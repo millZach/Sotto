@@ -28,6 +28,61 @@ export const ownServerTurnSchema = z.object({
   failure: z.enum(ownServerTurnFailures).optional(),
 })
 export type OwnServerTurn = z.infer<typeof ownServerTurnSchema>
+/**
+ * A picture or video an agent made or looked at, as a record carries it (ADR-0170): a handle, never the bytes and never
+ * a path. A picture's bytes are in the thread media store; a video stays in the file the agent wrote, which the store
+ * remembers by the video's digest on the host alone. `id` is the handle's place in its record, which a preview names
+ * with the thread and the record.
+ */
+export const MAX_ACTIVITY_MEDIA = 8
+/**
+ * The step a turn's written pictures and videos hung on (ADR-0170, part 4, kept for the records made before the request-only
+ * amendment of November 1, 2026) is Sotto's own, so its ID says so and each
+ * client shows its title in its own words rather than the English the host wrote.
+ */
+export const WRITTEN_STEP_PREFIX = 'sotto-written-'
+/** The ID every step an agent showed pictures or videos in through `sotto_media` starts with (ADR-0170, request-only); titled in the agent's words. */
+export const SHOWN_STEP_PREFIX = 'sotto-shown-'
+/** The largest video an agent wrote that a tile plays on the desktop (ADR-0170, part 4), read from where it was written. */
+export const AGENT_VIDEO_MAX_BYTES = 200 * 1024 * 1024
+/** The largest the iPhone fetches to play, in parts (`thread-media-part`); a larger one says it plays on the desktop. */
+export const PHONE_VIDEO_MAX_BYTES = 50 * 1024 * 1024
+export const AGENT_VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'] as const
+export type AgentVideoMimeType = typeof AGENT_VIDEO_MIME_TYPES[number]
+/** How much of a video one read hands back (`thread-media-part`): about 11.2 MB of base64, inside one 16 MiB frame. */
+export const AGENT_VIDEO_PART_BYTES = 8 * 1024 * 1024
+/** The most parts a video takes: one of `AGENT_VIDEO_MAX_BYTES` in `AGENT_VIDEO_PART_BYTES` parts. */
+export const AGENT_VIDEO_PARTS_MAX = Math.ceil(AGENT_VIDEO_MAX_BYTES / AGENT_VIDEO_PART_BYTES)
+/** The most callouts one show_in_thread call places, across all its pictures (ADR-0170, part 6). */
+export const MAX_MEDIA_CALLOUTS = 12
+/** The longest callout note, in characters. */
+export const CALLOUT_NOTE_MAX = 200
+const share = z.number().min(0).max(1)
+/**
+ * A numbered box with a note that the agent placed on a picture it showed (ADR-0170, part 6): where the box is, as shares
+ * of the picture's width and height from its top left, so it lands in the same place at any size. `n` numbers the
+ * callouts of one step, across its pictures.
+ */
+export const agentMediaCalloutSchema = z.object({
+  n: z.number().int().min(1).max(MAX_MEDIA_CALLOUTS),
+  x: share, y: share, w: z.number().gt(0).max(1), h: z.number().gt(0).max(1),
+  note: z.string().min(1).max(CALLOUT_NOTE_MAX),
+})
+export type AgentMediaCallout = z.infer<typeof agentMediaCalloutSchema>
+export const agentActivityMediaSchema = z.object({
+  id: z.string().regex(/^m[0-7]$/u),
+  digest: z.string().regex(/^[a-f0-9]{64}$/u),
+  kind: z.enum(['image', 'video']),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp', ...AGENT_VIDEO_MIME_TYPES]),
+  sizeBytes: z.number().int().min(1),
+  width: z.number().int().min(1).max(100_000).optional(), height: z.number().int().min(1).max(100_000).optional(),
+  name: z.string().min(1).max(200),
+  /** Where it came from: a tool's result, an image the agent generated, or a file it wrote. */
+  source: z.enum(['tool', 'generated', 'file']),
+  /** The callouts the agent placed on this picture when it showed it (ADR-0170, part 6). Never on a video. */
+  callouts: z.array(agentMediaCalloutSchema).max(MAX_MEDIA_CALLOUTS).optional(),
+})
+export type AgentActivityMedia = z.infer<typeof agentActivityMediaSchema>
 export const agentActivitySchema = z.object({
   id: z.string(), turnId: z.string(), sequence: z.number().int().nonnegative(),
   afterMessageId: z.string().optional(),
@@ -65,6 +120,13 @@ export const agentActivitySchema = z.object({
   steered: z.boolean().optional(),
   /** A turn record's own server (ADR-0124): set only on a turn whose model is one of the user's own model servers. */
   ownServer: ownServerTurnSchema.optional(),
+  /** Pictures the step made or looked at (ADR-0170): handles only, behind the `inline-media` Owl feature. */
+  media: z.array(agentActivityMediaSchema).max(MAX_ACTIVITY_MEDIA).optional(),
+  /**
+   * The step makes an image (ADR-0170): Codex's `imageGeneration` and Cursor's `generate_image`. While it runs and holds no
+   * picture yet, a tile plays the owl at the easel in the picture's place.
+   */
+  generates: z.literal('image').optional(),
   truncated: z.boolean().optional(),
   /**
    * Bodies the host sent cut, whose whole is still on the host (ADR-0025, October 18 amendment): each one's whole size in

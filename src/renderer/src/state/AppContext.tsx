@@ -24,12 +24,13 @@ import type {
 } from '../../../shared/contracts'
 import type { SpeechModelOption, SpeechModelStatus } from '../../../shared/speechModel'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
+import { LiveLevelStore, type LiveLevel } from '../audio/liveLevel'
 import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
 import type { DictationRecord } from '../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../shared/platform'
 import { cloudTranscriptionOn, type AppSettings, type SettingsPatch } from '../../../shared/settings'
-import type { RecoveryNotice } from '../../../shared/recoveryNotice'
+import { isPastePermissionNotice, type PastePermissionNoticeCode, type RecoveryNotice, type RecoveryNoticeEvent } from '../../../shared/recoveryNotice'
 import { AudioRecorder, type AudioRecorderOptions } from '../audio/audioRecorder'
 import { SoundCuePlayer } from '../audio/soundCues'
 import {
@@ -42,12 +43,13 @@ import {
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { cancelNightFalls, nightFallsRun, playNightFalls } from '../watcher/nightFalls'
 import type { SettingsSectionId } from '../features/settings/settingsPages'
+import { isHelpTopic, type HelpRequest, type HelpTopicId } from '../features/help/helpTopics'
 import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
-/** `watcher` is Watcher's room, reachable only while the Watcher gate is on. */
-export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+/** `watcher` is Watcher's room, reachable only while the Watcher gate is on; `council` the Council page, only while its Owl feature is (ADR-0177). */
+export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'council' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
 
 /** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */
 export interface SettingsRequest {
@@ -87,6 +89,8 @@ export interface AppControllerFactoryBindings {
   readonly addHistory: SottoBridge['addHistory']
   readonly retainOutput?: (entry: HistoryEntry) => void
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<SottoBridge['publishWidgetState']>
+  /** The microphone's level while listening, for the Dictate room's meter alone (#993). */
+  readonly publishLevel?: (level: number) => void
   readonly polishTranscript?: SottoBridge['polishTranscript']
   /** Present when the preload bridge exposes the speech model in main. */
   readonly transcription?: TranscriptionBridge
@@ -140,6 +144,7 @@ export function createProductionDictationController(
     ...(bindings.openRouterKeyMissing ? { openRouterKeyMissing: bindings.openRouterKeyMissing } : {}),
     ...(bindings.transcribedWith ? { transcribedWith: bindings.transcribedWith } : {}),
     publishWidgetState: bindings.publishWidgetState,
+    ...(bindings.publishLevel ? { publishLevel: bindings.publishLevel } : {}),
     ...(platform === undefined ? {} : { platform }),
     ...(polish === undefined
       ? {}
@@ -160,6 +165,8 @@ export interface AppActions {
   /** Transcribe on this computer: a kept recording OpenRouter turned away goes to the speech model here (ADR-0160). */
   retryOnThisComputer(): Promise<void>
   dismiss(): Promise<void>
+  /** Opens a page; Help can be opened at one of its topics (helpTopics.ts). */
+  navigate(destination: 'help', topic?: HelpTopicId): void
   /** Opens a page; Settings can be opened at one of its pages or groups (settingsPages.ts), and at one setting on it. */
   navigate(destination: AppNavigation, settingsSection?: SettingsSectionId, setting?: string): void
   updateSettings(patch: SettingsPatch): Promise<boolean>
@@ -173,6 +180,8 @@ export interface AppActions {
   clearHistory(): Promise<boolean>
   copyHistory(text: string): Promise<boolean>
   dismissDictationRecovery(id: string): void
+  dismissPastePermissionNotice(code: PastePermissionNoticeCode): void
+  dismissPastePermissionNotices(): void
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** OpenRouter's text models for the cleanup model picker (ADR-0122); a failure is a reason, never a throw. */
   listOpenRouterModels(): Promise<OpenRouterModelList>
@@ -210,9 +219,13 @@ export interface AppContextValue {
   readonly dictationRecords: readonly DictationRecord[]
   readonly dictationRecovery: readonly HistoryEntry[]
   readonly dictation: DictationState
+  /** The microphone's level while dictating, for the Dictate room's meter alone; never part of `dictation` (#993). */
+  readonly dictationLevel: LiveLevel
   readonly navigation: AppNavigation
   /** The Settings page or group last asked for with `navigate('settings', section)`; Settings opens there. */
   readonly settingsRequest?: SettingsRequest | null
+  /** The Help topic last asked for with `navigate('help', topic)`; Help opens there. */
+  readonly helpRequest?: HelpRequest | null
   readonly recoveryNotices: readonly RecoveryNotice[]
   /** Where the speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
@@ -264,9 +277,13 @@ export function AppProvider({
   const dictationRecordsTailRef = useRef<Promise<void>>(Promise.resolve())
   const [dictationRecovery, setDictationRecovery] = useState<readonly HistoryEntry[]>([])
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
+  const [dictationLevel] = useState(() => new LiveLevelStore())
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
   const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
+  const [helpRequest, setHelpRequest] = useState<HelpRequest | null>(null)
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
+  // A clear event can beat the initial list response. Only a newly raised failure can revive the notice.
+  const clearedRecoveryNotices = useRef(new Set<RecoveryNotice['code']>())
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   // The navigation and the update as of the last render, for navigate(), which is made once.
   const navigationRef = useRef(navigation)
@@ -299,17 +316,30 @@ export function AppProvider({
   const settingsTailRef = useRef<Promise<void>>(Promise.resolve())
   const historyTailRef = useRef<Promise<void>>(Promise.resolve())
 
-  const commitRecoveryNotice = useCallback((notice: RecoveryNotice): void => {
+  const commitRecoveryNotice = useCallback((notice: RecoveryNoticeEvent): void => {
+    if (notice.cleared === false) clearedRecoveryNotices.current.delete(notice.code)
+    if (notice.cleared) {
+      clearedRecoveryNotices.current.add(notice.code)
+      setRecoveryNotices(current => current.filter(candidate => candidate.code !== notice.code))
+      return
+    }
+    if (clearedRecoveryNotices.current.has(notice.code)) return
     setRecoveryNotices((current) =>
       current.some((candidate) => candidate.code === notice.code)
         ? current
-        : [...current, notice],
+        : [...current, { code: notice.code }],
     )
   }, [])
 
   const commitUpdate = useCallback((next: UpdateStatus): void => {
     setUpdate(next)
   }, [])
+
+  const dismissPastePermissionNotice = useCallback((code: PastePermissionNoticeCode): void => {
+    commitRecoveryNotice({ code, cleared: true })
+    // Dismiss locally at once; a lost bridge reply must not keep the card over the user's work.
+    void bridge?.dismissPastePermissionNotice(code).catch(() => undefined)
+  }, [bridge, commitRecoveryNotice])
 
   const commitSpeechModel = useCallback((next: SpeechModelStatus): void => {
     speechModelRef.current = next
@@ -472,6 +502,7 @@ export function AppProvider({
     setHistory([])
     setDictationRecords([])
     setDictation(initialDictationState)
+    dictationLevel.set(0)
     setRecoveryNotices([])
     setUpdate(null)
     setSpeechModels(null)
@@ -628,6 +659,9 @@ export function AppProvider({
             setDictation(controller.getState())
             return bridge.publishWidgetState(snapshot)
           },
+          publishLevel: (level) => {
+            if (isCurrentGeneration(generation) && localController === controller) dictationLevel.set(level)
+          },
         }
 
         try {
@@ -705,14 +739,17 @@ export function AppProvider({
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
     retryOnThisComputer: () => invokeController(controllerRef.current, (controller) => controller.retry?.('local') ?? Promise.resolve()),
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
-    navigate: (destination, settingsSection, setting) => {
+    navigate: (destination: AppNavigation, section?: SettingsSectionId | HelpTopicId, setting?: string) => {
+      const helpTopic = destination === 'help' && isHelpTopic(section) ? section : undefined
+      const settingsSection = destination === 'settings' && section !== undefined && !isHelpTopic(section) ? section : undefined
       // Navigations apply in the order they were asked for: a run's deferred page change gives way to any newer one.
       const generation = ++navigationGenerationRef.current
       const go = (): void => {
         if (generation !== navigationGenerationRef.current) return
         setNavigation(destination)
         // A request is for one visit: Settings opened any other way starts on its first page again.
-        setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1, ...(setting !== undefined ? { setting } : {}) } : null)
+        setSettingsRequest(request => settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1, ...(setting !== undefined ? { setting } : {}) } : null)
+        setHelpRequest(request => helpTopic !== undefined ? { topic: helpTopic, key: (request?.key ?? 0) + 1 } : null)
       }
       // Between Dictate or Threads and Watcher's room the window plays night falls, unless the setting is off.
       const run = nightFallsRun(navigationRef.current, destination, updateRef.current, settingsRef.current)
@@ -785,6 +822,13 @@ export function AppProvider({
       })
     },
     dismissDictationRecovery: id => setDictationRecovery(entries => entries.filter(entry => entry.id !== id)),
+    dismissPastePermissionNotice,
+    dismissPastePermissionNotices: () => {
+      for (const { code } of recoveryNotices) {
+        if (!isPastePermissionNotice(code)) continue
+        dismissPastePermissionNotice(code)
+      }
+    },
     copyHistory: async (text) => {
       if (bridge === undefined || activeGenerationRef.current === 0) return false
       const current = settingsRef.current
@@ -885,7 +929,18 @@ export function AppProvider({
         if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
       }
     },
-  }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration, queueDictationRecords, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
+  }), [bridge, commitUpdate, dismissPastePermissionNotice, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration, queueDictationRecords, recoveryNotices, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
+
+  // The application menu's Settings… (Cmd+, on a Mac, Ctrl+, elsewhere) opens Settings, once setup is done (#1825).
+  useEffect(() => {
+    if (bridge === undefined) return undefined
+    try {
+      return bridge.onSettingsRequested(() => { if (navigationRef.current !== 'onboarding') actions.navigate('settings') })
+    } catch {
+      // Without the menu's request, Settings is still a press or Ctrl+5 away.
+      return undefined
+    }
+  }, [actions, bridge])
 
   const value = useMemo<AppContextValue>(() => ({
     windowMaximized,
@@ -899,8 +954,10 @@ export function AppProvider({
     dictationRecords,
     dictationRecovery,
     dictation,
+    dictationLevel,
     navigation,
     settingsRequest,
+    helpRequest,
     recoveryNotices,
     speechModel,
     speechModels,
@@ -908,7 +965,7 @@ export function AppProvider({
     update,
     updateCheckRequest,
     actions,
-  }), [windowMaximized, actions, copy, dictation, dictationRecords, dictationRecovery, failure, history, historyStatus, navigation, settingsRequest, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
+  }), [windowMaximized, actions, copy, dictation, dictationLevel, dictationRecords, dictationRecovery, failure, history, historyStatus, navigation, settingsRequest, helpRequest, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
 
   return createElement(AppContext.Provider, { value }, children)
 }

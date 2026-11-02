@@ -30,17 +30,33 @@ private struct CardAnswer {
     var asked: AskedRequest { AskedRequest(thread: asking.ref, requestID: requestID) }
 }
 
+/// What the Settled shelf shows besides the threads the phone holds: how many settled threads its computers left out of
+/// their lists, and those read from them, or found by a search (ADR-0028, November 1 amendment, part 2).
+private struct Shelf {
+    let heldBack: Int
+    let older: [HostedThread]
+}
+
+/// What Threads' search of the computers' older settled threads depends on: the words, the computer menu, and which
+/// computers can be asked, so connecting one or choosing All computers searches again.
+private struct SettledSearchKey: Hashable {
+    let query: String; let show: ComputerFilter; let sources: [String]
+}
+
 /// The search field's frame, kept outside SwiftUI's state so scrolling doesn't redraw the page.
 private final class FrameBox {
     var frame: CGRect = .zero
 }
 
-/// Threads: questions and permissions first, answerable in place, then working threads, recent ones and the
-/// settled shelf (ADR-0039, ADR-0051). The heading, the computer menu, the summary and search scroll with the
-/// list as one sheet. Focus reads only host list summaries; opening a thread subscribes to its detail.
+/// Threads: questions and permissions first, then working threads, recent ones and the settled shelf (ADR-0039,
+/// ADR-0051). On every iPhone but the unfolded Duo it is the thread list, a row each, as the unfolded Duo's sidebar
+/// shows it, and a press opens the thread (ADR-0151, amended October 30, 2026). The unfolded Duo keeps its columns of
+/// cards, answerable in place. The heading, the computer menu and search scroll with the list as one sheet. Focus reads
+/// only host list summaries; opening a thread subscribes to its detail.
 struct ThreadsView: View {
     @EnvironmentObject var model: AppModel
-    var openCreated: (ThreadRef) -> Void = { _ in }
+    /// Opens a thread over the page, from the list or once New thread has made it.
+    var open: (ThreadRef) -> Void = { _ in }
     @State private var creating = false
     @State private var query = ""
     @State private var settledExpanded = false
@@ -49,31 +65,41 @@ struct ThreadsView: View {
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// At regular width, the iPhone Duo unfolded, the sections stand side by side, a column each. At the accessibility
-    /// text sizes a third of the width can't hold a title, so the page keeps one column.
-    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var typeSize
-    private var inColumns: Bool { sizeClass == .regular && !typeSize.isAccessibilitySize }
+    @Environment(\.duoLayout) private var duo
+    /// The unfolded Duo keeps its cards: side by side, a column each, except at the accessibility text sizes, where a
+    /// third of the width can't hold a title and the page keeps one column. Every other iPhone shows the thread list.
+    private var unfolded: Bool { duo.sideways || duo == .upright }
+    private var inColumns: Bool { unfolded && !typeSize.isAccessibilitySize }
 
     var body: some View {
+        let _ = BenchProbe.body("ThreadsView")
         let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
         let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
         SheetPage(warm: unsearched.requestCount > 0) {
-            heading
-            if inColumns {
-                HStack(spacing: Space.s3) {
-                    ComputerMenu()
-                    searchPill.frame(maxWidth: 420)
-                    Spacer(minLength: Space.s2)
-                    ThreadCounts(working: unsearched.working.count, needs: unsearched.questions.count)
+            VStack(alignment: .leading, spacing: 0) {
+                heading
+                // The computer menu shares the search row, and the sections count their own threads (#1849). At the
+                // accessibility text sizes the row can't hold both, so search goes under the menu.
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: Space.s3) { ComputerMenu(); searchPill }
+                        .padding(.top, Space.s3)
+                } else {
+                    HStack(spacing: Space.s3) {
+                        ComputerMenu()
+                        searchPill.frame(maxWidth: inColumns ? 420 : nil)
+                        if inColumns { Spacer(minLength: Space.s2) }
+                    }
+                    .padding(.top, Space.s3)
                 }
-                .padding(.top, Space.s3)
-            } else {
-                controls(unsearched)
-                searchPill.padding(.top, Space.s3)
+                notices
+                let shelf = Shelf(heldBack: model.settledHeldBack(show: model.show),
+                                  older: query.isEmpty ? model.olderSettledRows(show: model.show) : model.settledSearchRows(query: query, show: model.show))
+                if unfolded { sections(groups, shelf) } else { list(groups, shelf) }
             }
-            notices
-            sections(groups)
+            // A Max held sideways reads the list at the reading width, as a thread does; the unfolded Duo's columns
+            // take the whole width.
+            .readingWidth(on: !unfolded)
         }
         // A tap anywhere outside the search field closes its keyboard; so does scrolling.
         .simultaneousGesture(SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
@@ -87,10 +113,19 @@ struct ThreadsView: View {
             for id in Array(sent.keys) { resolve(id) }
         }
         .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
-            NewThreadSheet(opened: { ref in model.newThreadOpened(ref); openCreated(ref) })
+            NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
         .onAppear { openForShare(model.shareOpened) }
+        // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
+        .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
+        // The search also asks the computers for their older settled threads, a moment after typing stops, and again when
+        // the computers it can ask change.
+        .task(id: SettledSearchKey(query: query, show: model.show, sources: model.settledSources(show: model.show))) {
+            if !query.isEmpty { try? await Task.sleep(nanoseconds: 400_000_000) }
+            guard !Task.isCancelled else { return }
+            await model.searchSettled(query, show: model.show)
+        }
     }
 
     private func openForShare(_ destination: ShareDestination?) {
@@ -103,27 +138,15 @@ struct ThreadsView: View {
 
     private var heading: some View {
         PageHeading(String(localized: "Threads")) {
-            Button { creating = true } label: { Image(systemName: "plus") }
-                .buttonStyle(GlassCircleStyle())
-                .accessibilityLabel("New thread")
-                .accessibilityIdentifier("new-thread")
+            // On the iPhone Duo, New thread is on the rail instead (ADR-0151, amended).
+            if duo == .none {
+                Button { creating = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(GlassCircleStyle())
+                    .accessibilityLabel("New thread")
+                    .accessibilityIdentifier("new-thread")
+            }
         }
         .padding(.top, Space.s1)
-    }
-
-    private func controls(_ all: FocusThreads) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: Space.s3) {
-                ComputerMenu()
-                Spacer(minLength: Space.s2)
-                ThreadCounts(working: all.working.count, needs: all.questions.count)
-            }
-            VStack(alignment: .leading, spacing: Space.s2) {
-                ComputerMenu()
-                ThreadCounts(working: all.working.count, needs: all.questions.count)
-            }
-        }
-        .padding(.top, Space.s3)
     }
 
     private var searchPill: some View {
@@ -174,16 +197,121 @@ struct ThreadsView: View {
         ForEach(model.pendingCreations.filter { model.show.admits($0.hostID) }) { operation in
             CreationPendingRow(operation: operation).padding(.top, Space.s3)
         }
-        if query.isEmpty {
-            ForEach(model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }, id: \.hostID) { computer in
-                ConnectionNote(computer: computer, trying: computer.status == .connecting)
+        // Every computer that can't be reached shares one note (#1849).
+        let unreachable = model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }
+        if query.isEmpty && !unreachable.isEmpty {
+            ConnectionNote(computers: unreachable, trying: unreachable.allSatisfy { $0.status == .connecting })
+        }
+    }
+
+    // MARK: The thread list
+
+    /// The thread list, then the settled shelf, folded unless a search reaches into it. Opened, it reads the settled threads
+    /// its computers left out, 30 at a time, and shows them with any the phone holds, newest settled first (ADR-0028,
+    /// November 1).
+    @ViewBuilder private func list(_ groups: FocusThreads, _ shelf: Shelf) -> some View {
+        if groups.isEmpty && !shows(shelf, settled: groups.settled, groups) { empty(groups) }
+        ThreadListSections(groups: groups, open: open).equatable()
+        if shows(shelf, settled: groups.settled, groups) {
+            if groups.searching {
+                ThreadListHeading(title: String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: groups.settled.count + shelf.older.count, id: "settled")
+            } else {
+                settledToggle(groups.settled.count + shelf.heldBack)
+            }
+            if settledExpanded || groups.searching {
+                let watched = model.watchedThreadIDs
+                let row = { (row: HostedThread) in
+                    ThreadListRow(row: row, kind: .recent(unread: groups.isUnreadFinish(row)), watched: watched.contains(row.id), chosen: false,
+                                  canWatch: model.canChangeWatch(row.ref), identifier: "thread-",
+                                  open: { open(row.ref) },
+                                  setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+                        .equatable()
+                }
+                ForEach(shelfRows(groups.settled, shelf, groups)) { row($0) }
+                olderControls(groups)
             }
         }
     }
 
+    /// Whether the shelf has anything to show: settled threads here or held back on a computer, or, while Threads is
+    /// searched, those that match here or on a computer, or a computer still being asked.
+    private func shows(_ shelf: Shelf, settled: [HostedThread], _ groups: FocusThreads) -> Bool {
+        groups.searching ? !settled.isEmpty || !shelf.older.isEmpty || searchingComputers(groups) || model.settledSearch.failed
+            : !settled.isEmpty || shelf.heldBack > 0
+    }
+
+    /// A read of older settled threads that failed, with Try again, which reads them again.
+    private func olderFailed(_ retry: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("Settled threads couldn’t be read. Nothing was lost.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again", action: retry)
+                .font(.sotto(.small, .semibold)).frame(minHeight: 44)
+        }
+        .padding(.horizontal, Space.s3).padding(.top, Space.s2)
+    }
+
+    /// The shelf's rows as it shows them. While a computer holds settled threads back, what the list carries, such as a
+    /// thread settled since this phone connected, and what was read from the computers, as one list, newest settled first.
+    /// Otherwise, and while searching, the list's rows then what was found.
+    private func shelfRows(_ settled: [HostedThread], _ shelf: Shelf, _ groups: FocusThreads) -> [HostedThread] {
+        guard !groups.searching && (shelf.heldBack > 0 || !shelf.older.isEmpty) else { return settled + shelf.older }
+        return ThreadGroups.newestSettledFirst(settled + shelf.older)
+    }
+
+    /// While Threads is searched, whether a computer is still being asked for its held-back settled threads.
+    private func searchingComputers(_ groups: FocusThreads) -> Bool { groups.searching && model.settledSearch.reading }
+
+    /// Under the shelf's rows: reading, a read that failed with Try again, or Show 30 more. Opening the shelf reads the first
+    /// 30 from each computer, as does a computer connecting while it is open.
+    private func olderControls(_ groups: FocusThreads) -> some View {
+        // The clear line is always there, so the read starts even before anything shows under the rows.
+        VStack(spacing: 0) { Color.clear.frame(height: 0); olderControlsBody(groups) }
+            .frame(maxWidth: .infinity)
+            .task(id: groups.searching ? [] : model.settledSources(show: model.show)) {
+                if !groups.searching { await model.readOlderSettled(show: model.show, first: true) }
+            }
+    }
+    @ViewBuilder private func olderControlsBody(_ groups: FocusThreads) -> some View {
+        if model.olderSettledReading || searchingComputers(groups) {
+            HStack(spacing: Space.s2) {
+                ProgressView()
+                Text("Reading threads…").font(.sotto(.small)).foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, Space.s3).frame(minHeight: 52)
+            .accessibilityElement(children: .combine)
+        } else if groups.searching && model.settledSearch.failed {
+            olderFailed { Task { await model.searchSettled(query, show: model.show) } }
+        } else if !groups.searching && model.olderSettledFailed {
+            olderFailed { Task { await model.readOlderSettled(show: model.show) } }
+        } else if groups.searching && !model.settledSearch.next.isEmpty {
+            moreButton { Task { await model.searchMoreSettled() } }
+        } else if !groups.searching && model.moreOlderSettled(show: model.show) && !model.olderSettledRows(show: model.show).isEmpty {
+            moreButton { Task { await model.readOlderSettled(show: model.show) } }
+        }
+    }
+
+    /// Reads the next 30 settled threads from each computer that has more.
+    private func moreButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text("Show 30 more").font(.sotto(.small, .semibold)).frame(maxWidth: .infinity, minHeight: 48)
+        }
+        .buttonStyle(PressStyle())
+        .padding(.top, Space.s2)
+        .accessibilityIdentifier("older-settled-threads")
+    }
+
+    private func empty(_ groups: FocusThreads) -> some View {
+        (groups.searching ? Text("No matching threads.") : model.anyConnecting ? Text("Reading threads…") : Text("No threads here yet. Tap New thread to start one."))
+            .font(.sotto(.body)).foregroundStyle(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, Space.s7)
+            .paragraphDirection()
+    }
+
     // MARK: Sections
 
-    @ViewBuilder private func sections(_ groups: FocusThreads) -> some View {
+    @ViewBuilder private func sections(_ groups: FocusThreads, _ shelf: Shelf) -> some View {
         let needs = needsItems(groups)
         let departing = Set(needs.map { $0.row.id }).subtracting(groups.questions.map { $0.id })
         let working = groups.working.filter { !departing.contains($0.id) }
@@ -191,13 +319,7 @@ struct ThreadsView: View {
         let settled = groups.settled.filter { !departing.contains($0.id) }
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
         let watched = model.watchedThreadIDs
-        if needs.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty {
-            (groups.searching ? Text("No matching threads.") : model.anyConnecting ? Text("Reading threads…") : Text("No threads here yet. Tap New thread to start one."))
-                .font(.sotto(.body)).foregroundStyle(Palette.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, Space.s7)
-                .paragraphDirection()
-        }
+        if needs.isEmpty && working.isEmpty && recent.isEmpty && !shows(shelf, settled: settled, groups) { empty(groups) }
         let needsColumn = VStack(alignment: .leading, spacing: 0) {
             SectionHeading(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), count: needs.count, light: .warning)
             VStack(spacing: Space.s3) {
@@ -220,14 +342,16 @@ struct ThreadsView: View {
                 SectionHeading(String(localized: "Recent", comment: "The heading over threads that finished lately."), count: recent.count)
                 ThreadRowList(rows: recent, unread: unread, watched: watched)
             }
-            if !settled.isEmpty {
+            if shows(shelf, settled: settled, groups) {
                 if groups.searching {
-                    SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count)
+                    SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count + shelf.older.count)
                 } else {
-                    settledToggle(settled.count)
+                    settledToggle(settled.count + shelf.heldBack)
                 }
                 if settledExpanded || groups.searching {
-                    ThreadRowList(rows: settled, unread: unread, watched: watched)
+                    let rows = shelfRows(settled, shelf, groups)
+                    if !rows.isEmpty { ThreadRowList(rows: rows, unread: unread, watched: watched) }
+                    olderControls(groups)
                 }
             }
         }
@@ -236,7 +360,7 @@ struct ThreadsView: View {
             HStack(alignment: .top, spacing: Space.s4) {
                 if !needs.isEmpty { needsColumn.frame(maxWidth: .infinity, alignment: .leading) }
                 if !working.isEmpty { workingColumn.frame(maxWidth: .infinity, alignment: .leading) }
-                if !recent.isEmpty || !settled.isEmpty { recentColumn.frame(maxWidth: .infinity, alignment: .leading) }
+                if !recent.isEmpty || shows(shelf, settled: settled, groups) { recentColumn.frame(maxWidth: .infinity, alignment: .leading) }
             }
         } else {
             if !needs.isEmpty { needsColumn }
@@ -328,11 +452,14 @@ struct ThreadsView: View {
 
 // MARK: - The computer menu and the summary
 
-/// One unreachable computer's note. Try again is its own view so one press gives one press's feedback, however many
-/// computers are offline.
+/// The note for the computers that can't be reached, one line however many there are (#1849). Try again is its own
+/// view so one press gives one press's feedback, and it tries each of them that isn't being tried already; it waits
+/// only while every one of them is.
 private struct ConnectionNote: View {
-    let computer: ComputerThreads
+    let computers: [ComputerThreads]
     let trying: Bool
+    /// Their names, joined as the language joins a list: "Studio Mac and Desktop".
+    private var names: String { ListFormatter.localizedString(byJoining: computers.map(\.name)) }
     @EnvironmentObject var model: AppModel
     @Environment(\.sottoTheme) private var theme
     @State private var retries = 0
@@ -342,16 +469,20 @@ private struct ConnectionNote: View {
         HStack(spacing: Space.s3) {
             Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                (trying ? Text("Checking \(computer.name)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(computer.name).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
+                (trying ? Text("Checking \(names)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(names).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
                     .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                    // Several names hold one line, cut at its end; VoiceOver reads them all.
+                    .lineLimit(computers.count > 1 ? 1 : nil)
                 if !trying {
-                    Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    (computers.count == 1 ? Text("Showing its last shared threads.") : Text("Showing their last shared threads."))
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted)
                         .paragraphDirection()
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s2)
-            Button { retries += 1; Task { await model.connect(computer.hostID) } } label: {
+            // Each computer is tried on its own, so a slow one holds up none of the others.
+            Button { retries += 1; for computer in computers where computer.status != .connecting { Task { await model.connect(computer.hostID) } } } label: {
                 if trying {
                     HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying", comment: "On the button while Sotto tries to reach a computer again.") }
                 } else {
@@ -361,8 +492,8 @@ private struct ConnectionNote: View {
             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
             .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
             .disabled(trying)
-            .accessibilityLabel(trying ? String(localized: "Trying to reach \(computer.name)", comment: "%@ is the computer's name.")
-                                : String(localized: "Try reaching \(computer.name) again", comment: "%@ is the computer's name."))
+            .accessibilityLabel(trying ? String(localized: "Trying to reach \(names)", comment: "%@ is the computer's name.")
+                                : String(localized: "Try reaching \(names) again", comment: "%@ is the computer's name."))
         }
         .padding(.vertical, Space.s3).padding(.leading, Space.s4).padding(.trailing, Space.s3)
         .background {
@@ -406,44 +537,6 @@ private struct ComputerMenu: View {
     private var title: String {
         if case .only(let id) = model.show { return model.name(id) }
         return String(localized: "All computers")
-    }
-}
-
-/// How many threads are working and how many requests need the user, beside the computer menu.
-private struct ThreadCounts: View {
-    let working: Int
-    let needs: Int
-    var body: some View {
-        HStack(spacing: Space.s4) {
-            HStack(spacing: Space.s2) {
-                Light(tone: working > 0 ? .accent : .off, breathing: working > 0)
-                HStack(spacing: 4) {
-                    Text("\(working)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    Text(String(localized: "thread-count.working", defaultValue: "working", comment: "After the number of threads at work, such as 3 working."))
-                }
-            }
-            HStack(spacing: Space.s2) {
-                Light(tone: needs > 0 ? .warning : .off)
-                HStack(spacing: 4) {
-                    Text("\(needs)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    (needs == 1 ? Text(String(localized: "request-count.needs-you", defaultValue: "needs you", comment: "After the number 1: one request waits on the user."))
-                        : Text("need you", comment: "After a number other than 1: that many requests wait on the user."))
-                }
-            }
-        }
-        .font(.sotto(.small))
-        .foregroundStyle(Palette.muted)
-        .lineLimit(1)
-        .minimumScaleFactor(0.85)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "\(workingWords), \(needsWords)", comment: "First %@ is how many threads are working, such as 3 working; second is how many requests need the user, such as 1 needs you."))
-        .accessibilityIdentifier("thread-counts")
-    }
-    private var workingWords: String {
-        working == 1 ? String(localized: "1 working") : String(localized: "\(working) working")
-    }
-    private var needsWords: String {
-        needs == 1 ? String(localized: "1 needs you") : String(localized: "\(needs) need you")
     }
 }
 
@@ -857,6 +950,7 @@ private struct ThreadRowList: View {
     let unread: Set<String>
     var watched: Set<String> = []
     var body: some View {
+        let _ = BenchProbe.body("ThreadRowList")
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
@@ -883,6 +977,7 @@ private struct ThreadRow: View {
     /// Settled is quiet: a settled thread whose last turn failed doesn't say so here.
     private var failed: Bool { row.failed }
     var body: some View {
+        let _ = BenchProbe.body("ThreadRow")
         Group {
             if model.canChangeWatch(row.ref) || model.shelfAction(row.ref) != nil {
                 link.contextMenu {

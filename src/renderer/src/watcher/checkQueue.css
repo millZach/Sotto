@@ -1,12 +1,12 @@
 /* A machine's checks, one at a time (#1312, fourth part, Zach's pick C), in its panel and in Tools › Agents. */
 .check-queue { margin: 4px 0 10px; }
-.check-queue__head { margin: 0 0 4px; color: var(--tt-text-2); font-size: 12px; font-weight: 600; }
+.check-queue__head { margin: 0 0 4px; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; }
 .check-queue__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .check-queue .check-queue__list > li { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; column-gap: 8px; padding: 3px 0; }
 .check-queue__ring { display: block; width: 9px; height: 9px; justify-self: center; border-radius: 50%;
   background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
-.check-queue__place { justify-self: center; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.check-queue__place { justify-self: center; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .check-queue__title { min-width: 0; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
 .check-queue .check-queue__list > li[data-current] .check-queue__title { font-weight: 600; }
-.check-queue__facts { grid-column: 2; min-width: 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
-.check-queue__note.check-queue__note { margin: 0 0 10px; color: var(--tt-text-2); font-size: 12px; }
+.check-queue__facts { grid-column: 2; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
+.check-queue__note.check-queue__note { margin: 0 0 10px; color: var(--tt-text-2); font-size: var(--tt-type-caption); }

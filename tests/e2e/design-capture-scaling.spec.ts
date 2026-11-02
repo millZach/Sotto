@@ -36,7 +36,7 @@ test.describe('authoritative design-review captures', () => {
           await captureWidget(liveWidget, `scale-${scalePercent}-widget-${theme}.png`, { theme })
         }
         const liveWidget = await widgetPage(launched, 'dark')
-        await liveWidget.getByRole('button', { name: 'Cancel dictation' }).click()
+        await liveWidget.evaluate(() => window.sottoWidget!.requestCancel())
 
         // The Journal, from the bar to the last day it shows, once the cancelled dictation has gone back to rest.
         await expect(page.locator('.dictate')).toHaveAttribute('data-status', 'idle', { timeout: 15_000 })

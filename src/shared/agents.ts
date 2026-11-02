@@ -7,7 +7,7 @@ import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
-import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
+import { agentActivitySchema, AGENT_VIDEO_MAX_BYTES, AGENT_VIDEO_MIME_TYPES, AGENT_VIDEO_PART_BYTES, AGENT_VIDEO_PARTS_MAX, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
@@ -267,6 +267,28 @@ export const agentAttachmentPreviewRequestSchema = z.object({ threadId: id, mess
 export type AgentAttachmentPreviewRequest = z.infer<typeof agentAttachmentPreviewRequestSchema>
 export const agentAttachmentPreviewResultSchema = agentAttachmentPreviewDataSchema.nullable()
 export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreviewResultSchema>
+/** One picture a thread's activity record names (ADR-0170), asked for when its tile comes into view. */
+export const AGENT_THREAD_MEDIA = 'sotto:agents:thread-media'
+export const agentThreadMediaRequestSchema = z.object({ threadId: id, activityId: id, mediaId: z.string().regex(/^m[0-7]$/u) }).strict()
+export type AgentThreadMediaRequest = z.infer<typeof agentThreadMediaRequestSchema>
+/** What a window asks for: the picture whole for the viewer, or a thumbnail at tile size, which main makes. */
+export const agentThreadMediaWindowRequestSchema = agentThreadMediaRequestSchema.extend({ size: z.enum(['tile', 'full']) }).strict()
+export type AgentThreadMediaWindowRequest = z.infer<typeof agentThreadMediaWindowRequestSchema>
+export const agentThreadMediaResultSchema = z.object({ dataUrl: z.string().max(14_000_000).regex(/^data:image\/(png|jpeg|gif|webp);base64,/u) }).strict().nullable()
+export type AgentThreadMediaResult = z.infer<typeof agentThreadMediaResultSchema>
+/**
+ * One part of a video an agent wrote (ADR-0170, part 4), by its record and handle: read from the file it names while that
+ * is still the file, for the iPhone to put together and the desktop's player to play from.
+ */
+export const agentThreadMediaPartRequestSchema = agentThreadMediaRequestSchema.extend({ part: z.number().int().min(0).max(AGENT_VIDEO_PARTS_MAX - 1) }).strict()
+export type AgentThreadMediaPartRequest = z.infer<typeof agentThreadMediaPartRequestSchema>
+/** A part's bytes in base64, with what the whole video is, so a client can check it once every part is in. */
+export const agentThreadMediaPartSchema = z.object({
+  name: z.string().min(1).max(200), mimeType: z.enum(AGENT_VIDEO_MIME_TYPES), sizeBytes: z.number().int().min(1).max(AGENT_VIDEO_MAX_BYTES),
+  digest: z.string().regex(/^[a-f0-9]{64}$/u), part: z.number().int().min(0).max(AGENT_VIDEO_PARTS_MAX - 1), parts: z.number().int().min(1).max(AGENT_VIDEO_PARTS_MAX),
+  data: z.string().min(1).max(Math.ceil(AGENT_VIDEO_PART_BYTES / 3) * 4).regex(/^[A-Za-z0-9+/]*={0,2}$/u),
+}).strict().nullable()
+export type AgentThreadMediaPart = z.infer<typeof agentThreadMediaPartSchema>
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
@@ -334,6 +356,11 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * thread provider's own label, so a model from Anthropic on OpenCode never reads as Claude Code.
    */
   source: id.optional(),
+  /**
+   * A Claude Code or Codex model with a newer model of its line in the same catalog (ADR-0171). Menus list it under a closed
+   * Legacy section rather than with the newest. Set by the adapter from `markLegacyModels`; other providers never set it.
+   */
+  legacy: z.boolean().optional(),
 })
 /** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
 export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
@@ -365,7 +392,10 @@ export const agentRequestSchema = z.object({
    * The host adds it; no provider does. */
   linkMissing: z.literal(true).optional(),
   options: z.array(z.object({ id, label: text })).default([]),
-  questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional() })).max(100).optional(),
+  questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional(),
+    /** Its written answer reaches the agent as the user's own words, not as a value a form checks, so images may go in it
+     *  (ADR-0176). The adapter of an agent's own question tool sets it; a typed form field never has it. */
+    prose: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional(),
     /** A plan the agent asks the user to accept, in its parts (Cursor's `cursor/create_plan`, ADR-0128); `steps` is Markdown. */
@@ -403,6 +433,9 @@ export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int
   /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
   messageId: id.optional() }).strict()
 export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
+/** A thread Sotto moved off a model its provider stopped offering (ADR-0171): from and to by name, and when. */
+export const threadModelMovedSchema = z.object({ from: z.string().min(1).max(300), to: z.string().min(1).max(300), at: z.string().datetime() })
+export type ThreadModelMoved = z.infer<typeof threadModelMovedSchema>
 /**
  * The thread a **continued thread** continues (ADR-0089): its Sotto thread ID, its provider, when, and the proof of the
  * handover its first message carried, once that message was sent.
@@ -588,6 +621,11 @@ export const agentThreadSchema = z.object({
    * from older hosts. A value this build cannot read drops the link rather than the thread.
    */
   continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
+  /**
+   * Sotto moved this thread off a model its provider stopped offering (ADR-0171): the two models' names and when. The
+   * thread's note follows the last message written before then. Present only when the names differ. Sotto's record.
+   */
+  modelMoved: threadModelMovedSchema.optional().catch(undefined),
   continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
   /**
    * The thread this one began from, when it was an agent continued as its own thread or a fork at a reply (#1028). Sotto's
@@ -1011,6 +1049,11 @@ export const agentStateSchema = z.object({
   threadDeletePreview: threadDeletePreviewSchema.optional(),
   threadClearPreview: threadClearPreviewSchema.optional(),
   threadClearResult: threadClearResultSchema.optional(),
+  /**
+   * A refusal because the checkout guard is held (#1823), on that reply alone: present for every such refusal, with the
+   * thread holding the folder when a thread does, so the window offers to open it. Keyed for the window by the router.
+   */
+  checkoutHold: z.object({ threadId: z.string().min(1).optional() }).optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
   hostId: z.uuid().optional(),
@@ -1106,16 +1149,24 @@ export interface AgentThreadsBroadcast {
   /** Every thread's Sotto ID in order, when the order or the threads differ from `base`'s. Absent when they do not. */
   order?: string[]
 }
+/** A part of the shell a broadcast may keep: any field but its host (ADR-0028, October 30 kept parts). */
+export type KeptPart = Exclude<keyof AgentState, 'host'>
+/** A part of the shell's host a broadcast may keep: any field but its threads. */
+export type KeptHostPart = Exclude<keyof AgentHostSnapshot, 'threads'>
 export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts' | 'threads'> & {
   models: AgentModelCatalogBroadcast
   clientHosts?: AgentClientHostBroadcast[]
   threads: AgentThreadsBroadcast
+  /** The host's parts this broadcast left out, as the broadcast its threads are measured from had them (`kept`). */
+  kept?: KeptHostPart[]
 }
 /**
  * What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`
- * and its threads by `AgentThreadsBroadcast`.
+ * and its threads by `AgentThreadsBroadcast`. `kept` names the parts this broadcast left out, at the top and in `host`,
+ * because they hold what the broadcast its threads are measured from held (ADR-0028, October 30 kept parts): they are
+ * absent here, and the page puts them back before anything reads the state.
  */
-export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast }
+export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast; kept?: KeptPart[] }
 
 const PRIMARY_CATALOG_KEY = '__primary__'
 
@@ -1157,6 +1208,23 @@ export const agentCommandReceiptSchema = agentStateSchema.extend({
 export type AgentCommandReceipt = z.infer<typeof agentCommandReceiptSchema>
 
 /**
+ * `host.threads` as a command's reply carries it to a page that asked for changed thread records (ADR-0028, October 30 amendment):
+ * the shape of a broadcast's (`AgentThreadsBroadcast`), measured from the last broadcast the window was sent and moving
+ * nothing, so the page puts the whole array back from the records it holds. Unlike a broadcast's, the preload checks it,
+ * each changed record against the thread schema, as it checked every record of a whole reply.
+ */
+export const agentChangedThreadRecordsSchema = z.object({ revision: z.number().int().nonnegative(), base: z.number().int().nonnegative().nullable(),
+  changed: z.array(agentThreadSchema), removed: z.array(z.string()).optional(), order: z.array(z.string()).optional() }).strict()
+export type AgentChangedThreadRecords = z.infer<typeof agentChangedThreadRecordsSchema>
+/** A command receipt whose threads are the changes since the window's last broadcast (`agentChangedThreadRecordsSchema`). */
+export const agentCommandChangedThreadRecordsReceiptSchema = agentCommandReceiptSchema.extend({
+  host: agentCommandReceiptSchema.shape.host.extend({ threads: agentChangedThreadRecordsSchema }),
+})
+export type AgentCommandChangedThreadRecordsReceipt = z.infer<typeof agentCommandChangedThreadRecordsReceiptSchema>
+/** What a page may ask of a command's reply, beside the command: `changedThreadRecords` for its threads as changed thread records. */
+export const agentCommandReplyOptionsSchema = z.object({ changedThreadRecords: z.literal(true) }).strict()
+
+/**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
  * activity beside them. Activity is the larger half by far — a working thread reports hundreds of
  * records — and, like the messages, only the open pane draws it.
@@ -1187,15 +1255,22 @@ export const agentActivityDeltaSchema = z.union([
   z.object({ record: agentActivitySchema }).strict(),
   z.object({ id: z.string(), removed: z.literal(true) }).strict(),
 ])
-export type AgentActivityDelta = z.infer<typeof agentActivityDeltaSchema>
+/**
+ * The text a running record's output, its text or both grew by at their end, when nothing else about it changed: a
+ * command streaming its output costs the new lines, not the record. Only the main window is sent it (`appends` on
+ * `subscribeThreadDetail`); every other reader, a socket client among them, is sent the record whole, so the host
+ * protocol's activity delta is still a record or a removal (`agentActivityDeltaSchema`).
+ */
+export type AgentActivityAppend = { id: string; appendOutput?: string; appendText?: string }
+export type AgentActivityDelta = z.infer<typeof agentActivityDeltaSchema> | AgentActivityAppend
 export const agentThreadDetailDeltaSchema = z.object({
   threadId: id, baseRevision: z.number().int().nonnegative(), revision: z.number().int().nonnegative(),
   messageDeltas: z.array(agentMessageDeltaSchema),
   activityDeltas: z.array(agentActivityDeltaSchema).max(MAX_AGENT_ACTIVITIES),
 }).strict()
-export type AgentThreadDetailDelta = z.infer<typeof agentThreadDetailDeltaSchema>
+export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaSchema>, 'activityDeltas'> & { activityDeltas: AgentActivityDelta[] }
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
-export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
+export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
 
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
@@ -1483,7 +1558,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(),
     /** The user skipped a `skippable` question: its provider is told so and the turn goes on without an answer. */
-    skipped: z.literal(true).optional() }).strict(),
+    skipped: z.literal(true).optional(),
+    /** Images dropped on a question card (ADR-0176): saved in the thread's folder and named in the answer's words. */
+    attachments: agentAttachmentHandlesSchema.optional() }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
 /** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */
@@ -1501,6 +1578,8 @@ export interface AgentBridge {
   get(): Promise<AgentState>
   /** The bytes behind one published `preview: { available: true }` marker, or null when nothing is eligible. */
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  /** One picture a thread's activity record names, whole or at tile size; null when its host keeps no such picture (ADR-0170). */
+  threadMedia?(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult>
   /** Stages an image once on the host that runs `threadId` (the selected host when null) and answers with its handle (ADR-0031). */
   stageAttachment?(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a chip this window holds no copy of; null once its host no longer keeps it. */
@@ -1536,6 +1615,11 @@ export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
  */
 export interface AgentWireBridge extends Omit<AgentBridge, 'command' | 'onState'> {
   command(command: AgentCommand): Promise<AgentCommandReceipt>
+  /**
+   * The command, answered with its threads as the changed thread records since the window's last broadcast, for a page that holds that
+   * broadcast's records and puts the whole array back (ADR-0028, October 30 amendment).
+   */
+  commandWithChangedThreadRecords?(command: AgentCommand): Promise<AgentCommandChangedThreadRecordsReceipt>
   onState(listener: (state: AgentStateBroadcast) => void): () => void
 }
 
@@ -1636,4 +1720,12 @@ export function isThreadProviderConnected(host: AgentHostSnapshot, thread: Agent
   if (thread.clientConnected !== undefined) return thread.clientConnected
   if (!host.providers || !thread.providerId) return host.connected
   return host.providers.some(provider => provider.id === thread.providerId && provider.connection === 'connected')
+}
+
+/**
+ * The question an answer's images are named in (ADR-0176): the last whose written answer reaches the agent as the user's
+ * own words. A typed form field is never one, so a number or a date never carries them.
+ */
+export function answerImageCarrier(request: Pick<AgentRequest, 'questions'> | undefined): NonNullable<AgentRequest['questions']>[number] | undefined {
+  return request?.questions?.findLast(question => question.prose === true && question.allowFreeText && !question.unavailableReason)
 }

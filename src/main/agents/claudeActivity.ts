@@ -1,3 +1,4 @@
+import { picturesIn, type MediaCapture } from './threadMedia'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { MAX_ACTIVITY_TEXT, compactAgentIdentity, findAgentActivity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
@@ -89,7 +90,11 @@ export class ClaudeActivity {
   /** How many of each workflow's agents are waiting for a place to start, by the workflow's observed id. */
   private readonly queuedAgents = new Map<string, number>()
   private readonly thinking = new ClaudeThinking()
-  constructor(private readonly readActivity?: (activityId: string) => AgentActivity | undefined) {}
+  /**
+   * `capture` keeps a tool result's pictures in the thread media store and answers their handles (ADR-0170); absent while
+   * the `inline-media` Owl feature is off, when a row carries none.
+   */
+  constructor(private readonly readActivity?: (activityId: string) => AgentActivity | undefined, private readonly capture?: MediaCapture) {}
   /** The CLI ended. A thinking block it left open gets nothing more, so its row stops running now. */
   runtimeEnded(previous: AgentActivity[] | undefined): AgentActivity[] | undefined {
     const rows = this.thinking.ended(new Date().toISOString())
@@ -235,6 +240,8 @@ export class ClaudeActivity {
         rows.push({ ...base, ...old, id: `claude-tool-${block.tool_use_id}`, kind: old?.kind ?? 'tool', title: old?.title ?? 'Tool result',
           ...(child ? { agents: [child] } : {}),
           status: block.is_error === true ? 'failed' : 'completed', startedAt: old?.startedAt, output: text(claudeText(block.content)) ?? '',
+          // A row that already holds its pictures keeps them, so replaying a history hashes nothing again.
+          ...(() => { const media = old?.media ?? (this.capture ? this.capture(picturesIn(block.content), 'tool') : []); return media.length ? { media } : {} })(),
           ...(claudeText(block.content).length > MAX_ACTIVITY_TEXT ? { truncated: true } : {}),
           ...(Number.isInteger(result?.exitCode ?? result?.exit_code) ? { exitCode: (result?.exitCode ?? result?.exit_code) as number } : {}),
           ...(base.startedAt ? { completedAt: base.startedAt } : {}) })

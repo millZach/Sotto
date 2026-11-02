@@ -348,6 +348,21 @@ describe('polish prompt', () => {
       expect(requestBody(fetchFn, 0)).toMatchObject({ model: 'google/gemini-3.1-flash-lite:nitro', reasoning: { effort: 'low' } })
     })
 
+    it('preserves preset routing and reasoning even with a saved mode, retaining the usual cleanup fallback', async () => {
+      const fetchFn = vi.fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+        .mockResolvedValueOnce(okResponse('Polished text.'))
+      const service = new TranscriptPolishService({
+        getSettings: () => ({ ...chosen, llmModel: '@preset/qwen-cerebras' }), fetchFn, chosenModel: true,
+      })
+      await expect(service.polish(words)).resolves.toEqual({ text: 'Polished text.', applied: true })
+      const request = requestBody(fetchFn, 0)
+      expect(request.model).toBe('@preset/qwen-cerebras')
+      expect(request).not.toHaveProperty('reasoning')
+      expect(request).not.toHaveProperty('provider')
+      expect(requestBody(fetchFn, 1)).toMatchObject({ model: CLEANUP_MODELS.fallback.id, reasoning: { enabled: false } })
+    })
+
     it('puts Floor on the default model and keeps Mercury 2 unsuffixed as the backup', async () => {
       const fetchFn = vi.fn()
         .mockResolvedValueOnce(new Response('{}', { status: 404 }))

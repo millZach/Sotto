@@ -11,7 +11,7 @@ import { defaultAgentConfiguration, type AgentRequest } from '../../src/shared/a
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES, getThemeColorsForMode, type ThemeDefinition } from '../../src/shared/themes/library'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto, toggleTools, paneMenuAction } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Theme picker and request layout checks in the complete app: custom theme names in the picker, the
@@ -272,7 +272,7 @@ test('a minimized editor rests at the window edge, clear of the sidebar foot lin
       await size(launched, 1280, 860)
       await openThreads(page)
       await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-      await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(page)
       await panel.getByRole('tab', { name: 'Browser' }).click()
       const addressBar = panel.getByRole('textbox', { name: 'Address for a new page' })
       await addressBar.fill(`127.0.0.1:${address.port}`)
@@ -284,13 +284,13 @@ test('a minimized editor rests at the window edge, clear of the sidebar foot lin
         // At the minimum width an open Tools panel has the sidebar's place, and with it the page links: Tools steps
         // aside for the trip to Settings and comes back with the editor.
         const toolsHidSidebar = !(await page.locator('.thread-nav').isVisible())
-        if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        if (toolsHidSidebar) await toggleTools(page)
         await openPage(page, 'Settings')
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
         await page.getByRole('button', { name: 'Create theme', exact: true }).click()
         await expect(editor).toBeVisible()
         await openThreads(page)
-        if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        if (toolsHidSidebar) await toggleTools(page)
         await expect(panel.locator('.browser-viewport')).toBeVisible()
         await editor.getByRole('button', { name: 'Minimize the theme editor' }).click()
         await expect(editor).toHaveAttribute('data-minimized', 'true')
@@ -438,16 +438,19 @@ test('the composer beside a pending permission offers queueing with one hold hin
 
       // The compact row at 1280, then back to the grid from the keyboard.
       const tabs = page.getByRole('tablist', { name: 'Open panes' })
-      const toggle = gate.getByRole('button', { name: 'Single row' })
-      await toggle.click()
+      // The arrangement is a row of the pane's ··· menu (ADR-0163).
+      const more = gate.getByRole('button', { name: 'More actions', exact: true })
+      await paneMenuAction(gate, 'Arrange in a single row')
       await expect(tabs).toBeVisible()
       expect(await composerSays(gate)).toBe(1)
       await expectDecisionReachable(page, gate)
       await shot(page, 'permission-row-compact-1280x800-dark')
-      await toggle.focus()
+      await more.focus()
+      await page.keyboard.press('Enter')
+      await gate.getByRole('menuitem', { name: 'Arrange in a grid', exact: true }).focus()
       await page.keyboard.press('Enter')
       await expect(tabs).toHaveCount(0)
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(more).toBeFocused()
 
       for (const mode of ['dark', 'light'] as const) {
         await appearance(page, mode)

@@ -39,7 +39,7 @@
   min-height: 1.5em;
   margin: 0;
   color: var(--tt-text);
-  font-size: 20px;
+  font-size: var(--tt-type-heading);
   font-weight: 500;
   letter-spacing: -0.2px;
   line-height: 1.5;
@@ -64,7 +64,7 @@
   align-items: center;
   gap: 7px;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 /* A saved host's name may be 80 characters with nowhere to break; it wraps inside the window rather than leaving it. */
@@ -114,7 +114,7 @@
   overflow-wrap: anywhere;
   text-wrap: balance;
   color: var(--tt-text-2);
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
   line-height: 1.5;
 }
 

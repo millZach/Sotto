@@ -53,7 +53,7 @@ extension AppModel {
         if let kept = listed.groups[key] { return kept }
         // Each search typed is its own key; a list that stays the same while the user types keeps only the latest few.
         if listed.groups.count >= 8 { listed.groups = [:] }
-        let groups = FocusThreads(lists, show: show, query: query, opened: opened, holding: holding)
+        let groups = BenchProbe.time("list.focusThreads") { FocusThreads(lists, show: show, query: query, opened: opened, holding: holding) }
         listed.groups[key] = groups
         return groups
     }
@@ -295,7 +295,8 @@ extension AppModel {
         // Whether Watcher's turn ran when these words left: an older computer's refusal of them says only that, even if a
         // page saying Watcher finished arrives before it.
         let workingAtSend = current.status == "running"
-        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer, images: images, files: stagedFiles)
+        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer,
+                                         images: images, files: stagedFiles, handover: watcherHandoverOffered(hostID))
         do {
             let reply = try await connection.call(operation, as: WatcherSendResult.self)
             // A reply over a connection that has since changed doesn't say what happened to the words.
@@ -434,8 +435,8 @@ extension AppModel {
             return .answer(place, request)
         }
     }
-    /// Whether a card in Watcher's page can take an answer through Watcher's computer now. The computer checks Can answer
-    /// again. A card for a thread on another computer is answered there, through that computer's own pairing.
+    /// Whether a card in Watcher's page can take an answer through Watcher's computer now. The computer checks this
+    /// iPhone's answers grant again. A card for a thread on another computer is answered there, through that computer's own pairing.
     func canAnswerWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String) -> Bool {
         guard online(hostID), mayAnswer(hostID), card.mayAnswer, card.connected, card.request.supported, !answering(hostID),
               card.target.hostId == hostID, watcherPage(hostID)?.card(card.target.ref, requestID: card.request.id) != nil else { return false }
@@ -446,7 +447,7 @@ extension AppModel {
         scoped(hostID).first { $0.kind == "watcher-answer" && $0.threadID == card.target.threadId && $0.requestID == card.request.id }
     }
     /// Answers a card in Watcher's page as the user's own answer to the thread that asked, through the computer that runs
-    /// Watcher, which checks Can answer before it acts. Answering keeps the thread watched; Watcher answers nothing.
+    /// Watcher, which checks this iPhone's answers grant before it acts. Answering keeps the thread watched; Watcher answers nothing.
     func answerWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String, choice: String? = nil, text: String = "",
                            answers: [String: QuestionAnswer] = [:]) async {
         guard canAnswerWatcherCard(card, on: hostID), let computer = computer(hostID), let page = watcherPage(hostID) else { return }
@@ -596,8 +597,8 @@ extension AppModel {
 
 // What Watcher may do without asking, and the threads it watches (ADR-0073, amended October 13, 2026; Zach's picks:
 // control A, mark B, watch B). A computer that offers `watcher-phone-manage` takes these from this iPhone and checks each
-// one again: a mode that lets Watcher act without asking needs this iPhone's Can answer there, and watching needs only
-// the pairing. None of it answers anything. Each change has its own request ID, so a lost acknowledgement reads what the
+// one again: a mode that lets Watcher act without asking needs this iPhone's answers grant there, which its pairing
+// wrote (ADR-0033, October 30 amendment), and watching needs only the pairing. None of it answers anything. Each change has its own request ID, so a lost acknowledgement reads what the
 // computer did under it; nothing is sent again on its own.
 extension AppModel {
     static let watcherManageFeature = WatcherWire.manageFeature
@@ -644,7 +645,7 @@ extension AppModel {
         return page.current?.status == "running" || page.needsYou.contains { page.isOwn($0) }
     }
     /// Whether this iPhone may choose `mode` there: asking first always, and a mode that lets Watcher act without asking
-    /// only under this iPhone's Can answer on that computer, which the computer checks again.
+    /// only under this iPhone's answers grant on that computer, which the computer checks again.
     func mayChooseWatcherPermission(_ mode: String, on hostID: String) -> Bool {
         !WatcherPermissions.grants(mode) || mayAnswer(hostID)
     }
@@ -683,14 +684,15 @@ extension AppModel {
     }
     /// Whether a Watch or Stop watching press for this thread is on its way.
     func changingWatch(_ ref: ThreadRef) -> Bool { watcherManaging.contains(Self.watchKey(ref)) }
-    /// What a watched thread's reply box says, or nil for one Watcher doesn't watch: under a standing watch, which lasts
-    /// until the user stops it, that Watcher keeps it going, or only steers while the user's own turn runs; watched only for a
-    /// Watcher request, or on a computer that keeps no standing watches, that a send there takes it over, as before.
-    func watchedLine(_ ref: ThreadRef) -> String? {
+    /// What a watched thread's Watch adds to its hint, where the lit owl alone doesn't say it (ADR-0073, October 31
+    /// amendment): watched only for a Watcher request, or on a computer that keeps no standing watches, that a send there
+    /// takes it over; under a standing watch, that Watcher only steers while the user's own turn runs. Nil for a thread
+    /// Watcher doesn't watch, and for a standing watch at rest, which the lit owl says.
+    func watchFact(_ ref: ThreadRef) -> String? {
         guard let host = computers.first(where: { watcherSummary($0.hostID)?.watched.contains(ref.id) == true })?.hostID,
               let summary = watcherSummary(host) else { return nil }
         guard offersWatcherManage(host), summary.standing.contains(ref.id) else { return WatchedWords.takeover }
-        return summary.paused.contains(ref.id) ? WatchedWords.paused : WatchedWords.standing
+        return summary.paused.contains(ref.id) ? WatchedWords.paused : nil
     }
     /// The threads this iPhone lists that Watcher could be given to watch, in the order Threads shows them: not settled,
     /// not watched, on computers reached now, and never a Watcher's own thread.
@@ -818,6 +820,131 @@ extension AppModel {
         }
         await readWatcher(hostID)
         return outcome
+    }
+}
+
+// Watcher's box (Zach, October 31, 2026): the thread box's line, model, effort, speed and permissions, with New Watcher
+// after them, and Stop while Watcher's own turn runs, as the desktop's composer has them. A computer that offers
+// `watcher-phone-composer` takes each from this iPhone through its own Watcher, under the request's ID, as a management
+// change; another provider's model and New Watcher start a new Watcher there, which offers a handover of the last one.
+// None answers anything, and none widens what Watcher may do: a new Watcher keeps the saved permission mode.
+extension AppModel {
+    static let watcherComposerFeature = WatcherWire.composerFeature
+    /// Where `watcherManaging` marks a change from Watcher's box on a computer.
+    static func composerKey(_ hostID: String) -> String { "composer/" + hostID }
+
+    /// Whether this computer takes Watcher's box's changes from this iPhone. An older one keeps only the permissions.
+    func offersWatcherComposer(_ hostID: String) -> Bool {
+        offersWatcherManage(hostID) && live[hostID]?.features.contains(Self.watcherComposerFeature) == true
+    }
+    /// The models Watcher's computer lists, which the model menu draws from.
+    func watcherCatalog(_ hostID: String) -> [ThreadModel] { live[hostID]?.shell?.host.models ?? [] }
+    /// What the model, effort and speed chips show: the choice just made while the computer takes it, then the choice the
+    /// computer keeps for Watcher's next turn, then Watcher's own.
+    func watcherSettingValues(_ hostID: String) -> ThreadSettingValues? {
+        guard let page = watcherPage(hostID), let current = page.current else { return nil }
+        var values = WatcherSettings.values(current, next: page.nextTurnOptions, catalog: watcherCatalog(hostID))
+        if let pick = watcherSettingPicks[hostID] { values[pick.kind] = pick.value }
+        return values
+    }
+    /// Whether the effort Watcher's chip shows is the top its model offers Watcher, where its box's trace lights.
+    func watcherAtTopEffort(_ hostID: String) -> Bool {
+        watcherSettingValues(hostID).map { WatcherSettings.atTopEffort($0, catalog: watcherCatalog(hostID)) } ?? false
+    }
+    /// Whether Watcher's computer keeps a change to its model, effort or speed for its next turn while it works, rather
+    /// than refusing it until Watcher rests (November 1, 2026).
+    func keepsWatcherSettingsForNextTurn(_ hostID: String) -> Bool {
+        live[hostID]?.features.contains(WatcherWire.settingsLaterFeature) == true
+    }
+    /// Why the model, effort and speed chips can't be pressed now: while another change to Watcher is on its way, away from
+    /// its computer, or while a permission change waits. On an older computer, also while Watcher's turn runs, a card of its
+    /// own waits or a message to it is on its way, as that computer refuses a change then. Nil when they can.
+    func watcherSettingsHeld(_ hostID: String) -> String? {
+        guard let page = watcherPage(hostID), let current = page.current, online(hostID), current.connected else { return ThreadSettings.FixedReason.away.hint }
+        if watcherManaging.contains(Self.composerKey(hostID)) || watcherManaging.contains(Self.permissionKey(hostID)) {
+            return String(localized: "Can change once the last change to Watcher is done.")
+        }
+        // A message on its way starts a turn, which a change would run behind on an older computer.
+        let onItsWay = watcherSending[hostID] != nil || page.draftDeliveries?.contains(where: { ["queued", "submitting", "uncertain"].contains($0.status) }) == true
+            || page.followups?.contains(where: { $0.status == "dispatching" || $0.status == "uncertain" }) == true
+        switch WatcherSettings.busyHold(keptForNextTurn: keepsWatcherSettingsForNextTurn(hostID), working: watcherPermissionFixed(hostID), messageOnItsWay: onItsWay) {
+        case .working?: return WatcherPermissions.fixedHint
+        case .messageOnItsWay?: return ThreadSettings.FixedReason.working.hint
+        case nil: break
+        }
+        // A permission mode its provider hasn't confirmed holds the rest, as on a thread's chips (ADR-0166).
+        return watcherPermissionInForce(hostID) != nil ? ThreadSettings.FixedReason.unconfirmed.hint : nil
+    }
+    /// Chooses Watcher's model, effort or speed. The chip shows it at once; another provider's model starts a new Watcher.
+    /// While Watcher works, its computer keeps the change for Watcher's next turn and the chip shows it until then.
+    /// Refused, the chip goes back and the computer's words say why.
+    func chooseWatcherSetting(_ kind: ThreadSettingKind, _ value: String, on hostID: String) async {
+        guard offersWatcherComposer(hostID), watcherSettingsHeld(hostID) == nil, let page = watcherPage(hostID), let current = page.current,
+              let operation = WatcherSettings.press(kind, value: value, current: current, next: page.nextTurnOptions, catalog: watcherCatalog(hostID)) else { return }
+        // Another provider needs this iPhone's answers grant there, which the computer checks again.
+        if kind == .model, WatcherSettings.replaces(value, current: current, catalog: watcherCatalog(hostID)), !mayAnswer(hostID) { return }
+        let key = Self.composerKey(hostID)
+        watcherManaging.insert(key)
+        watcherSettingPicks[hostID] = WatcherSettingPick(kind: kind, value: value)
+        defer { watcherManaging.remove(key); watcherSettingPicks[hostID] = nil }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await setFixtureWatcherSetting(kind, value, on: hostID); return }
+        #endif
+        _ = await manageWatcher(operation, on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
+    }
+
+    /// Why New Watcher can't start one now, in the desktop's words, or nil when a press may go: Watcher's own turn running,
+    /// or nothing said yet to hand over. A press still asks the computer.
+    func newWatcherUnavailable(_ hostID: String) -> String? {
+        guard let page = watcherPage(hostID), page.current != nil else { return ThreadSettings.FixedReason.away.hint }
+        if watcherManaging.contains(Self.composerKey(hostID)) { return String(localized: "Starting a new Watcher…") }
+        switch page.newWatcher {
+        case "busy"?: return WatcherWords.newWatcherBusy
+        case "empty"?: return WatcherWords.newWatcherEmpty
+        default: return online(hostID) ? nil : ThreadSettings.FixedReason.away.hint
+        }
+    }
+    /// Starts a new Watcher on the current one's model, effort, speed and permissions. The last conversation goes to Watcher
+    /// history on the computer, and its handover is offered over the new one's box.
+    func startNewWatcher(_ hostID: String) async {
+        guard offersWatcherComposer(hostID), newWatcherUnavailable(hostID) == nil, let target = watcherPage(hostID)?.current?.target else { return }
+        let key = Self.composerKey(hostID)
+        watcherManaging.insert(key)
+        defer { watcherManaging.remove(key) }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await replaceFixtureWatcher(provider: nil, modelID: nil, on: hostID); return }
+        #endif
+        _ = await manageWatcher(WatcherWire.startNew(target: target), on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
+    }
+
+    /// Whether Stop shows in Watcher's box: while Watcher's own turn runs, on a computer that takes it from here.
+    func canStopWatcherTurn(_ hostID: String) -> Bool {
+        offersWatcherComposer(hostID) && online(hostID) && watcherPage(hostID)?.current?.status == "running"
+    }
+    /// Stops Watcher's own turn. The threads it started carry on.
+    func stopWatcherTurn(_ hostID: String) async {
+        guard canStopWatcherTurn(hostID), !watcherManaging.contains(Self.composerKey(hostID)), let target = watcherPage(hostID)?.current?.target else { return }
+        let key = Self.composerKey(hostID)
+        watcherManaging.insert(key)
+        defer { watcherManaging.remove(key) }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await stopFixtureWatcherTurn(on: hostID); return }
+        #endif
+        _ = await manageWatcher(WatcherWire.stopTurn(target: target), on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
+    }
+
+    /// Whether the handover strip stands over Watcher's box: a new Watcher's offer, until its first message or until the
+    /// user puts it away.
+    func watcherHandoverOffered(_ hostID: String) -> Bool {
+        offersWatcherComposer(hostID) && watcherPage(hostID)?.handoverOffered == true
+    }
+    /// Puts the handover away. Nothing is sent, and the new Watcher's first message goes without it.
+    func dismissWatcherHandover(_ hostID: String) async {
+        guard watcherHandoverOffered(hostID), let target = watcherPage(hostID)?.current?.target else { return }
+        #if DEBUG && os(iOS)
+        if isUIFixture { changeFixtureWatcher(on: hostID) { $0["handoverOffered"] = false }; return }
+        #endif
+        _ = await manageWatcher(WatcherWire.dismissHandover(target: target), on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
     }
 }
 
@@ -1048,6 +1175,14 @@ struct DraftFile: Identifiable {
     }
 }
 
+/// A video an agent wrote, as this iPhone fetched it to play (ADR-0170, part 4).
+enum AgentVideoOutcome: Equatable {
+    case file(URL)
+    /// Its computer can no longer read it: the file changed or went since the turn wrote it.
+    case notKept
+    case failed
+}
+
 /// What came of asking a thread's computer for a sent file to open.
 enum SentFileOutcome: Equatable {
     case file(name: String, data: Data)
@@ -1116,6 +1251,14 @@ struct HeldDetail {
     let detail: ThreadDetail
 }
 
+/// What a press on the folded Duo's thread rail asks of the thread showing. It lives with the model, which
+/// holds it, so the model's tests compile without the views.
+struct RailAsk: Equatable {
+    enum Action: Equatable { case back, agents }
+    let ref: ThreadRef
+    let action: Action
+}
+
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
@@ -1129,6 +1272,16 @@ struct HeldDetail {
     @Published private(set) var computers: [SavedComputer] = [] { didSet { listed = Listed() } }
     @Published private(set) var live: [String: Live] = [:] { didSet { listed = Listed() } }
     @Published private(set) var selected: ThreadRef?
+    /// The Settled shelf's threads read from each computer so far (`settled-threads-on-request`), and whether a read is
+    /// under way or the last one failed.
+    @Published private(set) var olderSettled: [String: OlderSettled] = [:]
+    @Published private(set) var olderSettledReading = false
+    @Published private(set) var olderSettledFailed = false
+    /// What Threads' search last asked the computers for among their held-back settled threads, and what each found.
+    @Published private(set) var settledSearch = SettledSearch()
+    /// A thread opened here that its computer's list does not carry yet, such as a settled one from a notification.
+    /// It stays open until the list carries it, which it does once the computer hears it is open.
+    private var openedUnlisted: ThreadRef?
     /// What the thread lists work out from `computers` and `live`, kept until either changes. The Threads list, the tab
     /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
     private var listed = Listed()
@@ -1157,6 +1310,8 @@ struct HeldDetail {
     /// Answers whose own receipt the computer confirmed, as `host/thread/request`, so a Threads card can say Answered
     /// only for those. An answer whose request left without that receipt is not in here.
     @Published private(set) var confirmedAnswers: Set<String> = []
+    /// Each thread's chip presses its agent hasn't confirmed yet, and the ones it refused, by `ThreadRef.id` (ADR-0166).
+    @Published private(set) var threadSettingsPending: [String: PendingThreadSettings] = [:]
     /// Whether the computer confirmed this iPhone's answer to a request.
     func answerConfirmed(_ requestID: String, in ref: ThreadRef) -> Bool {
         confirmedAnswers.contains(ref.hostID + "/" + ref.threadID + "/" + requestID)
@@ -1270,6 +1425,12 @@ struct HeldDetail {
     @Published var show = ComputerFilter.all
     /// A thread whose alert was tapped, for the tabs to open. They set it back to nil once it is open.
     @Published var alertOpened: ThreadRef?
+    /// A press on the folded Duo's thread rail, for the thread showing to act on: its page owns Back and its Agents sheet,
+    /// and a delegated thread opened from Agents is pushed by that page, not by the tabs. Set back to nil once taken.
+    @Published var railAsked: RailAsk?
+    /// What the Threads list is searched for now, read once when the Duo unfolds from it. Not published: nothing draws it.
+    var listQuery = ""
+
     /// A computer whose Watcher alert was tapped, for the tabs to open the Watcher tab. Set back to nil once it is open.
     @Published var watcherAlertOpened: String?
     /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.
@@ -1310,6 +1471,8 @@ struct HeldDetail {
     @Published private(set) var watcherManaging: Set<String> = []
     /// The mode just chosen for Watcher on each computer, shown on its chip while the computer takes it.
     @Published private(set) var watcherPermissionPicks: [String: String] = [:]
+    /// The model, effort or speed just chosen in Watcher's box on each computer, shown on its chip while the computer takes it.
+    @Published private(set) var watcherSettingPicks: [String: WatcherSettingPick] = [:]
     /// What the last Watch or Stop watching press did, said with Undo for a few seconds.
     @Published private(set) var watchNotice: WatchNotice?
     /// Each pull request as this iPhone last read it while running, by computer and pull request, for the chip's dot
@@ -1364,10 +1527,21 @@ struct HeldDetail {
     private var fixtureSlowDetail = false
     /// The reconnecting journey: a moment after a thread opens, its computer loses its connection and is tried again.
     private var fixtureReconnecting = false
+    /// The pictures journeys: the laptop hands back the long thread's pictures and photos.
+    private var fixturePictures = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
     /// The laptop's Watcher page in the Watcher journeys, as the laptop would send it.
     private var fixtureWatcher: [String: Any]?
+    /// The iPhone benchmarks (`--bench-threads`, `Scripts/bench.sh`): the computer their frames come from, the long
+    /// thread's `detail` push being built, the records the laptop's pushes were measured from, and the laptop's state.
+    private var benchLaptop: String?
+    private var benchTurns = 0
+    private var benchLongFrame: Task<Data, Never>?
+    private var benchRecords = ThreadRecordsCache()
+    private var benchShellRevision = 0
+    private var benchSequence = 1_000
+    private var benchState: Data?
     private func loadUIFixture() {
         isUIFixture = true
         if ProcessInfo.processInfo.arguments.contains("--reset-ui-preferences"), let bundle = Bundle.main.bundleIdentifier {
@@ -1389,8 +1563,13 @@ struct HeldDetail {
         // --ui-watcher-can-answer the laptop lets this iPhone answer; with --ui-watcher-asks Watcher itself is asking.
         let watching = arguments.contains("--ui-watcher")
         let watcherAnswers = watching && arguments.contains("--ui-watcher-can-answer")
-        let caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
-        let answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
+        let watcherBox = watching && arguments.contains("--ui-watcher-box")
+        // The thread settings journey: the idle Add keyboard shortcuts thread runs on a known model whose computer changes a
+        // thread's settings in place, and the laptop lets this iPhone answer, so every mode can be chosen (ADR-0166).
+        let settingThreads = arguments.contains("--ui-thread-settings")
+        var caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
+        var answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
+        if settingThreads { caps["configureThread"] = true; answeringCaps["configureThread"] = true }
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
@@ -1425,6 +1604,10 @@ struct HeldDetail {
                 if asking { row["requests"] = [Self.fixtureQuestion] }
             }
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
+            if id == "iphone" && settingThreads { row["modelId"] = "fixture-model"; row["runtimeMode"] = "approval-required" }
+            if id == "shortcuts" && settingThreads {
+                row["modelId"] = "fixture-model"; row["reasoningEffort"] = "high"; row["runtimeMode"] = "approval-required"
+            }
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
             if id == "settings" || id == "notes" { row["settledAt"] = date }
@@ -1475,9 +1658,13 @@ struct HeldDetail {
         ]
         fixtureDetails[laptop + "/iphone"] = decode(ThreadDetail.self, ["threadId": "iphone", "revision": 2,
             "messages": conversation, "activities": steps])
-        // A long conversation of tall replies, for the journey that opens a thread and expects its end on screen at once.
+        // A long conversation of tall replies, for the journey that opens a thread and expects its end on screen at once,
+        // with the turns before the latest ten not yet made.
+        // With --ui-pictures, its later turns carry pictures as turns that took screenshots do, and three of its questions
+        // a photo the user sent; each is read a moment after its tile asks, as from a computer.
+        fixturePictures = arguments.contains("--ui-pictures")
         if arguments.contains("--ui-long-thread") {
-            let (longMessages, longSteps) = Self.fixtureLongThread(at)
+            let (longMessages, longSteps) = Self.fixtureLongThread(at, pictures: fixturePictures)
             fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
                 "messages": longMessages, "activities": longSteps])
         }
@@ -1486,25 +1673,32 @@ struct HeldDetail {
         // Watcher's model offers all four modes in the Watcher journeys, as Codex does.
         let modes: [String] = watching ? WatcherPermissions.modes : ["approval-required", "full-access"]
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
-            let answers = (asking || watcherAnswers) && host == laptop
+            let answers = (asking || watcherAnswers || settingThreads) && host == laptop
             let hostCaps = answers ? answeringCaps : caps
             let pairing = decode(Pairing.self, ["v": 1, "hostId": host, "clientId": "ui-fixture", "token": "not-a-credential"])
             computers.append(SavedComputer(address: "https://fixture.invalid.ts.net", pairing: pairing, reportedName: name))
             let shellObject: [String: Any] = ["hostId": host, "host": ["hostId": host, "name": name,
                 "threads": threads[host] ?? [], "projects": [["id": "sotto", "title": "Sotto", "path": "D:\\Talk to Text Application"],
                     ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
-                "models": [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
-                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]],
+                "models": settingThreads ? Self.fixtureSettingModels(modes) : [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
+                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]]
+                    // Watcher's box lists another provider Watcher runs on, whose model starts a new Watcher, with an older
+                    // model of its line that the settings sheet keeps under Legacy (ADR-0171).
+                    + (watcherBox ? [["id": "fixture-opus", "name": "Opus 5.5", "provider": "Claude Code", "providerId": "claude", "ready": true,
+                                      "reasoningEfforts": ["low", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes],
+                                     ["id": "fixture-opus-5", "name": "Opus 5", "provider": "Claude Code", "providerId": "claude", "ready": true,
+                                      "reasoningEfforts": ["low", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes, "legacy": true]] : []) as [[String: Any]],
                 "providers": [["id": "codex", "connection": "connected", "capabilities": hostCaps]], "capabilities": hostCaps]]
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)
             var features = ["host-folders"]
-            if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature] }
+            if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature, Self.watcherComposerFeature] }
             // The pull request journey: the laptop is an Owl computer that offers the pull request sheet and babysitting.
             if arguments.contains("--ui-pull-request") && host == laptop { features += [Self.pullRequestViewFeature, Self.babysitFeature] }
             if agents && host == laptop { features += [AgentsRoster.feature, "subagents", "failure-seen"] }
             // The paste and share journeys: the laptop keeps files, for a thread and for Watcher.
             if arguments.contains("--ui-files") && host == laptop { features += [FileLimits.stagingFeature, WatcherWire.filesFeature] }
+            if fixturePictures && host == laptop { features += [Photos.threadMediaFeature] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         // The share journey: a link and a PDF wait in the inbox, as the share extension leaves them.
@@ -1527,6 +1721,12 @@ struct HeldDetail {
                 waiting = cards + [Self.fixtureNotesPermission(laptop: laptop, mayAnswer: watcherAnswers)]
             }
             if keepsWriting { page["needsYou"] = [[String: Any]]() }
+            // Watcher's box: New Watcher can start one, and nothing is handed over yet. With --ui-watcher-turn, Watcher's
+            // own turn runs, so its box offers Stop and New Watcher waits for it.
+            page["newWatcher"] = "available"; page["handoverOffered"] = false; page["replaced"] = false
+            if arguments.contains("--ui-watcher-turn"), var current = page["current"] as? [String: Any] {
+                current["status"] = "running"; page["current"] = current; page["newWatcher"] = "busy"
+            }
             // With --ui-watcher-nothing-waits, no card waits on the user, so the bar slides as the user reads (#1288).
             if arguments.contains("--ui-watcher-nothing-waits") { page["needsYou"] = [[String: Any]]() }
             // With --ui-watcher-queued-below, ten of the user's follow-ups wait in Watcher's queue at the page's end, so
@@ -1558,17 +1758,21 @@ struct HeldDetail {
             if arguments.contains("--ui-watcher-two-cards") { answerFixtureNotesWhenAsked(on: laptop) }
         }
         storageReady = true
-        if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
+        if arguments.contains("--bench-threads") { startBench(laptop: laptop, arguments: arguments) }
+        if arguments.contains("--ui-streaming") {
+            // In the pictures journeys the long thread's last reply grows instead of the working thread's update.
+            if fixturePictures { streamFixture(host: laptop, threadID: "drives", messageID: "reply-39") } else { streamFixture(host: laptop) }
+        }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = String(localized: "Recovered the saved computer list.") + " " + Self.pairingWarning(1) }
     }
     /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
     /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
-    private func streamFixture(host: String) {
+    private func streamFixture(host: String, threadID: String = "iphone", messageID: String = "update") {
         guard let object = fixtureShells[host],
               let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: object)) else { return }
-        let ref = ThreadRef(hostID: host, threadID: "iphone")
+        let ref = ThreadRef(hostID: host, threadID: threadID)
         let words = "The drawer’s chord is next, then the tests run again and the branch is ready for review.".split(separator: " ")
         Task { [weak self] in
             var sequence = 0
@@ -1579,7 +1783,7 @@ struct HeldDetail {
                 push(.shell(shell), from: host, sequence: sequence)
                 guard selected == ref, let detail = openDetail else { continue }
                 let delta: [String: Any] = ["threadId": ref.threadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
-                                            "messageDeltas": [["id": "update", "appendText": " " + String(words[sequence % words.count])]],
+                                            "messageDeltas": [["id": messageID, "appendText": " " + String(words[sequence % words.count])]],
                                             "activityDeltas": [[String: Any]]()]
                 guard let change = try? JSONDecoder().decode(ThreadDetailDelta.self, from: JSONSerialization.data(withJSONObject: delta)),
                       let next = detail.applying(change) else { continue }
@@ -1587,17 +1791,105 @@ struct HeldDetail {
             }
         }
     }
+    /// The iPhone benchmarks' computer (`docs/perf/2026-10-31-iphone-benchmarks.md`). The laptop's list becomes
+    /// `--bench-threads` records and a long thread of `--bench-turns` turns, sent as wire bytes the way a host that
+    /// offers `changed-thread-records` sends them, and read as `HostConnection` reads them: decoded off the main actor,
+    /// the records put back, then `push`, the path every computer's update takes.
+    private func startBench(laptop: String, arguments: [String]) {
+        func number(_ name: String) -> Int? {
+            guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else { return nil }
+            return Int(arguments[index + 1])
+        }
+        guard let threads = number("--bench-threads"), var state = fixtureShells[laptop] else { return }
+        let turns = number("--bench-turns") ?? 200
+        var host = state["host"] as? [String: Any] ?? [:]
+        host["threads"] = [Any]()
+        state["host"] = host
+        guard let stateData = try? JSONSerialization.data(withJSONObject: state) else { return }
+        BenchProbe.enabled = true
+        benchLaptop = laptop; benchTurns = turns; benchState = stateData
+        // As on a live connection, so the laptop's pushes are taken, not set aside as a finished connection's.
+        generations[laptop] = UUID()
+        let journey = arguments.firstIndex(of: "--bench-journey").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+        BenchDriver.start(model: self, chunks: number("--bench-chunks") ?? 200, journey: journey ?? "all",
+                          long: ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID))
+        let now = Date()
+        benchLongFrame = Task.detached(priority: .userInitiated) { BenchWire.longDetailFrame(turns: turns, now: now) }
+        Task { [weak self] in
+            let records = await Task.detached(priority: .userInitiated) { BenchWire.threadRecords(count: threads, hostID: laptop, now: now) }.value
+            guard let self else { return }
+            benchShellRevision = 1
+            await benchDeliver(BenchWire.shellFrame(state: stateData, revision: 1, base: nil, changed: records), kind: "shell-full")
+            BenchDriver.listApplied()
+        }
+    }
+    /// One frame from the benchmarks' computer, read as `HostConnection.receive` reads it, with its bytes and its time
+    /// to decode and to apply counted by kind.
+    private func benchDeliver(_ data: Data, kind: String) async {
+        guard let laptop = benchLaptop else { return }
+        BenchProbe.count("frames." + kind)
+        BenchProbe.count("bytes." + kind, by: data.count)
+        let read = DispatchTime.now().uptimeNanoseconds
+        guard var frame = try? await Wire.readFrame(data) else { BenchProbe.count("frames.unreadable"); return }
+        let applied = DispatchTime.now().uptimeNanoseconds
+        BenchProbe.record("decode." + kind, nanoseconds: Int(applied - read))
+        if case .shell(let shell) = frame {
+            guard let whole = benchRecords.whole(shell) else { BenchProbe.count("frames.unplaced"); return }
+            frame = .shell(whole)
+        }
+        benchSequence += 1
+        push(frame, from: laptop, sequence: benchSequence)
+        BenchProbe.record("apply." + kind, nanoseconds: Int(DispatchTime.now().uptimeNanoseconds - applied))
+    }
+    /// Streams `chunks` words into the long thread's last reply, one every 50 ms as a computer sends them, each a
+    /// `detail-delta` push; every fifth is followed by a shell push listing only the long thread's record, and every
+    /// twentieth finishes a step and starts another. `done` is called after the last, or once the thread is closed.
+    func benchStream(chunks: Int, done: @escaping @MainActor () -> Void) {
+        guard let laptop = benchLaptop, let state = benchState else { done(); return }
+        let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
+        let steps = BenchWire.streamStepSequence(turns: benchTurns)
+        Task { [weak self] in
+            let now = Date()
+            for chunk in 1...max(1, chunks) {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard let self, selected == ref, let detail = openDetail else { break }
+                await benchDeliver(BenchWire.deltaFrame(chunk: chunk, revision: detail.revision, firstSequence: steps, now: now), kind: "delta")
+                if chunk % 5 == 0 {
+                    let record = BenchWire.longThreadRecord(hostID: laptop, now: Date())
+                    await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: "shell")
+                    benchShellRevision += 1
+                }
+            }
+            done()
+        }
+    }
     /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
-    private static func fixtureLongThread(_ at: (Double) -> String) -> ([[String: Any]], [[String: Any]]) {
+    /// With `pictures`, the last fourteen turns' commands each hand back two screenshots, so pictures sit both in the latest
+    /// turns and in the turns before them, and three questions carry a photo the user sent.
+    private static func fixtureLongThread(_ at: (Double) -> String, pictures: Bool = false) -> ([[String: Any]], [[String: Any]]) {
         var messages: [[String: Any]] = []
         var steps: [[String: Any]] = []
-        for turn in 0..<12 {
-            let base = Double(12 - turn) * 600
-            messages.append(["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
-                             "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."])
-            steps.append(["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
-                          "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)])
-            let lead = turn == 11 ? "Final comparison: the second drive wins." : "Option \(turn + 1) against the last one."
+        let turns = 40
+        for turn in 0..<turns {
+            let base = Double(turns - turn) * 600
+            var ask: [String: Any] = ["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
+                                      "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."]
+            if pictures && [28, 33, 37].contains(turn) {
+                ask["attachments"] = [["id": "panel-photo-\(turn)", "name": "Panel \(turn + 1).jpg", "mimeType": "image/jpeg",
+                                       "sizeBytes": 240_000, "preview": ["available": true]]]
+            }
+            messages.append(ask)
+            var check: [String: Any] = ["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
+                                        "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)]
+            if pictures && turn >= turns - 14 {
+                check["media"] = (1...2).map { shot -> [String: Any] in
+                    ["id": "shot-\(shot)", "kind": "image", "mimeType": "image/png", "width": Self.fixtureScreenshotSize.width,
+                     "height": Self.fixtureScreenshotSize.height, "name": "drive-\(turn + 1)-\(shot).png", "source": "tool-result",
+                     "sizeBytes": 60_000]
+                }
+            }
+            steps.append(check)
+            let lead = turn == turns - 1 ? "Final comparison: the second drive wins." : "Option \(turn + 1) against the last one."
             let bullets: [String] = (0..<(3 + turn % 4)).map { point in
                 "- **Point \(point + 1):** the drive's rated current, its cooling and the cable run all change, so the breaker and the conduit fill need checking again before anything is ordered."
             }
@@ -1605,9 +1897,32 @@ struct HeldDetail {
                 + "\n\n1. Check the breaker.\n2. Check the conduit fill.\n\n```sh\npython compare_drives.py --option \(turn + 1) --report\n```"
             messages.append(["id": "reply-\(turn)", "role": "assistant", "createdAt": at(base - 120), "text": text])
         }
-        steps.append(["id": "long-final", "sequence": 13, "kind": "command", "status": "completed", "title": "Ran",
+        steps.append(["id": "long-final", "sequence": turns + 1, "kind": "command", "status": "completed", "title": "Ran",
                       "command": "python summarize_drives.py", "exitCode": 0, "durationMs": 2_000, "startedAt": at(30)])
         return (messages, steps)
+    }
+    private static let fixtureScreenshotSize = (width: 1280, height: 800)
+    /// A screenshot, wider than a tile, and a photo, taller than wide, each made once.
+    private static let fixtureScreenshot = fixtureImage(width: fixtureScreenshotSize.width, height: fixtureScreenshotSize.height)
+    private static let fixturePhoto = fixtureImage(width: 900, height: 1200)
+    private static func fixtureImage(width: Int, height: Int) -> Data {
+        let size = CGSize(width: width, height: height)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.white.setFill()
+            context.fill(CGRect(x: size.width / 4, y: size.height / 4, width: size.width / 2, height: size.height / 2))
+        }
+    }
+    /// A picture or photo of the pictures journeys, handed over most of a second after it is asked for, as a computer
+    /// across the network does, and not at all once nothing shows it.
+    private func fixturePicture(photo: Bool, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+        guard fixturePictures else { return nil }
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        guard wanted() else { return nil }
+        return photo ? Self.fixturePhoto : Self.fixtureScreenshot
     }
     /// The working thread's worktree record, as a host sends it: its own branch, uncommitted changes and a draft pull request.
     private static var fixtureWorktree: [String: Any] {
@@ -1662,6 +1977,18 @@ struct HeldDetail {
     | Drawer toggle | Terminal mode | No | Move the toggle on screen before the drawer opens |
     | Tooltips | Every pane | No | Name the chord only while the shortcut is on |
     """
+    /// Codex's models in the thread settings journey: Sol with Fast and Ultra fast in Codex's own words, Astra with Fast,
+    /// and one not ready, which the model chip leaves out.
+    private static func fixtureSettingModels(_ modes: [String]) -> [[String: Any]] {
+        let fast: [String: Any] = ["id": "fast", "name": "Fast", "description": "Faster answers. Uses more of your plan."]
+        let ultra: [String: Any] = ["id": "ultrafast", "name": "Ultra fast", "description": "The fastest answers. Uses the most of your plan."]
+        return [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
+                 "reasoningEfforts": ["low", "medium", "high", "xhigh"], "defaultReasoningEffort": "high", "runtimeModes": modes, "speeds": [fast, ultra]],
+                ["id": "fixture-astra", "name": "GPT-6 Astra", "provider": "Codex", "providerId": "codex", "ready": true,
+                 "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "medium", "runtimeModes": modes, "speeds": [fast]],
+                ["id": "fixture-luna", "name": "GPT-6.1 Luna", "provider": "Codex", "providerId": "codex", "ready": false,
+                 "reasoningEfforts": ["low", "medium"], "runtimeModes": modes]]
+    }
     /// The fixture has no computer to carry an answer, so once the answer is checked its request leaves the thread, as
     /// it would when the computer confirmed it.
     private func settleFixtureAnswer(_ request: AgentRequest, in ref: ThreadRef) throws {
@@ -1797,6 +2124,50 @@ struct HeldDetail {
             }
         }
     }
+    /// The laptop takes a change from Watcher's box a moment after it is made: the effort or speed on Watcher's thread, or
+    /// another provider's model, which starts a new Watcher there.
+    private func setFixtureWatcherSetting(_ kind: ThreadSettingKind, _ value: String, on hostID: String) async {
+        if kind == .model, WatcherSettings.replaces(value, current: watcherPage(hostID)!.current!, catalog: watcherCatalog(hostID)) {
+            let provider = CatalogEntry.model(watcherCatalog(hostID), id: value)?.providerId
+            await replaceFixtureWatcher(provider: provider, modelID: value, on: hostID); return
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        changeFixtureWatcher(on: hostID) { page in
+            guard var current = page["current"] as? [String: Any] else { return }
+            switch kind {
+            case .model: current["modelId"] = value; current["reasoningEffort"] = NSNull()
+            case .effort: current["reasoningEffort"] = value
+            case .speed: current["speed"] = value == ThreadSettings.standard ? NSNull() : value
+            case .permissions: break
+            }
+            page["current"] = current
+        }
+    }
+    /// A new Watcher on the laptop, by New Watcher or another provider's model: an empty conversation on a new thread, the
+    /// last one's handover offered, and nothing to hand over yet. The threads it watches carry on.
+    private func replaceFixtureWatcher(provider: String?, modelID: String?, on hostID: String) async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        changeFixtureWatcher(on: hostID) { page in
+            guard var current = page["current"] as? [String: Any] else { return }
+            current["target"] = ["hostId": hostID, "threadId": "watcher-" + UUID().uuidString.lowercased()]
+            if let provider { current["provider"] = provider }
+            if let modelID { current["modelId"] = modelID; current["reasoningEffort"] = NSNull() }
+            current["status"] = "idle"
+            page["current"] = current
+            page["conversation"] = ["messages": [[String: Any]](), "earlierAvailable": false, "revision": 0]
+            page["receiptGroups"] = [[String: Any]](); page["ownChanges"] = [[String: Any]]()
+            page["needsYou"] = (page["needsYou"] as? [[String: Any]] ?? []).filter { ($0["title"] as? String) != "Watcher" }
+            page["handoverOffered"] = true; page["replaced"] = true; page["newWatcher"] = "empty"
+        }
+    }
+    /// Watcher's own turn stops on the laptop a moment after Stop; the threads it started carry on.
+    private func stopFixtureWatcherTurn(on hostID: String) async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        changeFixtureWatcher(on: hostID) { page in
+            guard var current = page["current"] as? [String: Any] else { return }
+            current["status"] = "idle"; page["current"] = current; page["newWatcher"] = "available"
+        }
+    }
     /// The laptop watches the thread until the user stops it, or stops watching it, as it would: a watched row with its
     /// standing watch, or the row no longer watched and its watch gone.
     private func watchFixtureThread(_ ref: ThreadRef, _ watched: Bool, title: String, on hostID: String) async {
@@ -1886,6 +2257,8 @@ struct HeldDetail {
     /// Watcher takes the words, then a moment later answers and sends Babysit #845 release notes a note.
     private func sendToFixtureWatcher(_ text: String, on hostID: String) async {
         let stamp = ISO8601DateFormatter()
+        // The first message spends the handover offer, carried or not, and a Watcher that has said something can be replaced.
+        changeFixtureWatcher(on: hostID) { $0["handoverOffered"] = false; $0["newWatcher"] = "available" }
         appendFixtureWatcherMessage(["id": "phone-" + UUID().uuidString, "role": "user", "text": text, "createdAt": stamp.string(from: Date())], on: hostID)
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 700_000_000)
@@ -1958,6 +2331,96 @@ struct HeldDetail {
     }
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }
+
+    // MARK: The Settled shelf's threads read from the computers
+
+    func offersOlderSettled(_ hostID: String) -> Bool { live[hostID]?.features.contains(Wire.settledThreadsFeature) == true }
+    /// How many settled threads the computers the strip admits left out of their lists.
+    func settledHeldBack(show: ComputerFilter) -> Int {
+        computers.filter { show.admits($0.hostID) }.reduce(0) { $0 + (live[$1.hostID]?.shell?.settledHeldBack ?? 0) }
+    }
+    /// The computers whose settled threads can be read now: admitted, reachable, offering the read, holding some back.
+    func settledSources(show: ComputerFilter) -> [String] {
+        computers.map(\.hostID).filter { show.admits($0) && online($0) && offersOlderSettled($0) && (live[$0]?.shell?.settledHeldBack ?? 0) > 0 }
+    }
+    /// The settled threads read so far, as the shelf's rows.
+    func olderSettledRows(show: ComputerFilter) -> [HostedThread] {
+        ThreadGroups.older(lists, read: olderSettled.mapValues(\.threads), show: show)
+    }
+    /// Whether a computer the strip admits has settled threads it has not sent yet.
+    func moreOlderSettled(show: ComputerFilter) -> Bool {
+        settledSources(show: show).contains { (olderSettled[$0] ?? OlderSettled()).more }
+    }
+    /// Reads the next page of settled threads from each computer that has more, or with `first`, the first page from each
+    /// not read yet, as the shelf opens or a computer connects while it is open. Nothing shown changes on failure.
+    func readOlderSettled(show: ComputerFilter, first: Bool = false) async {
+        guard !olderSettledReading else { return }
+        olderSettledReading = true; olderSettledFailed = false
+        defer { olderSettledReading = false }
+        for hostID in settledSources(show: show) {
+            let held = olderSettled[hostID] ?? OlderSettled()
+            guard held.more, !(first && held.read), let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
+            do {
+                let page = try await connection.call(Wire.settledThreads(after: held.next), as: SettledThreadsPage.self)
+                guard generations[hostID] == epoch else { continue }
+                var next = olderSettled[hostID] ?? OlderSettled()
+                next.add(page)
+                olderSettled[hostID] = next
+            } catch { olderSettledFailed = true }
+        }
+    }
+    /// Asks each computer for its older settled threads that match `query`, as Threads' search is typed. An empty search
+    /// clears what was found; a later search replaces an earlier one still being read.
+    func searchSettled(_ query: String, show: ComputerFilter) async {
+        let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !words.isEmpty else { settledSearch = SettledSearch(); return }
+        settledSearch = SettledSearch(query: words, reading: true)
+        var found: [String: [ThreadSummary]] = [:], next: [String: String] = [:]
+        var failed = false
+        for hostID in settledSources(show: show) {
+            guard let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
+            do {
+                let page = try await connection.call(Wire.settledThreads(query: words), as: SettledThreadsPage.self)
+                // A page read over a connection that has since been replaced is left out, as the shelf leaves one out.
+                if generations[hostID] == epoch {
+                    found[hostID] = page.threads
+                    if let after = page.next { next[hostID] = after }
+                }
+            } catch { failed = true }
+            guard settledSearch.query == words else { return }
+        }
+        settledSearch = SettledSearch(query: words, found: found, failed: failed, next: next)
+    }
+    /// Reads the next matches from each computer that has more for the search on screen.
+    func searchMoreSettled() async {
+        let current = settledSearch
+        guard !current.query.isEmpty, !current.reading, !current.next.isEmpty else { return }
+        settledSearch = SettledSearch(query: current.query, found: current.found, reading: true, next: current.next)
+        var found = current.found, next: [String: String] = [:]
+        var failed = false
+        for (hostID, after) in current.next {
+            guard let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
+            do {
+                let page = try await connection.call(Wire.settledThreads(after: after, query: current.query), as: SettledThreadsPage.self)
+                // A page read over a replaced connection is left out, and the search can read on from where it was.
+                if generations[hostID] == epoch {
+                    let held = Set((found[hostID] ?? []).map(\.id))
+                    found[hostID, default: []] += page.threads.filter { !held.contains($0.id) }
+                    if let more = page.next { next[hostID] = more }
+                } else { next[hostID] = after }
+            } catch { failed = true; next[hostID] = after }
+            guard settledSearch.query == current.query else { return }
+        }
+        settledSearch = SettledSearch(query: current.query, found: found, failed: failed, next: next)
+    }
+    /// The older settled threads the computers found for `query`, as Settled's rows while Threads is searched.
+    func settledSearchRows(query: String, show: ComputerFilter) -> [HostedThread] {
+        guard settledSearch.query == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return [] }
+        return ThreadGroups.older(lists, read: settledSearch.found, show: show)
+    }
     func mayAnswer(_ hostID: String) -> Bool { live[hostID]?.mayAnswer ?? false }
     /// The thread the user is reading now: the open thread while the app is on screen, or Watcher's own while its tab is.
     var threadOnScreen: ThreadRef? {
@@ -1975,7 +2438,11 @@ struct HeldDetail {
                                    threads: state?.shell?.host.threads ?? [], projects: state?.shell?.host.projects ?? [])
         }
     }
-    func thread(_ ref: ThreadRef) -> ThreadSummary? { live[ref.hostID]?.shell?.host.threads.first { $0.id == ref.threadID } }
+    /// A thread from its computer's list, or an older settled one the shelf or search read, which the list leaves out.
+    func thread(_ ref: ThreadRef) -> ThreadSummary? { live[ref.hostID]?.shell?.host.threads.first { $0.id == ref.threadID } ?? readSettled(ref) }
+    private func readSettled(_ ref: ThreadRef) -> ThreadSummary? {
+        olderSettled[ref.hostID]?.threads.first { $0.id == ref.threadID } ?? settledSearch.found[ref.hostID]?.first { $0.id == ref.threadID }
+    }
     func detail(for ref: ThreadRef) -> ThreadDetail? { selected == ref && openDetail?.threadId == ref.threadID ? openDetail : nil }
     /// The open thread as its page shows it: the latest copy, or while that is being read again, the copy read before,
     /// so a reconnect or a return to the thread never empties the page.
@@ -2303,6 +2770,9 @@ struct HeldDetail {
             guard let endpoint = saved.endpoint else { throw ClientError.invalidHost }
             let greeting = try await connection(hostID).connect(endpoint: endpoint, pairing: saved.pairing)
             guard generations[hostID] == current else { return }
+            // The thread open here, as this iPhone last held it. One settled while the last connection lasted stayed
+            // in that list but is left out of the new one, and it stays open as one read from the shelf does.
+            let openHere = selected?.hostID == hostID ? selected.flatMap(thread) : nil
             try applyShell(greeting.value.shell, from: hostID, sequence: greeting.sequence, reconcileAnswers: false)
             update(hostID) {
                 $0.status = .online
@@ -2310,10 +2780,15 @@ struct HeldDetail {
                 if $0.shell?.clientCapabilities == nil { $0.mayAnswer = greeting.value.capabilities.mayAnswer }
                 $0.features = greeting.value.features ?? []
             }
+            // The shelf reads settled threads afresh on a new connection, keeping a settled one open here so it stays open.
+            let listed = Set(greeting.value.shell.host.threads.map(\.id))
+            olderSettled[hostID] = OlderSettled(keeping: openHere.flatMap { (kept: ThreadSummary) -> ThreadSummary? in
+                let project = greeting.value.shell.host.projects.first { $0.id == kept.projectId }
+                return !listed.contains(kept.id) && offersOlderSettled(hostID) && ThreadGroups.isSettled(kept, project: project) ? kept : nil })
             // Hello's shell was read before its features said whether this computer runs Watcher.
             if let page = greeting.value.shell.watcher { applyWatcher(page, from: hostID, proof: proof); helloCarriedWatcher = true }
             wasOnline.insert(hostID)
-            if let selected, selected.hostID == hostID, thread(selected) == nil { self.selected = nil }
+            if let selected, selected.hostID == hostID, thread(selected) == nil, selected != openedUnlisted { self.selected = nil }
         } catch {
             guard generations[hostID] == current else { return }
             connections[hostID]?.disconnect()
@@ -2562,10 +3037,19 @@ struct HeldDetail {
         holdDetail()
         if let ref, detailStore.held?.ref != ref { detailStore.held = nil }
         selected = ref; detailProblem = nil; detailVersion += 1
+        openedUnlisted = ref.flatMap { thread($0) == nil && offersOlderSettled($0.hostID) ? $0 : nil }
         let selection = UUID()
         threadSelectionGeneration = selection
         guard threadSelectionGeneration == selection, !Task.isCancelled else { return }
         #if DEBUG && os(iOS)
+        if isUIFixture, let ref, ref.hostID == benchLaptop, ref.threadID == BenchWire.longThreadID, let frame = benchLongFrame {
+            // The benchmarks' long thread is read as a computer's `detail` push, through the frame reader and `push`.
+            let data = await frame.value
+            guard selected == ref else { return }
+            await benchDeliver(data, kind: "detail")
+            BenchDriver.detailApplied()
+            return
+        }
         if isUIFixture {
             let detail = ref.flatMap { fixtureDetails[$0.id] }
             if fixtureSlowDetail, let ref {
@@ -2818,6 +3302,45 @@ struct HeldDetail {
             for item in added { await self?.prepare(item.photo.id, in: box, from: item.source) }
         }
     }
+    /// Why a marked copy can't go into this reply box now, or nil (ADR-0170, part 5): the box's own rules for a photo.
+    func markedCopyRefusal(_ box: PhotoBox) -> String? {
+        if let reason = photoSupport(box).reason(computer: name(box.hostID), watcher: box.isWatcher) { return reason }
+        if preparingSends.contains(box.id) {
+            return box.isWatcher ? String(localized: "Your message is being sent.", comment: "A message to Watcher is on its way, so its photos can't change")
+                : String(localized: "Your reply is being sent.")
+        }
+        if PhotoLimits.count - photos(box).count - files(box).count > 0 { return nil }
+        return files(box).isEmpty ? box.photoLimitWords : FileWords.full
+    }
+    /// Puts a marked copy into a reply box (ADR-0170, part 5), prepared and checked against the box's limits before it
+    /// goes in, so a refusal comes back to the editor, which keeps the marks. Nil once it is in; staging then follows as
+    /// for any photo.
+    func attachMarkedCopy(_ box: PhotoBox, name: String, data: Data) async -> String? {
+        if let refusal = markedCopyRefusal(box) { return refusal }
+        do {
+            let prepared = try await preparePhoto(data, name)
+            // The box may have changed while the copy was prepared.
+            if let refusal = markedCopyRefusal(box) { return refusal }
+            if let refusal = sizeRefusal(prepared.byteCount, in: box) { return refusal }
+            var photo = DraftPhoto()
+            photo.prepared = prepared
+            draftPhotos[box.id, default: []].append(photo)
+            attachHaptics[box.id, default: 0] += 1
+            photoNotices[box.id] = nil
+            _ = staging(photo.id, in: box)
+            return nil
+        } catch {
+            return (error as? PhotoPipelineError)?.errorDescription ?? (error as? ClientError)?.errorDescription ?? PhotoPipelineError.unreadable.errorDescription!
+        }
+    }
+    /// Why a prepared photo of this many bytes can't join the box's other photos and files, or nil when it fits.
+    /// `besides` is the photo itself, when it is already in the box.
+    private func sizeRefusal(_ byteCount: Int, in box: PhotoBox, besides id: UUID? = nil) -> String? {
+        let others = photos(box).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
+        guard Photos.fits(byteCount, with: others) else { return box.photosTooLargeWords }
+        guard others.reduce(byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else { return FileWords.tooLargeInTotal }
+        return nil
+    }
     func removePhoto(_ id: UUID, from box: PhotoBox) {
         guard !preparingSends.contains(box.id) else { return }
         dropPhoto(id, in: box, reason: nil)
@@ -2828,13 +3351,7 @@ struct HeldDetail {
         do {
             let prepared = try await preparePhoto(try await loaded(source.load, for: id), source.name)
             guard photo(id, in: box) != nil else { return }
-            let others = photos(box).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
-            guard Photos.fits(prepared.byteCount, with: others) else {
-                throw ClientError.rejected(box.photosTooLargeWords)
-            }
-            guard others.reduce(prepared.byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else {
-                throw ClientError.rejected(FileWords.tooLargeInTotal)
-            }
+            if let refusal = sizeRefusal(prepared.byteCount, in: box, besides: id) { throw ClientError.rejected(refusal) }
             change(id, in: box) { $0.prepared = prepared }
             // Staged on its own, so a slow computer never holds up preparing photos for any other reply.
             _ = staging(id, in: box)
@@ -3109,6 +3626,56 @@ struct HeldDetail {
     }
     /// A sent photo's bytes from the computer that keeps it. It waits its turn behind other large requests to
     /// that computer, and is never made if nothing on screen still `wanted` it by then.
+    /// A photo's bytes, or an agent's picture's (ADR-0170): a sent photo by its message and attachment, an agent's picture
+    /// by its step (`activityID`) and its handle (`attachmentID`). Nil when the computer has none to give, or does not keep
+    /// its agents' pictures. It takes the key's parts, not the view's key type, since the model compiles without the views.
+    func photoBytes(_ ref: ThreadRef, messageID: String, attachmentID: String, activityID: String?, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return await fixturePicture(photo: activityID == nil, wanted: wanted) }
+        #endif
+        guard let activityID else { return await sentPhoto(ref, messageID: messageID, attachmentID: attachmentID, wanted: wanted) }
+        guard live[ref.hostID]?.features.contains(Photos.threadMediaFeature) == true else { return nil }
+        let operation = Photos.threadMedia(threadID: ref.threadID, activityID: activityID, mediaID: attachmentID)
+        guard let url = try? await largeRequest(on: ref.hostID, { connection -> String? in
+            guard wanted() else { return nil }
+            return try await connection.call(operation, as: Optional<PhotoPreview>.self)?.dataUrl
+        }) else { return nil }
+        return await Photos.bytes(fromDataURL: url)
+    }
+    /// A video an agent wrote, from the computer that runs its thread (ADR-0170, part 4): part by part, each waiting its
+    /// turn behind other large requests to that computer and none asked for once nothing `wanted` it, written to a file
+    /// as it comes. The parts must make the video their first one named, its size and digest, or none of it is kept.
+    func agentVideo(_ ref: ThreadRef, activityID: String, mediaID: String, progress: @escaping @MainActor (Double) -> Void,
+                    wanted: @escaping @MainActor () -> Bool) async -> AgentVideoOutcome {
+        guard live[ref.hostID]?.features.contains(AgentVideos.feature) == true else { return .failed }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("agent-videos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var download: AgentVideoDownload?
+        repeat {
+            let operation = AgentVideos.part(threadID: ref.threadID, activityID: activityID, mediaID: mediaID, part: download?.received ?? 0)
+            let part: AgentVideoPart?
+            do {
+                part = try await largeRequest(on: ref.hostID) { connection -> AgentVideoPart? in
+                    guard wanted() else { throw CancellationError() }
+                    return try await connection.call(operation, as: Optional<AgentVideoPart>.self)
+                }
+            } catch { return .failed }
+            guard let part else { return download == nil ? .notKept : .failed }
+            let before = download
+            // Decoded and written off the main actor: a part is 8 MiB.
+            let next = await Task.detached { () -> AgentVideoDownload? in
+                guard let before else { return AgentVideoDownload(first: part, url: folder.appendingPathComponent(AgentVideos.fileName(digest: part.digest, mimeType: part.mimeType))) }
+                return before.add(part) ? before : nil
+            }.value
+            guard let next else { return .failed }
+            download = next
+            progress(next.progress)
+        } while download?.complete == false
+        guard let download, await Task.detached(operation: { download.finish() }).value else { return .failed }
+        return .file(download.url)
+    }
+    /// Whether this thread's computer shows its agents' pictures (ADR-0170).
+    func showsAgentPictures(_ hostID: String) -> Bool { live[hostID]?.features.contains(Photos.threadMediaFeature) == true }
     func sentPhoto(_ ref: ThreadRef, messageID: String, attachmentID: String, wanted: @escaping @MainActor () -> Bool) async -> Data? {
         // Watcher's thread is never one of this iPhone's own to read: its photos come through Watcher's page.
         let operation: [String: JSONValue]
@@ -3434,7 +4001,8 @@ struct HeldDetail {
         live[hostID]?.shell.map { NewThreads.startingEffort(model, shell: $0, defaults: newThreadDefaults) } ?? model.startingEffort
     }
     /// The permission New thread starts on. A default that would let the thread act without asking waits for
-    /// Can answer on that computer (ADR-0033); until then the thread starts by asking.
+    /// this iPhone's answers grant on that computer, which pairing writes (ADR-0033); a computer from before that may not
+    /// have it, and there the thread starts by asking.
     func initialCreationPermission(_ hostID: String, model: ThreadModel) -> StartingPermission {
         NewThreads.startingPermission(model, defaults: newThreadDefaults, mayAnswer: mayAnswer(hostID))
     }
@@ -3629,6 +4197,7 @@ struct HeldDetail {
             if let allowed = next.clientCapabilities?.mayAnswer { $0.mayAnswer = allowed }
         }
         noticeChanges(next, from: hostID)
+        observeThreadSettings(next, from: hostID)
         // Live evidence can arrive after the acknowledgement timed out. Never resend to settle it.
         // A Keychain write failure is local feedback, not a lost connection to the computer.
         for item in scoped(hostID) {
@@ -3640,7 +4209,10 @@ struct HeldDetail {
         }
         // Watcher's page comes with each shell from a computer that runs Watcher.
         if let page = next.watcher { applyWatcher(page, from: hostID) }
-        if let selected, selected.hostID == hostID, !next.host.threads.contains(where: { $0.id == selected.threadID }) {
+        // An older settled thread opened from the shelf or a search is not in the list until the computer hears it is open.
+        if let opened = openedUnlisted, opened.hostID == hostID, next.host.threads.contains(where: { $0.id == opened.threadID }) { openedUnlisted = nil }
+        if let selected, selected.hostID == hostID, !next.host.threads.contains(where: { $0.id == selected.threadID }), readSettled(selected) == nil,
+           selected != openedUnlisted {
             cancelDetailReload(); self.selected = nil; openDetail = nil; detailStore.held = nil; detailProblem = nil
         }
     }
@@ -3900,4 +4472,129 @@ struct AgentsSource {
     let models: [ThreadModel]
     /// Whether the computer says which failures a client has shown (`failure-seen`).
     let failuresSeen: Bool
+}
+
+// MARK: - A thread's settings from its reply box (ADR-0166)
+
+extension AppModel {
+    /// How long a confirmed change is held for the thread to show it, as the desktop holds one (`CONFIRMED_HOLD_MS`).
+    static let settingHold: UInt64 = 4_000_000_000
+
+    /// What the thread's chips draw, or nil where they stay off its box.
+    func threadSettings(_ ref: ThreadRef) -> ThreadSettingsPanel? {
+        guard let thread = self.thread(ref), let shell = live[ref.hostID]?.shell else { return nil }
+        let source = provider(for: ref)
+        return ThreadSettingsPanel.make(thread: thread, catalog: shell.host.models ?? [], capabilities: capabilities(for: ref),
+                                        providerConnected: source == nil || source?.connection == "connected", online: online(ref.hostID),
+                                        mayAnswer: mayAnswer(ref.hostID), unconfirmed: ThreadSettings.unconfirmed(shell, threadID: ref.threadID),
+                                        promptOnItsWay: ThreadSettings.promptOnItsWay(shell, threadID: ref.threadID) || preparingSends.contains(ref.id),
+                                        pending: threadSettingsPending[ref.id] ?? PendingThreadSettings())
+    }
+    /// Chooses a model, effort, speed or permission mode for the thread. The chip shows it at once; the computer passes it
+    /// to the agent, and a refusal puts the chip back and says why. A press made while the last one is on its way waits,
+    /// and only the newest is sent once that one answers.
+    func chooseSetting(_ kind: ThreadSettingKind, _ value: String, in ref: ThreadRef) {
+        guard let panel = threadSettings(ref), panel.pressable(kind), let thread = self.thread(ref) else { return }
+        if kind == .permissions {
+            guard let mode = panel.permissions.first(where: { $0.id == value }), panel.mayChoose(mode) else { return }
+        }
+        let value = kind == .model ? ThreadSettings.modelChoice(value, thread: thread, catalog: panel.models) : value
+        var pending = threadSettingsPending[ref.id] ?? PendingThreadSettings()
+        let press = pending.press(kind, value: value, patch: ThreadSettings.patch(kind, value: value, model: panel.model),
+                                  showing: panel.unpressed[kind], drawn: panel.drawn)
+        threadSettingsPending[ref.id] = pending.isEmpty ? nil : pending
+        if let press { Task { await saveSetting(press, kind, in: ref, carrying: panel.drawn.speed) } }
+    }
+    /// Sends a refused change once more, where it could be chosen now.
+    func retrySetting(_ kind: ThreadSettingKind, in ref: ThreadRef) {
+        guard let panel = threadSettings(ref), var pending = threadSettingsPending[ref.id], let wanted = pending.refusals[kind]?.wanted,
+              panel.canRetry(kind, wanted: wanted) else { return }
+        let press = pending.retry(kind, drawn: panel.drawn)
+        threadSettingsPending[ref.id] = pending.isEmpty ? nil : pending
+        if let press { Task { await saveSetting(press, kind, in: ref, carrying: panel.drawn.speed) } }
+    }
+    /// Sends a press and, while newer presses of the same setting wait behind it, the newest of them in turn. Each answer
+    /// is recorded, then the thread as it now stands is read again, so a change the computer kept and let go of before
+    /// the answer was recorded never stays on the chip. A model change the agent took without the speed the thread had
+    /// chosen (`carrying`) is said on the bolt's line, as the desktop says it.
+    private func saveSetting(_ first: PendingThreadSettings.Press, _ kind: ThreadSettingKind, in ref: ThreadRef, carrying speed: String) async {
+        var press = first
+        while true {
+            let outcome = await configureThread(press, kind, in: ref)
+            guard var pending = threadSettingsPending[ref.id] else { return }
+            let next = pending.answered(kind, sent: press.value, outcome: outcome)
+            if kind == .model, case .confirmed = outcome, speed != ThreadSettings.standard, let shell = live[ref.hostID]?.shell,
+               let thread = shell.host.threads.first(where: { $0.id == ref.threadID }), ThreadSettings.speed(of: thread) == ThreadSettings.standard {
+                let model = CatalogEntry.model(shell.host.models ?? [], id: thread.modelId)
+                pending.refuse(.speed, wanted: speed, patch: ThreadSettings.patch(.speed, value: speed, model: model), error: ThreadSettingWords.speedNotCarriedError)
+            }
+            threadSettingsPending[ref.id] = pending.isEmpty ? nil : pending
+            if let shell = live[ref.hostID]?.shell { observeThreadSettings(shell, from: ref.hostID) }
+            if let hold = pending.holdToken(kind) {
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: Self.settingHold)
+                    guard let self, var held = self.threadSettingsPending[ref.id] else { return }
+                    held.expire(kind, hold: hold)
+                    self.threadSettingsPending[ref.id] = held.isEmpty ? nil : held
+                }
+            }
+            guard let next else { return }
+            press = next
+        }
+    }
+    /// Sends one change and reads what became of it from the thread the computer answers with. A change is never sent
+    /// again on its own: a lost answer leaves the chip on what the thread last reported, with Try again.
+    private func configureThread(_ press: PendingThreadSettings.Press, _ kind: ThreadSettingKind, in ref: ThreadRef) async -> PendingThreadSettings.Outcome {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return await configureFixtureThread(press, kind, in: ref) }
+        #endif
+        guard let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else { return .refused(nil) }
+        do {
+            let command = try Commands.configureThread(threadID: ref.threadID, patch: press.patch)
+            let result = try await connection.callReceived(["op": .string("command"), "command": command], as: Shell.self, id: UUID().uuidString.lowercased())
+            guard generations[ref.hostID] == epoch else { return .refused(nil) }
+            try applyShell(result.value, from: ref.hostID, sequence: result.sequence, reconcileAnswers: false)
+            return PendingThreadSettings.outcome(of: result.value, kind, sent: press.value, threadID: ref.threadID)
+        } catch let refusal as HostRefusal {
+            return .refused(refusal.localizedDescription)
+        } catch {
+            return .refused(nil)
+        }
+    }
+    /// Lets go of what each thread on this computer now shows, and of every thread it no longer lists.
+    private func observeThreadSettings(_ shell: Shell, from hostID: String) {
+        guard !threadSettingsPending.isEmpty else { return }
+        let prefix = hostID + "/"
+        for (key, held) in threadSettingsPending where key.hasPrefix(prefix) {
+            let threadID = String(key.dropFirst(prefix.count))
+            guard let thread = shell.host.threads.first(where: { $0.id == threadID }) else { threadSettingsPending[key] = nil; continue }
+            var next = held
+            next.observe(ThreadSettings.values(thread, model: CatalogEntry.model(shell.host.models ?? [], id: thread.modelId)),
+                         unconfirmed: ThreadSettings.unconfirmed(shell, threadID: threadID))
+            if next != held { threadSettingsPending[key] = next.isEmpty ? nil : next }
+        }
+    }
+
+    #if DEBUG && os(iOS)
+    /// The fixture's agent takes a change a moment after it goes, and a permission change only after eight seconds, so the
+    /// journey sees the chip marked and the line saying what is still in force.
+    private func configureFixtureThread(_ press: PendingThreadSettings.Press, _ kind: ThreadSettingKind, in ref: ThreadRef) async -> PendingThreadSettings.Outcome {
+        try? await Task.sleep(nanoseconds: kind == .permissions ? 8_000_000_000 : 300_000_000)
+        guard var root = fixtureShells[ref.hostID], var host = root["host"] as? [String: Any], var rows = host["threads"] as? [[String: Any]],
+              let index = rows.firstIndex(where: { ($0["id"] as? String) == ref.threadID }) else { return .refused(nil) }
+        for (key, value) in press.patch {
+            switch value {
+            case .string(let text): rows[index][key] = text
+            case .bool(let flag): rows[index][key] = flag
+            case .null: rows[index][key] = NSNull()
+            default: break
+            }
+        }
+        host["threads"] = rows; root["host"] = host; fixtureShells[ref.hostID] = root
+        guard let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: root)) else { return .refused(nil) }
+        update(ref.hostID) { $0.shell = shell }
+        observeThreadSettings(shell, from: ref.hostID)
+        return PendingThreadSettings.outcome(of: shell, kind, sent: press.value, threadID: ref.threadID)
+    }
+    #endif
 }

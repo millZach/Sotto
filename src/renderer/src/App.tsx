@@ -6,12 +6,14 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { speechModelSummary } from './components/SpeechModelStatus'
 import { PARAKEET_V3, sottoSpeechModel, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
+import { startShortcut } from '../../shared/dictationShortcuts'
 import { AppShell, layoutFor } from './components/AppShell'
 import { usePageShortcuts } from './components/pageShortcuts'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { UsageView } from './features/usage/UsageView'
+import { CouncilView } from './features/council/CouncilView'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { ThreadsTour } from './features/onboarding/ThreadsTour'
 import { UpdateControl } from './features/updates/UpdateControl'
@@ -27,7 +29,8 @@ import {
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useDictationOn } from './state/dictationFeature'
-import { useOpenThreadsOnNotification } from './state/desktopNotifications'
+import { useOpenNotification } from './state/desktopNotifications'
+import type { NotificationOpening } from '../../shared/desktopNotifications'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useReleaseTrack } from './state/useReleaseTrack'
 import { releaseTrackName } from '../../shared/releaseTrack'
@@ -36,7 +39,7 @@ import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { OpenSystemSettingsButton } from './components/OpenSystemSettingsButton'
 import { platformCopy } from './platformCopy'
-import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import { isPastePermissionNotice, type PastePermissionNoticeCode, type RecoveryNotice } from '../../shared/recoveryNotice'
 import type { SottoPlatform } from '../../shared/platform'
 import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
@@ -44,6 +47,7 @@ import { MoveThreadsSheetHost } from './watcher/MoveThreads'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { UpdateAllCard } from './features/updates/UpdateAllCard'
 import { PageSidebar } from './agents/PageSidebar'
+import { useRegionCycle } from './components/regionCycle'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
@@ -77,7 +81,8 @@ const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>>
   AUTOMATION_PERMISSION_REQUIRED: 'automation',
 }
 
-function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMessage {
+function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform, dismiss: (code: PastePermissionNoticeCode) => void): ToastMessage {
+  const code = notice.code
   const text = notice.code === 'OPENROUTER_KEY_UNREADABLE'
     ? platformCopy(platform).openRouterKeyUnreadable
     : i18n._(recoveryMessages[notice.code])
@@ -85,6 +90,7 @@ function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMe
   return {
     id: notice.code,
     message: pane === undefined ? text : <>{text} <OpenSystemSettingsButton platform={platform} pane={pane} appearance="toast" /></>,
+    ...(isPastePermissionNotice(code) ? { onDismiss: () => dismiss(code) } : {}),
   }
 }
 
@@ -137,6 +143,7 @@ function FooterStatus({ navigation, dictationOn, cloudTranscription, speechModel
   const { t } = useLingui()
   switch (navigation) {
     case 'usage': return t`Numeric usage stays on each computer.`
+    case 'council': return null
     case 'memory': return t`Your preferences, with their history.`
     case 'settings': return t`Changes save as you make them.`
     case 'help': return t`Shortcuts, privacy, and troubleshooting.`
@@ -150,6 +157,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const watcherEnabled = useWatcherEnabled()
   const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
+  // The Council page (ADR-0177): only while its Owl feature is on and main gave the window its bridge.
+  const councilEnabled = useOwlFeature('council') && window.sotto?.council !== undefined
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   // Set when main refused the last choice, so the picker can say why nothing changed.
@@ -221,7 +230,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         <strong>{notice.title}</strong>
         {notice.detail === null ? null : <> {notice.detail}</>}
         {link !== null && open !== undefined
-          ? <> <button type="button" className="tt-toast__link tt-focusable" onClick={() => { void open(link) }}><Trans>Read more</Trans></button></>
+          ? <> <button type="button" className="tt-toast__link tt-focusable" data-outside-link="" onClick={() => { void open(link) }}><Trans>Read more</Trans></button></>
           : null}
       </>
     )
@@ -265,13 +274,18 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   // Ctrl+1 to Ctrl+5 (⌘ on a Mac) by default: Dictate, Watcher, Threads, Usage and Settings (ADR-0158).
   usePageShortcuts({ settings: app.settings, platform: app.platform, navigation: app.navigation, navigate: app.actions.navigate })
+  // F6 and Shift+F6 between the sidebar, each pane and its composer, or the room (ADR-0164).
+  useRegionCycle({ settings: app.settings, platform: app.platform })
 
   // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
   useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
 
-  // A pressed notification: main brought the window forward and selected the thread; the window shows Threads (ADR-0117).
-  const showThreads = useCallback(() => app.actions.navigate('threads'), [app.actions])
-  useOpenThreadsOnNotification(showThreads)
+  const [notificationNotice, setNotificationNotice] = useState<string | null>(null)
+  const openNotification = useCallback((opening: NotificationOpening) => {
+    setNotificationNotice(opening.notice ?? null)
+    app.actions.navigate(opening.page)
+  }, [app.actions])
+  useOpenNotification(openNotification)
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
@@ -398,7 +412,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
       </main>
     )
   } else if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
-    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform))
+    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice))
     content = (
       <>
         <Onboarding
@@ -437,7 +451,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     // Watcher's room is reachable only while its gate is on, and Dictate only while dictation is on (ADR-0107);
     // without them the navigation lands on Threads.
     const watcherPage = navigation === 'watcher' && watcherEnabled
-    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'home' && !dictationOn)
+    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'council' && !councilEnabled) || (navigation === 'home' && !dictationOn)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
@@ -464,6 +478,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         break
       case 'usage':
         view = usageEnabled ? <UsageView /> : threadWorkspace
+        break
+      case 'council':
+        view = councilEnabled ? <CouncilView /> : threadWorkspace
         break
       case 'settings':
         view = <SettingsView
@@ -496,7 +513,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
+        view = <HelpView shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
         break
       default:
         view = threadsPage ? threadWorkspace : <DictateRoom
@@ -505,6 +522,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
           platform={app.platform}
           dictation={app.dictation}
+          level={app.dictationLevel}
           entries={app.history}
           records={app.dictationRecords}
           recovery={app.dictationRecovery}
@@ -569,8 +587,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onNotice={message => setThemeNotice(current => ({ id: `theme-${Number(current?.id.slice(6) ?? 0) + 1}`, message }))}
         />
         <ToastRegion messages={[
-          ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform)),
+          ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice)),
           ...(themeNotice === null ? [] : [themeNotice]),
+          ...(notificationNotice === null ? [] : [{
+            id: 'notification-open',
+            message: <>{notificationNotice} <button type="button" className="tt-toast__link tt-focusable" onClick={() => setNotificationNotice(null)}><Trans>Dismiss</Trans></button></>,
+          }]),
           ...(settingsNotice === null ? [] : [{
             id: 'settings-save', tone: 'error' as const,
             message: <>{settingsNotice} <button type="button" className="tt-toast__link tt-focusable" aria-label={t`Dismiss dictionary save notice`} onClick={() => setSettingsNotice(null)}><Trans>Dismiss</Trans></button></>,

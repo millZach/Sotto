@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { bareEntityId, closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 
 // Babysitting a pull request, variant C of ADR-0061 (#825), over the built app, the scripted provider and a scripted gh
 // (tests/fixtures/fakeGh.mjs) that answers babysitting's reads: Babysit pull request from the Pull request surface's ···
@@ -153,7 +153,7 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     const status = row.locator('.thread-nav__status')
     await row.click()
     await expect(status).toHaveText(/(Done|Just finished)$/u)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tab', { name: 'Pull request', exact: true }).click()
     await expect(panel.getByRole('heading', { name: '#74 Greet the reviewer' })).toBeVisible({ timeout: 30_000 })

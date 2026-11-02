@@ -338,6 +338,7 @@ msgstr "<0>End {name}?</0> Whatever is running in it stops."
 msgid "A {width} by {height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS."
 msgstr "A {width} by {height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS."
 
+#: src/renderer/src/tools/toolsMenu.tsx
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "A browser request is waiting for your answer"
 msgstr "A browser request is waiting for your answer"
@@ -354,7 +355,7 @@ msgstr "A cloud iPhone request is waiting for your answer"
 msgid "A cloud iPhone session is running"
 msgstr "A cloud iPhone session is running"
 
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "A delegated thread needs you"
 msgstr "A delegated thread needs you"
 
@@ -476,7 +477,7 @@ msgstr "Agent task"
 msgid "Agents"
 msgstr "Agents"
 
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "Agents are working"
 msgstr "Agents are working"
 
@@ -523,7 +524,7 @@ msgid "An agent opens your app here when it tests it. You can also load a web bu
 msgstr "An agent opens your app here when it tests it. You can also load a web build yourself, such as the address <0>{command}</0> prints."
 
 #. Stands in for a thread's title, as in "Tools are pinned to another thread".
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "another thread"
 msgstr "another thread"
 
@@ -1557,12 +1558,10 @@ msgid "Hide phone"
 msgstr "Hide phone"
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
 msgid "Hide terminal drawer"
 msgstr "Hide terminal drawer"
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
 msgid "Hide terminal drawer ({keys})"
 msgstr "Hide terminal drawer ({keys})"
 
@@ -2816,14 +2815,6 @@ msgstr "Show page: {label}"
 msgid "Show phone"
 msgstr "Show phone"
 
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
-msgid "Show terminal drawer"
-msgstr "Show terminal drawer"
-
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
-msgid "Show terminal drawer ({keys})"
-msgstr "Show terminal drawer ({keys})"
-
 #. {title} is a thread's title; {actionText} says what the browser task is doing.
 #: src/renderer/src/tools/BrowserPlayer.tsx
 msgid "Show the browser for {title}: {actionText}"
@@ -2846,7 +2837,7 @@ msgid "Show whitespace changes"
 msgstr "Show whitespace changes"
 
 #. {pinnedTitle} is a thread's title.
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "Showing {pinnedTitle}, pinned"
 msgstr "Showing {pinnedTitle}, pinned"
 
@@ -3492,14 +3483,10 @@ msgstr "took a picture of the page"
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
+#: src/renderer/src/tools/toolsMenu.tsx
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Tools"
 msgstr "Tools"
-
-#. {pinnedTitle} is a thread's title.
-#: src/renderer/src/tools/ToolsPanel.tsx
-msgid "Tools are pinned to {pinnedTitle}"
-msgstr "Tools are pinned to {pinnedTitle}"
 
 #: src/renderer/src/tools/browserSteps.ts
 msgid "tried to change the page size"

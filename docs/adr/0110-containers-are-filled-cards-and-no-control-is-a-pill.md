@@ -14,6 +14,8 @@ Amended October 24, 2026: the composer card has no edge in any state, running an
 
 Amended October 26, 2026: one light comes back at the highest effort, the effort trace, a travelling light rather than an edge (below, "The composer's edge").
 
+Amended October 30, 2026: a card says its status in words, with no coloured edge and no tint, and labels are written in sentence case (below, "Status in words, labels in sentence case").
+
 Amends ADR-0011 (main window themes): the look keeps its character and its colours still come only from theme roles through `--tt-*` tokens, but a container is no longer a hairline box and a control is no longer a pill. Amends ADR-0084 (solid glass) for the composer only: it is painted as a card, not in the field colour; the skill list that opens from it keeps the field colour.
 
 ## Context
@@ -59,3 +61,8 @@ Amended October 26, 2026, at Zach's ask for "the appropriate light tracing aroun
 
 Keyboard users keep a visible path: the composer's buttons, chips and the branch toolbar keep their focus rings, and the transcript keeps its own. Watcher's composer follows the same rule.
 
+## Status in words, labels in sentence case
+
+Amended October 30, 2026, from the desktop UI review (#1830, #1829). Six kinds of card still drew a 2 or 3 pixel coloured stripe down their left edge to say their status: the request card (the attention colour, the warning colour while an answer is unconfirmed, and its recovered answers), the ready prototype (the accent), a question lifted out of a folded reply (the attention colour), the client update card (the update colour, the error colour when one failed), a provider's refusal (the error colour) and a thread's error and notice lines. The docked questions box above the composer drew a warning outline for an unconfirmed answer. Each card already says the same in its heading, its sentence and its buttons, and the sidebar says a thread needs you. Zach picked **no stripe and no tint** from `look-fixes-prototype.html` on the tag `prototype/ui-hillclimb-desktop`: those cards are plain fills like every other card, and their words and buttons carry the urgency. An error still sets its sentence in the error colour, at 4.5:1 on its fill. `themeTokens.test.ts` fails if any of those cards draws a left edge or a coloured border again.
+
+Labels are written in sentence case, as the words are written: no stylesheet turns them into capitals. The Dictate room's stats and day headings, the theme editor's colour groups and first-run setup's step line were the last tracked capitals ("TODAY", "STEP 1 OF 10 · WELCOME"); they now read "Today" and "Step 1 of 10" (ADR-0063 has the rest of setup's change). `themeTokens.test.ts` fails on any `text-transform: uppercase` in a renderer stylesheet.

@@ -91,12 +91,6 @@
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
-  "src/main/agents/nativeUsage.ts": {
-    "NativeUsage.constructor": {
-      "count": 1,
-      "reason": "Built once per provider's usage ledger, constructed at start."
-    }
-  },
   "src/main/agents/opencode.ts": {
     "OpenCodeHost.constructor": {
       "count": 2,

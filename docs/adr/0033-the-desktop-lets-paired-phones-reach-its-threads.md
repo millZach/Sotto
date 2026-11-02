@@ -1,5 +1,7 @@
 # The desktop lets paired phones reach its threads
 
+October 30, 2026 amendment: [pairing a phone lets it answer](#october-30-amendment-pairing-a-phone-lets-it-answer). The **Can answer** switch described below is gone; Remove is the only way to take a phone's answers away.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The assignment-context and coordinator-reasoning disclosure below is historical. Saved reasoning choices and credentials remain for native default resolution, but manual threads do not send context to a separate reasoning host. Phone access, pairing and Can answer policy remain unchanged.
 
 ## Status
@@ -89,3 +91,19 @@ A thread's ••• menu on the iPhone offered only Compact context, so putting
 As on the desktop, a running thread can be settled; it keeps working on the shelf. The item waits only while the thread's computer is away or has not confirmed the last command. Each press is a pending command like Compact context: it reads Settling… or Restoring…, is never sent again, and is confirmed by the thread standing where it put it, which survives an expired receipt, or by its receipt. The confirmation is said in the existing banner, "Moved to Settled." or "Restored.", the desktop's words.
 
 The phone never asks whether to remove the thread's worktree and never applies the desktop's on-settle cleanup rule, both of which live in the desktop's window. Settling from the phone always keeps the thread's working copy; remove it from the desktop if you want it gone.
+
+## October 30 amendment: pairing a phone lets it answer
+
+Zach removed the **Can answer** switch: "We should remove the phone can answer toggle. That is dumb and can answer should just be on, no toggle." The owner shows a pairing code on a computer they are sitting at, and the phone that redeems it in the next five minutes is theirs. Asking again on the row beside it was a second press for the same decision, and a phone left with it off could read a question and do nothing about it. Zach chose each of the following and asked for no prototype, since this is a removal.
+
+**Pairing writes the grant.** When a phone redeems a code shown on this computer's Phones page or in a host's Phones dialog, phone access writes that phone's `remote-answer` policy record, scoped `client:<clientId>` with the source `user`, before the phone opens its first socket. Authority still lives only in that record (ADR-0004); what changed is the user's act that writes it. Showing the code and letting a phone redeem it is that act. A client paired another way, such as a desktop through the host's own pairing command, gets nothing from this: its record is still the launch script's to write (ADR-0025, September 29 amendment).
+
+**Remove is the only revocation.** A phone's row on the Phones page and in a host's Phones dialog keeps Remove, which revokes the pairing and the record and closes the phone's sockets, and nothing else. The iPhone shows no Can answer line. A headless host's `--deny-answers` refuses a phone and still revokes a desktop's record.
+
+**Phones already paired can answer after the update.** At every start, once the pairing store is read, phone access writes the record for each paired phone that has no active grant: one paired when only the switch wrote records, one whose record the switch revoked, and one whose record expired. A phone that already answers gets no second record. An `always-confirm` record about a phone stays where it is, since nothing Sotto writes makes one and it would be the owner's own boundary.
+
+**The same holds for what acts without asking.** A paired phone may set any new-thread permission default, including the ones that act without asking (ADR-0074), and may let Watcher act without asking. Those checks are unchanged; they read the same record, and pairing writes it.
+
+**Compatibility.** Host protocol v1 is unchanged. `capabilities.mayAnswer` in hello and `clientCapabilities.mayAnswer` on each shell still report what the record says. An older iPhone reads that it may answer and shows its Can answer line as on. An older desktop administering a newer host still draws its switch, read from `canAnswer`, which the host still sends: pressing it on changes nothing, and pressing it off is refused with a sentence that says to remove the phone. A newer desktop administering an older host shows no switch, and a phone that host left without answers stays without them until the host runs this version, which the desktop's Update offers. An older desktop keeps its own switch for its own phones until it is updated. When a computer's permission policies cannot be read, no phone can answer there, as before: an unreadable store never widens who can grant.
+
+**What it costs.** Whoever redeems a live code now gets answers as well as reading and replies, so the code is the whole of a phone's admission. It is eight characters, good once for five minutes, shown only on the computer's own screen, and pairing is rate limited. A paired phone's token still never expires (#1692), which matters more now that the token carries answers; that is a follow-up, not part of this change.

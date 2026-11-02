@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
@@ -106,7 +106,7 @@ test('point at something names the element, takes its picture and puts it in the
         })
         await page.reload(); await size(launched, 1280, 800); await openThreads(page)
         await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await toggleTools(page)
         const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
         await panel.getByRole('tab', { name: 'Browser' }).click()
         const fresh = panel.getByRole('textbox', { name: 'Address for a new page' })

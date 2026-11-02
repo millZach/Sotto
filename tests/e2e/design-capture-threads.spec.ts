@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { capturePage } from './support/designCapture'
-import { openThreads } from './support/sottoLaunch'
+import { openThreads, toggleTools } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
 
@@ -80,7 +80,7 @@ test.describe('authoritative design-review captures', () => {
       const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
       await expect(page.locator(`[id="thread-pane-${hostEntityKey(hostId, 'grok-previews')}"]`)).toHaveAttribute('inert')
       await capturePage(page, `threads-split-focus-820-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-focus-820' })
-      await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(page)
       const tools = page.getByRole('complementary', { name: 'Tools', exact: true })
       // Files answers at most four requests at once and says it is busy past that, with Retry. Late in a full capture
       // run on a loaded machine the earlier panes' reads can still be in flight, so a busy answer is retried once.

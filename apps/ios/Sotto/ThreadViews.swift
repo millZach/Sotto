@@ -23,9 +23,15 @@ struct ThreadView: View {
     @State private var agentsOpen = false
     @State private var agentsCovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dismiss) private var dismiss
     private var thread: ThreadSummary? { model.thread(ref) }
+    /// The folded Duo's cover screen, where the thread has no bar: its controls stand in the strip (`FoldedThreadRail`)
+    /// and its title only in the page (Zach, TestFlight build 45, reversing #1724).
+    private var folded: Bool { if case .folded = duo { return true } else { return false } }
 
     var body: some View {
+        let _ = BenchProbe.body("ThreadView")
         Conversation(ref: ref, stuck: $stuck, titled: $titled) { request in
             shown = request.id
             open = request
@@ -50,8 +56,19 @@ struct ThreadView: View {
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
+        .toolbar(folded ? .hidden : .automatic, for: .navigationBar)
+        // With no bar, iOS's own swipe back is kept, so a swipe in from the left edge goes back to the list.
+        .background { InteractivePop(enabled: folded).frame(width: 0, height: 0).accessibilityHidden(true) }
         .toolbar(.hidden, for: .tabBar)
         .coversTabs()
+        .onChange(of: model.railAsked) { _, asked in
+            guard let asked, asked.ref == ref else { return }
+            model.railAsked = nil
+            switch asked.action {
+            case .back: dismiss()
+            case .agents: agentsOpen = true
+            }
+        }
         // While a request sheet is up its keyboard never squeezes the page behind it, so the conversation keeps its
         // size and its place.
         .ignoresSafeArea(open != nil ? SafeAreaRegions.keyboard : [], edges: .bottom)
@@ -59,7 +76,7 @@ struct ThreadView: View {
         .onDisappear { Task { if model.selected == ref { await model.select(nil) } } }
         .onChange(of: thread?.requests.map(\.id)) { _, _ in offer() }
         .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
-            RequestSheet(ref: ref, request: request).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            RequestSheet(ref: ref, request: request).requestSheetDetents()
         }
         .agentsSheet(ref: ref, open: $agentsOpen, covered: $agentsCovered) { offer() }
     }
@@ -89,6 +106,72 @@ struct ThreadView: View {
     }
 }
 
+/// A thread's controls in the folded Duo's strip, in place of its bar (Zach's pick A on the build 45 prototype): Back
+/// where New thread stands on the other pages, under the clock and battery, then the thread's state, Agents, Watch and
+/// its actions, centred in the height under it. The tabs come back with the list, and a swipe in from the left edge goes
+/// back too.
+struct FoldedThreadRail: View, Equatable {
+    @EnvironmentObject var model: AppModel
+    /// The thread showing, once its page has read it.
+    let ref: ThreadRef?
+    let clear: CGFloat
+    let back: () -> Void
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: back) { Image(systemName: "chevron.backward") }
+                .buttonStyle(GlassCircleStyle())
+                .accessibilityLabel(String(localized: "Back"))
+                .accessibilityIdentifier("duo-rail-back")
+                .padding(.top, clear)
+            VStack(spacing: Space.s3) {
+                if let ref {
+                    let thread = model.thread(ref)
+                    ThreadStatePill(state: thread.map { ThreadState($0) } ?? .done, since: Words.date(thread?.summary?.runningTurnStartedAt),
+                                    reachable: model.status(ref.hostID) != .unreachable, vertical: true)
+                    if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { model.railAsked = RailAsk(ref: ref, action: .agents) } }
+                    if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
+                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
+                }
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .ignoresSafeArea(.keyboard)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("duo-thread-rail")
+    }
+    /// It draws from the model it watches, the thread and its place under the clock; Back never changes what it draws.
+    static func == (lhs: FoldedThreadRail, rhs: FoldedThreadRail) -> Bool { lhs.ref == rhs.ref && lhs.clear == rhs.clear }
+}
+
+/// Keeps iOS's swipe back on a page whose navigation bar is hidden, which otherwise loses it, while `enabled`. It answers
+/// the stack's swipe only while there is a page to go back to, and gives the swipe back to iOS when the page goes.
+struct InteractivePop: UIViewControllerRepresentable {
+    let enabled: Bool
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.enabled = enabled; controller.apply() }
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        var enabled = false
+        private weak var kept: UIGestureRecognizerDelegate?
+        private var holding = false
+        override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); apply() }
+        override func viewWillDisappear(_ animated: Bool) { super.viewWillDisappear(animated); release() }
+        func apply() {
+            guard let pop = navigationController?.interactivePopGestureRecognizer else { return }
+            guard enabled else { release(); return }
+            if !holding { kept = pop.delegate; pop.delegate = self; holding = true }
+            pop.isEnabled = true
+        }
+        private func release() {
+            guard holding, let pop = navigationController?.interactivePopGestureRecognizer else { return }
+            pop.delegate = kept
+            holding = false
+        }
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigationController?.viewControllers.count ?? 0) > 1
+        }
+    }
+}
+
 extension ToolbarContent {
     /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
     /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
@@ -104,27 +187,46 @@ extension ToolbarContent {
 
 /// The thread's state in the bar, in a word: a light, the word and, while it works, how long it has been at it, except at
 /// compact width, where the bar's room goes to the thread's title.
-private struct ThreadStatePill: View {
+struct ThreadStatePill: View {
     let state: ThreadState
     let since: Date?
     let reachable: Bool
+    /// Stacked, the light over the word, for the folded Duo's strip.
+    var vertical = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
-        HStack(spacing: 6) {
-            if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
-            Text(word)
-            if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since) }
+        Group {
+            if vertical {
+                VStack(spacing: 4) {
+                    light
+                    Text(word).lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+                }
+                .padding(.vertical, 7)
+                .frame(width: 66)
+                .foregroundStyle(foreground)
+                .background(background, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            } else {
+                HStack(spacing: 6) {
+                    light
+                    Text(word)
+                    if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since) }
+                }
+                .lineLimit(1)
+                .padding(.leading, Space.s3)
+                .padding(.trailing, 10)
+                .frame(minHeight: 28)
+                .foregroundStyle(foreground)
+                .background(background, in: Capsule())
+                .fixedSize()
+            }
         }
         .font(.sotto(.caption, .semibold).monospacedDigit())
-        .lineLimit(1)
-        .padding(.leading, Space.s3)
-        .padding(.trailing, 10)
-        .frame(minHeight: 28)
-        .foregroundStyle(foreground)
-        .background(background, in: Capsule())
-        .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(reachable ? state.words : String(localized: "Can’t reach this computer"))
+        .accessibilityIdentifier("thread-state")
+    }
+    @ViewBuilder private var light: some View {
+        if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
     }
     private var word: String {
         guard reachable else { return String(localized: "Can’t reach it", comment: "A thread's state in its bar: its computer can't be reached") }
@@ -154,10 +256,11 @@ private struct ThreadStatePill: View {
 
 /// Watch beside the thread's state (watch B, Zach's pick on October 13, 2026): pressed while Watcher watches the thread,
 /// which then lasts until the user stops it here or on Watched, with no limit on how many. A press asks nothing first;
-/// what it did is said over the reply box with Undo. Its name stays Watch and its value says whether it is on. Only where
+/// what it did is said over the reply box with Undo. Its name stays Watch and its value says whether it is on; its hint
+/// says what the lit owl can't, where a send here takes the thread over or Watcher only steers. Only where
 /// a computer that runs Watcher takes it from this iPhone; at compact width, where the bar's room goes to the thread's
 /// title, and at the largest text sizes it is the owl alone.
-private struct WatchToggle: View {
+struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
@@ -188,7 +291,9 @@ private struct WatchToggle: View {
         .disabled(!model.canChangeWatch(ref))
         .accessibilityLabel("Watch")
         .accessibilityValue(watched ? String(localized: "On", comment: "Whether Watcher watches this thread") : String(localized: "Off", comment: "Whether Watcher watches this thread"))
-        .accessibilityHint(watched ? String(localized: "Stops Watcher watching this thread") : String(localized: "Watcher keeps this thread going until you stop it"))
+        // What the line over the reply box said goes here, ahead of what a press does (ADR-0073, October 31 amendment).
+        .accessibilityHint(watched ? [model.watchFact(ref), String(localized: "Stops Watcher watching this thread")].compactMap { $0 }.joined(separator: " ")
+                           : String(localized: "Watcher keeps this thread going until you stop it"))
         .accessibilityIdentifier("thread-watch")
     }
 }
@@ -196,7 +301,7 @@ private struct WatchToggle: View {
 /// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it, and Settle
 /// or Restore, as on the desktop. A press asks the thread's computer; one that can't go now says why under its name.
 /// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner.
-private struct ThreadMenu: View {
+struct ThreadMenu: View {
     @EnvironmentObject var model: AppModel
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
@@ -257,11 +362,28 @@ private final class FollowBox {
     var missedFollow = false
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
+    /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
+    var endInPage: CGFloat = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
 /// A message, or a run of steps, as the conversation draws it.
-private struct ConversationRow: Identifiable {
+/// A rule across the conversation naming the model a thread moved from and to (ADR-0171), as quiet as a step's line.
+private struct ModelMovedLine: View {
+    let words: String
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+            Text(verbatim: words).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+                .layoutPriority(1)
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("thread-model-moved")
+    }
+}
+
+private struct ConversationRow: Identifiable, Equatable {
     let item: TimelineItem
     /// The provider's name heads an answer that doesn't follow another answer.
     let showsWho: Bool
@@ -288,6 +410,11 @@ private struct ConversationRow: Identifiable {
 private final class TimelineCache {
     private var key: String?
     private var cached: [ConversationRow] = []
+    /// The index of the first row of the latest turns, which the page lays out whole; the rows before it are made as
+    /// they scroll into view. Set with the rows.
+    private(set) var latestTurnsStart = 0
+    /// That row's identity, so a split held for a selection can be found again in the next revision's rows.
+    private var latestTurnsStartID: String?
     private var dates: [String: Date] = [:]
     /// `held` marks the copy kept on screen while the thread is read again. A fresh copy can carry the same revision, from
     /// a computer whose Sotto restarted, so it is always drawn anew.
@@ -295,15 +422,28 @@ private final class TimelineCache {
         guard let detail else {
             key = nil
             cached = []
+            latestTurnsStart = 0
+            latestTurnsStartID = nil
             return []
         }
         let next = detail.threadId + "#" + String(detail.revision) + (held ? "#held" : "")
         if next == key { return cached }
         key = next
         if dates.count > 10_000 { dates = [:] }
-        let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
-                                         earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
-        cached = ConversationRow.make(items, date: { self.date($0) })
+        cached = BenchProbe.time("timeline.rows") {
+            let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
+                                             earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
+            var start = ThreadTimeline.latestTurnsStart(items)
+            // A new turn moves the oldest whole turn into the lazy stack, which makes its rows again. While words in a
+            // reply are selected the split stays where it was, so the selection and its Add to prompt survive (ADR-0129).
+            if !ReplySelection.views.isEmpty, let held = self.latestTurnsStartID,
+               let index = items.firstIndex(where: { $0.id == held }), index < start {
+                start = index
+            }
+            self.latestTurnsStart = start
+            self.latestTurnsStartID = start < items.count ? items[start].id : nil
+            return ConversationRow.make(items, date: { self.date($0) })
+        }
         return cached
     }
     private func date(_ stamp: String) -> Date? {
@@ -311,6 +451,36 @@ private final class TimelineCache {
         guard let parsed = Stamp.date(stamp) else { return nil }
         dates[stamp] = parsed
         return parsed
+    }
+}
+
+/// Everything besides their rows that the turns before the latest are drawn from.
+private struct OlderTurnsInputs: Equatable {
+    let ref: ThreadRef
+    let provider: String
+    let working: String?
+    let last: String?
+    let movedAfter: String?
+    let movedWords: String?
+    let openRuns: Set<String>
+    let showsPictures: Bool
+    let opensFiles: Bool
+    let spacing: CGFloat
+}
+
+/// The turns before the latest, made as they scroll into view. They are drawn again only when they or what they are
+/// drawn from change, not for each word streamed into the latest turn: given its rows again, the lazy stack guessed
+/// the heights of the rows it hadn't made afresh each time, the page's height swung by tens of thousands of points
+/// under a reply, and a reader at the end was thrown far above it and back.
+private struct OlderTurns<Row: View>: View, Equatable {
+    let rows: ArraySlice<ConversationRow>
+    let inputs: OlderTurnsInputs
+    @ViewBuilder let row: (ConversationRow) -> Row
+    static func == (a: Self, b: Self) -> Bool { a.inputs == b.inputs && a.rows == b.rows }
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: inputs.spacing) {
+            ForEach(rows) { row($0) }
+        }
     }
 }
 
@@ -323,8 +493,8 @@ private struct Tail: Equatable {
     let failed: Bool
 }
 
-/// The scrolling page: the wash, the big title and its chips, then messages and steps, with the reply box in glass
-/// over the bottom edge. The page keeps its place: while the user reads at the bottom it stays at the bottom when the
+/// The scrolling page: the wash, the big title and its chips, then messages and steps, with the reply box floating over
+/// the bottom edge. The page keeps its place: while the user reads at the bottom it stays at the bottom when the
 /// reply box changes height, the keyboard opens or closes, a request is answered or new content arrives; once they
 /// have scrolled up to read, nothing moves them.
 private struct Conversation: View {
@@ -346,8 +516,14 @@ private struct Conversation: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "thread-end"
+    private static let pageSpace = "thread-page"
+    #if DEBUG
+    /// The simulator journeys that pass `--ui-end-probe` read where the conversation's end sits from `EndProbe`.
+    private static let probesEnd = ProcessInfo.processInfo.arguments.contains("--ui-end-probe")
+    #endif
 
     var body: some View {
+        let _ = BenchProbe.body("Conversation")
         let detail = model.shown(for: ref)
         let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
         let pending = model.pending(for: ref)
@@ -370,7 +546,12 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
             .background(barReader)
+            #if DEBUG
+            .overlay(alignment: .topLeading) { if Self.probesEnd { EndProbe(follow: follow) } }
+            #endif
             .safeAreaInset(edge: .bottom, spacing: 0) {
+                // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
+                // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
                 ReplyDock(ref: ref, openRequest: openRequest)
                     .equatable()
                     .readingWidth()
@@ -380,7 +561,7 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
         }
-        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .thread(ref)) }
         .confirmationDialog("Stop waiting for confirmation?", isPresented: Binding(get: { dismissMarker != nil }, set: { if !$0 { dismissMarker = nil } }), titleVisibility: .visible) {
             Button("I checked the thread") { if let item = dismissMarker { model.acknowledgeUnknown(item.id) }; dismissMarker = nil }
             Button("Cancel", role: .cancel) { dismissMarker = nil }
@@ -403,11 +584,12 @@ private struct Conversation: View {
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                 .equatable()
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
-            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
+            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
         .padding(.horizontal, Space.s4)
         .padding(.bottom, Space.s4)
+        .coordinateSpace(.named(Self.pageSpace))
         .background(alignment: .top) {
             // Reaches up under the bar, so at rest the wash meets the top edge; it scrolls away with the title.
             Wash(warm: state.waitsOnYou, tone: washTone(state), height: 720).offset(y: -200)
@@ -442,8 +624,30 @@ private struct Conversation: View {
                         .padding(.vertical, Space.s7)
                         .paragraphDirection()
                 }
-                ForEach(rows) { row in
-                    rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
+                // Where Sotto moved the thread off a model its provider stopped offering (ADR-0171).
+                let moved = thread?.modelMoved
+                let movedAfter = moved.flatMap { $0.anchor(in: detail?.messages ?? []) }.map { "message-" + $0 }
+                if let moved, movedAfter == nil, !rows.isEmpty { ModelMovedLine(words: moved.words(provider: provider)) }
+                // The latest turns, as many as a thread opens with, are laid out whole, so the page's jump to its end
+                // always lands on rows already made: a lazy stack under that jump once left a thread black until it was
+                // scrolled (#749). The turns before them, from Show earlier messages or a long stay on the thread, are
+                // made as they scroll into view. Laid out whole, every row of a long thread was updated and placed again
+                // for each streamed word, and opening one took seconds (#1702).
+                let split = min(timeline.latestTurnsStart, rows.count)
+                if split > 0 {
+                    let inputs = OlderTurnsInputs(ref: ref, provider: provider, working: working, last: last,
+                                                  movedAfter: movedAfter, movedWords: moved?.words(provider: provider),
+                                                  openRuns: openRuns, showsPictures: model.showsAgentPictures(ref.hostID),
+                                                  opensFiles: model.opensSentFiles(ref.hostID),
+                                                  spacing: Space.dense(Space.s5, density))
+                    OlderTurns(rows: rows[..<split], inputs: inputs) { row in
+                        entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
+                              scroll: scroll)
+                    }
+                    .equatable()
+                }
+                ForEach(rows[split...]) { row in
+                    entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
                 }
             } else if model.detailProblem == nil || !online {
                 (model.status(ref.hostID) == .unreachable ? Text("Reconnect to read this thread.") : Text("Reading this thread…"))
@@ -462,6 +666,13 @@ private struct Conversation: View {
         .padding(.top, Space.s3)
     }
 
+    /// A row, and under it the line saying Sotto moved the thread off its model, where that happened.
+    @ViewBuilder private func entry(_ row: ConversationRow, provider: String, working: String?, last: String?, moved: ModelMoved?,
+                                    movedAfter: String?, scroll: ScrollViewProxy) -> some View {
+        rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
+        if let moved, row.id == movedAfter { ModelMovedLine(words: moved.words(provider: provider)) }
+    }
+
     @ViewBuilder private func rowView(_ row: ConversationRow, provider: String, working: Bool, last: Bool,
                                       scroll: ScrollViewProxy) -> some View {
         switch row.item {
@@ -472,6 +683,8 @@ private struct Conversation: View {
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
                       open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
                 .equatable()
+            // The run's pictures stay in view whether it is open or folded (ADR-0170).
+            if model.showsAgentPictures(ref.hostID) { AgentPictures(ref: ref, steps: steps, by: provider) { viewing = $0 } }
         }
     }
 
@@ -505,11 +718,31 @@ private struct Conversation: View {
     }
 
     /// The end of the conversation.
-    private var sentinelReader: some View {
+    private func sentinelReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { follow.sentinel = proxy.frame(in: .global).maxY; follow.settle() }
-                .onChange(of: proxy.frame(in: .global).maxY) { _, value in follow.sentinel = value; follow.settle() }
+                .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
+                .onChange(of: proxy.frame(in: .global).maxY) { _, value in
+                    endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
+        }
+    }
+
+    /// An end pushed away from a reader at it by what the page holds is followed: something above it grew, a photo taking
+    /// its own shape or a picture's tile being made, and the reader never left. Taken for the reader leaving, it once
+    /// stranded them short of the end, where the page stopped following (November 1, 2026). An end that moved only on
+    /// the screen moved because the page scrolled, by the user's hand or the status bar, and decides where they stand.
+    /// Any growth that slips the end under the reply box is followed, even less than the slack: a photo a little taller
+    /// than its placeholder would otherwise leave the end's last lines covered with nothing to bring them back.
+    private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
+        let wasAtBottom = follow.atBottom
+        let grew = abs(inPage - follow.endInPage) > 0.5
+        follow.sentinel = end
+        follow.endInPage = inPage
+        if wasAtBottom, grew, end > follow.dockTop + 1 {
+            toBottom(scroll)
+        } else {
+            follow.settle()
         }
     }
 
@@ -568,6 +801,24 @@ private struct Conversation: View {
     }
 }
 
+#if DEBUG
+/// The conversation's end, the reply box's top and the bar's bottom, in points from the top of the screen, as one label
+/// the simulator journeys read: in a long page an element's accessibility frame can lag its layout by thousands of
+/// points. It reads the page's place ten times a second and holds no state of the page's, so the page draws as it would
+/// without it. Drawn all but invisibly, so it stays in the accessibility tree.
+private struct EndProbe: View {
+    let follow: FollowBox
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            let words = [follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
+                .joined(separator: " ")
+            Text(verbatim: words).font(.system(size: 2)).opacity(0.02).allowsHitTesting(false)
+                .accessibilityIdentifier("thread-end-probe").accessibilityLabel(Text(verbatim: words))
+        }
+    }
+}
+#endif
+
 extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
     /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
@@ -601,6 +852,7 @@ private struct ThreadHero: View, Equatable {
         a.ref == b.ref && a.thread == b.thread && a.watched == b.watched && a.pullRequest == b.pullRequest
     }
     var body: some View {
+        let _ = BenchProbe.body("ThreadHero")
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
             Text(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
@@ -661,18 +913,28 @@ struct PullRequestChip: Equatable {
 }
 
 /// Branch, changed lines and pull request, from the worktree's Git status. The row reads as one sentence; where the
-/// computer offers the pull request sheet, the pull request chip is a button of its own that opens it.
+/// computer offers the pull request sheet, the pull request chip is a button of its own that opens it. The chips wrap
+/// onto a second line when they don't fit: at the largest text sizes a row that couldn't wrap pushed the whole thread
+/// wider than a small iPhone's screen, cutting the first letters off every line (#1848).
 private struct GitChipRow: View {
     let chips: GitChips
     var sheet: PullRequestChip? = nil
     var open: () -> Void = {}
     var body: some View {
         if let sheet, let pullRequest = chips.pullRequest {
-            HStack(spacing: Space.s2) {
-                if chips.branch != nil || chips.changes != nil {
-                    HStack(spacing: Space.s2) { branchAndChanges }
+            ChipLine(squeezesFirst: chips.branch != nil) {
+                // The branch and changes still read as one sentence: the branch chip says both, and the changes chip
+                // speaks only when there is no branch.
+                if let branch = chips.branch {
+                    branchChip(branch)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(chips.spoken(includingPullRequest: false))
+                }
+                if let changes = chips.changes {
+                    changesChip(changes)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(chips.spoken(includingPullRequest: false))
+                        .accessibilityHidden(chips.branch != nil)
                 }
                 Button(action: open) {
                     HStack(spacing: 5) {
@@ -691,7 +953,6 @@ private struct GitChipRow: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(PressStyle())
-                .fixedSize()
                 .accessibilityLabel(Self.spokenPullRequest(pullRequest, rollup: sheet.rollup))
                 .accessibilityIdentifier("pull-request-chip")
             }
@@ -711,41 +972,100 @@ private struct GitChipRow: View {
         return String(localized: "Show pull request \(number), \(state). Checks: \(rollup)", comment: "The first %@ is the pull request's number, the second its state, the third its checks' roll-up")
     }
 
-    @ViewBuilder private var branchAndChanges: some View {
-        if let branch = chips.branch {
-            GitChip {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold))
-                Text(verbatim: branch)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Palette.ink)
-                    .truncationMode(.middle)
-            }
+    private func branchChip(_ branch: String) -> some View {
+        GitChip {
+            Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold))
+            Text(verbatim: branch)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(Palette.ink)
+                .truncationMode(.middle)
         }
-        if let changes = chips.changes {
-            GitChip {
-                Text("+\(changes.insertions)").foregroundStyle(Palette.accentText)
-                Text("−\(changes.deletions)").foregroundStyle(Palette.dangerText)
-                (changes.files == 1 ? Text("1 file") : Text("\(changes.files) files"))
-            }
-            .fixedSize()
+    }
+
+    private func changesChip(_ changes: GitChips.Changes) -> some View {
+        GitChip {
+            Text("+\(changes.insertions)").foregroundStyle(Palette.accentText)
+            Text("−\(changes.deletions)").foregroundStyle(Palette.dangerText)
+            (changes.files == 1 ? Text("1 file") : Text("\(changes.files) files"))
         }
     }
 
     /// The row as it is without the sheet: every chip one sentence.
     private var plain: some View {
-        HStack(spacing: Space.s2) {
-            branchAndChanges
+        ChipLine(squeezesFirst: chips.branch != nil) {
+            if let branch = chips.branch { branchChip(branch) }
+            if let changes = chips.changes { changesChip(changes) }
             if let pullRequest = chips.pullRequest {
                 GitChip {
                     Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
                     Text("#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
                 }
-                .fixedSize()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(chips.spoken)
+    }
+}
+
+/// The Git chips on one line while they fit, the first (the branch) giving up width before anything wraps, as the row
+/// always did; when even a squeezed branch leaves no room, as many lines as it takes, each chip no wider than the row.
+/// Chips of different heights share a line's middle.
+private struct ChipLine: Layout {
+    var spacing: CGFloat = Space.s2
+    var squeezesFirst = false
+    /// The narrowest the first chip gets before the row wraps instead: its icon and a few letters of the branch.
+    private static let narrowest: CGFloat = 96
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        return CGSize(width: proposal.width ?? (frames.map(\.maxX).max() ?? 0), height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, arrange(width: bounds.width, subviews: subviews)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: frame.width, height: frame.height))
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [CGRect] {
+        var sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        guard let first = sizes.first else { return [] }
+        let others = sizes.dropFirst().reduce(CGFloat(0)) { $0 + spacing + $1.width }
+        var rows: [[Int]] = [[]]
+        if squeezesFirst, others + min(first.width, Self.narrowest) <= width {
+            if first.width + others > width {
+                sizes[0] = subviews[0].sizeThatFits(ProposedViewSize(width: width - others, height: nil))
+            }
+            rows = [Array(sizes.indices)]
+        } else {
+            var x: CGFloat = 0
+            for index in sizes.indices {
+                if sizes[index].width > width {
+                    sizes[index] = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+                }
+                if x > 0 && x + sizes[index].width > width {
+                    rows.append([])
+                    x = 0
+                }
+                rows[rows.count - 1].append(index)
+                x += sizes[index].width + spacing
+            }
+        }
+        var frames = Array(repeating: CGRect.zero, count: sizes.count)
+        var y: CGFloat = 0
+        for row in rows {
+            let height = row.map { sizes[$0].height }.max() ?? 0
+            var x: CGFloat = 0
+            for index in row {
+                let size = sizes[index]
+                frames[index] = CGRect(x: x, y: y + (height - size.height) / 2, width: size.width, height: size.height)
+                x += size.width + spacing
+            }
+            y += height + spacing
+        }
+        return frames
     }
 }
 
@@ -781,6 +1101,7 @@ private struct MessageView: View, Equatable {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
     }
     var body: some View {
+        let _ = BenchProbe.body("MessageView")
         if message.role == "user" {
             userMessage
         } else if message.role == "assistant" {
@@ -862,6 +1183,7 @@ struct MarkdownText: View, Equatable {
     @Environment(\.sottoDensity) private var density
     static func == (a: Self, b: Self) -> Bool { a.text == b.text && a.quotable == b.quotable }
     var body: some View {
+        let _ = BenchProbe.body("MarkdownText")
         let blocks = SottoCore.Markdown.cachedBlocks(text)
         VStack(alignment: .leading, spacing: Space.dense(Space.s3, density)) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
@@ -880,6 +1202,7 @@ private struct MarkdownBlockView: View, Equatable {
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     var body: some View {
+        let _ = BenchProbe.body("MarkdownBlockView")
         switch block {
         case .heading(let level, let text):
             Text(InlineStyle.render(text, theme: theme))
@@ -1291,6 +1614,7 @@ private struct ReplyText: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(box: box) }
 
     func makeUIView(context: Context) -> UITextView {
+        BenchProbe.count("textview.make")
         let view = Words()
         view.isEditable = false
         view.isScrollEnabled = false
@@ -1304,10 +1628,12 @@ private struct ReplyText: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
+        BenchProbe.count("textview.update")
         context.coordinator.box = box
         // Set only when the words or their look change, so a selection survives the page drawing again.
         let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
-        if view.attributedText != words { view.attributedText = words }
+        if view.attributedText != words { BenchProbe.count("textview.set"); view.attributedText = words }
+        context.coordinator.installed = MeasuredWords.Words(inline: inline, traits: view.traitCollection)
         view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
         view.tintColor = UIColor(theme.color(.accent))
     }
@@ -1315,7 +1641,21 @@ private struct ReplyText: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         // Asked without a width, or with an unbounded one, it answers as Text does: its words on one line.
         let bounded = proposal.width.flatMap { $0.isFinite ? $0 : nil }
-        let fitted = uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        // Laying words out is the costly part of a text view, and SwiftUI asks for the same size several times while
+        // a row is made, and again when a row scrolled away is made again. The same words at the same width measure
+        // the same, so each is measured once.
+        let words = MeasuredWords.Words(inline: inline, traits: uiView.traitCollection)
+        let key = MeasuredWords.Key(words: words, width: bounded ?? -1)
+        let fitted: CGSize
+        if let known = MeasuredWords.size(for: key) {
+            fitted = known
+        } else {
+            fitted = BenchProbe.time("textview.measure") {
+                uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+            }
+            // Kept only when the view holds these words: asked before its update, it measured what it held before.
+            if context.coordinator.installed == words { MeasuredWords.keep(fitted, for: key) }
+        }
         return CGSize(width: bounded ?? ceil(fitted.width), height: fitted.height)
     }
 
@@ -1326,9 +1666,23 @@ private struct ReplyText: UIViewRepresentable {
         override var accessibilityTraits: UIAccessibilityTraits { get { .staticText } set {} }
     }
 
+    static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) {
+        ReplySelection.views.remove(ObjectIdentifier(view))
+    }
+
     final class Coordinator: NSObject, UITextViewDelegate {
         var box: ReplyQuoteBox
+        /// The words the view holds since its last update, which its measured size is kept for.
+        var installed: MeasuredWords.Words?
         init(box: ReplyQuoteBox) { self.box = box }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            if textView.selectedRange.length > 0 {
+                ReplySelection.views.insert(ObjectIdentifier(textView))
+            } else {
+                ReplySelection.views.remove(ObjectIdentifier(textView))
+            }
+        }
 
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             // A key chord's narrow spaces are drawing, not words.
@@ -1344,6 +1698,41 @@ private struct ReplyText: UIViewRepresentable {
             return UIMenu(children: [add] + suggestedActions)
         }
     }
+}
+
+/// Reply text views' measured sizes, by everything that sizes their words: the Markdown, the text size and Bold Text
+/// that pick `InlineStyle`'s fonts, and the width they were measured at. Colour, from the theme and the ink, sizes nothing.
+@MainActor private enum MeasuredWords {
+    struct Words: Equatable, Hashable {
+        let inline: MarkdownInline
+        let size: UIContentSizeCategory
+        let weight: UILegibilityWeight
+        init(inline: MarkdownInline, traits: UITraitCollection) {
+            self.inline = inline
+            size = traits.preferredContentSizeCategory
+            weight = traits.legibilityWeight
+        }
+    }
+    struct Key: Hashable {
+        let words: Words
+        let width: CGFloat
+    }
+    private static var sizes: [Key: CGSize] = [:]
+    private static var bytes = 0
+    static func size(for key: Key) -> CGSize? { sizes[key] }
+    static func keep(_ size: CGSize, for key: Key) {
+        // A reply streaming in is a new entry with every word, so the Markdown the entries hold is what bounds them: the
+        // cache starts again rather than growing past 4,000 entries or 2 MB of Markdown.
+        let cost = key.words.inline.source.utf8.count
+        if sizes.count >= 4_000 || bytes + cost > 2_000_000 { sizes = [:]; bytes = 0 }
+        sizes[key] = size
+        bytes += cost
+    }
+}
+
+/// The reply text views holding a selection, so the page keeps their rows where they are while words are selected.
+private enum ReplySelection {
+    static var views: Set<ObjectIdentifier> = []
 }
 
 // MARK: - Steps
@@ -1369,6 +1758,7 @@ private struct FoldedRun: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let _ = BenchProbe.body("FoldedRun")
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
                 if working {
@@ -1431,6 +1821,7 @@ private struct WorkingLine: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let _ = BenchProbe.body("WorkingLine")
         HStack(spacing: Space.s2) {
             if still {
                 Light(tone: .accent, size: 7, breathing: false)
@@ -1666,6 +2057,7 @@ private struct StepLine: View {
     let record: Activity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        let _ = BenchProbe.body("StepLine")
         HStack(spacing: 7) {
             mark.frame(width: 16, height: 16)
             Text(verbatim: record.title)
@@ -1889,40 +2281,25 @@ private struct ReplyDock: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sent = 0
     @State private var stopped = 0
+    /// Watched for which box listens, which changes only as dictation starts and stops.
+    @ObservedObject private var dictation = Dictation.shared
 
     var body: some View {
+        let _ = BenchProbe.body("ReplyDock")
         VStack(spacing: Space.s2) {
             ComputerBanner(ref: ref)
             if let problem = model.detailProblem, model.online(ref.hostID) {
                 problemNote(problem)
             }
             FollowupStack(ref: ref)
-            // What a Watch press just did, with Undo, in place of what watching means here.
+            // What a Watch press just did, with Undo. What watching means is the lit owl's to say, not a line here
+            // (Zach, October 31, 2026).
             if model.watchNotice?.target == ref { WatchToast(scope: ref) }
-            else if let line = model.watchedLine(ref) { watchedLine(line) }
             dock
         }
         .padding(.horizontal, Space.s3)
         .padding(.top, Space.s2)
         .padding(.bottom, Space.s2)
-    }
-
-    /// What watching means here: Watcher keeps the thread going, and only steers while the user's own turn runs; or, on a
-    /// computer that keeps no standing watches, that a direct instruction here takes the thread over from Watcher.
-    /// Opening the thread or answering its card changes neither.
-    private func watchedLine(_ words: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            WatcherOwlMark(size: 13).accessibilityHidden(true)
-            Text(words).fixedSize(horizontal: false, vertical: true).paragraphDirection()
-        }
-        .font(.sotto(.small))
-        .foregroundStyle(Palette.muted)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s3)
-        .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("watched-takeover")
     }
 
     private func problemNote(_ problem: String) -> some View {
@@ -1977,40 +2354,48 @@ private struct ReplyDock: View, Equatable {
     }
 
     private var replyField: some View {
-        let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
         let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
-        // As in Messages: the + on its own beside a slim box, which grows without it. Photos wait inside the box across
-        // its width, above the words, files under them as pills, and Send and Stop sit inside its end.
-        return HStack(alignment: .bottom, spacing: Space.s2) {
-            AttachPhotosButton(box: .thread(ref))
-            VStack(alignment: .leading, spacing: 0) {
+        let settings = model.threadSettings(ref)
+        let listening = dictation.key == ref.id
+        // As in Claude's iPhone app (Zach's pick A, November 1, 2026): photos and files wait inside the card above the
+        // words, and the row under them holds the +, the thread's settings as one pill (ADR-0166), the mic and Send.
+        // What the settings still wait on sits above the card.
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            if let settings { ThreadSettingsLines(ref: ref, panel: settings) }
+            ComposerCard {
                 DraftAttachments(box: .thread(ref))
-                HStack(alignment: .bottom, spacing: Space.s1) {
-                    TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
-                        .font(.sotto(.body))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(1...6)
-                        .focused($focused)
-                        // Words added from a reply put the caret after them, here (ADR-0129).
-                        .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
-                        .padding(.vertical, ComposerMetrics.wordsPadding)
-                        .accessibilityLabel("Reply to this thread")
-                        .accessibilityIdentifier("thread-reply")
-                        .pasteAttaches(to: .thread(ref))
-                        .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
-                        // Locked while the reply's photos are staged, so nothing typed now joins it.
-                        .disabled(model.preparingSends.contains(ref.id))
-                    trailingButtons.padding(.bottom, ComposerMetrics.buttonInset)
-                }
-                .padding(.leading, ComposerMetrics.wordsInset)
-                .padding(.trailing, ComposerMetrics.buttonInset)
-                .frame(minHeight: ComposerMetrics.height)
+            } words: {
+                words(placeholder)
+            } plus: {
+                if listening { ListeningLine() } else { AttachPhotosButton(box: .thread(ref)) }
+            } pill: {
+                if let settings, !listening { ThreadSettingsPill(ref: ref, panel: settings) }
+            } trailing: {
+                trailingButtons()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .composerSurface(in: shape)
+            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
+            // (ADR-0019).
+            .effortTrace(settings?.atTopEffort == true, radius: ComposerMetrics.radius)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
+    }
+
+    private func words(_ placeholder: String) -> some View {
+        TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .lineLimit(1...6)
+            .focused($focused)
+            // Words added from a reply put the caret after them, here (ADR-0129).
+            .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
+            .accessibilityLabel("Reply to this thread")
+            .accessibilityIdentifier("thread-reply")
+            .pasteAttaches(to: .thread(ref))
+            .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
+            // Locked while the reply's photos are staged, so nothing typed now joins it, and while the mic writes in it.
+            .disabled(model.preparingSends.contains(ref.id) || dictation.key == ref.id)
     }
 
     /// Whether the box holds something to send: words, photos or files.
@@ -2019,23 +2404,28 @@ private struct ReplyDock: View, Equatable {
             || !model.files(ref).isEmpty
     }
 
-    /// Stop while the turn can be stopped. Send once the box holds something, as in Messages; while the turn runs it
-    /// queues for after the turn, beside Stop.
-    @ViewBuilder private var trailingButtons: some View {
-        HStack(alignment: .bottom, spacing: ComposerMetrics.buttonGap) {
-            if model.canInterrupt(ref) { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
-            if written || model.preparingSends.contains(ref.id) { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+    /// The mic, then Send, which is always there: the accent once the box holds something, dim while it's empty. While
+    /// the turn can be stopped, Stop takes Send's place until something is written; then Stop and Send sit side by side,
+    /// and Send queues for after the turn. Sending while the mic listens stops it. The mic waits while a send's photos are
+    /// made ready.
+    @ViewBuilder private func trailingButtons() -> some View {
+        let interrupts = model.canInterrupt(ref)
+        let preparing = model.preparingSends.contains(ref.id)
+        let ready = written || preparing
+        HStack(spacing: ComposerMetrics.gap) {
+            DictateButton(key: ref.id, words: draft).disabled(preparing)
+            if interrupts { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if ready || !interrupts { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
         }
     }
 
+    /// A solid disc the size of Send, with a larger square: on the soft fill it read as a dot (Zach, October 31, 2026).
     private var stopButton: some View {
         Button { stopped += 1; Task { await model.interrupt(ref) } } label: {
-            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                .frame(width: 10, height: 10)
-                .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
-                .foregroundStyle(Palette.ink)
-                .background(Palette.fillSoft, in: Circle())
-                .pressArea(drawn: ComposerMetrics.button)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .frame(width: 12, height: 12)
+                .foregroundStyle(Palette.canvas)
+                .composerDisc(Palette.ink)
         }
         .buttonStyle(PressStyle())
         .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
@@ -2047,15 +2437,13 @@ private struct ReplyDock: View, Equatable {
         let preparing = model.preparingSends.contains(ref.id)
         let canSend = model.canSendReply(ref)
         let queues = model.queuesReply(ref)
-        return Button { sent += 1; Task { await model.send(ref) } } label: {
+        return Button { sent += 1; dictation.cancel(ref.id); Task { await model.send(ref) } } label: {
             Group {
                 if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
-                else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 14, weight: .bold)) }
+                else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 15, weight: .bold)) }
             }
-            .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
             .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
-            .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
-            .pressArea(drawn: ComposerMetrics.button)
+            .composerDisc(canSend || preparing ? AnyShapeStyle(Palette.accent) : AnyShapeStyle(Palette.fillSoft))
         }
         .buttonStyle(PressStyle())
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
@@ -2063,6 +2451,192 @@ private struct ReplyDock: View, Equatable {
         .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
         .disabled(!canSend)
         .accessibilityLabel(queues ? (preparing ? String(localized: "Queuing reply") : String(localized: "Queue for after this turn")) : (preparing ? String(localized: "Sending reply") : String(localized: "Send reply")))
+        .accessibilityIdentifier("thread-send")
+    }
+}
+
+/// The thread's model, effort, speed and permissions as one pill in the reply box's row (ADR-0166, amended November 1,
+/// 2026: Zach's picks A and C). It shows the model with its provider's logo and the effort dimmer after it, and opens the
+/// settings sheet: the model in use, the models starred on this iPhone that the thread's provider offers, the provider
+/// closed until pressed, then Effort, Speed and Permissions, each a row saying what it is set to. What the agent would
+/// refuse is held as the chips were: the whole pill during a turn, while the thread waits on the user and while a
+/// permission change goes unconfirmed, its hint saying why; the model and effort alone where the provider changes only a
+/// started thread's permissions.
+private struct ThreadSettingsPill: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    let panel: ThreadSettingsPanel
+    @State private var picks = 0
+    @State private var open = false
+
+    var body: some View {
+        let pressable = ThreadSettingKind.allCases.contains { panel.pressable($0) }
+        let speedName = panel.speeds.isEmpty ? nil : ThreadSettings.speedName(panel.speed, offered: panel.speeds)
+        Button { open = true } label: {
+            ComposerPill(providerID: panel.providerID, model: panel.model?.name ?? "", effort: effortName, speed: panel.speed,
+                         shield: panel.permission == "full-access" ? .full : panel.permissionGrants ? .grants : .asks,
+                         pending: panel.permissionPending)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!pressable)
+        .opacity(pressable ? 1 : 0.55)
+        .sensoryFeedback(.selection, trigger: picks)
+        .accessibilityLabel(String(localized: "Thread settings"))
+        .accessibilityValue([panel.model?.name, effortName, speedName, panel.permissionName].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint(panel.fixed?.hint ?? String(localized: "Opens this thread’s model, effort, speed and permissions"))
+        .accessibilityIdentifier("thread-settings")
+        .sheet(isPresented: $open) { sheet }
+    }
+
+    private var sheet: some View {
+        ComposerSettingsSheet(title: String(localized: "Thread settings"), current: panel.model,
+                              groups: [ModelGroup(id: panel.providerID ?? panel.provider, name: panel.provider, models: panel.models)],
+                              modelsEnabled: panel.pressable(.model), choose: { choose(.model, $0.id) }) {
+            if panel.modelFixed {
+                Text("\(panel.provider) changes only a started thread’s permissions.", comment: "%@ is the agent's name, such as Devin.")
+            }
+        } foot: {
+            EmptyView()
+        } settings: {
+            effortRow
+            speedRow
+            permissionRow
+        }
+    }
+
+    private var effortName: String? {
+        guard !panel.efforts.isEmpty else { return nil }
+        return panel.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(panel.effort)
+    }
+
+    /// Chooses a value for the thread, with the light tap a choice makes, and puts the sheet away.
+    private func choose(_ kind: ThreadSettingKind, _ value: String) {
+        picks += 1
+        open = false
+        model.chooseSetting(kind, value, in: ref)
+    }
+
+    private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        SettingOption(name: name, line: line, chosen: chosen, action: action)
+    }
+
+    @ViewBuilder private var effortRow: some View {
+        if let effortName {
+            Menu {
+                ForEach(Array(panel.efforts.enumerated()), id: \.element) { index, level in
+                    option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: panel.efforts.count), chosen: level == panel.effort) {
+                        choose(.effort, level)
+                    }
+                }
+            } label: {
+                SettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName)
+            }
+            .disabled(!panel.pressable(.effort))
+        }
+    }
+
+    @ViewBuilder private var speedRow: some View {
+        if !panel.speeds.isEmpty {
+            SpeedMenu(speeds: panel.speeds, speed: panel.speed, providerID: panel.providerID) { choose(.speed, $0) }
+                .disabled(!panel.pressable(.speed))
+        }
+    }
+
+    @ViewBuilder private var permissionRow: some View {
+        if !panel.permissions.isEmpty {
+            Menu {
+                ForEach(panel.permissions) { mode in
+                    option(mode.name, line: mode.asks ?? ThreadSettingWords.permissionLine(mode.id, provider: panel.provider), chosen: mode.id == panel.permission) {
+                        choose(.permissions, mode.id)
+                    }
+                    .disabled(!panel.mayChoose(mode))
+                }
+                if !panel.mayAnswer {
+                    Text("This iPhone can’t answer on \(model.name(ref.hostID)), so it can only keep this thread asking first.", comment: "%@ is the computer's name.")
+                }
+            } label: {
+                SettingRow(name: Text("Permissions", comment: "The field for the permission mode a new thread starts in."), value: panel.permissionName ?? "")
+            }
+            .disabled(!panel.pressable(.permissions))
+        }
+    }
+}
+
+/// One choice in a setting chip's menu, in a thread's box and in Watcher's. A toggle, so iOS marks the one in force by its
+/// state, which it keeps at the accessibility text sizes where it drops a menu item's images; the line is the item's
+/// second text, its subtitle.
+struct SettingOption: View {
+    let name: String
+    var line: String? = nil
+    let chosen: Bool
+    let action: () -> Void
+    var body: some View {
+        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
+        if let line {
+            Toggle(isOn: isOn) {
+                Text(verbatim: name)
+                Text(verbatim: line)
+            }
+        } else {
+            Toggle(isOn: isOn) { Text(verbatim: name) }
+        }
+    }
+}
+
+/// A text button in the reply box's row, where Watcher's box offers only its permissions: its value and a small chevron,
+/// no fill at rest (ADR-0113). Drawn 32 points tall and pressed across 44. A change the agent hasn't confirmed draws a
+/// still dot; nothing in the box draws an edge.
+struct SettingChip<Content: View>: View {
+    var pending = false
+    @ViewBuilder let content: Content
+    var body: some View {
+        HStack(spacing: 5) {
+            content
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).accessibilityHidden(true)
+            if pending { Circle().fill(Palette.warning).frame(width: 6, height: 6).accessibilityHidden(true) }
+        }
+        .font(.sotto(.small, .medium))
+        .foregroundStyle(Palette.muted)
+        .padding(.horizontal, Space.s2)
+        .frame(minHeight: 32)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .padding(.vertical, -6)
+    }
+}
+
+/// Above the reply box: while a permission change waits, what is still in force; after a change the agent refused, why,
+/// with Try again; and a change it never confirmed, with what comes next.
+private struct ThreadSettingsLines: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    let panel: ThreadSettingsPanel
+    var body: some View {
+        if panel.caption != nil || !panel.notices.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if let caption = panel.caption {
+                    Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true).paragraphDirection()
+                        .accessibilityIdentifier("thread-settings-in-force")
+                }
+                ForEach(panel.notices) { notice in
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                        Text(notice.text).font(.sotto(.small)).foregroundStyle(Palette.warningText)
+                            .fixedSize(horizontal: false, vertical: true).paragraphDirection()
+                        if notice.retry {
+                            Spacer(minLength: 0)
+                            Button("Try again") { model.retrySetting(notice.kind, in: ref) }
+                                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                                .disabled(!panel.canRetry(notice.kind, wanted: model.threadSettingsPending[ref.id]?.refusals[notice.kind]?.wanted ?? ""))
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("thread-settings-notice-\(notice.kind.rawValue)")
+                }
+            }
+            .padding(.horizontal, Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -2072,6 +2646,7 @@ private struct FollowupStack: View {
     let ref: ThreadRef
     @State private var all = false
     var body: some View {
+        let _ = BenchProbe.body("FollowupStack")
         let items = model.followups(ref)
         if !items.isEmpty {
             let hidden = items.count - FollowupQueue.shownCards
@@ -2180,6 +2755,20 @@ private struct FollowupCard: View {
 
 // MARK: - Question and permission sheet
 
+extension View {
+    /// A request sheet's heights: half or full, and only full at the accessibility text sizes, where half the screen cut
+    /// the sheet's words off and hid its buttons on a small iPhone.
+    func requestSheetDetents() -> some View { modifier(RequestSheetDetents()) }
+}
+
+private struct RequestSheetDetents: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    func body(content: Content) -> some View {
+        let heights: Set<PresentationDetent> = typeSize.isAccessibilitySize ? [.large] : [.medium, .large]
+        return content.presentationDetents(heights).presentationDragIndicator(.visible)
+    }
+}
+
 /// The whole request: its context and every choice, on glass with a warm wash. Nothing is chosen for the user, and a
 /// question is sent only when they press Send answer. It answers the request where it waits: in its own thread, or as a
 /// card in Watcher's page (4B), where the answer is still the user's own, to the thread that asked.
@@ -2229,6 +2818,7 @@ struct RequestSheet: View {
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .presentationBackground { SheetBackdrop(wash: true) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
         .onChange(of: current == nil && !model.hasPending(at: place)) { _, gone in if gone { dismiss() } }
         .sheet(item: $opening) { row in SafariPage(url: row.url).ignoresSafeArea() }
@@ -2288,7 +2878,8 @@ struct RequestSheet: View {
             note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
         } else if !model.mayAnswer(at: place) {
-            note(String(localized: "This iPhone can’t answer on \(computer) yet. Turn on Can answer for it in Sotto on \(computer), or answer there.", comment: "Both %@ are the computer's name; Can answer is a setting's name in Sotto on the computer"))
+            // Pairing lets this iPhone answer (ADR-0033, October 30 amendment), so only a computer from before that says no.
+            note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
         } else if permission {
             permissionChoices(current)

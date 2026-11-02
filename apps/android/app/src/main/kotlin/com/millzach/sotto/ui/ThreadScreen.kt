@@ -435,7 +435,7 @@ private fun RequestSheet(model: AppModel, ref: ThreadRef, request: AgentRequest,
             val enabled = model.canAnswer(current, ref)
             when {
                 !current.supported -> Text("This request can’t be answered here. Check the thread, or answer it on $computer.", style = figtree(15), color = p.muted)
-                !model.mayAnswer(ref.hostID) -> Text("This phone can’t answer on $computer yet. Turn on Can answer for it in Sotto on $computer, or answer there.", style = figtree(15), color = p.muted)
+                !model.mayAnswer(ref.hostID) -> Text("This request can’t be answered here. Check the thread, or answer it on $computer.", style = figtree(15), color = p.muted)
                 current.kind == "permission" -> {
                     val choices = current.permissionChoices
                     if (choices != null) {

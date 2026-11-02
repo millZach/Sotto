@@ -84,7 +84,7 @@ function fakeBridge(initial: WatcherRoomState, options: { readonly handover?: bo
 function renderRoom(room: WatcherRoomState, options: { readonly state?: AgentState; readonly handover?: boolean } = {}) {
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled: true }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: { watcherEnabled: true }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn(), dismissPastePermissionNotices: vi.fn() },
   } as unknown as AppContextValue)
   const state = options.state ?? stateWithWatcher()
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)

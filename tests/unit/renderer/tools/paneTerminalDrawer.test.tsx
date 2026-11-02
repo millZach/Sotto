@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TerminalSession } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { PaneTerminalDrawer } from '../../../../src/renderer/src/tools/PaneTerminalDrawer'
-import { PaneTerminalToggle } from '../../../../src/renderer/src/tools/PaneTerminalToggle'
+import { usePaneTerminalMenuItem } from '../../../../src/renderer/src/tools/PaneTerminalToggle'
 import { PaneTerminalChromeStore } from '../../../../src/renderer/src/tools/paneTerminalStore'
 import { setDrawerShortcut } from '../../../../src/renderer/src/tools/paneTerminalShortcut'
 import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
@@ -36,6 +36,15 @@ function fakeViews() {
 }
 
 const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDirectory: 'D:\\work\\workshop', worktree: { status: 'ready' as const, mode: 'shared' as const, branch: 'feature/drawer', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work', dirty: false } }
+
+/**
+ * The pane's Terminal drawer row of its ··· menu (ADR-0163), drawn as a plain button so the drawer's own behaviour reads
+ * as it did: pressed while the drawer shows, its keys beside it.
+ */
+function PaneTerminalToggle({ threadId, store }: { readonly threadId: string; readonly store: PaneTerminalChromeStore }) {
+  const item = usePaneTerminalMenuItem(threadId, true, store)!
+  return <button type="button" aria-pressed={item.shown} aria-keyshortcuts={item.shortcut?.keys} data-keys={item.shortcut?.plain} onClick={item.run}>{item.label}</button>
+}
 
 type DrawerThread = Omit<typeof thread, 'worktree'> & { worktree: Omit<typeof thread.worktree, 'mode'> & { mode: 'shared' | 'independent' } }
 
@@ -76,9 +85,10 @@ describe('the pane terminal drawer', () => {
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
     await userEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    // A pressed toggle keeps its name; the title says what a press does now.
+    // A ticked row keeps its name, with its keys at its end.
     expect(toggle).toHaveAccessibleName('Terminal drawer')
-    expect(toggle).toHaveAttribute('title', 'Hide terminal drawer (Ctrl+J)')
+    expect(toggle).toHaveAttribute('data-keys', 'Ctrl+J')
+    expect(toggle).toHaveAttribute('aria-keyshortcuts', 'Control+J')
     await waitFor(() => expect(terminal.bridge.create).toHaveBeenCalledWith({ threadId: 'thread-a', workspaceId: workspace.workspaceId, place: 'drawer' }))
     expect(await screen.findByRole('tab', { name: 'PowerShell', selected: true })).toBeInTheDocument()
     expect(screen.queryByText('No terminal is open for this thread.')).toBeNull()

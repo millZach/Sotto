@@ -94,7 +94,7 @@ describe('model favorites', () => {
   it('keeps a favorite whose model has gone, unavailable, and lets its star come off with focus on the next row', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    act(() => { toggleModelFavorite({ id: 'gone', name: 'Old Model', provider: 'Claude', providerId: 'claude', ready: true }); toggleModelFavorite(model('sonnet')) })
+    act(() => { toggleModelFavorite({ id: 'gone', name: 'Old Model', provider: 'OpenCode', providerId: 'opencode', ready: true }); toggleModelFavorite(model('sonnet')) })
     render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={onChange} />)
     await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const gone = screen.getByRole('option', { name: /Old Model/ })
@@ -105,6 +105,21 @@ describe('model favorites', () => {
     await user.keyboard('f')
     expect(screen.queryByRole('option', { name: /Old Model/ })).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Claude Sonnet 4.6' })).toHaveFocus()
+  })
+
+  it('leaves out a Claude Code or Codex favorite that cannot be chosen now, and keeps a starred legacy model at the top', async () => {
+    const user = userEvent.setup()
+    const lineup: AgentModel[] = [...models, { id: 'opus', name: 'Opus 5.5', provider: 'Claude', providerId: 'claude', ready: true },
+      { id: 'opus-5', name: 'Opus 5', provider: 'Claude', providerId: 'claude', ready: true, legacy: true },
+      { id: 'opus-4-8', name: 'Opus 4.8', provider: 'Claude', providerId: 'claude', ready: true, legacy: true }]
+    act(() => { toggleModelFavorite({ id: 'retired', name: 'Fable 5.1', provider: 'Claude', providerId: 'claude', ready: true }); toggleModelFavorite(lineup.at(-2)!) })
+    render(<ModelPicker models={lineup} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    expect(screen.queryByRole('option', { name: /Fable 5\.1/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Opus 5' })).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Claude' }))
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Opus 5.5', 'Opus 5', 'Claude Sonnet 4.6'])
+    expect(screen.getByRole('button', { name: /Legacy/ })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('leaves out favorites of providers this menu does not offer, and then opens as before', async () => {

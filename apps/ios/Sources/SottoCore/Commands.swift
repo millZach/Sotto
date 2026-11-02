@@ -23,6 +23,9 @@ public enum RemoteCommands {
         "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
         "create-project": ["provider", "title", "path", "useExisting"],
         "create-thread": ["projectId", "title", "modelId", "titleSource", "threadId", "workingCopy", "reasoningEffort", "runtimeMode", "providerMode", "managed"],
+        // A running thread's model, effort, permissions and speed from its reply box (ADR-0166). A mode that lets the
+        // thread act without asking needs the computer's remote-answer policy, which the computer checks.
+        "configure-thread": ["threadId", "modelId", "reasoningEffort", "runtimeMode", "providerMode", "fastMode", "speed"],
         // The user's own Babysit pull request and Stop babysitting (ADR-0061, ADR-0102). Neither grants anything.
         "babysit-pull-request": ["threadId", "url"],
         "stop-babysitting": ["threadId", "url"],
@@ -61,6 +64,27 @@ public enum Commands {
     /// Puts the thread on the Settled shelf, or takes it back off.
     public static func settle(threadID: String, settled: Bool) throws -> JSONValue {
         try RemoteCommands.checked(.object(["type": .string(settled ? "settle-thread" : "restore-thread"), "threadId": .string(threadID)]))
+    }
+    /// Changes one or more of a thread's settings, within what the computer accepts: a model ID, an effort of at most 64
+    /// characters, one of Sotto's four modes or a provider's own, and a speed of Fast or Ultra fast, null for Standard.
+    public static func configureThread(threadID: String, patch: [String: JSONValue]) throws -> JSONValue {
+        guard !patch.isEmpty else { throw ClientError.invalidRequest }
+        for (key, value) in patch {
+            switch (key, value) {
+            case ("modelId", .string(let id)), ("providerMode", .string(let id)):
+                guard !id.isEmpty, id.utf16.count <= 6_144 else { throw ClientError.invalidRequest }
+            case ("reasoningEffort", .string(let effort)):
+                guard !effort.isEmpty, effort.utf16.count <= 64 else { throw ClientError.invalidRequest }
+            case ("runtimeMode", .string(let mode)):
+                guard ThreadSettings.runtimeModes.contains(mode) else { throw ClientError.invalidRequest }
+            case ("speed", .null): break
+            case ("speed", .string(let speed)):
+                guard ["fast", "ultrafast"].contains(speed) else { throw ClientError.invalidRequest }
+            case ("fastMode", .bool): break
+            default: throw ClientError.invalidRequest
+            }
+        }
+        return try RemoteCommands.checked(.object(patch.merging(["type": .string("configure-thread"), "threadId": .string(threadID)]) { $1 }))
     }
     /// Starts or stops babysitting one of the thread's pull requests, by its GitHub URL (ADR-0061).
     public static func babysit(threadID: String, url: String, on: Bool) throws -> JSONValue {

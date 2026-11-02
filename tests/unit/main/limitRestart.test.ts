@@ -151,6 +151,26 @@ describe('restarting threads a usage limit stopped', () => {
     await expect.poll(f.saved).toEqual([])
   })
 
+  it.each([undefined, new Date(START + 60_000).toISOString()])('drops a restart when Watcher becomes read-only history, with reset %s', async reset => {
+    const f = await fixture({ threads: [thread('watcher', { kind: 'watcher' })] })
+    f.update('watcher', limitStop('watcher', reset))
+    expect(f.restart.scheduled('watcher')).toBeDefined()
+    f.update('watcher', { kind: 'watcher-history' })
+    expect(f.restart.publish(f.host.threads[0]!).scheduledRestart).toBeUndefined()
+    expect(f.live()).toEqual([])
+    await expect.poll(f.saved).toEqual([])
+  })
+
+  it('removes a saved no-reset card for an earlier Watcher conversation on startup', async () => {
+    const f = await fixture({
+      threads: [thread('watcher', { ...limitStop('watcher'), kind: 'watcher-history' })],
+      saved: { version: 1, threads: [{ threadId: 'watcher', provider: 'claude', stoppedAt: new Date(START).toISOString(), restarts: 0 }] },
+    })
+    expect(f.restart.publish(f.host.threads[0]!).scheduledRestart).toBeUndefined()
+    expect(f.live()).toEqual([])
+    await expect.poll(f.saved).toEqual([])
+  })
+
   it('leaves a thread the user sent to after the stop to them, and schedules it again only when that turn stops at the limit too', async () => {
     const f = await fixture({ threads: [thread('a'), thread('b')] })
     const reset = new Date(START + 60 * 60_000).toISOString()

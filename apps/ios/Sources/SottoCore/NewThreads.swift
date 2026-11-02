@@ -9,12 +9,22 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let name: String; public let provider: String; public let providerId: String?
     public let ready: Bool; public let recommended: Bool?
     public let reasoningEfforts: [String]?; public let defaultReasoningEffort: String?
-    public let runtimeModes: [String]?; public let providerModes: [ProviderMode]?
+    /// `providerModes` is a `var` only so the connection can put back the list a catalog named by its place
+    /// (`providerModeList`, `provider-mode-lists`); once a shell leaves `HostConnection` that place is nil.
+    public let runtimeModes: [String]?; public var providerModes: [ProviderMode]?
+    public var providerModeList: Int? = nil
     /// Whether the model reads images. Only a model that says so is sent photos.
     public let supportsImages: Bool?
     /// Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model
     /// maker, the company that made it, such as Anthropic (ADR-0128). Other providers' models say nothing.
     public let source: String?
+    /// The speeds the model offers besides Standard, in the provider's names (ADR-0143), read item by item; or, from an
+    /// older computer, `fastMode` alone for Fast.
+    public var speeds: ThreadList<ModelSpeed>? = nil
+    public var fastMode: ModelFastMode? = nil
+    /// A Claude Code or Codex model with a newer model of its line in the same catalog (ADR-0171). Menus list it under a
+    /// closed Legacy submenu. Older computers never send it, and their models all list together.
+    public var legacy: Bool? = nil
     public struct ProviderMode: Decodable, Equatable, Sendable {
         public let id: String; public let name: String; public let allows: String?; public let asks: String?
     }
@@ -47,10 +57,17 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
                                              grants: id != "approval-required", providerOwned: false) }
         }
     }
-    /// Prefer an asking mode. A grant is never selected just because Can answer is on.
+    /// Prefer an asking mode. A grant is never selected just because this iPhone may answer.
     public var startingPermission: String { permissions.first { !$0.grants }?.id ?? "" }
 }
-public struct ThreadPermission: Identifiable, Sendable {
+/// A model menu's two parts (ADR-0171): the models it leads with, and the legacy ones under a closed Legacy submenu, each in
+/// the computer's order. The computer marks which are legacy, so the iPhone and the desktop list the same models the same way.
+public enum ModelLineup {
+    public static func split(_ models: [ThreadModel]) -> (latest: [ThreadModel], legacy: [ThreadModel]) {
+        (models.filter { $0.legacy != true }, models.filter { $0.legacy == true })
+    }
+}
+public struct ThreadPermission: Identifiable, Equatable, Sendable {
     public let id: String; public let name: String; public let asks: String?
     public let grants: Bool; public let providerOwned: Bool
 }

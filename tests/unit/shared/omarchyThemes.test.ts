@@ -12,7 +12,7 @@ import { BUILT_IN_THEMES, DEFAULT_THEME_ID, resolveThemeFor, parseCustomThemes }
 import { OMARCHY_THEME_ID, OMARCHY_TEXT_PAIRS, guardOmarchyColors, omarchySuccessText, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
 import { OMARCHY_CSS_TEXT_PAIRS, OMARCHY_GRAPHIC_COLOR_TOKENS } from '../../fixtures/renderer/omarchyTextSurfaces'
 import { parseTokenBlocks, rootDeclarations, resolveColor, contrast, over } from '../../fixtures/renderer/themeTokenResolver'
-import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
+import { PAINTED_TEXT_PAIRS, paintedContrast, placeholderApartFromText, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 
 const entries = Object.entries(fixtures.themes)
 const blocks = parseTokenBlocks(readFileSync('src/renderer/src/styles/tokens.css', 'utf8'))
@@ -78,6 +78,9 @@ describe('Omarchy M3 and readability check', () => {
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(painted, pair), `${name}: ${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
     }
+    // The muted foreground can be lifted to the body text for Changes, but the composer's placeholder still reads as a
+    // hint: dimmer than typed text, not the same ink.
+    expect(placeholderApartFromText(painted), `${name}: placeholder against typed text`).toBeGreaterThanOrEqual(1.2)
   })
   it.each(entries)('%s keeps widget status text readable through the widget token projection', (name, fixture) => {
     const theme = parseOmarchyTheme(fixture.rendered, name)
@@ -177,11 +180,17 @@ describe('Omarchy M3 and readability check', () => {
     // October 25 amendment), and when DeepSeek's mark got its badge colour, and when the effort trace's halo got its
     // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Appearance preview could paint a
     // half of its own (`[data-theme-scope]`), and when the Glass theme's see-through tokens and the card's
-    // solid colour arrived (ADR-0150), and when the collapsed rail's trays got their group colours (ADR-0146, October 28 amendment); none of them changes a palette.
+    // solid colour arrived (ADR-0150), and when the collapsed rail's trays got their group colours (ADR-0146, October 28 amendment),
+    // and when text sizes and corners got their scale of `--tt-type-*` and `--tt-radius-*` steps (ADR-0169), and when the
+    // prompt's placeholder got its hint tier, `--tt-text-hint`, from the theme's Muted text role, mixed with the room on Glass
+    // (October 31, 2026), when High Contrast began lifting that hint at half strength (November 1, 2026), and when Mark up
+    // took its red and amber inks, `--tt-ink-red` and `--tt-ink-amber`, from the theme's error and warning colours at full
+    // strength (November 1, 2026), and when that hint moved to the theme's Placeholder role (November 2, 2026); none of
+    // them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('6effc1758095634b7f8265bde5360865d034e81daa258c9d5503269178cee4d4')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('5e9f3ff5db22d0f2b160c7c7106b376e8c4621591368aaaa5ecba4a5f83d6f63')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

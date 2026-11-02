@@ -12,7 +12,7 @@ import {
   movePermission, movePermissionWords, movePrompt, narrowedName, THREAD_MOVE_CARDS_MAX, THREAD_MOVE_CONFIRMATION_MS, THREAD_MOVE_SOURCE_UNDECIDED, THREAD_MOVE_UNDECIDED, THREAD_MOVE_WORDS,
   threadMoveAnswerRequestSchema, threadMovePrepareRequestSchema, threadMoveRefusal, threadMoveSourceAnswerSchema, threadMoveStartAnswerSchema, threadMoveStartRequestSchema,
   type HostThreadMoveSource, type MoveFacts, type ThreadMoveAnswer, type ThreadMoveCard, type ThreadMoveHost, type ThreadMoveLink, type ThreadMoveModel, type ThreadMovePlanned,
-  type ThreadMovePrepare, type ThreadMoveStart, type ThreadMovesView, THREAD_MOVE_PROPOSALS_MAX, THREAD_MOVE_PROPOSE_NOTE, threadMoveProposeInputSchema,
+  type ThreadMovePrepare, type ThreadMoveStart, type ThreadMovesView, THREAD_MOVE_PROPOSALS_MAX, THREAD_MOVE_PROPOSE_NOTE, threadMoveProposeInputSchema, threadMoveKeepAnswerSchema,
   type ThreadMoveAnswerRequest, type ThreadMoveProposal, type ThreadMoveProposedThread, type ThreadMoveProposeOutput,
 } from '../../shared/threadMoves'
 import type { WatcherRefusal, WatcherThreadTarget } from '../../shared/watcher'
@@ -106,11 +106,12 @@ export interface MoveNews {
   readonly source: WatcherThreadTarget
   readonly movedTo?: WatcherThreadTarget | undefined
   readonly machine: string
-  readonly outcome: 'moved' | 'stayed' | 'given-back'
+  readonly outcome: 'moved' | 'stayed' | 'given-back' | 'kept'
 }
 
 const id = z.string().min(1).max(512)
-export const MOVE_STATES = ['fenced', 'branch-sent', 'thread-started', 'first-turn-ended', 'source-settled', 'given-back', 'stayed'] as const
+/** `kept`: the user called the move off with Keep it here, and the machine it went to answered that it holds nothing for it (part 4). */
+export const MOVE_STATES = ['fenced', 'branch-sent', 'thread-started', 'first-turn-ended', 'source-settled', 'given-back', 'stayed', 'kept'] as const
 export type MoveState = typeof MOVE_STATES[number]
 const recordSchema = z.object({
   id: z.uuid(),
@@ -120,10 +121,14 @@ const recordSchema = z.object({
   sourceHostId: z.uuid().optional(),
   /** That machine's name when the move began, for the words of a move from it. */
   from: z.string().min(1).max(200).optional(),
+  /** The source's machine was asked to hold it, so it may hold it, fenced there, even when its answer was lost. */
+  holdAsked: z.literal(true).optional(),
+  /** Called off with Keep it here, the machine it went to had made a thread for it, though its ID was never heard here. */
+  keptMade: z.literal(true).optional(),
   /** The source's machine held it for this move, fenced there by its own record. */
   held: z.literal(true).optional(),
   /** The move ends as given back or stayed once the source's machine has let go of it; until then it waits on that machine. */
-  ending: z.enum(['given-back', 'stayed']).optional(),
+  ending: z.enum(['given-back', 'stayed', 'kept']).optional(),
   /** The machine it goes to: a paired host, or This computer for a host's thread. */
   targetHostId: z.uuid(),
   /** The machine's name when the move began, for its words while it is away. */
@@ -155,7 +160,12 @@ const fileSchema = z.object({ version: z.literal(1), moves: z.array(recordSchema
    * The sources of moves not given back and not stayed, whose worktrees no automatic cleanup removes (Zach, October 21, 2026).
    * Kept apart from the moves' history, which is trimmed, and let go of only when the thread itself is deleted.
    */
-  kept: z.array(id).max(100_000).optional() }).strict()
+  kept: z.array(id).max(100_000).optional(),
+  /**
+   * The moves the user pressed Keep it here on (part 4), until the machine they went to calls them off. Kept apart from the
+   * moves' records, so a step under way that writes its record never loses the press.
+   */
+  keeping: z.array(z.uuid()).max(10_000).optional() }).strict()
 type MovesFile = z.infer<typeof fileSchema>
 const empty = (): MovesFile => ({ version: 1, moves: [] })
 /** Finished moves kept, newest last; a move under way is never dropped. */
@@ -164,7 +174,8 @@ const FINISHED_KEPT = 500
 const RETRY_MS = 5_000
 /** How many times in a row Watcher's watch is tried before the move waits, unsettled and fenced, for part 4 to show it. */
 const WATCH_TRIES = 5
-const UNFINISHED = new Set<string>(MOVE_STATES.filter(state => state !== 'source-settled' && state !== 'given-back' && state !== 'stayed'))
+const terminal = (state: MoveState): boolean => state === 'source-settled' || state === 'given-back' || state === 'stayed' || state === 'kept'
+const UNFINISHED = new Set<string>(MOVE_STATES.filter(state => !terminal(state)))
 /**
  * What a record that does not read as a whole still names: each move it calls unfinished, with its source and machine, and
  * every source whose worktree it keeps. Read leniently, so a source is fenced and kept whenever anything says it might move.
@@ -177,7 +188,7 @@ function namedIn(raw: unknown): { readonly moving: readonly { readonly threadId:
   const moving = local.filter(move => typeof move.sourceThreadId === 'string' && !(typeof move.state === 'string' && !UNFINISHED.has(move.state)))
     .map(move => ({ threadId: move.sourceThreadId as string, machine: typeof move.machine === 'string' ? move.machine.slice(0, 200) : undefined }))
   const kept = [...Array.isArray(file.kept) ? file.kept.filter((item): item is string => typeof item === 'string') : [],
-    ...local.flatMap(move => typeof move.sourceThreadId === 'string' && move.state !== 'given-back' && move.state !== 'stayed' ? [move.sourceThreadId] : [])]
+    ...local.flatMap(move => typeof move.sourceThreadId === 'string' && move.state !== 'given-back' && move.state !== 'stayed' && move.state !== 'kept' ? [move.sourceThreadId] : [])]
   return { moving, kept }
 }
 /**
@@ -209,7 +220,6 @@ export async function holdUnfinishedMoves(directory: string, control: Pick<MoveC
   return { keepsWorktree: threadId => kept.has(threadId),
     settleFences: () => { for (const threadId of control.fencedForMove?.() ?? []) if (!unfinished.has(threadId)) void Promise.resolve(control.liftMoveFence(threadId)).catch(() => undefined) } }
 }
-const terminal = (state: MoveState): boolean => state === 'source-settled' || state === 'given-back' || state === 'stayed'
 const now = (): string => new Date().toISOString()
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -325,9 +335,13 @@ export class ThreadMoveService {
   private readonly threadIndex = new WeakMap<AgentHostSnapshot, SnapshotIndex>()
   /** Sources whose worktrees no automatic cleanup removes (`kept` in the file), never trimmed with the history. */
   private readonly kept = new Set<string>()
+  /** The moves the user pressed Keep it here on (`keeping` in the file), until each is called off. */
+  private readonly keeping = new Set<string>()
   /** Moves whose watch could not be carried, after `WATCH_TRIES`: they wait, fenced and unsettled, and nothing steps them. */
   private readonly stuck = new Set<string>()
   private readonly watchTries = new Map<string, number>()
+  /** The tries to bring Watcher's watch back to a move's source after Keep it here, apart from the tries to carry it. */
+  private readonly returnTries = new Map<string, number>()
   /** The record could not be read at start: no move starts, nothing is written, and the sources it named stay fenced. */
   private unreadable = false
   /** Whether the record read whole at start, which alone lets a fence the coordinator kept be lifted for want of a move. */
@@ -389,6 +403,7 @@ export class ThreadMoveService {
     const file = read.status === 'valid' ? read.value : empty()
     this.records = new Map(file.moves.map(record => [record.id, record]))
     for (const threadId of file.kept ?? []) this.kept.add(threadId)
+    for (const moveId of file.keeping ?? []) if (this.records.has(moveId)) this.keeping.add(moveId)
     for (const record of this.records.values()) {
       // A host's thread is fenced and kept by that host's own record (`thread-move-source`).
       const here = !terminal(record.state) && record.sourceHostId === undefined
@@ -459,6 +474,8 @@ export class ThreadMoveService {
         ...record.threadId ? { moved: { hostId: record.targetHostId, threadId: record.threadId } } : {}, hostId: record.targetHostId, machine: record.machine,
         ...record.from ? { from: record.from } : {}, ...record.targetHostId === here ? { here: true as const } : {},
         ...record.givenBack ? { words: record.givenBack } : {}, model, ...waiting.has(record.id) ? { waiting: true as const, waitingOn: this.waitingOn(record) } : {},
+        ...this.keeping.has(record.id) ? { keeping: true as const } : {}, ...this.keepable(record, waiting) ? { keepable: true as const } : {},
+        ...record.startAsked && !record.threadId && !record.ending ? { startAsked: true as const } : {},
         ...record.watchMoved === true ? { watched: true as const } : {}, at: this.placedAt.get(record.id) ?? record.createdAt, updatedAt: record.updatedAt }
     })
     const run = [...this.runCards.values()].map((card): ThreadMoveCard => ({ id: card.id, state: card.state, source: card.source, hostId: card.hostId, machine: card.machine,
@@ -512,6 +529,7 @@ export class ThreadMoveService {
     const parsed = threadMoveAnswerRequestSchema.safeParse(input)
     if (!parsed.success) return { status: 'refused', message: THREAD_MOVE_WORDS.unread }
     if ('proposalId' in parsed.data) return this.answerProposal(parsed.data)
+    if ('moveId' in parsed.data) return this.keepHere(parsed.data.moveId)
     const card = this.runCards.get(parsed.data.cardId)
     if (!card || card.state !== 'asks') return { status: 'refused', message: THREAD_MOVE_WORDS.noCard }
     if (parsed.data.answer === 'keep') {
@@ -570,7 +588,7 @@ export class ThreadMoveService {
    * The user's press on Watcher's proposal: Not now ends it; Move asks for a fresh preview of the threads ticked and moves
    * them only while it still says what the card showed. One that changed moves nothing, and the card shows it as it is now.
    */
-  private async answerProposal(press: Exclude<ThreadMoveAnswerRequest, { cardId: string }>): Promise<ThreadMoveAnswer> {
+  private async answerProposal(press: Extract<ThreadMoveAnswerRequest, { proposalId: string }>): Promise<ThreadMoveAnswer> {
     const proposal = this.proposals.get(press.proposalId)
     if (!proposal || proposal.state !== 'open') return { status: 'refused', message: THREAD_MOVE_WORDS.noProposal }
     if (press.answer === 'dismiss') { this.proposals.set(proposal.id, { ...proposal, state: 'dismissed', updatedAt: now() }); this.changed(); return { status: 'ok' } }
@@ -818,7 +836,7 @@ export class ThreadMoveService {
     const machines = record.sourceHostId ? [record.targetHostId, record.sourceHostId] : [record.targetHostId]
     const key = this.sourceKey(record)
     if (terminal(record.state)) {
-      this.live.delete(moveId); this.waitingTurn.delete(moveId); this.lastRead.delete(moveId); this.stuck.delete(moveId); this.watchTries.delete(moveId)
+      this.live.delete(moveId); this.waitingTurn.delete(moveId); this.lastRead.delete(moveId); this.stuck.delete(moveId); this.watchTries.delete(moveId); this.returnTries.delete(moveId)
       if (this.moving.get(key) === moveId) this.moving.delete(key)
       for (const hostId of machines) {
         const host = this.byHost.get(hostId)
@@ -915,6 +933,8 @@ export class ThreadMoveService {
     if (!targets || !here) return false
     // A move ending as given back or stayed waits only on the host its thread is on letting go of it.
     if (record.ending) return this.end(record)
+    // Keep it here: the move is called off on the machine it went to before anything else happens to it.
+    if (this.keeping.has(record.id)) return this.callOff(record)
     const target = record.targetHostId, name = target === here ? 'This computer' : targets.name(target) ?? record.machine
     const sourceHost = record.sourceHostId ?? here
     // Read only by the steps that need it, never while a move waits on its first turn. A host that is not connected has none.
@@ -999,11 +1019,13 @@ export class ThreadMoveService {
     if (!host || !this.targets?.snapshot(sourceHost)) return false
     if (!host.supportsThreadMoveSource) return this.giveBack(record, THREAD_MOVE_WORDS.olderSource(from))
     let raw: unknown
+    // Recorded first: once asked, the host may hold it whatever happens to its answer, and only its release lets go.
+    if (!record.holdAsked) record = await this.update(record, { holdAsked: true })
     try { raw = await host.threadMove({ action: 'hold', moveId: record.id, threadId: record.sourceThreadId, machine: record.machine }) } catch { this.later(record.id); return false }
     const answer = threadMoveSourceAnswerSchema.safeParse(raw)
     if (!answer.success || answer.data.type === 'refused' && THREAD_MOVE_SOURCE_UNDECIDED.has(answer.data.reason)) { this.later(record.id); return false }
-    // Refused, the host fenced nothing: the move is given back in the host's own words.
-    if (answer.data.type === 'refused') return this.giveBack(record, answer.data.message)
+    // Refused, the host fenced nothing: the move is given back in the host's own words, with nothing to let go of there.
+    if (answer.data.type === 'refused') return this.giveBack(record, answer.data.message, true)
     if (answer.data.type !== 'held') { this.later(record.id); return false }
     return this.update(record, { held: true })
   }
@@ -1070,6 +1092,8 @@ export class ThreadMoveService {
    * linked and settled by that host (`settle`), which lets go of its fence.
    */
   private async settleSource(record: MoveRecord, here: string, source: AgentThread | undefined): Promise<boolean> {
+    // Keep it here pressed meanwhile wins: the move is called off rather than finished (part 4).
+    if (this.keeping.has(record.id)) return this.callOff(record)
     // The watch goes first, and the source settles only once it has: a watch on a settled thread ends, and would be lost.
     // One that will not go is tried again a few times, then the move waits, fenced and unsettled, for part 4 to show it.
     if (record.watched && record.watchMoved !== true && record.threadId && this.options.watch) {
@@ -1082,6 +1106,7 @@ export class ThreadMoveService {
         return false
       }
       record = await this.update(record, { watchMoved: true })
+      if (this.keeping.has(record.id)) return this.callOff(record)
     }
     if (record.sourceHostId) {
       if (record.threadId && !await this.sourceStep(record, { action: 'settle', moveId: record.id, link: this.linkOf(record) })) { this.later(record.id); return false }
@@ -1111,9 +1136,9 @@ export class ThreadMoveService {
    * landed there is let go of. A record that cannot be saved keeps the source fenced, and the step is tried again. A host's
    * thread it held is let go of by that host first (`end`).
    */
-  private async giveBack(record: MoveRecord, why: string): Promise<boolean> {
+  private async giveBack(record: MoveRecord, why: string, nothingHeld = false): Promise<boolean> {
     const words = THREAD_MOVE_WORDS.givenBack(why, this.fromName(record)).slice(0, 1_200)
-    if (record.sourceHostId && record.held) return this.end(await this.update(record, { ending: 'given-back', givenBack: words }))
+    if (record.sourceHostId && !nothingHeld && (record.held || record.holdAsked)) return this.end(await this.update(record, { ending: 'given-back', givenBack: words }))
     await this.update(record, { state: 'given-back', givenBack: words }, true)
     if (!record.sourceHostId) this.lift(record.sourceThreadId)
     await this.forgetBranch(record)
@@ -1131,8 +1156,76 @@ export class ThreadMoveService {
     void _ending
     // A write that fails keeps the move ending, as its record still says, and the step is tried again.
     try { await this.update(rest, { state }, true) } catch (error) { this.records.set(record.id, record); throw error }
-    if (state === 'given-back') await this.forgetBranch(record)
+    if (state === 'given-back' || state === 'kept' && !record.threadId && !record.keptMade) await this.forgetBranch(record)
     return true
+  }
+  /**
+   * Keep it here (part 4, ADR-0105 decision 7, "Reconciling"; Zach's picks of October 30): the machine the move went to
+   * fences its ID and stops and settles any thread it made for it, and only its answer ends the move as kept, the thread
+   * here taking sends again. A move never asked to start there has made nothing, and ends at once. While that machine
+   * cannot be asked, the press is kept and the move waits, its thread still fenced.
+   */
+  private async callOff(record: MoveRecord): Promise<boolean> {
+    if (!record.startAsked) return this.endKept(record, false)
+    const host = this.moveHost(record.targetHostId)
+    if (!host || !this.snapshotOf(record.targetHostId) || !host.supportsThreadMoveKeep) return false
+    // Watcher's watch comes back first, while the new thread is still there to take it from: settled there, its watch
+    // would end with it. Tried a few times before the move goes on without it.
+    const here = this.options.control.hostId()
+    if (record.watchMoved === true && record.threadId && here && this.options.watch) {
+      const back = await this.options.watch.moveWatch({ hostId: record.targetHostId, threadId: record.threadId }, { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId }).catch(() => false)
+      if (back) record = await this.update(record, { watchMoved: false })
+      else {
+        const tries = (this.returnTries.get(record.id) ?? 0) + 1
+        this.returnTries.set(record.id, tries)
+        if (tries < WATCH_TRIES) { this.later(record.id); return false }
+      }
+    }
+    let raw: unknown
+    try { raw = await host.threadMove({ action: 'keep', moveId: record.id }) } catch { this.later(record.id); return false }
+    const answer = threadMoveKeepAnswerSchema.safeParse(raw)
+    // A refusal proves nothing about a thread there: the move waits, fenced, and is asked again.
+    if (!answer.success || answer.data.type !== 'kept') { this.later(record.id); return false }
+    return this.endKept(record, answer.data.made)
+  }
+  /**
+   * The move is called off: the thread here, or on its host, takes sends again. A thread made there keeps the branch its
+   * worktree came from, its ID known here or not.
+   */
+  private async endKept(record: MoveRecord, made: boolean): Promise<boolean> {
+    const words = THREAD_MOVE_WORDS.kept(record.machine, made, this.fromName(record)).slice(0, 1_200)
+    const ended = { givenBack: words, ...made && !record.threadId ? { keptMade: true as const } : {} }
+    if (record.sourceHostId && (record.held || record.holdAsked)) return this.end(await this.update(record, { ending: 'kept', ...ended }))
+    await this.update(record, { state: 'kept', ...ended }, true)
+    if (!record.sourceHostId) this.lift(record.sourceThreadId)
+    if (!made && !record.threadId) await this.forgetBranch(record)
+    return true
+  }
+  /** Whether Keep it here is offered: the move waits on a machine, with no step under way and not already ending or kept. */
+  private keepable(record: MoveRecord, waiting: ReadonlySet<string> = new Set(this.stalled().map(item => item.id))): boolean {
+    return !terminal(record.state) && !record.ending && !this.keeping.has(record.id) && !this.advancing.has(record.id) && waiting.has(record.id)
+  }
+  /**
+   * The user's Keep it here on a move that waits on a machine not answering (part 4). The press is saved, then the move
+   * calls itself off as soon as that machine can be asked. A machine that cannot call a move off says so.
+   */
+  private async keepHere(moveId: string): Promise<ThreadMoveAnswer> {
+    const record = this.records.get(moveId)
+    // A step under way, settling the source among them, is not waiting: the press would race it.
+    if (!record || !this.keepable(record)) return { status: 'refused', message: THREAD_MOVE_WORDS.notWaiting }
+    const host = this.moveHost(record.targetHostId)
+    if (record.startAsked && host && !host.supportsThreadMoveKeep) return { status: 'refused', message: THREAD_MOVE_WORDS.olderKeep(record.machine) }
+    if (!this.keeping.has(moveId)) {
+      this.keeping.add(moveId)
+      try { await this.save() } catch { this.keeping.delete(moveId); return { status: 'refused', message: THREAD_MOVE_WORDS.unsaved } }
+    }
+    // Asked now, not at the next retry: a move stuck on its watch is taken up again too.
+    const retry = this.retryAt.get(moveId)
+    if (retry) { clearTimeout(retry.timer); this.retryAt.delete(moveId) }
+    this.stuck.delete(moveId)
+    this.changed()
+    void this.advance(moveId)
+    return { status: 'ok' }
   }
   /** Lets go of the branch a move given back landed on its target, so no ref there holds its commits. */
   private async forgetBranch(record: MoveRecord): Promise<void> {
@@ -1148,15 +1241,19 @@ export class ThreadMoveService {
     const next: MoveRecord = { ...record, ...patch, updatedAt: now() }
     const local = record.sourceHostId === undefined
     const keptBefore = local && this.kept.has(record.sourceThreadId)
+    // A move that ends lets go of its Keep it here in the same write.
+    const ends = terminal(next.state) && !terminal(record.state), keepingBefore = this.keeping.has(record.id)
     this.records.set(record.id, next)
     if (release && local) this.kept.delete(record.sourceThreadId)
+    if (ends) this.keeping.delete(record.id)
     try { await this.save() } catch (error) {
       this.records.set(record.id, record)
       if (keptBefore) this.kept.add(record.sourceThreadId)
+      if (keepingBefore) this.keeping.add(record.id)
       throw error
     }
     this.track(next)
-    if (terminal(next.state) && !terminal(record.state)) this.told(next)
+    if (ends) this.told(next)
     this.changed()
     return next
   }
@@ -1167,7 +1264,7 @@ export class ThreadMoveService {
     try {
       this.options.news?.({ moveId: record.id, source: { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId }, machine: record.machine,
         ...record.threadId ? { movedTo: { hostId: record.targetHostId, threadId: record.threadId } } : {},
-        outcome: record.state === 'source-settled' ? 'moved' : record.state === 'stayed' ? 'stayed' : 'given-back' })
+        outcome: record.state === 'source-settled' ? 'moved' : record.state === 'stayed' ? 'stayed' : record.state === 'kept' ? 'kept' : 'given-back' })
     } catch { /* Watcher's news is Watcher's: a move never fails for it. */ }
   }
   /**
@@ -1181,7 +1278,8 @@ export class ThreadMoveService {
       const finished = [...this.records.values()].filter(record => terminal(record.state))
       for (const old of finished.slice(0, Math.max(0, finished.length - FINISHED_KEPT))) this.records.delete(old.id)
       const keeps = first.filter(record => record.sourceHostId === undefined).map(record => record.sourceThreadId)
-      await this.store.write({ version: 1, moves: [...this.records.values(), ...first], kept: [...this.kept, ...keeps.filter(threadId => !this.kept.has(threadId))] })
+      await this.store.write({ version: 1, moves: [...this.records.values(), ...first], kept: [...this.kept, ...keeps.filter(threadId => !this.kept.has(threadId))],
+        ...this.keeping.size ? { keeping: [...this.keeping].filter(moveId => this.records.has(moveId)) } : {} })
       for (const record of first) { this.records.set(record.id, record); if (record.sourceHostId === undefined) this.kept.add(record.sourceThreadId); this.track(record) }
       if (first.length) this.changed()
     })

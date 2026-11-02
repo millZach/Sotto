@@ -51,11 +51,19 @@ test('a pane opens its own terminal below the composer, keeps it running while h
 
     const pane = page.locator('.thread-pane').first()
     const threadId = (await pane.getAttribute('data-thread-id'))!
-    const toggle = pane.locator('[data-pane-terminal-toggle]')
-    await expect(toggle).toHaveAccessibleName('Terminal drawer')
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-    await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // The drawer is a row of the pane's ··· menu (ADR-0163), ticked while it is open, with its keys at its end.
+    const more = pane.getByRole('button', { name: 'More actions', exact: true })
+    const drawerRow = pane.getByRole('menuitemcheckbox', { name: 'Terminal drawer', exact: true })
+    const drawerShown = async (): Promise<string | null> => {
+      await more.click()
+      const checked = await drawerRow.getAttribute('aria-checked')
+      await page.keyboard.press('Escape')
+      return checked
+    }
+    expect(await drawerShown()).toBe('false')
+    await more.click()
+    await expect(drawerRow).toHaveAttribute('aria-keyshortcuts', 'Control+J')
+    await drawerRow.click()
     const drawer = page.locator('.pane-terminal')
     // Opening starts a shell by itself: no empty "Start terminal" step.
     await expect(drawer.getByRole('tab', { selected: true })).toBeVisible()
@@ -110,7 +118,7 @@ test('a pane opens its own terminal below the composer, keeps it running while h
     await drawer.getByRole('button', { name: /^Close / }).click()
     await drawer.getByRole('button', { name: 'End terminal' }).click()
     await expect(drawer).toHaveCount(0)
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(await drawerShown()).toBe('false')
     await expect.poll(() => drawerSessions(page, threadId, 'drawer')).toEqual([])
   } finally {
     await closeSotto(launched)

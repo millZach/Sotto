@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — the quiet composer's Queue disc</title>
+<!--
+  THROWAWAY PROTOTYPE. Not product code.
+  Question: while a turn runs and something is typed, the quiet composer's disc (ADR-0161 decision 5) queues the
+  prompt, drawn today as lucide ArrowDownToLine, which reads as Download. What should it show instead?
+  Candidates: A ListPlus (what the full composer's Queue key already uses, ADR-0153), B ListEnd, C Clock,
+  D the word Queue in a pill. Each in Sotto's default theme, dark and light, at rest and hovered. Idle Send
+  (ArrowUp) is kept for comparison.
+  Zach's pick (October 30, 2026): A, ListPlus, matching the full composer's Queue key. Starts from the real look: ThreadComposer.tsx, quietComposer.css, threads.css.
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'), url('figtree-latin.woff2') format('woff2'); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #1b1c20; color: #ececef; font: 14px/1.45 'Figtree', system-ui, sans-serif; padding: 0 0 48px; }
+.top { padding: 18px 20px 6px; max-width: 1240px; margin: 0 auto; }
+.top h1 { font-size: 18px; margin: 0 0 6px; font-weight: 650; }
+.top p { margin: 0 0 6px; color: #b4b6bd; max-width: 70ch; }
+.top b { color: #ececef; }
+section { max-width: 1240px; margin: 18px auto 0; padding: 0 20px; }
+section > h2 { font-size: 15px; font-weight: 650; margin: 0 0 2px; }
+section > h2 small { font-weight: 500; color: #9a9ca4; margin-left: 6px; }
+section > p.note { margin: 0 0 10px; color: #a7a9b0; font-size: 13px; max-width: 80ch; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } .top, section { padding: 0 12px; } .top { padding-top: 14px; } }
+
+/* Sotto's default theme (id t3-code), from src/shared/themes/palettes.ts and tokens.css. */
+.room[data-theme='dark'] {
+  --canvas: oklch(0.115 0.008 265); --text: oklch(0.985 0.005 280); --muted: oklch(0.72 0.014 265);
+  --card: oklch(0.185 0.008 265); --border: oklch(0.305 0.02 265); --accent: oklch(0.714403 0.104089 183.092);
+  --claude: #e2ad80;
+}
+.room[data-theme='light'] {
+  --canvas: oklch(0.978 0.004 85); --text: oklch(0.235 0.014 75); --muted: oklch(0.5 0.014 75);
+  --card: color-mix(in oklab, var(--text) 4%, var(--canvas)); --border: oklch(0.86 0.012 80); --accent: oklch(0.53 0.095 186);
+  --claude: #b4703c;
+}
+.room { --text-2: color-mix(in oklab, var(--text) 55%, var(--muted)); --pill: var(--text); --pill-ink: var(--canvas);
+  --hover: color-mix(in oklab, var(--accent) 14%, transparent); --hairline: color-mix(in oklab, var(--border) 70%, transparent);
+  background: var(--canvas); color: var(--text); border-radius: 12px; padding: 12px 12px 10px; border: 1px solid #2c2d33; }
+.room[data-theme='light'] { border-color: #d9d6cf; }
+.room > .label { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); margin: 0 2px 8px; }
+.room > .label b { color: var(--text-2); font-weight: 600; }
+.room > .tip { font-size: 12px; color: var(--muted); margin: 8px 4px 0; min-height: 17px; }
+.room > .tip kbd { font: inherit; font-size: 11px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-2); }
+
+/* The quiet composer: one pill (quietComposer.css). */
+.pill { display: flex; align-items: center; gap: 2px; padding: 6px 7px 6px 8px; border-radius: 24px; background: var(--card); min-width: 0; }
+.ico { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 8px; color: var(--muted); }
+.ico svg { width: 16px; height: 16px; }
+.prompt { flex: 1 1 auto; min-width: 0; padding: 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-size: 14px; }
+.prompt[data-empty] { color: var(--muted); }
+.chip { display: inline-flex; align-items: center; flex: none; height: 28px; border-radius: 8px; background: color-mix(in oklab, var(--text) 6%, var(--card)); font-size: 13px; }
+.chip .model { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; color: var(--text); }
+.chip .mark { width: 12px; height: 12px; color: var(--claude); }
+.chip .sep { width: 1px; height: 14px; background: var(--hairline); }
+.chip .effort { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; color: var(--text-2); }
+.chip .effort svg { width: 12px; height: 12px; opacity: .55; }
+@media (max-width: 460px) { .chip .model-name { display: none; } }
+.stop { display: inline-grid; place-items: center; flex: none; width: 22px; height: 28px; border-radius: 6px; color: var(--muted); }
+.stop svg { width: 10px; height: 10px; }
+.stop:hover { background: var(--hover); color: var(--text); }
+
+/* One disc (quietComposer.css + threads.css): the pill pair, 32px round, glyph 16px at 2.4. */
+.disc { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border: 0; padding: 0; border-radius: 50%;
+  background: var(--pill); color: var(--pill-ink); cursor: pointer; transition: background-color 160ms ease-out, transform 120ms ease-out; }
+.disc svg { width: 16px; height: 16px; }
+.disc:is(:hover, [data-hover]) { background: color-mix(in oklab, var(--pill) 84%, var(--card)); }
+.disc:active { transform: scale(.94); }
+.disc[data-word] { width: auto; padding: 0 12px; border-radius: 16px; font: inherit; font-size: 13px; font-weight: 650; letter-spacing: .01em; }
+.disc:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.room .hoverhint { color: var(--accent); }
+
+/* Side-by-side strip */
+.strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; }
+.strip .cell { display: grid; justify-items: center; gap: 6px; padding: 10px 4px 8px; text-align: center; font-size: 12px; color: var(--muted); }
+.strip .cell b { color: var(--text); font-weight: 600; font-size: 12.5px; }
+.strip .cell[data-today] b { text-decoration: line-through; text-decoration-color: var(--muted); }
+.strip.big .disc { width: 48px; height: 48px; } .strip.big .disc svg { width: 24px; height: 24px; }
+.strip.big .disc[data-word] { width: auto; height: 48px; border-radius: 24px; font-size: 19px; padding: 0 18px; }
+@media (max-width: 640px) { .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.footer { max-width: 1240px; margin: 24px auto 0; padding: 0 20px; color: #9a9ca4; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>The Queue disc while a thread is working</h1>
+  <p>While a turn runs and you have typed something, Enter queues the prompt and the round button at the end of the composer becomes <b>Queue prompt</b>. Today it draws a download arrow. Four candidates, each shown in the real composer row (attach, shield, prompt, model and effort, Stop, disc), dark and light, at rest and hovered. Hover or tap any disc to feel it.</p>
+  <p><b>A</b> is the same list-plus the full (stable) composer already uses for Queue, so both composers would match.</p>
+</div>
+
+<section>
+  <h2>At a glance</h2>
+  <p class="note">Today's arrow, the four candidates and the idle Send arrow, at the real 32px and enlarged.</p>
+  <div class="grid" id="glance"></div>
+</section>
+
+<div id="candidates"></div>
+
+<div class="footer">Throwaway prototype for the quiet composer (ADR-0161, Owl). Colours are Sotto's default theme. The tooltip text under each row is what hovering the real disc shows.</div>
+
+<script>
+const svg = (inner, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${inner}</svg>`
+const G = {
+  download: svg('<path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/>'),
+  listPlus: svg('<path d="M16 5H3"/><path d="M11 12H3"/><path d="M16 19H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>'),
+  listEnd: svg('<path d="M16 5H3"/><path d="M16 12H3"/><path d="M9 19H3"/><path d="m16 16-3 3 3 3"/><path d="M21 5v12a2 2 0 0 1-2 2h-6"/>'),
+  clock: svg('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'),
+  send: svg('<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>'),
+}
+const plus = svg('<path d="M5 12h14"/><path d="M12 5v14"/>', 'stroke-width="2"')
+const shield = svg('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>', 'stroke-width="2"')
+const bolt = svg('<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>', 'stroke-width="2"')
+const stopSq = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor"/></svg>'
+const mark = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.6 6.2L20 6l-4.6 4.6L22 12l-6.6 1.4L20 18l-6.4-2.2L12 22l-1.6-6.2L4 18l4.6-4.6L2 12l6.6-1.4L4 6l6.4 2.2z"/></svg>'
+
+const CANDS = [
+  { id: 'today', name: 'Today: ArrowDownToLine', short: 'Today', glyph: G.download, note: 'An arrow into a line: the download symbol.' },
+  { id: 'A', name: 'A · ListPlus (recommended)', short: 'A ListPlus', glyph: G.listPlus, note: 'Add to a list, as in “Add to queue”. Already the Queue glyph in the full composer (ADR-0153), so both composers would say Queue the same way.' },
+  { id: 'B', name: 'B · ListEnd', short: 'B ListEnd', glyph: G.listEnd, note: 'An arrow tucking into the end of a list: “goes after what is already there”. Busier at 16px.' },
+  { id: 'C', name: 'C · Clock', short: 'C Clock', glyph: G.clock, note: '“Later.” Says when, not where; could also read as “schedule” or “history”.' },
+  { id: 'D', name: 'D · The word Queue', short: 'D Word', word: 'Queue', note: 'Unambiguous, but the disc widens into a pill while queueing, so the row shifts when you start typing during a turn.' },
+  { id: 'send', name: 'For comparison: idle Send (unchanged)', short: 'Send', glyph: G.send, idle: true, note: 'What the disc shows when no turn is running.' },
+]
+
+const disc = (c, hover) => {
+  const label = c.idle ? 'Send prompt' : 'Queue prompt'
+  return c.word
+    ? `<button class="disc" data-word ${hover ? 'data-hover' : ''} aria-label="${label}" title="${label}">${c.word}</button>`
+    : `<button class="disc" ${hover ? 'data-hover' : ''} aria-label="${label}" title="${label}">${c.glyph}</button>`
+}
+const row = (c, hover) => `<div class="pill">
+  <span class="ico" title="Attach">${plus}</span>
+  <span class="ico" title="Ask first">${shield}</span>
+  <span class="prompt">${c.idle ? 'Add a test for the tray icon on Linux' : 'Also run the Linux tray check when you’re done'}</span>
+  <span class="chip"><span class="model">${mark}<span class="model-name">Opus 5.5</span></span><span class="sep"></span><span class="effort">High ${bolt}</span></span>
+  ${c.idle ? '' : `<span class="stop" title="Stop agent">${stopSq}</span>`}
+  ${disc(c, hover)}
+</div>`
+const room = (c, theme, hover) => `<div class="room" data-theme="${theme}">
+  <div class="label"><b>${theme === 'dark' ? 'Dark' : 'Light'} · ${hover ? '<span class="hoverhint">hovered</span>' : 'at rest'}</b><span>${c.idle ? 'nothing running' : 'Claude Code is working'}</span></div>
+  ${row(c, hover)}
+  <div class="tip">${hover ? `Tooltip: ${c.idle ? 'Send prompt' : 'Queue prompt'} <kbd>Enter</kbd>` : ''}</div>
+</div>`
+
+document.getElementById('candidates').innerHTML = CANDS.map(c => `<section id="${c.id}">
+  <h2>${c.name}</h2><p class="note">${c.note}</p>
+  <div class="grid">${room(c, 'dark', false)}${room(c, 'dark', true)}${room(c, 'light', false)}${room(c, 'light', true)}</div>
+</section>`).join('')
+
+const strip = (theme, big) => `<div class="room" data-theme="${theme}"><div class="label"><b>${theme === 'dark' ? 'Dark' : 'Light'}${big ? ' · enlarged' : ' · actual size'}</b></div>
+  <div class="strip ${big ? 'big' : ''}">${CANDS.map(c => `<div class="cell" ${c.id === 'today' ? 'data-today' : ''}>${disc(c, false)}<b>${c.short}</b></div>`).join('')}</div></div>`
+document.getElementById('glance').innerHTML = strip('dark', false) + strip('light', false) + strip('dark', true) + strip('light', true)
+</script>
+</body>
+</html>

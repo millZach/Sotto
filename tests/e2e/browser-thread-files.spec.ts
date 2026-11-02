@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { expect, test } from '@playwright/test'
 import { captureSotto } from './support/sottoCapture'
 import { resizeContentWindow } from './support/sottoWindow'
-import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Agents show a prototype by opening the HTML file they made in their thread's folder. Sotto's browser opens no file://
@@ -87,7 +87,7 @@ test('an agent opens an HTML file from its thread\'s folder in Sotto\'s browser,
     await expect(player).toBeVisible()
     await captureSotto(launched, join(SHOTS, 'thread-file-player.png'), { mode: 'native-window', title: 'Sotto thread file player', retries: 9, retryDelayMs: 500 })
 
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tab', { name: 'Browser' }).click()
     await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue(shown.url)

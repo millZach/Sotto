@@ -84,7 +84,7 @@ function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled =
   const navigate = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: museEnabled || quiet ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: museEnabled, 'quiet-composer': quiet } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: museEnabled || quiet ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: museEnabled, 'quiet-composer': quiet } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn(), dismissPastePermissionNotices: vi.fn() },
   } as unknown as AppContextValue)
   return navigate
 }
@@ -114,17 +114,29 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe("Watcher's room", () => {
+  it('says once, in one sentence above the composer, that the first message starts Watcher, and leaves the rest to Help (#1822)', async () => {
+    const { navigate } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
+    await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })
+    const intro = document.querySelector('.watcher-first__intro')!
+    expect(intro).toHaveTextContent(/^Start WatcherWatcher starts your other threads, briefs them and keeps an eye on them while they work\. Your first message starts it\. How Watcher works$/u)
+    // The providers and permissions paragraph lives in Help now, and "starts it" is said nowhere else.
+    expect(screen.queryByText(/only you answer a thread’s questions and permissions/u)).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Watcher message' })).toHaveAttribute('data-placeholder', 'Say what to start or check.')
+    expect(document.body.textContent?.match(/starts (it|Watcher)\b/gu)).toEqual(['starts it'])
+    fireEvent.click(screen.getByRole('button', { name: 'How Watcher works' }))
+    expect(navigate).toHaveBeenCalledWith('help', 'help-watcher')
+  })
+
   it('starts on Watcher’s own composer the first time, and the first message starts Watcher and goes to it without selecting anything', async () => {
     const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     expect(await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
-    expect(screen.getByText(/only you answer a thread’s questions and permissions/)).toBeInTheDocument()
     // No actions before Watcher runs.
     expect(screen.queryByRole('button', { name: 'More Watcher actions' })).toBeNull()
     const chosen = screen.getByRole('group', { name: 'Watcher’s model' })
     expect(within(chosen).getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Sonnet 4.5')
     // What it may do without asking is chosen here too, and a new Watcher starts on Ask for approval.
     expect(within(chosen).getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
-    expect(screen.getByText('Your first message starts Watcher on Sonnet 4.5, with your own Claude Code account.')).toBeInTheDocument()
+    expect(screen.getByText('On Sonnet 4.5, with your own Claude Code account.')).toBeInTheDocument()
     const send = screen.getByRole('button', { name: 'Start Watcher and send' })
     expect(send).toBeDisabled()
     setPromptText(screen.getByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
@@ -152,7 +164,7 @@ describe("Watcher's room", () => {
       expect(effort).toHaveTextContent(/^Medium$/u)
       fireEvent.keyDown(effort, { key: 'End' })
       expect(effort).toHaveTextContent(/^High$/u)
-      expect(screen.getByRole('combobox', { name: 'Watcher’s permissions' }).closest('.thread-prompt__lead')).not.toBeNull()
+      expect(screen.getByRole('combobox', { name: 'Watcher’s permissions' }).closest('.thread-prompt__meta > .thread-prompt__shield')).not.toBeNull()
     } else {
       expect(document.querySelector('.split-chip-effort')).toBeNull()
       fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
@@ -375,7 +387,7 @@ describe("Watcher's room", () => {
     mockAgents(state)
     const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
-    expect(await screen.findByText(/your own Codex, Claude Code, Grok Build or Muse account/)).toBeInTheDocument()
+    expect(await screen.findByText('On Fixture Muse, with your own Muse account.')).toBeInTheDocument()
     setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
     fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
     await waitFor(() => expect(bridge.open).toHaveBeenCalledWith(expect.objectContaining({ provider: 'muse', modelId: 'muse:fixture' })))
@@ -1140,5 +1152,49 @@ describe('Watcher’s night scene', () => {
   it('does not exist with the Watcher gate off', () => {
     const { container } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }), false)
     expect(container.querySelectorAll('canvas')).toHaveLength(0)
+  })
+})
+
+describe("Watcher's first-start box suggests a first message (ADR-0173)", () => {
+  const suggestion = { headline: '', ghost: 'Check on the footer links thread', suggestions: [], answers: [] }
+  /** The first-start box with next prompts on, Suggest a next prompt as `on`, and a window bridge that answers as given. */
+  function firstStart(on: boolean, watcherFirst: (modelId: string) => Promise<unknown>, cancelWatcherFirst = vi.fn()) {
+    const app = (suggest: boolean) => vi.mocked(useOptionalApp).mockReturnValue({
+      navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: { ...DEFAULT_SETTINGS, nextPromptSuggestions: suggest },
+      update: { watcherEnabled: true, owlFeatures: { watcher: true, 'next-prompt': true } },
+      actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn(), dismissPastePermissionNotices: vi.fn() },
+    } as unknown as AppContextValue)
+    app(on)
+    mockAgents(stateWithWatcher())
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
+    const before = window.sotto
+    window.sotto = { ...before, nextPrompt: { read: async () => [], onChanged: () => () => undefined, watcherFirst: vi.fn(watcherFirst), cancelWatcherFirst } } as unknown as NonNullable<typeof window.sotto>
+    const tree = () => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>
+    const view = render(tree())
+    return { view, setSuggest: (suggest: boolean) => { app(suggest); view.rerender(tree()) },
+      restore: () => { if (before === undefined) delete window.sotto; else window.sotto = before } }
+  }
+
+  it('takes its ghost away, and Tab no longer takes it, once Suggest a next prompt is turned off', async () => {
+    const box = firstStart(true, async () => suggestion)
+    try {
+      const prompt = await screen.findByRole('textbox', { name: 'Watcher message' })
+      await waitFor(() => expect(document.querySelector('.prompt-editor__ghost')).toHaveTextContent('Check on the footer links thread'), { timeout: 4000 })
+      box.setSuggest(false)
+      expect(document.querySelector('.prompt-editor__ghost')).toBeNull()
+      fireEvent.keyDown(prompt, { key: 'Tab' })
+      expect(promptText(prompt)).toBe('')
+    } finally { box.restore() }
+  })
+
+  it('tells main to stop the side request it waits on once the box closes', async () => {
+    const cancelWatcherFirst = vi.fn()
+    const box = firstStart(true, () => new Promise(() => undefined), cancelWatcherFirst)
+    try {
+      await screen.findByRole('textbox', { name: 'Watcher message' })
+      expect(cancelWatcherFirst).not.toHaveBeenCalled()
+      box.view.unmount()
+      expect(cancelWatcherFirst).toHaveBeenCalled()
+    } finally { box.restore() }
   })
 })

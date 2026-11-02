@@ -22,7 +22,8 @@ it('answers the Phones page in the main window only, and parses every command', 
   expect(() => handlers.get(PHONES_COMMAND)!(widget, { type: 'show-code' })).toThrow('Open Phones in the main Sotto window.')
   await handlers.get(PHONES_COMMAND)!(main, { type: 'show-code' })
   expect(phones.command).toHaveBeenCalledWith({ type: 'show-code' })
-  expect(() => handlers.get(PHONES_COMMAND)!(main, { type: 'set-can-answer', clientId: 'phone' })).toThrow()
+  // Pairing lets a phone answer, so the window has no Can answer to send.
+  expect(() => handlers.get(PHONES_COMMAND)!(main, { type: 'set-can-answer', clientId: 'phone', allowed: true })).toThrow()
   expect(() => handlers.get(PHONES_COMMAND)!(main, { type: 'open-url', url: 'https://example.com' })).toThrow()
   cleanup()
   expect(handlers.size).toBe(0)

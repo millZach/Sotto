@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
 import { AGENT_FORK_GONE, START_HANDOVER_CLOSE } from '../../src/shared/threadStarts'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 import { textContrast } from './support/textContrast'
 
@@ -57,7 +57,7 @@ async function ready(launched: LaunchedSotto, threadId: string): Promise<void> {
 }
 
 async function openAgents(page: Page): Promise<void> {
-  if (await page.getByRole('complementary', { name: 'Tools', exact: true }).count() === 0) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+  if (await page.getByRole('complementary', { name: 'Tools', exact: true }).count() === 0) await toggleTools(page)
   await page.getByRole('tab', { name: 'Agents', exact: true }).click()
 }
 

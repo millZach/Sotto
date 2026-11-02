@@ -23,7 +23,7 @@ function listening(): WidgetSnapshot {
     status: 'listening',
     sessionId: 's',
     startedAt: 1,
-    level: 0.5,
+    speaking: true,
     cancellable: true,
   })
 }
@@ -58,6 +58,29 @@ describe('NativeDictationLifecycle widget presence', () => {
     await lifecycle.publish(snapshot({ status: 'error', code: 'TRANSCRIPTION_FAILED', kept: true } as Partial<WidgetSnapshot>))
 
     expect(syncEscape).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', kept: true }))
+  })
+
+  it('tells the widget whether main holds Escape, and never passes on a renderer\'s claim', async () => {
+    let claimed = true
+    const sendToWidget = vi.fn(async () => true)
+    const lifecycle = new NativeDictationLifecycle({
+      delivery: { sendToWidget },
+      getTrayState: () => ({ dictating: false, autoPaste: true }),
+      updateTray: vi.fn(),
+      syncEscape: vi.fn(() => claimed),
+      showWidgetWhenIdle: () => true,
+      log: vi.fn(),
+    })
+    const listening = snapshot({ status: 'listening', sessionId: 's', startedAt: 0, speaking: false, cancellable: true } as Partial<WidgetSnapshot>)
+
+    await lifecycle.publish(listening)
+    expect(sendToWidget).toHaveBeenLastCalledWith(WIDGET_STATE, expect.objectContaining({ escapeClaimed: true }), true)
+
+    // Another app holds Escape: the widget hears it is not claimed and keeps its cancel ×,
+    // even when the renderer's publication says otherwise.
+    claimed = false
+    await lifecycle.publish({ ...listening, escapeClaimed: true })
+    expect(sendToWidget).toHaveBeenLastCalledWith(WIDGET_STATE, expect.objectContaining({ escapeClaimed: undefined }), true)
   })
 
   it('keeps the widget revealed for idle snapshots so the resting sliver stays visible', async () => {
@@ -200,7 +223,7 @@ describe('NativeDictationLifecycle theme presentation', () => {
     const harness = presentedHarness()
     await harness.lifecycle.publish(listening())
     expect(harness.delivered().at(-1)?.palette).toEqual(fern)
-    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', level: 0.5 })
+    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', speaking: true })
   })
 
   it('repaints an active session live when the theme changes, without a new renderer publication', async () => {

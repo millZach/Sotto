@@ -5,8 +5,8 @@ import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
 import { AGENT_ACTIVITY_BODY, type AgentState } from '../../../src/shared/agents'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' }, BrowserWindow: { fromWebContents: vi.fn() }, dialog: { showOpenDialog: vi.fn() } }))
-import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
+import { receiptEncoders } from '../../fixtures/receiptEncoders'
 
 const disposables: Array<() => void> = []
 afterEach(() => { for (const dispose of disposables.splice(0)) dispose() })
@@ -17,7 +17,7 @@ function fixture(activityBody?: (request: { threadId: string; activityId: string
   const registry = ipcRegistry()
   const { ipc, main, widget } = registry
   const control = { get: vi.fn<() => AgentState>(), shell: vi.fn<() => AgentState>(), threadDetail: vi.fn(() => null), attachmentPreview: vi.fn(() => null), ...(activityBody ? { activityBody } : {}) }
-  disposables.push(registerAgentIpc(ipc, control, { command: vi.fn() }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, control, { command: vi.fn() }, () => [main, widget], { ...receiptEncoders() }))
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const fromWidget: IpcInvocationEvent = { sender: widget.webContents, senderFrame: widget.webContents.mainFrame }
   return { invoke: (source: IpcInvocationEvent, payload: unknown) => registry.invoke(AGENT_ACTIVITY_BODY, [payload], source), event, fromWidget }

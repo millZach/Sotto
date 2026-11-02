@@ -159,6 +159,8 @@ export interface OwnerScalePipelineOptions {
   creationRead?: () => void
   /** The thread-store writer the workspace runs over; absent, the one it makes itself (#1457). */
   storeWriter?: (store: ThreadStore) => ThreadStoreWriter
+  /** The built store worker the thread store writes and reads on (`builtStoreWorker`); absent, it writes on main. */
+  storeWorker?: string | undefined
 }
 
 export interface ThreadChangesReport {
@@ -397,7 +399,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
       opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor'), deepseek: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('deepseek') } })
   shadows.tapSwitchChanges(native)
-  const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl, options.storeWriter)
+  const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl, options.storeWriter, options.storeWorker)
   shadows.tapAccept(workspace)
   shadows.tapWorkspaceChanges(workspace)
   shadows.tap(workspace, 'workspace publication')
@@ -441,7 +443,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
   watcher?.useRemoteHosts(router.watcherHosts())
   router.add({ hostId: localHostId, name: 'This computer', kind: 'local', service,
-    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener) })
+    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener, { appends: true }) })
 
   // The remote host, as a socket connection holds it: its last pushed state, copied whole for a `shell()` and read in place
   // for a `view()`. Its threads each held a question the user answered. Its catalog lists a few Muse models, which a

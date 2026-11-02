@@ -25,7 +25,7 @@ describe('visual preview parser', () => {
     const second = parseVisualPreview(query, true)
     expect(first).toEqual(second)
     expect(first).toEqual(expect.objectContaining({ status, theme: 'dark', reducedMotion: 'on' }))
-    if (first?.status === 'listening') expect(first.level).toBe(0.64)
+    if (first?.status === 'listening') expect(first.speaking).toBe(true)
     if (first?.status === 'processing') expect(first.progress).toBe(0.58)
   })
 
@@ -71,7 +71,7 @@ describe('visual preview parser', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.5,
+          status: 'listening', sessionId: 'listening', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={5_000}

@@ -29,7 +29,7 @@ async function selectThread(page: Page, title: string): Promise<void> {
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
 
-/** Rename, Regenerate title and Settle live behind the pane header's More menu now, so it has to be opened first. */
+/** Rename and Settle live behind the pane header's More menu now, so it has to be opened first. */
 async function headerAction(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: 'More actions', exact: true }).first().click()
   await page.getByRole('menuitem', { name, exact: true }).click()
@@ -306,12 +306,21 @@ test('keyboard navigation exposes folder actions, rich scrollers and truthful fa
     await prepare(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('searchbox', { name: 'Search threads' }).focus()
-    const action = sidebar.getByRole('button', { name: 'Settle project Sotto test', exact: true })
-    for (let steps = 0; steps < 15 && !await action.evaluate(node => node === document.activeElement); steps += 1) await page.keyboard.press('Tab')
+    // A folder's actions are its menu's from the keyboard (ADR-0164): Tab into the thread list, walk it to the folder,
+    // and Shift+F10 opens the menu with Settle project in words.
+    for (let steps = 0; steps < 6 && !await page.evaluate(() => document.activeElement?.closest('.thread-nav__list') != null); steps += 1) await page.keyboard.press('Tab')
+    await page.keyboard.press('Home')
+    const folder = sidebar.getByRole('button', { name: /^Sotto test \d+ threads?$/ })
+    for (let steps = 0; steps < 30 && !await folder.evaluate(node => node === document.activeElement); steps += 1) await page.keyboard.press('ArrowDown')
+    await expect(folder).toBeFocused()
+    await page.keyboard.press('Shift+F10')
+    const action = sidebar.getByRole('menu', { name: 'Actions for Sotto test' }).getByRole('menuitem', { name: 'Settle project', exact: true })
+    for (let steps = 0; steps < 4 && !await action.evaluate(node => node === document.activeElement); steps += 1) await page.keyboard.press('ArrowDown')
     await expect(action).toBeFocused()
-    expect(await action.evaluate(node => parseFloat(getComputedStyle(node).outlineWidth))).toBeGreaterThanOrEqual(2)
-    expect(await action.evaluate(node => getComputedStyle(node.parentElement!).opacity)).toBe('1')
+    expect(await action.evaluate(node => getComputedStyle(node).boxShadow)).toMatch(/ 3px inset/u)
     await captureModes(launched, 'keyboard-folder-action', 760)
+    await page.keyboard.press('Escape')
+    await expect(folder).toBeFocused()
     await selectThread(page, 'Docs')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: '| Item | State |\n| --- | --- |\n| Pump | Ready |\n\n```typescript\nconst enabled = true;\n```' }))
     const transcript = page.getByRole('log', { name: 'Thread transcript' })

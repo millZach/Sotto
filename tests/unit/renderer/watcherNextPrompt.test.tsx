@@ -98,7 +98,7 @@ describe('the next prompt in Watcher’s composer', () => {
     expect(field).toHaveFocus()
   })
 
-  it('offers nothing while Suggest a next prompt after each turn is off', async () => {
+  it('offers nothing while Suggest a next prompt is off', async () => {
     renderRoom({ ...DEFAULT_SETTINGS, nextPromptSuggestions: false })
     await prompt()
     expect(ghost()).toBeNull()

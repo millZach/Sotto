@@ -26,7 +26,20 @@ function holdingMessage(holder: CheckoutHolder): string {
     case 'git-action': return 'A Git action is running in this folder.'
   }
 }
-export function checkoutMutationRefusal(holder: CheckoutHolder): GitActionRefusal {
+/**
+ * A change refused because something else holds the folder's checkout guard (#1823). It says what holds it, that
+ * nothing was changed and what to do; `threadId` names the thread holding it, when one does, so a window can open it.
+ */
+export class CheckoutHeldRefusal extends GitActionRefusal {
+  constructor(message: string, readonly threadId: string | undefined, private readonly parts?: { readonly holding: string; readonly recovery: string }) { super(message) }
+  /**
+   * The same hold with `outcome` in place of "Nothing was changed.", such as "Nothing was brought back." for Bring changes
+   * back (#1866). The message as it is when the refusal was made without its parts.
+   */
+  withOutcome(outcome: string): string { return this.parts ? `${this.parts.holding} ${outcome} ${this.parts.recovery}` : this.message }
+}
+
+export function checkoutMutationRefusal(holder: CheckoutHolder): CheckoutHeldRefusal {
   let recovery: string
   switch (holder.kind) {
     case 'waiting-answer': recovery = 'Answer it, then try again.'; break
@@ -43,7 +56,8 @@ export function checkoutMutationRefusal(holder: CheckoutHolder): GitActionRefusa
     case 'settle': recovery = 'Try again in a moment.'; break
     default: recovery = 'Wait for it to finish before changing this folder.'
   }
-  return new GitActionRefusal(`${holdingMessage(holder)} ${recovery}`)
+  const holding = holdingMessage(holder)
+  return new CheckoutHeldRefusal(`${holding} Nothing was changed. ${recovery}`, 'threadId' in holder ? holder.threadId : undefined, { holding, recovery })
 }
 
 /** A refusal of a checkout's send reservation, before a prompt or terminal starts. Each consumer supplies its own recovery copy. */

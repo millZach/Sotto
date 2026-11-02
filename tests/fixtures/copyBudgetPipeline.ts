@@ -85,7 +85,7 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const service = new LocalHostService({ control, events: workspace, ...(watcher ? { watcher } : {}) })
   const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
-    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener) })
+    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener, { appends: true }) })
   const broadcaster = new AgentStateBroadcaster()
   const statePublisher = coalesceAgentStatePublishes(next => { broadcaster.send(next, () => true) })
   const detailPublisher = coalesceAgentThreadDetailPublishes(() => undefined, { beforeOpening: () => statePublisher.flush() })

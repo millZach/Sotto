@@ -558,14 +558,53 @@ describe('DictationController', () => {
     recorderOptions(harness).onLevel?.(0.3)
     expect(snapshots(harness).at(-1)?.palette).toEqual(widgetPaletteFor(current))
 
-    // A theme chosen mid-session reaches the next level publication, not only the next session.
+    // A theme chosen mid-session reaches the next publication, here the speaking gate closing on a pause, not only
+    // the next session.
     current = settings({ hotkey: 'Control+Alt+X', lightTheme: 'fern', darkTheme: 'citrine' })
-    recorderOptions(harness).onLevel?.(0.6)
+    recorderOptions(harness).onLevel?.(0)
+    harness.fireTimers()
     const latest = snapshots(harness).at(-1)!
     expect(latest.palette).toEqual(widgetPaletteFor(current))
     expect(latest.palette.dark.accent).not.toBe(widgetPaletteFor(settings()).dark.accent)
     expect(latest.shortcut).toBe('Control+Alt+D')
     expect(widgetSnapshotSchema.parse(latest)).toEqual(latest)
+  })
+})
+
+describe('microphone levels (#993)', () => {
+  it('publishes each level to the meter alone, and a snapshot only when the speaking gate opens or closes', async () => {
+    const harness = createHarness()
+    await harness.controller.start()
+    const published = harness.publishWidgetState.mock.calls.length
+    const levels = [0.004, 0.3, 0.5, 0.2, 0.6, 0.015, 0.4, 0.5, 0.3, 0.004, 0, 0]
+    for (const level of levels) recorderOptions(harness).onLevel?.(level)
+    // Thirty levels a second while someone speaks: one snapshot, when the gate opened, and none for the rest.
+    expect(harness.publishWidgetState.mock.calls.length - published).toBe(1)
+    expect(snapshots(harness).at(-1)).toMatchObject({ status: 'listening', speaking: true })
+    expect(harness.controller.getState()).toMatchObject({ status: 'listening', speaking: true })
+    expect(harness.publishLevel.mock.calls.map(([level]) => level)).toEqual([0.004, 0.3, 0.5, 0.2, 0.6, 0.015, 0.4, 0.5, 0.3, 0.004, 0])
+
+    // The pause outlasts the hold: one more snapshot, the gate closing.
+    harness.fireTimers()
+    expect(harness.publishWidgetState.mock.calls.length - published).toBe(2)
+    expect(snapshots(harness).at(-1)).toMatchObject({ status: 'listening', speaking: false })
+  })
+
+  it('rests the meter and drops a pending close when listening ends', async () => {
+    const harness = createHarness()
+    await harness.controller.start()
+    recorderOptions(harness).onLevel?.(0.5)
+    recorderOptions(harness).onLevel?.(0)
+    expect(harness.publishLevel).toHaveBeenLastCalledWith(0)
+    // The gate's close is pending when the dictation is cancelled: it goes with the listening.
+    const pendingClose = harness.setTimer.mock.results.at(-1)!.value as number
+    await harness.controller.cancel()
+    expect(harness.clearTimer).toHaveBeenCalledWith(pendingClose)
+    expect(harness.publishLevel).toHaveBeenLastCalledWith(0)
+    const published = harness.publishWidgetState.mock.calls.length
+    recorderOptions(harness).onLevel?.(0.9)
+    expect(harness.publishWidgetState.mock.calls.length).toBe(published)
+    expect(harness.publishLevel).toHaveBeenLastCalledWith(0)
   })
 })
 

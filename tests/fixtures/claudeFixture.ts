@@ -8,6 +8,26 @@ import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, Recor
 
 export const claudeFixtureSkips: AdapterContractSkips = {}
 
+/**
+ * `count` saved Claude threads under `root`, as an earlier run left them: their aliases, the project they belong to, and a
+ * transcript each, of what `transcript` gives for its session and its place. Answers the folder the transcripts are in and
+ * each thread's session ID by its thread ID, in the order made.
+ */
+export async function savedClaudeThreads(root: string, count: number, transcript: (session: string, index: number) => string): Promise<{ folder: string; sessions: Map<string, string> }> {
+  const folder = join(root, 'home', 'projects', root.replace(/[^a-zA-Z0-9]/gu, '-'))
+  await mkdir(folder, { recursive: true })
+  const aliases: Record<string, unknown> = {}, sessions = new Map<string, string>()
+  for (let index = 0; index < count; index++) {
+    const id = randomUUID(), session = randomUUID()
+    sessions.set(id, session)
+    aliases[id] = { sessionId: session, projectId: 'project', cwd: root, title: `Saved ${index}`, modelId: 'fixture-model', createdAt: new Date(Date.UTC(2026, 9, 1)).toISOString(), origins: [], answeredRequestIds: [] }
+    await writeFile(join(folder, `${session}.jsonl`), transcript(session, index))
+  }
+  await writeFile(join(root, 'claude-threads.json'), JSON.stringify(aliases))
+  await writeFile(join(root, 'claude-projects.json'), JSON.stringify([{ id: 'project', title: 'Project', path: root }]))
+  return { folder, sessions }
+}
+
 export { storedClaudeOrigins } from './claudeOrigins'
 
 /** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */

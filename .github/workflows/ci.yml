@@ -111,57 +111,6 @@ jobs:
           echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=$coreml" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"; echo "tests=$tests" >> "$GITHUB_OUTPUT"
           echo "Host job: $host. iOS job: $ios. Core ML helper job: $coreml. Package job: $package. Desktop job: $desktop. Tests: $tests."
 
-  # The gates that are not the test suite. Every pull request and every push to main runs them.
-  checks:
-    name: Typecheck and lint (Windows)
-    needs: changes
-    runs-on: windows-latest
-    timeout-minutes: 20
-    env:
-      CI: 'true'
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
-      # so a path a test builds from os.tmpdir() never equals the real path the
-      # code resolves. The runner's work temp folder is a long path.
-      - name: Use a long temp path
-        shell: pwsh
-        run: |
-          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
-          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24.22.1'
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify release assets
-        run: npm run assets:verify
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Third-party notices
-        run: npm run notices:verify
-
-      # CI runs only a few Playwright journeys, so a spec that cannot load would go unseen (#1579). Listing loads every one.
-      - name: Load every Playwright spec
-        run: npm run e2e:list
-
-      # A change made only of documents skips the shards; these are the tests that read the documents.
-      - name: Document tests
-        if: needs.changes.outputs.tests == 'docs'
-        run: npx vitest run tests/unit/release tests/unit/scripts --maxWorkers=2
-
   # The suite took 24 to 27 minutes as one step (#895). Six runners each take a sixth of the test files,
   # with the same two-worker cap, so a run finishes in minutes and every file still runs on Windows.
   tests:
@@ -207,10 +156,12 @@ jobs:
 
   # Six shards keep the Linux suite near the Windows shards' duration without changing those jobs.
   # This uses the full-suite decision, not the host filter that skips renderer and preload changes.
+  # Pull requests skip them: twelve test shards per run made jobs wait for runners, and a Tests shard on Windows
+  # queued over two minutes in 54 of the last 98 runs (November 1, 2026). Pushes to main and the weekly run keep them.
   linux-tests:
     name: Tests (Linux, ${{ matrix.shard }}/6)
     needs: changes
-    if: needs.changes.outputs.tests == 'full'
+    if: needs.changes.outputs.tests == 'full' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -244,8 +195,9 @@ jobs:
   # Not a required check, by Drake's decision on October 28, 2026: Linux shards flaked often (coordinatorThreadChanges
   # failed 22 times in two days before its fix, and a workspaceThreadChanges 15 s timeout is still open), so requiring
   # it would put every Linux flake in every merge's path. The cost is that a pull request can merge before Linux ends:
-  # #1709 merged two minutes before Tests (Linux, 6/6) went red. Read Linux result before merging when it has ended.
-  # A skipped or failed Changed areas job must not make skipped Linux shards look green.
+  # #1709 merged two minutes before Tests (Linux, 6/6) went red.
+  # Pull requests skip the shards, so Linux breakage shows on the push to main. A skipped or failed Changed areas job
+  # must not make skipped Linux shards look green.
   linux-result:
     name: Linux result
     needs: [changes, linux-tests]
@@ -259,17 +211,19 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           MODE: ${{ needs.changes.outputs.tests }}
           TESTS: ${{ needs.linux-tests.result }}
+          EVENT: ${{ github.event_name }}
         run: |
           if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided which Linux tests to run."; exit 1; fi
+          if [ "$EVENT" = "pull_request" ] && [ "$TESTS" = "skipped" ]; then echo "Pull request: the Linux shards run on the push to main."; exit 0; fi
           if [ "$MODE" = "docs" ] && [ "$TESTS" = "skipped" ]; then echo "Documents only: the Linux shards were skipped."; exit 0; fi
           if [ "$MODE" != "full" ] || [ "$TESTS" != "success" ]; then echo "Linux tests mode: $MODE. Shards ended $TESTS."; exit 1; fi
           echo "Linux typecheck and all six test shards passed."
 
-  # Main's ruleset requires this job by name. It passes only when Changed areas finished, the checks passed
-  # and every test shard passed, or when Changed areas found a documents-only change and skipped the shards.
+  # Main's ruleset requires this job by name. It passes only when Changed areas finished, the checks in Checks and
+  # desktop (Windows) passed and every test shard passed, or when Changed areas found a documents-only change and skipped the shards.
   gates:
     name: Gates (Windows)
-    needs: [changes, checks, tests]
+    needs: [changes, desktop, tests]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -279,11 +233,12 @@ jobs:
         env:
           CHANGES: ${{ needs.changes.result }}
           MODE: ${{ needs.changes.outputs.tests }}
-          CHECKS: ${{ needs.checks.result }}
+          CHECKS: ${{ needs.desktop.outputs.checks }}
+          JOB: ${{ needs.desktop.result }}
           TESTS: ${{ needs.tests.result }}
         run: |
           if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided which tests to run."; exit 1; fi
-          if [ "$CHECKS" != "success" ]; then echo "Typecheck and lint (Windows) ended $CHECKS."; exit 1; fi
+          if [ "$CHECKS" != "true" ]; then echo "A check in Checks and desktop (Windows) did not pass; the job ended $JOB."; exit 1; fi
           if [ "$MODE" = "docs" ]; then echo "Documents only: the document tests passed and the shards were skipped ($TESTS)."; exit 0; fi
           if [ "$TESTS" != "success" ]; then echo "A test shard ended $TESTS."; exit 1; fi
           echo "Checks and all six test shards passed."
@@ -324,19 +279,28 @@ jobs:
       - name: Build and verify the unpacked Windows app
         run: npm run package:dir
 
-  # Exercise the built app on the hosted desktop without publishing (#899). The ruleset requires Desktop result, not this job.
+  # The gates that are not the test suite, which every pull request and every push to main runs, then the built app
+  # on the hosted desktop without publishing (#899) when Changed areas asks for it. They were two jobs until
+  # November 1, 2026; one job waits for one Windows runner instead of two and installs once. It took about 400 s
+  # against the test shards' 551 s median, so it does not lengthen a run. The journeys run even when a check fails,
+  # so one failure does not hide the other. Gates (Windows) reads the checks' output and Desktop result the journeys'.
   desktop:
-    name: Desktop check (Windows)
+    name: Checks and desktop (Windows)
     needs: changes
-    if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       CI: 'true'
+    outputs:
+      checks: ${{ steps.checks.outputs.passed }}
+      desktop: ${{ steps.smoke.outcome }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
+      # so a path a test builds from os.tmpdir() never equals the real path the
+      # code resolves. The runner's work temp folder is a long path.
       - name: Use a long temp path
         shell: pwsh
         run: |
@@ -350,17 +314,45 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        id: install
         run: npm ci
 
       - name: Verify release assets
+        id: assets
         run: npm run assets:verify
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Third-party notices
+        run: npm run notices:verify
+
+      # CI runs only a few Playwright journeys, so a spec that cannot load would go unseen (#1579). Listing loads every one.
+      - name: Load every Playwright spec
+        run: npm run e2e:list
+
+      # A change made only of documents skips the shards; these are the tests that read the documents.
+      - name: Document tests
+        if: needs.changes.outputs.tests == 'docs'
+        run: npx vitest run tests/unit/release tests/unit/scripts --maxWorkers=2
+
+      # Runs only when every step before it passed.
+      - name: Record that the checks passed
+        id: checks
+        shell: bash
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
       - name: Exercise the Windows desktop
+        id: smoke
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && needs.changes.outputs.desktop == 'true' }}
         run: npm run test:desktop-smoke
 
       # Keep passing captures too, so the hosted desktop each run used can be inspected.
       - name: Retain desktop journeys and screenshots
-        if: always()
+        if: ${{ always() && needs.changes.outputs.desktop == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-desktop-journeys-${{ github.run_attempt }}
@@ -391,8 +383,8 @@ jobs:
           if [ "$WANTED" = "true" ] && [ "$PACKAGE" != "success" ]; then echo "Package (Windows) was needed and ended $PACKAGE."; exit 1; fi
           echo "Package (Windows) needed: $WANTED. Result: $PACKAGE."
 
-  # The ruleset requires this guard because a skipped Desktop check (Windows) alone would count as passing even
-  # if Changed areas failed. Keep the packaging guard's independent contract.
+  # The ruleset requires this guard because skipped desktop journeys alone would count as passing even if Changed
+  # areas failed. It reads the journeys' own outcome, so a failed check in the same job does not fail it. Keep the packaging guard's independent contract.
   desktop-result:
     name: Desktop result
     needs: [changes, desktop]
@@ -400,16 +392,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check Changed areas and Desktop check (Windows)
+      - name: Check Changed areas and the desktop journeys
         shell: bash
         env:
           CHANGES: ${{ needs.changes.result }}
           WANTED: ${{ needs.changes.outputs.desktop }}
-          DESKTOP: ${{ needs.desktop.result }}
+          DESKTOP: ${{ needs.desktop.outputs.desktop }}
         run: |
           if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided whether to check the desktop."; exit 1; fi
-          if [ "$WANTED" = "true" ] && [ "$DESKTOP" != "success" ]; then echo "Desktop check (Windows) was needed and ended $DESKTOP."; exit 1; fi
-          echo "Desktop check (Windows) needed: $WANTED. Result: $DESKTOP."
+          if [ "$WANTED" = "true" ] && [ "$DESKTOP" != "success" ]; then echo "The desktop journeys were needed and ended ${DESKTOP:-without running}."; exit 1; fi
+          echo "Desktop journeys needed: $WANTED. Result: ${DESKTOP:-skipped}."
 
   host:
     name: Host archive and socket contract (Linux)
@@ -464,21 +456,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  ios:
-    name: Native iOS client (macOS)
+  # One job per phone, at the same time, so the slower phone sets the wait rather than the two added together, and a
+  # journey failing on one phone no longer leaves the other unrun. Each job builds for itself: the build is two to four
+  # minutes, and a shared one would still run ahead of both phones and hand a derived data folder between machines.
+  # Two named jobs rather than a matrix: a matrix job's result can read success when a leg was cancelled before a runner
+  # took it (https://github.com/orgs/community/discussions/211624), and the result below reads each phone's own.
+  ios-small:
+    name: Native iOS journeys on the small iPhone (macOS)
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    # Simulator journeys on two phones, with the package tests and two builds before them. Nineteen journeys took 67
-    # minutes on a push to main and one run reached 75; the Watcher tab added six, and twenty-five took 106 minutes on a
-    # push to main. Watcher's permissions, own changes and watching added three.
-    timeout-minutes: 140
+    # The package tests, two builds and one phone's journeys. Across five runs on November 2, 2026 the slower phone's
+    # journeys took up to 64 minutes and the rest of the job about 5.
+    timeout-minutes: 90
     env:
+      PHONE: small
       # Older than the TestFlight workflow's Xcode 27.1: the journeys run on iPhone SE (3rd generation) and iPhone 16
       # Pro Max, which the iOS 27.1 simulator no longer offers. Its Swift 6 compiler builds in Swift 5 mode, above
       # Package.swift's 5.9 tools and the iOS 17 minimum.
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-    steps:
+    steps: &ios-journey-steps
       - name: Check out the repository
         uses: actions/checkout@v4
       - name: Record native toolchain
@@ -487,17 +484,50 @@ jobs:
           swift --version
       - name: Test native protocol and build the unsigned simulator app
         run: sh apps/ios/Scripts/verify.sh
-      - name: Exercise Focus on small and large iPhones
-        run: sh apps/ios/Scripts/verify-ui.sh
+      - name: Exercise Focus on the ${{ env.PHONE }} iPhone
+        run: sh apps/ios/Scripts/verify-ui.sh "$PHONE"
       - name: Retain native journeys and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-focus-journeys
+          name: ios-focus-journeys-${{ env.PHONE }}
           path: apps/ios/.build-ui/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
+
+  ios-large:
+    name: Native iOS journeys on the large iPhone (macOS)
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      PHONE: large
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps: *ios-journey-steps
+
+  # The one result under the iOS job's name, so whatever reads that name does not need to know there are two phones.
+  # always() so a phone that was cancelled, or timed out, fails this rather than skipping it. It skips, as the job did
+  # before the split, when Changed areas did not ask for the journeys. This is not a required check.
+  ios:
+    name: Native iOS client (macOS)
+    needs: [changes, ios-small, ios-large]
+    if: always() && needs.changes.outputs.ios == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check both phones' journeys
+        shell: bash
+        env:
+          SMALL: ${{ needs.ios-small.result }}
+          LARGE: ${{ needs.ios-large.result }}
+        run: |
+          if [ "$SMALL" != "success" ] || [ "$LARGE" != "success" ]; then
+            echo "The iPhone journeys did not pass: the small phone ended $SMALL and the large phone ended $LARGE. Each phone's own artifact keeps its evidence."
+            exit 1
+          fi
+          echo "The iPhone journeys passed on both phones."
 
   # The Mac app's Core ML speech helper (built on FluidAudio) builds on Apple silicon and answers protocol 2.
   coreml-asr:

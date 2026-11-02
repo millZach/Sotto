@@ -157,8 +157,8 @@ async function columnContrast(page: Page, extra: readonly string[] = []): Promis
     const formEl = pane.querySelector<HTMLElement>(':scope > .thread-workspace__compose > .thread-prompt')!
     const cardColour = rgba(getComputedStyle(formEl).backgroundColor)
     const inCard = new Map<string, number[]>()
-    // The placeholder is suggestion ink, muted ink at 55%, and stands outside the 4.5:1 words here as on every solid
-    // field (threads.css, paintedTextPairs.ts): its meaning speech takes from the field's label (#1646).
+    // The placeholder is drawn by a pseudo-element, so it is not read here; it is solid muted ink, a tier the glass
+    // counts, and paintedTextPairs.ts holds it to 4.5:1 on the solid card (#1819).
     for (const element of formEl.querySelectorAll('*')) {
       // A decorative mark, such as the faint dot between New Watcher and the model, is not a word.
       if (element.closest('.tt-visually-hidden, [aria-hidden="true"]') !== null || ![...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.nodeValue!.trim())) continue
@@ -232,8 +232,10 @@ test.describe("Watcher's conversation column on the built app", () => {
             const card = box.querySelector(':scope > .thread-prompt')!.getBoundingClientRect()
             const last = [...log.querySelectorAll('.thread-transcript__content > *')].at(-1)!.getBoundingClientRect()
             const glass = getComputedStyle(box.querySelector(':scope > .thread-prompt')!)
+            const beside = document.elementFromPoint((card.right + box.getBoundingClientRect().right) / 2, card.top + 10)
             return { height: box.offsetHeight, marginTop: parseFloat(getComputedStyle(box).marginTop), padding: parseFloat(getComputedStyle(log).paddingBottom),
               lastClear: last.bottom <= box.getBoundingClientRect().top + 1, floorClear: card.bottom <= innerHeight,
+              underStrip: beside !== null && log.contains(beside),
               glass: { background: glass.backgroundColor, filter: glass.backdropFilter } }
           })
           const context = `${width}x${height} ${JSON.stringify(float)}`
@@ -241,6 +243,7 @@ test.describe("Watcher's conversation column on the built app", () => {
           expect(float.padding, context).toBeGreaterThanOrEqual(float.height)
           expect(float.lastClear, context).toBe(true)
           expect(float.floorClear, context).toBe(true)
+          expect(float.underStrip, context).toBe(true)
           expect(float.glass.filter, context).toContain('blur(14px)')
           // At least the picked 72%, and thicker where the card's words need it over pure white or black.
           const glassAlpha = await page.evaluate(css => { const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1); return ctx.getImageData(0, 0, 1, 1).data[3]! / 255 }, float.glass.background)
@@ -253,6 +256,13 @@ test.describe("Watcher's conversation column on the built app", () => {
           await readBack(page, 420)
           await expect(compose(page)).toHaveAttribute('data-slim', 'true')
           await settle(page)
+          const readable = await page.evaluate(() => {
+            const log = document.querySelector<HTMLElement>('#watcher-pane .thread-workspace__transcript')!
+            const jump = document.querySelector('#watcher-pane .thread-transcript__jump')!.getBoundingClientRect()
+            const edge = log.getBoundingClientRect().bottom - parseFloat(getComputedStyle(log).scrollPaddingBottom)
+            return { gap: jump.top - edge }
+          })
+          expect(readable.gap, JSON.stringify(readable)).toBeGreaterThanOrEqual(13)
           expect(await columnDigest(page), `the scene under the column at ${width}x${height} as the composer slims and the words scroll`).toBe(before)
           expect(await pageBoundProblems(page), `slim at ${width}x${height}`).toEqual([])
           await capture(launched, `slim-${appearance}-${width}x${height}.png`)

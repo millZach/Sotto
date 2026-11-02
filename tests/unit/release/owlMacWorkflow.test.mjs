@@ -17,8 +17,11 @@ const index = name => {
 const secrets = ['MAC_DEVELOPER_ID_P12', 'MAC_DEVELOPER_ID_P12_PASSWORD', 'APPLE_NOTARY_KEY_P8', 'APPLE_NOTARY_KEY_ID', 'APPLE_NOTARY_ISSUER_ID']
 
 describe('Sotto Owl for Mac workflow signing (ADR-0093)', () => {
-  it('runs only by hand, in the owl-mac environment', () => {
-    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
+  it('runs only by hand or from the nightly, in the owl-mac environment', () => {
+    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch', 'workflow_call'])
+    expect(Object.keys(workflow.on.workflow_call.inputs).sort()).toEqual(['source', 'version'])
+    // The signing secrets stay in the owl-mac environment, which admits only main; a caller passes none.
+    expect(workflow.on.workflow_call.secrets).toBeUndefined()
     expect(job.environment).toBe('owl-mac')
   })
   it('reads exactly the five owl-mac secrets, and only through a step\'s environment', () => {

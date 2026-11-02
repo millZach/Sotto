@@ -2,7 +2,7 @@ import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -41,7 +41,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
     await openThreads(page)
     await page.evaluate(() => document.fonts.ready)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByText('No agents spawned in this thread yet.')).toBeVisible()
     await page.screenshot({ path: join(shots, 'app-empty-dark.png') })
@@ -50,9 +50,9 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     const startedAt = new Date(Date.now() - 192_000).toISOString()
     const children = [{ ...first, startedAt }, { ...second, startedAt }]
     await activity(page, children)
-    await expect(page.locator('.tools-toggle__agents-dot')).toBeVisible()
+    await expect(page.locator('.tools-dot')).toBeVisible()
     await expect(page.getByRole('complementary', { name: 'Tools', exact: true })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await expect(page.getByRole('tab', { name: 'Files', exact: true })).toHaveAttribute('aria-selected', 'true')
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await page.getByRole('tab', { name: 'Agents', exact: true }).focus()
@@ -67,7 +67,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     const completeFirst = { ...children[0]!, status: 'completed', completedAt: new Date().toISOString(), message: 'History survives activity eviction and restart.' }
     await activity(page, [completeFirst, children[1]!])
     await expect(roster.getByText('Finished', { exact: true })).toHaveCount(1)
-    await expect(page.locator('.tools-toggle__agents-dot')).toBeVisible()
+    await expect(page.locator('.tools-dot')).toBeVisible()
     await page.locator('[data-agent-id="claude:storage"] .subagent-head').click()
     await expect(page.locator('.subagent-details')).toContainText('History survives activity eviction and restart.')
     await page.keyboard.press('Escape')
@@ -75,7 +75,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     const completeSecond = { ...children[1]!, status: 'completed', completedAt: new Date().toISOString(), message: 'The roomier view is ready for review.' }
     await activity(page, [completeFirst, completeSecond])
     await expect(roster.getByText('Finished', { exact: true })).toHaveCount(2)
-    await expect(page.locator('.tools-toggle__agents-dot')).toHaveCount(0)
+    await expect(page.locator('.tools-dot')).toHaveCount(0)
     await page.screenshot({ path: join(shots, 'app-two-agents-finished-dark.png') })
 
     const resumed = { ...first, assignmentId: 'task-storage-2', title: 'Check history-off cleanup', description: 'Remove saved words when local history is disabled.', startedAt: new Date().toISOString() }
@@ -94,9 +94,9 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     await expect(page.getByText('No agents spawned in this thread yet.')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Pin to Workshop', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Unpin from Workshop', exact: true })).toHaveCount(0)
-    await expect(page.locator('.tools-toggle__agents-dot')).toHaveCount(0)
+    await expect(page.locator('.tools-dot')).toHaveCount(0)
     await page.getByRole('button', { name: 'Close tools panel', exact: true }).click()
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await expect(page.getByText('No agents spawned in this thread yet.')).toBeVisible()
     await expect(roster.locator('.subagent-item')).toHaveCount(0)
     await page.screenshot({ path: join(questionEvidence, 'agents-selected-docs-pinned-workshop.png'), animations: 'disabled' })
@@ -105,7 +105,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     await page.getByRole('button', { name: 'Unpin from Workshop', exact: true }).click()
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByText('No agents spawned in this thread yet.')).toBeVisible()
-    await expect(page.locator('.tools-toggle__agents-dot')).toHaveCount(0)
+    await expect(page.locator('.tools-dot')).toHaveCount(0)
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' }) })
     await expect(roster.locator('.subagent-item')).toHaveCount(5)
     await page.locator('.subagents-roster').click({ position: { x: 24, y: 3 } })
@@ -149,10 +149,10 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     await page.screenshot({ path: join(shots, 'app-roomy-history-820-light.png') })
     await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'Close tools panel', exact: true }).click()
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await expect(page.getByRole('tab', { name: 'Agents', exact: true })).toHaveAttribute('aria-selected', 'true')
     await page.evaluate(async () => { await window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: 'workshop', text: '' }) })
-    await expect(page.locator('.tools-toggle__agents-dot')).toHaveCount(0)
+    await expect(page.locator('.tools-dot')).toHaveCount(0)
     await expect(roster.getByText('Last seen working', { exact: true })).toHaveCount(2)
     await page.screenshot({ path: join(shots, 'app-disconnected-820-light.png') })
     await launched.app.close()
@@ -165,7 +165,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     expect(old.assignments).toHaveLength(2)
     expect(old.assignments.some(item => item.result === 'History survives activity eviction and restart.')).toBe(true)
     await activity(reopened.page, [{ ...first, assignmentId: 'privacy-live', title: 'Private live task', prompt: 'Erase this task while retaining live status.' }])
-    await expect(reopened.page.locator('.tools-toggle__agents-dot')).toBeVisible()
+    await expect(reopened.page.locator('.tools-dot')).toBeVisible()
     for (const historyEnabled of [false, true]) {
       await reopened.page.evaluate(async enabled => { await window.sotto!.updateSettings({ historyEnabled: enabled }) }, historyEnabled)
       const retained = await reopened.page.evaluate(() => window.sotto!.subagents!.page({ threadId: 'workshop' }))
@@ -174,7 +174,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
       expect(JSON.stringify(retained)).not.toContain('Private live task')
       const erased = await reopened.page.evaluate(() => window.sotto!.subagents!.assignments({ threadId: 'workshop', agentId: 'claude:storage' }))
       expect(erased.assignments.every(item => item.prompt === undefined && item.result === undefined)).toBe(true)
-      await expect(reopened.page.locator('.tools-toggle__agents-dot')).toBeVisible()
+      await expect(reopened.page.locator('.tools-dot')).toBeVisible()
     }
     expect(errors).toEqual([])
   } catch (error) { console.error({ errors, body: await launched.page.locator('body').innerText().catch(() => 'closed') }); await launched.page.screenshot({ path: join(shots, 'failure.png') }).catch(() => undefined); throw error } finally { if (reopened) await reopened.app.close(); await closeSotto(launched) }

@@ -3,7 +3,7 @@ import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { mkdir, realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow, paneMenuToggle } from './support/sottoLaunch'
 import { threadTerminal, waitForShellPrompt } from './support/terminal'
 
 /**
@@ -64,7 +64,7 @@ test('a worktree thread’s terminal drawer starts in the project folder and nam
     await openThreads(page)
     const pane = page.locator(`section.thread-pane[data-thread-id="${threadId}"]`)
     await expect(pane).toBeVisible()
-    await pane.locator('[data-pane-terminal-toggle]').click()
+    await paneMenuToggle(pane, 'Terminal drawer')
     const drawer = page.locator('.pane-terminal')
     await expect(drawer.getByRole('tab', { selected: true })).toBeVisible()
 

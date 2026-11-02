@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { HOST_DESKTOP_FEATURES, HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostPushSchema, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { HOST_DESKTOP_FEATURES, HOST_FEATURE_LIST_MAX, HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostHealthFeatures, hostPushSchema, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 import { CHECK_QUEUE_VIEW_MAX } from '../../../src/shared/checkQueue'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
 
@@ -119,6 +120,10 @@ describe('remote command allow-list', () => {
       'stage-file-part',
       // A sent file's bytes by its message, for the iPhone's Quick Look: a read, as `preview` is.
       'attachment-file',
+      // One picture an agent's step carries, by its handle (ADR-0170): a read on the preview guard, as `preview` is.
+      'thread-media',
+      // One part of a video an agent wrote, by its handle (ADR-0170, part 4): a read on the same guard, as `thread-media` is.
+      'thread-media-part',
       // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
       ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
@@ -129,12 +134,16 @@ describe('remote command allow-list', () => {
       // Neither becomes an ordinary remote command or grants answer authority.
       'watcher-control', 'watcher-read',
       'watcher-phone-read', 'watcher-phone-send', 'watcher-phone-answer', 'watcher-phone-prepare-stop-all', 'watcher-phone-stop-all',
-      // Optional phone management: pairing admits watching; permissive mode changes recheck Can answer.
+      // Optional phone management: pairing admits watching; permissive mode changes recheck the answers grant.
       'watcher-phone-set-permission', 'watcher-phone-watch', 'watcher-phone-unwatch',
       // Optional phone steering: removing the user's own follow-up for Watcher, by its queue item, needs only the pairing (#1229).
       'watcher-phone-remove-followup',
       // Optional phone photos: one photo of the current Watcher's message, a read on the preview guard (October 23, 2026).
       'watcher-phone-preview',
+      // Optional phone composer: Watcher's own model, effort and speed, New Watcher, Stop on Watcher's own turn and putting
+      // the handover away, each naming the current Watcher (October 31, 2026). Pairing admits them, as it admits watching:
+      // a new Watcher keeps the saved permission mode, and none answers anything.
+      'watcher-phone-open', 'watcher-phone-new', 'watcher-phone-stop-turn', 'watcher-phone-dismiss-handover',
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
@@ -176,9 +185,25 @@ describe('remote command allow-list', () => {
       'delegation-remote-ask',
       // A confirmation receipt for the merge, close or auto-merge the client sends next (#1691): evidence of a second step,
       // never a grant, given only for a pull request the host read for that client.
-      'pull-request-confirmation']
+      'pull-request-confirmation',
+      // Whether a desktop that accepted next-prompts wants them now (ADR-0173): the user's switch, which only decides whether
+      // the host asks its providers for suggestions. It answers nothing and grants nothing.
+      'next-prompts-wanted',
+      // The settled threads a phone's list leaves out, a page at a time (ADR-0028, November 1 amendment): a read of the
+      // same thread records `shell` carries, with the same trust.
+      'settled-threads']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
+  })
+
+  it('reads the health of a host that lists every feature, and of a later one that lists many this build does not know', () => {
+    // A host that listed one feature past the old cap of 64 was read as another version of Sotto (October 30, 2026).
+    const health = (features: string[]) => hostHealthFeatures({ v: 1, status: 'ready', hostId: randomUUID(), pid: 1, port: 1, sottoVersion: '0.1.41', features })
+    expect(health([...HOST_FEATURES])?.features).toEqual([...HOST_FEATURES])
+    const later = [...HOST_FEATURES, ...Array.from({ length: 200 }, (_, index) => `later-feature-${index}`)]
+    expect(health(later)?.features).toHaveLength(later.length)
+    // Room for every feature to come for a long while: the list is read far past what any build lists.
+    expect(HOST_FEATURES.length).toBeLessThanOrEqual(HOST_FEATURE_LIST_MAX / 4)
   })
 
   it('carries a check on a Watcher start as a flag on watcher-control, no operation of its own, under watcher-check-queue (#1312)', () => {
@@ -196,7 +221,7 @@ describe('remote command allow-list', () => {
     // any operation it admitted, so a lost answer is read back by its receipt.
     expect(HOST_FEATURES).toContain('watcher-check-stop')
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
-    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all'])
+    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all', 'watcher-phone-stop-turn'])
     expect(Object.keys(watcherToolSchemas.stop_thread.input.shape).sort()).toEqual(['requestId', 'retryKey', 'target'])
   })
   it('sends a host\u2019s own check queue to a recorded desktop as a push under check-queue-views, no request of its own, and only ids and names (#1312)', () => {

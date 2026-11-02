@@ -77,6 +77,22 @@ function previousWorktreeLabel(branch: string | null | undefined): string {
 }
 
 /**
+ * When a thread was last active, by its messages, its provider's time and its summary's newest message, remembered for each
+ * thread record. Records are never written into, and an update that leaves a thread alone hands back its very record, so
+ * only a thread that changed is read again: the toolbar orders a project's threads on every draw, and the open ones carry
+ * hundreds of messages each (#993).
+ */
+const activeAt = new WeakMap<ToolbarThread, number>()
+function lastActive(thread: ToolbarThread): number {
+  let at = activeAt.get(thread)
+  if (at === undefined) {
+    at = thread.messages.reduce((latest, message) => Math.max(latest, Date.parse(message.createdAt) || 0), Math.max(0, Date.parse(thread.updatedAt ?? '') || 0, Date.parse(thread.summary?.lastMessageAt ?? '') || 0))
+    activeAt.set(thread, at)
+  }
+  return at
+}
+
+/**
  * The choices a draft can make: the checkout it shares, a worktree of its own, and every worktree another
  * thread of the same project already has, each named by its branch so two can be told apart.
  */
@@ -84,9 +100,7 @@ export function workspaceOptions(thread: ToolbarThread, threads: readonly Toolba
   const previous: WorkspaceOption[] = []
   const seen = new Set<string>()
   // Use activity, not Git's polling time. Shell snapshots carry the newest message time in their summary.
-  const recent = threads.filter(other => other.id !== thread.id && other.projectId === thread.projectId).map(other => ({ thread: other,
-    at: other.messages.reduce((latest, message) => Math.max(latest, Date.parse(message.createdAt) || 0), Math.max(0, Date.parse(other.updatedAt ?? '') || 0, Date.parse(other.summary?.lastMessageAt ?? '') || 0)),
-  }))
+  const recent = threads.filter(other => other.id !== thread.id && other.projectId === thread.projectId).map(other => ({ thread: other, at: lastActive(other) }))
     .sort((a, b) => b.at - a.at)
   for (const { thread: other } of recent) {
     const worktree = other.worktree

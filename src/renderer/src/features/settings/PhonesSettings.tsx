@@ -140,7 +140,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
       ? (() => {
         const left = countdown(code.expiresAt, now)
         const spelled = [...code.code].join(' '), expires = left.text
-        return <div key="code" ref={codeBox} className="phones-code" role="group" aria-label={t`Pairing code`} tabIndex={-1}
+        return <div key="code" ref={codeBox} className="phones-code" data-code="" role="group" aria-label={t`Pairing code`} tabIndex={-1}
           onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void run({ type: 'cancel-code' }) } }}>
           <p>{t`Pairing code`}</p>
           <span className="phones-code__value" aria-hidden="true">{code.code.slice(0, 4)}<i />{code.code.slice(4)}</span>
@@ -166,6 +166,9 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
       <p className="tt-paragraph"><Trans>Phone access needs the local host. Turn on Run the local host above, then restart Sotto.</Trans></p>
       <Button variant="secondary" onClick={onOpenHosts}>{t`Show Run the local host`}</Button>
     </div> : null}
+    {/* One card, as on every other Settings page (ADR-0110, #1831): the switch, its three checks as rows, and Pair a phone
+        as a row with its button. */}
+    <div className="hosts-card phones-card">
     <div className="phones-switch">
       <Toggle setting="phone-access" label={t`Let phones connect`} checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
         onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setAccessSaveFailed(!saved)) }}
@@ -206,19 +209,19 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
           <li><Trans>Enter <b className="phones-mono">{machine}</b>.</Trans></li>
           <li><Trans>Enter the code shown here.</Trans></li>
         </ol>
-        <p className="phones-note tt-paragraph"><Trans>A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it.</Trans></p>
+        <p className="phones-note tt-paragraph"><Trans>A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away.</Trans></p>
       </div>
       {codeCard}
     </section>
+    </div>
     <p className="phones-live tt-paragraph" role="status" aria-live="polite">{shownWords(announcement)}</p>
     {state?.phones.length ? <section aria-labelledby={`${pairHeading}-phones`}>
       <h3 id={`${pairHeading}-phones`}>{t`Paired phones`}</h3>
-      <div className="hosts-list phones-list">
-        {state.phones.map(phone => <PhoneRow key={phone.clientId} phone={phone} answersAvailable={state.answersAvailable}
-          onCanAnswer={allowed => void run({ type: 'set-can-answer', clientId: phone.clientId, allowed })} onRemove={() => setRemoveId(phone.clientId)} />)}
+      <div className="hosts-list hosts-card phones-list">
+        {state.phones.map(phone => <PhoneRow key={phone.clientId} phone={phone} onRemove={() => setRemoveId(phone.clientId)} />)}
       </div>
     </section> : null}
-    {state ? <div className="phones-name">
+    {state ? <div className="settings-rows phones-name">
       <NameField name={phoneAccessName} defaultName={state.defaultName} onSave={name => onUpdateSettings({ phoneAccessName: name })} />
     </div> : null}
     {error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div> : null}

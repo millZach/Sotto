@@ -34,18 +34,20 @@ import {
   OWN_SERVER_CLEANUP_MEASURE, OWN_SERVER_CLEANUP_MEASURED, OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, ownCleanupChoiceSchema, ownCleanupMeasuredListSchema,
   ownCleanupMeasureResultSchema, type OwnServerCleanupBridge,
 } from '../shared/ownServerCleanup'
-import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptBridge } from '../shared/nextPrompt'
+import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, NEXT_PROMPT_WATCHER_FIRST, NEXT_PROMPT_WATCHER_FIRST_CANCEL, nextPromptEntriesSchema, nextPromptEntrySchema, nextPromptSchema, type NextPromptBridge } from '../shared/nextPrompt'
 import { THREAD_MOVE_ANSWER, THREAD_MOVE_PREPARE, THREAD_MOVE_START, THREAD_MOVES_CHANGED, THREAD_MOVES_READ, threadMoveAnswerRequestSchema, threadMoveAnswerSchema,
   threadMovePrepareRequestSchema, threadMovePrepareSchema, threadMovesViewSchema, threadMoveStartRequestSchema, threadMoveStartSchema,
   type ThreadMovesBridge } from '../shared/threadMoves'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
+import { COUNCIL_CHANGED, COUNCIL_COMMAND, COUNCIL_ESTIMATE, COUNCIL_READ, COUNCIL_RENDERER_ARGUMENT, councilChangedSchema, councilCommandResultSchema, councilCommandSchema, councilEstimateRequestSchema,
+  councilEstimateSchema, councilViewsSchema, type CouncilBridge } from '../shared/council'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
   mainCheckoutStateSchema, type MainCheckoutBridge } from '../shared/mainCheckout'
 import { GLASS_WINDOW_CHANGED, GLASS_WINDOW_SET, glassWindowRequestSchema, glassWindowResultSchema, parseGlassWindowArguments, type GlassWindowBridge, type GlassWindowState } from '../shared/glassWindow'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
-import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
+import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationOpeningSchema, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -65,7 +67,7 @@ import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { agentActivitySchema } from '../shared/agentActivity'
 import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, agentThreadPromptsSchema } from '../shared/threadPrompts'
-import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
+import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -104,6 +106,7 @@ import {
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
+  PASTE_PERMISSION_NOTICE_DISMISS,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
   OPENROUTER_LIST_MODELS,
@@ -126,6 +129,7 @@ import {
   UPDATE_DOWNLOAD,
   UPDATE_GET_STATUS,
   UPDATE_CHECK_REQUESTED,
+  SETTINGS_OPEN_REQUESTED,
   UPDATE_INSTALL,
   UPDATE_STATUS,
   WIDGET_DRAG,
@@ -146,6 +150,7 @@ import {
   updateStatusSchema,
   widgetSnapshotSchema,
   widgetVisibilitySchema,
+  LIVING_OWL_RENDERER_ARGUMENT,
   type SottoBridge,
   type SottoWidgetBridge,
   type WidgetDragPayload,
@@ -159,9 +164,9 @@ import {
   type SottoPlatform,
 } from '../shared/platform'
 import { settingsSchema } from '../shared/settings'
-import { recoveryNoticeSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
+import { pastePermissionNoticeCodeSchema, recoveryNoticeEventSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
-  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema,
+  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema,
   E2E_SNAPSHOT_CHANNEL,
   E2E_TRIGGER_SHORTCUT_CHANNEL,
   e2eScenarioSchema,
@@ -194,7 +199,10 @@ const hotkeyResultSchema = z.discriminatedUnion('ok', [
     .strict(),
 ])
 const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('unavailable') }).strict()
-const dictationShortcutsChangeSchema = z.object({ press: z.array(z.string().min(1).max(64)).min(1).max(4), hold: z.array(z.string().min(1).max(64)).max(4) }).strict()
+/** Watcher's first-start suggestion (ADR-0173): the model it is asked on, and what main answers. */
+const watcherFirstModelSchema = z.string().min(1).max(512)
+const watcherFirstAnswerSchema = nextPromptSchema.nullable()
+const dictationShortcutsChangeSchema = z.object({ press: z.array(z.string().min(1).max(64)).min(1).max(4), hold: z.array(z.string().min(1).max(64)).max(4), standby: z.boolean().optional() }).strict()
 const dictationShortcutsResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
   z.object({ ok: z.literal(false), reason: z.enum(['conflict', 'invalid', 'unavailable']), chord: z.string().max(64).optional(), message: z.string().max(8000).optional() }).strict(),
@@ -343,6 +351,9 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
     attachmentPreview: (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
+    // A tile or the viewer reads one picture a thread's record names (ADR-0170).
+    threadMedia: (request: import('../shared/agents').AgentThreadMediaWindowRequest) =>
+      invokeParsed(renderer, AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema.parse(request)),
     // The composer stages a screenshot once and carries its handle; a chip reads its image back (ADR-0031).
     stageAttachment: (request: import('../shared/agents').AgentAttachmentStageRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
@@ -367,6 +378,7 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     // puts them back from what the broadcast sent it, the same way it does for an omitted broadcast catalog.
     // See src/renderer/src/agents/agentStateCatalogs.ts.
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command)),
+    commandWithChangedThreadRecords: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandChangedThreadRecordsReceiptSchema, validatedRoutedCommand(command), { changedThreadRecords: true }),
     // The broadcast may omit a model catalog this window already has (issue #286), and carries only the
     // thread records that changed since this window's last broadcast (issue #1330), coded as
     // AgentStateBroadcast rather than AgentState. This crosses to the page unreassembled on purpose:
@@ -408,6 +420,8 @@ export function createSottoBridge(
   mainCheckoutEnabled = false,
   /** The see-through window as main made it (ADR-0150): only while the `glass-theme` Owl feature is on. */
   glassWindow: GlassWindowState | null = null,
+  /** The Council (ADR-0177): only while the `council` Owl feature is on and this computer runs threads. */
+  councilEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -424,7 +438,7 @@ export function createSottoBridge(
   const onRecoveryNotice = createBufferedSubscription(
     renderer,
     RECOVERY_NOTICE,
-    recoveryNoticeSchema,
+    recoveryNoticeEventSchema,
     2,
   )
   const onSpeechModelStatus = createBufferedSubscription(
@@ -529,11 +543,21 @@ export function createSottoBridge(
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
       test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
-      onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, nullSchema, () => listener()),
+      onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, notificationOpeningSchema, listener),
     }) } : {}),
     ...(nextPromptEnabled ? { nextPrompt: Object.freeze<NextPromptBridge>({
       read: () => invokeParsed(renderer, NEXT_PROMPT_READ, nextPromptEntriesSchema),
       onChanged: listener => subscribe(renderer, NEXT_PROMPT_CHANGED, nextPromptEntrySchema, listener),
+      watcherFirst: modelId => invokeParsed(renderer, NEXT_PROMPT_WATCHER_FIRST, watcherFirstAnswerSchema, watcherFirstModelSchema.parse(modelId)),
+      // Nothing waits on a cancel; a lost one leaves the side request to its own timeout.
+      cancelWatcherFirst: () => { void renderer.invoke(NEXT_PROMPT_WATCHER_FIRST_CANCEL).catch(() => undefined) },
+    }) } : {}),
+    // The Council (ADR-0177): only while the Owl list turns it on, so stable's window has no such bridge.
+    ...(councilEnabled ? { council: Object.freeze<CouncilBridge>({
+      read: () => invokeParsed(renderer, COUNCIL_READ, councilViewsSchema),
+      estimate: request => invokeParsed(renderer, COUNCIL_ESTIMATE, councilEstimateSchema, councilEstimateRequestSchema.parse(request)),
+      command: command => invokeParsed(renderer, COUNCIL_COMMAND, councilCommandResultSchema, councilCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, COUNCIL_CHANGED, councilChangedSchema, listener),
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
@@ -612,6 +636,7 @@ export function createSottoBridge(
     listRecoveryNotices: () =>
       invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
     onRecoveryNotice,
+    dismissPastePermissionNotice: code => invokeParsed(renderer, PASTE_PERMISSION_NOTICE_DISMISS, commandResultSchema, pastePermissionNoticeCodeSchema.parse(code)),
 
     getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     updateSettings: (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),
@@ -675,6 +700,7 @@ export function createSottoBridge(
     installUpdate: () => invokeParsed(renderer, UPDATE_INSTALL, commandResultSchema),
     onUpdateStatus,
     onUpdateCheckRequested: listener => subscribe(renderer, UPDATE_CHECK_REQUESTED, nullSchema, () => listener()),
+    onSettingsRequested: listener => subscribe(renderer, SETTINGS_OPEN_REQUESTED, nullSchema, () => listener()),
 
     getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
     setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),
@@ -709,6 +735,8 @@ export function createSottoWidgetBridge(
   platform: SottoPlatform,
   /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
+  /** The living owl (ADR-0178): only while its Owl feature is on. */
+  livingOwl = false,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
@@ -725,6 +753,7 @@ export function createSottoWidgetBridge(
   return Object.freeze({
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
+    ...(livingOwl ? { livingOwl: true as const } : {}),
 
     onWidgetState,
     onWidgetVisibilityChange,
@@ -790,13 +819,13 @@ export function exposeRendererBridge(
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
-      parseGlassWindowArguments(arguments_)))
+      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {
     context.exposeInMainWorld(
       'sottoWidget',
-      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_)),
+      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(LIVING_OWL_RENDERER_ARGUMENT)),
     )
     return true
   }
@@ -816,6 +845,7 @@ export function exposeE2EBridge(
     browserAgent: (request: Parameters<NonNullable<SottoE2EBridge['browserAgent']>>[0]) => invokeParsed(renderer, E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentResultSchema, e2eBrowserAgentSchema.parse(request)),
     hostSetupTool: (request: Parameters<NonNullable<SottoE2EBridge['hostSetupTool']>>[0]) => invokeParsed(renderer, E2E_HOST_SETUP_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eHostSetupToolSchema.parse(request)),
     visualTool: (request: Parameters<NonNullable<SottoE2EBridge['visualTool']>>[0]) => invokeParsed(renderer, E2E_VISUAL_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
+    mediaTool: (request: Parameters<NonNullable<SottoE2EBridge['mediaTool']>>[0]) => invokeParsed(renderer, E2E_MEDIA_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
     delegationTool: (request: Parameters<NonNullable<SottoE2EBridge['delegationTool']>>[0]) => invokeParsed(renderer, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eDelegationToolSchema.parse(request)),
     agentEvent: async (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => {
       const key = parseHostEntityKey(event.threadId)

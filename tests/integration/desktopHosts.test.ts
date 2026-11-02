@@ -164,6 +164,16 @@ describe('desktop remote host management over a real socket', () => {
     expect(scheduled).toEqual([])
   })
 
+  it('answers the window\'s read of a remote thread it observes from the copy the observation brought (#996)', async () => {
+    await add()
+    const thread = await remoteThread()
+    const client = desktopWindowClient('desktop-test')
+    const reads = vi.spyOn(SocketHostService.prototype, 'readThreadDetail')
+    await fixture.router.command({ type: 'observe-threads', threadIds: [thread] }, client)
+    expect((await fixture.router.threadDetail(thread))?.threadId).toBe(thread)
+    expect(reads).not.toHaveBeenCalled()
+  })
+
   it('saves, pairs itself, selects, sends only to the remote host and revokes on Forget', async () => {
     const remote = await add()
     expect(fixture.manager.get().hosts[0]!.phase).toBe('connected')

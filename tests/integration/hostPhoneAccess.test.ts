@@ -8,7 +8,7 @@ import { startHeadlessHost } from '../../src/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { PhoneAccessTailscale } from '../../src/main/phones/phoneAccess'
 import { standInTailscale } from '../fixtures/standInTailscale'
-import type { HostPhonesCommand, PhonesState } from '../../src/shared/phones'
+import type { HostAdminPhonesCommand, PhonesState } from '../../src/shared/phones'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { phonesOff } from '../../src/host/socketServer'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
@@ -33,11 +33,11 @@ async function start(tailscale: PhoneAccessTailscale, options: { startedBy?: 'la
   hosts.push(host)
   const { adminToken } = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
   const url = `http://127.0.0.1:${host.descriptor!.port}`
-  const admin = async (route: 'phones' | 'phones-command' | 'tailnet' | 'pairing-code' | 'revoke-client', body: unknown, token = adminToken) => {
+  const admin = async (route: 'phones' | 'phones-command' | 'tailnet' | 'pairing-code' | 'revoke-client' | 'deny-answers', body: unknown, token = adminToken) => {
     const response = await fetch(`${url}/v1/admin/${route}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     return { status: response.status, body: await response.json() as { hostId: string; state: PhonesState; enabled?: boolean; url?: string; error?: string; code?: string; revoked?: boolean } }
   }
-  const command = async (input: HostPhonesCommand) => (await admin('phones-command', { command: input })).body
+  const command = async (input: HostAdminPhonesCommand) => (await admin('phones-command', { command: input })).body
   const read = async () => (await admin('phones', {})).body.state
   /** Turns the host's tailnet connections on or off the way a desktop does over SSH, and answers once Serve has followed. */
   const tailnet = async (enabled?: boolean) => (await admin('tailnet', enabled === undefined ? {} : { enabled })).body
@@ -95,15 +95,21 @@ it('turns phone access on from the administrative routes, serves the host on a l
 
   const { state: shown } = await command({ type: 'show-code' })
   const paired = await (await fetch(`http://127.0.0.1:${phonePort}/v1/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: shown.code!.code, name: 'Zach’s iPhone' }) })).json() as { clientId: string }
-  await vi.waitFor(async () => expect(await read()).toMatchObject({ code: null, phones: [{ clientId: paired.clientId, name: 'Zach’s iPhone', canAnswer: false }] }))
+  // Pairing by the code the owner showed is what lets the phone answer (ADR-0033).
+  await vi.waitFor(async () => expect(await read()).toMatchObject({ code: null, phones: [{ clientId: paired.clientId, name: 'Zach’s iPhone', canAnswer: true }] }))
   // A client paired from the host's own pairing command, as a desktop is, is no phone and is not listed.
   const { code: desktopCode } = await (await fetch(`http://127.0.0.1:${host.descriptor!.port}/v1/admin/pairing-code`, { method: 'POST', headers: { Authorization: `Bearer ${JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')).adminToken as string}` } })).json() as { code: string }
-  await fetch(`http://127.0.0.1:${host.descriptor!.port}/v1/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: desktopCode, name: 'Sotto desktop' }) })
+  const desktop = await (await fetch(`http://127.0.0.1:${host.descriptor!.port}/v1/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: desktopCode, name: 'Sotto desktop' }) })).json() as { clientId: string }
   expect((await read()).phones.map(phone => phone.name)).toEqual(['Zach’s iPhone'])
   // One pairing store: the host's own listing knows the phone too.
   expect(host.pairing.list().map(client => client.clientId)).toContain(paired.clientId)
-  expect((await command({ type: 'set-can-answer', clientId: paired.clientId, allowed: true })).state.phones[0]).toMatchObject({ canAnswer: true })
-  expect(await command({ type: 'set-can-answer', clientId: 'not-a-client', allowed: true })).toMatchObject({ error: 'That phone is no longer paired. Nothing was changed.' })
+  // A desktop from when Can answer was a switch may still press it: on asks for what the phone has, off is refused.
+  expect(await command({ type: 'set-can-answer', clientId: paired.clientId, allowed: true })).toMatchObject({ state: { phones: [{ canAnswer: true }] } })
+  expect(await command({ type: 'set-can-answer', clientId: paired.clientId, allowed: false })).toMatchObject({ error: 'A paired phone can always answer now. To stop a phone answering, remove it. Nothing was changed.', state: { phones: [{ canAnswer: true }] } })
+  // Remove is the only revocation for a phone, so `--deny-answers` refuses one, and still takes a desktop's answers away.
+  expect((await admin('deny-answers', { clientId: paired.clientId })).status).toBe(400)
+  expect((await read()).phones[0]).toMatchObject({ canAnswer: true })
+  expect((await admin('deny-answers', { clientId: desktop.clientId })).status).toBe(200)
 })
 
 it('takes its Serve setting away when it stops, and puts it back on the loopback port it remembers when it starts again', async () => {

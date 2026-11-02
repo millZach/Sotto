@@ -65,7 +65,7 @@ function world() {
     forget: vi.fn(async (input: { readonly moveId: string }) => { forgotten.push(input.moveId) }),
   }
   // The machine: it makes one thread per move, and answers the same one when asked again.
-  const remote = { connected: true, mayAnswer: true, supports: true, threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveStart[],
+  const remote = { connected: true, mayAnswer: true, supports: true, keepSupported: true, keeps: [] as string[], loseStart: false, threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveStart[],
     fail: undefined as Error | undefined, answer: undefined as unknown, listeners: new Set<(hostId?: string) => void>(), updates: new Set<() => void>(),
     /** Each push makes a new snapshot, as the router does; between pushes the same one is read. */
     version: 0, snapshot: undefined as { version: number; snapshot: AgentHostSnapshot } | undefined,
@@ -73,33 +73,44 @@ function world() {
     visits: 0, snapshots: 0 }
   const host = {
     get supportsThreadMove() { return remote.supports },
+    get supportsThreadMoveKeep() { return remote.keepSupported },
     threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
+      // Keep it here (part 4): forge calls the move off, saying whether it had made a thread for it.
+      if (asked.action === 'keep') { if (remote.fail) throw remote.fail; remote.keeps.push(asked.moveId); return { type: 'kept', moveId: asked.moveId, made: remote.made.has(asked.moveId) } }
       if (asked.action !== 'start') throw new Error('Forge holds none of its own threads here.')
       const request = asked
       remote.requests.push(request)
       if (remote.fail) throw remote.fail
       if (remote.answer !== undefined) return remote.answer
       let threadId = remote.made.get(request.moveId)
+      const lose = remote.loseStart
       if (!threadId) {
         threadId = randomUUID(); remote.made.set(request.moveId, threadId)
         remote.threads.push({ id: threadId, title: request.title, projectId: request.projectId, modelId: request.modelId, providerId: 'codex', status: 'running', requests: [], messages: [],
           lastUserMessageId: randomUUID(), ...request.runtimeMode ? { runtimeMode: request.runtimeMode } : {} })
       }
       remote.version++
+      // Made there, and the answer lost on the way back.
+      if (lose) throw new Error('The connection dropped.')
       return { type: 'started', moveId: request.moveId, threadId, ...request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}, sent: true }
     }),
   }
   // A second paired host, lab, whose own threads move (part 3): it holds one for a move, gives its handover, and settles
   // or lets go of it, each answered the same when asked again.
   const lab = { connected: true, supportsSource: true, threads: [source('lab-1')] as AgentThread[], asked: [] as HostThreadMoveSource[], fences: new Set<string>(),
-    holdAnswer: undefined as unknown }
+    holdAnswer: undefined as unknown, loseHold: false }
   const labHost: ThreadMoveHost = {
     supportsThreadMove: true, get supportsThreadMoveSource() { return lab.supportsSource },
     threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
-      if (asked.action === 'start') throw new Error('Nothing moves to lab here.')
+      if (asked.action === 'start' || asked.action === 'keep') throw new Error('Nothing moves to lab here.')
       lab.asked.push(asked)
       switch (asked.action) {
-        case 'hold': if (lab.holdAnswer !== undefined) return lab.holdAnswer; lab.fences.add(asked.threadId); return { type: 'held', moveId: asked.moveId }
+        case 'hold':
+          if (lab.holdAnswer !== undefined) return lab.holdAnswer
+          lab.fences.add(asked.threadId)
+          // Held there, and the answer lost on the way back.
+          if (lab.loseHold) throw new Error('The connection dropped.')
+          return { type: 'held', moveId: asked.moveId }
         case 'handover': return { type: 'handover', moveId: asked.moveId, text: 'The handover of lab-1.', counts: { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: false } }
         default: lab.fences.clear(); return { type: 'done', moveId: asked.moveId }
       }
@@ -168,6 +179,15 @@ async function confirmed(w: World, moves: ThreadMoveService, threadIds: readonly
 }
 const stateOf = (moves: ThreadMoveService, moveId: string): MoveRecord['state'] | undefined => moves.list().find(record => record.id === moveId)?.state
 const saved = async (): Promise<MoveRecord[]> => (JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')) as { moves: MoveRecord[] }).moves
+/** The service's own sets: the moves whose new thread runs its first turn, and the moves mid-step. */
+const stepsOf = (moves: ThreadMoveService) => moves as unknown as { readonly waitingTurn: ReadonlySet<string>; readonly advancing: ReadonlySet<string> }
+/**
+ * Waits until a move's start is saved and no step of it runs: it waits on its first turn there. From then each update from
+ * the machine is read as it arrives, so whether it stepped the move is known when the update returns, with no sleep (#1886).
+ */
+async function waitingOnFirstTurn(moves: ThreadMoveService, moveId: string): Promise<void> {
+  await vi.waitFor(() => { expect(stepsOf(moves).waitingTurn.has(moveId)).toBe(true); expect(stepsOf(moves).advancing.has(moveId)).toBe(false) })
+}
 
 describe('prepare: what moves now, what asks first, and what stays and why', () => {
   it('names each thread’s outcome under one confirmation, and moves nothing', () => {
@@ -244,10 +264,12 @@ describe('confirm, then the move record’s states', () => {
     const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
     await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
     w.endTurn(moveId, 'failed')
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
+    // A thread that fails to transfer stays where it is and takes sends again. The record says stayed as its write begins,
+    // and the fence lifts once that write is saved: wait for both (#1886).
+    await vi.waitFor(() => { expect(stateOf(moves, moveId)).toBe('stayed'); expect(w.fences.has('a')).toBe(false) })
     const threadId = w.remote.made.get(moveId)!
-    // A thread that fails to transfer stays where it is: not settled, its watch not moved, and it takes sends again.
-    expect(w.settled).toEqual([]); expect(w.watch.moved).toEqual([]); expect(w.fences.has('a')).toBe(false)
+    // Not settled, and its watch not moved.
+    expect(w.settled).toEqual([]); expect(w.watch.moved).toEqual([])
     // The new thread is left there, and the source links to it.
     expect(w.links).toEqual([{ threadId: 'a', link: { threadId, provider: 'codex', at: expect.any(String), host: FORGE } }])
     expect(moves.list().find(record => record.id === moveId)?.givenBack)
@@ -474,20 +496,22 @@ describe('the first turn is over only once the thread is quiet there (Sol’s sp
   it('keeps the source fenced while a failed first turn leaves background work or a delegated thread working there', async () => {
     const w = world(), moves = w.service(); moves.useTargets(w.targets)
     const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    await waitingOnFirstTurn(moves, moveId)
     const threadId = w.remote.made.get(moveId)!
     w.remote.threads.push({ id: 'child-there', projectId: 'forge-project', title: 'Child', modelId: model.id, status: 'running', requests: [], messages: [], delegatedBy: threadId })
+    // Each update is read as it arrives: one that leaves the turn unfinished there starts no step.
     w.endTurn(moveId, 'failed', { backgroundWork: [{ id: 'tests' }] as never })
-    await new Promise(done => setTimeout(done, 50))
+    expect(stepsOf(moves).advancing.has(moveId)).toBe(false)
     expect(stateOf(moves, moveId)).toBe('thread-started'); expect(w.fences.has('a')).toBe(true)
     // Its own background work ends; the thread it delegated to still works.
     w.endTurn(moveId, 'failed', { backgroundWork: [] })
-    await new Promise(done => setTimeout(done, 50))
+    expect(stepsOf(moves).advancing.has(moveId)).toBe(false)
     expect(stateOf(moves, moveId)).toBe('thread-started')
     w.remote.threads.find(thread => thread.id === 'child-there')!.status = 'idle'
     w.changed()
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
-    expect(w.fences.has('a')).toBe(false); expect(w.settled).toEqual([])
+    // Stayed, and only once that is saved is the fence lifted: wait for both (#1886).
+    await vi.waitFor(() => { expect(stateOf(moves, moveId)).toBe('stayed'); expect(w.fences.has('a')).toBe(false) })
+    expect(w.settled).toEqual([])
     moves.close()
   })
 })
@@ -773,11 +797,14 @@ describe('a host’s thread moves too (#1178 part 3)', () => {
     await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
     w.lab.connected = false
     w.endTurn(moveId, 'failed')
-    await vi.waitFor(() => expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', ending: 'stayed' }))
-    expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'lab', from: 'lab' })
+    // The record says it ends as stayed as that write begins; the move waits on lab only once the write is saved and its
+    // step has found lab away. Wait for the waiting card, not the record (#1886).
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'lab', from: 'lab' }))
+    expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', ending: 'stayed' })
     expect(w.lab.fences.has('lab-1')).toBe(true)
     w.lab.connected = true; w.reconnected(LAB)
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
+    // Watcher hears it stayed once that record is saved: wait for both.
+    await vi.waitFor(() => { expect(stateOf(moves, moveId)).toBe('stayed'); expect(w.news.at(-1)).toMatchObject({ moveId, outcome: 'stayed' }) })
     const threadId = w.remote.made.get(moveId)!
     expect(w.lab.asked.at(-1)).toEqual({ action: 'release', moveId, link: { threadId, provider: 'codex', hostId: FORGE, at: expect.any(String) } })
     expect(moves.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.stayed('forge', true, 'lab'))
@@ -881,5 +908,105 @@ describe('Watcher’s proposal from the user’s words (#1178 part 3, Zach’s p
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['b'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notProposed })
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'dismiss' })).toEqual({ status: 'ok' })
     expect(moves.view().proposals![0]!.state).toBe('dismissed')
+  })
+})
+
+describe('Keep it here on a move waiting on its machine (#1178 part 4)', () => {
+  it('waits for the machine, then has it stop and settle the new thread, and the thread here takes sends again', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    // Not waiting yet: nothing to keep here.
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notWaiting })
+    w.remote.connected = false; w.connected()
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, keepable: true }))
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    expect(moves.view().cards[0]).toMatchObject({ id: moveId, keeping: true })
+    expect(moves.view().cards[0]!.keepable).toBeUndefined()
+    // Remembered across a restart, and still fenced meanwhile.
+    expect(JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')).keeping).toEqual([moveId])
+    expect(w.fences.has('a')).toBe(true)
+    moves.close()
+    const again = w.service(); await again.load(); again.useTargets(w.targets)
+    expect(again.view().cards[0]).toMatchObject({ id: moveId, keeping: true })
+    w.remote.connected = true; w.connected()
+    await vi.waitFor(() => expect(stateOf(again, moveId)).toBe('kept'))
+    expect(w.remote.keeps).toEqual([moveId])
+    expect(again.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.kept('forge', true))
+    // The fence lifts once the kept record is saved.
+    await vi.waitFor(() => expect(w.fences.has('a')).toBe(false))
+    expect(w.settled).toEqual([])
+    expect(w.news.at(-1)).toMatchObject({ moveId, outcome: 'kept', source: { hostId: HERE, threadId: 'a' } })
+    expect(JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')).keeping).toBeUndefined()
+    again.close()
+  })
+  it('keeps the press of a move stuck on its watch, and calls it off rather than settling it', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.watch.watched.add('a'); w.watch.refuses = true
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    w.endTurn(moveId)
+    // The watch will not go: after its tries the move waits, stuck, and Keep it here is offered.
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true }), { timeout: 5_000 })
+    w.watch.refuses = false
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(w.remote.keeps).toEqual([moveId]); expect(w.settled).toEqual([])
+    await vi.waitFor(() => expect(w.fences.has('a')).toBe(false))
+    moves.close()
+  })
+  it('has a host let go of its thread when its hold was saved but its answer lost, and the move is kept', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.lab.loseHold = true
+    const labKey = hostEntityKey(LAB, 'lab-1')
+    const prepared = moves.prepare({ threadIds: [labKey], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    const moveId = ((await moves.move({ confirmationId: prepared.confirmationId, threadIds: [labKey], allowNarrower: [] })) as Extract<ThreadMoveStart, { status: 'ok' }>).moves[0]!.moveId!
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true }))
+    expect(w.lab.fences.has('lab-1')).toBe(true); expect(moves.list()[0]).toMatchObject({ holdAsked: true })
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(w.lab.asked.at(-1)).toEqual({ action: 'release', moveId })
+    expect(w.lab.fences.size).toBe(0)
+    moves.close()
+  })
+  it('keeps the branch of a thread forge made though its answer never came', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.remote.loseStart = true
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, startAsked: true }))
+    expect(moves.list()[0]!.threadId).toBeUndefined()
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(moves.list()[0]).toMatchObject({ keptMade: true, givenBack: THREAD_MOVE_WORDS.kept('forge', true) })
+    expect(w.forgotten).toEqual([])
+    moves.close()
+  })
+  it('ends a move never asked to start there at once, made nothing, with nothing asked of the machine', async () => {
+    const w = world(), at = new Date().toISOString(), moveId = randomUUID()
+    const record: MoveRecord = { id: moveId, sourceThreadId: 'a', targetHostId: FORGE, machine: 'forge', state: 'fenced',
+      start: { provider: 'codex', modelId: model.id, title: 'Thread a' }, watched: false, createdAt: at, updatedAt: at }
+    await writeFile(join(directory, 'moves.json'), JSON.stringify({ version: 1, moves: [record] }))
+    w.remote.connected = false
+    const moves = w.service(); await moves.load(); moves.useTargets(w.targets)
+    expect(w.fences.has('a')).toBe(true)
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ waiting: true }))
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(moves.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.kept('forge', false))
+    expect(w.remote.keeps).toEqual([])
+    await vi.waitFor(() => expect(w.fences.has('a')).toBe(false))
+    moves.close()
+  })
+  it('says a machine too old to call a move off needs a newer Sotto, and keeps nothing', async () => {
+    // Forge took the start but its answer was lost, so the move waits on it, connected and too old to call it off.
+    const w = world(), moves = w.service(1_000); moves.useTargets(w.targets)
+    w.remote.fail = new Error('The connection dropped.')
+    w.remote.keepSupported = false
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ waiting: true }))
+    expect(moves.list()[0]!.startAsked).toBe(true)
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.olderKeep('forge') })
+    expect(moves.view().cards[0]!.keeping).toBeUndefined()
+    moves.close()
   })
 })

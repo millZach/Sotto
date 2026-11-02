@@ -12,6 +12,18 @@ export function pngOfSize(size: number, seed = 0): Buffer {
   return bytes
 }
 
+/**
+ * A PNG Sotto reads as a `width` by `height` picture: the signature, then IHDR, 40 bytes in all. Only the header is read
+ * for its size; `salt`, the last byte, makes each one different content.
+ */
+export function pngHeader(width: number, height: number, salt = 0): Buffer {
+  const bytes = Buffer.alloc(40)
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes)
+  bytes.writeUInt32BE(13, 8); bytes.write('IHDR', 12, 'ascii'); bytes.writeUInt32BE(width, 16); bytes.writeUInt32BE(height, 20)
+  bytes[39] = salt
+  return bytes
+}
+
 /** The handle staging these bytes answers with, but with the ID and name a test chooses. */
 export function handleOf(bytes: Uint8Array, id = 'image', name = 'pixel.png', mimeType: AgentAttachmentHandle['mimeType'] = 'image/png'): AgentAttachmentHandle {
   return { id, name, mimeType, sizeBytes: bytes.byteLength, digest: createHash('sha256').update(bytes).digest('hex') }

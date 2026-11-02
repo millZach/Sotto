@@ -9,7 +9,8 @@ export const MAC_TRAY_GUID = 'b51ae4d7-15a7-440a-89e1-f227a7cad4c0'
 
 export type MainWindowChrome = 'frameless' | 'hidden-inset'
 
-export type ApplicationMenuTemplate = 'none' | 'macos'
+/** A Mac shows its application menu; Windows and Linux carry one only for its keys, and the tray is their one menu (#1825). */
+export type ApplicationMenuTemplate = 'hidden' | 'macos'
 
 export type WidgetAlwaysOnTopLevel = 'normal' | 'floating' | 'screen-saver'
 
@@ -95,7 +96,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       platform: 'win32',
       mainWindowChrome: 'frameless',
       trafficLightPosition: null,
-      applicationMenu: 'none',
+      applicationMenu: 'hidden',
       // 'floating' silently fails to apply WS_EX_TOPMOST on current Windows 11
       // builds; 'normal' sticks and survives hide/show.
       widgetAlwaysOnTopLevel: 'normal',
@@ -135,7 +136,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       platform: 'linux',
       mainWindowChrome: 'frameless',
       trafficLightPosition: null,
-      applicationMenu: 'none',
+      applicationMenu: 'hidden',
       widgetAlwaysOnTopLevel: 'normal',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,

@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { preserveLegacyAliases } from './legacyAliases'
 import { ProviderUnavailable } from './providerProblem'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
@@ -5,6 +6,7 @@ import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
+import type { MediaCapture } from './threadMedia'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { NativeUsage, type NativeUsageContext } from './nativeUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
@@ -16,10 +18,10 @@ import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { watcherRequestLine } from './watcherRequestNote'
 import { questionInstructions } from './questionInstructions'
@@ -190,6 +192,8 @@ export interface GrokAcpOptions {
   /** How long a running thread's process has to answer a limits read; tests whose answer is held shorten it. */
   liveBillingTimeoutMs?: number
   /** Test-only admission injection; desktop and host production wiring never supplies it. */
+  /** The thread media store's capture (ADR-0170), given only with the Owl feature `inline-media` on: a tool's pictures become handles on its step. */
+  captureMedia?: MediaCapture
 }
 
 /** Grok owns credentials, tools and durable sessions. Only alias/origin metadata belongs to Sotto. */
@@ -881,7 +885,10 @@ export class GrokAcpHost implements AgentHost {
       this.state.connected = true; delete this.state.error
       // Each watched session loads in a new process of its own, where it is not yet resident, so a pending
       // mode change is applied by the load itself: nothing is left over to close first.
-      await Promise.all(Object.entries(this.aliases).filter(([id, alias]) => alias.kind !== 'personal' && alias.grokSessionId && this.observed.has(id)).map(([id]) => this.loadSession(id, true)))
+      await Promise.all(Object.entries(this.aliases).filter(([id, alias]) => alias.kind !== 'personal' && alias.grokSessionId && this.observed.has(id)).map(([id]) => this.loadSession(id, true).catch((error: unknown) => {
+        // An earlier Watcher conversation in view stays unopened; the rest of Grok Build connects as usual.
+        if (!(error instanceof WatcherHistoryRefusal)) throw error
+      })))
       if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
       this.reaper.start()
       await this.pollHistory()
@@ -966,8 +973,9 @@ export class GrokAcpHost implements AgentHost {
       // A thread that stays in the set with its session loaded and read is the poll's to keep up to date. Reading
       // it again here put a history read in front of every send, which observes its thread first (#765).
       if (before.has(id) && this.loaded.has(id) && this.histories.has(id)) continue
-      void this.loadSession(id, true).then(() => { if (generation === this.generation) return this.queueRead(id) }).catch(() => {
-        if (generation === this.generation) { this.state.error = 'A Grok thread could not be loaded. Check the native client.'; this.emit() }
+      void this.loadSession(id, true).then(() => { if (generation === this.generation) return this.queueRead(id) }).catch((error: unknown) => {
+        // An earlier Watcher conversation in view is read only history: refusing to open it is not Grok failing.
+        if (generation === this.generation && !(error instanceof WatcherHistoryRefusal)) { this.state.error = 'A Grok thread could not be loaded. Check the native client.'; this.emit() }
       })
     }
   }
@@ -1003,12 +1011,20 @@ export class GrokAcpHost implements AgentHost {
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias?.grokSessionId) return null
+    return this.writeOn({ modelId: alias.nativeModelId ?? alias.modelId, cwd: alias.cwd }, prompt, generation, signal)
+  }
+  /** A side call for what has no session yet (ADR-0173), on the model chosen. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (!this.state.connected) return null
+    return this.writeOn(target, prompt, this.generation, signal)
+  }
+  private async writeOn(target: ShortTextTarget, prompt: ShortTextPrompt, generation: number, signal?: AbortSignal): Promise<string | null> {
     const writer = new GrokSubscriptionClient(join(this.userDataDirectory, 'writing', 'grok'), {
       ...(this.options.executable ? { executable: this.options.executable } : {}), ...(this.options.args ? { prefixArgs: this.options.args } : {}),
       ...(this.options.environment ? { environment: this.options.environment } : {}) })
-    const workingDirectory = await existingWorkingDirectory(alias.cwd)
+    const workingDirectory = await existingWorkingDirectory(target.cwd ?? homedir())
     this.assertGeneration(generation)
-    return writer.write({ ...prompt, model: alias.nativeModelId ?? alias.modelId, workingDirectory, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
+    return writer.write({ ...prompt, model: target.modelId, workingDirectory, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   /**
    * Read a thread back from Grok and hand back the snapshot. The read before a send (`beforeSend`) is the same
@@ -1123,7 +1139,7 @@ export class GrokAcpHost implements AgentHost {
           if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) delete history.assistant
           // A prompt after a turn with no recorded end follows a turn its process cut off, and that cut off its thought too.
           if (update.sessionUpdate === 'user_message_chunk' && history.lastTurn?.status === 'running') history.activities = cutThinking(history.activities, false)
-          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities, false, parsed.data._meta))
+          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities, false, parsed.data._meta, this.options.captureMedia))
           if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
             if (update.sessionUpdate === 'user_message_chunk') {
               history.statusEvents.add(eventKey(parsed.data, 0))
@@ -1544,7 +1560,7 @@ export class GrokAcpHost implements AgentHost {
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
       this.usage.grok(id, thread.modelId, parsed.data, this.usageEnabled ? this.usageContext(id, parsed.data, false) : undefined); thread.usage = this.usage.get(id)
-      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true, parsed.data._meta)
+      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true, parsed.data._meta, this.options.captureMedia)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {

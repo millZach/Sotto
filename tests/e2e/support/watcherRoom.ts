@@ -41,3 +41,21 @@ export async function seedWatcherRoom(page: Page, { watched, idPrefix }: { reado
   await page.reload()
   await openThreads(page)
 }
+
+/** Watcher's room before Watcher starts: the stand-in's first entry, no Watcher and nothing watched. Reloads and opens Threads. */
+export async function seedWatcherFirstEntry(page: Page): Promise<void> {
+  const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
+  expect(hostId, 'the window names its host').toBeTruthy()
+  const created = { target: { hostId: hostId!, threadId: 'release-notes' }, projectId: 'workshop', provider: 'codex' as const, creationOperationId: randomUUID(),
+    createdAt: new Date(E2E_THREADS_NOW - 60_000).toISOString() }
+  const seed: WatcherStandInSeed = {
+    state: {
+      current: null, currentOptions: null, history: [], runtimeMode: 'approval-required', ownChanges: [], standingWatches: [], requests: [],
+      watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: new Date(E2E_THREADS_NOW).toISOString(),
+    },
+    created,
+  }
+  await page.evaluate(({ key, seed }) => localStorage.setItem(key, JSON.stringify(seed)), { key: WATCHER_STAND_IN_KEY, seed })
+  await page.reload()
+  await openThreads(page)
+}

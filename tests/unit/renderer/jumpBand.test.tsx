@@ -30,9 +30,33 @@ describe('the Jump to latest band', () => {
     expect(reachesJumpBand(transcript(500, 120, { top: 100, bottom: 300 }))).toBe(false)
   })
 
+  it('ignores the button’s own clear space when deciding whether a request reaches it', () => {
+    const scroller = transcript(500, 184, { top: 330, bottom: 360 })
+    scroller.style.setProperty('--thread-compose-cover', '120px')
+    expect(reachesJumpBand(scroller)).toBe(true)
+  })
+
   it('sits at the foot when the composer stacks', () => {
     expect(reachesJumpBand(transcript(500, 0, { top: 100, bottom: 460 }))).toBe(true)
     expect(reachesJumpBand(transcript(500, 0, { top: 100, bottom: 360 }))).toBe(false)
+  })
+
+  it('keeps the question overlap out of the clip without moving the button’s band', () => {
+    // The scroll box extends 26px under the question, but Jump still sits above the stacked composer.
+    const pane = document.createElement('section')
+    pane.className = 'thread-pane'
+    pane.setAttribute('data-questions', '')
+    document.body.append(pane)
+    for (const [card, expected] of [
+      [{ top: 415, bottom: 430 }, true],
+      [{ top: 480, bottom: 495 }, false],
+    ] as const) {
+      const scroller = transcript(500, 26, card)
+      scroller.style.setProperty('--thread-compose-height', '26px')
+      scroller.style.setProperty('--thread-compose-cover', '0px')
+      pane.append(scroller)
+      expect(reachesJumpBand(scroller)).toBe(expected)
+    }
   })
 
   it('rides above what shows of a slim composer, which keeps the full composer’s padding (ADR-0125)', () => {

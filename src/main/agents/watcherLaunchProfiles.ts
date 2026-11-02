@@ -1,14 +1,16 @@
-import { readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
-import { watcherRecordSchema, type WatcherRecord } from '../../shared/watcher'
+import type { WatcherRecord } from '../../shared/watcher'
 import type { AgentThread } from '../../shared/agents'
 import type { ProviderId } from '../../shared/agents'
 import type { WatcherProfileTools, ThreadLaunchProfiles, WatcherLaunchProfile } from './host'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { migrateWatcherRecord } from './watcherRecords'
+import { samePlainData } from './agentStateBroadcast'
+import { savedWatcherFile } from './watcherRecordFile'
 
-const savedIdentity = z.object({ watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema) })
+/** Watcher's saved file as the identity check reads it: an object, whose Watcher record `migrateWatcherRecord` checks. */
+const savedFile = z.object({ watcher: z.unknown().optional() })
 type Identity = Pick<WatcherRecord, 'current' | 'creation' | 'history'>
 export const WATCHER_DISABLED = 'Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
 const IDENTITY_FAILURE = 'Watcher’s saved identity could not be verified. Nothing was sent. Restart Sotto to recover.'
@@ -18,17 +20,28 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
   private tools: WatcherProfileTools | undefined
   private readonly revoked = new Map<string, string>()
   private cached: { signature: string; identity: Identity | undefined } | undefined
+  /**
+   * The last Watcher record read from the file that passed its check, as read, and the identity it holds. Every save of a
+   * store whose record is still in `agents.json` changes its signature, and most leave the record as it was, so a record
+   * the same as this one is not checked again (#1759): the check reads nothing but the record, so it would give the same
+   * identity.
+   */
+  private checked: { record: unknown; identity: Identity } | undefined
   /** Previous valid identity is evidence for refusal only, never permission to launch. */
   private lastKnown: Identity | undefined
   private readTail: Promise<void> = Promise.resolve()
   constructor(private readonly directory: string, private readonly hostId: () => string | undefined,
     private readonly thread: (id: string) => AgentThread | undefined, private readonly enabled = false) {}
 
-  private async signature(): Promise<string> {
-    const file = await stat(join(this.directory, 'agents.json'), { bigint: true })
+  /**
+   * The file the record is read from (`savedWatcherFile`) and its signature. Watcher's own file changes only when the
+   * record does, so most checks read nothing.
+   */
+  private async source(): Promise<{ path: string; signature: string }> {
+    const { path, stats: file } = await savedWatcherFile(this.directory)
     // AtomicJsonStore syncs a fresh file, then renames it over the destination. Include its
     // identity as well as nanosecond times/size so same-size replacements invalidate the cache.
-    return [file.dev, file.ino, file.size, file.mtimeNs, file.ctimeNs, file.birthtimeNs].join(':')
+    return { path, signature: [path, file.dev, file.ino, file.size, file.mtimeNs, file.ctimeNs, file.birthtimeNs].join(':') }
   }
   private identity(): Promise<Identity> {
     // Concurrent workspace/adapter checks share the read rather than parse the same file twice.
@@ -38,19 +51,24 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
   }
   private async readIdentity(): Promise<Identity> {
     for (let attempt = 0; attempt < 3; attempt++) {
-      const signature = await this.signature()
+      const { path, signature } = await this.source()
       if (this.cached?.signature === signature) {
         if (!this.cached.identity) throw new WatcherProfileRefusal(IDENTITY_FAILURE)
         return this.cached.identity
       }
       let identity: Identity | undefined
       try {
-        const record = savedIdentity.parse(JSON.parse(await readFile(join(this.directory, 'agents.json'), 'utf8'))).watcher
-        identity = { current: record.current, creation: record.creation, history: record.history }
+        const saved = savedFile.parse(JSON.parse(await readFile(path, 'utf8'))).watcher
+        if (this.checked !== undefined && samePlainData(this.checked.record, saved)) identity = this.checked.identity
+        else {
+          const record = migrateWatcherRecord(saved)
+          identity = { current: record.current, creation: record.creation, history: record.history }
+          this.checked = { record: saved, identity }
+        }
       } catch { /* Invalid/unreadable data cannot confer a profile. Keep lastKnown only for refusal. */ }
       // Do not associate a read of the old file with a replacement's signature, or admit an
       // identity superseded while reading. A continuously changing file refuses this check.
-      if (signature !== await this.signature()) continue
+      if (signature !== (await this.source()).signature) continue
       this.cached = { signature, identity }
       if (!identity) throw new WatcherProfileRefusal(IDENTITY_FAILURE)
       this.lastKnown = identity
@@ -108,7 +126,7 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
     }
     const current = record?.current
     if (record?.history.some(identity => identity.target.threadId === threadId) || thread?.kind === 'watcher-history') {
-      throw new WatcherProfileRefusal('This earlier Watcher conversation is read only history. Open Watcher to continue.')
+      throw new WatcherHistoryRefusal()
     }
     if (current?.target.threadId !== threadId) {
       if (thread?.kind === 'watcher' || record?.creation?.identity.target.threadId === threadId) throw new WatcherProfileRefusal(IDENTITY_FAILURE)

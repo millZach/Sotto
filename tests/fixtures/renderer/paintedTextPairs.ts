@@ -10,10 +10,10 @@ import { contrast, over, parseTokenBlocks, resolveColor, type Rgba } from './the
  *
  * The list came from following every `color:` that paints text to the backgrounds behind it, states included
  * (hover, the current row, picked Changes lines, open menus). Icons are left out: they need 3:1, which the
- * finished, focus and boundary checks hold. Disabled controls are exempt. So is the prompt editor's suggestion ink
- * (its placeholder and the next prompt's ghost, muted ink at 55% in threads.css): words nobody has typed yet, read
- * as unaccepted, whose meaning speech takes from the field's label and description. themeTokens.test.ts holds every
- * built-in half to it, and omarchyThemes.test.ts every stock Omarchy palette.
+ * finished, focus and boundary checks hold. Disabled controls are exempt. So is the next prompt's ghost, suggestion
+ * ink (muted ink at 55% in nextPrompt.css): words nobody has typed yet, read as unaccepted, which speech hears in the
+ * prompt's description. The prompt editor's placeholder is not exempt (#1819): it is read here from threads.css.
+ * themeTokens.test.ts holds every built-in half to it, and omarchyThemes.test.ts every stock Omarchy palette.
  */
 export interface PaintedTextPair {
   readonly ink: string
@@ -45,7 +45,10 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // metadata on cards, menus and glass, Changes line numbers, and ghost buttons on the bubble and warning card.
   ...each('text-muted', [...rooms, ['selected'], ['hover-strong'], ['bubble'], ['warning-surface'], [followups], ...hovered, ...glass], 'muted text'),
   ...lines.flatMap(line => each('text-muted', [line, [...line, hover]], 'Changes line number')),
-  // Faint text: ghost buttons and input placeholders. The prompt editor's placeholder is suggestion ink, exempt above.
+  // The prompt editor's placeholder, as threads.css paints it: on the composer card, where while a turn runs it is the
+  // only thing that says what typing will do, and in the field a queued message is edited in (#1819).
+  ...each('--placeholder-ink', [['card'], ['field']], "the prompt editor's placeholder"),
+  // Faint text: ghost buttons and input placeholders.
   ...each('text-faint', [['canvas'], ['surface'], ['surface-elevated'], ['surface-overlay'], ['surface-sunken'], ['field'], ['card'], [followups], ...glass], 'ghost button or placeholder'),
   // Changes lines: the code, and on a picked line the numbers and signs (changes.css).
   ...lines.flatMap(line => each('code-text', [line, [...line, hover], [...line, picked]], 'Changes code')),
@@ -81,6 +84,8 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('accent-text', [['canvas'], ['surface'], ['surface-elevated'], ['card'], ['card-selected'], ['sidebar'], ['selected'], ['bubble'], ['field'], ['hover-strong']], 'accent text and activity'),
   // Steer now, in the composer and on a queued message, keeps the accent while pointed at.
   ...each('accent-text', [['card', hover], ['canvas', hover]], 'Steer now, hovered'),
+  // The effort offer's level on the accent's wash, on the composer card (ADR-0172).
+  pair('accent-text', ['card', '--effort-offer-wash'], 'the effort offer'),
   // Text on its own fill.
   pair('bubble-text', ['bubble'], 'bubble'), pair('sidebar-text', ['sidebar'], 'sidebar'), pair('update-text', ['update-surface'], 'update chip'),
   pair('on-accent', ['accent'], 'accent fill'), pair('primary-contrast', ['primary'], 'primary action'), pair('primary-contrast', ['primary-hover'], 'primary action, hovered'),
@@ -102,6 +107,8 @@ export function withPaintedLayers(declarations: Map<string, string>): Map<string
   declarations.set('--threads-field', 'var(--tt-field)')
   declarations.set(followups, stylesheetProperty('src/renderer/src/agents/composer.css', followups))
   declarations.set('--delegated-needs', stylesheetProperty('src/renderer/src/tools/agentsSurface.css', '--delegated-needs'))
+  declarations.set('--placeholder-ink', stylesheetProperty('src/renderer/src/agents/threads.css', '--placeholder-ink'))
+  declarations.set('--effort-offer-wash', stylesheetProperty('src/renderer/src/agents/quietComposer.css', '--effort-offer-wash'))
   return declarations
 }
 
@@ -118,4 +125,14 @@ export function paintedContrast(declarations: ReadonlyMap<string, string>, { ink
   const pixel = { r: Math.round(background.r), g: Math.round(background.g), b: Math.round(background.b), a: 1 }
   const foreground = over(token(ink), background)
   return Math.min(contrast(foreground, background), contrast(foreground, pixel))
+}
+
+/**
+ * How far the prompt editor's placeholder stands from typed text on the composer card, as a contrast ratio between the
+ * two inks. The placeholder is a hint, so it must read as dimmer than what the user types, not as the same ink.
+ */
+export function placeholderApartFromText(declarations: ReadonlyMap<string, string>): number {
+  const token = (name: string): Rgba => resolveColor(name.startsWith('--') ? name : `--tt-${name}`, declarations)
+  const card = over(token('card'), token('canvas'))
+  return contrast(over(token('--placeholder-ink'), card), over(token('text'), card))
 }

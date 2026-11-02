@@ -11,6 +11,7 @@ import {
   dictateSentence,
   formatElapsed,
 } from '../../../src/renderer/src/features/dictate/DictateRoom'
+import { LiveLevelStore } from '../../../src/renderer/src/audio/liveLevel'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { MICROPHONE_NOT_SET_UP_DETAIL, SPEECH_MODEL_NOT_READY_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type DictationState } from '../../../src/shared/dictation'
 import type { DictationRecord } from '../../../src/shared/dictationRecord'
@@ -66,7 +67,7 @@ describe('DictateRoom', () => {
   it.each([false, true])('matches the Linux recording hint to Automatic paste=%s', autoPaste => {
     const { container } = render(<DictateRoom {...baseProps} platform="linux"
       settings={{ ...baseProps.settings, autoPaste }}
-      dictation={{ status: 'listening', sessionId: 'hint', startedAt: Date.now(), level: 0 }} />)
+      dictation={{ status: 'listening', sessionId: 'hint', startedAt: Date.now(), speaking: false }} />)
     expect(container).toHaveTextContent(autoPaste
       ? 'Sotto copies, then pastes into the focused window on Hyprland.'
       : 'Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.')
@@ -167,7 +168,7 @@ describe('DictateRoom', () => {
     await user.click(screen.getByRole('button', { name: 'Start dictation' }))
     expect(start).toHaveBeenCalledOnce()
 
-    const listening: DictationState = { status: 'listening', sessionId: 'one', startedAt: 10_000, level: 0.8 }
+    const listening: DictationState = { status: 'listening', sessionId: 'one', startedAt: 10_000, speaking: true }
     rendered.rerender(<DictateRoom {...baseProps} dictation={listening} onStart={start} onStop={stop} />)
     const heading = screen.getByRole('heading', { level: 1 })
     expect(heading).toHaveTextContent(/^Listening\.00:00$/u)
@@ -382,18 +383,24 @@ describe('DictateRoom', () => {
     expect(onStart).not.toHaveBeenCalled()
   })
 
-  it('shares the widget speaking gate and seven-bar animation, settling after silence', () => {
+  it('shares the widget speaking gate and seven-bar animation from the live level, settling after silence', () => {
     vi.useFakeTimers()
-    const rendered = render(<DictateRoom {...baseProps} />)
+    const level = new LiveLevelStore()
+    const rendered = render(<DictateRoom {...baseProps} level={level} />)
     const resting = barHeights(rendered.container)
     expect(resting).toHaveLength(7)
     expect(resting[3]!).toBeGreaterThan(resting[0]!)
     expect(resting[0]).toBe(6)
-    rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'listening', sessionId: 'one', startedAt: 0, level: 1 }} />)
+    const listening: DictationState = { status: 'listening', sessionId: 'one', startedAt: 0, speaking: true }
+    rendered.rerender(<DictateRoom {...baseProps} level={level} dictation={listening} />)
+    act(() => level.set(1))
     const bars = screen.getByTestId('listening-bars')
     expect(bars.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
     expect(bars).toHaveAttribute('data-speaking', 'true')
-    rendered.rerender(<DictateRoom {...baseProps} dictation={{ status: 'listening', sessionId: 'one', startedAt: 0, level: 0 }} />)
+    // The meter gives screen readers the live level, which reaches it without the room being handed new state.
+    expect(rendered.container.querySelector('.voice-wave')).toHaveAttribute('aria-valuenow', '1')
+    act(() => level.set(0))
+    expect(rendered.container.querySelector('.voice-wave')).toHaveAttribute('aria-valuenow', '0')
     expect(bars).toHaveAttribute('data-speaking', 'true')
     act(() => vi.advanceTimersByTime(2_000))
     expect(bars).not.toHaveAttribute('data-speaking')

@@ -225,3 +225,188 @@ reads a few fields of it and builds what it publishes from its own read.
 On the owner-scale benchmark (`tests/perf/dataTransfer.perf.test.ts`, a host thread streaming), the client's time per
 push fell from 10.2 ms to 5.2 ms and the window broadcast's catalog comparison from 29.2 ms to 0.9 ms over 60 pushes
 (`docs/perf/2026-10-29-data-transfer.md`).
+
+## October 30, 2026: a command's reply carries only the thread records that changed
+
+The October 22 section left command receipts carrying every thread whole. Every command the window sends answers with
+one: a draft save at each pause in typing, Refresh on every pane at every window focus, selecting a pane, telling main
+which panes are open. At the owner's scale (293 threads) a draft save's reply was 272,706 bytes. The window spent about
+6.5 ms on each: 1.4 ms receiving it, 3.1 to 3.3 ms in the preload checking every record against the thread schema, and
+1.9 to 2.1 ms in state sharing walking every record, all fresh objects, before contextBridge copied them once more.
+
+**The main window's page asks for a reply's threads as the changed thread records since its last broadcast.** The preload gives the
+page a second command method, `commandWithChangedThreadRecords`, which sends `{ changedThreadRecords: true }` beside the command.
+Main answers it with `encodeChangedThreadRecordsReceipt`. That is `encodeReceipt`'s receipt with `host.threads` in a
+broadcast's shape (`AgentThreadsBroadcast`), measured by the same `ThreadRecordsBroadcast` from the last broadcast the
+window was delivered, and recording nothing as sent. The next broadcast is measured from the same base and carries the
+same changes. A reply before any broadcast, or after the window read the whole state, lists every record with a null
+base. Only the main window may send a command, and only it is broadcast to, so the base is always its own.
+
+**The preload still checks what crosses.** The changed records are parsed against the thread schema, as every record of
+a whole reply was, and the base, revision, removals and order structurally (`agentCommandChangedThreadRecordsReceiptSchema`).
+
+**The page puts the threads back from the broadcast it holds, and moves nothing it holds.** The subscription's
+reassembly (`createThreadReassembly`) reads the reply's changed records against its held records with `peek` and keeps them
+held, so a reply never changes what the next broadcast is applied to. A thread the reply did not change is the record the
+broadcast gave, so state sharing meets it by identity. A reply that overtook the broadcast it was measured from waits for
+it (October 31, #1939): main sent that broadcast first, but the two cross separately and a busy computer can deliver the
+reply first. When the reply names a newer base than the one held, `peekOnArrival` puts it back from that broadcast the
+moment it is held, before a later one replaces it, for up to a second. A reply measured from a broadcast the window does
+not hold, an older one or one that did not come in time, reads the whole state through `AGENT_GET`. That read is begun
+for the reply alone, after it arrived, so
+it holds the reply's own command; a catalog's recovery may be shared, since its revision only advances. The next
+broadcast then lists every record. When that read fails twice, the reply carries the whole list the window was last
+broadcast, never its changed records alone, and the next broadcast carries the change. In a real window the command
+receipt journey (`tests/e2e/command-receipt.spec.ts`) types into a composer and counts no whole-state read while the
+draft saves. A page with no subscription yet asks for the whole reply. Every other caller of the preload's `command`,
+the e2e specs included, still gets every thread whole.
+
+Measured with the data-transfer benchmark at the owner's scale, a draft save's reply, three runs each: 272,706 bytes to
+11,462. The window's work fell from 1.38-1.39 ms receiving it, 3.12-3.25 ms checking it and 1.86-2.11 ms sharing it to
+0.10-0.11 ms, 0.31-0.33 ms and 0.19-0.20 ms, with 0.08-0.10 ms more to put the threads back: about 6.5 ms to 0.7 ms per
+reply (`docs/perf/2026-10-30-command-reply-threads.md`).
+
+## October 30, 2026: a paired host's shell pushes carry only the thread records that changed (#996)
+
+The October 22 section left the socket protocol untouched, so a paired host still pushed every thread record whole in
+every shell push. While a thread on the host streams, it pushes the shell up to twenty times a second to each connected
+client. On the owner-scale benchmark (`tests/perf/dataTransfer.perf.test.ts`, about 290 threads on the host) each push to
+a desktop was 232,942 bytes, about 11 KB deflated, for a change to one thread's record. The desktop's host client then
+parsed every record against the thread schema, and the router compared every one, all fresh objects, before the window's
+broadcast found the one that changed.
+
+**A host lists a new feature, `changed-thread-records`, and the protocol stays v1** (ADR-0025). Every listener lists it,
+to desktops and phones alike. A client that accepts it in hello is sent each shell push with `threads`, the changed
+thread records since the last shell push written to that connection, in the window's broadcast shape
+(`AgentChangedThreadRecords`), and with `state.host.threads` empty. The host keeps one `ThreadRecordsBroadcast` per such
+connection and encodes each push's thread list with it. A push becomes the base only once it is written. A push that
+repeats the last one, is held for Watcher's writing window or goes as a `too_large` error moves nothing. A push whose only
+news is a thread record is written, though the rest of its state repeats the last. Hello, a `shell` read and a command's
+answer still carry every record and move nothing. A `shell` read drops the base, so the push after it lists every
+record.
+
+**The desktop's host client accepts the feature wherever the host lists it, and puts each push's list back before
+anything reads it.** It keeps the records the last push carried with the page's reassembly, moved from the renderer to
+`src/shared/threadReassembly.ts` so main and the page share one. A thread that did not change is the record the client
+already holds, so the router and the window's broadcast meet it by identity. A push measured from records it does not
+hold, which should not happen on one ordered connection, is not shown. The client reads the shell whole instead, and
+the host's next push lists every record. A new connection starts with nothing held on either side.
+
+**The iPhone accepts it too, and puts each push's list back the same way** (`ThreadRecordsCache` in SottoCore, ported
+from `threadReassembly.ts`). The connection holds the records beside the catalog it holds, in socket order, and a push
+it cannot put back starts the connection again, as a catalog revision it does not hold does. The new connection's hello
+lists every record. An earlier iPhone build, the Android client and any other client that does not accept the feature
+are sent every record in every push.
+
+On the benchmark, three runs before and after on forge, with one host thread streaming for 60 pushes: a desktop push
+fell from 232,942 bytes to 11,929-11,950 (about 11,100 to about 1,970 deflated). The first push of a connection, and
+the first after a `shell` read, lists every record (205 KB). The desktop client's work on its pushes fell from
+295-303 ms to 67-73 ms, about 5 ms to 1.2 ms a push. The host's shell sends to its three clients fell from 287-293 ms to
+236-248 ms. The whole process, host, clients, router and window together, used 889-945 ms of CPU against 1,490-1,532 ms.
+The window was broadcast the same thread records as before. For a phone, a shell push after a send on the open thread
+fell from 220,462 bytes to 6,946, and reading one push on a Mac test runner from 3.88-4.44 ms for every record to 0.68 ms for
+one changed record put back (`docs/perf/2026-10-30-host-shell-thread-records.md`).
+
+## October 30, 2026: a broadcast keeps the parts that did not change
+
+The October 22 section left every field of the shell but the threads whole on every broadcast. That is the drafts, the
+receipt lists, the deliveries, the projects, the providers, the paired hosts and the settings, and nearly none of it
+changes while a reply streams. On the owner-scale benchmark a broadcast with one thread streaming was 14,580 bytes, about
+2.7 KB of it the record that changed, up to seventeen times a second. With full receipt lists the audit estimated about
+80 KB a broadcast. The page then walked every one of those parts again in state sharing, all fresh objects.
+
+**A broadcast leaves out each part that holds what the broadcast its threads are measured from held, and names it in
+`kept`** (`withKeptParts` in `agentStateBroadcast.ts`). The parts are the shell's top-level fields and its `host` fields,
+but the threads; a catalog's encoding (a revision, or the catalog whole) is a part like any other. Main keeps the parts of
+the last broadcast the window was delivered, under its thread revision, and compares each with `samePlainData`, identity
+first. It keeps nothing when the threads list every record, as after the window read the whole state: `windowRead`
+drops the parts with the threads' base, and a delivery a read voided leaves neither.
+
+**The page puts each kept part back from the broadcast it applied, before anything reads the state.** It holds the last
+broadcast whose threads it applied, as it crossed with its kept parts put back. A broadcast measured from it gets each
+kept part back as that very object, so state sharing meets it by identity. One measured from a broadcast the page does not
+hold, or naming a part it does not hold, is read whole through `AGENT_GET`, as a broadcast whose threads cannot be
+applied is. Command receipts keep carrying every part.
+
+On the owner-scale benchmark, three runs each on Owl, a broadcast with one thread streaming fell from 14,580 bytes to
+2,680, with three from 18,818 to 6,918, and a draft save's from 12,600 to 1,452. In `windowChangedThreads.perf.test.ts`
+(291 threads, three streaming) a streaming broadcast fell from 13,624-13,635 bytes to 4,358-4,410 on Owl and from 12,574
+to 4,466 on stable. The page's work per broadcast fell from 0.212-0.216 ms to 0.126-0.127 on Owl and from 0.189-0.194 to
+0.128-0.136 on stable, and main's from 0.076-0.079 to 0.062-0.065 and 0.120-0.129 to 0.113-0.118
+(`docs/perf/2026-10-30-window-kept-parts.md`).
+
+## November 1, 2026: a phone's connect lists the threads once and each provider's modes once
+
+The owner's iPhone took 10 to 30 seconds to connect to the laptop on a slow network, and under a second to forge. The
+network, the TLS and the host were not the difference: the laptop answered hello in 79 ms. The bytes were. On the
+laptop, with 632 threads and a catalog of 942 models, a connect sent the phone 4.5 to 5.7 MB, and 8.3 to 9.2 MB when the
+phone checked its deliveries with a `shell` read; forge, with 67 threads and 48 models, sent 0.23 to 0.78 MB. Phones are
+not sent compressed messages (ADR-0025, October 18 amendment).
+
+Two parts of that were sent twice. The first shell push after hello listed every thread record again (1.7 MB), because
+the October 30 amendment measured a connection's first push from nothing, and so did the push after a `shell` read. And
+every model carried its provider's modes: Devin's 846 models each carried the same 962-byte list, 814 KB of a 1 MB
+catalog.
+
+**A hello and a `shell` read name the revision of the records they list, and the next push is measured from them**, to a
+client that accepts `reply-thread-records` beside `changed-thread-records`. The listener seeds the connection's
+`ThreadRecordsBroadcast` with the records the answer lists and makes them its base once the answer is written; a send
+that had not become the base by then is voided, as a reset voids it. The answer carries `threadRecordsRevision` on its
+shell. The iPhone holds those records with the answer's envelope, in socket order, as it holds a catalog an answer
+carries: an answer's caller reads it after later pushes have been handled, so holding them there would be too late for
+the push that follows. A command's answer names nothing and moves nothing.
+
+**A catalog lists each distinct list of provider modes once, and each model names its list by its place**, to a client
+that accepts `provider-mode-lists`. Places rather than a list per provider, so a provider that ever gives two of its models
+different modes still reads exactly, and a model without modes is sent as it is, so it is never mistaken for one that
+names a list. The iPhone puts each list back before anything reads the catalog.
+
+Both are opt-ins: the desktop's own host client, the Android client and every earlier iPhone build are sent exactly what
+they were. Compressing phones' messages, the larger cut, stays a later change with its own device verification, and so
+does sending a phone only the threads it shows first.
+
+Replaying the laptop's captured hello through the listener, a phone connect fell from 4,510 KB to 2,257 KB, and from
+7,994 KB to 4,277 KB with a `shell` read; hello from 2,768 KB to 1,978 KB and the first push from 1,742 KB to 279 KB. The
+replay's before matched the installed laptop's within 1% (`docs/perf/2026-11-01-phone-connect-size.md`).
+
+### Part 2: a phone is sent only threads that are not settled, and reads the Settled shelf when asked
+
+After the first part, hello still listed every thread record: 1.48 MB of the laptop's 1,978 KB, for 632 threads of which
+625 were settled. The iPhone shows a settled thread only on its Settled shelf, folded until opened. The owner first chose,
+from three mock-ups (tag `prototype/ios-settled-shelf`, variant C), to keep the threads settled in the last seven days on
+the phone and read older ones when asked. Measured, the week was 122 of the laptop's settled threads, 256 KB of a 785 KB
+hello at about 2.1 KB a record, and the owner settles well over 50 a week, so he dropped it the same day: **only threads
+that are not settled are sent on connect**. The shelf and Threads' search read settled threads from the computer.
+
+**To a phone that accepts `settled-threads-on-request`, every shell holds back its settled threads**, and says how many
+in `settledHeldBack` (`heldBackSettled.ts`). What stays is what the phone needs to read correctly: a thread that asks the
+user something, and every thread above it in its delegation, so Needs you reads as before; one the phone observes or has
+selected, so a thread opened from the shelf stays in its list while it is open; and **every thread its list has carried
+since hello**, so a thread settled while the phone is connected, from the phone or anywhere else, stays where Settle's
+Undo puts it straight back, until the phone connects again. **`settled-threads` reads the held-back threads a page at a
+time**, newest settled first, matching a search when it names one. The settled time is the latest any settlement names,
+as the iPhone's `isSettled` reads settlement.
+
+The iPhone's shelf keeps its count, which the computer's `settledHeldBack` makes whole. Opened, it reads the first 30
+from each computer, shows them with any settled thread its lists carry as one list, newest settled first, and **Show 30
+more** reads the next. Threads' search asks each computer for the settled threads that match, a moment after typing
+stops. The iPhone keeps what it read beside its lists, so a thread opened from them is open before its computer lists
+it, and a new connection reads them afresh but for the one open.
+
+On the laptop's replayed shell, the list keeps 7 of 632 records and holds back 625. Against the week kept, measured the
+same hour: hello fell from 785 KB to 529 KB, a connect from 1,062 KB to 806 KB, and with a `shell` read from 1,887 KB to
+1,376 KB.
+
+**What was left of the hello was mostly the model catalog**, and most of that was models the phone could not use. The
+desktop keeps every model a provider has listed, marked not ready once it stops listing it, so an old thread's model
+still resolves. Devin, no longer connected on the owner's laptop, had left 846 such models; with the rest, 858 of the 942
+models were not ready, and only 5 of them were named by a thread. The iPhone's menus offer only ready models. The owner
+had part 2 carry the fix: **to a phone that accepts `usable-models`, the catalog carries ready models and any model that
+is not ready only while something names it** (`usableModels.ts`): a thread, held back or not, so one opened from the
+Settled shelf still names its model; the new-thread default; and Watcher's model now and for its next turn. The cut
+catalog counts its own revisions, so a phone sent it and a desktop sent the whole one never move one counter back and
+forth.
+
+On the laptop's replayed shell the catalog fell from 234 KB to 27 KB, 89 models, and hello from 529 KB to 321 KB; a
+connect from 806 KB to 598 KB, and with a `shell` read from 1,376 KB to 1,168 KB. From before either part, a connect fell
+from 4,510 KB to 598 KB, about an eighth (`docs/perf/2026-11-01-phone-connect-size.md`).

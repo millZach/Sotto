@@ -9,6 +9,20 @@ import { platformCopy } from '../../../../../src/renderer/src/platformCopy'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 
 describe('SettingsView', () => {
+  it('draws the Microphone test as a row on the Microphone card, with its button named for Find a setting (#1831)', () => {
+    render(<SettingsView {...baseProps()} />)
+    const row = document.querySelector('.settings-microphone-test')!
+    expect(row).toHaveClass('tt-field')
+    expect(row.parentElement).toHaveClass('settings-rows')
+    expect(row.querySelector('.tt-field__label')).toHaveTextContent('Microphone test')
+    expect(row.querySelector('.tt-field__label')?.nextElementSibling).toHaveClass('tt-field__description')
+    const button = screen.getByRole('button', { name: 'Test microphone' })
+    expect(button).toHaveAttribute('data-setting', 'microphone-test')
+    expect(button).toHaveAccessibleDescription('Microphone test Check that Sotto can hear you. Access is asked for only while the test runs.')
+    // Before a test, the row says nothing more than its description.
+    expect(row.querySelector('[role="status"]')).toBeEmptyDOMElement()
+  })
+
   it.each(['denied', 'missing', 'error'] as const)('keeps a %s test result after category changes and hiding', async outcome => {
     render(<SettingsView {...baseProps({ createMicrophoneTest: () => ({ start: vi.fn(async () => outcome), stop: vi.fn(async () => undefined) }) })} />)
     await userEvent.click(screen.getByRole('button', { name: 'Test microphone' }))

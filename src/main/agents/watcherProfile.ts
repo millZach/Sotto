@@ -6,6 +6,13 @@ export class WatcherProfileRefusal extends Error {
   readonly retryable = false
   constructor(reason: string) { super(reason); this.name = 'WatcherProfileRefusal' }
 }
+/**
+ * The refusal an earlier Watcher conversation answers with: it is read only history, so a send to it is refused, and
+ * nothing is wrong with its provider. Opening it to read is not a failure, so it never becomes the provider's error.
+ */
+export class WatcherHistoryRefusal extends WatcherProfileRefusal {
+  constructor() { super('This earlier Watcher conversation is read only history. Open Watcher to continue.'); this.name = 'WatcherHistoryRefusal' }
+}
 
 export function validateWatcherProfile(profile: WatcherLaunchProfile): void {
   let url: URL

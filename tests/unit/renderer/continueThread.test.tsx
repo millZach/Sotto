@@ -79,7 +79,7 @@ function mount(threads: AgentThread[] = [stopped()], options: { readonly owl?: b
   const on = options.owl !== false
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
     update: { owlFeatures: { 'continue-on-provider': on, 'reply-quote': on } },
-    actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
+    actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn(), dismissPastePermissionNotices: vi.fn() } } as unknown as AppContextValue)
   const bridge = fakeBridge()
   Object.assign(window, { sotto: options.bridge === false ? {} : { continueThread: bridge } })
   const state = stateWith(threads, options)

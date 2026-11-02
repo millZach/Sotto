@@ -24,7 +24,7 @@ import { fakeClaudePrompts } from '../fixtures/fakeClaudeRecords'
 import { parseProviderRecords, writeProviderAction } from '../fixtures/providerRecords'
 import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
-import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/thread-delegation')
 /** The roster's captures, which the verification note for delegated threads in Tools › Agents cites. */
@@ -161,7 +161,7 @@ async function capture(launched: LaunchedSotto, name: string, directory = eviden
 
 const tools = (page: Page) => page.getByRole('complementary', { name: 'Tools', exact: true })
 async function openAgents(page: Page): Promise<Locator> {
-  if (await tools(page).count() === 0) await pane(page).getByRole('button', { name: 'Tools', exact: true }).click()
+  if (await tools(page).count() === 0) await toggleTools(pane(page))
   await page.getByRole('tab', { name: 'Agents', exact: true }).click()
   return tools(page).getByRole('list', { name: 'Delegated threads and agents, newest first' })
 }
@@ -303,7 +303,7 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       await expect(parentRow).toHaveAccessibleDescription(new RegExp(`Waiting in ${REVIEW}`, 'u'))
       await expect(tools(page).locator('.tools-chrome__detail')).toHaveText('1 needs you')
       await expect(page.locator('#tools-tab-agents .tools-rail__live')).toHaveAttribute('data-needs', 'true')
-      await expect(pane(page).locator('.tools-toggle__agents-dot')).toHaveAttribute('data-needs', 'true')
+      await expect(pane(page).locator('.tools-dot')).toHaveAttribute('data-needs', 'true')
       for (const [width, height] of [[1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)
         for (const appearance of ['dark', 'light'] as const) {

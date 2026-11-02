@@ -30,6 +30,10 @@ SOTTO_PERF_BENCH=1 NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/p
 SOTTO_PERF_BENCH=1 SOTTO_AUDIT_SOCKET=1 SOTTO_AUDIT_PROFILE='socket 1' NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/perf/dataTransfer.perf.test.ts -t "host socket" --maxWorkers=1 --disable-console-intercept
 ```
 
+By default the thread store writes on main, as under the test runner, and the wire to the store worker is built beside
+it. `SOTTO_AUDIT_WORKER=1` runs the store on the store worker as the build compiles it. A read that runs on the worker then
+leaves main, and the wire counted is the worker handle's own.
+
 Times are from forge (Linux, shared with other work) and read as proportions. A profiled time is the inclusive time of a
 function in a CPU profile sampled every 200 microseconds, taken the same way before and after.
 

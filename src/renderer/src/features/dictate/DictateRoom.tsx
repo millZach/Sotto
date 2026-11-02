@@ -17,9 +17,11 @@ import type { HistoryEntry } from '../../../../shared/history'
 import type { DictationRecord } from '../../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
+import { startShortcut } from '../../../../shared/dictationShortcuts'
 import { Button } from '../../components/Button'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { VoiceWave, type VoiceWaveStage } from '../../components/VoiceWave'
+import { SILENT_LEVEL, useLiveLevel, type LiveLevel } from '../../audio/liveLevel'
 import { platformCopy, type PlatformCopy } from '../../platformCopy'
 import { linuxKeyWords } from '../omarchy/linuxKeys'
 import type { HistoryStatus } from '../../state/AppContext'
@@ -38,6 +40,8 @@ export interface DictateRoomProps {
   readonly speechModelName?: string
   readonly platform: SottoPlatform
   readonly dictation: DictationState
+  /** The microphone's level while listening, which only the wave's meter reads (#993); silent when absent. */
+  readonly level?: LiveLevel
   /** Saved transcripts, for the Journal. */
   readonly entries: readonly HistoryEntry[]
   /** Every dictation record (ADR-0100), for the stats column and each row's app. */
@@ -151,12 +155,27 @@ function waveStage(state: DictationState): VoiceWaveStage {
  * is doing, the button and the shortcut), then every transcript by day, with the stats column beside it. Errors, a
  * kept recording and text to recover keep the bar's sentence and buttons, and the recovered text sits under the bar.
  */
+/**
+ * The room's wave, which alone reads the microphone's level: a level redraws this and nothing else in the window,
+ * while its meter still gives screen readers the value (#993).
+ */
+function LiveVoiceWave({ stage, listening, level, label }: {
+  readonly stage: VoiceWaveStage
+  readonly listening: boolean
+  readonly level: LiveLevel
+  readonly label: string
+}): ReactNode {
+  const value = useLiveLevel(level)
+  return <VoiceWave stage={stage} value={listening ? value : 0} label={label} size="deck" />
+}
+
 export function DictateRoom({
   settings,
   speechModel,
   speechModelName,
   platform,
   dictation,
+  level = SILENT_LEVEL,
   entries,
   records = NO_RECORDS,
   recovery = [],
@@ -316,8 +335,8 @@ export function DictateRoom({
           : t`With Sotto’s compositor bindings: hold ${hold} to talk, or press ${press}. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.`
     } else {
       hint = listening
-        ? <Trans>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> again</Trans>
-        : <Trans>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> in any app</Trans>
+        ? <Trans>or press <ShortcutKey accelerator={startShortcut(settings)} platform={platform} /> again</Trans>
+        : <Trans>or press <ShortcutKey accelerator={startShortcut(settings)} platform={platform} /> in any app</Trans>
     }
   } else {
     hint = microphoneSkipped ? null : speechModelSummary(speechModel, speechModelName)
@@ -328,12 +347,7 @@ export function DictateRoom({
     <section className="dictate" data-room-backdrop="" aria-label={t`Dictation`} data-status={dictation.status} data-stage={stage}>
       <div className="dictate__layout" data-room-backdrop="">
         <div className="dictate__bar">
-          <VoiceWave
-            stage={stage}
-            value={listening ? dictation.level : 0}
-            label={t`Microphone activity`}
-            size="deck"
-          />
+          <LiveVoiceWave stage={stage} listening={listening} level={level} label={t`Microphone activity`} />
           <div className="dictate__words">
             <div className="dictate__state" aria-atomic="true" {...liveProps}>
               <h1 className="dictate__sentence">

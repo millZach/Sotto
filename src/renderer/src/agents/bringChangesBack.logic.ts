@@ -3,6 +3,8 @@ import { useSyncExternalStore } from 'react'
 import type { AgentThread } from '../../../shared/agents'
 import { bringBackTarget, type BringBack, type BringBackTarget } from '../../../shared/bringChangesBack'
 import { ltr, own } from '../components/isolated'
+import { ON_HOLD } from './checkoutHold'
+import { shownWords } from './interfaceWords'
 
 /**
  * What the strip above a delegated, continued or forked thread's composer shows (#1030, pick B of the continue prototype,
@@ -121,7 +123,11 @@ export function questionWords(record: BringBack): { readonly title: string; read
 
 /** An outcome's words: what happened, whether anything changed, and what to do next. */
 export interface OutcomeWords {
-  readonly tone: 'ok' | 'error'
+  /**
+   * `held`: refused because another thread's work holds the folder where the target is checked out (#1866), which is no
+   * failure. The record's `heldBy` names that thread, and the strip offers to open it.
+   */
+  readonly tone: 'ok' | 'error' | 'held'
   readonly title: string
   readonly body: string
   /** Git's own words, shown as Git said them. */
@@ -181,7 +187,13 @@ export function outcomeWords(record: BringBack, title: string, machine?: string)
     case 'snapshot': return { tone: 'error', title: nothing, body: t`${branch} starts from a check’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from ${target}, then try again.`, openParent: false, commit: false }
     case 'ignored': return { tone: 'error', title: nothing, body: record.message ?? t`The folder where ${target} is checked out has an ignored file these commits would replace, so Sotto didn’t touch it. Move it aside, then try again.`, openParent: true, commit: false }
     case 'gone': return { tone: 'error', title: t`Nothing was brought back.`, body: t`Git has no branch named ${target} any more.`, openParent: false, commit: false }
-    case 'busy': return { tone: 'error', title: nothing, body: record.message ?? t`Something else is using one of the folders. Try again in a moment.`, openParent: false, commit: false }
+    case 'busy': {
+      const body = record.message ?? t`Something else is using one of the folders. Try again in a moment.`
+      // Another thread's work holds the folder: a hold, worded as the Git action's is, in the host's words with that thread (#1866).
+      // An older host names no thread, and a Git action or Sotto holding the folder names none; those keep these words.
+      if (record.heldBy !== undefined) return { tone: 'held', title: shownWords(ON_HOLD), body, openParent: false, commit: false }
+      return { tone: 'error', title: nothing, body, openParent: false, commit: false }
+    }
     default: return { tone: 'error', title: unchanged, body: `${record.message ?? t`Git refused.`}${gitSaid}`, gitSaid: record.gitSaid, openParent: false, commit: false }
   }
 }

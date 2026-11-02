@@ -338,6 +338,7 @@ msgstr ""
 msgid "A {width} by {height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS."
 msgstr ""
 
+#: src/renderer/src/tools/toolsMenu.tsx
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "A browser request is waiting for your answer"
 msgstr ""
@@ -354,7 +355,7 @@ msgstr ""
 msgid "A cloud iPhone session is running"
 msgstr ""
 
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "A delegated thread needs you"
 msgstr ""
 
@@ -476,7 +477,7 @@ msgstr ""
 msgid "Agents"
 msgstr ""
 
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "Agents are working"
 msgstr ""
 
@@ -523,7 +524,7 @@ msgid "An agent opens your app here when it tests it. You can also load a web bu
 msgstr ""
 
 #. Stands in for a thread's title, as in "Tools are pinned to another thread".
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "another thread"
 msgstr ""
 
@@ -1557,12 +1558,10 @@ msgid "Hide phone"
 msgstr ""
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
 msgid "Hide terminal drawer"
 msgstr ""
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
 msgid "Hide terminal drawer ({keys})"
 msgstr ""
 
@@ -2816,14 +2815,6 @@ msgstr ""
 msgid "Show phone"
 msgstr ""
 
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
-msgid "Show terminal drawer"
-msgstr ""
-
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
-msgid "Show terminal drawer ({keys})"
-msgstr ""
-
 #. {title} is a thread's title; {actionText} says what the browser task is doing.
 #: src/renderer/src/tools/BrowserPlayer.tsx
 msgid "Show the browser for {title}: {actionText}"
@@ -2846,7 +2837,7 @@ msgid "Show whitespace changes"
 msgstr ""
 
 #. {pinnedTitle} is a thread's title.
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/toolsMenu.tsx
 msgid "Showing {pinnedTitle}, pinned"
 msgstr ""
 
@@ -3492,13 +3483,9 @@ msgstr ""
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
+#: src/renderer/src/tools/toolsMenu.tsx
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Tools"
-msgstr ""
-
-#. {pinnedTitle} is a thread's title.
-#: src/renderer/src/tools/ToolsPanel.tsx
-msgid "Tools are pinned to {pinnedTitle}"
 msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts

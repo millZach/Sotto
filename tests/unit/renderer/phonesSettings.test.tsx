@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 const DNS = 'laptop-russh2j5.tail5728ca.ts.net'
 const OFF: PhonesState = phonesState()
 const READY: PhonesState = { ...OFF, enabled: true, phase: 'on', tailscale: { status: 'ok', hostName: 'laptop-russh2j5', dnsName: DNS }, serve: { status: 'ok' }, servePort: 8443, address: `https://${DNS}:8443`, defaultName: 'laptop-russh2j5', computerName: 'laptop-russh2j5' }
-const PHONE: PairedPhone = { clientId: 'phone-1', name: 'Zach’s iPhone', pairedAt: '2026-09-26T10:00:00.000Z', connected: true, canAnswer: false }
+const PHONE: PairedPhone = { clientId: 'phone-1', name: 'Zach’s iPhone', pairedAt: '2026-09-26T10:00:00.000Z', connected: true, canAnswer: true }
 
 function fixture(initial: PhonesState, answer?: (command: PhonesCommand, state: PhonesState) => PhonesState) {
   const published = phonesBridgeFixture({ initial, ...(answer ? { answer } : {}) })
@@ -117,17 +117,15 @@ it('closes the code when a phone redeems it, and says the phone is paired', asyn
   expect(screen.getByRole('region', { name: 'Zach’s iPhone' })).toBeTruthy()
 })
 
-it('paired: a phone row with its date, whether it is connected, Can answer off at first, and Remove that asks first', async () => {
-  const { command } = show({ ...READY, phones: [PHONE] }, { answer: (input, state) => input.type === 'remove' ? { ...state, phones: [] } : input.type === 'set-can-answer' ? { ...state, phones: [{ ...PHONE, canAnswer: input.allowed }] } : state })
+it('paired: a phone row with its date, whether it is connected, that it can answer, and Remove that asks first', async () => {
+  const { command } = show({ ...READY, phones: [PHONE] }, { answer: (input, state) => input.type === 'remove' ? { ...state, phones: [] } : state })
   const row = await screen.findByRole('region', { name: 'Zach’s iPhone' })
   expect(within(row).getByText(/^Paired /u).textContent).toBe('Paired Sep 26 · Connected')
-  expect(within(row).getByText('Reads and replies. Can’t answer questions or permissions.')).toBeTruthy()
-  const answer = within(row).getByRole('switch', { name: 'Can answer: let Zach’s iPhone answer questions and permissions' })
-  expect(answer.getAttribute('aria-checked')).toBe('false')
+  expect(within(row).getByText('Reads and replies. Can answer questions and permissions.')).toBeTruthy()
+  // Pairing let it answer, so Remove is the row's one control (ADR-0033).
+  expect(within(row).queryByRole('switch')).toBeNull()
+  expect(within(row).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Remove Zach’s iPhone'])
   const user = userEvent.setup()
-  await user.click(answer)
-  expect(command).toHaveBeenLastCalledWith({ type: 'set-can-answer', clientId: 'phone-1', allowed: true })
-  expect(await within(row).findByText('Reads and replies. Can answer questions and permissions.')).toBeTruthy()
   await user.click(within(row).getByRole('button', { name: 'Remove Zach’s iPhone' }))
   const dialog = screen.getByRole('dialog', { name: 'Remove Zach’s iPhone?' })
   expect(command).not.toHaveBeenCalledWith({ type: 'remove', clientId: 'phone-1' })

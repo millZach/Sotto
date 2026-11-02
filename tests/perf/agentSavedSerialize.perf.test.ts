@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { describe, expect, it } from 'vitest'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { WATCHER_RECORD_FILE } from '../../src/main/agents/watcherRecordFile'
 import type { WatcherRecord } from '../../src/shared/watcher'
 import { createAgentControl } from '../fixtures/agentControlFixture'
 import { testCredentials } from '../fixtures/testCredentials'
@@ -80,7 +81,6 @@ describe.skipIf(!PERF_BENCH)('a save with nothing new (#1332; requires SOTTO_PER
       const inside = control as unknown as Inside
       if (!OWN_FILE) await fill(inside)
       await inside.persist()
-      const bytes = JSON.stringify(inside.savedOverLiveState()).length
       const time = (run: () => unknown, rounds = 200): number => {
         for (let index = 0; index < 20; index++) run()
         const samples: number[] = []
@@ -92,9 +92,13 @@ describe.skipIf(!PERF_BENCH)('a save with nothing new (#1332; requires SOTTO_PER
       const samples: number[] = []
       for (let index = 0; index < 200; index++) { const start = performance.now(); await inside.persist(); samples.push(performance.now() - start) }
       const persist = median(samples)
-      expect(await readFile(join(root, 'agents.json'), 'utf8')).toBe(`${JSON.stringify(inside.savedOverLiveState())}
-`)
-      console.log(`agents.json ${(bytes / 1024).toFixed(0)} KB${OWN_FILE ? ' (given file)' : ` at ${THREADS} threads`}: JSON.stringify of the whole state ${whole.toFixed(3)} ms, persist with nothing new ${check.toFixed(3)} ms to its first wait, ${persist.toFixed(3)} ms awaited (medians)`)
+      // Watcher's record is saved in a file of its own, and agents.json holds the rest (ADR-0073, October 30, 2026).
+      const { watcher, ...rest } = inside.savedOverLiveState()
+      const agents = await readFile(join(root, 'agents.json'), 'utf8'), own = await readFile(join(root, WATCHER_RECORD_FILE), 'utf8')
+      expect(agents).toBe(`${JSON.stringify(rest)}\n`)
+      expect(own).toBe(`${JSON.stringify({ watcher })}\n`)
+      const kb = (text: string): string => (Buffer.byteLength(text) / 1024).toFixed(0)
+      console.log(`agents.json ${kb(agents)} KB and Watcher's file ${kb(own)} KB${OWN_FILE ? ' (given file)' : ` at ${THREADS} threads`}: JSON.stringify of the whole state ${whole.toFixed(3)} ms, persist with nothing new ${check.toFixed(3)} ms to its first wait, ${persist.toFixed(3)} ms awaited (medians)`)
       if (process.env.SOTTO_PERF_ASSERT === '1') expect(check).toBeLessThan(whole / 2)
     } finally {
       control.dispose(); await control.closed()

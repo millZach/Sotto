@@ -35,6 +35,10 @@ export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
 const timestamp = z.iso.datetime({ offset: true })
 const pending = z.object({ id: z.string(), kind: z.enum(['question', 'permission']),
   openTarget: watcherThreadTargetSchema }).strict()
+/** Watcher's choice kept for its next turn (`nextTurnOptions`), on Watcher's own provider. */
+export const watcherNextTurnOptionsSchema = z.object({ modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).nullable(),
+  speed: agentSpeedSchema.nullable().optional() }).strict()
+export type WatcherNextTurnOptions = z.infer<typeof watcherNextTurnOptionsSchema>
 export const watcherRoomStateSchema = z.object({
   current: watcherIdentitySchema.nullable(),
   currentOptions: z.object({ modelId: z.string(), reasoningEffort: z.string().nullable(), speed: agentSpeedSchema.nullable().optional(),
@@ -76,6 +80,12 @@ export const watcherRoomStateSchema = z.object({
    * publish makes nothing new for it (ownerScaleWorkBudget).
    */
   newWatcher: z.enum(['available', 'busy', 'empty']).optional(),
+  /**
+   * Watcher's model, effort or speed the user chose while it worked, which its next turn starts on: main takes it the
+   * moment Watcher rests, before anything else goes to it. A null effort is the model's default; an absent speed leaves
+   * Watcher's own. Absent when nothing waits, and from older hosts.
+   */
+  nextTurnOptions: watcherNextTurnOptionsSchema.optional(),
   /**
    * What the replacement that made the current Watcher carried over (#1735), for the new Watcher's note while it has said
    * nothing: whether the last one's card was closed, how many of the user's messages moved to its queue paused, whether the

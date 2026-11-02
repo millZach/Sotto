@@ -2,7 +2,7 @@ import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, toggleTools } from './support/sottoLaunch'
 import { waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -52,7 +52,7 @@ test('the Tools terminal recovers a failed view without restarting its shell or 
     }, id)
     await expect.poll(async () => (await read()).output).toContain('BEFORE_RELOAD')
     const show = async (): Promise<void> => {
-      await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(page)
       await page.getByRole('complementary', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
     }
     await show()

@@ -8,6 +8,7 @@ import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
+import { modelInForce } from '../../../../shared/modelLineup'
 import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, fitSpeed, roleInForce, watcherProvidersInWords, withRoleRow, WORKER_COUNT_MAX, WORKER_COUNTS, WORKER_ROLES, workerCounts,
   type RoleInForce, type WorkerCount, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
@@ -53,8 +54,10 @@ type Starter = 'workers' | 'watcher'
 
 function shownOf(read: RoleInForce, models: readonly AgentModel[]): Shown | undefined {
   if (read.choice) {
-    const model = resolveModel(models, read.choice.modelId)
-    return { modelId: read.choice.modelId, model, reasoningEffort: read.choice.reasoningEffort, speed: read.choice.speed ?? null,
+    // A retired choice shows as the model it now runs on (ADR-0171).
+    const modelId = modelInForce(models, read.choice.modelId)
+    const model = resolveModel(models, modelId)
+    return { modelId, model, reasoningEffort: read.choice.reasoningEffort, speed: read.choice.speed ?? null,
       runtimeMode: read.choice.runtimeMode ?? fitRuntimeMode(read.role.permission, model) ?? read.role.permission ?? undefined }
   }
   return read.fallback ? { modelId: read.fallback.model.id, model: read.fallback.model, reasoningEffort: read.fallback.reasoningEffort, speed: read.fallback.speed, runtimeMode: read.fallback.runtimeMode } : undefined

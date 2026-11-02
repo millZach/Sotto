@@ -1,0 +1,238 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE. Not product code.
+  Question: how should Zach's composer tell you the draft looks like it wants more effort, so it is easy to notice,
+  stays until you act on it, and looks finished? Today it is a note that floats over the prompt for 2.4 seconds.
+  Every variant reads the same draft rules (a wider word list, length and line breaks, measured from the model's
+  default) and changes nothing until you press. Colours approximate the T3 Code theme in Drake's screenshot.
+  Picked: A, "The word moves" (Drake, October 31, 2026). Recorded in ADR-0172.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Effort suggestion: three ways to say it</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #151618; --card: #232528; --text: #ececec; --text-2: #c9cacd; --muted: #9a9ca1; --hint: #6f7277;
+    --accent: #79b8ff; --on-accent: #0b1a2a; --gold: #d9b45a; --hover: rgba(255,255,255,.06); --hairline: rgba(255,255,255,.09);
+    --pill: #f2f2f2; --pill-ink: #151618;
+    font-family: Figtree, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --page: #f4f4f2; --card: #ffffff; --text: #1b1c1e; --text-2: #3a3c40; --muted: #63666b; --hint: #8a8d92;
+    --accent: #1f6fd1; --on-accent: #ffffff; --gold: #9a6a00; --hover: rgba(0,0,0,.05); --hairline: rgba(0,0,0,.1);
+    --pill: #1b1c1e; --pill-ink: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text); font-size: 14px; line-height: 1.45; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  .lede { margin: 0 0 20px; color: var(--muted); max-width: 66ch; }
+  .tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 28px; }
+  .tools button, .theme { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--hover); color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; }
+  .tools button:hover, .theme:hover { color: var(--text); background: color-mix(in oklab, var(--text) 10%, transparent); }
+  .tools .label { align-self: center; color: var(--muted); font-size: 12px; margin-right: 4px; }
+  section { margin: 0 0 36px; }
+  h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  h2 span { color: var(--muted); font-weight: 500; }
+  .why { margin: 0 0 12px; color: var(--muted); font-size: 13px; max-width: 70ch; }
+
+  /* Zach's composer, drawn from rowsComposer.css: prompt on its own row, then attach | shield, model, effort, disc. */
+  .composer { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 10px 8px 16px; border-radius: 18px; background: var(--card); }
+  .composer textarea { grid-column: 1 / -1; min-height: 45px; max-height: 220px; resize: none; border: 0; outline: 0; padding: 0 6px 0 0; background: transparent; color: var(--text); font: inherit; font-size: 15px; line-height: 1.5; }
+  .composer textarea::placeholder { color: var(--hint); }
+  .foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+  .icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+  .icon:hover { background: var(--hover); color: var(--text); }
+  .attach { margin-left: -8px; }
+  .spacer { flex: 1; }
+  .shield { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--gold); font: inherit; font-size: 13px; cursor: pointer; }
+  .model { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+  .model:hover, .shield:hover, .effort:hover { background: var(--hover); }
+  .mark { width: 14px; height: 14px; color: #d97757; }
+  .effort { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+  .bolt { opacity: .55; }
+  .disc { display: inline-grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--pill); color: var(--pill-ink); cursor: pointer; }
+  .disc:disabled { opacity: .35; cursor: default; }
+  button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Shared motion: in once, then still. Reduced motion keeps the fade and drops the travel. */
+  @keyframes rise { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .enter { animation: rise 180ms cubic-bezier(.2,.8,.2,1) both; }
+  @media (prefers-reduced-motion: reduce) { .enter { animation: fade 120ms ease-out both; } }
+  :root[data-motion="reduced"] .enter { animation: fade 120ms ease-out both; }
+
+  /* A. The word moves: "Medium → High". The arrow and the new level are one press that sets it. */
+  .a-word { display: inline-flex; align-items: center; gap: 5px; }
+  .a-arrow { color: var(--muted); }
+  .a-next { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 0; border-radius: 6px; background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .a-next:hover { background: color-mix(in oklab, var(--accent) 24%, transparent); }
+
+  /* B. A small accent button before the model: "Try High", with a sparkle, and an x to put it away for this draft. */
+  .b-chip { display: inline-flex; align-items: stretch; height: 26px; margin-right: 4px; border-radius: 8px; background: color-mix(in oklab, var(--accent) 14%, transparent); color: var(--accent); }
+  .b-chip button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+  .b-take { padding: 0 6px 0 8px; font-weight: 600; border-radius: 8px 0 0 8px; }
+  .b-take:hover, .b-away:hover { background: color-mix(in oklab, var(--accent) 10%, transparent); }
+  .b-away { padding: 0 6px; border-radius: 0 8px 8px 0; color: color-mix(in oklab, var(--accent) 75%, var(--muted)); }
+
+  /* C. A line of its own inside the card, between the prompt and the footer: why, then one press. */
+  .slot { grid-column: 1 / -1; }
+  .c-line { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; padding: 7px 8px 7px 10px; border-radius: 10px; background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--text-2); font-size: 13px; }
+  .c-line svg { flex: none; color: var(--accent); }
+  .c-line .c-why { flex: 1; min-width: 0; }
+  .c-line .c-why b { color: var(--text); font-weight: 600; }
+  .c-line .c-why small { color: var(--muted); font-size: 12px; }
+  .c-use { height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .c-not { height: 26px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+  .c-not:hover { color: var(--text); background: var(--hover); }
+
+  .reason { margin: 8px 2px 0; color: var(--muted); font-size: 12px; min-height: 18px; }
+  .set-note { color: var(--accent); }
+  .narrow { max-width: 520px; }
+  .row-label { margin: 18px 0 6px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Effort suggestion, three ways</h1>
+    <button class="theme" type="button" id="theme">Light</button>
+  </header>
+  <p class="lede">Type in any composer, or fill all three with a sample. Each one reads the draft the same way and changes nothing until you press. Once the draft no longer calls for more, or you press, the suggestion goes. It never suggests less than you chose.</p>
+  <div class="tools">
+    <span class="label">Fill all with</span>
+    <button type="button" data-fill="Fix the typo in the README heading">A small fix</button>
+    <button type="button" data-fill="Why does the sidebar flicker when a thread finishes?">A why question</button>
+    <button type="button" data-fill="keyfix app needs major fixes.. super buggy and is not working. pls debug and don't report back to me till it's all working">Drake's keyfix prompt</button>
+    <button type="button" data-fill="Refactor the settings page into smaller components.&#10;Keep every test passing and migrate the old schema.&#10;Investigate why the save snaps back first.">A long, several-line refactor</button>
+    <button type="button" data-fill="">Clear</button>
+    <button type="button" id="motion">Reduced motion: off</button>
+  </div>
+
+  <section data-variant="a">
+    <h2>A. The word moves <span>· Medium → High</span></h2>
+    <p class="why">The effort word itself says what it would become. The new level, tinted in the accent, is the press that sets it. Nothing else is added to the footer, so the line stays as quiet as Zach's pick.</p>
+    <div class="composer"></div>
+    <p class="reason"></p>
+  </section>
+
+  <section data-variant="b">
+    <h2>B. A button before the model <span>· ✦ Try High ×</span></h2>
+    <p class="why">A small tinted button joins the footer's left edge of the settings, with a sparkle so it reads as a suggestion and not a setting. Press it to set High; the x puts it away until the draft asks for a different level.</p>
+    <div class="composer"></div>
+    <p class="reason"></p>
+  </section>
+
+  <section data-variant="c">
+    <h2>C. A line that says why <span>· inside the card</span></h2>
+    <p class="why">A line of its own between the prompt and the footer: what it suggests, why in a few words, then Use High or Not now. The most apparent of the three, and the only one that explains itself without hovering.</p>
+    <div class="composer"></div>
+    <p class="reason"></p>
+  </section>
+
+  <section>
+    <h2>The same three in a narrow pane <span>· 520px</span></h2>
+    <p class="why">At the 820x560 window with the sidebar open, a pane is about this wide. A keeps "→ High" and drops "Medium"; B keeps the sparkle and the level; C wraps its reason under the words.</p>
+    <div class="narrow" data-variant="a" data-narrow><div class="row-label">A</div><div class="composer"></div></div>
+    <div class="narrow" data-variant="b" data-narrow><div class="row-label">B</div><div class="composer"></div></div>
+    <div class="narrow" data-variant="c" data-narrow><div class="row-label">C</div><div class="composer"></div></div>
+  </section>
+</main>
+
+<script>
+// The draft rules the app would use: a wider word list, length and line breaks, measured from the model's default.
+const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max']
+const NAMES = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
+const DEFAULT = 'medium'
+const HARD = /\b(?:refactor\w*|debug\w*|investigat\w*|why|redesign\w*|architect\w*|migrat\w*|root cause|race condition|regression\w*|flak\w*|deadlock\w*|concurren\w*|performance|optimi[sz]\w*|security|audit\w*|end[- ]to[- ]end|entire|whole (?:app|codebase|repo)|thorough\w*|comprehensive|buggy|not working|crash\w*|broken)\b/giu
+function read(text) {
+  const t = text.trim()
+  if (t.length < 14) return { score: 0, why: [] }
+  const words = [...new Set((t.match(HARD) || []).map(w => w.toLowerCase()))]
+  const why = []
+  if (words.length) why.push(`says “${words.slice(0, 2).join('”, “')}”`)
+  if (t.includes('\n')) why.push('spans several lines')
+  else if (t.length > 140) why.push('is long')
+  return { score: Math.min(3, words.length) + (t.includes('\n') ? 1 : 0) + (t.length > 140 ? 1 : 0), why }
+}
+function suggest(text, current) {
+  const { score, why } = read(text)
+  const steps = score >= 3 ? 2 : score >= 1 ? 1 : 0
+  const base = Math.max(LEVELS.indexOf(DEFAULT), 0)
+  const target = Math.min(LEVELS.length - 1, base + steps)
+  return steps > 0 && target > LEVELS.indexOf(current) ? { level: LEVELS[target], why } : null
+}
+
+const svg = {
+  clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.4 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8"/></svg>',
+  shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="color-mix(in oklab, currentColor 28%, transparent)" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>',
+  mark: '<svg class="mark" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.2L20 6l-4.4 4.6L22 12l-6.4 1.4L20 18l-6.4-2.2L12 22l-1.6-6.2L4 18l4.4-4.6L2 12l6.4-1.4L4 6l6.4 2.2Z"/></svg>',
+  bolt: '<svg class="bolt" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>',
+  up: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  spark: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c.4 4.6 2.4 7.6 7 8-4.6.4-6.6 3.4-7 8-.4-4.6-2.4-7.6-7-8 4.6-.4 6.6-3.4 7-8Z"/></svg>',
+  x: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+}
+
+const composers = []
+for (const host of document.querySelectorAll('[data-variant]')) {
+  const box = host.querySelector('.composer')
+  const state = { variant: host.dataset.variant, narrow: host.hasAttribute('data-narrow'), effort: 'medium', away: null, shown: null, note: '' }
+  box.innerHTML = `<textarea aria-label="Prompt" placeholder="What would you like to do next?" rows="2"></textarea><div class="slot"></div><div class="foot"></div>`
+  const area = box.querySelector('textarea'), slot = box.querySelector('.slot'), foot = box.querySelector('.foot')
+  const reason = host.querySelector('.reason')
+  const render = () => {
+    const found = suggest(area.value, state.effort)
+    const s = found && found.level === state.away ? null : found
+    const key = s ? s.level : null
+    const fresh = key !== null && key !== state.shown
+    state.shown = key
+    const enter = fresh ? ' enter' : ''
+    const name = NAMES[state.effort]
+    let effort = `<button class="effort" type="button" title="Effort: ${name} · Standard">${name}${svg.bolt}</button>`
+    let lead = ''
+    slot.innerHTML = ''
+    if (s && state.variant === 'a') {
+      effort = `<span class="effort a-word" title="Effort: ${name}. ${NAMES[s.level]} suggested for this draft">${state.narrow ? '' : `<span>${name}</span><span class="a-arrow">→</span>`}<button class="a-next${enter}" type="button" aria-label="Set effort to ${NAMES[s.level]}, suggested for this draft">${state.narrow ? '→ ' : ''}${NAMES[s.level]}</button>${svg.bolt}</span>`
+    }
+    if (s && state.variant === 'b') {
+      lead = `<span class="b-chip${enter}"><button class="b-take" type="button" aria-label="Set effort to ${NAMES[s.level]}, suggested for this draft" title="Suggested because the draft ${s.why.join(' and ')}">${svg.spark}${state.narrow ? '' : 'Try '}${NAMES[s.level]}</button><button class="b-away" type="button" aria-label="Not now">${svg.x}</button></span>`
+    }
+    if (s && state.variant === 'c') {
+      slot.innerHTML = `<div class="c-line${enter}" role="status">${svg.spark}<span class="c-why"><b>${NAMES[s.level]}</b> effort may suit this draft<small> · it ${s.why.join(' and ')}</small></span><button class="c-use" type="button">Use ${NAMES[s.level]}</button><button class="c-not" type="button">Not now</button></div>`
+    }
+    foot.innerHTML = `<button class="icon attach" type="button" aria-label="Attach">${svg.clip}</button><span class="spacer"></span>${lead}<button class="shield" type="button" title="Full access">${svg.shield}${state.narrow ? '' : 'Full access'}</button><button class="model" type="button">${svg.mark}Opus 5.5</button>${effort}<button class="disc" type="button" aria-label="Send prompt" ${area.value.trim() ? '' : 'disabled'}>${svg.up}</button>`
+    if (reason) reason.innerHTML = state.note ? `<span class="set-note">${state.note}</span>` : s ? `Suggested because the draft ${s.why.join(' and ')}.` : area.value.trim() ? 'Nothing suggested for this draft.' : ''
+  }
+  const take = () => { const s = suggest(area.value, state.effort); if (!s) return; state.effort = s.level; state.note = `Effort set to ${NAMES[s.level]}. It goes back to Medium when you choose it.`; render(); area.focus() }
+  box.addEventListener('click', event => {
+    const target = event.target.closest('button')
+    if (!target) return
+    if (target.matches('.a-next, .b-take, .c-use')) take()
+    else if (target.matches('.b-away, .c-not')) { state.away = suggest(area.value, state.effort)?.level ?? null; render(); area.focus() }
+    else if (target.matches('.effort')) { state.effort = 'medium'; state.note = ''; render() }
+  })
+  area.addEventListener('input', () => { state.note = ''; render() })
+  composers.push({ area, state, render })
+  render()
+}
+for (const button of document.querySelectorAll('[data-fill]')) button.addEventListener('click', () => {
+  for (const c of composers) { c.area.value = button.dataset.fill; c.state.effort = 'medium'; c.state.away = null; c.state.note = ''; c.render() }
+})
+document.getElementById('theme').addEventListener('click', event => {
+  const light = document.documentElement.dataset.theme !== 'light'
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  event.currentTarget.textContent = light ? 'Dark' : 'Light'
+})
+document.getElementById('motion').addEventListener('click', event => {
+  const reduced = document.documentElement.dataset.motion !== 'reduced'
+  document.documentElement.dataset.motion = reduced ? 'reduced' : ''
+  event.currentTarget.textContent = `Reduced motion: ${reduced ? 'on' : 'off'}`
+})
+</script>
+</body>
+</html>

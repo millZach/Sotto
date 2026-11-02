@@ -29,6 +29,7 @@ export interface OutputServiceDependencies {
    * the app (ADR-0100). Null when it cannot be read. Unset where nothing can read it.
    */
   readonly readFocusedApp?: () => Promise<string | null>
+  readonly onPasted?: () => void
   readonly log?: (event: 'delivered-app-unreadable') => void
 }
 
@@ -215,6 +216,7 @@ export class OutputService {
         // A failed or lost acknowledgement can still follow dispatched input.
         await this.dependencies.delay(PASTE_SETTLE_MS)
       }
+      if (pasted) this.dependencies.onPasted?.()
       return pasted ? 'pasted' : 'copied'
     } catch {
       return 'copied'

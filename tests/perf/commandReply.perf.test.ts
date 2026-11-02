@@ -29,8 +29,8 @@ import { AGENT_COMMAND, type AgentCommand, type AgentHostSnapshot, type AgentMes
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
-import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
 import { registerAgentIpc } from '../../src/main/agents/ipc'
+import { receiptEncoders } from '../fixtures/receiptEncoders'
 
 const THREADS = 8
 const MESSAGES_PER_THREAD = 1_500
@@ -94,7 +94,7 @@ describe.skipIf(!PERF_BENCH)("command reply cost (timing benchmark; requires SOT
     router.add({ hostId: HOST_ID, name: 'This computer', kind: 'local', service: new LocalHostService({ control: live }),
       detail: threadId => live.threadDetail(threadId), preview: () => null })
     const registry = ipcRegistry({ mainUrl: 'file:///main.html' })
-    const unregister = registerAgentIpc(registry.ipc, router, router, () => [registry.main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt })
+    const unregister = registerAgentIpc(registry.ipc, router, router, () => [registry.main], { ...receiptEncoders() })
     dispose = () => { unregister(); registry.dispose(); router.dispose() }
     const send = (command: AgentCommand) =>
       registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>

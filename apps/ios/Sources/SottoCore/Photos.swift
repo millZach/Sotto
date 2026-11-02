@@ -113,6 +113,12 @@ public enum Photos {
     public static func preview(threadID: String, messageID: String, attachmentID: String) -> [String: JSONValue] {
         ["op": .string("preview"), "request": .object(["threadId": .string(threadID), "messageId": .string(messageID), "attachmentId": .string(attachmentID)])]
     }
+    /// The feature a computer lists when it keeps its agents' pictures and answers for them (ADR-0170).
+    public static let threadMediaFeature = "thread-media"
+    /// The request that reads one picture a step's handle names (ADR-0170). It is answered like a preview, `{dataUrl}`.
+    public static func threadMedia(threadID: String, activityID: String, mediaID: String) -> [String: JSONValue] {
+        ["op": .string("thread-media"), "request": .object(["threadId": .string(threadID), "activityId": .string(activityID), "mediaId": .string(mediaID)])]
+    }
     /// Whether one more image of `bytes` keeps a reply inside the host's limits.
     public static func fits(_ bytes: Int, with others: [Int]) -> Bool {
         others.count < PhotoLimits.count && bytes > 0 && bytes <= PhotoLimits.bytesEach

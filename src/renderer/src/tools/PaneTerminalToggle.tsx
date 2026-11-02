@@ -1,16 +1,12 @@
-import React, { useMemo, type ReactNode } from 'react'
+import React, { useMemo } from 'react'
 import { PanelBottom } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { SottoPlatform } from '../../../shared/platform'
+import type { PaneMenuItem } from '../agents/PaneMenu'
 import { useOptionalApp } from '../state/AppContext'
 import { chosenThreadChord } from '../agents/threadShortcuts'
 import { paneTerminalChord, paneTerminalShortcutKeys, paneTerminalShortcutLabel, type PaneTerminalShortcut } from './paneTerminalShortcut'
 import { paneTerminalChromeStore, usePaneTerminalChrome, type PaneTerminalChromeStore } from './paneTerminalStore'
-
-export interface PaneTerminalToggleProps {
-  readonly threadId: string
-  readonly store?: PaneTerminalChromeStore
-}
 
 /** The drawer's shortcut in this window, or null while the dictation hotkey owns the chord. */
 export function usePaneTerminalShortcut(): PaneTerminalShortcut | null {
@@ -21,22 +17,15 @@ export function usePaneTerminalShortcut(): PaneTerminalShortcut | null {
 }
 
 /**
- * Shows or hides this pane's own terminal drawer. Every pane carries one, not only the focused one, just after
- * the Tools toggle, so the Tools toggle appearing in a pane as it takes focus never shifts this one. Like the
- * Tools toggle, its name stays put, "Terminal drawer" (Terminal alone is the Tools tab's), and aria-pressed says
- * whether the drawer is open, so it never shares a name with the drawer's own Hide terminal button.
+ * Shows or hides this pane's own terminal drawer, as a row of the pane's More menu (ADR-0163), in every pane that has
+ * a drawer. Its name stays put, "Terminal drawer" (Terminal alone is the Tools tab's), and its tick says whether the
+ * drawer is open, so it never shares a name with the drawer's own Hide terminal button. Its keys follow it.
  */
-export function PaneTerminalToggle({ threadId, store = paneTerminalChromeStore }: PaneTerminalToggleProps): ReactNode {
+export function usePaneTerminalMenuItem(threadId: string, offered: boolean, store: PaneTerminalChromeStore = paneTerminalChromeStore): PaneMenuItem | null {
   const { t } = useLingui()
   const chrome = usePaneTerminalChrome(threadId, store)
   const shortcut = usePaneTerminalShortcut()
-  const keys = shortcut?.label
-  const does = chrome.open
-    ? keys ? t`Hide terminal drawer (${keys})` : t`Hide terminal drawer`
-    : keys ? t`Show terminal drawer (${keys})` : t`Show terminal drawer`
-  return <button type="button" className="pane-action tt-focusable" data-pane-terminal-toggle aria-pressed={chrome.open}
-    aria-label={t`Terminal drawer`} aria-keyshortcuts={shortcut?.keys} title={does}
-    onClick={() => store.setOpen(threadId, !chrome.open)}>
-    <PanelBottom size={16} aria-hidden="true" />
-  </button>
+  if (!offered) return null
+  return { id: 'terminal-drawer', label: t`Terminal drawer`, icon: <PanelBottom size={15} aria-hidden="true" />, shown: chrome.open,
+    shortcut: shortcut ? { plain: shortcut.label, keys: shortcut.keys } : undefined, run: () => store.setOpen(threadId, !chrome.open) }
 }

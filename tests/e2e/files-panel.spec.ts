@@ -3,7 +3,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 
 // Requires the shared tools slot to be mounted (ThreadsView `tools={props => <ToolsPanel {...props} />}` and one
 // ToolsPanelToggle in the focused pane header). Real Files IPC reads real temporary folders; providers and clipboard output are fixtures.
@@ -102,8 +102,9 @@ test('browses real working folders in the shared tools panel, following focus or
     await page.getByRole('button', { name: 'Workshop files', exact: true }).first().click()
     await expect(page.getByRole('heading', { name: 'Workshop files', exact: true })).toBeVisible()
 
-    const toggle = page.getByRole('button', { name: 'Tools', exact: true })
-    await toggle.click()
+    // Tools is a row of the pane's ··· menu (ADR-0163); the ··· button is where the panel hands focus back.
+    const toggle = page.locator('[data-opens="tools"]')
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(page.getByRole('tab', { name: 'Files' })).toBeFocused()
@@ -209,7 +210,7 @@ test('browses real working folders in the shared tools panel, following focus or
     await resize(launched, 1280)
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark', accent: 'blue' }))
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await toggle.click()
+    await toggleTools(page)
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     expect(await panel.locator('.tools-panel__sheet').evaluate(node => getComputedStyle(node).animationName)).toBe('none')
     const scale = await page.evaluate(() => window.devicePixelRatio)

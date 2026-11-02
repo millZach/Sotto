@@ -42,11 +42,13 @@ struct PullRequestSheet: View {
             }
             .padding(.horizontal, Space.s3)
             .padding(.bottom, Space.s2)
+            .dockFade { SheetBackdrop(wash: false) }
         }
         .foregroundStyle(Palette.ink)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
         .toast($toast)
         .task { await load() }

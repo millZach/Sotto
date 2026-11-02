@@ -71,6 +71,12 @@ extension WatcherPhoneState {
 // MARK: - Asking Watcher
 
 /// A message on its way to Watcher: its words, its draft ID, and the messages Watcher's conversation held when it left.
+/// A choice just made in Watcher's box, shown on its chip while Watcher's computer takes it.
+struct WatcherSettingPick: Equatable, Sendable {
+    let kind: ThreadSettingKind
+    let value: String
+}
+
 struct WatcherSending: Equatable, Sendable {
     let text: String
     let draftID: String
@@ -340,6 +346,22 @@ struct WatcherReaderPlace: Equatable {
         guard abs(spare) > 1 else { return 0 }
         return min(max((wanted - top) / spare, 0), 1)
     }
+
+    /// How far above the box following leaves the newest words, so they end clear of it rather than against the top of
+    /// its frame, which sits only the box's padding above its glass.
+    static let newestGap: CGFloat = 12
+    /// Where following puts the newest words: `newestGap` above the box. Returns the point, as a fraction of the visible
+    /// page's height, that `ScrollViewProxy.scrollTo` lines a zero-height mark under the newest words up with, or nil
+    /// before the box has been measured or while the room between the header and the box is no taller than the gap.
+    /// `.bottom` would line the mark up with the top of the box's frame. A gap-tall mark inside a zero-height frame
+    /// doesn't help: on CI's phones `scrollTo` lined up the frame, and the newest words still ended against the box.
+    /// - Parameters:
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    static func newestAnchor(top: CGFloat, dockTop: CGFloat) -> CGFloat? {
+        let room = dockTop - top
+        guard dockTop < .greatestFiniteMagnitude / 2, room > newestGap else { return nil }
+        return (room - newestGap) / room
+    }
 }
 
 /// Which way the user moves one of Watcher's pages, so its bar slides away as they read down and comes back as they go
@@ -379,7 +401,7 @@ struct WatcherBarSlide: Equatable {
 
 enum WatcherWords {
     /// The bar's owl, which goes to the top of Watcher's page.
-    static let toTop = String(localized: "Go to the top, where Watcher’s state and permissions are")
+    static let toTop = String(localized: "Go to the top, where Watcher’s state is")
     /// What Watcher did, in a word or two.
     static func action(_ action: String) -> String {
         switch action {
@@ -535,6 +557,13 @@ enum WatcherWords {
             : String(localized: "\(computer) didn’t confirm that Watcher stopped watching \(title).", comment: "The first %@ is the computer's name; the second is a thread's title"))
             + " " + String(localized: "Check Watched before you try again.")
     }
+    /// Why New Watcher can't start one now, in the desktop's words (`WatcherNew.tsx`).
+    static let newWatcherBusy = String(localized: "Watcher is working. Stop its turn to start a new one.")
+    static let newWatcherEmpty = String(localized: "This Watcher is new, so there is nothing to hand over yet.")
+    /// A change from Watcher's box whose answer was lost on the way.
+    static func changeUnconfirmed(_ computer: String) -> String {
+        String(localized: "\(computer) didn’t confirm the change to Watcher. Check Watcher’s page before you change it again.", comment: "%@ is the computer's name")
+    }
     static func permissionUnconfirmed(_ computer: String) -> String {
         String(localized: "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again.", comment: "%@ is the computer's name")
     }
@@ -620,8 +649,7 @@ enum WatcherPermissions {
         let listed = (model?.runtimeModes ?? []).filter { modes.contains($0) }
         return listed.isEmpty ? modes : modes.filter { listed.contains($0) }
     }
-    /// Why the chip can't be pressed while Watcher works, as on the desktop: beside the chip, and when, as its hint.
-    static let fixed = String(localized: "Fixed while Watcher works.", comment: "Why Watcher's permission mode can't be changed now")
+    /// When the chip can be pressed again, as its hint while Watcher works, as on the desktop.
     static let fixedHint = String(localized: "It can change once Watcher finishes and nothing waits on you.")
     /// What stays in force while Watcher's provider hasn't confirmed the mode just chosen.
     static func inForce(_ mode: String, provider: String) -> String {
@@ -671,15 +699,13 @@ struct WatcherWatch: Sendable {
     }
 }
 
-/// The words a watched thread carries, shared by its rows, cards and reply box.
+/// The words a watched thread carries, shared by its rows, cards and its Watch.
 enum WatchedWords {
     static let label = String(localized: "Watched by Watcher")
-    /// What a watched thread's reply box says on a computer whose watching a send takes over: one that keeps no
-    /// standing watches.
+    /// What Watch's hint says first where watching is not the standing kind the lit owl already shows (ADR-0073, October
+    /// 31 amendment): on a computer whose watching a send takes over, one that keeps no standing watches, or for a
+    /// thread watched only for a Watcher request; and while the user's own turn runs under a standing watch.
     static let takeover = String(localized: "Watched by Watcher. If you send here, Watcher stops sending to it.")
-    /// What it says where Watcher keeps the thread watched until the user stops it, word for word as on the desktop, and
-    /// while the user's own turn there runs.
-    static let standing = String(localized: "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
     static let paused = String(localized: "Watched by Watcher. While your own turn here runs, it can only steer that turn.")
     /// The words a row or card adds for VoiceOver after where the thread runs.
     static func spoken(_ watched: Bool) -> String {

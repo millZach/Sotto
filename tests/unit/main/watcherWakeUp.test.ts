@@ -1053,6 +1053,95 @@ it('removes paired PR facts and Landing only after the connected owning roster e
   expect(f.delivered.at(-1)!.events).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'evidence-changed', target })]))
 })
 
+describe('a paired host that still reports a pull request its thread no longer links', () => {
+  const remoteHost = '55555555-5555-4555-8555-555555555555', url = 'https://github.com/o/r/pull/1'
+  /** A thread on a paired host, parked on a question, whose host's facts still hold a pull request from a branch it has left. */
+  function parked() {
+    const f = fixture(false), target = { hostId: remoteHost, threadId: f.thread.id }, owner = new WatcherEvidenceStore()
+    f.thread.hostId = remoteHost; f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.thread.requests = [{ id: 'question', kind: 'question', text: 'private question', options: [] }]
+    f.record.requests[0]!.participants[0]!.target = target
+    const reconcile = () => { f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); f.wakes.observe() }
+    const evidenceLines = () => f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')
+    return { f, target, owner, reconcile, evidenceLines }
+  }
+
+  it.each([
+    ['checks that passed', { state: 'open', checks: 'passed', checkCount: 1 }],
+    ['a merge', { state: 'merged' }],
+  ] as const)('does not wake Watcher on each reconcile for %s, and drops the fact from its reads', async (_name, said) => {
+    const { f, target, owner, reconcile, evidenceLines } = parked()
+    owner.pullRequest(target, { url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', ...said })
+    f.wakes.start(); await f.advance(2_000)
+    for (let round = 0; round < 6; round++) {
+      reconcile(); await f.advance(2_000)
+      for (const news of f.delivered.splice(0)) { f.wakes.settled(news.events, 'told'); expect(news.events.filter(event => event.kind === 'evidence-changed')).toEqual([]) }
+      expect(f.wakes.evidence.read(target, true, f.now()).filter(fact => fact.source === 'github')).toEqual([])
+    }
+    expect(evidenceLines()).toEqual([])
+  })
+
+  it('tells its facts again once the thread links it again', async () => {
+    const { f, target, owner, reconcile } = parked()
+    owner.pullRequest(target, { url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'open', checks: 'passed' })
+    f.wakes.start(); reconcile(); await f.advance(2_000)
+    f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic PR', state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+    f.wakes.observe()
+    owner.pullRequest(target, { url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed' })
+    reconcile(); await f.advance(2_000)
+    const line = f.delivered.flatMap(news => news.events).find(event => event.kind === 'evidence-changed')!
+    expect(line).toBeDefined()
+    expect(watcherPullRequestWords(f.wakes.untoldAttention(target), f.thread)).toBe('Pull request #1: checks failed on its newest commit.')
+  })
+
+  it('still wakes Watcher when a pull request its thread links fails its checks', async () => {
+    const { f, target, owner, reconcile } = parked()
+    f.thread.pullRequests = [{ url, number: 1, title: 'Synthetic PR', state: 'open', draft: false, source: 'linked', linkedAt: new Date(f.now()).toISOString() }]
+    f.wakes.start(); await f.advance(2_000)
+    for (const news of f.delivered.splice(0)) f.wakes.settled(news.events, 'told')
+    owner.pullRequest(target, { url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'open', checks: 'failed' })
+    reconcile(); await f.advance(2_000)
+    const [news] = f.delivered
+    expect(news!.events.map(event => event.kind)).toEqual(['evidence-changed'])
+    expect(watcherPullRequestWords(f.wakes.untoldAttention(target), f.thread)).toBe('Pull request #1: checks failed on its newest commit.')
+    // Told once: the same read again is no news.
+    f.wakes.settled(news!.events, 'told'); f.delivered.length = 0
+    reconcile(); await f.advance(2_000)
+    expect(f.delivered).toEqual([])
+  })
+})
+
+it('stops treating restored news as unknown once its facts are read, so an unlink after that names nothing and wakes no one', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.checks('failed'); await f.advance(2_000)
+  const saved = f.delivered.flatMap(news => news.events)
+  expect(saved.map(event => event.kind)).toContain('evidence-changed')
+  f.wakes.close()
+  const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
+  const recovered = new WatcherWakeUp({ ordinaryBatch: SHORT_BATCH, snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    restoredEvents: () => saved, deliver, remember: async () => undefined, prune: async () => undefined, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  recovered.start()
+  recovered.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
+  delete f.thread.pullRequests; recovered.observe(); await recovered.drained()
+  recovered.settled(saved, 'withdrawn'); await recovered.drained()
+  expect(deliver).not.toHaveBeenCalled()
+})
+
+it('does not wake Watcher with no pull request fact to name when a thread lets go of its link while the news waits', async () => {
+  const f = fixture()
+  f.thread.status = 'idle'; f.thread.lastTurn = undefined; f.wakes.observe()
+  f.checks('passed')
+  delete f.thread.pullRequests; f.wakes.observe()
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered).toEqual([])
+  // The working copy moving later is still only bookkeeping.
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'later', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 1 })
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered).toEqual([])
+})
+
 it('shows Watcher’s conversation without Sotto’s news for it, by the host’s record of its wake-ups and never by text alone', () => {
   const f = fixture(); f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe()
   const news = watcherNewsText({ source: 'watcher', watcher: f.record.current!.target, events: f.wakes.news(), omitted: 0 })
@@ -2232,6 +2321,111 @@ it('wakes once for a pull request Watcher saw open merging, and never for what G
   expect(f.delivered).toHaveLength(told + 1)
   for (const checks of ['unknown', 'failed', 'passed', 'unknown'] as const) { read(checks === 'failed' ? 'open' : 'merged', checks); await f.advance(120_000) }
   expect(f.delivered).toHaveLength(told + 1)
+})
+
+describe('a merge Watcher was told, when its pull request leaves the thread and comes back (#1495)', () => {
+  const url = 'https://github.com/synthetic/project/pull/31', next = 'https://github.com/synthetic/project/pull/32'
+  type BranchPullRequest = { url: string; number: number; state: 'open' | 'merged' | 'closed' }
+  const topic = (state: BranchPullRequest['state']): BranchPullRequest => ({ url, number: 31, state })
+  const following: BranchPullRequest = { url: next, number: 32, state: 'open' }
+  /** A thread at rest whose pull requests it knows only through its branch, as one made with `gh pr create` is. */
+  async function onBranch() {
+    const f = fixture()
+    finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+    for (const news of f.delivered.splice(0)) f.wakes.settled(news.events, 'told')
+    const on = (pullRequest: BranchPullRequest | null, changedFiles = 0) => {
+      f.thread.worktree = { mode: 'independent', status: 'ready', branch: 'topic', baseBranch: 'main', git: { isRepository: true, branch: 'topic', upstream: 'origin/topic', hasRemote: true,
+        defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null,
+        pullRequest: pullRequest && { ...pullRequest, title: 'Synthetic pull request', draft: false }, readAt: new Date(f.now()).toISOString(), fetchedAt: null } }
+      f.wakes.observe()
+    }
+    /** The wake-ups the news that waits makes, and what the pull request words said in them. */
+    const told = async (outcome: 'told' | 'unknown' | 'failed' = 'told') => {
+      await f.advance(WATCHER_BATCH_MS)
+      const news = f.delivered.splice(0), said = news.length ? watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread) : undefined
+      for (const item of news) f.wakes.settled(item.events, outcome)
+      await f.wakes.drained()
+      return { wakeUps: news.length, said }
+    }
+    return { f, on, told }
+  }
+  const nothing = { wakeUps: 0, said: undefined }
+
+  it.each([
+    ['its branch is left and come back to', following],
+    ['a Git read names no pull request for a moment, as during a rebase', null],
+  ] as const)('tells it once however often %s', async (_name, away) => {
+    const { on, told } = await onBranch()
+    on(topic('open')); await told()
+    on(topic('merged'))
+    expect(await told()).toEqual({ wakeUps: 1, said: 'Pull request #31: merged.' })
+    for (let round = 1; round <= 3; round++) {
+      on(away, round); expect(await told()).toEqual(nothing)
+      on(topic('merged'), round); expect(await told()).toEqual(nothing)
+    }
+  })
+
+  it('keeps as many told merges as a thread can link and its branch’s own, letting the oldest go first', async () => {
+    const { on, told } = await onBranch()
+    const pullRequest = (number: number): BranchPullRequest => ({ url: `https://github.com/synthetic/project/pull/${number}`, number, state: 'merged' })
+    let files = 0
+    for (let number = 100; number < 152; number++) { on(pullRequest(number), ++files); expect((await told()).said).toBe(`Pull request #${number}: merged.`) }
+    // Fifty-two told, so the newest fifty-one are kept.
+    on(pullRequest(101), ++files); expect(await told()).toEqual(nothing)
+    on(pullRequest(100), files + 1); expect((await told()).said).toBe('Pull request #100: merged.')
+  })
+
+  it.each(['told', 'unknown'] as const)('keeps it told through a wake-up that did not carry it, whose send was %s', async outcome => {
+    const { f, on, told } = await onBranch()
+    on(topic('open')); await told()
+    on(topic('merged')); await told()
+    on(following)
+    f.wakes.pullRequest({ url: next, head: 'next', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
+    expect(await told(outcome)).toEqual({ wakeUps: 1, said: 'Pull request #32: checks failed on its newest commit.' })
+    await told()
+    on(topic('merged'), 1)
+    expect(await told()).toEqual(nothing)
+  })
+
+  it('still tells a merge Watcher was not told, once, when it comes back', async () => {
+    const { on, told } = await onBranch()
+    on(topic('open')); await told()
+    on(topic('merged')); on(following)
+    expect(await told()).toEqual(nothing)
+    on(topic('merged'))
+    expect(await told()).toEqual({ wakeUps: 1, said: 'Pull request #31: merged.' })
+    on(following); expect(await told()).toEqual(nothing)
+    on(topic('merged')); expect(await told()).toEqual(nothing)
+  })
+
+  it('leaves a merge untold while the send that carried it failed', async () => {
+    const { f, on, told } = await onBranch()
+    on(topic('open')); await told()
+    on(topic('merged'))
+    expect(await told('failed')).toEqual({ wakeUps: 1, said: 'Pull request #31: merged.' })
+    expect([...f.wakes.untoldAttention(centerTarget).values()].some(kinds => kinds.has('merged'))).toBe(true)
+  })
+
+  it('still tells failed checks again when they come back, as it did', async () => {
+    const { f, on, told } = await onBranch()
+    const failed = () => f.wakes.pullRequest({ url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
+    on(topic('open')); await told()
+    failed()
+    expect((await told()).said).toBe('Pull request #31: checks failed on its newest commit.')
+    on(following); await told()
+    on(topic('open')); failed()
+    expect((await told()).said).toBe('Pull request #31: checks failed on its newest commit.')
+  })
+
+  it('still tells a close again when it comes back, as it did', async () => {
+    const { on, told } = await onBranch()
+    on(topic('open')); await told()
+    on(topic('closed'))
+    expect((await told()).said).toBe('Pull request #31: closed without merging.')
+    on(following); await told()
+    on(topic('closed'), 1)
+    expect((await told()).said).toBe('Pull request #31: closed without merging.')
+  })
 })
 
 it('tells Watcher of every thread a usage limit’s reset restarted, watched or not, in Sotto’s words (ADR-0144)', async () => {

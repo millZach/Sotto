@@ -195,6 +195,40 @@ describe('desktop host routing', () => {
     router.dispose()
   })
 
+  it('names the thread holding a refused Git command\'s folder by this window\'s key, on that reply alone (#1823)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const words = 'Thread "Task" is waiting for your answer. Nothing was changed. Answer it, then try again.'
+    for (const [entry, hostId] of [[local, LOCAL], [remote, REMOTE]] as const) {
+      entry.command.mockResolvedValueOnce({ ...entry.state, error: words, checkoutHold: { threadId: 'holder' } })
+      const refused = await router.command({ type: 'git-action', threadId: hostEntityKey(hostId, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())
+      expect(refused.checkoutHold).toEqual({ threadId: hostEntityKey(hostId, 'holder') })
+      expect(refused.error).toContain('Nothing was changed.')
+      expect(agentStateSchema.parse(refused).checkoutHold).toEqual({ threadId: hostEntityKey(hostId, 'holder') })
+    }
+    // Held by Sotto itself, the hold names no thread; a refusal that is no hold names none either.
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Sotto is pulling this folder. Nothing was changed. Try again in a moment.', checkoutHold: {} })
+    expect((await router.command({ type: 'git-action', threadId: hostEntityKey(LOCAL, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())).checkoutHold).toEqual({})
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Push failed.' })
+    expect((await router.command({ type: 'git-action', threadId: hostEntityKey(LOCAL, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())).checkoutHold).toBeUndefined()
+    router.dispose()
+  })
+
+  it('names the thread holding a refused bring-back\'s folder by this window\'s key, on this computer and a paired host (#1866)', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const held = { actionId: randomUUID(), status: 'refused', target: 'main', branch: 'sotto/task', refusal: 'busy', heldBy: 'holder', at: '2026-10-30T00:00:00.000Z',
+      message: 'Thread "Docs" is working in this folder. Nothing was brought back. Wait for it to finish before changing this folder.' } as const
+    for (const entry of [local, remote]) entry.state.host.threads = [{ ...entry.state.host.threads[0]!, bringBack: held, broughtBack: { ...held, from: 'away' } }]
+    router.add(local.connection); router.add(remote.connection)
+    try {
+      for (const hostId of [LOCAL, REMOTE]) {
+        const thread = agentStateSchema.parse(router.shell()).host.threads.find(item => item.id === hostEntityKey(hostId, 'thread'))
+        expect(thread?.bringBack).toEqual({ ...held, heldBy: hostEntityKey(hostId, 'holder') })
+        expect(thread?.broughtBack?.heldBy).toBe(hostEntityKey(hostId, 'holder'))
+      }
+    } finally { router.dispose() }
+  })
+
   it('names the host in its no-provider refusal by the name this computer saved it under (#459)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add({ ...remote.connection, name: 'forge' })

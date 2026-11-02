@@ -1,5 +1,5 @@
 /* The working threads line (#1183) under the Threads sidebar's search field: the error line's box in a quiet tone, set
    apart by its icon alone. Colour comes from theme roles only. */
-.thread-nav__working { display: flex; flex: none; align-items: flex-start; gap: 8px; margin: 0 8px 8px; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.thread-nav__working { display: flex; flex: none; align-items: flex-start; gap: 8px; margin: 0 8px 8px; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; overflow-wrap: anywhere; }
 .thread-nav__working > svg { flex: none; margin-top: 1px; color: var(--tt-attention); }
 .thread-nav__working strong { color: var(--tt-text); font-weight: 500; }

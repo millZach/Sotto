@@ -3,7 +3,7 @@ import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GitActionButton } from '../../../src/renderer/src/agents/GitActionButton'
+import { GitActionButton, type GitActionHandle } from '../../../src/renderer/src/agents/GitActionButton'
 import { commitLabel, defaultBranchQuestion, HINT_DETACHED, HINT_DIVERGED, HINT_NOTHING_TO_PUSH, HINT_UP_TO_DATE, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor } from '../../../src/renderer/src/agents/gitActionButton.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../src/shared/agents'
 import type { GitActionProgress } from '../../../src/shared/gitActions'
@@ -26,8 +26,9 @@ function mount(current: AgentThread, options: { command?: (request: AgentCommand
   const gitChangedFiles = vi.fn(async () => options.changed ?? files())
   vi.stubGlobal('sotto', { agents: { gitChangedFiles }, openExternalLink: options.openExternalLink ?? vi.fn() })
   const command = vi.fn(options.command ?? (async () => state(current)))
-  const view = render(<GitActionButton thread={current} command={command} noticeSlot={null} onExplainedError={options.explained} />)
-  return { ...view, command, gitChangedFiles, rerender: (next: AgentThread) => view.rerender(<GitActionButton thread={next} command={command} noticeSlot={null} onExplainedError={options.explained} />) }
+  const handle = React.createRef<GitActionHandle>()
+  const view = render(<GitActionButton ref={handle} thread={current} command={command} noticeSlot={null} onExplainedError={options.explained} />)
+  return { ...view, command, gitChangedFiles, handle, rerender: (next: AgentThread) => view.rerender(<GitActionButton ref={handle} thread={next} command={command} noticeSlot={null} onExplainedError={options.explained} />) }
 }
 /** The header's own button, apart from the notice's, whose labels can match. */
 const quick = (): HTMLButtonElement => { const button = document.querySelector<HTMLButtonElement>('.git-action__quick'); if (!button) throw new Error('No Git action button.'); return button }
@@ -111,13 +112,16 @@ describe('the Git action in the pane header', () => {
     fireEvent.click(disabled)
     expect(command).toHaveBeenCalledTimes(1)
   })
-  it('draws nothing before the host has read the folder, and Initialize Git for a folder without one', async () => {
-    const { command, rerender } = mount(thread(undefined))
+  it('draws nothing before the host has read the folder, nor for a folder without Git, whose Initialize Git the ··· menu presses here', async () => {
+    const { command, rerender, handle } = mount(thread(undefined))
     expect(screen.queryByRole('button')).toBeNull()
     rerender(thread(status({ isRepository: false, branch: null, hasRemote: false, upstream: null })))
-    expect(screen.queryByRole('button', { name: 'More Git actions' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Initialize Git' }))
+    // Initialize Git is a row of the pane's ··· menu (ADR-0163); the button leaves the header to it.
+    expect(screen.queryByRole('button')).toBeNull()
+    act(() => handle.current!.initialize())
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-init', threadId: 'thread-1' }]))
+    // Its answer is the Git action's own notice.
+    expect(await screen.findByText('Git initialized.')).toBeInTheDocument()
   })
   it('opens the commit dialog with the files and their counts, leaves a file out in Edit, and commits the rest with the typed message', async () => {
     const { command, gitChangedFiles } = mount(thread(status({ dirty: true })))
@@ -296,5 +300,44 @@ describe('the Git action in the pane header', () => {
     expect(command).toHaveBeenCalledTimes(1)
     await act(async () => { release() })
     await waitFor(() => expect(quick()).toBeEnabled())
+  })
+})
+
+describe('a refusal because something holds the folder (#1823)', () => {
+  const words = 'Thread "Visual gate flake" is waiting for your answer. Nothing was changed. Answer it, then try again.'
+  function press(hold: AgentState['checkoutHold']) {
+    // Ahead of its upstream, the press is Push & create PR, which asks nothing first.
+    const current = thread(status({ ahead: 1 }))
+    const holder = thread(status(), { id: 'thread-2', title: 'Visual gate flake' })
+    vi.stubGlobal('sotto', { agents: { gitChangedFiles: vi.fn(async () => files()) }, openExternalLink: vi.fn() })
+    const command = vi.fn(async (request: AgentCommand) => request.type === 'git-action' ? state(current, { error: words, ...(hold ? { checkoutHold: hold } : {}) }) : state(current))
+    render(<GitActionButton thread={current} threads={[current, holder]} command={command} noticeSlot={null} />)
+    fireEvent.click(quick())
+    return { command }
+  }
+
+  it('reads as a hold, not a failure, and opens the thread holding the folder', async () => {
+    const { command } = press({ threadId: 'thread-2' })
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent(`On hold ${words}`)
+    expect(notice).not.toHaveTextContent('Action failed')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    fireEvent.click(within(notice).getByRole('button', { name: 'Open Visual gate flake' }))
+    expect(sent(command).at(-1)).toEqual({ type: 'select-thread', threadId: 'thread-2' })
+  })
+
+  it('offers nothing to open when the thread holding it is this one, or when Sotto holds it', async () => {
+    press({ threadId: 'thread-1' })
+    expect(await screen.findByRole('status')).toHaveTextContent('On hold')
+    expect(screen.queryByRole('button', { name: /^Open / })).not.toBeInTheDocument()
+    cleanup()
+    press({})
+    expect(await screen.findByRole('status')).toHaveTextContent('On hold')
+    expect(screen.queryByRole('button', { name: /^Open / })).not.toBeInTheDocument()
+  })
+
+  it('keeps Action failed for a refusal that is no hold', async () => {
+    press(undefined)
+    expect(await screen.findByRole('alert')).toHaveTextContent(`Action failed ${words}`)
   })
 })

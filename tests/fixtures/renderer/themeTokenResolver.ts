@@ -95,6 +95,7 @@ export function rootDeclarations(mode: Mode, themeId: string = DEFAULT_THEME_ID,
   result.set('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   result.set('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
   result.set('--theme-contrast-border-boost', `${Math.max(contrast - 100, 0) / 4}%`)
+  result.set('--theme-contrast-hint-boost', `${Math.max(contrast - 100, 0) / 2}%`)
   return result
 }
 

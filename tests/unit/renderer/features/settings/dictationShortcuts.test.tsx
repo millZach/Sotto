@@ -25,6 +25,7 @@ interface Options {
   readonly hotkey?: string
   readonly press?: readonly string[]
   readonly hold?: readonly string[]
+  readonly standby?: boolean
   readonly bridge?: Partial<SottoBridge>
   readonly hotkeyResult?: Awaited<ReturnType<SottoBridge['replaceHotkey']>>
   readonly shortcutsResult?: { ok: true } | { ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string }
@@ -41,6 +42,7 @@ function setup(options: Options = {}) {
     hotkey: options.hotkey ?? (platform === 'darwin' ? 'Control+Shift+Space' : 'CommandOrControl+Shift+Space'),
     pressShortcuts: [...options.press ?? []],
     holdShortcuts: [...options.hold ?? []],
+    hotkeyStandby: options.standby ?? false,
   }
   render(<div className="settings-rows"><DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} /></div>)
   return { bridge, onReplaceHotkey, onReplaceDictationShortcuts, user: userEvent.setup() }
@@ -202,14 +204,24 @@ describe('DictationShortcuts', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('The shortcut could not be changed. Ctrl + Win still works.')
   })
 
-  it('hides remove on the last shortcut and on a main shortcut nothing could replace', () => {
-    setup({ owl: true, press: ['CommandOrControl+Alt'] })
-    const pressRow = row('Press to start and stop')
-    expect(within(pressRow).queryByRole('button', { name: 'Remove shortcut, Ctrl Shift Space' })).not.toBeInTheDocument()
-    expect(within(pressRow).getByRole('button', { name: 'Remove shortcut, Ctrl Alt' })).toBeVisible()
-    cleanup()
+  it('hides remove on the last shortcut', () => {
     setup({ owl: true })
     expect(screen.queryByRole('button', { name: /^Remove shortcut/u })).not.toBeInTheDocument()
+  })
+
+  it('puts the main shortcut on standby when only shortcuts the key listener runs could replace it', async () => {
+    const { onReplaceDictationShortcuts, user } = setup({ owl: true, press: ['CommandOrControl+Alt'] })
+    await user.click(screen.getByRole('button', { name: 'Turn shortcut off, Ctrl Shift Space' }))
+    expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['CommandOrControl+Shift+Space', 'CommandOrControl+Alt'], hold: [], standby: true })
+  })
+
+  it('hides a main shortcut on standby and turns it back on', async () => {
+    const { onReplaceDictationShortcuts, user } = setup({ owl: true, press: ['CommandOrControl+Alt'], standby: true })
+    const pressRow = row('Press to start and stop')
+    expect(within(pressRow).queryByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).not.toBeInTheDocument()
+    expect(pressRow).toHaveAccessibleDescription('Press Ctrl + Alt to start, and again to finish.')
+    await user.click(screen.getByRole('button', { name: 'Turn Ctrl + Shift + Space back on' }))
+    expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['CommandOrControl+Shift+Space', 'CommandOrControl+Alt'], hold: [], standby: false })
   })
 
   it('promotes the first registerable extra when the main shortcut is removed', async () => {
@@ -219,27 +231,11 @@ describe('DictationShortcuts', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Shortcut saved.')
   })
 
-  it('offers Record keys and Fn on its own on macOS, and closes the menu on Escape', async () => {
-    const { onReplaceDictationShortcuts, user } = setup({ platform: 'darwin', owl: true })
-    const add = within(row('Hold to dictate')).getByRole('button', { name: 'Add a hold shortcut' })
-    await user.click(add)
-    expect(add).toHaveAttribute('aria-expanded', 'true')
-    const menu = screen.getByRole('menu', { name: 'Add a shortcut' })
-    expect(within(menu).getByRole('menuitem', { name: 'Record keys…' })).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(within(menu).getByRole('menuitem', { name: 'Fn on its own' })).toHaveFocus()
-    await user.keyboard('{Escape}')
+  it('records straight away from Add on macOS too', async () => {
+    const { user } = setup({ platform: 'darwin', owl: true })
+    await user.click(within(row('Hold to dictate')).getByRole('button', { name: 'Add a hold shortcut' }))
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(add).toHaveFocus()
-    await user.click(add)
-    await user.click(screen.getByRole('menuitem', { name: 'Fn on its own' }))
-    expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['Control+Shift+Space'], hold: ['Fn'] })
-  })
-
-  it('disables Fn on its own when Fn is already in use', async () => {
-    const { user } = setup({ platform: 'darwin', owl: true, hold: ['Fn'] })
-    await user.click(within(row('Press to start and stop')).getByRole('button', { name: 'Add a start-and-stop shortcut' }))
-    expect(screen.getByRole('menuitem', { name: 'Fn is already in use' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel recording' })).toHaveFocus()
   })
 
   it('records straight away from Add on Windows', async () => {
@@ -398,18 +394,6 @@ describe('DictationShortcuts', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it('opens the Add menu with ArrowDown and closes it with Escape on the button', async () => {
-    const { user } = setup({ platform: 'darwin', owl: true })
-    const add = within(row('Hold to dictate')).getByRole('button', { name: 'Add a hold shortcut' })
-    add.focus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitem', { name: 'Record keys…' })).toHaveFocus()
-    add.focus()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(add).toHaveFocus()
   })
 
   it('refuses listener chords when main says no key listener can run', async () => {

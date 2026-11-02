@@ -20,7 +20,10 @@ interface AgentTraffic {
   readonly lastReply: { readonly bytes: number; readonly activeThreadId: string | null; readonly models: { readonly revision?: number; readonly omitted?: boolean; readonly models?: unknown } } | null
   /** The text of the last `save-thread-draft` main answered. */
   readonly lastDraft: string | null
-  /** The exact creation request and its own receipt, independent of later observation commands. */
+  /**
+   * The exact creation request and its own receipt, independent of later observation commands. The created thread's
+   * record is the receipt's, or the window broadcast's the receipt was measured from when that carried it first.
+   */
   readonly lastCreation: { readonly threadId: string; readonly activeThreadId: string | null; readonly createdThreadId: string | null; readonly modelId: string | null; readonly error: string | null } | null
 }
 
@@ -31,8 +34,24 @@ interface AgentTraffic {
  * command wrapper sees the receipt exactly as main sends it, before the preload or the page touch it.
  */
 async function watchAgentTraffic(launched: LaunchedSotto): Promise<() => Promise<AgentTraffic>> {
-  await launched.app.evaluate(({ ipcMain }) => {
+  await launched.app.evaluate(({ ipcMain, BrowserWindow }) => {
     type Handler = (...args: unknown[]) => unknown
+    type Thread = { id: string; modelId: string }
+    // The last record each window broadcast carried for a thread. A receipt carries only the records that changed since
+    // the last broadcast the window was sent (ADR-0028, October 30), so a thread a broadcast already carried is read here.
+    const broadcastRecords = new Map<string, Thread>()
+    for (const window of BrowserWindow.getAllWindows()) {
+      const contents = window.webContents, send = contents.send.bind(contents)
+      contents.send = (channel: string, ...payload: unknown[]) => {
+        try {
+          if (channel === 'sotto:agents:state') {
+            const threads = (payload[0] as { host: { threads: Thread[] | { changed: Thread[] } } }).host.threads
+            for (const thread of Array.isArray(threads) ? threads : threads.changed) broadcastRecords.set(thread.id, thread)
+          }
+        } catch { /* Watching never changes what the window is sent. */ }
+        send(channel, ...payload)
+      }
+    }
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, Handler> })._invokeHandlers
     const get = handlers?.get('sotto:agents:get')
     const command = handlers?.get('sotto:agents:command')
@@ -49,11 +68,15 @@ async function watchAgentTraffic(launched: LaunchedSotto): Promise<() => Promise
       const request = args[1] as { type?: string; text?: string; threadId?: string } | undefined
       traffic.inFlight++
       try {
-        const receipt = await command(...args) as { activeThreadId: string | null; error: string | null; host: { models: unknown; threads: { id: string; modelId: string }[] } }
+        const receipt = await command(...args) as { activeThreadId: string | null; error: string | null; host: { models: unknown; threads: Thread[] | { changed: Thread[] } } }
+        // The page asks for its threads as changed thread records (ADR-0028, October 30).
+        const threads = Array.isArray(receipt.host.threads) ? receipt.host.threads : receipt.host.threads.changed
         traffic.lastReply = { bytes: JSON.stringify(receipt).length, activeThreadId: receipt.activeThreadId, models: receipt.host.models }
         if (request?.type === 'save-thread-draft') traffic.lastDraft = request.text ?? ''
         if (request?.type === 'create-thread' && request.threadId) {
-          const thread = receipt.host.threads.find(thread => thread.id === request.threadId)
+          // The new thread's record is in this receipt, or, when a broadcast carrying it reached the window first, in that
+          // broadcast, which the receipt was measured from (#1914).
+          const thread = threads.find(thread => thread.id === request.threadId) ?? broadcastRecords.get(request.threadId)
           traffic.lastCreation = { threadId: request.threadId, activeThreadId: receipt.activeThreadId,
             createdThreadId: thread?.id ?? null, modelId: thread?.modelId ?? null, error: receipt.error }
         }
@@ -68,14 +91,15 @@ async function watchAgentTraffic(launched: LaunchedSotto): Promise<() => Promise
 }
 
 /**
- * Waits until `ready` holds, main has answered every command the page sent, and the page has made one round
- * trip to main after that. A read the page makes on receiving a receipt is sent before that round trip's own
- * request, so main has counted it by the time the round trip answers.
+ * Waits until `ready` holds, main has answered every command the page sent, the page has put every reply back, and the page
+ * has made one round trip to main after that. A reply that overtook its broadcast waits for it (#1939), and a read the page
+ * falls back to is answered before that reply is put back, so main has counted it by the time the round trip answers.
  */
 async function settled(page: Page, traffic: () => Promise<AgentTraffic>, ready: (seen: AgentTraffic) => boolean = () => true): Promise<AgentTraffic> {
   await expect.poll(async () => {
     const seen = await traffic()
     if (!ready(seen) || seen.inFlight > 0) return false
+    if (await page.evaluate(() => (document.documentElement.dataset.agentRepliesPending ?? '0') !== '0')) return false
     await page.evaluate(async () => { await window.sotto!.getSettings() })
     return true
   }).toBe(true)
@@ -126,14 +150,16 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     // 2. Change a setting and see the card keep it once its receipt has come back.
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
-    const directory = page.locator('#settings-agents').getByLabel('Default projects directory', { exact: true })
+    // The projects folder is chosen in a folder browser, so the card's own change here is Clear.
+    const projects = page.locator('#settings-agents')
     const chosen = 'D:\\Receipt projects'
+    await page.evaluate(async path => { await window.sotto!.agents!.command({ type: 'configure', patch: { projectsDirectory: path } }) }, chosen)
+    await expect(projects.getByText(chosen, { exact: true })).toBeVisible()
     const beforeSetting = await settled(page, traffic)
-    await directory.fill(chosen)
-    await directory.press('Tab')
+    await projects.getByRole('button', { name: 'Clear the default projects directory on this computer', exact: true }).click()
     await settled(page, traffic, seen => answered(seen, 'configure') > answered(beforeSetting, 'configure'))
-    expect((await agentState(page)).configuration.projectsDirectory).toBe(chosen)
-    await expect(directory).toHaveValue(chosen)
+    expect((await agentState(page)).configuration.projectsDirectory).toBe('')
+    await expect(projects.getByText('No folder chosen', { exact: true })).toBeVisible()
     await page.screenshot({ path: `${ARTIFACTS}/setting-kept.png`, animations: 'disabled' })
 
     // 3. Pick a model after the provider reconnects. The disconnect goes straight to main; the reconnect is the

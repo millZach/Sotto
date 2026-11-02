@@ -27,7 +27,7 @@
   width: 100%;
   padding: 16px;
   color: var(--tt-text-muted);
-  font-size: 14px;
+  font-size: var(--tt-type-body);
   line-height: 1.45;
   text-align: center;
 }

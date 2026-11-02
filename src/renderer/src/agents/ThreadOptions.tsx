@@ -12,6 +12,7 @@ import { shownWords, wordsOf, type LaterWords } from './interfaceWords'
 import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
+import { ServerMark, ServerSpeedCard, useOwnServerMark } from './ServerMark'
 import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { SplitChipEffort, type SpeedOption } from './SplitChipEffort'
@@ -461,14 +462,18 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
   /**
-   * The quiet composer (ADR-0161, Owl): effort and speed as a word and a bolt beside the model, which may mark a level the
-   * draft seems to want, and the permissions shield drawn in `shieldSlot`, at the pill's start. Absent, the options are
-   * the chips of ADR-0113.
+   * Zach's composer (ADR-0168): effort and speed as a word and a bolt beside the model, which may offer a level the draft
+   * seems to want (ADR-0172), and the permissions drawn in `shieldSlot`, before the model. Absent, the options are the
+   * chips of ADR-0113.
    */
-  readonly quiet?: { readonly effortScore: number; readonly shieldSlot?: HTMLElement | null | undefined } | undefined
+  readonly quiet?: { readonly effortScore: number; readonly broadWork?: boolean; readonly shieldSlot?: HTMLElement | null | undefined } | undefined
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
+  // A thread on one of the user's own model servers wears the server mark in its chip, with its speed card (ADR-0124).
+  const serverMark = useOwnServerMark(thread, isThreadProviderConnected(state.host, thread))
+  const serverTurn = serverMark?.turn
+  const speedCardId = useId()
   // Your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
   // and never for Watcher (ADR-0124, phase 1).
   const ownServersBridge = useOwnServersBridge()
@@ -506,8 +511,17 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       setReplacing(refusal === null ? null : { provider, refusal })
     } catch { setReplacing({ provider, refusal: msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.` }) }
   }
+  /**
+   * Watcher's model, effort or speed chosen while it works, which main keeps for its next turn: the chips show it as
+   * chosen, since main has taken it, and a line says when it starts.
+   */
+  const nextTurn = watcher && room?.currentThreadId === thread.id ? room.state?.nextTurnOptions : undefined
+  const nextTurnModel = nextTurn === undefined ? undefined : resolveModel(state.host.models, nextTurn.modelId)
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
-  const drawn = settingValues(state, thread)
+  const drawn = nextTurn === undefined ? settingValues(state, thread)
+    : settingValuesFor({ modelId: nextTurn.modelId, ...(nextTurn.reasoningEffort ? { reasoningEffort: nextTurn.reasoningEffort } : {}),
+      ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
+      speed: nextTurn.speed !== undefined ? nextTurn.speed : threadSpeed(thread) }, nextTurnModel)
   const unconfirmed = unconfirmedKinds(state, thread.id)
   /**
    * The chips are fixed by what a provider actually refuses: a turn under way, an unanswered request, an archived
@@ -517,8 +531,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
    * (#1192), and its chip keeps its mark until the provider reports it. They do not read the coordinator's busy mark, which covers the very save a press starts and outlives its
    * reply: a save in flight fixes nothing, and main's thread lane runs the saves and any prompt in order.
    */
-  const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || unconfirmed.has('permissions')
+  const busy = thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)
+  // Watcher's model, effort and speed are not fixed by its work: main keeps a change made meanwhile for its next turn.
+  // Its permissions are.
+  const fixed = Boolean(thread.archivedAt) || (busy && !watcher) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
+  const permissionsFixed = fixed || busy
   const unconfirmedKey = [...unconfirmed].join(',')
   useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, drawn.fast, unconfirmedKey])
   const threads = state.host.threads
@@ -550,7 +568,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const stayingWith = providerNameOf(thread)
   if (locked && !capabilities.configureThread) {
     if (watcher) return <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })}
-      inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
+      inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={permissionsFixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
     if (continuing === undefined) return null
     return <div className="thread-options-bar" data-provider-locked>
       <div className="thread-options thread-options--chips">
@@ -563,12 +581,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const modelDisabled = locked && capabilities.configureThreadModel === false
   // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
   const confirmedModel = resolveModel(models, thread.modelId)
-  const modelId = settings.pending.model?.value ?? thread.modelId
+  const modelId = settings.pending.model?.value ?? drawn.model
   const model = resolveModel(models, modelId)
   const keptSpeed = watcher && savedRoleSpeed !== undefined ? savedRoleSpeed : threadSpeed(thread)
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
   // model's default effort, so that is what the effort chip shows meanwhile.
-  const unpressed = modelId === thread.modelId ? drawn
+  const unpressed = modelId === drawn.model ? drawn
     : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
       ...(keptSpeed ? { speed: keptSpeed } : {}) }, model)
   const reasoning = settings.pending.effort?.value ?? unpressed.effort
@@ -644,7 +662,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const effortDescription = [settings.pending.effort?.awaiting === 'unconfirmed' ? unconfirmedEffortId : '', settings.pending.fast?.awaiting === 'unconfirmed' ? unconfirmedFastId : ''].filter(Boolean).join(' ')
   const permissions = watcher
     ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
-      disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
+      disabled={permissionsFixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
     : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder={t`Provider default`} value={permission} options={modes} disabled={fixed} icon={PERMISSIONS_ICON}
       pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
       onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />
@@ -653,6 +671,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
         pending={settings.pending.model?.awaiting === 'unconfirmed'} describedBy={unconfirmedModelId} ownServers={ownServers}
+        mark={serverMark ? <ServerMark state={serverMark.state} attempt={serverMark.attempt} turnId={serverTurn?.turnId} finished={serverTurn?.status === 'completed'} /> : undefined}
+        card={serverMark && serverTurn ? { id: speedCardId, render: shown => <ServerSpeedCard turn={serverTurn} heard={serverMark.heard} unanswered={serverMark.unanswered} usage={thread.usage} modelId={thread.modelId} shown={shown} /> } : undefined}
         unavailable={continueUnavailable} continueOn={continueOn} onChange={pressed => {
         if (continuing && continuations.some(model => model.id === pressed)) { continuing.onContinue(pressed); return }
         const picked = others.find(model => model.id === pressed)
@@ -672,9 +692,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
-        suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,
-          // On the provider's default, the model's own default is what a suggestion must stand above.
-          levels.includes(reasoning) ? levels.indexOf(reasoning) : levels.indexOf(model?.defaultReasoningEffort ?? ''))}
+        suggestion={suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
         onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
@@ -692,7 +710,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     </div>
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? t({ message: `Starting a new Watcher on ${replacingName}…`, comment: '{replacingName} is a provider\'s name.' }) : caption}</span>
-    {locked && thread.status === 'running' && turnNote ? <small>{t`Available after this turn finishes.`}</small> : null}
+    {watcher && nextTurn !== undefined ? <small>{t`Watcher starts its next turn on this choice.`}</small>
+      : !watcher && locked && thread.status === 'running' && turnNote ? <small>{t`Available after this turn finishes.`}</small> : null}
     {noticeSlot ? createPortal(notices, noticeSlot) : notices}
   </div>
 }

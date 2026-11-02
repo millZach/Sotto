@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // An agent's scroll on a page nobody is looking at used to wait for a frame that never came, until Claude Code gave
@@ -62,7 +62,7 @@ test('an agent scrolls a page that is not on screen, and the page is free for it
     expect(again.isError, JSON.stringify(again)).not.toBe(true)
 
     // Show it: the page is where the agent left it.
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tab', { name: 'Browser' }).click()
     await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue(url)

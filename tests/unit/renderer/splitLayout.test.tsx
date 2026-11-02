@@ -147,6 +147,32 @@ describe('pane sizing', () => {
 })
 
 describe('layout persistence', () => {
+  it.each(['grid', 'row'] as const)('keeps every slot share when a pane is replaced in a zoomed %s layout and restored', arrangement => {
+    const storage = new MemoryStorage()
+    const store = new SplitLayoutStore(storage)
+    let layout = resizeDivider(layoutOf(['a', 'b', 'c', 'd']), { axis: 'columns', row: 0, index: 0 }, 0.3, 1600)
+    layout = resizeDivider(layout, { axis: 'columns', row: 1, index: 0 }, 0.6, 1600)
+    layout = resizeDivider(layout, { axis: 'rows', index: 0 }, 0.4, 1000)
+    layout = resizeDivider(setArrangement(layout, 'row'), { axis: 'columns', row: 0, index: 1 }, 0.55, 2400)
+    layout = setZoomed(setFocused(setArrangement(layout, arrangement), 'b'), true)
+    store.set(layout)
+
+    const restored = new SplitLayoutStore(storage).get()
+    expect(restored).toEqual(layout)
+    const replaced = replacePane(restored, 1, 'new')
+    expect(replaced.panes).toEqual(['a', 'new', 'c', 'd'])
+    expect(replaced.focused).toBe('new')
+    expect(replaced.sizes).toEqual(layout.sizes)
+    expect(replaced.grid).toEqual(layout.grid)
+    expect(replaced.zoomed).toBe(true)
+    expect(retarget(restored, 'b', 'new')).toEqual(replaced)
+
+    store.set(replaced)
+    const restarted = new SplitLayoutStore(storage).get()
+    expect(restarted).toEqual(replaced)
+    expect(setZoomed(restarted, false)).toEqual({ ...replaced, zoomed: false })
+  })
+
   it('restores the arrangement, threads, focus, zoom and sizes after a restart', () => {
     const storage = new MemoryStorage()
     const first = new SplitLayoutStore(storage)

@@ -99,7 +99,9 @@ function movedWords(event: WatcherEvent): string {
   const machine = event.machine ?? 'another machine', there = event.movedTo ? JSON.stringify(event.movedTo) : 'a new thread'
   const said = event.moveOutcome === 'moved'
     ? `The user moved this thread to ${machine}, and Sotto moved it: it continues there as ${there}, whose first turn has ended, and this one is settled where it ran.${unwatched(event) ? '' : ' Your watch on it went to the new thread, so its news comes from there now.'}`
-    : event.moveOutcome === 'stayed'
+    : event.moveOutcome === 'kept'
+      ? `The user moved this thread to ${machine}, then called the move off with Keep it here before it finished: ${event.movedTo ? `the new thread there, ${there}, was stopped and settled, and ` : ''}this one stays where it is and takes sends again.`
+      : event.moveOutcome === 'stayed'
       ? `The user moved this thread to ${machine}, but the new thread there, ${there}, failed or was stopped in its first turn, so this one stays where it is and takes sends again. The new thread is left there.`
       : `The user moved this thread to ${machine}, but the move was given back before any thread was made there, so this one stays where it is and takes sends again.`
   return `${said} This approves nothing.`

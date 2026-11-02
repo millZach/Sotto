@@ -43,7 +43,11 @@ export interface PairedPhone {
   readonly pairedAt: string
   /** Holds an open socket now. */
   readonly connected: boolean
-  /** A policy record lets this phone's answers count (ADR-0004). */
+  /**
+   * A policy record lets this phone's answers count (ADR-0004). Pairing writes it, so it is false only while this
+   * computer's permission policies cannot be read, or on a host from before pairing granted answers. A desktop from
+   * then reads it to draw its Can answer switch.
+   */
   readonly canAnswer: boolean
 }
 
@@ -73,7 +77,7 @@ export interface PhonesState {
   /** The one live pairing code, if any. It lives in memory only and is never logged. */
   readonly code: { readonly code: string; readonly expiresAt: string } | null
   readonly phones: readonly PairedPhone[]
-  /** False when this computer's permission policies cannot be read, so Can answer cannot be turned on. */
+  /** False when this computer's permission policies cannot be read, so no paired phone can answer. */
   readonly answersAvailable: boolean
 }
 
@@ -81,7 +85,6 @@ export const phonesCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('retry') }).strict(),
   z.object({ type: z.literal('show-code') }).strict(),
   z.object({ type: z.literal('cancel-code') }).strict(),
-  z.object({ type: z.literal('set-can-answer'), clientId: z.string().min(1).max(512), allowed: z.boolean() }).strict(),
   z.object({ type: z.literal('remove'), clientId: z.string().min(1).max(512) }).strict(),
   z.object({ type: z.literal('open-serve-setup') }).strict(),
 ])
@@ -109,6 +112,17 @@ export const hostPhonesCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set-enabled'), enabled: z.boolean() }).strict(),
 ])
 export type HostPhonesCommand = z.infer<typeof hostPhonesCommandSchema>
+
+/**
+ * What a host's administrative route takes: the commands above, and the press of a Can answer switch, which a desktop
+ * from before pairing granted answers still sends. Turning it on asks for what a paired phone has already; turning it off
+ * is refused, since Remove is the only way to take a phone's answers away (ADR-0033).
+ */
+export const hostAdminPhonesCommandSchema = z.discriminatedUnion('type', [
+  ...hostPhonesCommandSchema.options,
+  z.object({ type: z.literal('set-can-answer'), clientId: z.string().min(1).max(512), allowed: z.boolean() }).strict(),
+])
+export type HostAdminPhonesCommand = z.infer<typeof hostAdminPhonesCommandSchema>
 
 /** What a host's administrative route answers with, checked before the desktop shows any of it. */
 export const phonesStateSchema = z.object({

@@ -25,9 +25,11 @@ function createHarness(options: { platform?: SottoPlatform; taken?: readonly str
   let running = false
   let permission: KeyListenerPermissionState = 'unknown'
   const watched: string[][] = []
+  const swallowed: string[][] = []
   const listener = {
-    watch: vi.fn((tokens: readonly string[]) => {
+    watch: vi.fn((tokens: readonly string[], chords: readonly string[] = []) => {
       watched.push([...tokens])
+      swallowed.push([...chords])
       running = options.spawns !== false && tokens.length > 0
     }),
     record: vi.fn((on: boolean) => {
@@ -64,7 +66,7 @@ function createHarness(options: { platform?: SottoPlatform; taken?: readonly str
     platform: options.platform ?? 'darwin',
   })
   return {
-    router, shortcuts, active, calls, listener, watched, dispatch, showWidget, pushHeld, pushPermission, openInputMonitoring, log,
+    router, shortcuts, active, calls, listener, watched, swallowed, dispatch, showWidget, pushHeld, pushPermission, openInputMonitoring, log,
     key: (type: 'down' | 'up', token: string) => handlers.onKey(type, token),
     handlers: () => handlers,
     setIdle: (value: boolean) => { idle = value },
@@ -83,6 +85,7 @@ describe('dictation shortcut router apply', () => {
     expect(h.router.apply({ press: ['Control+Shift+Space', 'Alt+Shift+D', 'Fn+Shift+Space'], hold: ['Control+Alt'] }, 'strict')).toEqual({ ok: true })
     expect([...h.active.keys()]).toEqual(['Alt+Shift+D'])
     expect(h.watched.at(-1)?.sort()).toEqual(['Alt', 'Control', 'Fn', 'Shift', 'Space'])
+    expect(h.swallowed.at(-1)).toEqual(['Fn+Shift+Space'])
     h.active.get('Alt+Shift+D')?.()
     expect(h.dispatch).toHaveBeenLastCalledWith({ type: 'toggle' })
     expect(h.showWidget).toHaveBeenCalledOnce()
@@ -165,6 +168,7 @@ describe('dictation shortcut router apply', () => {
     h.router.apply({ press: ['Control+Shift+Space', 'Fn+Shift'], hold: [] }, 'strict')
     h.key('down', 'Fn')
     h.key('down', 'Shift')
+    h.key('up', 'Shift')
     expect(h.dispatch).toHaveBeenLastCalledWith({ type: 'toggle' })
     expect(h.showWidget).toHaveBeenCalledOnce()
   })

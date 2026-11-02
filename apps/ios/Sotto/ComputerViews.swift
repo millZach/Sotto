@@ -24,12 +24,6 @@ struct ComputersView: View {
                 }
             }
             .padding(.top, Space.s6)
-            Text("Whether this iPhone can answer questions and permissions is set in Sotto on each computer.")
-                .font(.sotto(.small)).foregroundStyle(Palette.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Space.s1)
-                .padding(.top, Space.s3)
-                .paragraphDirection()
         }
         .refreshable { await model.refresh() }
         .navigationTitle("Computers")
@@ -38,8 +32,9 @@ struct ComputersView: View {
     }
 }
 
-/// One computer: whether it can be reached, whether this iPhone may answer there, and what it last shared.
-/// The card opens the computer's page; one that can't be reached offers Try again.
+/// One computer: whether it can be reached, and what it last shared. One card with plain lines and no tiles inside it
+/// (#1863). Pairing let this iPhone answer there, so the card says nothing about answering (ADR-0033, October 30
+/// amendment). The card opens the computer's page; one that can't be reached offers Try again.
 private struct ComputerCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dynamicTypeSize) private var textSize
@@ -50,14 +45,11 @@ private struct ComputerCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             NavigationLink(value: ComputerRoute(hostID: hostID)) {
-                VStack(alignment: .leading, spacing: Space.s4) {
-                    header
-                    facts
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .accessibilityElement(children: .combine)
-                .accessibilityHint("Opens this computer’s details")
+                header
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityHint("Opens this computer’s details")
             }
             .buttonStyle(PressStyle())
             if status == .unreachable {
@@ -74,59 +66,54 @@ private struct ComputerCard: View {
             }
         }
         .padding(Space.s4)
-        .failedEdge(status == .unreachable, tint: 0.09)
-        .sottoCard(status == .online ? .online : .plain)
+        .sottoCard()
     }
 
-    private var header: some View {
-        HStack(spacing: Space.s3) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(status == .online ? Palette.accentText : Palette.muted)
-                .frame(width: 42, height: 42)
-                .background(status == .online ? Palette.accent.opacity(0.14) : Palette.fillSoft, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: name).font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
-                    .lineLimit(textSize.isAccessibilitySize ? 3 : 1)
-                HStack(spacing: Space.s2) {
-                    ComputerDot(status: status)
-                    Text(status.words).font(.sotto(.small)).foregroundStyle(Palette.muted)
-                }
-            }
-            Spacer(minLength: Space.s2)
-            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(Palette.muted).accessibilityHidden(true)
-        }
-    }
-
-    @ViewBuilder private var facts: some View {
+    /// The name with one line under it, and the computer's state at the trailing edge. At the largest text sizes the
+    /// state goes under the name instead, so the name keeps the width.
+    @ViewBuilder private var header: some View {
         if textSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                Fact(title: answerTitle, detail: answerDetail)
-                Fact(title: projectWords, detail: threadWords)
+            HStack(spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    title
+                    state
+                    detail
+                }
+                Spacer(minLength: Space.s2)
+                chevron
             }
         } else {
-            HStack(alignment: .top, spacing: Space.s2) {
-                Fact(title: answerTitle, detail: answerDetail)
-                Fact(title: projectWords, detail: threadWords)
+            HStack(spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    title
+                    detail
+                }
+                Spacer(minLength: Space.s2)
+                state
+                chevron
             }
         }
     }
+    private var title: some View {
+        Text(verbatim: name).font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
+            .lineLimit(textSize.isAccessibilitySize ? 3 : 1)
+    }
+    private var state: some View {
+        HStack(spacing: Space.s2) {
+            ComputerDot(status: status)
+            Text(status.words).font(.sotto(.small)).foregroundStyle(Palette.muted)
+        }
+    }
+    private var detail: some View {
+        Text(verbatim: line).font(.sotto(.small)).foregroundStyle(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+    private var chevron: some View {
+        Image(systemName: "chevron.right").font(.footnote).foregroundStyle(Palette.muted).accessibilityHidden(true)
+    }
 
-    private var answerTitle: String {
-        switch status {
-        case .online: return model.mayAnswer(hostID) ? String(localized: "Can answer", comment: "This iPhone may answer questions and permissions on this computer.") : String(localized: "Can’t answer yet", comment: "This iPhone may not answer questions and permissions on this computer yet.")
-        case .connecting: return String(localized: "Checking…", comment: "Whether this iPhone may answer on a computer is being checked.")
-        case .unreachable: return String(localized: "Not known now", comment: "Whether this iPhone may answer on a computer that can’t be reached.")
-        }
-    }
-    private var answerDetail: String {
-        switch status {
-        case .online: return model.mayAnswer(hostID) ? String(localized: "Questions and permissions") : String(localized: "Turn on Can answer in Sotto there")
-        case .connecting: return String(localized: "Whether this iPhone may answer")
-        case .unreachable: return String(localized: "Shown once it’s back")
-        }
-    }
+    /// Under the name: what it last shared, "3 projects, 7 threads".
+    private var line: String { "\(projectWords), \(threadWords)" }
     private var shared: ComputerThreads? { model.lists.first { $0.hostID == hostID } }
     private var projectWords: String {
         let count = shared?.projects.count ?? 0
@@ -138,24 +125,7 @@ private struct ComputerCard: View {
     }
 }
 
-/// One fact about a computer in a small tile.
-private struct Fact: View {
-    let title: String
-    let detail: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-            Text(detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
-        .background(Palette.fillSofter, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-/// One computer: whether it can be reached, its names, whether this iPhone may answer there and how
-/// to allow it, this iPhone's client ID, Rename and Remove.
+/// One computer: whether it can be reached, its names, this iPhone's client ID, Rename and Remove.
 struct ComputerDetailView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -190,12 +160,9 @@ private struct ComputerDetails: View {
                     Rectangle().fill(Palette.hairline).frame(height: 1)
                     DetailRow(label: String(localized: "Address", comment: "A computer’s network address."), value: computer.endpoint?.address ?? computer.address, mono: true)
                     Rectangle().fill(Palette.hairline).frame(height: 1)
-                    DetailRow(label: String(localized: "Answers from this iPhone"), value: answers, mono: false)
-                    Rectangle().fill(Palette.hairline).frame(height: 1)
                     ClientIDRow(clientID: computer.pairing.clientId)
                 }
                 .sottoCard(.plain)
-                if status == .online && !model.mayAnswer(hostID) { AllowAnswersHelp(name: computer.name) }
                 VStack(spacing: 0) {
                     Button { newName = computer.localName ?? ""; renaming = true } label: {
                         Text("Rename").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
@@ -235,13 +202,6 @@ private struct ComputerDetails: View {
             Button("Cancel", role: .cancel) {}
         } message: { Text("The name shows on this iPhone only. Leave it empty to use the computer’s own name.") }
     }
-    private var answers: String {
-        switch status {
-        case .online: return model.mayAnswer(hostID) ? String(localized: "Allowed", comment: "This iPhone may answer questions and permissions on this computer.") : String(localized: "Not allowed yet", comment: "This iPhone may not answer questions and permissions on this computer yet.")
-        case .connecting: return String(localized: "Checking…", comment: "Whether this iPhone may answer on a computer is being checked.")
-        case .unreachable: return String(localized: "Shown once it’s back")
-        }
-    }
 }
 
 /// Online, connecting, or can't be reached with what to do about it.
@@ -271,8 +231,7 @@ private struct ComputerStatusCard: View {
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .failedEdge(status == .unreachable, tint: 0.09)
-        .sottoCard(status == .online ? .online : .plain)
+        .sottoCard()
     }
 }
 
@@ -304,16 +263,3 @@ private struct ClientIDRow: View {
     }
 }
 
-/// How to let this iPhone answer on a computer: its Settings › Hosts & phones, a host's Phones on the main computer, or its command.
-private struct AllowAnswersHelp: View {
-    let name: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("To answer questions and permissions from this iPhone, open Sotto on \(name), go to Settings › Hosts & phones and turn on Can answer for this iPhone.")
-            Text("For a computer without a screen, turn it on in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row. Or run its \(Interface.isolated("--allow-answers")) command with this iPhone’s client ID.", comment: "%@ is a command-line option, left as it is.")
-        }
-        .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, Space.s1)
-        .paragraphDirection()
-    }
-}

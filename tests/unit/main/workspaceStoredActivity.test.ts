@@ -264,7 +264,8 @@ describe.each([['main', false], ['the store worker', true]] as const)('with the 
     provider.state.threads[0]!.activities = [...provider.state.threads[0]!.activities!, record('c', 1)]
     provider.emitActivity()
     await vi.waitFor(() => expect(workshop(host).activities?.map(item => item.id)).toEqual(['a', 'b', 'c']))
-    expect(read).toHaveBeenCalledTimes(1)
+    // Read once, on the store worker where there is one, so main reads no record of it there (#1645).
+    expect(read).toHaveBeenCalledTimes(onWorker ? 0 : 1)
   })
 
   it('keeps a running thread\'s records in memory after the window stops looking', async () => {
@@ -376,6 +377,22 @@ describe.each([['main', false], ['the store worker', true]] as const)('with the 
     await host.snapshot()
     await f.close(host)
     expect(f.disk().map(item => item.id)).toEqual(['fresh'])
+  })
+
+  it('tells the provider a stored thread keeps a live session with its observation, once its records are in', async () => {
+    const f = await stored([record('a', 0)])
+    const host = await f.open()
+    await host.connect()
+    // The coordinator names the live-session set first; a thread it does not observe yet waits for its observation.
+    host.keepSessionsLive([THREAD])
+    expect(f.provider.live).toEqual([])
+    await observe(host, [THREAD])
+    expect(workshop(host).activities?.map(item => item.id)).toEqual(['a'])
+    expect(f.provider.observed).toEqual([THREAD])
+    expect(f.provider.live).toEqual([THREAD])
+    host.keepSessionsLive([])
+    expect(f.provider.live).toEqual([])
+    await f.close(host)
   })
 
   it('says why when a stored record cannot be read back, and keeps the store as it was', async () => {

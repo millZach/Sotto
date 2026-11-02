@@ -201,6 +201,11 @@ describe('validateChord', () => {
     })
   })
 
+  it('lets a press of modifiers alone sit beside a longer press chord', () => {
+    const set = { press: ['Control+Alt+Space', 'Fn'], hold: [] }
+    expect(validateChord('Fn+Space', adding('press'), set, 'darwin', owl)).toEqual({ ok: true })
+  })
+
   it('ignores the slot being replaced', () => {
     expect(validateChord('Fn', { role: 'hold', index: 0 }, darwinSet, 'darwin', owl)).toEqual({ ok: true })
     expect(validateChord('Fn+Shift', { role: 'hold', index: 0 }, darwinSet, 'darwin', owl)).toEqual({ ok: true })

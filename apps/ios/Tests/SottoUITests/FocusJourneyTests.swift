@@ -105,7 +105,10 @@ import UIKit
             let distance = min(120, visible.height * 0.3)
             let direction: CGFloat = down ? 1 : -1
             let origin = window.coordinate(withNormalizedOffset: .zero)
-            let x = visible.midX - window.frame.minX
+            // Drag in the page's leading margin, where no control sits: a drag that starts on a slider moves the slider,
+            // not the page. Settings' Glow slider came to sit under the viewport's middle once Glass added a third row of
+            // theme tiles, and forty drags in a row moved only the slider (#1752).
+            let x = visible.minX + 10 - window.frame.minX
             let y = visible.midY - window.frame.minY
             let start = origin.withOffset(CGVector(dx: x, dy: y - direction * distance / 2))
             let end = origin.withOffset(CGVector(dx: x, dy: y + direction * distance / 2))
@@ -281,12 +284,15 @@ import UIKit
     func testCreateThreadInAKnownProject() {
         launch(Self.fixture)
         app.buttons["new-thread"].tap()
+        // With only the laptop online, New thread starts on its projects (#1856); the computer's chip still opens the list.
+        let project = app.buttons["new-thread-project-sotto"]
+        XCTAssertTrue(project.waitForExistence(timeout: 5), "With one computer online, New thread opens on its projects")
+        app.buttons["new-thread-change-computer"].tap()
         let offline = app.buttons["new-thread-computer-22222222-2222-4222-8222-222222222222"]
         XCTAssertTrue(offline.waitForExistence(timeout: 5))
         XCTAssertFalse(offline.isEnabled)
         capture("new-thread-computers-dark")
         app.buttons["new-thread-computer-\(laptop)"].tap()
-        let project = app.buttons["new-thread-project-sotto"]
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.tap()
         let open = app.buttons["open-new-thread"]
@@ -325,8 +331,8 @@ import UIKit
         app.buttons["setting-light"].tap()
         app.tab("Threads").tap()
         app.buttons["new-thread"].tap()
-        app.buttons["new-thread-computer-\(laptop)"].tap()
         let browse = app.buttons["browse-project-folder"]
+        XCTAssertTrue(browse.waitForExistence(timeout: 5), "With one computer online, New thread opens on its projects")
         reveal(browse); browse.tap()
         let filter = app.textFields["folder-filter"]
         XCTAssertTrue(filter.waitForExistence(timeout: 5))
@@ -391,16 +397,16 @@ import UIKit
         reveal(settled)
         XCTAssertTrue(!search.exists || search.frame.minY < restingTop - 40, "Search scrolls away with the list, as one sheet")
 
-        // Search's keyboard closes on a tap outside the field, and on scrolling the list. The summary above search is
-        // somewhere to tap that does nothing else.
-        let counts = byID("thread-counts")
-        reveal(counts, swipingDown: true)
+        // Search's keyboard closes on a tap outside the field, and on scrolling the list. The Needs you heading under
+        // search is somewhere to tap that does nothing else.
+        let heading = byID("threads-heading-needs")
+        reveal(heading, swipingDown: true)
         reveal(search)
         let keyboard = app.keyboards.firstMatch
         search.tap()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard")
-        XCTAssertTrue(counts.isHittable)
-        counts.tap()
+        XCTAssertTrue(heading.isHittable)
+        heading.tap()
         XCTAssertTrue(waitUntilGone(keyboard), "A tap outside search closes its keyboard")
         search.tap()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard again")
@@ -490,7 +496,9 @@ import UIKit
 
     /// A long thread whose messages arrive a moment after it opens shows its end at once. On the phone a thread sometimes
     /// opened black until scrolled; a lazy list landing over rows it had not drawn is the likely cause. The simulator did
-    /// not reproduce it, so this journey guards the end of a long thread rather than proving the fix.
+    /// not reproduce it, so this journey guards the end of a long thread rather than proving the fix. The page lays out
+    /// only the latest ten turns whole and makes the thirty before them as they scroll into view (#1702), so the first
+    /// turn is not made yet.
     func testALongThreadShowsItsEndWithoutAScroll() {
         launch(["--ui-fixture", "--reset-ui-preferences", "--ui-long-thread", "--ui-slow-detail"])
         let thread = row("drives")
@@ -502,8 +510,10 @@ import UIKit
         let end = byID("steps-run-long-final")
         // The last reply is taller than the screen, so its heading sits above the view at the end; its closing command
         // is what must be on screen.
-        let last = threadText("python compare_drives.py --option 12 --report")
+        let last = threadText("python compare_drives.py --option 40 --report")
         waitForEnd(end, last: last, above: reply, "A long thread opens showing its end, with no scroll needed")
+        XCTAssertFalse(threadText("python compare_drives.py --option 1 --report").exists,
+                       "The turns before the latest ten are made as they scroll into view, not when the thread opens")
         capture("thread-long-open")
     }
 
@@ -515,6 +525,95 @@ import UIKit
         recent.press(forDuration: 1.0)
         XCTAssertTrue(app.buttons["Settle"].waitForExistence(timeout: 5), "A Recent row's long press offers Settle")
         capture("row-menu-settle")
+    }
+
+    /// A thread whose turns carry pictures keeps a reader at its end once they are there: while its pictures and photos
+    /// load, after reading back up past turns whose tiles let go of their pictures and dragging down again, and while a
+    /// reply streams. On the phone such a thread kept snapping back up to one spot and would not let the reader reach its
+    /// end (Zach, November 1, 2026). Its messages arrive a moment after it opens, as from a computer.
+    ///
+    /// Where the end sits is read from the page's own layout (`--ui-end-probe`): in this long page an element's
+    /// accessibility frame lagged its layout by up to thousands of points.
+    func testAThreadWithPicturesStaysAtItsEnd() { picturesStayAtTheEnd(streaming: false) }
+    func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
+
+    private func picturesStayAtTheEnd(streaming: Bool) {
+        launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []))
+        let thread = row("drives")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(byID("steps-run-long-final").waitForExistence(timeout: 10), "The long thread's messages arrive")
+        holdsTheEnd("pictures-open", "Opened at its end, the thread stays there while the pictures and photos near it load")
+
+        // Back up past the latest turns' pictures, so the tiles at the end let go of theirs, then down again by dragging,
+        // as a reader does, until the end is in view, and once more against it so the page rests there.
+        for _ in 0..<12 { dragThread(towardEnd: false, above: reply) }
+        capture("thread-pictures-read-back")
+        XCTAssertTrue(endProbe().away, "Reading back up leaves the end, and nothing pulls the reader down (" + endProbe().words + ")")
+        var drags = 0
+        while !endProbe().atEnd && drags < 40 { dragThread(towardEnd: true, above: reply); drags += 1 }
+        XCTAssertTrue(endProbe().atEnd, "Dragging down reaches the thread's end (" + endProbe().words + ")")
+        dragThread(towardEnd: true, above: reply)
+        holdsTheEnd("pictures-returned", "Back at its end, the thread stays there while its pictures load again")
+    }
+
+    /// Where the conversation's end, the reply box's top and the bar's bottom sit, as the page lays them out, and whether
+    /// the end is whole on screen above the reply box, or well below it, where reading back up leaves it.
+    private func endProbe() -> (atEnd: Bool, away: Bool, words: String) {
+        let probe = byID("thread-end-probe")
+        guard probe.exists else { return (false, false, "no probe") }
+        let words = probe.label
+        let numbers = words.split(separator: " ").compactMap { Double($0) }
+        guard numbers.count == 3 else { return (false, false, words) }
+        let end = numbers[0], dock = numbers[1], bar = numbers[2]
+        return (end <= dock + 1 && end > bar, end > dock + 400, "end \(Int(end)), dock top \(Int(dock)), bar bottom \(Int(bar))")
+    }
+
+    /// Drags the thread once from the middle of the conversation, slowly enough not to fling: toward its end, or back
+    /// toward its start.
+    private func dragThread(towardEnd: Bool, above dock: XCUIElement) {
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        let top = threadTop + 16, bottom = dock.frame.minY - 32
+        let distance = min(220, (bottom - top) * 0.45)
+        let x = window.frame.width - 32, middle = (top + bottom) / 2 - window.frame.minY
+        let direction: CGFloat = towardEnd ? -1 : 1
+        origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
+            .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2)),
+                   withVelocity: .slow, thenHoldForDuration: 0.15)
+    }
+
+    /// Waits for the conversation's end to come into view above the reply box, then reads it for six seconds more: every
+    /// reading must find it there. A page pulled back up leaves the end under the box or off the screen.
+    private func holdsTheEnd(_ name: String, _ message: String) {
+        var readings: [String] = []
+        let started = Date()
+        func shown() -> Bool {
+            let probe = endProbe()
+            readings.append(String(format: "%.1f s: ", Date().timeIntervalSince(started)) + probe.words)
+            return probe.atEnd
+        }
+        var inARow = 0
+        while inARow < 2 && Date().timeIntervalSince(started) < 30 {
+            inARow = shown() ? inARow + 1 : 0
+            if inARow < 2 { Thread.sleep(forTimeInterval: 0.2) }
+        }
+        guard inARow >= 2 else {
+            explain("thread-\(name)-end-never-shown", readings.joined(separator: "\n"))
+            XCTFail(message + ": the end never came into view\n" + readings.suffix(8).joined(separator: "\n"))
+            return
+        }
+        var away = 0
+        let held = Date()
+        while Date().timeIntervalSince(held) < 6 {
+            if !shown() { away += 1 }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        capture("thread-\(name)")
+        if away > 0 { explain("thread-\(name)-left-the-end", readings.joined(separator: "\n")) }
+        XCTAssertEqual(away, 0, message + "\n" + readings.joined(separator: "\n"))
     }
 
     /// A paste into the reply box attaches a copied file as a pill, as if chosen in Files, and copied words still paste as words.
@@ -610,6 +709,40 @@ import UIKit
         XCTAssertTrue(chips.label.contains("7 files changed, 212 lines added, 48 removed"))
         XCTAssertTrue(chips.label.contains("Pull request 721, draft"))
         capture("thread-glow-top")
+    }
+
+    /// At the largest text sizes a thread stays inside the screen. On a small iPhone the Git chips wrap onto another line
+    /// rather than widen the page, which cut the first letters off every line of the thread (#1848).
+    func testAThreadStaysInsideTheScreenAtTheLargestTextSizes() {
+        launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let chips = text("Branch feat/frosted-window-and-pane-terminal")
+        scrollThread(to: chips, towardStart: true)
+        let screen = app.windows.firstMatch.frame
+        for (name, element) in [("The title", app.staticTexts["thread-title"]), ("The branch and changes", chips), ("The reply box", byID("thread-reply"))] {
+            XCTAssertTrue(element.exists, "\(name) shows")
+            XCTAssertGreaterThanOrEqual(element.frame.minX, screen.minX - 1, "\(name) starts inside the screen")
+            XCTAssertLessThanOrEqual(element.frame.maxX, screen.maxX + 1, "\(name) ends inside the screen")
+        }
+        capture("thread-largest-text-top")
+    }
+
+    /// A press on the tab already chosen scrolls its page back to the top, as the system's tab bar does.
+    func testPressingTheChosenTabAgainScrollsItsPageToTheTop() {
+        launch(Self.fixture)
+        let tab = byID("tab-settings")
+        tab.tap()
+        let heading = app.staticTexts["Settings"].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        for _ in 0..<3 { app.swipeUp() }
+        XCTAssertFalse(heading.isHittable, "Scrolled down, the page's heading has left the screen")
+        capture("settings-scrolled-status-bar")
+        tab.tap()
+        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: heading)
+        waitForExpectations(timeout: 5)
     }
 
     /// A thread's pull request on an Owl computer (ADR-0102): the chip opens a sheet that reads it from GitHub, shows where
@@ -745,22 +878,19 @@ import UIKit
         capture("question-glow-after")
     }
 
-    /// A question with a few choices is answered on its Threads card: the chip chosen there is the question's answer.
-    func testAOneTapQuestionIsAnsweredOnItsCard() {
+    /// Needs you is a row like the others, with nothing to answer on the Threads page itself: the row opens its thread,
+    /// and the question opens there (ADR-0151, amended October 30, 2026, Zach's pick A).
+    func testANeedsYouRowOpensItsThreadOnTheQuestion() {
         launch(Self.fixture + ["--ui-question-while-reading"])
-        let chip = app.buttons["Ctrl+J"]
-        // Whole and clear of the floating tab bar. At the largest text on the Pro Max, a chip mostly under the bar is
-        // hittable to XCTest only at its top corner, outside its capsule, and on CI the press there opened the thread.
-        reveal(chip, fullyVisible: true)
-        chip.tap()
-        XCTAssertTrue(chip.isSelected, "The pressed chip is chosen on its card")
-        // Another card on Threads has its own Send answer, which stays off until one of its chips is chosen.
-        let send = app.buttons.matching(NSPredicate(format: "label == %@ AND enabled == true", "Send answer")).firstMatch
-        XCTAssertTrue(send.waitForExistence(timeout: 5), "Choosing a chip readies its card's Send answer")
-        reveal(send, fullyVisible: true)
-        send.tap()
-        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The chosen chip goes as the question's answer")
-        capture("threads-glow-card-answered")
+        let thread = row("iphone")
+        reveal(thread)
+        XCTAssertTrue(thread.label.contains("Refine the iPhone thread view"))
+        XCTAssertFalse(app.buttons["Send answer"].exists, "The Threads page answers nothing in place")
+        XCTAssertFalse(app.buttons["Ctrl+J"].exists, "A Needs you row shows no choices")
+        capture("threads-list-needs-you")
+        thread.tap()
+        XCTAssertTrue(app.buttons["request-send-answer"].waitForExistence(timeout: 5), "The row opens its thread on the question")
+        XCTAssertTrue(app.buttons["request-option-j"].exists)
     }
 
     // MARK: Watcher (ADR-0073, amended October 11, 2026)
@@ -843,6 +973,14 @@ import UIKit
             XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
             return (.infinity, -.infinity)
         }
+        guard let band = watcherBand(in: elements) else {
+            XCTFail("Watcher's visible bounds must include its window")
+            return (.infinity, -.infinity)
+        }
+        return band
+    }
+    /// The band from one reading of the hierarchy (`everyElement`), or nil without the app's window.
+    private func watcherBand(in elements: [any XCUIElementSnapshot]) -> (top: CGFloat, bottom: CGFloat)? {
         func element(_ identifier: String, type: XCUIElement.ElementType = .any) -> (any XCUIElementSnapshot)? {
             // Like matching(identifier:), keep the first descendant of the requested type whose identifying
             // attributes match. All of these attributes belong to the captured snapshot, with no further UI query.
@@ -852,10 +990,7 @@ import UIKit
                  ($0.value as? String) == identifier || $0.placeholderValue == identifier)
             }
         }
-        guard let window = elements.first(where: { $0.elementType == .window }) else {
-            XCTFail("Watcher's visible bounds must include its window")
-            return (.infinity, -.infinity)
-        }
+        guard let window = elements.first(where: { $0.elementType == .window }) else { return nil }
         let header = element("watcher-section-conversation")
         // The bar's glass ends the switch's own padding and the bar's bottom padding below Conversation | Watched. While
         // the bar is away (#1278), the page shows from under the status bar's glass, which no iPhone draws taller than 60
@@ -965,26 +1100,47 @@ import UIKit
         dragWatcher(down: false, by: 80)
         waitForWatcherBar(away: false, "Going back up the page brings the bar back")
     }
-    /// Presses the bar's owl, and waits for the hero at the top of Watcher's page to bring Watcher's permissions into view.
+    /// Presses the bar's owl, and waits for the hero at the top of Watcher's page to bring Watcher's state into view.
     @discardableResult private func toWatcherHero() -> XCUIElement {
         let owl = app.buttons["watcher-to-top"]
         XCTAssertTrue(owl.waitForExistence(timeout: 5), "The bar carries the owl")
         showWatcherBar()
-        let permissions = app.buttons["watcher-permissions"]
+        let state = byID("watcher-state")
         // The bar and the box don't move; where the band begins and ends is read once.
         let band = watcherBand
-        var seen = "no look found Watcher's permissions"
+        var seen = "no look found Watcher's state"
         let shown = NSPredicate { _, _ in
-            guard permissions.exists else { seen = "Watcher's permissions are missing"; return false }
-            let frame = permissions.frame
-            seen = "permissions \(frame), between \(band.top) and \(band.bottom)"
-            return frame.minY >= band.top && frame.maxY <= band.bottom && permissions.isHittable
+            guard state.exists else { seen = "Watcher's state is missing"; return false }
+            let frame = state.frame
+            seen = "state \(frame), between \(band.top) and \(band.bottom)"
+            return frame.minY >= band.top && frame.maxY <= band.bottom && state.isHittable
         }
         // Going to the top again does nothing more, so a dropped press is simply pressed again.
         let result = press(owl, until: shown)
-        if result != .completed { explain("watcher-hero-permissions-not-shown", seen) }
-        XCTAssertEqual(result, .completed, "The owl brings Watcher's permissions into view (\(seen))")
-        return permissions
+        if result != .completed { explain("watcher-hero-state-not-shown", seen) }
+        XCTAssertEqual(result, .completed, "The owl brings Watcher's state into view (\(seen))")
+        return state
+    }
+    /// Watcher's settings pill in its box's row, whose menu holds Watcher's permissions (ADR-0166, amended November 1, 2026).
+    private func watcherPill() -> XCUIElement {
+        let pill = byID("watcher-settings")
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "Watcher's box carries its settings pill")
+        return pill
+    }
+    /// Opens what Watcher may do without asking from its pill's menu, and waits for the list.
+    private func openWatcherPermissions(_ pill: XCUIElement) {
+        let entry = menuItem("Permissions")
+        press(pill, until: NSPredicate { _, _ in entry.exists })
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), "The pill's menu offers Permissions")
+        XCTAssertTrue(entry.isEnabled, "Watcher waits between turns, so its permissions can change")
+        entry.tap()
+        XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 10), "Permissions opens the four modes")
+    }
+    /// Whether the pill's value ends on this permission mode, within `timeout`. One look at the large iPhone's page can
+    /// outlast five seconds on a loaded runner, so the deadline is generous; it is never reached when the pill is right.
+    private func watcherPill(_ pill: XCUIElement, says mode: String, timeout: TimeInterval = 20) -> Bool {
+        let says = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value ENDSWITH %@", mode), object: pill)
+        return XCTWaiter.wait(for: [says], timeout: timeout) == .completed
     }
     /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
     /// its top does. Each drag runs down the page's leading margin (`watcherDragX`), clear of cards, rows and the scroll
@@ -1169,7 +1325,7 @@ import UIKit
         openWatcher()
         let owl = app.buttons["watcher-to-top"]
         XCTAssertTrue(owl.waitForExistence(timeout: 5), "The bar carries the owl")
-        XCTAssertEqual(owl.label, "Go to the top, where Watcher’s state and permissions are")
+        XCTAssertEqual(owl.label, "Go to the top, where Watcher’s state is")
         XCTAssertEqual(owl.value as? String, "Working", "The owl says Watcher's state once the hero has scrolled off")
         let conversation = app.buttons["watcher-section-conversation"]
         let watched = app.buttons["watcher-section-watched"]
@@ -1295,8 +1451,13 @@ import UIKit
         capture("watcher-bar-away-card-answered-dark")
     }
 
-    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title, Watch on, and
-    /// the line saying what watching means in its reply box.
+    /// Whether a line over a thread's reply box says it is watched, as one did until October 31, 2026, in any wording.
+    private func watchedLineShows() -> Bool {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Watched by Watcher.")).firstMatch.exists
+    }
+
+    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title and Watch on,
+    /// and no line over its reply box: the lit owl says the thread is watched (ADR-0073, October 31 amendment).
     func testAReceiptRowOpensItsThread() {
         launch(Self.watcher)
         for appearance in ["dark", "light"] {
@@ -1309,11 +1470,8 @@ import UIKit
             XCTAssertTrue(title.waitForExistence(timeout: 10), "The row opens its thread")
             XCTAssertEqual(title.label, "Babysit #845 release notes")
             XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
-            let watched = byID("watched-takeover")
-            XCTAssertTrue(watched.waitForExistence(timeout: 5))
-            XCTAssertEqual(watched.label, "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.",
-                           "Watcher keeps a watched thread going until the user stops it; a send here doesn't end that")
             XCTAssertEqual(app.buttons["thread-watch"].value as? String, "On", "Its Watch is on")
+            XCTAssertFalse(watchedLineShows(), "Nothing over the reply box says what the lit owl says")
             capture("watcher-receipt-thread-" + appearance)
             back()
             XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Back returns to Watcher's page")
@@ -1397,13 +1555,15 @@ import UIKit
         capture("watcher-card-light")
     }
 
+    /// The first words of the reply the fixture's Watcher goes on writing (`--ui-watcher-keeps-writing`).
+    private static let writingStart = "Checking the threads I watch."
     /// A worker's question that arrives while Watcher writes stays where the reader scrolls to it: Watcher's words go on
     /// growing above it and never push it under the box, so it is answered there. Once it is answered, the page follows
     /// Watcher's words again (#1277).
     func testAWaitingCardStaysAboveTheBoxWhileWatcherKeepsWriting() {
         launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing"])
         openWatcher()
-        let writing = text("Checking the threads I watch.")
+        let writing = text(Self.writingStart)
         XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
         XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 15),
                       "Fix login test's question arrives while Watcher writes")
@@ -1430,12 +1590,20 @@ import UIKit
         XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
         XCTAssertTrue(waitUntilGone(send), "The card leaves Watcher's page once answered")
         // With the card answered, the page follows Watcher's words again: the end of its reply comes into view above the box.
-        // Each look reads the band again: Answer sent. stays a few seconds over the page, and the band ends above it.
+        // Each look reads the band again: Answer sent. stays a few seconds over the page, and the band ends above it. The
+        // band and the reply come from one reading of the hierarchy, the same instant, and the reply is found by its first
+        // words in that reading: queries of their own for a reply growing a line twice a second took a look a second on
+        // CI, and the wait cut the last one off before it could say where the reply was.
         var seen = "no look found the reply's frame"
         let following = NSPredicate { _, _ in
-            guard writing.exists else { seen = "the reply is missing"; return false }
-            let band = self.watcherBand
-            let frame = writing.frame
+            let elements: [any XCUIElementSnapshot]
+            // A reading the wait cuts off leaves the last look's report standing.
+            do { elements = try self.everyElement() } catch { return false }
+            guard let band = self.watcherBand(in: elements) else { seen = "no window"; return false }
+            guard let reply = elements.first(where: { $0.label.hasPrefix(Self.writingStart) }) else {
+                seen = "the reply is missing"; return false
+            }
+            let frame = reply.frame
             guard !frame.isEmpty else { return false }
             seen = "reply \(frame), between \(band.top) and \(band.bottom)"
             return frame.maxY > band.top && frame.maxY <= band.bottom + 1
@@ -1503,54 +1671,14 @@ import UIKit
         XCTAssertEqual(result, .completed, "\(what) stays whole above the box while Watcher writes (\(seen))")
     }
 
-    /// A phone without Can answer on the computer that runs Watcher reads the cards in its page and answers none of them,
-    /// and says so, as it does on Threads. Watcher's own request badges its tab.
-    func testAPhoneWithoutCanAnswerSaysSoInWatchersPage() {
-        launch(Self.watcher + ["--ui-watcher-asks"])
-        let tab = openWatcher()
-        XCTAssertEqual(byID("watcher-state").label, "Watcher, Needs you")
-        let note = text("This iPhone can’t answer on Laptop yet.")
-        revealInWatcher(note)
-        XCTAssertFalse(app.buttons["watcher-card-send"].exists, "Nothing can be sent from a card")
-        XCTAssertFalse(app.buttons["Allow once"].exists)
-        let own = byID("watcher-own-card")
-        revealInWatcher(own)
-        XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
-        XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
-        capture("watcher-cannot-answer-dark")
-        // While Watcher's own request waits on the user, its permissions are fixed, as on the desktop, and the chip says so.
-        let permissions = app.buttons["watcher-permissions"]
-        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
-        XCTAssertFalse(permissions.isEnabled, "Fixed while Watcher waits on the user")
-        XCTAssertEqual(byID("watcher-permissions-fixed").label, "Fixed while Watcher works.")
-        let review = app.buttons["watcher-card-review"].firstMatch
-        revealInWatcher(review)
-        review.tap()
-        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5),
-                      "Review opens the card's own sheet, which says why it can't be answered here")
-        capture("watcher-cannot-answer-sheet-dark")
-        let notNow = app.buttons["Not now"]
-        reveal(notNow)
-        notNow.tap()
-        XCTAssertTrue(waitUntilGone(notNow))
-        watcherInLight()
-        revealInWatcher(byID("watcher-own-card"))
-        capture("watcher-cannot-answer-light")
-        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
-        let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
-        XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
-    }
-
     /// Watcher's permissions can only stay asking first from a phone that can't answer on Watcher's computer, and the list
     /// says why.
-    func testAPhoneWithoutCanAnswerCanOnlyKeepWatcherAskingFirst() {
+    func testAPhoneThatCantAnswerCanOnlyKeepWatcherAskingFirst() {
         launch(Self.watcher)
         openWatcher()
-        let permissions = toWatcherHero()
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
-        XCTAssertTrue(permissions.isEnabled, "Watcher waits between turns, so its permissions can change")
-        permissions.tap()
+        let pill = watcherPill()
+        XCTAssertTrue(watcherPill(pill, says: "Ask before actions"), "The pill says Watcher asks first (\(String(describing: pill.value)))")
+        openWatcherPermissions(pill)
         XCTAssertTrue(byID("watcher-permissions-asks-only").waitForExistence(timeout: 5), "The list says why")
         XCTAssertEqual(byID("watcher-permissions-asks-only").label, "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
         // The list runs past half the SE's screen, so the sheet is grown to read every mode in it.
@@ -1568,7 +1696,7 @@ import UIKit
         // Pressing the chosen mode closes the list and changes nothing.
         asking.tap()
         XCTAssertTrue(waitUntilGone(asking))
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        XCTAssertTrue(watcherPill(pill, says: "Ask before actions"))
     }
 
     /// Watched says what watching means, with a card for each watched thread and no count to fill, and Stop all asks
@@ -1616,21 +1744,20 @@ import UIKit
         capture("watcher-stopped-light")
     }
 
-    /// Watcher's permissions sit in its hero, at the top of its page, in this iPhone's own words (control A, #1276): the
-    /// owl brings them into view, the chip opens the four modes, a choice shows at once, and until Watcher's provider
-    /// confirms it the chip says what is still in force. Nothing of them sits over the box.
-    func testWatchersPermissionsChangeFromItsHero() {
+    /// Watcher's permissions are Permissions in its box's settings pill (ADR-0166, amended November 1, 2026), in this
+    /// iPhone's own words (control A, #1276): it opens the four modes, a choice shows on the pill at once, and until
+    /// Watcher's provider confirms it the line over the box says what is still in force.
+    func testWatchersPermissionsChangeFromItsBox() {
         launch(Self.watcher + ["--ui-watcher-can-answer"])
         openWatcher()
         let reply = byID("watcher-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
-        let permissions = toWatcherHero()
-        XCTAssertGreaterThan(permissions.frame.minY, byID("watcher-state").frame.maxY, "Watcher's permissions sit in the hero, under its state")
-        XCTAssertGreaterThan(reply.frame.minY - permissions.frame.maxY, 100, "Nothing of them sits over the box")
-        XCTAssertEqual(permissions.label, "Watcher’s permissions")
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        let pill = watcherPill()
+        XCTAssertGreaterThanOrEqual(pill.frame.minY, reply.frame.maxY - 1, "The pill sits under the words, in the box")
+        XCTAssertEqual(pill.label, "Watcher’s settings")
+        XCTAssertTrue(watcherPill(pill, says: "Ask before actions"), "The pill says Watcher asks first (\(String(describing: pill.value)))")
         capture("watcher-permissions-dark")
-        permissions.tap()
+        openWatcherPermissions(pill)
         XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
         let asking = app.buttons["watcher-permission-approval-required"]
         XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
@@ -1638,31 +1765,30 @@ import UIKit
                       "Each mode says what Watcher does under it")
         let edits = app.buttons["watcher-permission-auto-accept-edits"]
         reveal(edits)
-        XCTAssertTrue(edits.isEnabled, "With Can answer, a wider mode can be chosen")
+        XCTAssertTrue(edits.isEnabled, "Where this iPhone can answer, a wider mode can be chosen")
         XCTAssertFalse(byID("watcher-permissions-asks-only").exists)
         capture("watcher-permissions-sheet-dark")
         edits.tap()
         XCTAssertTrue(waitUntilGone(edits), "Choosing closes the list")
-        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Allow edits"), object: permissions)
-        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: 5), .completed, "The chip says the choice at once")
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"), "The pill says the choice at once")
         let inForce = byID("watcher-permissions-in-force")
-        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the chip says what is still in force")
+        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the line over the box says what is still in force")
         XCTAssertEqual(inForce.label, "Codex stays on Ask before actions until it confirms.")
+        XCTAssertLessThanOrEqual(inForce.frame.maxY, reply.frame.minY, "Over the box")
         capture("watcher-permissions-pending-dark")
         // The fixture's Codex confirms fifteen seconds after the choice. On CI's SE each look for the caption on Watcher's
         // long page took eight seconds or more, so twenty seconds held only three looks, and once ran out with the caption
         // already gone from the screen. A deadline that is never reached costs nothing.
         XCTAssertTrue(waitUntilGone(inForce, timeout: 60), "Once Codex confirms it, nothing more is said")
-        XCTAssertEqual(permissions.value as? String, "Allow edits")
-        // Writing in the box leaves the chip where it is, in the hero.
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"))
+        // Writing in the box leaves the pill where it is.
         reply.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(permissions.exists, "The chip stays in the hero while the box is written in")
+        XCTAssertTrue(pill.exists, "The pill stays in the box while the box is written in")
         dismissKeyboard()
         watcherInLight()
-        toWatcherHero()
         capture("watcher-permissions-light")
-        permissions.tap()
+        openWatcherPermissions(watcherPill())
         let picked = app.buttons["watcher-permission-auto-accept-edits"]
         XCTAssertTrue(picked.waitForExistence(timeout: 5))
         reveal(picked)
@@ -1671,7 +1797,145 @@ import UIKit
         // Pressing the chosen mode closes the list and changes nothing.
         picked.tap()
         XCTAssertTrue(waitUntilGone(picked))
-        XCTAssertEqual(permissions.value as? String, "Allow edits")
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"))
+    }
+
+    /// Watcher's box takes a thread box's pill (ADR-0166, amended November 1, 2026): Watcher's model and effort on it, and
+    /// one sheet holding the models of every provider Watcher runs on, Effort, Speed, Permissions and, last, New Watcher,
+    /// which starts one at once, whose empty conversation says so, with the last one's handover offered over the box until
+    /// X puts it away.
+    func testWatchersBoxChangesItsModelAndStartsANewWatcher() {
+        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-can-answer", "--ui-watcher-nothing-waits"])
+        openWatcher()
+        let reply = byID("watcher-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let settings = byID("watcher-settings")
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertEqual(settings.label, "Watcher’s settings")
+        XCTAssertTrue((settings.value as? String)?.hasPrefix("GPT-6.1 Sol, High") == true, "The pill says Watcher's model and effort (\(String(describing: settings.value)))")
+        XCTAssertGreaterThanOrEqual(settings.frame.minY, reply.frame.maxY - 1, "Under the words, in the box")
+        XCTAssertFalse(app.buttons["watcher-permissions"].exists, "Watcher's permissions are in the pill's menu")
+        capture("watcher-box-dark")
+        // Watcher's effort, from its box.
+        let low = menuItem("Low")
+        open(settings, then: "Effort", until: low)
+        low.tap()
+        XCTAssertEqual(waitForValue(settings, containing: "Low"), .completed, "The pill says the choice")
+        // The sheet lists Claude Code too, closed until pressed, and says what its model does.
+        let claude = byID("model-provider-claude"), opus = menuItem("Opus 5.5")
+        press(settings, until: NSPredicate { _, _ in claude.exists })
+        XCTAssertTrue(claude.waitForExistence(timeout: 5), "Another provider Watcher runs on is listed")
+        claude.tap()
+        XCTAssertTrue(opus.waitForExistence(timeout: 5), "Opened, it lists its models")
+        XCTAssertTrue(text("Another provider’s model starts a new Watcher.").exists, "And the sheet says what its model does")
+        capture("watcher-box-models-dark")
+        // The model Watcher is on closes the sheet and changes nothing.
+        byID("model-current").tap()
+        XCTAssertEqual(waitForValue(settings, containing: "GPT-6.1 Sol"), .completed)
+        // New Watcher, the menu's last item: an empty conversation that says so, and the handover offered over the box.
+        let new = menuItem("New Watcher")
+        press(settings, until: NSPredicate { _, _ in new.exists })
+        XCTAssertTrue(new.isEnabled)
+        new.tap()
+        let note = byID("watcher-new-note")
+        XCTAssertTrue(note.waitForExistence(timeout: 10), "The new Watcher's conversation says what happened")
+        XCTAssertTrue(note.label.contains("New Watcher on GPT-6.1 Sol."))
+        XCTAssertTrue(note.label.contains("The last conversation is in Watcher history on Laptop."))
+        let strip = byID("watcher-handover")
+        XCTAssertTrue(strip.waitForExistence(timeout: 5))
+        XCTAssertTrue(labelled("Sending starts the new Watcher with a handover of the last one.").exists)
+        press(settings, until: NSPredicate { _, _ in new.exists })
+        XCTAssertFalse(new.isEnabled, "A Watcher that has said nothing has nothing to hand over")
+        dismissMenu()
+        XCTAssertTrue(waitUntilGone(new), "The menu goes")
+        capture("watcher-new-handover-dark")
+        app.buttons["watcher-handover-dismiss"].tap()
+        XCTAssertTrue(waitUntilGone(strip), "X puts the handover away")
+        watcherInLight()
+        capture("watcher-new-light")
+    }
+
+    /// While Watcher's own turn runs, its box offers Stop where Send was, a solid disc the size of Send, and New Watcher
+    /// waits for it.
+    func testWatchersOwnTurnStopsFromItsBox() {
+        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-turn", "--ui-watcher-nothing-waits"])
+        openWatcher()
+        let stop = app.buttons["watcher-stop"], settings = byID("watcher-settings"), new = menuItem("New Watcher")
+        XCTAssertTrue(stop.waitForExistence(timeout: 10), "Watcher's turn runs, so its box offers Stop")
+        XCTAssertEqual(stop.label, "Stop Watcher’s turn")
+        XCTAssertGreaterThanOrEqual(stop.frame.width, 30, "At least as large as Send")
+        XCTAssertFalse(app.buttons["watcher-send"].exists, "With nothing written, Stop stands where Send was")
+        press(settings, until: NSPredicate { _, _ in new.exists })
+        XCTAssertFalse(new.isEnabled, "New Watcher waits for Watcher's turn")
+        dismissMenu()
+        XCTAssertTrue(waitUntilGone(new), "The menu goes")
+        capture("watcher-turn-stop-dark")
+        stop.tap()
+        XCTAssertTrue(waitUntilGone(stop), "Stopped, Stop leaves the box")
+        XCTAssertTrue(app.buttons["watcher-send"].waitForExistence(timeout: 5), "And Send is back in its place")
+        XCTAssertTrue(becomesEnabled(new, in: settings), "New Watcher can start one once the turn has stopped")
+    }
+
+    /// The settings pill opens a sheet at its top (ADR-0166, amended November 1, 2026): the model in use, then the models
+    /// starred on this iPhone, then every provider closed, the one in use too. Opening one provider closes the other, its
+    /// older models wait closed under Legacy, and put away and opened again the sheet is back at its top with every
+    /// provider closed and its stars kept.
+    func testTheSettingsSheetOpensAtTheTopWithEveryProviderClosed() {
+        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-can-answer", "--ui-watcher-nothing-waits"])
+        openWatcher()
+        let settings = watcherPill()
+        let current = byID("model-current"), codex = byID("model-provider-codex"), claude = byID("model-provider-claude")
+        let sol = byID("model-codex/fixture-model"), opus = byID("model-claude/fixture-opus")
+        let legacy = byID("model-legacy-claude"), opus5 = byID("model-claude/fixture-opus-5")
+        let favorite = byID("model-favorite-claude/fixture-opus")
+        press(settings, until: NSPredicate { _, _ in current.exists })
+        XCTAssertTrue(current.waitForExistence(timeout: 5), "The pill opens the settings sheet")
+        XCTAssertTrue(current.isHittable, "It opens at its top, on the model in use")
+        XCTAssertTrue(current.label.hasPrefix("GPT-6.1 Sol"), "The model in use leads (\(current.label))")
+        XCTAssertFalse(favorite.exists, "Nothing is starred yet")
+        XCTAssertEqual(codex.value as? String, "Closed", "Every provider starts closed, the one in use too")
+        XCTAssertEqual(claude.value as? String, "Closed")
+        XCTAssertFalse(sol.exists || opus.exists || legacy.exists, "Closed providers show none of their models")
+        capture("settings-sheet-closed-dark")
+
+        codex.tap()
+        XCTAssertTrue(sol.waitForExistence(timeout: 5), "A press opens a provider")
+        XCTAssertEqual(codex.value as? String, "Open")
+        claude.tap()
+        XCTAssertTrue(opus.waitForExistence(timeout: 5), "A press on another opens it")
+        XCTAssertTrue(waitUntilGone(sol), "and closes the first: one open at a time")
+        XCTAssertEqual(codex.value as? String, "Closed")
+        XCTAssertEqual(claude.value as? String, "Open")
+        XCTAssertTrue(legacy.exists, "Its older models wait under Legacy")
+        XCTAssertFalse(opus5.exists, "closed")
+        legacy.tap()
+        XCTAssertTrue(opus5.waitForExistence(timeout: 5), "Legacy opens inside its provider")
+        XCTAssertEqual(legacy.value as? String, "Open")
+        capture("settings-sheet-legacy-dark")
+        codex.tap()
+        XCTAssertTrue(waitUntilGone(opus5), "Opening another provider closes Legacy with its own")
+        XCTAssertTrue(waitUntilGone(opus))
+        claude.tap()
+        XCTAssertTrue(opus.waitForExistence(timeout: 5))
+        XCTAssertFalse(opus5.exists, "and Legacy opens closed again")
+
+        // A star keeps a model under Favorites, over the providers.
+        byID("model-claude/fixture-opus-star").tap()
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5), "A starred model is listed under Favorites")
+        XCTAssertLessThan(favorite.frame.minY, codex.frame.minY, "over the providers")
+        capture("settings-sheet-favorite-dark")
+
+        // Put away and opened again, the sheet is at its top with every provider closed, and the star kept.
+        dismissMenu()
+        XCTAssertTrue(waitUntilGone(current), "The sheet goes")
+        press(settings, until: NSPredicate { _, _ in current.exists })
+        XCTAssertTrue(current.waitForExistence(timeout: 5))
+        XCTAssertTrue(current.isHittable, "Opened again at its top")
+        XCTAssertEqual(claude.value as? String, "Closed", "with every provider closed again")
+        XCTAssertFalse(opus.exists)
+        XCTAssertTrue(favorite.exists, "and the star kept")
+        dismissMenu()
+        XCTAssertTrue(waitUntilGone(current), "The sheet goes")
     }
 
     /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that
@@ -1722,7 +1986,6 @@ import UIKit
         XCTAssertTrue(watch.waitForExistence(timeout: 5), "A thread's page offers Watch where a computer runs Watcher")
         XCTAssertEqual(watch.label, "Watch")
         XCTAssertEqual(watch.value as? String, "Off")
-        XCTAssertFalse(byID("watched-takeover").exists)
         // XCTest lets an expectation be waited on only once, so each wait for Watch's value makes its own.
         func watchReads(_ value: String) -> XCTWaiter.Result {
             let reads = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: watch)
@@ -1743,10 +2006,10 @@ import UIKit
         XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
         watch.tap()
         XCTAssertEqual(watchReads("On"), .completed, "Watch watches it again")
-        // Once the toast goes, the box says what watching means.
-        let line = byID("watched-takeover")
-        XCTAssertTrue(line.waitForExistence(timeout: 20))
-        XCTAssertEqual(line.label, "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
+        // Once the toast goes, nothing over the reply box takes its place: the lit owl says the thread is watched.
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: toast)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 20), .completed, "The toast goes")
+        XCTAssertFalse(watchedLineShows(), "No line says what watching means")
         capture("watch-thread-page-watched-dark")
         back()
 
@@ -1844,12 +2107,152 @@ import UIKit
     }
 
     /// New thread's fields open from anywhere in their box, and New worktree can be chosen.
+    /// A thread's model, effort, speed and permissions change from the reply box's settings pill (ADR-0166, amended
+    /// November 1, 2026, pick A): the pill shows the model and effort and opens one menu, the models first, then Effort,
+    /// Speed and Permissions as submenus; a permission change is marked until the agent confirms it. The row around it is
+    /// Claude's: the + and the pill on the left, the mic and Send on the right. While a turn runs the pill is held, as on
+    /// the desktop.
+    func testAThreadsSettingsChangeFromItsReplyBox() {
+        launch(Self.fixture + ["--ui-thread-settings"])
+        let thread = row("shortcuts")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let settings = byID("thread-settings"), plus = byID("thread-attach-photos"), mic = byID("dictate"), send = byID("thread-send")
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), "The thread's settings are a pill in the reply box's row")
+        XCTAssertEqual(settings.label, "Thread settings")
+        XCTAssertEqual(settings.value as? String, "GPT-6.1 Sol, High, Standard, Ask before actions")
+        XCTAssertGreaterThanOrEqual(settings.frame.minY, reply.frame.maxY - 1, "Under the words, inside the box")
+        // At the accessibility text sizes (the large iPhone's run) the pill takes a line of its own over the buttons.
+        let size = UIApplication.shared.preferredContentSizeCategory
+        if size.isAccessibilityCategory {
+            XCTAssertLessThanOrEqual(settings.frame.maxY, plus.frame.minY + 1, "At \(size.rawValue) the pill sits over the buttons")
+            XCTAssertLessThan(plus.frame.maxX, mic.frame.minX, "The + leads the buttons, the mic on the right")
+        } else {
+            XCTAssertLessThan(plus.frame.maxX, settings.frame.minX + 1, "The + leads the row, then the pill (\(size.rawValue))")
+            XCTAssertLessThan(settings.frame.maxX, mic.frame.minX, "The mic is on the right")
+        }
+        XCTAssertLessThan(mic.frame.maxX, send.frame.minX + 1, "Then Send")
+        XCTAssertLessThan(abs(plus.frame.midY - send.frame.midY), 1, "All on one line")
+        XCTAssertEqual(mic.label, "Dictate")
+        XCTAssertFalse(send.isEnabled, "Send is there with nothing to send, and waits")
+        XCTAssertTrue(settings.isEnabled, "An idle thread's settings can be changed")
+        capture("thread-settings-dark")
+
+        // The pill opens the settings sheet, the thread's own provider closed until pressed.
+        let codex = byID("model-provider-codex"), astra = menuItem("GPT-6 Astra")
+        press(settings, until: NSPredicate { _, _ in codex.exists })
+        XCTAssertTrue(codex.waitForExistence(timeout: 5), "The pill opens the settings sheet with the thread's provider")
+        XCTAssertEqual(codex.value as? String, "Closed", "Its provider starts closed")
+        XCTAssertFalse(byID("model-provider-claude").exists, "A thread's sheet offers only its own provider")
+        XCTAssertFalse(astra.exists, "Closed, it shows none of its models")
+        if size.isAccessibilityCategory {
+            // Stacked at the accessibility sizes, each setting row keeps space above and below its name and value.
+            let effort = menuItem("Effort"), speed = menuItem("Speed"), permissions = menuItem("Permissions")
+            reveal(permissions, fullyVisible: true)
+            XCTAssertTrue(effort.isHittable && speed.isHittable && permissions.isHittable, "All three rows show")
+            XCTAssertLessThanOrEqual(effort.frame.maxY, speed.frame.minY + 1, "Effort ends before Speed starts")
+            XCTAssertLessThanOrEqual(speed.frame.maxY, permissions.frame.minY + 1, "Speed ends before Permissions starts")
+            capture("thread-settings-rows-large-dark")
+            reveal(codex)
+        }
+        codex.tap()
+        XCTAssertTrue(astra.waitForExistence(timeout: 5), "Opened, it lists the thread's own provider's models")
+        XCTAssertFalse(menuItem("GPT-6.1 Luna").exists, "A model that isn't ready is left out")
+        XCTAssertTrue(menuItem("Effort").exists && menuItem("Speed").exists && menuItem("Permissions").exists, "Then the thread's other settings")
+        capture("thread-settings-model-menu-dark")
+        astra.tap()
+        XCTAssertEqual(waitForValue(settings, containing: "GPT-6 Astra"), .completed, "The pill says the choice at once")
+
+        let low = menuItem("Low")
+        open(settings, then: "Effort", until: low)
+        XCTAssertFalse(menuItem("Extra high").exists, "Astra offers no Extra high")
+        capture("thread-settings-effort-menu-dark")
+        low.tap()
+        XCTAssertEqual(waitForValue(settings, containing: "Low"), .completed)
+
+        let fast = menuItem("Fast")
+        open(settings, then: "Speed", until: fast)
+        fast.tap()
+        XCTAssertEqual(waitForValue(settings, containing: "Fast"), .completed, "Speed is a choice in the same menu")
+
+        let full = menuItem("Full access")
+        open(settings, then: "Permissions", until: full)
+        capture("thread-settings-permissions-menu-dark")
+        full.tap()
+        XCTAssertEqual(waitForValue(settings, containing: "Full access"), .completed, "The pill says the choice at once")
+        let inForce = byID("thread-settings-in-force")
+        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, a line says what is still in force")
+        XCTAssertEqual(inForce.label, "Codex still asks before acting until it confirms.")
+        capture("thread-settings-pending-dark")
+        // The fixture's Codex confirms eight seconds after the choice. A deadline that is never reached costs nothing.
+        XCTAssertTrue(waitUntilGone(inForce, timeout: 60), "Once Codex confirms it, nothing more is said")
+        XCTAssertEqual(waitForValue(settings, containing: "Full access"), .completed)
+
+        // In light, and on the working thread, whose pill waits for its turn to end.
+        launch(Self.fixture + ["--ui-thread-settings", "--ui-light"])
+        let idle = row("shortcuts")
+        reveal(idle)
+        idle.tap()
+        XCTAssertTrue(byID("thread-settings").waitForExistence(timeout: 5))
+        capture("thread-settings-light")
+        let medium = menuItem("Medium")
+        open(byID("thread-settings"), then: "Effort", until: medium)
+        capture("thread-settings-effort-menu-light")
+        medium.tap()
+        back()
+        let working = row("iphone")
+        reveal(working)
+        working.tap()
+        let held = byID("thread-settings")
+        XCTAssertTrue(held.waitForExistence(timeout: 5))
+        XCTAssertFalse(held.isEnabled, "While the turn runs the agent would refuse a change, so the pill waits")
+        capture("thread-settings-working-light")
+    }
+    /// Opens a settings pill's menu, then its submenu, until `item` shows.
+    private func open(_ pill: XCUIElement, then submenu: String, until item: XCUIElement) {
+        let entry = menuItem(submenu)
+        press(pill, until: NSPredicate { _, _ in entry.exists })
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), "The pill's menu offers \(submenu)")
+        press(entry, until: NSPredicate { _, _ in item.exists })
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "\(submenu) opens its choices")
+    }
+    /// Puts an open menu away with a press above it, clear of the box; an open settings sheet with its Done.
+    private func dismissMenu() {
+        let done = byID("settings-sheet-done")
+        if done.exists && done.isHittable { done.tap(); return }
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+    }
+    /// Whether a pill's menu item reads enabled within `timeout`. An open menu keeps the state it opened with, so it is
+    /// put away and opened again until the item reads enabled.
+    private func becomesEnabled(_ item: XCUIElement, in pill: XCUIElement, timeout: TimeInterval = 20) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        repeat {
+            press(pill, until: NSPredicate { _, _ in item.exists })
+            if item.exists && item.isEnabled { return true }
+            dismissMenu()
+            _ = waitUntilGone(item, timeout: 5)
+        } while Date() < end
+        return false
+    }
+    /// A menu's item whose words start with these, wherever iOS draws the menu.
+    private func menuItem(_ start: String) -> XCUIElement {
+        let kinds = [XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.switch.rawValue]
+        return app.descendants(matching: .any).matching(NSPredicate(format: "elementType IN %@ AND label BEGINSWITH %@", kinds, start)).firstMatch
+    }
+    /// Waits for an element to read this value: a chip settling on a choice.
+    private func waitForValue(_ element: XCUIElement, _ value: String, timeout: TimeInterval = 10) -> XCTWaiter.Result {
+        XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: element)], timeout: timeout)
+    }
+    /// Waits for an element's value to hold these words: a settings pill settling on a choice.
+    private func waitForValue(_ element: XCUIElement, containing part: String, timeout: TimeInterval = 10) -> XCTWaiter.Result {
+        XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", part), object: element)], timeout: timeout)
+    }
+
     func testNewThreadFieldsOpenFromTheirWholeBox() {
         launch(Self.fixture)
         app.buttons["new-thread"].tap()
-        let computer = app.buttons["new-thread-computer-\(laptop)"]
-        XCTAssertTrue(computer.waitForExistence(timeout: 5))
-        computer.tap()
         let project = app.buttons["new-thread-project-sotto"]
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.tap()
@@ -1969,9 +2372,10 @@ import UIKit
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
         launch(Self.fixture)
-        let counts = byID("thread-counts")
-        XCTAssertTrue(counts.exists)
-        XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
+        let working = byID("threads-heading-working")
+        XCTAssertTrue(working.exists)
+        XCTAssertTrue(working.label.contains("2"), "Working now counts the threads at work")
+        XCTAssertFalse(byID("thread-counts").exists, "The sections count their threads; there is no counts line (#1849)")
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].exists, "A computer that can't be reached offers Try again")
         XCTAssertFalse(app.tab("Watcher").exists, "A computer that doesn't run Watcher gives it no tab")
         capture("threads-glow-dark")
@@ -2047,13 +2451,14 @@ import UIKit
                 app.tab("Threads").tap()
             }
             app.buttons["new-thread"].tap()
-            app.buttons["new-thread-computer-\(laptop)"].tap()
             let browse = app.buttons["browse-project-folder"]
+            XCTAssertTrue(browse.waitForExistence(timeout: 5))
             reveal(browse); browse.tap()
             let problem = app.staticTexts["Sotto did not answer in time. Try again."]
             XCTAssertTrue(problem.waitForExistence(timeout: 5))
             reveal(problem)
             XCTAssertFalse(app.staticTexts["Delivery is unconfirmed. Check the thread before sending again."].exists)
+            XCTAssertTrue(app.buttons["folders-try-again"].exists, "A read that timed out has a Try again button")
             capture("folder-read-timeout-" + appearance)
             app.buttons["Home"].tap()
             XCTAssertTrue(problem.waitForExistence(timeout: 5))
@@ -2097,7 +2502,18 @@ import UIKit
         launch(Self.fixture + ["--ui-agents"])
         let thread = row("iphone")
         reveal(thread)
+        // Its delegated review waits on the user, so the row stands in Needs you and opens the review on its question,
+        // with Back returning to the thread that delegated it (ADR-0151's second October 30 amendment).
+        XCTAssertTrue(thread.label.contains("Review the drawer fix"), "The row says which delegated thread asks")
         thread.tap()
+        XCTAssertTrue(app.staticTexts["Run npm test -- terminalDrawer?"].waitForExistence(timeout: 5),
+                      "A Needs you row for a delegated thread opens that thread on its question")
+        let notNow = app.buttons["Not now"]
+        reveal(notNow)
+        // The journey runs first on a freshly booted simulator, where a synthesized tap is now and then dropped (#1984).
+        XCTAssertEqual(press(notNow, until: NSPredicate { _, _ in !notNow.exists }, untouched: { notNow.exists }), .completed,
+                       "Not now closes the delegated thread's question")
+        back()
         let agents = app.buttons["thread-agents"]
         XCTAssertTrue(agents.waitForExistence(timeout: 5), "A thread with delegated threads and agents has Agents in its top bar")
         XCTAssertEqual(agents.value as? String, "4 agents, 1 needs you")
@@ -2108,8 +2524,9 @@ import UIKit
         XCTAssertTrue(app.buttons["agents-answer-thread:review-fix"].exists, "A delegated thread that waits on you opens to answer")
         // The outcome and the order come with the computer's reads, a moment after the sheet opens.
         let answered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Check the drawer docs, delegated thread on Codex, Answered"), object: docs)
-        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: 5), .completed, "A delegated thread's row says its outcome")
-        XCTAssertTrue(app.buttons["agents-row-agent:waits"].waitForExistence(timeout: 5))
+        // A deadline that is never reached costs nothing; on a cold simulator those reads can take longer than 5 s (#1984).
+        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: 30), .completed, "A delegated thread's row says its outcome")
+        XCTAssertTrue(app.buttons["agents-row-agent:waits"].waitForExistence(timeout: 30))
         // Newest start first: the running agent, the review, the docs, then the finished agent.
         let order = ["agents-row-agent:suite", "agents-row-thread:review-fix", "agents-row-thread:drawer-docs", "agents-row-agent:waits"]
             .map { app.buttons[$0].frame.minY }

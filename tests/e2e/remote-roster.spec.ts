@@ -27,7 +27,7 @@ import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
 import { OWL_E2E_VERSION, onReleaseTrack } from './support/releaseTrack'
-import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/remote-roster')
 const PARENT = 'Tidy the host protocol docs'
@@ -194,7 +194,7 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await capture(launched, 'delegated-work-dark-1280x800')
 
       // Tools › Agents: a heading for Forge with its count, and its threads under it, both levels.
-      await pane(page).getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(pane(page))
       await page.getByRole('tab', { name: 'Agents', exact: true }).click()
       const forge = tools(page).getByRole('region', { name: /^Forge/u })
       await expect(forge.getByRole('heading', { level: 3 })).toHaveText('Forge4 threads · 2 working', { timeout: 30_000 })

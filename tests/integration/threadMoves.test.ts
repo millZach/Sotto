@@ -89,7 +89,7 @@ async function machines() {
   const movesHere = new HostThreadMoves(f.root, { control: f.control, workspace: workspace.host, mayAnswer: () => true, file: 'thread-moves-here.json' })
   const thisComputer = desktopWindowClient()
   const moves = new ThreadMoveService(f.root, { control: f.control, workspace: workspace.host, branches: branchMoves, watch: watcher, retryMs: 200,
-    here: { supportsThreadMove: true, threadMove: request => movesHere.handle(request, thisComputer) } })
+    here: { supportsThreadMove: true, supportsThreadMoveKeep: true, threadMove: request => movesHere.handle(request, thisComputer) } })
   await moves.load()
   moves.useTargets(moveTargetsOf(router.watcherHosts(), watcher, listener => router.subscribeChanges(listener)))
   cleanups.push(async () => {
@@ -216,6 +216,34 @@ describe('moving a thread from This computer to a paired host (#1178)', () => {
     expect(m.socket.shell().host.threads).toHaveLength(threadsBefore)
     // The source takes sends again.
     expect((await m.control.commandShell({ type: 'manual-send', threadId: sourceId, draftId: randomUUID(), text: 'Commit it first.' })).error).toBeNull()
+  }, 120_000)
+})
+
+describe('calling a move off on the host with Keep it here (#1178 part 4)', () => {
+  it('stops and settles the thread the host made for the move, and refuses its start from then on', async () => {
+    const m = await machines()
+    expect(m.hello.features).toContain('thread-move-keep')
+    expect(m.socket.supportsThreadMoveKeep).toBe(true)
+    const sourceId = await m.source()
+    const moveId = (await m.move([sourceId])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(m.record(moveId)?.state).toBe('thread-started'), { timeout: 30_000 })
+    const made = m.record(moveId)!.threadId!
+    await vi.waitFor(() => expect(m.hostThread(made)).toBeDefined(), { timeout: 30_000 })
+    // Its first turn is running there: forge says it kept the move only once that turn has stopped, so the first ask fails.
+    await expect(m.socket.threadMove({ action: 'keep', moveId })).rejects.toThrow()
+    // A real provider reports the interrupted turn's end; this fake does not, so the test reports it, and the desktop's
+    // next ask, as this one, keeps the move.
+    const nativeId = (await remote.native.snapshot()).threads.find(item => item.title === 'WAV preview stall')!.id
+    remote.native.event({ type: 'ready', threadId: nativeId, text: 'Stopped.' })
+    await vi.waitFor(async () => expect(await m.socket.threadMove({ action: 'keep', moveId }).catch(() => null)).toEqual({ type: 'kept', moveId, made: true }), { timeout: 30_000 })
+    await vi.waitFor(() => expect(m.hostThread(made)?.workspaceSettledAt).toEqual(expect.any(String)), { timeout: 30_000 })
+    // The same move's start is refused for good, and a move forge never saw is fenced before it says so.
+    const again = await m.socket.threadMove({ action: 'start', moveId, projectId: m.forgeProject.id, title: 'WAV preview stall', modelId: m.hostThread(made)!.modelId,
+      from: { threadId: sourceId, provider: 'codex', hostId: m.control.hostId()! }, prompt: 'Again', handover: { prefixLength: 1, prefixDigest: 'a'.repeat(64),
+        counts: { total: 1, carried: 1, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: false } } })
+    expect(again).toMatchObject({ type: 'refused', reason: 'kept' })
+    const never = randomUUID()
+    expect(await m.socket.threadMove({ action: 'keep', moveId: never })).toEqual({ type: 'kept', moveId: never, made: false })
   }, 120_000)
 })
 

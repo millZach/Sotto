@@ -317,11 +317,15 @@ describe('ThreadsView workspace', () => {
     expect(command).not.toHaveBeenCalled()
   })
 
-  it('shows an empty workspace and a way to create a thread', () => {
+  it('shows an empty workspace and a way to create a thread, and says so once: an empty folder shows its name alone', () => {
     const state = stateFixture(); state.host.threads = [];
     renderThreads(state)
     expect(screen.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Projects' })).toHaveTextContent('No open threads.')
+    const projects = screen.getByRole('region', { name: 'Projects' })
+    expect(projects).not.toHaveTextContent('No open threads.')
+    expect(projects).not.toHaveTextContent('No threads yet.')
+    const folder = within(projects).getByRole('button', { name: /^workshop/u })
+    expect(folder).toHaveTextContent(/^workshop$/u)
   })
 
   it('opens a thread in the active project at once from the empty workspace’s own button', async () => {

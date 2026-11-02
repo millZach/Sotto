@@ -5,7 +5,7 @@ import SottoCore
 // The Watcher tab (1B, ADR-0073 amended October 11, 2026): Watcher on the computer that runs it, with its Conversation
 // and the threads it Watches. Zach's picks: one card of what Watcher did for each reply, a row per thread (2B); provider
 // logos with the quiet owl (3B); a thread's own question or permission card answered here, as the user's own answer to
-// that thread (4B); the keyboard's own microphone key for dictation (7A).
+// that thread (4B); dictation from the box's own mic (ADR-0174), where pick 7A left it to the keyboard's mic key.
 
 /// A card in Watcher's page opened in the request sheet, with where its answer goes.
 struct ReviewedCard: Identifiable {
@@ -64,8 +64,7 @@ struct WatcherView: View {
         .onChange(of: section) { _, _ in barAway = false }
         .onChange(of: voiceOver) { _, on in if on { barAway = false } }
         .sheet(item: $reviewing) { card in
-            RequestSheet(place: card.place, request: card.request)
-                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            RequestSheet(place: card.place, request: card.request).requestSheetDetents()
         }
         // Stop all asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26 draws a
         // confirmation dialog as a menu from the page and leaves its Cancel out, so this is an alert.
@@ -195,9 +194,6 @@ private struct WatcherHero: View {
             }
             if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
             WatcherMachinesLine(hostID: hostID)
-            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil {
-                WatcherPermissionChip(hostID: hostID).padding(.top, Space.s1)
-            }
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.top, Space.s2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -620,6 +616,8 @@ private struct WatcherConversationPane: View {
     @State private var viewing: OpenPhotos?
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
+    /// Just under the newest words, where following scrolls to, `WatcherReaderPlace.newestGap` above the box.
+    private static let newestEnd = "watcher-newest-end"
     /// A waiting card's place on the page, to scroll it whole above the box.
     private static func cardID(_ key: String) -> String { "watcher-needs-you-" + key }
 
@@ -630,7 +628,7 @@ private struct WatcherConversationPane: View {
         // The photos of Watcher's messages are its thread's, read through Watcher's page.
         let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
         let items = page.map { WatcherConversation.items($0) } ?? []
-        let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
+        let newest = items.isEmpty && sending == nil ? Self.end : Self.newestEnd
         // While a card waits on the user, the bar stays where it is (#1288).
         let pinned = page?.needsYou.isEmpty == false
         ScrollViewReader { proxy in
@@ -642,24 +640,28 @@ private struct WatcherConversationPane: View {
                     notes(page)
                     if !items.isEmpty || sending != nil {
                         // The conversation and the words on their way, whose bottom is the newest words.
-                        VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                            ForEach(items) { item in
-                                Group {
-                                    switch item {
-                                    case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
-                                    case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
-                                    case .ownChange(let change): WatcherOwnChangeLine(change: change)
+                        VStack(alignment: .leading, spacing: 0) {
+                            VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                                ForEach(items) { item in
+                                    Group {
+                                        switch item {
+                                        case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
+                                        case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                                        case .ownChange(let change): WatcherOwnChangeLine(change: change)
+                                        }
                                     }
+                                    .id(item.id)
                                 }
-                                .id(item.id)
+                                if let sending { SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID) }
                             }
-                            if let sending { SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID) }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(reader { follow.newest = $0.maxY })
+                            .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
+                                model.quoteReply($0, into: model.watcherDraftKey(hostID))
+                            })
+                            // The place following scrolls to, under the newest words, taking no room on the page.
+                            Color.clear.frame(height: 0).id(Self.newestEnd).accessibilityHidden(true)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(reader { follow.newest = $0.maxY })
-                        .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
-                            model.quoteReply($0, into: model.watcherDraftKey(hostID))
-                        })
                     }
                     ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
                         SetAsideCard(hostID: hostID, words: words)
@@ -720,6 +722,7 @@ private struct WatcherConversationPane: View {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
+                // It floats as a thread's reply box does, with the conversation running on under it.
                 }).readingWidth().background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
@@ -743,7 +746,7 @@ private struct WatcherConversationPane: View {
             // the layout while it is away. It stays until no card waits (#1288).
             .onChange(of: pinned, initial: true) { _, waits in if waits { slideBar(false) } }
         }
-        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .watcher(hostID: hostID)) }
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
@@ -852,16 +855,21 @@ private struct WatcherConversationPane: View {
         box.followRequests += 1
         let request = box.followRequests
         let still = reduceMotion
+        // The mark under the newest words goes `newestGap` above the box; the page's end, before any words, to the box.
+        func anchor() -> UnitPoint {
+            guard target == Self.newestEnd, let y = WatcherReaderPlace.newestAnchor(top: box.top, dockTop: box.dockTop) else { return .bottom }
+            return UnitPoint(x: 0.5, y: y)
+        }
         Task { @MainActor in
             await Task.yield()
             guard box.followRequests == request else { return }
             guard !box.userScrolling else { box.missedFollow = true; return }
             box.quiet()
-            withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: .bottom) }
+            withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: anchor()) }
             try? await Task.sleep(nanoseconds: still ? 120_000_000 : 360_000_000)
             if box.followRequests == request, box.following, !box.userScrolling {
                 box.quiet()
-                scroll.scrollTo(target, anchor: .bottom)
+                scroll.scrollTo(target, anchor: anchor())
             }
         }
     }
@@ -877,11 +885,26 @@ private struct WatcherConversationPane: View {
             note(String(localized: "Watcher isn’t running on \(model.name(hostID)). Start it in Sotto on \(model.name(hostID)), then ask it here.",
                         comment: "Both %@ are the computer's name"))
         } else if let page, page.conversation.messages.isEmpty, model.watcherSending[hostID] == nil {
-            note(String(localized: "Ask Watcher to start, check on or stop your threads. It answers nothing for you."))
+            if page.replaced == true, let current = page.current { newWatcherNote(current) }
+            else { note(String(localized: "Ask Watcher to start, check on or stop your threads. It answers nothing for you.")) }
         } else if page == nil {
             note(model.online(hostID) ? model.watcherReadProblems[hostID] ?? String(localized: "Reading Watcher on \(model.name(hostID))…", comment: "%@ is the computer's name")
                  : String(localized: "Reconnect to \(model.name(hostID)) to read Watcher.", comment: "%@ is the computer's name"))
         }
+    }
+    /// A new Watcher's empty conversation, by New Watcher or another provider's model, as the desktop's note says it: the
+    /// model it is on, and where the last conversation went.
+    private func newWatcherNote(_ current: WatcherPage.Current) -> some View {
+        let name = CatalogEntry.model(model.watcherCatalog(hostID), id: current.modelId)?.name ?? current.modelId
+        return VStack(spacing: Space.s2) {
+            WatcherOwlMark(size: 28).foregroundStyle(Palette.ink).accessibilityHidden(true)
+            Text("New Watcher on \(name).", comment: "%@ is the model the new Watcher is on, such as GPT-6.1 Sol")
+                .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+            note(String(localized: "The last conversation is in Watcher history on \(model.name(hostID)).", comment: "%@ is the computer's name"))
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("watcher-new-note")
     }
     private func note(_ words: String) -> some View {
         Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
@@ -1284,7 +1307,7 @@ private struct WatcherOwnChangeLine: View {
 // MARK: - Cards that wait on the user (4B)
 
 /// A question or permission in Watcher's page: a worker's own card, or Watcher's own. One-tap answers are made here and go
-/// to the thread that asked, as the user's own answer under this iPhone's Can answer: through the computer that runs
+/// to the thread that asked, as the user's own answer under this iPhone's answers grant: through the computer that runs
 /// Watcher for its own threads, or, for a thread on another computer this iPhone is paired with, to that computer, as
 /// the thread's own page would send it. Anything more opens the request sheet. Watcher answers nothing.
 private struct WatcherRequestCard: View {
@@ -1498,8 +1521,8 @@ private struct WatcherRequestCard: View {
 
 // MARK: - Reply box
 
-/// Asking Watcher: the box floating over the conversation's end, as a thread's reply box does. The keyboard's own
-/// microphone key dictates into it.
+/// Asking Watcher: the box floating over the conversation's end, as a thread's reply box does, with the same mic
+/// (ADR-0174).
 private struct WatcherDock: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -1510,7 +1533,10 @@ private struct WatcherDock: View {
     let willSend: () -> Void
     @FocusState private var focused: Bool
     @State private var sent = 0
+    @State private var stopped = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Watched for which box listens, which changes only as dictation starts and stops.
+    @ObservedObject private var dictation = Dictation.shared
 
     var body: some View {
         VStack(spacing: Space.s2) {
@@ -1527,6 +1553,25 @@ private struct WatcherDock: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Space.s4)
             }
+            // Until Watcher's provider confirms a permission mode just chosen, what is still in force, as over a thread's box.
+            if let caption = model.watcherPermissionInForce(hostID) {
+                Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s3)
+                    .accessibilityIdentifier("watcher-permissions-in-force")
+            }
+            // A model, effort or speed chosen while Watcher works, which its computer keeps for Watcher's next turn: the
+            // chips show it, and this says when it starts.
+            if model.offersWatcherComposer(hostID), model.watcherPage(hostID)?.nextTurnOptions != nil {
+                Text("Watcher starts its next turn on this choice.").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s3)
+                    .accessibilityIdentifier("watcher-next-turn")
+            }
+            if model.watcherHandoverOffered(hostID) { WatcherHandoverStrip(hostID: hostID) }
             field
         }
         .padding(.horizontal, Space.s3)
@@ -1574,14 +1619,63 @@ private struct WatcherDock: View {
         let photos = model.photos(box), files = model.files(box)
         // Locked from the press of a message with photos or files until Watcher answers, so nothing typed meanwhile joins it.
         let preparing = model.preparingSends.contains(box.id)
-        let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
-        let canSend = model.canSendToWatcher(hostID)
-        // Send shows once the box holds something, as in a thread's reply box.
-        let written = !(model.drafts[model.watcherDraftKey(hostID)] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let stops = model.canStopWatcherTurn(hostID)
+        let key = model.watcherDraftKey(hostID)
+        let listening = dictation.key == key
+        // Send is always there, as in a thread's reply box, and lights once the box holds something.
+        let written = !(model.drafts[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !photos.isEmpty || !files.isEmpty
-        // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
-        // takes no steer (#1229, pick B); otherwise it sends as before.
+        // The card a thread's reply box is (Zach's pick A, November 1, 2026): photos and files above the words, and the
+        // row under them with the +, Watcher's settings as one pill, the mic and Send.
+        return ComposerCard {
+            DraftAttachments(box: box)
+        } words: {
+            words(box: box, working: working, preparing: preparing)
+        } plus: {
+            if listening { ListeningLine() } else { AttachPhotosButton(box: box) }
+        } pill: {
+            if !listening, model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil { WatcherSettingsPill(hostID: hostID) }
+        } trailing: {
+            trailing(key: key, stops: stops, ready: written || preparing, preparing: preparing)
+        }
+        // The trace round the card at the top level Watcher's model offers: Max on Claude, where Ultracode is never Watcher's.
+        .effortTrace(model.offersWatcherManage(hostID) && model.watcherAtTopEffort(hostID), radius: ComposerMetrics.radius)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: stops)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
+    }
+
+    private func words(box: PhotoBox, working: Bool, preparing: Bool) -> some View {
+        TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .lineLimit(1...6)
+            .focused($focused)
+            // Words added from a reply put the caret after them, here (ADR-0129).
+            .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }
+            .accessibilityLabel("Ask Watcher")
+            .accessibilityIdentifier("watcher-reply")
+            .pasteAttaches(to: box)
+            .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
+            // Locked while the mic writes in it, as a thread's box is.
+            .disabled(preparing || dictation.key == model.watcherDraftKey(hostID))
+    }
+
+    /// The mic, then Send, which is always there; while Watcher's own turn can be stopped, Stop takes Send's place until
+    /// something is written. Sending while the mic listens stops it; the mic waits while a send's photos are made ready.
+    private func trailing(key: String, stops: Bool, ready: Bool, preparing: Bool) -> some View {
+        HStack(spacing: ComposerMetrics.gap) {
+            DictateButton(key: key, words: draft).disabled(preparing)
+            if stops { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if ready || !stops { sendButton(preparing: preparing).transition(.scale(scale: 0.6).combined(with: .opacity)) }
+        }
+    }
+
+    /// Sends to Watcher. While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues
+    /// when its provider takes no steer (#1229, pick B); otherwise it sends as before.
+    private func sendButton(preparing: Bool) -> some View {
+        let canSend = model.canSendToWatcher(hostID)
         let page = model.watcherPage(hostID)
         let current = page?.current
         let waitingOnCard = page.map { page in page.needsYou.contains(where: { page.isOwn($0) }) } ?? false
@@ -1589,147 +1683,258 @@ private struct WatcherDock: View {
         let queueing = waitingOnCard || (steering && current?.steers == false)
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
         let label = waitingOnCard ? String(localized: "Queue") : queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
-        // The + on its own beside a slim box, as in a thread's reply box: photos and files above the words, Send inside
-        // the box's end.
-        return HStack(alignment: .bottom, spacing: Space.s2) {
-            AttachPhotosButton(box: box)
-            VStack(alignment: .leading, spacing: 0) {
-                DraftAttachments(box: box)
-                HStack(alignment: .bottom, spacing: Space.s1) {
-                    TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
-                        .font(.sotto(.body))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(1...6)
-                        .focused($focused)
-                        // Words added from a reply put the caret after them, here (ADR-0129).
-                        .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }
-                        .padding(.vertical, ComposerMetrics.wordsPadding)
-                        .accessibilityLabel("Ask Watcher")
-                        .accessibilityIdentifier("watcher-reply")
-                        .pasteAttaches(to: box)
-                        .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
-                        .disabled(preparing)
-                    if written || preparing {
-                        // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
-                        Button { sent += 1; willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
-                            Group {
-                                if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
-                                else { Image(systemName: symbol).font(.system(size: 14, weight: .bold)) }
-                            }
-                            .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
-                            .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
-                            .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
-                            .pressArea(drawn: ComposerMetrics.button)
-                        }
-                        .buttonStyle(PressStyle())
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
-                        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
-                        .disabled(!canSend)
-                        .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
-                        .accessibilityIdentifier("watcher-send")
-                        .padding(.bottom, ComposerMetrics.buttonInset)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
-                    }
-                }
-                .padding(.leading, ComposerMetrics.wordsInset)
-                .padding(.trailing, ComposerMetrics.buttonInset)
-                .frame(minHeight: ComposerMetrics.height)
+        // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
+        return Button {
+            sent += 1; willSend(); focused = false
+            dictation.cancel(model.watcherDraftKey(hostID))
+            Task { await model.sendToWatcher(hostID) }
+        } label: {
+            Group {
+                if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
+                else { Image(systemName: symbol).font(.system(size: 15, weight: .bold)) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .composerSurface(in: shape)
+            .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
+            .composerDisc(canSend || preparing ? AnyShapeStyle(Palette.accent) : AnyShapeStyle(Palette.fillSoft))
         }
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
+        .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
+        .disabled(!canSend)
+        .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
+        .accessibilityIdentifier("watcher-send")
+    }
+
+    /// Stop on Watcher's own turn, the thread box's solid disc the size of Send. The threads Watcher started carry on.
+    private var stopButton: some View {
+        Button { stopped += 1; Task { await model.stopWatcherTurn(hostID) } } label: {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .frame(width: 12, height: 12)
+                .foregroundStyle(Palette.canvas)
+                .composerDisc(Palette.ink)
+        }
+        .buttonStyle(PressStyle())
+        .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
+        .disabled(model.watcherManaging.contains(AppModel.composerKey(hostID)))
+        .accessibilityLabel("Stop Watcher’s turn")
+        .accessibilityIdentifier("watcher-stop")
     }
 }
 
-// MARK: - What Watcher may do without asking (control A)
+/// Over a new Watcher's box, while the last one's handover is offered (ADR-0073, as the desktop's strip): sending starts
+/// the new Watcher with it, ahead of the user's words, and X puts it away, so the first message goes without it.
+private struct WatcherHandoverStrip: View {
+    @EnvironmentObject var model: AppModel
+    let hostID: String
+    var body: some View {
+        HStack(alignment: .center, spacing: Space.s2) {
+            Image(systemName: "arrow.turn.down.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                .accessibilityHidden(true)
+            Text("Sending starts the new Watcher with a handover of the last one.")
+                .font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { Task { await model.dismissWatcherHandover(hostID) } } label: {
+                Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.muted)
+                    .frame(width: 32, height: 32)
+                    .pressArea(drawn: 32)
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityLabel("Don’t hand over: start the new Watcher without it")
+            .accessibilityIdentifier("watcher-handover-dismiss")
+        }
+        .padding(.leading, Space.s4).padding(.trailing, Space.s1).padding(.vertical, Space.s1)
+        .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("watcher-handover")
+    }
+}
 
-/// Watcher's permissions in its hero, under its model and computer (#1276, pick A): a chip in this iPhone's own words,
-/// after the Threads composer's, that opens the four modes. A choice shows at once; until Watcher's provider confirms
-/// it, the chip's edge is dashed and the words beside it say what is still in force. A computer that refuses says why
-/// in its own words. It left the box so the conversation has the room, and so it no longer comes and goes as the box is
-/// written in.
-private struct WatcherPermissionChip: View {
+/// Watcher's model, effort, speed and permissions as one pill in its box's row, as a thread's box has them (ADR-0166,
+/// amended November 1, 2026), opening the same settings sheet with New Watcher as its last row. The sheet lists every
+/// provider Watcher runs on, each closed until pressed; another provider's model starts a new Watcher. The model,
+/// effort and speed are held still, the sheet saying why, while Watcher works or a card of its own waits. A computer that
+/// takes only Watcher's permissions from this iPhone shows the shield alone.
+private struct WatcherSettingsPill: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
-    @State private var choosing = false
+    @State private var choosingPermission = false
     @State private var picks = 0
-    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var starts = 0
+    @State private var open = false
+    /// Permissions was pressed in the settings sheet: its own sheet opens once this one has gone.
+    @State private var permissionsNext = false
 
     var body: some View {
-        let caption = model.watcherPermissionInForce(hostID)
-        let fixed = model.watcherPermissionFixed(hostID)
         Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: Space.s1) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
-            } else {
-                HStack(spacing: Space.s3) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
-            }
+            if model.offersWatcherComposer(hostID) { pill } else { permissionShield }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sheet(isPresented: $choosing) {
+        .sensoryFeedback(.selection, trigger: picks)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: starts)
+        .sheet(isPresented: $choosingPermission) {
             WatcherPermissionSheet(hostID: hostID) { mode in
                 picks += 1
-                choosing = false
+                choosingPermission = false
                 Task { await model.setWatcherPermission(mode, on: hostID) }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .sensoryFeedback(.selection, trigger: picks)
     }
 
-    private func chip(pending: Bool, fixed: Bool) -> some View {
+    private var catalog: [ThreadModel] { model.watcherCatalog(hostID) }
+    private var current: WatcherPage.Current? { model.watcherPage(hostID)?.current }
+    private var values: ThreadSettingValues? { model.watcherSettingValues(hostID) }
+    /// The model the pill reads: the one just chosen while the computer takes it, then Watcher's own.
+    private var shownModel: ThreadModel? { CatalogEntry.model(catalog, id: values?.model) }
+    private var held: String? { model.watcherSettingsHeld(hostID) }
+    private var efforts: [String] { WatcherSettings.efforts(shownModel) }
+    private var speeds: [ModelSpeed] { ThreadSettings.offeredSpeeds(shownModel, providerID: shownModel?.providerId ?? current?.provider) }
+    private var effortName: String? {
+        guard !efforts.isEmpty, let values else { return nil }
+        return values.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(values.effort)
+    }
+    /// The speed in force, Standard where the model offers no other.
+    private var speed: String {
+        guard let values, speeds.contains(where: { $0.id == values.speed }) else { return ThreadSettings.standard }
+        return values.speed
+    }
+
+    /// Chooses a value for Watcher and puts the sheet away.
+    private func choose(_ kind: ThreadSettingKind, _ value: String) {
+        picks += 1
+        open = false
+        Task { await model.chooseWatcherSetting(kind, value, on: hostID) }
+    }
+    private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        SettingOption(name: name, line: line, chosen: chosen, action: action)
+    }
+
+    /// The pill opens the settings sheet, as a thread's does.
+    private var pill: some View {
         let mode = model.watcherPermission(hostID)
-        let busy = model.watcherManaging.contains(AppModel.permissionKey(hostID))
-        let edge = StrokeStyle(lineWidth: 1, dash: pending ? [4, 3] : [])
-        return Button { choosing = true } label: {
-            HStack(spacing: 6) {
-                if busy { ProgressView().controlSize(.mini) } else {
-                    Image(systemName: "shield").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
-                }
-                Text(WatcherPermissions.name(mode)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
+        let modelName = shownModel?.name ?? current?.modelId ?? ""
+        return Button { open = true } label: {
+            ComposerPill(providerID: shownModel?.providerId ?? current?.provider, model: modelName, effort: effortName, speed: speed,
+                         shield: mode == "full-access" ? .full : WatcherPermissions.grants(mode) ? .grants : .asks,
+                         pending: model.watcherPermissionInForce(hostID) != nil)
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(String(localized: "Watcher’s settings"))
+        .accessibilityValue([modelName, effortName, speeds.isEmpty ? nil : ThreadSettings.speedName(speed, offered: speeds), WatcherPermissions.name(mode)]
+            .compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint(String(localized: "Opens Watcher’s model, effort, speed and permissions, and New Watcher"))
+        .accessibilityIdentifier("watcher-settings")
+        .sheet(isPresented: $open, onDismiss: {
+            if permissionsNext { permissionsNext = false; choosingPermission = true }
+        }) { sheet }
+    }
+
+    /// While the computer holds Watcher's model, effort and speed, why; then the models, Effort, Speed, Permissions (which
+    /// opens the four modes in Watcher's own words) and New Watcher.
+    private var sheet: some View {
+        let mode = model.watcherPermission(hostID)
+        let groups = current.map { WatcherSettings.groups($0, catalog: catalog, others: model.mayAnswer(hostID)) } ?? []
+        return ComposerSettingsSheet(title: String(localized: "Watcher’s settings"), current: shownModel,
+                                     groups: groups.map { ModelGroup(id: $0.providerID, name: $0.name, models: $0.models) },
+                                     modelsEnabled: held == nil, choose: { choose(.model, $0.id) }) {
+            if let held { Text(held) }
+        } foot: {
+            if groups.contains(where: { !$0.own }) {
+                Text("Another provider’s model starts a new Watcher. This conversation stays in Watcher history.")
             }
-            .font(.sotto(.small, .semibold))
-            .foregroundStyle(Palette.ink)
-            .padding(.horizontal, Space.s4)
-            .frame(minHeight: 44)
-            .background(Palette.fillSoft, in: Capsule())
-            .overlay(Capsule().strokeBorder(pending ? Palette.accent.opacity(0.7) : Palette.hairline, style: edge))
-            .contentShape(Capsule())
+        } settings: {
+            effortRow
+            speedRow
+            Button { permissionsNext = true; open = false } label: {
+                SettingRow(name: Text("Permissions", comment: "The field for the permission mode a new thread starts in."),
+                           value: WatcherPermissions.name(mode))
+            }
+            .buttonStyle(PressStyle())
+            .disabled(!model.canChangeWatcherPermission(hostID))
+            newWatcherRow
+        }
+    }
+
+    @ViewBuilder private var effortRow: some View {
+        if let effortName, let values {
+            Menu {
+                ForEach(Array(efforts.enumerated()), id: \.element) { index, level in
+                    option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: efforts.count), chosen: level == values.effort) {
+                        choose(.effort, level)
+                    }
+                }
+            } label: {
+                SettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName)
+            }
+            .disabled(held != nil)
+        }
+    }
+
+    @ViewBuilder private var speedRow: some View {
+        if !speeds.isEmpty, values != nil {
+            SpeedMenu(speeds: speeds, speed: speed, providerID: shownModel?.providerId) { choose(.speed, $0) }
+                .disabled(held != nil)
+        }
+    }
+
+    /// Where the computer doesn't offer Watcher's model and effort from here, its permissions alone, as their shield: an
+    /// outline while Watcher asks first, half filled while it may act without asking, filled for Full access.
+    private var permissionShield: some View {
+        let mode = model.watcherPermission(hostID)
+        let full = mode == "full-access", grants = WatcherPermissions.grants(mode)
+        let fixed = model.watcherPermissionFixed(hostID)
+        return Button { choosingPermission = true } label: {
+            SettingChip(pending: model.watcherPermissionInForce(hostID) != nil) {
+                if model.watcherManaging.contains(AppModel.permissionKey(hostID)) { ProgressView().controlSize(.mini) } else {
+                    Image(systemName: full ? "shield.fill" : grants ? "shield.lefthalf.filled" : "shield")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(full ? Palette.warningText : grants ? Palette.accentText : Palette.muted)
+                }
+            }
         }
         .buttonStyle(PressStyle())
         .disabled(!model.canChangeWatcherPermission(hostID))
+        .opacity(fixed ? 0.55 : 1)
         .accessibilityLabel("Watcher’s permissions")
         .accessibilityValue(WatcherPermissions.name(mode))
         .accessibilityHint(fixed ? WatcherPermissions.fixedHint : String(localized: "Opens what Watcher may do without asking"))
-        .opacity(fixed ? 0.55 : 1)
         .accessibilityIdentifier("watcher-permissions")
     }
 
-    @ViewBuilder private func captionText(_ caption: String?) -> some View {
-        if let caption {
-            Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                .paragraphDirection()
-                .accessibilityIdentifier("watcher-permissions-in-force")
+    /// New Watcher (as the desktop's chip), the sheet's last row: a new Watcher at once on this one's model, effort,
+    /// speed and permissions, with a handover of this one offered over its box. Unavailable, it says why under it.
+    @ViewBuilder private var newWatcherRow: some View {
+        let why = model.newWatcherUnavailable(hostID)
+        Button { open = false; starts += 1; Task { await model.startNewWatcher(hostID) } } label: {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "square.and.pencil").font(.system(size: 14, weight: .semibold)).frame(width: 16).accessibilityHidden(true)
+                Text("New Watcher")
+                Spacer(minLength: 0)
+            }
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, Space.s3)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
         }
-    }
-
-    /// Beside the chip while Watcher works; the chip's hint says when it can change.
-    @ViewBuilder private func fixedText(_ shown: Bool) -> some View {
-        if shown {
-            Text(WatcherPermissions.fixed).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                .paragraphDirection()
-                .accessibilityIdentifier("watcher-permissions-fixed")
+        .buttonStyle(PressStyle())
+        .disabled(why != nil)
+        .opacity(why != nil ? 0.5 : 1)
+        if let why {
+            Text(why).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Space.s3 + 16 + Space.s2)
+                .padding(.bottom, Space.s3)
         }
     }
 }
 
+// MARK: - What Watcher may do without asking (control A)
+
 /// The four modes, each with what Watcher does under it, the chosen one ticked; then what stays true in every mode. An
-/// iPhone without Can answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
+/// iPhone that can't answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
 private struct WatcherPermissionSheet: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -1773,6 +1978,7 @@ private struct WatcherPermissionSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
     }
 
@@ -2170,6 +2376,7 @@ private struct WatchPicker: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
     }
     private func pickRow(_ row: HostedThread) -> some View {

@@ -10,12 +10,11 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
 import { PhoneAccess, type PhoneAccessTailscale } from '../../src/main/phones/phoneAccess'
-import { rawPeer } from '../fixtures/rawHostPeer'
 import { serveTarget } from '../../src/main/phones/tailscale'
 
 /**
  * The desktop's phone listener over a real host service and the real socket server: what a phone sees
- * at health, pairing through a code the Phones page showed, Can answer, and Remove. Tailscale is a
+ * at health, pairing through a code the Phones page showed, which lets the phone answer, and Remove. Tailscale is a
  * stand-in; the listener is reached on its loopback port, which is what Serve proxies to.
  */
 let root: string
@@ -65,8 +64,8 @@ it('answers health with the name phones show, and has no administrative routes',
 it('pairs a phone with the code shown, closes the code, and lists the phone as connected', async () => {
   const { client, paired } = await pairPhone()
   expect(access.get().code).toBeNull()
-  expect((await client.connect()).capabilities.mayAnswer).toBe(false)
-  expect(access.get().phones).toEqual([expect.objectContaining({ clientId: paired.clientId, name: 'Zach’s iPhone', connected: true, canAnswer: false })])
+  expect((await client.connect()).capabilities.mayAnswer).toBe(true)
+  expect(access.get().phones).toEqual([expect.objectContaining({ clientId: paired.clientId, name: 'Zach’s iPhone', connected: true, canAnswer: true })])
   // A code works once.
   const spent = await fetch(await url() + '/v1/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: 'AAAAAAAA', name: 'Other' }) })
   expect(spent.status).toBe(401)
@@ -82,23 +81,31 @@ it('refuses a code the owner cancelled or replaced', async () => {
   expect(access.get().phones).toEqual([])
 })
 
-it('lets a phone answer only once the owner turns on Can answer, which writes the policy record', async () => {
+it('lets a phone answer from its pairing, which writes the policy record', async () => {
   const { client, paired } = await pairPhone()
-  await client.connect()
-  await access.command({ type: 'set-can-answer', clientId: paired.clientId, allowed: true })
-  expect(access.get().phones[0]).toMatchObject({ canAnswer: true })
-  expect(new PolicyStore(memory).list({ scope: `client:${paired.clientId}` })).toEqual([expect.objectContaining({ action: 'remote-answer', resource: paired.clientId, source: 'user' })])
+  expect(new PolicyStore(memory).list({ scope: `client:${paired.clientId}` })).toEqual([expect.objectContaining({ action: 'remote-answer', resource: paired.clientId, source: 'user', effect: 'allow' })])
   expect((await client.connect()).capabilities.mayAnswer).toBe(true)
-  await access.command({ type: 'set-can-answer', clientId: paired.clientId, allowed: false })
-  expect((await client.connect()).capabilities.mayAnswer).toBe(false)
-  expect(new PolicyStore(memory).list({ scope: `client:${paired.clientId}` }).filter(record => record.action === 'remote-answer')).toEqual([])
+})
+
+it('gives a phone paired with Can answer off its answers at the next start, and writes nothing for one already answering', async () => {
+  const policy = new PolicyStore(memory)
+  const off = await pairPhone('Off phone'), on = await pairPhone('On phone')
+  // How a phone was left when Can answer was a switch and the owner turned it off.
+  policy.setRemoteAnswers(off.paired.clientId, false, 'The user turned off Can answer.')
+  expect((await off.client.connect()).capabilities.mayAnswer).toBe(false)
+  await access.close()
+  access = new PhoneAccess({ directory: join(root, 'desktop'), service: host.service, tailscale, settings: () => settings, policy, openExternal: async () => undefined })
+  await access.start()
+  expect(access.get().phones).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Off phone', canAnswer: true }), expect.objectContaining({ name: 'On phone', canAnswer: true })]))
+  const reconnected = new SocketHostService({ url: await url(), token: off.paired.token, expectedHostId: off.paired.hostId }); clients.push(reconnected)
+  expect((await reconnected.connect()).capabilities.mayAnswer).toBe(true)
+  expect(policy.list({ scope: `client:${on.paired.clientId}` }).filter(record => record.action === 'remote-answer')).toHaveLength(1)
 })
 
 it('removes a phone: its pairing ends and its connection closes at once', async () => {
   const changes: boolean[] = []
   const { client, paired } = await pairPhone('Zach’s iPhone', connected => changes.push(connected))
   await client.connect()
-  await access.command({ type: 'set-can-answer', clientId: paired.clientId, allowed: true })
   await access.command({ type: 'remove', clientId: paired.clientId })
   expect(access.get().phones).toEqual([])
   await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
@@ -145,28 +152,4 @@ it.each(['turn-off', 'quit'])('disconnects phones and reserves the port while %s
     await new Promise<void>(resolve => rebound.listen(port, '127.0.0.1', resolve))
     await new Promise<void>(resolve => rebound.close(() => resolve()))
   } finally { status.mockRestore(); remove.mockRestore() }
-})
-
-it('pushes Can answer changes to each connected phone without reconnecting', async () => {
-  const phones = [await pairPhone('First phone'), await pairPhone('Second phone')]
-  const base = await url()
-  const peers = await Promise.all(phones.map(async ({ paired }) => {
-    const session = await (await fetch(base + '/v1/session', { method: 'POST', headers: { Authorization: 'Bearer ' + paired.token } })).json() as { session: string }
-    return rawPeer(Number(new URL(base).port), session.session)
-  }))
-  try {
-    for (const peer of peers) expect(await peer.call('hello', { op: 'hello' })).toMatchObject({ ok: true, result: { capabilities: { mayAnswer: false } } })
-    for (const peer of peers) peer.messages.length = 0
-    await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: true })
-    await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: true } } })
-    // The second phone's shell did not change. It is pushed one only if it was still owed its first after hello, since
-    // the host skips a shell the phone already has (#1303). Either way it is never told it may answer. The answer to a
-    // read made now comes behind anything that publish wrote to it, so what it holds then is all it was sent.
-    expect(await peers[1]!.call('after-publish', { op: 'events', afterSeq: 0, threadId: 'no-such-thread' })).toMatchObject({ id: 'after-publish' })
-    for (const message of peers[1]!.messages) if (message.event === 'shell') expect(message).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
-    for (const peer of peers) peer.messages.length = 0
-    await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: false })
-    await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
-    expect(access.get().phones.every(phone => phone.connected)).toBe(true)
-  } finally { for (const peer of peers) peer.frames.close() }
 })

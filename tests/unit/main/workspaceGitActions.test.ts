@@ -69,7 +69,7 @@ describe("durable project/thread organization", () => {
     await started.promise
     // Mid-pull, the other thread in the same folder presses Commit & push: refused, not run beside the pull, and told
     // what holds the folder, since the automatic pull shows nothing on screen.
-    await expect(f.host.runGitAction({ threadId: 'second', actionId: 'press', action: 'commit_push' })).rejects.toThrow('Sotto is pulling this folder. Try again in a moment.')
+    await expect(f.host.runGitAction({ threadId: 'second', actionId: 'press', action: 'commit_push' })).rejects.toThrow('Sotto is pulling this folder. Nothing was changed. Try again in a moment.')
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.gitAction).toBeUndefined()
     expect(run.mock.calls.filter(call => call[2][0] === 'commit')).toHaveLength(0)
     pulling.resolve()

@@ -73,7 +73,7 @@ it('leaves caret keys in a preview row rename field to the field', () => {
   const { folder } = mount()
   fireEvent.pointerOver(folder, { pointerType: 'mouse' })
   advance(350)
-  fireEvent.click(screen.getByRole('button', { name: 'Rename Visual gate flake' }))
+  fireEvent.doubleClick(screen.getByText('Visual gate flake', { selector: '.thread-nav__title' }))
   const field = screen.getByRole('textbox')
   expect(field).toHaveFocus()
   expect(fireEvent.keyDown(field, { key: 'Home' })).toBe(true)

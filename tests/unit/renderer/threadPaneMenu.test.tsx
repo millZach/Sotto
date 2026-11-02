@@ -48,14 +48,14 @@ describe('the pane header’s More menu', () => {
   it('lists what the beta offers, in groups, with nothing about the hidden voice coordinator', () => {
     const view = mount()
     const menu = openPaneMenu(view.head())
-    expect(paneMenuItems(menu)).toEqual(['Rename', 'Regenerate title', 'Open beside', 'Compact context', 'Settle'])
-    // Three groups: naming the thread, its context, and where it rests.
-    expect(menu.querySelectorAll('hr')).toHaveLength(2)
+    expect(paneMenuItems(menu)).toEqual(['Open beside', 'Rename', 'Compact context', 'Settle'])
+    // Four groups: the layout (ADR-0163), naming the thread, its context, and where it rests.
+    expect(menu.querySelectorAll('hr')).toHaveLength(3)
   })
 
   it('leaves Open beside out where the caller has nowhere to put a second pane', () => {
     const view = mount({ beside: false })
-    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Rename', 'Regenerate title', 'Compact context', 'Settle'])
+    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Rename', 'Compact context', 'Settle'])
   })
 
   it('runs the item chosen and closes, and closes on Escape or a pointer outside without running anything', () => {
@@ -161,7 +161,7 @@ describe('the manual composer', () => {
     expect(view.requests()).toContainEqual({ type: 'configure-thread-working-copy', threadId: THREAD, workingCopy: 'shared' })
   })
 
-  it('keeps the full toolbar under an answer even when the quiet pill is enabled', () => {
+  it('draws Zach\'s composer under an answer too, with the branch controls in the pane header', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     const thread = state.host.threads.find(item => item.id === THREAD)!
@@ -171,12 +171,11 @@ describe('the manual composer', () => {
     thread.status = 'running'
     const view = mount({ state })
     const toolbar = screen.getByRole('group', { name: 'Branch toolbar' })
-    expect(document.querySelector('.thread-prompt')).not.toHaveAttribute('data-quiet')
-    expect(view.head()).not.toContainElement(toolbar)
-    expect(document.querySelector('.thread-workspace__compose')).toContainElement(toolbar)
+    expect(document.querySelector('.thread-prompt')).toHaveAttribute('data-quiet')
+    expect(view.head()).toContainElement(toolbar)
   })
 
-  it('keeps quiet Stop after the split chip and before the round Send, with the shield at the start of the pill', () => {
+  it('draws Zach\'s composer: the prompt above, permissions before the model, and the disc as Stop while a turn runs with nothing typed', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     state.host.capabilities.configureThread = true
@@ -185,14 +184,18 @@ describe('the manual composer', () => {
     thread.requests = []
     state.host.models.find(model => model.id === thread.modelId)!.runtimeModes = ['approval-required', 'full-access']
     mount({ state })
+    const form = document.querySelector('form.thread-prompt')!
+    expect(form.querySelector('.thread-prompt__lead')).toBeNull()
     const shield = screen.getByRole('combobox', { name: 'Thread permissions' })
+    const model = form.querySelector('.model-picker__trigger')!
+    // In the footer, in the order the eye and Tab take them: permissions, the model, then the disc.
+    expect(shield.closest('.thread-prompt__shield')).not.toBeNull()
+    expect(shield.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const actions = form.querySelector('.thread-prompt__actions')!
+    expect([...actions.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Stop agent'])
     const stop = screen.getByRole('button', { name: 'Stop agent' })
-    const send = screen.getByRole('button', { name: 'Queue prompt' })
-    expect(shield.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(stop.parentElement).toHaveClass('thread-prompt__actions')
-    expect(send).toHaveClass('thread-prompt__disc')
-    // The shield stands at the pill's start, after attach (ADR-0161).
-    expect(shield.closest('.thread-prompt__lead')).not.toBeNull()
+    expect(stop).toHaveClass('thread-prompt__disc')
+    expect(stop).toHaveAttribute('data-face', 'stop')
+    expect(screen.queryByRole('button', { name: 'Queue prompt' })).toBeNull()
   })
 })

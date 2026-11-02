@@ -9,14 +9,17 @@ import { z } from 'zod'
 import { RequestAnswerCheckRefusal, type HostService, type ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
-import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
+import { ModelCatalogRevisions, ThreadRecordsBroadcast, type ThreadRecordsSeed } from '../main/agents/agentStateBroadcast'
+import { shareProviderModes } from './providerModeLists'
+import { usableModels, usableVariant } from './usableModels'
+import { heldBackSettled, settledPage } from './heldBackSettled'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
-import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
+import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
+import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -31,13 +34,15 @@ import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
-import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
+import { hostAdminPhonesCommandSchema, type HostAdminPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import { HttpBudgets } from './httpBudgets'
 import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
+import type { WatcherPhoneCurrent, WatcherPhoneOpen, WatcherPhoneState } from '../shared/watcherPhone'
+import type { WatcherSetPermissionRequest, WatcherWatchThreadRequest } from '../shared/watcherRoom'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
 import { delegationBriefSchema, delegationsReadSchema, stateWithoutDelegation, DELEGATIONS_CHANGED_MAX } from '../shared/delegation'
@@ -47,9 +52,12 @@ import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 import type { HostBranchMoves } from './branchMoves'
 import type { HostThreadMoves } from '../main/agents/threadMovesHost'
 
+/** Watcher's box on a phone (October 31, 2026): each of its operations and the change it asks of the phone service. */
+const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new', 'watcher-phone-stop-turn': 'stop-turn',
+  'watcher-phone-dismiss-handover': 'dismiss-handover' } as const
 /** The HTTP listener's request bodies, checked against schemas built once rather than on every request. */
 const adminPhonesRequest = z.object({}).strict()
-const adminPhonesCommandRequest = z.object({ command: hostPhonesCommandSchema }).strict()
+const adminPhonesCommandRequest = z.object({ command: hostAdminPhonesCommandSchema }).strict()
 const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict()
 const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
 const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
@@ -115,7 +123,25 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+  /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
+  threadRecords?: ThreadRecordsBroadcast | undefined
+  /**
+   * Whether its hello accepted `reply-thread-records` beside `changed-thread-records`: the records a hello or a `shell` read
+   * lists whole are, once that answer is written, what the next shell push is measured from, and the answer names their
+   * revision, so the push after it does not list every record again.
+   */
+  replyThreadRecords?: boolean
+  /** Whether its hello accepted `provider-mode-lists`: a catalog it is sent lists each provider's modes once, not on every model. */
+  providerModeLists?: boolean
+  /**
+   * Whether its hello accepted `settled-threads-on-request`: its list leaves out settled threads (`heldBackSettled`),
+   * which it reads with `settled-threads`. `listed` is every thread its list has carried since hello, which stays in it
+   * until it connects again, so a thread settled while it watches stays where Undo can reach it.
+   */
+  settledOnRequest?: boolean; listed?: Set<string>
+  /** Whether its hello accepted `usable-models`: its catalog leaves out models that are not ready and nothing names. */
+  usableModels?: boolean }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -247,7 +273,7 @@ export interface HostPhonesAnswer { readonly state: PhonesState; readonly url?: 
 export interface HostTailnetAnswer { readonly enabled: boolean; readonly state: PhonesState; readonly error?: string | undefined }
 export interface HostPhonesAdministration {
   get(): PhonesState
-  command(command: HostPhonesCommand): Promise<HostPhonesAnswer>
+  command(command: HostAdminPhonesCommand): Promise<HostPhonesAnswer>
   /** Reads `tailnetConnections`, or sets it and waits for Serve to follow. */
   tailnet(request: { readonly enabled?: boolean | undefined }): Promise<HostTailnetAnswer>
 }
@@ -292,6 +318,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-phone-photos' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined)
     // Files for Watcher ride on its photos, where the host keeps files at all (ADR-0131, October 28 amendment).
     && (feature !== 'watcher-phone-files' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined && service.supportsFileStaging === true)
+    && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
+    && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
@@ -306,6 +334,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Watcher's stop_thread takes a check out of that queue (#1637), so it goes with the queue.
     && (feature !== 'watcher-check-stop' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
+    && (feature !== 'next-prompts' || service.supportsNextPrompts === true)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
@@ -357,6 +386,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'branch-moves' || options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Moves (#1178) on the same terms as branch moves, whose incoming ref each one starts from.
     && (feature !== 'thread-move' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
+    // Calling a move off (#1178 part 4, Keep it here) on the same terms as thread-move.
+    && (feature !== 'thread-move-keep' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Its own threads as a move's source (#1178 part 3) on the same terms, where it holds them.
     && (feature !== 'thread-move-source' || options.threadMoves?.holdsSources === true && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // The desktop relay (#1316) only where delegation runs here and the Owl answer turns on cross-machine work, for recorded desktops.
@@ -393,7 +424,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
-    .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
+    .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
     .filter(feature => feature !== 'host-delegation' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
@@ -546,7 +577,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     return made
   }
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
-  const shell = (peer: Peer, read: AgentState = service.shell()) => {
+  /** `whole` is set only by a `settled-threads` read, which pages through the threads a phone's list leaves out. */
+  const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
     const visible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original), false) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
@@ -574,7 +606,36 @@ export async function startSocketServer(options: SocketServerOptions) {
       : { ...projected, clientUpdates: state.clientUpdates.map(peer.clientUpdates ? clientUpdateWithoutNotListed : clientUpdateForOlderClient) }
     // An iPhone from before ADR-0111 settles a terminal answer it was waiting on only once a complete list leaves its
     // terminal out, so a client that still accepts `terminals` reads an empty one. Nothing offers the feature.
-    return peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
+    const listed = peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
+    const kept = peer.settledOnRequest && !whole ? withoutHeldBack(peer, listed) : listed
+    return peer.usableModels ? withUsableModels(kept, read, phoneState) : kept
+  }
+  /**
+   * `state` with its catalog cut to the models a phone can use (`usable-models`): the ready ones, and any that is not but
+   * is still named by a thread, held back or not, by the new-thread default, or by Watcher now or for its next turn.
+   */
+  const withUsableModels = <State extends AgentState>(state: State, read: AgentState, page: WatcherPhoneState | undefined): State => {
+    const models = usableModels(state.host.models, namedModels(read, page))
+    return models === state.host.models ? state : { ...state, host: { ...state.host, models } }
+  }
+  function* namedModels(read: AgentState, page: WatcherPhoneState | undefined): Generator<string | undefined> {
+    for (const thread of read.host.threads) yield thread.modelId
+    yield read.configuration.newThreadModelId
+    yield page?.current?.modelId
+    yield page?.nextTurnOptions?.modelId
+  }
+  /**
+   * The threads a phone that accepted `settled-threads-on-request` is not sent with its list, by ID. It asks the phone's
+   * own sets about each thread rather than copying them, since what it has listed only grows while it stays connected.
+   */
+  const heldBack = (peer: Peer, state: AgentState): Set<string> => heldBackSettled(state.host.threads, state.host.projects,
+    id => peer.observed.has(id) || id === peer.selectedThreadId || (peer.listed?.has(id) ?? false))
+  /** `state` with its settled threads left out of its list, and how many were left out. What it lists stays listed. */
+  const withoutHeldBack = <State extends AgentState>(peer: Peer, state: State): State & { settledHeldBack: number } => {
+    const held = heldBack(peer, state), listed = peer.listed ??= new Set()
+    const threads = held.size ? state.host.threads.filter(thread => !held.has(thread.id)) : state.host.threads
+    for (const thread of threads) listed.add(thread.id)
+    return { ...state, host: { ...state.host, threads }, settledHeldBack: held.size }
   }
   /**
    * The catalog revisions this listener names to peers that accept `model-catalog-revision`. A peer that does not know a
@@ -583,8 +644,10 @@ export async function startSocketServer(options: SocketServerOptions) {
    * changes. What each peer was sent is its own.
    */
   const catalogRevisions = new Map<string, ModelCatalogRevisions>()
-  const revisionsFor = (peer: Peer): ModelCatalogRevisions => {
-    const key = [...peer.unknownProviders].sort().join(',')
+  const revisionsFor = (peer: Peer, models: readonly AgentModel[]): ModelCatalogRevisions => {
+    // A catalog cut to usable models is a variant of its own, and so is each cut by the models it keeps, so no two
+    // catalogs move one counter back and forth.
+    const key = (peer.usableModels ? `usable:${usableVariant(models) ?? ''}:` : '') + [...peer.unknownProviders].sort().join(',')
     let revisions = catalogRevisions.get(key)
     if (!revisions) catalogRevisions.set(key, revisions = new ModelCatalogRevisions())
     return revisions
@@ -596,14 +659,26 @@ export async function startSocketServer(options: SocketServerOptions) {
    * only once its frame was written, never when a too_large error went in its place.
    */
   const wireShell = (peer: Peer, state: HostClientShell): WireShell => {
-    if (!peer.catalogRevisions) return { state, carries: null }
-    const modelsRevision = revisionsFor(peer).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
+    if (!peer.catalogRevisions) return { state: withModeLists(peer, state), carries: null }
+    const modelsRevision = revisionsFor(peer, state.host.models).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
     const host: HostWireShell['host'] = { ...state.host, modelsRevision }
-    if (peer.catalogSent !== modelsRevision) return { state: { ...state, host }, carries: modelsRevision }
+    if (peer.catalogSent !== modelsRevision) return { state: withModeLists(peer, { ...state, host }), carries: modelsRevision }
     delete host.models
     return { state: { ...state, host }, carries: null }
   }
+  /** A shell whose catalog goes to a client that accepted `provider-mode-lists`, with each provider's modes listed once. */
+  const withModeLists = (peer: Peer, state: HostWireShell): HostWireShell => {
+    if (!peer.providerModeLists || !state.host.models) return state
+    const { models, providerModeLists } = shareProviderModes(state.host.models)
+    return providerModeLists.length ? { ...state, host: { ...state.host, models, providerModeLists } } : state
+  }
   const recordCatalog = (peer: Peer, shell: WireShell): void => { if (shell.carries !== null) peer.catalogSent = shell.carries }
+  /** The records `shell` lists whole, to become the base of the next push once the answer carrying them is written. */
+  const seedRecords = (peer: Peer, shell: HostClientShell): ThreadRecordsSeed | undefined =>
+    peer.replyThreadRecords ? peer.threadRecords?.seed(shell.host.threads) : undefined
+  /** `wire` naming the revision its records are held under, when they were seeded. */
+  const withSeededRecords = (wire: WireShell, seed: ThreadRecordsSeed | undefined): WireShell =>
+    seed ? { ...wire, state: { ...wire.state, threadRecordsRevision: seed.revision } } : wire
   /**
    * A shell's state as it is written, and the digests that say whether it repeats the last one pushed. Watcher's page on a
    * phone's shell says when it was read (`observedAt`), a new time on every read, so with it no phone's shell ever
@@ -755,26 +830,32 @@ export async function startSocketServer(options: SocketServerOptions) {
       const projection = watcherFor(peer, service.watcherProjection(scope, peer.client))
       if (watcherRevisions.get(peer) !== projection.revision && push(peer, { v: 1, event: 'watcher-state', projection })) watcherRevisions.set(peer, projection.revision)
     }
-    const wire = wireShell(peer, shell(peer, read?.())), state = wire.state, eventPage = events(peer, peer.afterSeq)
+    const wire = wireShell(peer, shell(peer, read?.())), eventPage = events(peer, peer.afterSeq)
+    // To a client that accepted `changed-thread-records`, the thread records that changed since its last shell push go
+    // beside a state whose own list is empty (#996); they become what it holds once the frame is written.
+    const records = peer.threadRecords?.encode(wire.state.host.threads)
+    const state = records ? { ...wire.state, host: { ...wire.state.host, threads: [] } } : wire.state
+    const threadNews = records !== undefined && (records.payload.base === null || records.payload.changed.length > 0 || records.payload.removed !== undefined || records.payload.order !== undefined)
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
     const { text: stateText, digest, withoutConversation } = shellText(state)
-    const full = '{"v":1,"event":"shell","state":' + stateText + ',"eventPage":' + JSON.stringify(eventPage) + '}'
+    const full = '{"v":1,"event":"shell","state":' + stateText + (records ? ',"threads":' + JSON.stringify(records.payload) : '') + ',"eventPage":' + JSON.stringify(eventPage) + '}'
+    // A written push moves the client past its events, and what it carried is what the client now holds.
+    const written = (): void => { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire); records?.commit() }
     if (fits(full)) {
       // A shell whose state is byte for byte the last one this client was pushed, with no events to bring, would only
       // cost the link its bytes again. It is not written; the cursor still moves past what the page left out for this
       // client, so those events are not read again on every publish. The catalog it would have carried is the one that
       // shell carried.
       const noEvents = eventPage.events.length === 0 && !eventPage.hasMore, last = lastShell.get(peer), now = writingClock()
-      if (digest === peer.shellSent && noEvents) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
+      if (digest === peer.shellSent && noEvents && !threadNews) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
       // One whose only news is Watcher's conversation waits out its window, and is read again when the window closes.
-      else if (noEvents && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + WATCHER_WRITING_WINDOW_MS) holdWriting(peer, last.at + WATCHER_WRITING_WINDOW_MS)
+      else if (noEvents && !threadNews && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + WATCHER_WRITING_WINDOW_MS) holdWriting(peer, last.at + WATCHER_WRITING_WINDOW_MS)
       else {
-        peer.frames.sendText(full); peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer)
-        peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire)
+        peer.frames.sendText(full); peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer); written()
       }
     } else {
       peer.shellSent = null
-      if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true } })) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
+      if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true }, ...records ? { threads: records.payload } : {} })) written()
     }
     if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
   }
@@ -921,6 +1002,18 @@ export async function startSocketServer(options: SocketServerOptions) {
       ? { id: entry.id, ...entry.whose ? { whose: entry.whose } : {} } : entry)
     push(peer, { v: 1, event: 'check-queue', checks: shown })
   }
+  /**
+   * The next prompts this host holds (ADR-0173), pushed whole to a desktop that accepted `next-prompts` once it says it
+   * wants them, and each change after that. A thread this peer is not sent is not named to it.
+   */
+  const pushNextPrompts = (peer: Peer): void => {
+    if (!peer.nextPrompts?.wanted || peer.frames.isClosed) return
+    push(peer, { v: 1, event: 'next-prompts', entries: (service.nextPrompts?.() ?? []).filter(entry => !hiddenThread(peer, entry.threadId)) })
+  }
+  const unsubscribeNextPrompts = service.subscribeNextPrompts?.(entry => {
+    if (closing) return
+    for (const peer of peers) if (peer.ready && peer.nextPrompts?.wanted && !peer.frames.isClosed && !hiddenThread(peer, entry.threadId)) push(peer, { v: 1, event: 'next-prompt', entry })
+  })
   const unsubscribeChecks = service.subscribeCheckQueue?.(() => {
     if (closing) return
     for (const peer of peers) if (peer.ready && peer.checkQueueViews) pushChecks(peer)
@@ -1003,6 +1096,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     }
     const receipt: HostReceipt = { status: 'pending' }
     let privateError: string | null | undefined
+    // A Git command refused because the folder is held says what holds it (#1823), on this reply alone.
+    let checkoutHold: AgentState['checkoutHold']
     const task = (async () => {
       try {
         if (input.type === 'select-thread') {
@@ -1024,6 +1119,7 @@ export async function startSocketServer(options: SocketServerOptions) {
             }) : await service.command(input, client, answerDecisionId(peer.client.clientId, request.id))
             : await service.command(dispatched, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
+          if (result.checkoutHold) checkoutHold = result.checkoutHold
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
           // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is.
           if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
@@ -1037,7 +1133,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     })()
     if (recorded) receipts.record(peer.client.clientId, request.id, { digest, receipt, task } satisfies CommandReceipt)
     await task
-    return privateError === undefined ? shell(peer) : { ...shell(peer), error: privateError }
+    const answer = privateError === undefined ? shell(peer) : { ...shell(peer), error: privateError }
+    return checkoutHold === undefined ? answer : { ...answer, checkoutHold }
   }
   /** A tool read that failed outright is the host's failure to read; what it answered, a refusal included, goes as it is. */
   const toolRead = async <T>(read: () => Promise<T>): Promise<T> => {
@@ -1106,8 +1203,15 @@ export async function startSocketServer(options: SocketServerOptions) {
       const answer = await (async () => { switch (request.op) {
         case 'watcher-phone-set-permission':
         case 'watcher-phone-watch':
-        case 'watcher-phone-unwatch': {
+        case 'watcher-phone-unwatch':
+        case 'watcher-phone-open':
+        case 'watcher-phone-new':
+        case 'watcher-phone-stop-turn':
+        case 'watcher-phone-dismiss-handover': {
           if (!peer.watcherPhoneManage || !offers(peer, 'watcher-phone-manage')) throw new Refusal('invalid_request')
+          // Watcher's box (October 31, 2026), only from a phone that negotiated it.
+          const composing = request.op in COMPOSER_OPS ? COMPOSER_OPS[request.op as keyof typeof COMPOSER_OPS] : undefined
+          if (composing && (!peer.watcherPhoneComposer || !offers(peer, 'watcher-phone-composer'))) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
           if (previous) {
@@ -1121,8 +1225,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const action = request.op === 'watcher-phone-set-permission' ? 'permission' : request.op === 'watcher-phone-watch' ? 'watch' : 'unwatch'
-          const task = phone.manage(action, request.request, peer.client, guard, mayAnswer, steer).then(result => {
+          const task = (composing ? phone.compose(composing, request.request as WatcherPhoneOpen | WatcherPhoneCurrent, peer.client, guard, mayAnswer, steer)
+            : phone.manage(request.op === 'watcher-phone-set-permission' ? 'permission' : request.op === 'watcher-phone-watch' ? 'watch' : 'unwatch',
+              request.request as WatcherSetPermissionRequest | WatcherWatchThreadRequest, peer.client, guard, mayAnswer, steer)).then(result => {
             receipt.watcherManage = result.status === 'refused' ? result : { status: 'ok' }
             receipt.status = 'completed'
             return result
@@ -1174,6 +1279,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           // Only a phone that negotiated steering may ask for a steer; an older phone's send is unchanged (#1229).
           if (request.request.delivery !== undefined && (!steer || !offers(peer, 'watcher-phone-steer'))) throw new Refusal('invalid_request')
           if (request.request.images !== undefined && !offers(peer, 'watcher-phone-photos')) throw new Refusal('invalid_request')
+          if (request.request.handover !== undefined && (!peer.watcherPhoneComposer || !offers(peer, 'watcher-phone-composer'))) throw new Refusal('invalid_request')
           if (request.request.images?.some(handle => !isImageAttachment(handle.mimeType)) && !offers(peer, 'watcher-phone-files')) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
@@ -1249,6 +1355,13 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.clientUpdates = (request.accepts?.includes('client-updates') ?? false) && offers(peer, 'client-updates')
         peer.clientUpdateNotListed = peer.clientUpdates && (request.accepts?.includes('client-update-not-listed') ?? false) && offers(peer, 'client-update-not-listed')
         peer.catalogRevisions = request.accepts?.includes('model-catalog-revision') ?? false
+        // Shell pushes carry only the thread records that changed since the last one, measured from a fresh start (#996).
+        peer.threadRecords = (request.accepts?.includes('changed-thread-records') ?? false) && offers(peer, 'changed-thread-records') ? new ThreadRecordsBroadcast() : undefined
+        // The records this answer lists whole become the base the first push is measured from (ADR-0028, November 1 amendment).
+        peer.replyThreadRecords = peer.threadRecords !== undefined && (request.accepts?.includes('reply-thread-records') ?? false) && offers(peer, 'reply-thread-records')
+        peer.providerModeLists = (request.accepts?.includes('provider-mode-lists') ?? false) && offers(peer, 'provider-mode-lists')
+        peer.settledOnRequest = (request.accepts?.includes('settled-threads-on-request') ?? false) && offers(peer, 'settled-threads-on-request')
+        peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
@@ -1257,6 +1370,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.watcherPhoneManage = peer.watcherPhone && (request.accepts?.includes('watcher-phone-manage') ?? false) && offers(peer, 'watcher-phone-manage')
         peer.watcherPhoneSteer = peer.watcherPhone && (request.accepts?.includes('watcher-phone-steer') ?? false) && offers(peer, 'watcher-phone-steer')
         peer.watcherPhoneMachines = peer.watcherPhone && (request.accepts?.includes('watcher-phone-machines') ?? false) && offers(peer, 'watcher-phone-machines')
+        // Watcher's box keeps its changes' outcomes under management's receipts, so it rides with management.
+        peer.watcherPhoneComposer = peer.watcherPhoneManage && (request.accepts?.includes('watcher-phone-composer') ?? false) && offers(peer, 'watcher-phone-composer')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
         peer.retiredTerminals = request.accepts?.includes('terminals') ?? false
@@ -1264,6 +1379,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
         peer.delegationViews = (request.accepts?.includes('delegation-views') ?? false) && offers(peer, 'delegation-views')
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
+        // Accepted here; pushed only once the desktop says it wants them, so a desktop with its switch off costs no side call.
+        peer.nextPrompts = (request.accepts?.includes('next-prompts') ?? false) && offers(peer, 'next-prompts') ? { wanted: peer.nextPrompts?.wanted ?? false } : undefined
         // A desktop that relays this host's delegations to other machines (#1316): asks go to it from now on.
         if ((request.accepts?.includes('delegation-relay') ?? false) && offers(peer, 'delegation-relay') && options.delegationRelay) {
           const relayPeer = peer
@@ -1294,7 +1411,15 @@ export async function startSocketServer(options: SocketServerOptions) {
         return { hostId, clientId: peer.client.clientId, shell: shell(peer), capabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false }, sottoVersion, features: featuresFor(peer),
           ...about(), ...(phoneAccess ? { phoneAccess } : {}), ...events(peer, peer.afterSeq) }
       }
-      case 'shell': return shell(peer)
+      // A client reading the shell whole holds its threads afresh, so the next push lists every record (#996).
+      // One that accepted `reply-thread-records` holds this answer's records instead, once it is written (`onMessage`).
+      case 'shell': if (!peer.replyThreadRecords) peer.threadRecords?.reset(); return shell(peer)
+      case 'settled-threads': {
+        if (!peer.settledOnRequest) throw new Refusal('invalid_request')
+        // The phone's own form of every thread, of which those its list leaves out are read a page at a time.
+        const whole = shell(peer, service.shell(), true), held = heldBack(peer, whole)
+        return settledPage(whole.host.threads.filter(thread => held.has(thread.id)), whole.host.projects, request) satisfies HostSettledThreadsPage
+      }
       case 'detail': return forPeer(peer, service.threadDetail(request.threadId))
       case 'activity-body': {
         // One record whole, for the row a desktop opened (ADR-0025, October 18 amendment); a hidden thread was refused above.
@@ -1453,6 +1578,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         const brief = await toolRead(() => service.delegationBrief!(request.threadId))
         try { return delegationBriefSchema.parse(brief) } catch { throw new Refusal('unavailable') }
       }
+      case 'next-prompts-wanted': {
+        // The desktop's own switch (ADR-0173): while no connected desktop wants them, this host asks its providers nothing.
+        if (!peer.nextPrompts) throw new Refusal('invalid_request')
+        peer.nextPrompts.wanted = request.wanted
+        return { wanted: request.wanted }
+      }
       case 'desktop-defaults': {
         // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
         // as sent is this host's `remote-answer` policy for that desktop, read at every delegated start.
@@ -1517,7 +1648,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         await options.watcherDesktops?.refresh().catch(() => undefined)
         const { threadMoves } = options
         if (!threadMoves || !offers(peer, 'thread-move') || !peer.ready) throw new Refusal('invalid_request')
-        if (request.request.action !== 'start' && !offers(peer, 'thread-move-source')) throw new Refusal('invalid_request')
+        if (request.request.action === 'keep' ? !offers(peer, 'thread-move-keep') : request.request.action !== 'start' && !offers(peer, 'thread-move-source')) throw new Refusal('invalid_request')
         try { return await threadMoves.handle(request.request, peer.client) } catch { throw new Refusal('unavailable') }
       }
       case 'usage-read':
@@ -1592,6 +1723,18 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.attachmentPreview?.(request.request) ?? null } finally { peer.preview = false }
+      // A picture an activity record names (ADR-0170), on the same one-at-a-time guard as a preview: one large frame a socket.
+      case 'thread-media':
+        if (!offers(peer, 'thread-media') || !service.threadMedia) throw new Refusal('invalid_request')
+        if (peer.preview) throw new Refusal('busy')
+        peer.preview = true
+        try { return await service.threadMedia(request.request) } finally { peer.preview = false }
+      // A part of a video an activity record names (ADR-0170, part 4), on the same guard: one large frame a socket.
+      case 'thread-media-part':
+        if (!offers(peer, 'thread-media-video') || !service.threadMediaPart) throw new Refusal('invalid_request')
+        if (peer.preview) throw new Refusal('busy')
+        peer.preview = true
+        try { return await service.threadMediaPart(request.request) } finally { peer.preview = false }
       // A part of a sent file, on the socket's one-at-a-time guard as a preview is, and one at a time for the paired client
       // across all its sockets (ADR-0131, October 25 amendment).
       case 'attachment-file': {
@@ -1636,13 +1779,17 @@ export async function startSocketServer(options: SocketServerOptions) {
       // The shell a hello, a shell read or a command answers with is encoded for this peer only here, just before it
       // is written, so what this connection was sent of the model catalog follows the order its frames go out in.
       let carried: WireShell | null = null
+      // The records a hello or a shell read lists whole, which the next push is measured from once the answer is written.
+      let seeded: ThreadRecordsSeed | undefined
       try {
         let result = await dispatch(peer, request)
         if (request.op === 'hello') {
           // Hello starts the client's picture afresh, so it carries the catalog whole whatever this connection was sent before.
           const hello = result as { shell: HostClientShell }
-          peer.catalogSent = null; carried = wireShell(peer, hello.shell); result = { ...hello, shell: carried.state }
-        } else if (request.op === 'shell' || request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = carried.state }
+          peer.catalogSent = null; carried = withSeededRecords(wireShell(peer, hello.shell), seeded = seedRecords(peer, hello.shell)); result = { ...hello, shell: carried.state }
+        } else if (request.op === 'shell') {
+          carried = withSeededRecords(wireShell(peer, result as HostClientShell), seeded = seedRecords(peer, result as HostClientShell)); result = carried.state
+        } else if (request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = carried.state }
         response = { v: 1, id: request.id, ok: true, result }
       }
       catch (error) {
@@ -1655,8 +1802,9 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
+      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
         if (carried) recordCatalog(peer, carried)
+        seeded?.commit()
         if (!response.ok) return
         if (request.op === 'detail') {
           // A thread read whole is held at that revision, and the deltas that follow it apply.
@@ -1668,6 +1816,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (request.op === 'hello' && peer.checkQueueViews) pushChecks(peer)
           const latestSeq = (response.result as { latestSeq: number }).latestSeq
           peer.afterSeq = peer.afterSeq === Number.MAX_SAFE_INTEGER ? latestSeq : Math.max(peer.afterSeq, latestSeq)
+        } else if (request.op === 'next-prompts-wanted') {
+          // Every next prompt held now follows the answer that turned them on; each change follows it.
+          pushNextPrompts(peer)
         }
       }
       // A restart that went ahead waits for its own answer to be on the way before it stops this host (ADR-0088), whether or
@@ -1786,7 +1937,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
@@ -1823,7 +1974,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')
@@ -1844,10 +1995,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     stopServing,
     /** How many paired clients hold an open socket: the host's measure of a window being in front. */
     peers: (): number => peers.size,
+    /** Whether a connected desktop wants this host's next prompts now (ADR-0173): until one does, no provider is asked for them. */
+    nextPromptsWanted: (): boolean => [...peers].some(peer => peer.ready && peer.nextPrompts?.wanted === true && !peer.frames.isClosed),
     /** The paired clients holding an open socket now, each once. */
     connectedClients: (): string[] => [...new Set([...peers].map(peer => peer.client.clientId))],
-    /** A changed policy is reflected in every client's own next shell without reopening its session. */
-    refreshCapabilities: (): void => { shellPublisher.publish(service.shell()) },
     /**
      * Closes at once every socket whose client is no longer paired, after a revocation made outside this listener, and
      * every phone's while phones are not admitted, after phone access turned off with the listener staying up.
