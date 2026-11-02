@@ -2330,10 +2330,14 @@ struct RailAsk: Equatable {
         var failed = false
         for hostID in settledSources(show: show) {
             guard let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
             do {
                 let page = try await connection.call(Wire.settledThreads(query: words), as: SettledThreadsPage.self)
-                found[hostID] = page.threads
-                if let after = page.next { next[hostID] = after }
+                // A page read over a connection that has since been replaced is left out, as the shelf leaves one out.
+                if generations[hostID] == epoch {
+                    found[hostID] = page.threads
+                    if let after = page.next { next[hostID] = after }
+                }
             } catch { failed = true }
             guard settledSearch.query == words else { return }
         }
@@ -2348,11 +2352,15 @@ struct RailAsk: Equatable {
         var failed = false
         for (hostID, after) in current.next {
             guard let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
             do {
                 let page = try await connection.call(Wire.settledThreads(after: after, query: current.query), as: SettledThreadsPage.self)
-                let held = Set((found[hostID] ?? []).map(\.id))
-                found[hostID, default: []] += page.threads.filter { !held.contains($0.id) }
-                if let more = page.next { next[hostID] = more }
+                // A page read over a replaced connection is left out, and the search can read on from where it was.
+                if generations[hostID] == epoch {
+                    let held = Set((found[hostID] ?? []).map(\.id))
+                    found[hostID, default: []] += page.threads.filter { !held.contains($0.id) }
+                    if let more = page.next { next[hostID] = more }
+                } else { next[hostID] = after }
             } catch { failed = true; next[hostID] = after }
             guard settledSearch.query == current.query else { return }
         }
