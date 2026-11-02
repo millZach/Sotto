@@ -297,6 +297,9 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+        # DIAGNOSTIC, never to merge (#2035): build the tree that failed, not a merge with today's main.
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
       # so a path a test builds from os.tmpdir() never equals the real path the

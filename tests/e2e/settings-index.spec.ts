@@ -180,7 +180,34 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await mkdir(join(projectsDirectory, 'inner'), { recursive: true })
     await page.evaluate(async path => { await window.sotto!.agents!.command({ type: 'configure', patch: { projectsDirectory: path } }) }, join(projectsDirectory, 'inner'))
     const projects = page.getByRole('button', { name: 'Change the default projects directory on this computer', exact: true })
-    await projects.click()
+    // DIAGNOSTIC, never to merge (#2035): when this click hangs, says whether main and the renderer still answer.
+    await page.evaluate(() => {
+      const seen: string[] = []
+      ;(window as unknown as { diagSeen: string[] }).diagSeen = seen
+      for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) document.addEventListener(type, () => { seen.push(type) }, true)
+    })
+    try {
+      await projects.click(process.env.SOTTO_DIAG_FORCE ? { timeout: 1 } : {})
+    } catch (error: unknown) {
+      const within = async (work: Promise<unknown>): Promise<unknown> => Promise.race([
+        work.then(answer => ({ answer }), (failed: unknown) => ({ threw: String(failed).slice(0, 300) })),
+        new Promise(resolve => { setTimeout(() => resolve('no answer in 10 s'), 10_000) }),
+      ])
+      const startedAt = Date.now()
+      const main = await within(launched.app.evaluate(async ({ BrowserWindow }) => Promise.all(BrowserWindow.getAllWindows().map(async window => ({
+        visible: window.isVisible(), focused: window.isFocused(), crashed: window.webContents.isCrashed(), loading: window.webContents.isLoading(),
+        png: (await window.webContents.capturePage()).toPNG().toString('base64'),
+      })))))
+      const mainTook = Date.now() - startedAt
+      const renderer = await within(page.evaluate(() => ({ seen: (window as unknown as { diagSeen: string[] }).diagSeen, openDialogs: document.querySelectorAll('dialog[open]').length,
+        active: document.activeElement?.getAttribute('data-setting') ?? document.activeElement?.tagName, hidden: document.hidden, focused: document.hasFocus() })))
+      const windows = (main as { answer?: { png: string }[] }).answer
+      for (const [index, window] of (windows ?? []).entries()) await writeFile(join(evidence, `diag-window-${index}.png`), Buffer.from(window.png, 'base64'))
+      const report = JSON.stringify({ mainTook, main: windows ? windows.map(({ png, ...rest }) => ({ ...rest, pngBytes: png.length })) : main, renderer })
+      await writeFile(join(evidence, 'diag.json'), report)
+      console.log(`DIAG ${report}`)
+      throw error
+    }
     const browser = page.getByRole('dialog', { name: /^Default projects directory on this computer/ })
     await expect(browser.getByRole('button', { name: 'inner', exact: true })).toHaveAttribute('aria-current', 'location')
     await page.keyboard.press('Backspace')
