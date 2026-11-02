@@ -5735,6 +5735,7 @@ msgid "Open {sourceTitle}"
 msgstr "Open {sourceTitle}"
 
 #: src/renderer/src/agents/DelegatedWork.tsx
+#: src/renderer/src/agents/ThreadPane.tsx
 msgid "Open {threadTitle}"
 msgstr "Open {threadTitle}"
 
@@ -6155,6 +6156,10 @@ msgstr "Permission request"
 msgid "Permission request for {ownerTitle}"
 msgstr "Permission request for {ownerTitle}"
 
+#: src/renderer/src/agents/ThreadPane.tsx
+msgid "Permission request from {title}"
+msgstr "Permission request from {title}"
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Permissions"
 msgstr "Permissions"
@@ -6439,6 +6444,10 @@ msgstr "Question"
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Question from {ownerTitle}"
 msgstr "Question from {ownerTitle}"
+
+#: src/renderer/src/agents/ThreadPane.tsx
+msgid "Question from {title}"
+msgstr "Question from {title}"
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Question skipped."
@@ -8270,8 +8279,8 @@ msgid "That thread is gone or archived, or this thread did not delegate to it. {
 msgstr "That thread is gone or archived, or this thread did not delegate to it. {nothing}"
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "That thread was waiting for your answer on its own card. {nothing}"
-msgstr "That thread was waiting for your answer on its own card. {nothing}"
+msgid "That thread was waiting for your answer. {nothing}"
+msgstr "That thread was waiting for your answer. {nothing}"
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "That thread's own queue was paused, or a message to it had an unknown result, so it takes no brief until you resume, clear or check it there. {nothing}"
@@ -9611,8 +9620,8 @@ msgid "Waiting for Sotto…"
 msgstr "Waiting for Sotto…"
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your answer to its question. Open it to answer."
-msgstr "Waiting for your answer to its question. Open it to answer."
+msgid "Waiting for your answer to its question. Answer it below."
+msgstr "Waiting for your answer to its question. Answer it below."
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Waiting for your last prompt to be confirmed."
@@ -9620,17 +9629,17 @@ msgstr "Waiting for your last prompt to be confirmed."
 
 #. {toolName} is the name of a tool the delegated thread asks to use.
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission to use {toolName}. Open it to answer."
-msgstr "Waiting for your permission to use {toolName}. Open it to answer."
+msgid "Waiting for your permission to use {toolName}. Answer it below."
+msgstr "Waiting for your permission to use {toolName}. Answer it below."
 
 #. {shown} is the command the delegated thread asks to run.
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission: {shown}. Open it to answer."
-msgstr "Waiting for your permission: {shown}. Open it to answer."
+msgid "Waiting for your permission: {shown}. Answer it below."
+msgstr "Waiting for your permission: {shown}. Answer it below."
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission. Open it to answer."
-msgstr "Waiting for your permission. Open it to answer."
+msgid "Waiting for your permission. Answer it below."
+msgstr "Waiting for your permission. Answer it below."
 
 #. {waitingIn} is the title of a thread this one delegated to.
 #. {waitingIn} is where the thread waits, such as the name of the thread it delegated to.

@@ -5735,6 +5735,7 @@ msgid "Open {sourceTitle}"
 msgstr ""
 
 #: src/renderer/src/agents/DelegatedWork.tsx
+#: src/renderer/src/agents/ThreadPane.tsx
 msgid "Open {threadTitle}"
 msgstr ""
 
@@ -6155,6 +6156,10 @@ msgstr ""
 msgid "Permission request for {ownerTitle}"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadPane.tsx
+msgid "Permission request from {title}"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Permissions"
 msgstr ""
@@ -6438,6 +6443,10 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Question from {ownerTitle}"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPane.tsx
+msgid "Question from {title}"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -8270,7 +8279,7 @@ msgid "That thread is gone or archived, or this thread did not delegate to it. {
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "That thread was waiting for your answer on its own card. {nothing}"
+msgid "That thread was waiting for your answer. {nothing}"
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -9611,7 +9620,7 @@ msgid "Waiting for Sotto…"
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your answer to its question. Open it to answer."
+msgid "Waiting for your answer to its question. Answer it below."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -9620,16 +9629,16 @@ msgstr ""
 
 #. {toolName} is the name of a tool the delegated thread asks to use.
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission to use {toolName}. Open it to answer."
+msgid "Waiting for your permission to use {toolName}. Answer it below."
 msgstr ""
 
 #. {shown} is the command the delegated thread asks to run.
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission: {shown}. Open it to answer."
+msgid "Waiting for your permission: {shown}. Answer it below."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission. Open it to answer."
+msgid "Waiting for your permission. Answer it below."
 msgstr ""
 
 #. {waitingIn} is the title of a thread this one delegated to.

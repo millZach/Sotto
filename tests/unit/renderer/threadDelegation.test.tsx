@@ -430,7 +430,7 @@ describe('delegated work in the delegating thread', () => {
     expect(Object.keys(states(still))).toEqual(['Muse review: Build plan for your pick, A', 'UI work: Check text contrast on every theme', 'Computer use: Capture the night scene', 'Review: Spec review'])
     expect(states(still)).toEqual({ 'Muse review: Build plan for your pick, A': 'Working', 'UI work: Check text contrast on every theme': 'Working',
       'Computer use: Capture the night scene': 'Needs you', 'Review: Spec review': 'Starting' })
-    expect(within(still).getByRole('listitem', { name: 'Computer use: Capture the night scene, Needs you' })).toHaveTextContent('Waiting for your permission: npm run design:capture. Open it to answer.')
+    expect(within(still).getByRole('listitem', { name: 'Computer use: Capture the night scene, Needs you' })).toHaveTextContent('Waiting for your permission: npm run design:capture. Answer it below.')
     expect(document.querySelector('[data-message-id="final"]')!.compareDocumentPosition(still) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // Opened, the fold holds a row for every delegation of the turn, in the order they were made.
     fireEvent.click(fold)
@@ -581,8 +581,8 @@ describe('the words of delegated work', () => {
     expect(pendingRequestOf(working, both)?.kind).toBe('permission')
     expect(pendingRequestOf(view({ outcome: 'answered' }), both)).toBeUndefined()
     expect(pendingRequestOf(working, { ...both, archivedAt: at(1) })).toBeUndefined()
-    expect(delegatedLine(working, 'needs-you', NOW, asking('permission', 'npm run design:capture'))).toBe('Waiting for your permission: npm run design:capture. Open it to answer.')
-    expect(delegatedLine(working, 'needs-you', NOW, asking('question'))).toBe('Waiting for your answer to its question. Open it to answer.')
+    expect(delegatedLine(working, 'needs-you', NOW, asking('permission', 'npm run design:capture'))).toBe('Waiting for your permission: npm run design:capture. Answer it below.')
+    expect(delegatedLine(working, 'needs-you', NOW, asking('question'))).toBe('Waiting for your answer to its question. Answer it below.')
     const answered = view({ outcome: 'answered', outcomeAt: at(1), wait: { seconds: 300, startedAt: at(2) } })
     expect(delegatedLine(answered, 'returned', NOW, undefined)).toBe('Answered in 1 min, while this thread waited for it. Open it to read what it found.')
     // A thread the window no longer lists cannot be opened, so the line does not say to open it.
