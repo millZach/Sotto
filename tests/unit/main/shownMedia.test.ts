@@ -188,6 +188,18 @@ describe('a turn that wrote pictures and a video, through the workspace, the med
         await expect.poll(lagging, { timeout: 15_000 }).toBeDefined()
         expect(lagging()).toMatchObject({ turnId: third(), afterMessageId: third() })
       } finally { history.newestMessages = written }
+      // Callouts go on the pictures the call shows (ADR-0170, part 6): numbered, as shares of the picture, and each one
+      // that can't be placed is named back with why.
+      expect(await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: ['test-results/signup.png', 'test-results/signup.mp4'], title: 'Marked', callouts: [
+        { path: 'test-results/signup.png', x: 640, y: 400, width: 320, height: 100, note: 'The Pay button sits on the total.' },
+        { path: 'test-results/signup.mp4', x: 0, y: 0, width: 10, height: 10, note: 'The spinner never stops.' },
+        { path: 'test-results/signup.png', x: 5000, y: 0, width: 10, height: 10, note: 'Off the side' },
+      ] })).toEqual({ content: [{ type: 'text', text: 'Shown in the thread as "Marked": 2 files, with 1 callout. Callouts not placed: "The spinner never stops." (callouts go on pictures, not videos); "Off the side" (its box is outside the picture).' }] })
+      const marked = () => control.control.threadDetail(thread.id)?.activities?.find(record => record.title === 'Marked')
+      await expect.poll(marked, { timeout: 15_000 }).toBeDefined()
+      expect(marked()!.media!.map(item => item.callouts)).toEqual([[{ n: 1, x: 0.5, y: 0.5, w: 0.25, h: 0.125, note: 'The Pay button sits on the total.' }], undefined])
+      expect((await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: ['test-results/signup.png'], title: 'Too many',
+        callouts: Array.from({ length: 13 }, () => ({ path: 'test-results/signup.png', x: 0, y: 0, width: 5, height: 5, note: 'n' })) })).isError).toBe(true)
       // A call that names nothing Sotto shows shows nothing and says why; a bad call says what to send.
       expect(await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: ['.gitignore'], title: 'Ignore list' })).toEqual({ isError: true, content: [{ type: 'text', text: 'Nothing was shown. .gitignore (it is not a picture or video Sotto shows).' }] })
       expect((await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: [] , title: 'x' })).isError).toBe(true)

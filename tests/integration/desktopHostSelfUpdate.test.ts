@@ -73,7 +73,7 @@ async function scene(options: { readonly entry?: string; readonly hostReachesRel
   /** Holds every launch script operation over SSH until it settles, so a test decides when SSH carries a step. */
   readonly beforeSsh?: () => Promise<void> } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-desktop-self-update-')); roots.push(root)
-  const { install, data, sshUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
+  const { install, data, sshUsed, opencodeUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
   // Tailscale runs on forge, as the end-to-end stand-in reads it; this machine's own is never touched.
   await writeFile(join(data, 'e2e-tailscale.json'), JSON.stringify({ state: 'running', dnsName: DNS, hostName: 'forge' }))
   // A held download is answered never, so it runs until it is cancelled; any later one is answered at once.
@@ -179,7 +179,7 @@ async function scene(options: { readonly entry?: string; readonly hostReachesRel
     }
     return { updates, steps, one, run }
   }
-  return { root, install, data, sshUsed, stand, admin, page, connects, operations, remote, onTailnet, updatePanel, hostId: ready.hostId as string,
+  return { root, install, data, sshUsed, opencodeUsed, stand, admin, page, connects, operations, remote, onTailnet, updatePanel, hostId: ready.hostId as string,
     get manager() { return manager },
     /** Moves the desktop's clock on by `ms`. */
     runAhead: (ms: number) => { ahead += ms },
@@ -202,6 +202,7 @@ describe('a host update over the tailnet (ADR-0088)', () => {
     expect(s.connects).toEqual(['ssh'])
     expect(s.operations).toEqual([])
     await expect(readFile(s.sshUsed)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(s.opencodeUsed)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(s.manager.get().hosts[0]).toMatchObject({ phase: 'connected', via: 'tailnet', version: NEW })
     expect(s.manager.get().hosts[0]!.error).toBeUndefined()
     expect((await readFile(join(s.install, 'current'), 'utf8')).trim()).toBe(NEW)

@@ -14,6 +14,7 @@ import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { shownMedia, type ShownMediaStore, type ShownRefusal } from './shownMedia'
+import { placeCallouts, type CalloutRefusal, type CalloutRequest } from './shownCallouts'
 import { SHOWN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -201,7 +202,9 @@ const ACTIVITY_READ_ERROR = 'Thread activity could not be read. Saved activity r
  */
 /** What showing pictures in a thread came to (ADR-0170, request-only): how many were shown, and each file refused with why. */
 export type ShownMediaResult =
-  | { readonly shown: true; readonly count: number; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
+  | { readonly shown: true; readonly count: number; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[]
+    /** The callouts placed on the pictures (ADR-0170, part 6), and each one refused with why. */
+    readonly callouts: number; readonly calloutsRefused: readonly { readonly note: string; readonly reason: CalloutRefusal }[] }
   | { readonly shown: false; readonly reason: 'unknown-thread' }
   | { readonly shown: false; readonly reason: 'nothing-shown'; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
 export type VisualAddition =
@@ -1485,9 +1488,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * Shows the pictures and videos an agent named in its thread (ADR-0170, request-only): each file is kept by handle, and
    * the call becomes a step of its own, titled in the agent's words, placed with the turn under way: after its newest
-   * record, or after the user's newest message. Nothing is shown when no file is a picture or video Sotto shows.
+   * record, or after the user's newest message. Nothing is shown when no file is a picture or video Sotto shows. The
+   * callouts the agent gave go on the pictures they name (ADR-0170, part 6).
    */
-  async showMedia(threadId: string, input: { readonly paths: readonly string[]; readonly title: string }): Promise<ShownMediaResult> {
+  async showMedia(threadId: string, input: { readonly paths: readonly string[]; readonly title: string; readonly callouts?: readonly CalloutRequest[] | undefined }): Promise<ShownMediaResult> {
     const store = this.shownMediaStore
     if (!store || !this.admitsShownMedia(threadId)) return { shown: false, reason: 'unknown-thread' }
     const thread = this.threadById(threadId)!
@@ -1495,6 +1499,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { folder = this.threadFolder(thread) } catch { folder = undefined }
     const found = await shownMedia(folder, input.paths, store)
     if (!found.media.length) return { shown: false, reason: 'nothing-shown', refused: found.refused }
+    // The agent's callouts go on the pictures it named, by the files they were read from (ADR-0170, part 6).
+    const placed = placeCallouts(folder, input.callouts ?? [], found.shown)
     // What the provider said before the call is committed first, so the newest message read below is the turn's own.
     await this.settled(threadId, true)
     const current = this.threadById(threadId)
@@ -1517,11 +1523,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const turnId = inTurn ? last.turnId : userMessageId ?? 'shown'
     const afterMessageId = inTurn ? last.afterMessageId : userMessageId
     const record: AgentActivity = { id: `${SHOWN_STEP_PREFIX}${randomUUID()}`, turnId, ...afterMessageId ? { afterMessageId } : {},
-      sequence: 0, kind: 'tool', status: 'completed', title: input.title, completedAt: new Date().toISOString(), media: found.media }
+      sequence: 0, kind: 'tool', status: 'completed', title: input.title, completedAt: new Date().toISOString(), media: placed.media }
     this.touched(current).activities = immutableActivities(mergeAgentActivities(current.activities, [record]))
     this.dirty = true
     this.publish()
-    return { shown: true, count: found.media.length, refused: found.refused }
+    return { shown: true, count: found.media.length, refused: found.refused, callouts: placed.placed, calloutsRefused: placed.refused }
   }
   /**
    * How a check installs packages first, present only while Work across machines is on (#1312, ADR-0072): main turns it on

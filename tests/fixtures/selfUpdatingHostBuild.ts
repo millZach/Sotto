@@ -4,6 +4,7 @@ import { isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { build } from 'vite'
+import { OPENCODE_CLI_VERSION } from '../../src/main/agents/opencodeServer'
 
 /**
  * The self-updating host entry (`selfUpdatingHost.ts`) built for Node into one CommonJS file, as a release's
@@ -17,16 +18,24 @@ export async function buildSelfUpdatingHost(): Promise<{ readonly directory: str
   return { directory, source: await readFile(join(directory, 'index.js'), 'utf8') }
 }
 
-/** The release layout both update journeys start from, with SSH shims that record any unexpected use. */
+/**
+ * The release layout both update journeys start from, with SSH and OpenCode shims that record any unexpected use. Its home
+ * is the test's own, because OpenCode's lookup tries `~/.opencode/bin` before the path: a host that went looking would
+ * otherwise start this machine's real OpenCode, which nothing here can stop once the host is killed.
+ */
 export async function installSelfUpdatingHost(root: string, builtDirectory: string, version: string) {
-  const install = join(root, 'sotto-host'), data = join(root, 'data'), bin = join(root, 'bin'), sshUsed = join(root, 'ssh-used')
-  await mkdir(join(install, 'host'), { recursive: true }); await mkdir(bin); await mkdir(data)
+  const install = join(root, 'sotto-host'), data = join(root, 'data'), bin = join(root, 'bin'), home = join(root, 'home')
+  const sshUsed = join(root, 'ssh-used'), opencodeUsed = join(root, 'opencode-used')
+  await mkdir(join(install, 'host'), { recursive: true }); await mkdir(bin); await mkdir(data); await mkdir(home)
   await copyFile(join(builtDirectory, 'index.js'), join(install, 'host', 'index.js'))
   await writeFile(join(install, 'package.json'), JSON.stringify({ name: 'sotto-host', version }))
   await writeFile(join(bin, 'ssh'), `#!/bin/sh\necho used > '${sshUsed}'\nexit 255\n`, { mode: 0o755 })
   await writeFile(join(bin, 'ssh.cmd'), `@echo used > "${sshUsed}"\r\n@exit /b 255\r\n`)
+  // It says a version Sotto drives, so a host that went looking stops here rather than trying the next OpenCode it can find.
+  // Windows' lookup reads a `.cmd` rather than running it, so this records nothing there.
+  await writeFile(join(bin, 'opencode'), `#!/bin/sh\necho used > '${opencodeUsed}'\necho 'opencode v${OPENCODE_CLI_VERSION}'\n`, { mode: 0o755 })
   const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH'
-  return { install, data, sshUsed, env: { ...process.env, [pathKey]: bin + delimiter + (process.env[pathKey] ?? '') } }
+  return { install, data, sshUsed, opencodeUsed, env: { ...process.env, HOME: home, USERPROFILE: home, [pathKey]: bin + delimiter + (process.env[pathKey] ?? '') } }
 }
 
 /**

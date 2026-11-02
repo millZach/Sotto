@@ -290,6 +290,8 @@ export const councilRowSchema = z.object({
   citations: z.array(councilCitationSchema).max(40).optional(),
   /** An answer's sources by finding: links Sotto checked only for their shape, which reviewers open. */
   sources: z.array(z.object({ finding: seatId, url: z.string().max(2_048) }).strict()).max(40).optional(),
+  /** A review whose panelist changed its own answer in it, read from its result block: the chamber's changed-answer mark. */
+  changed: z.literal(true).optional(),
   thread: id,
   actions: z.array(z.enum(COUNCIL_ROW_ACTIONS)).max(COUNCIL_ROW_ACTIONS.length),
 }).strict()

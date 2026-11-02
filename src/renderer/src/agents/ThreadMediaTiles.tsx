@@ -10,6 +10,7 @@ import { threadVideoUrl } from '../../../shared/threadVideoUrl'
 import { formatAttachmentSize } from '../../../shared/attachmentLabels'
 import { useOwlFeature } from '../state/owlFeature'
 import { OwlEasel } from './OwlEasel'
+import { CalloutLayer } from './callouts'
 
 /** One picture as a tile and the viewer know it: its handle and where it is found. */
 interface Shown { readonly origin: ThreadMediaOrigin; readonly media: AgentActivityMedia; readonly record: AgentActivity }
@@ -34,6 +35,9 @@ function pictureName(t: ReturnType<typeof useLingui>['t'], number: number): stri
   return t({ message: `Picture ${number}`, comment: '{number} is the place of an agent\'s picture among the pictures of one turn.' })
 }
 
+/** A tile's picture box inside its border: the 208 by 140 frame less a pixel each side. */
+const TILE_ROOM = { width: 206, height: 138 }
+
 function MediaTile({ shown, index, count, onOpen }: {
   readonly shown: Shown; readonly index: number; readonly count: number; readonly onOpen: (from: HTMLElement) => void
 }): ReactNode {
@@ -56,12 +60,23 @@ function MediaTile({ shown, index, count, onOpen }: {
   // A read that failed is tried again when the tile next comes near; a picture its host no longer keeps is gone.
   const status = !near || awaiting ? null : unread || failed ? t`Could not load. Nothing was lost. Scroll back to it to try again.`
     : source === null ? t`No longer kept on its computer` : null
+  // The agent's callouts (ADR-0170, part 6), drawn over the picture where it sits in the tile, with their count.
+  const callouts = shown.media.callouts ?? []
+  const { width, height } = shown.media
+  const drawn = source && !failed ? callouts.length > 0 && width && height ? { width, height } : null : null
+  const title = stepTitle(t, shown.record)
   return <figure className="rich-attachment rich-attachment--image thread-media" role="listitem" data-media-id={shown.media.id}>
-    <button type="button" ref={frame} className="rich-attachment__frame tt-focusable"
-      aria-label={t({ message: `Open picture ${number} of ${count}, from ${stepTitle(t, shown.record)}`, comment: '{number} of {count} pictures in a turn; {title} names the step that made it.' })}
+    <button type="button" ref={frame} className={`rich-attachment__frame tt-focusable${callouts.length ? ' thread-media__frame--callouts' : ''}`}
+      aria-label={callouts.length
+        ? t({ message: `Open picture ${number} of ${count}, from ${title}, with ${plural(callouts.length, { one: '# callout', other: '# callouts' })}`, comment: '{number} of {count} pictures in a turn; {title} names the step that made it; then how many callouts the agent placed on it.' })
+        : t({ message: `Open picture ${number} of ${count}, from ${stepTitle(t, shown.record)}`, comment: '{number} of {count} pictures in a turn; {title} names the step that made it.' })}
       title={t`Open picture`} onClick={event => onOpen(event.currentTarget)}>
       {source && !failed ? <img src={source} alt="" decoding="async" draggable={false} onError={() => setFailed(true)} />
         : <ImageIcon size={18} aria-hidden="true" className="thread-media__placeholder" />}
+      {drawn ? <svg className="thread-media__callouts" viewBox={`0 0 ${drawn.width} ${drawn.height}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <CalloutLayer callouts={callouts} size={drawn} unit={Math.max(drawn.width / TILE_ROOM.width, drawn.height / TILE_ROOM.height)} />
+      </svg> : null}
+      {callouts.length ? <span className={`thread-media__callout-count${gif ? ' thread-media__callout-count--start' : ''}`} aria-hidden="true">{callouts.length}</span> : null}
     </button>
     {gif && source && !failed ? <button type="button" className="thread-media__play thread-media__play--corner tt-focusable" aria-pressed={playing}
       aria-label={playing ? t({ message: `Stop GIF ${number}`, comment: '{number} is the place of an agent\'s GIF among the pictures of one turn.' })
@@ -130,8 +145,10 @@ const making = (record: AgentActivity): boolean => record.generates === 'image' 
  * shows the owl at the easel in its place. Nothing shows while the `inline-media` Owl feature is off, and a turn with no
  * pictures draws nothing.
  */
-export const ThreadMediaTiles = memo(function ThreadMediaTiles({ groups, threadId }: {
+export const ThreadMediaTiles = memo(function ThreadMediaTiles({ groups, threadId, who }: {
   readonly groups: readonly ActivityGroup[] | undefined; readonly threadId: string | undefined
+  /** Who wrote the turn, its provider or Watcher: the viewer names the callouts as theirs. */
+  readonly who?: string | undefined
 }): ReactNode {
   const { t } = useLingui()
   const enabled = useOwlFeature('inline-media')
@@ -143,7 +160,9 @@ export const ThreadMediaTiles = memo(function ThreadMediaTiles({ groups, threadI
   const makers = useMemo<readonly AgentActivity[]>(() => !enabled || !groups ? [] : groups.flatMap(group => group.records.filter(making)), [enabled, groups])
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
   const images = useMemo<readonly ViewerImage[]>(() => pictures.map((picture, index) => ({ id: `${picture.record.id}/${picture.media.id}`,
-    name: pictureName(t, index + 1), details: mediaDetails(picture.media), media: picture.origin })), [pictures, t])
+    name: pictureName(t, index + 1), details: mediaDetails(picture.media), media: picture.origin,
+    ...picture.media.callouts?.length ? { callouts: picture.media.callouts, calloutsBy: who,
+      ...picture.media.width && picture.media.height ? { pixels: { width: picture.media.width, height: picture.media.height } } : {} } : {} })), [pictures, t, who])
   if (!shown.length && !makers.length) return null
   const count = shown.length + makers.length
   return <div className="rich-attachments thread-media-tiles">

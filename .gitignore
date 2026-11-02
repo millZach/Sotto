@@ -910,3 +910,7 @@ artifacts/watcher-card-queue/*
 artifacts/macos-dock-icon-padding/*
 !artifacts/macos-dock-icon-padding/sidebar-before.png
 !artifacts/macos-dock-icon-padding/sidebar-after.png
+
+# Wrangler, for the product event Worker
+.wrangler/
+.dev.vars
