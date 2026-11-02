@@ -1603,7 +1603,8 @@ struct RailAsk: Equatable {
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
             if id == "iphone" && settingThreads { row["modelId"] = "fixture-model"; row["runtimeMode"] = "approval-required" }
             if id == "shortcuts" && settingThreads {
-                row["modelId"] = "fixture-model"; row["reasoningEffort"] = "high"; row["runtimeMode"] = "approval-required"
+                // `--ui-top-effort` puts it at its model's top level, where the reply box's trace lights.
+                row["modelId"] = "fixture-model"; row["reasoningEffort"] = arguments.contains("--ui-top-effort") ? "xhigh" : "high"; row["runtimeMode"] = "approval-required"
             }
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
@@ -1613,6 +1614,10 @@ struct RailAsk: Equatable {
                 "messages": [["id": "prompt", "role": "user", "text": title + ". Keep the changes focused."],
                     ["id": "reply", "role": "assistant", "text": "I have the context and am checking the details. The next update will summarize the changes and anything that needs your attention."]],
                 "activities": [["id": "read", "sequence": 1, "kind": "command", "status": "completed", "title": "Read project notes"]]])
+            // A new thread with nothing in it yet, whose reply box stays full.
+            if id == "shortcuts" && arguments.contains("--ui-empty-thread") {
+                fixtureDetails[host + "/" + id] = decode(ThreadDetail.self, ["threadId": id, "revision": 1, "messages": [[String: Any]](), "activities": [[String: Any]]()])
+            }
         }
         if watching {
             // Watcher's two workers on the laptop: one it started, which asks which account to use, and one it sent a note.
@@ -2485,6 +2490,10 @@ struct RailAsk: Equatable {
         return canSend(ref) && !preparingSends.contains(ref.id) && (written || !photos.isEmpty || !files.isEmpty)
             && !photos.contains(where: \.preparing) && (photos.isEmpty || photoSupport(ref) == .available)
             && !files.contains(where: \.reading) && (files.isEmpty || fileSupport(ref) == .available)
+    }
+    /// Whether a thread's reply box holds something to send: words, photos or files.
+    func replyHoldsAnything(_ ref: ThreadRef) -> Bool {
+        !(drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos(ref).isEmpty || !files(ref).isEmpty
     }
     func photos(_ ref: ThreadRef) -> [DraftPhoto] { photos(.thread(ref)) }
     func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }

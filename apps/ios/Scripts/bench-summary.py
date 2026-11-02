@@ -26,7 +26,7 @@ PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadL
 # What opening the long thread made and read once.
 ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
            "markdown.blocks", "markdown.bytes"]
-PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream"]
+PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "reply-box", "reply-box-stream"]
 # Work counts the climb has brought down, held there (#1702). Counts do not vary with the runner as times do, so each
 # budget sits a little above what the change that set it measured. A budget only tightens; a raise needs its reason in
 # the pull request.
@@ -37,6 +37,10 @@ BUDGETS = {
     "open.app.time.textview.measure.n": 60,
     # Each paragraph is measured once for its words, text size and width (0.36 a streamed word).
     "stream.per_chunk.time.textview.measure.n": 1.0,
+    # The small reply box lives inside the dock: going small and back draws no part of the conversation (ADR-0178).
+    "reply-box.app.body.Conversation": 0,
+    "reply-box.app.body.MessageView": 0,
+    "reply-box.app.textview.update": 0,
 }
 
 
@@ -92,6 +96,12 @@ def app_metrics(folder):
     put("journey.app.peak_footprint", [r.get("peakFootprintMB") for r in journeys], "MB")
     for name in ["list-scroll", "thread-scroll"]:
         put(f"{name}.app.points", [p.get("scrolledPoints") for p in phases[name]], "pt")
+
+    # Twenty moves of the reply box, alone and over a stream, with what they drew.
+    for key in ["body.Conversation", "body.MessageView", "body.ReplyDock", "textview.update"]:
+        put(f"reply-box.app.{key}", [c.get(key, 0) if c else None for c in counts["reply-box"]], "count")
+    put("reply-box.app.moves", [p.get("replyBoxMoves") for p in phases["reply-box"]], "count")
+    put("reply-box-stream.app.moves", [p.get("replyBoxMoves") for p in phases["reply-box-stream"]], "count")
 
     put("open.app.tap_to_drawn", [m["open-rendered"] - m["open-begin"] for m in marks if "open-rendered" in m and "open-begin" in m], "ms")
     for key in ON_OPEN:
