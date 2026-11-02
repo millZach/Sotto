@@ -1869,8 +1869,8 @@ import UIKit
         undo.tap()
         XCTAssertEqual(watchReads("Off"), .completed, "Undo stops watching it")
         XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
-        watch.tap()
-        XCTAssertEqual(watchReads("On"), .completed, "Watch watches it again")
+        let watchOn = NSPredicate { _, _ in watch.value as? String == "On" }
+        XCTAssertEqual(press(watch, until: watchOn, untouched: { watch.value as? String == "Off" }), .completed, "Watch watches it again")
         // Once the toast goes, nothing over the reply box takes its place: the lit owl says the thread is watched.
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: toast)
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 20), .completed, "The toast goes")
@@ -1982,7 +1982,8 @@ import UIKit
             XCTAssertLessThan(settings.frame.maxX, mic.frame.minX, "The mic is on the right")
         }
         XCTAssertLessThan(mic.frame.maxX, send.frame.minX + 1, "Then Send")
-        XCTAssertLessThan(abs(plus.frame.midY - send.frame.midY), 1, "All on one line")
+        // Their tops, since each is drawn from the row's top and only some report the 44 points their press area reaches down.
+        XCTAssertLessThan(abs(plus.frame.minY - send.frame.minY), 1, "All on one line")
         XCTAssertEqual(mic.label, "Dictate")
         XCTAssertFalse(send.isEnabled, "Send is there with nothing to send, and waits")
         XCTAssertTrue(settings.isEnabled, "An idle thread's settings can be changed")
