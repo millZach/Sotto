@@ -11,8 +11,8 @@ import './serverMark.css'
 
 /**
  * The server mark (ADR-0124, November 1 amendment; the `own-model-servers` Owl feature): a 2x2 grid of square pixels
- * on every thread that runs on one of the user's own model servers, in its model chip, its sidebar row and the live
- * line of its running turn. One glyph for any server; it does not count the server's machines. What the cells do says
+ * on a thread that runs on one of the user's own model servers, in its model chip and on the live line of its running
+ * turn. One glyph for any server; it does not count the server's machines. What the cells do says
  * what the server is doing: dim at rest, filling one at a time while it reads the prompt, flickering as fast as words
  * arrive while it writes, and grey, blinking once a try, while OpenCode tries it again. Decorative: the words beside it
  * say the same.
@@ -20,7 +20,7 @@ import './serverMark.css'
 export type ServerMarkState = 'idle' | 'reading' | 'writing' | 'retrying'
 
 /** Whether a thread's model is on one of the user's own servers: OpenCode's and DeepSeek Harness's IDs both start so. */
-export function isOwnServerModel(modelId: string): boolean {
+function isOwnServerModel(modelId: string): boolean {
   return modelId.startsWith(OWN_SERVER_ID_PREFIX) && modelId.indexOf('/') > OWN_SERVER_ID_PREFIX.length
 }
 
@@ -68,7 +68,7 @@ export function serverTurnSample(thread: Pick<AgentThread, 'activities' | 'messa
   return { turnId: turn.turnId, startedAt: turn.startedAt, heard, parts }
 }
 
-/** A thread's mark, as its chip and its row show it, and the running turn's sample to time. Null off Owl or off an own server. */
+/** A thread's mark, as its model chip shows it, and the running turn's sample to time. */
 export interface OwnServerMark {
   readonly state: ServerMarkState
   /** The try OpenCode is on, while it tries the server again: each new one blinks the mark once. */
@@ -100,7 +100,7 @@ export interface ServerPace {
 
 /** Text that comes again within this long of the last is one stream; a longer gap is a tool running, and is not counted. */
 const STREAM_GAP_MS = 1_500
-/** The turns kept, newest last: enough for every pane and row a window shows. */
+/** The turns kept, newest last: enough for every pane a window shows. */
 const PACES_KEPT = 64
 
 interface Pace {
@@ -122,7 +122,7 @@ function wordsAfter(text: string, from: number): number {
   return from > 0 && /\S/u.test(text.charAt(from - 1)) && /^\S/u.test(tail) ? count - 1 : count
 }
 
-/** Takes a sample of a running turn. The chip, the row and the live line all give the same one; a repeat changes nothing. */
+/** Takes a sample of a running turn. The chip and the live line both give the same one; a repeat changes nothing. */
 export function observeServerTurn(sample: ServerTurnSample, now: number): void {
   let pace = paces.get(sample.turnId)
   if (pace === undefined) {
@@ -182,53 +182,16 @@ function flickerMs(wordsPerSecond: number | undefined): number {
   return Math.round(Math.min(600, Math.max(90, 6_000 / wordsPerSecond)) / 30) * 30
 }
 
-/** How long the burst at the first word lasts, after which it is never drawn again for that turn. */
-export const SPARK_MS = 700
-/** Turns whose line said the server was not answering or still being waited for, and when each one's burst began. */
-const waitedTurns = new Set<string>()
-const sparkedAt = new Map<string, number>()
-
-/**
- * Whether the mark bursts now: the turn's line said it was waiting on the server (still waiting, or trying it again), and
- * the server has now been heard. Once a turn, for `SPARK_MS`; a line drawn again later, or another window draw, never
- * plays it again.
- */
-export function useFirstWordSpark(turnId: string | null, waited: boolean, heard: boolean): boolean {
-  useEffect(() => {
-    if (turnId === null || !waited) return
-    waitedTurns.add(turnId)
-    if (waitedTurns.size > PACES_KEPT) waitedTurns.delete(waitedTurns.values().next().value!)
-  }, [turnId, waited])
-  const due = turnId !== null && heard && waitedTurns.has(turnId) && !sparkedAt.has(turnId)
-  useEffect(() => {
-    if (!due) return
-    sparkedAt.set(turnId, performance.now())
-    if (sparkedAt.size > PACES_KEPT) sparkedAt.delete(sparkedAt.keys().next().value!)
-  }, [due, turnId])
-  const began = turnId === null ? undefined : sparkedAt.get(turnId)
-  return due || began !== undefined && performance.now() - began < SPARK_MS
-}
-
-export function ServerMark({ state, attempt, wordsPerSecond, spark = false, size = 'chip' }: {
+export function ServerMark({ state, attempt, wordsPerSecond }: {
   readonly state: ServerMarkState; readonly attempt?: number | undefined; readonly wordsPerSecond?: number | undefined
-  /** One burst from the mark: the first word came after a wait. */
-  readonly spark?: boolean | undefined
-  /** A sidebar row's is smaller, to sit with its caption. */
-  readonly size?: 'chip' | 'row' | undefined
 }): ReactNode {
-  return <span className="server-mark" data-state={state} data-size={size} aria-hidden="true"
+  return <span className="server-mark" data-state={state} aria-hidden="true"
     style={state === 'writing' ? { '--server-mark-step': `${flickerMs(wordsPerSecond)}ms` } as CSSProperties : undefined}>
     {/* A new try draws the cells again, so the blink plays once for it. */}
     <span className="server-mark__cells" key={state === 'retrying' ? `try-${attempt ?? 0}` : 'cells'}><i /><i /><i /><i /></span>
-    {spark ? <span className="server-mark__spark"><i /><i /><i /><i /><i /><i /><i /><i /></span> : null}
   </span>
 }
 
-/**
- * The speed card's figures, under the model chip's name while the pointer or the keyboard focus is on the chip: how long
- * the first word took, how fast words came and how full the context is, each only when Sotto knows it. Shown only when
- * `knowsSpeed` says it has something.
- */
 /** How much of the model's context the thread fills, when its usage is for the thread's model. */
 function contextUsedOf(usage: AgentThread['usage'], modelId: string): number | undefined {
   return usage?.contextUsed !== undefined && (usage.modelId === undefined || usage.modelId === modelId) ? usage.contextUsed : undefined
@@ -239,6 +202,11 @@ export function knowsSpeed(pace: ServerPace, usage: AgentThread['usage'], modelI
   return pace.firstWordMs !== undefined || pace.wordsPerSecond !== undefined || contextUsedOf(usage, modelId) !== undefined
 }
 
+/**
+ * The speed card's figures, under the model chip's name while the pointer or the keyboard focus is on the chip: how long
+ * the first word took, how fast words came and how full the context is, each only when Sotto knows it. Shown only when
+ * `knowsSpeed` says it has something.
+ */
 export function ServerSpeedCard({ pace, usage, modelId }: {
   readonly pace: ServerPace
   readonly usage: AgentThread['usage']; readonly modelId: string

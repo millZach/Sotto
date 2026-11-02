@@ -1,16 +1,14 @@
-/* The server mark (ADR-0124, November 1 amendment; Owl only): four square pixels, no rounding, for a thread on one of
-   the user's own model servers. Lit cells take the theme's accent; resting cells a faint ink. What the cells do says
-   what the server is doing, and under reduced motion each state holds still: dim at rest, two lit corners while it
-   reads, all four lit while it writes, grey while it is tried again. */
+/* The server mark (ADR-0124, November 1 amendment; Owl only): four square pixels, no rounding, in the model chip and on
+   the running turn's live line of a thread on one of the user's own model servers. Lit cells take the theme's accent;
+   resting cells a faint ink. What the cells do says what the server is doing, and under reduced motion each state holds
+   still: dim at rest, two lit corners while it reads, all four lit while it writes, grey while it is tried again. */
 .server-mark {
-  --server-mark-cell: 4px; --server-mark-gap: 2px;
   --server-mark-on: var(--tt-accent);
   --server-mark-off: color-mix(in oklab, var(--tt-text-muted) 30%, transparent);
-  position: relative; display: inline-grid; flex: none; place-items: center; overflow: visible; vertical-align: middle;
+  display: inline-grid; flex: none; place-items: center; vertical-align: middle;
 }
-.server-mark[data-size='row'] { --server-mark-cell: 3px; --server-mark-gap: 1px; }
-.server-mark__cells { display: grid; grid-template-columns: repeat(2, var(--server-mark-cell)); gap: var(--server-mark-gap); }
-.server-mark__cells > i { display: block; width: var(--server-mark-cell); height: var(--server-mark-cell); border-radius: 0; background: var(--server-mark-off); }
+.server-mark__cells { display: grid; grid-template-columns: repeat(2, 4px); gap: 2px; }
+.server-mark__cells > i { display: block; width: 4px; height: 4px; border-radius: 0; background: var(--server-mark-off); }
 .server-mark[data-state='idle'] .server-mark__cells > i { background: var(--tt-text-muted); opacity: .55; }
 .server-mark[data-state='reading'] .server-mark__cells > i:is(:nth-child(1), :nth-child(4)) { background: var(--server-mark-on); }
 .server-mark[data-state='writing'] .server-mark__cells > i { background: var(--server-mark-on); }
@@ -29,32 +27,12 @@
   :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i:nth-child(4) { animation-duration: calc(var(--server-mark-step, 600ms) * 3.1); animation-delay: calc(var(--server-mark-step, 600ms) * -.4); }
   /* Not answering: one blink for each new try. */
   :root:not([data-reduced-motion='on']) .server-mark[data-state='retrying'] .server-mark__cells > i { animation: server-mark-blink .5s steps(1, end) 1; }
-  /* The first word after a wait: one burst of sparks out of the mark, never again for that turn. */
-  :root:not([data-reduced-motion='on']) .server-mark__spark > i { animation: server-mark-spark .6s cubic-bezier(.2, .7, .3, 1) 1 forwards; }
 }
 @keyframes server-mark-fill { 0% { background: var(--server-mark-off); } 25% { background: var(--server-mark-on); } }
 @keyframes server-mark-flicker { 0% { background: var(--server-mark-on); } 55% { background: var(--server-mark-off); } 100% { background: var(--server-mark-off); } }
 @keyframes server-mark-blink { 0% { opacity: .9; } 100% { opacity: .45; } }
-@keyframes server-mark-spark { 0% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(var(--spark-x), var(--spark-y)); } }
-
-.server-mark__spark { position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; }
-.server-mark__spark > i { position: absolute; top: -1px; left: -1px; width: 2px; height: 2px; border-radius: 0; background: var(--server-mark-on); opacity: 0; }
-.server-mark__spark > i:nth-child(1) { --spark-x: 12px; --spark-y: 0px; }
-.server-mark__spark > i:nth-child(2) { --spark-x: 8px; --spark-y: 8px; }
-.server-mark__spark > i:nth-child(3) { --spark-x: 0px; --spark-y: 12px; }
-.server-mark__spark > i:nth-child(4) { --spark-x: -8px; --spark-y: 8px; }
-.server-mark__spark > i:nth-child(5) { --spark-x: -12px; --spark-y: 0px; }
-.server-mark__spark > i:nth-child(6) { --spark-x: -8px; --spark-y: -8px; }
-.server-mark__spark > i:nth-child(7) { --spark-x: 0px; --spark-y: -12px; }
-.server-mark__spark > i:nth-child(8) { --spark-x: 8px; --spark-y: -8px; }
 
 /* The speed card's figures, under the chip's name in the model chip's card. */
 .server-speed { display: grid; gap: 4px; margin: 6px 0 0; }
 .server-speed > div { display: flex; justify-content: space-between; gap: 16px; }
 .server-speed dd { margin: 0; color: var(--tt-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-/* Your hardware: a thin line of the accent along the composer's top edge, fading out before the corners. */
-.thread-prompt > .thread-prompt__own-server {
-  position: absolute; top: -1px; right: 0; left: 0; grid-column: auto; z-index: 2; height: 2px; pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--tt-accent) 20%, var(--tt-accent) 80%, transparent); opacity: .8;
-}

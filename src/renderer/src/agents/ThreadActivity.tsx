@@ -21,7 +21,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
-import { heardFrom, ServerMark, serverTurnSample, useFirstWordSpark, useServerPace } from './ServerMark'
+import { heardFrom, ServerMark, serverTurnSample, useServerPace } from './ServerMark'
 import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import {
   browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
@@ -479,14 +479,11 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const heard = server !== undefined && turnId !== null && heardFrom(thread, turnId)
   const waiting = useStillWaiting(turn?.startedAt, server !== undefined && server.attempt === undefined && turnId !== null && !heard)
   // Its server mark stands where the pulse would (ADR-0124, November 1 amendment): grey while OpenCode tries the server
-  // again, filling while the server reads the prompt, flickering as fast as words come once it writes, with one burst of
-  // sparks when the first word comes after the line said it was waiting. A try mid-reply is no wait for a first word.
+  // again, filling while the server reads the prompt, and flickering as fast as words come once it writes.
   const serverTurn = server !== undefined && turn !== undefined && turnId !== null ? turnId : undefined
   const pace = useServerPace(serverTurn, serverTurn !== undefined && turn !== undefined ? serverTurnSample(thread, turn, heard) : undefined)
-  const ownLine = server !== undefined && !heard && (server.attempt !== undefined || waiting && turn?.startedAt !== undefined)
-  const spark = useFirstWordSpark(serverTurn ?? null, ownLine, heard)
   const mark = server === undefined ? null
-    : <ServerMark state={server.attempt !== undefined ? 'retrying' : heard ? 'writing' : 'reading'} attempt={server.attempt} wordsPerSecond={pace.wordsPerSecond} spark={spark} />
+    : <ServerMark state={server.attempt !== undefined ? 'retrying' : heard ? 'writing' : 'reading'} attempt={server.attempt} wordsPerSecond={pace.wordsPerSecond} />
   const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
