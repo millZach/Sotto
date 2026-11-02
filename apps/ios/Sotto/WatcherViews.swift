@@ -399,6 +399,9 @@ private final class WatcherFollow {
     /// The bottom of the newest words, and of the page: under Watcher's working line and the user's follow-ups.
     var newest: CGFloat = 0
     var end: CGFloat = 0
+    /// The bottom of the last message or the words on their way, above what Watcher did for it: what following must leave
+    /// on screen. Nil on a page with neither.
+    var lastWords: CGFloat?
     /// The bottom of the status bar, where the page's top shows, and the top of the box.
     var top: CGFloat = 0
     var dockTop: CGFloat = .greatestFiniteMagnitude
@@ -518,6 +521,8 @@ private struct WatcherConversationPane: View {
         let items = page.map { WatcherConversation.items($0) } ?? []
         // Whether the page has words to follow, the conversation's or the user's on their way.
         let hasWords = !items.isEmpty || sending != nil
+        // The message following must leave on screen, unless the user's words on their way come after it.
+        let lastMessage = sending == nil ? items.last(where: { if case .message = $0 { return true }; return false })?.id : nil
         let working = model.online(hostID) && page?.working == true
         ScrollViewReader { proxy in
             ScrollView {
@@ -534,14 +539,19 @@ private struct WatcherConversationPane: View {
                                     ForEach(items) { item in
                                         Group {
                                             switch item {
-                                            case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
+                                            case .message(let message):
+                                                WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
+                                                    .background { if item.id == lastMessage { reader { follow.lastWords = $0.maxY } } }
                                             case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
                                             case .ownChange(let change): WatcherOwnChangeLine(change: change)
                                             }
                                         }
                                         .id(item.id)
                                     }
-                                    if let sending { SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID) }
+                                    if let sending {
+                                        SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID)
+                                            .background(reader { follow.lastWords = $0.maxY })
+                                    }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(reader { follow.newest = $0.maxY })
@@ -750,7 +760,7 @@ private struct WatcherConversationPane: View {
         // Decided from where everything sits when it scrolls, so each look aims afresh. Before the box has been measured,
         // the page's end goes to the box.
         func aim() -> (target: String, anchor: UnitPoint) {
-            guard let found = WatcherReaderPlace.followAim(newest: words ? box.newest : nil, end: box.end, top: box.top, dockTop: box.dockTop) else {
+            guard let found = WatcherReaderPlace.followAim(newest: words ? box.lastWords ?? box.newest : nil, end: box.end, top: box.top, dockTop: box.dockTop) else {
                 return (Self.end, .bottom)
             }
             return (found.mark == .newest ? Self.newestEnd : Self.end, UnitPoint(x: 0.5, y: found.y))

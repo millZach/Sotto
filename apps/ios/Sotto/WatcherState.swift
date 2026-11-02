@@ -377,10 +377,12 @@ struct WatcherReaderPlace: Equatable {
     /// at the page's end, so following puts the page's end `endGap` above the box, and they show whole above it rather
     /// than under the box. Cards waiting on the user sit between the newest words and the end too: while what sits there
     /// is too tall to show with at least `slack` of the newest words above it, following puts the newest words
-    /// `newestGap` above the box instead (`newestAnchor`), as it always did. Nil before the box has been measured or while
-    /// the room between the page's top and the box is no taller than the gap.
+    /// `newestGap` above the box instead (`newestAnchor`), as it always did. What Watcher did for a reply doesn't count as
+    /// its words: it can fill the screen with the reply gone above it. Nil before the box has been measured or while the
+    /// room between the page's top and the box is no taller than the gap.
     /// - Parameters:
-    ///   - newest: the bottom of the newest words, or nil while the page has none; `end`, the bottom of the page.
+    ///   - newest: the bottom of the last message or the words on their way, or nil while the page has none; `end`, the
+    ///     bottom of the page.
     ///   - top: the top of what the page shows, under the status bar; `dockTop`, the top of the box.
     static func followAim(newest: CGFloat?, end: CGFloat, top: CGFloat, dockTop: CGFloat) -> FollowAim? {
         let room = dockTop - top
