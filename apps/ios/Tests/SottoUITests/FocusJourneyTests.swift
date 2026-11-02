@@ -2048,6 +2048,16 @@ import UIKit
         XCTAssertEqual(codex.value as? String, "Closed", "Its provider starts closed")
         XCTAssertFalse(byID("model-provider-claude").exists, "A thread's sheet offers only its own provider")
         XCTAssertFalse(astra.exists, "Closed, it shows none of its models")
+        if size.isAccessibilityCategory {
+            // Stacked at the accessibility sizes, each setting row keeps space above and below its name and value.
+            let effort = menuItem("Effort"), speed = menuItem("Speed"), permissions = menuItem("Permissions")
+            reveal(permissions, fullyVisible: true)
+            XCTAssertTrue(effort.isHittable && speed.isHittable && permissions.isHittable, "All three rows show")
+            XCTAssertLessThanOrEqual(effort.frame.maxY, speed.frame.minY + 1, "Effort ends before Speed starts")
+            XCTAssertLessThanOrEqual(speed.frame.maxY, permissions.frame.minY + 1, "Speed ends before Permissions starts")
+            capture("thread-settings-rows-large-dark")
+            reveal(codex)
+        }
         codex.tap()
         XCTAssertTrue(astra.waitForExistence(timeout: 5), "Opened, it lists the thread's own provider's models")
         XCTAssertFalse(menuItem("GPT-6.1 Luna").exists, "A model that isn't ready is left out")
