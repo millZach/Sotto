@@ -118,8 +118,13 @@ export class DesktopDefaultsStore {
   roles(counts: DesktopCounts): WorkerRoleChoices { return this.current(counts)?.workerRoles ?? {} }
   /** Capacity eligibility needs a paired, recorded desktop; this limit grants no permission. */
   workerCeiling(counts: DesktopCounts): number { return this.current(counts)?.workerCeiling ?? DEFAULT_WORKER_CEILING }
-  /** **Show every picture and video an agent makes** as the defaults that apply now say (ADR-0170, part 7); on, its default, when none says. */
-  showEveryAgentPicture(counts: DesktopCounts): boolean { return this.current(counts)?.showEveryAgentPicture ?? true }
+  /**
+   * **Show every picture and video an agent makes** as the newest desktop that counts and says anything of it says
+   * (ADR-0170, part 7), so a desktop that sends no word of it changes nothing; on, its default, when none says.
+   */
+  showEveryAgentPicture(counts: DesktopCounts): boolean {
+    return this.kept.find(item => item.showEveryAgentPicture !== undefined && counts(item.clientId))?.showEveryAgentPicture ?? true
+  }
 }
 
 

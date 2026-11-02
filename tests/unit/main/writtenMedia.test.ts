@@ -4,8 +4,13 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThreadMediaStore } from '../../../src/main/agents/threadMedia'
+vi.mock('../../../src/main/agents/writtenMedia', async original => {
+  const real = await original<typeof import('../../../src/main/agents/writtenMedia')>()
+  // Counted, so a turn's end that looks at nothing is asserted, not waited out.
+  return { ...real, writtenMedia: vi.fn(real.writtenMedia) }
+})
 import { listMediaFiles, writtenMedia, writtenSince } from '../../../src/main/agents/writtenMedia'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
 import { pngHeader } from '../../fixtures/stagedImages'
@@ -87,6 +92,7 @@ describe('what a turn wrote', () => {
 })
 
 describe('a turn that wrote pictures, through the workspace and the coordinator (ADR-0170, part 7)', () => {
+  beforeEach(() => { vi.mocked(writtenMedia).mockClear() })
   /** A thread whose turn is sent, writes a screenshot and then ends, with the switch as `wanted` says at each point. */
   async function turn(wanted: { on: boolean }, whileWorking: () => void = () => undefined) {
     const f = await workspaceFixture(); folders.push(f.root)
@@ -106,6 +112,8 @@ describe('a turn that wrote pictures, through the workspace and the coordinator 
     whileWorking()
     session.status = 'idle'; f.adapters.codex.emit()
     await control.control.command({ type: 'observe-threads', threadIds: [thread.id] })
+    // The turn's end asks and looks in the same pass that publishes the status: once it reads idle, it has decided.
+    await expect.poll(() => control.control.get().host.threads.find(item => item.id === thread.id)?.status, { timeout: 15_000 }).not.toBe('running')
     return { step: () => control.control.threadDetail(thread.id)?.activities?.find(record => record.id.startsWith('sotto-written-')), stop: async () => { await control.dispose(); await f.stop() } }
   }
 
@@ -121,7 +129,7 @@ describe('a turn that wrote pictures, through the workspace and the coordinator 
   it('with the switch off, looks at nothing', async () => {
     const { step, stop } = await turn({ on: false })
     try {
-      await new Promise(resolve => setTimeout(resolve, 300))
+      expect(writtenMedia).not.toHaveBeenCalled()
       expect(step()).toBeUndefined()
     } finally { await stop() }
   })
@@ -130,8 +138,26 @@ describe('a turn that wrote pictures, through the workspace and the coordinator 
     const wanted = { on: true }
     const { step, stop } = await turn(wanted, () => { wanted.on = false })
     try {
-      await new Promise(resolve => setTimeout(resolve, 300))
+      expect(writtenMedia).not.toHaveBeenCalled()
       expect(step()).toBeUndefined()
     } finally { await stop() }
+  })
+
+  it('keeps no start for a send the provider refused, so the next turn is looked at from its own start', async () => {
+    const f = await workspaceFixture(); folders.push(f.root)
+    const media = new ThreadMediaStore(join(f.root, 'media')); await media.load()
+    f.host.keepWrittenMedia(media, () => true)
+    const project = f.adapters.codex.state.projects[0]!.path!
+    execFileSync('git', ['init', '-q'], { cwd: project })
+    const control = await agentControlFixture({ host: f.host, directory: f.root, credentialOptions: { mode: 'unavailable' }, control: { threadMedia: media } })
+    try {
+      await control.control.start(); await control.control.command({ type: 'connect' })
+      const thread = control.control.get().host.threads.find(item => item.providerId === 'codex')!
+      const starts = (f.host as unknown as { turnStarts: Map<string, unknown> }).turnStarts
+      const execute = vi.spyOn(f.adapters.codex, 'execute').mockImplementationOnce(async () => { throw new Error('refused') })
+      await control.control.command({ type: 'manual-send', threadId: thread.id, draftId: randomUUID(), text: 'Take a screenshot' })
+      expect(execute).toHaveBeenCalled()
+      expect(starts.has(thread.id)).toBe(false)
+    } finally { await control.dispose(); await f.stop() }
   })
 })

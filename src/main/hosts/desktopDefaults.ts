@@ -131,14 +131,14 @@ export interface DesktopDefaultsSource {
  * connection the router takes.
  */
 export function followDesktopDefaults(push: DesktopDefaultsPush, source: DesktopDefaultsSource, roles: () => WorkerRoleChoices | undefined,
-  ceilings: () => DesktopWorkerCeilings | undefined = () => undefined, everyPicture: () => boolean | undefined = () => undefined): { rolesChanged(): void; dispose(): void } {
+  ceilings: () => DesktopWorkerCeilings | undefined = () => undefined, everyPicture: () => boolean | undefined = () => undefined): { defaultsChanged(): void; dispose(): void } {
   let mode: AgentRuntimeMode | undefined
   let seen = false
   const offConnected = source.subscribeConnected(connection => push.connected(connection))
   const offState = source.subscribe(state => { mode = state.configuration.newThreadRuntimeMode; seen = true; push.update(mode, roles(), ceilings(), everyPicture()) })
   return {
     // Before the first state, the roles go with it.
-    rolesChanged: () => { if (seen) push.update(mode, roles(), ceilings(), everyPicture()) },
+    defaultsChanged: () => { if (seen) push.update(mode, roles(), ceilings(), everyPicture()) },
     dispose: () => { offConnected(); offState() },
   }
 }

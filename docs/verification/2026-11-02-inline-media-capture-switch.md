@@ -23,7 +23,8 @@ Captures in `artifacts/inline-media/`:
 
 - **Tool results and viewed pictures, on and off:** `shownMedia.test.ts` and `toolPictureCapture.perf.test.ts`, through the store and through the Codex projection.
 - **Turned off during a turn:** `writtenMedia.test.ts`. The turn's end lists nothing.
-- **A headless host:** `hostDelegation.test.ts`, unit and integration, over a real socket. A recorded desktop is offered `every-agent-picture`, its answer survives a restart, a desktop that sends no word of it doesn't erase it, an older host is never sent the field, and a stable host doesn't offer it. No host's thread was seen gaining or losing a tile.
+- **A send the provider refused:** `writtenMedia.test.ts`. It keeps no turn start.
+- **A headless host:** `hostDelegation.test.ts`, unit and integration, the second over a real socket. A recorded desktop is offered `every-agent-picture`, its answer survives a restart, a desktop that sends no word of it changes nothing, an older host is never sent the field, and a stable host doesn't offer it. No host's thread was seen gaining or losing a tile.
 
 ## Not checked
 
@@ -32,17 +33,30 @@ Captures in `artifacts/inline-media/`:
 
 ## Performance
 
-Median of three runs on forge. Main is bd229c329.
+Medians of three runs on forge. Main is bd229c329.
+
+`tests/perf/toolPictureCapture.perf.test.ts`, on Electron main, per update:
 
 | | Main | Branch, switch off | Branch, switch on |
 |---|---|---|---|
-| Codex update, words alone | 5.29 µs | 5.42 µs | 5.63 µs |
-| Codex update, Computer Use screenshot | 16.22 µs | 16.22 µs | 2.1 ms the first time, kept once |
-| Codex update, `view_image` | 5.00 µs | 4.95 µs | read once, off the update path |
-| Cursor update, screenshot | 1.37 µs | 1.47 µs | not timed |
-| Pictures kept, file reads, per step | 0, 0 | 0, 0 | 1, 1 |
-| A turn's end | nothing | nothing | 5.4 ms listing, 0.4 ms looking |
+| Codex, words alone | 5.29 µs | 5.42 µs | 5.43 µs |
+| Codex, Computer Use screenshot | 16.22 µs | 16.22 µs | 2.06 ms, its first time only |
+| Codex, `view_image` | 5.00 µs | 4.95 µs | one file read, off the update path |
+| Cursor, screenshot | 1.37 µs | 1.47 µs | 0.52 ms its first time, then 1.35 µs |
+| Pictures kept and files read, per step | 0, 0 | 0, 0 | 1, 1 |
 
-The turn's end is `writtenMediaTurnEnd.perf.test.ts`: a working copy with 300 committed pictures, a `node_modules` of 3,000 files and 43 listed files. `ownerScaleWorkBudget` and `streamingCopyBudget` pass unchanged, with no budget raised.
+`tests/perf/writtenMediaTurnEnd.perf.test.ts`, at a turn's end: nothing on main or with the switch off. With it on, a 5.4 ms listing and a 0.4 ms look, in a working copy with 300 committed pictures, a `node_modules` of 3,000 files and 43 listed files.
 
-So off costs what main costs, and on, the default, costs what parts 3 and 4 cost before request-only: one hash of each picture a tool hands back, and one listing at each turn's end.
+`tests/perf/inlineMediaTranscript.perf.test.tsx`, the 200-turn thread with pictures. This pull request changes nothing it runs, so these differences are the run-to-run spread:
+
+| | Main | Branch |
+|---|---|---|
+| Opening the thread | 80.0 ms | 82.3 ms |
+| Streamed chunk | 8.56 ms | 8.70 ms |
+| Chunk commits | 20 | 20 |
+| Scroll step | 2.71 ms | 2.55 ms |
+| Reads: opening, chunk, scroll | 6, 0, 30 | 6, 0, 30 |
+
+`ownerScaleWorkBudget` and `streamingCopyBudget` pass with no budget raised.
+
+So off costs what main costs. On, the default, costs what parts 3 and 4 cost before request-only: one hash of each picture a tool hands back, and one listing at each turn's end. That is more work than main does, by Zach's choice of default.

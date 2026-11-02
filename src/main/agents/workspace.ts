@@ -5763,11 +5763,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     const releaseSend = !checkoutHeld && dispatchFolder
       ? await this.checkoutMutations.acquire(dispatchFolder, 'send', this.checkoutThreadHolder(thread.id, 'send')) : undefined
+    // The start this send kept for what its turn writes, let go again if no turn came of it.
+    let turnStart: { at: number; folder: string; messageId: string; sequence: number | undefined } | undefined
+    let turnBegan = false
     try {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
       // A turn's start, for the pictures it writes: the first send of a turn holds it until the turn ends.
       if (command.type === 'send' && this.writtenMediaKept?.wanted() && dispatchFolder && !this.turnStarts.has(thread.id)) {
-        this.turnStarts.set(thread.id, { at: Date.now(), folder: dispatchFolder, messageId: command.messageId, sequence: this.storedActivity.has(thread.id) ? undefined : thread.activities?.at(-1)?.sequence ?? -1 })
+        turnStart = { at: Date.now(), folder: dispatchFolder, messageId: command.messageId, sequence: this.storedActivity.has(thread.id) ? undefined : thread.activities?.at(-1)?.sequence ?? -1 }
+        this.turnStarts.set(thread.id, turnStart)
       }
       if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks, command.hiddenWakeUp === true)
       const dispatched = command.type === 'send' ? withoutWakeUp(preparedSkills ? { ...command, skills: preparedSkills } : command)
@@ -5775,6 +5779,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       watcherGuard?.()
       const result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(dispatched, watcherGuard) : this.inner.execute(dispatched))
+      turnBegan = result.accepted
       // A continued thread's first message begins with its handover; its branch is named from the user's words (ADR-0089).
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, continuedPromptWords(thread, command.text))
       if (command.type === 'configure-thread') {
@@ -5786,6 +5791,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       return result
     } finally {
+      if (turnStart && !turnBegan && this.turnStarts.get(thread.id) === turnStart) this.turnStarts.delete(thread.id)
       releaseSend?.()
       if (inspectAfter) this.inspectAfterSend(thread.id)
     }

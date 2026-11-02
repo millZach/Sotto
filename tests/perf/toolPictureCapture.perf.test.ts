@@ -127,5 +127,19 @@ describe('tool pictures per update (ADR-0170)', () => {
       + `screenshot ${round(result.shotOff)} / ${round(result.shotOn)}; kept ${capture.calls()}`)
     expect(capture.calls()).toBe(0)
     if (process.env.SOTTO_PERF_ASSERT === '1') for (const value of Object.values(result)) expect(value).toBeLessThan(BUDGET_US)
+
+    // On, the first update that carries the picture keeps it; every later one finds it on the row and hashes nothing.
+    const everyCapture = counted<MediaCapture>(media.capture)
+    const every = agentCaptures({ capture: everyCapture.work, captureFile: async () => [] }, () => true).captureMedia
+    let rows: AgentActivity[] = cursorActivities({ sessionUpdate: 'tool_call', toolCallId: 'call', title: 'screenshot', kind: 'other', status: 'pending' }, place, [], true, every)
+    const once = process.hrtime.bigint()
+    rows = cursorActivities(shot, place, rows, true, every)
+    const firstUs = Number(process.hrtime.bigint() - once) / 1_000
+    const laterUs = perUpdate(() => { rows = cursorActivities(shot, place, rows, true, every) })
+    await media.idle()
+    console.info(`[perf] Cursor, switch on: first screenshot ${round(firstUs)} µs, each update after it ${round(laterUs)} µs; kept ${everyCapture.calls()}`)
+    expect(rows.at(-1)!.media).toHaveLength(1)
+    expect(everyCapture.calls()).toBe(1)
+    if (process.env.SOTTO_PERF_ASSERT === '1') expect(laterUs).toBeLessThan(BUDGET_US)
   })
 })

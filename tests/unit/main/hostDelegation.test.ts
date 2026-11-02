@@ -54,6 +54,9 @@ describe('the desktop defaults a host keeps', () => {
     expect(store.showEveryAgentPicture(() => true)).toBe(false)
     const again = new DesktopDefaultsStore(root); await again.load()
     expect(again.showEveryAgentPicture(() => true)).toBe(false)
+    // Another desktop that sends no word of it, newer or not, changes nothing.
+    await again.record('desktop-b', { newThreadRuntimeMode: 'auto' })
+    expect(again.showEveryAgentPicture(() => true)).toBe(false)
     await again.record('desktop-a', { newThreadRuntimeMode: 'auto', showEveryAgentPicture: true })
     expect(again.showEveryAgentPicture(() => true)).toBe(true)
   })
@@ -333,7 +336,7 @@ describe('the desktop\'s push of its defaults', () => {
     const follow = followDesktopDefaults(push, source, () => roles)
     // Roles that change before any state go with the first one.
     roles = { 'code-review': { modelId: 'model-a', reasoningEffort: null } }
-    follow.rolesChanged()
+    follow.defaultsChanged()
     await push.settled(); expect(sent).toEqual([])
     // The router's state carries this computer's default while its host runs, the selected host's while it is off.
     for (const listener of states) listener({ configuration: { newThreadRuntimeMode: 'auto' } })
@@ -345,7 +348,7 @@ describe('the desktop\'s push of its defaults', () => {
     // New roles keep the default last published.
     for (const listener of states) listener({ configuration: { newThreadRuntimeMode: 'full-access' } })
     roles = { 'code-review': { modelId: 'model-b', reasoningEffort: null } }
-    follow.rolesChanged()
+    follow.defaultsChanged()
     await push.settled()
     expect(sent.at(-1)).toEqual({ newThreadRuntimeMode: 'full-access', workerRoles: roles })
     // A connection the router takes is told.
