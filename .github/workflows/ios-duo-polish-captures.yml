@@ -1,0 +1,41 @@
+name: iPhone Duo polish captures
+
+# Throwaway, for Zach's Duo polish of November 1, 2026: this file lives on chore/ios-captures-duo-polish and is never
+# merged. GitHub runs workflow_dispatch only for a workflow on the default branch, so a push to this branch starts it.
+on:
+  push:
+    branches: [chore/ios-captures-duo-polish, chore/ios-captures-duo-before]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-duo-polish-captures-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  captures:
+    name: iPhone Duo captures (macOS)
+    runs-on: xcode-27
+    timeout-minutes: 75
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch the Duo posture tool's tag
+        run: git fetch --force origin tag prototype/iphone-duo-layout
+      - name: Record native toolchain
+        run: xcodebuild -version
+      - name: Capture the unfolded Duo upright and sideways
+        run: sh apps/ios/Scripts/duo-polish-captures.sh
+      - name: Keep the captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-duo-polish-captures
+          path: apps/ios/.build-duo/out/
+          if-no-files-found: warn
+          retention-days: 14
