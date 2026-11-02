@@ -21,6 +21,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
+import { heardFrom, LiveServerMark } from './ServerMark'
 import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import {
   browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
@@ -375,13 +376,6 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
 /** How long a turn on one of the user's own servers waits with nothing from it before its line says it is still waiting. */
 export const STILL_WAITING_MS = 30_000
 
-/** Whether the server has sent anything for this turn: a reply after its message, or any work of its own. */
-function heardFrom(thread: Pick<AgentThread, 'activities' | 'messages'>, turnId: string): boolean {
-  if (thread.activities?.some(record => record.turnId === turnId && !isTurnRecord(record))) return true
-  const at = thread.messages.findLastIndex(message => message.id === turnId)
-  return at >= 0 && thread.messages.slice(at + 1).some(message => message.role === 'assistant')
-}
-
 /** True once a running wait has gone on for 30 seconds; one timer brings the line round when it does. */
 function useStillWaiting(startedAt: string | undefined, active: boolean): boolean {
   const [, setDue] = useState(0)
@@ -400,8 +394,10 @@ function useStillWaiting(startedAt: string | undefined, active: boolean): boolea
  * The live line of a turn waiting on one of the user's own model servers: what it is waiting for, with Stop, the
  * thread's own interrupt. Only its words are announced, and politely, so a new try does not move anything.
  */
-function OwnServerLine({ actions, server, startedAt, steps }: {
+function OwnServerLine({ actions, server, mark, startedAt, steps }: {
   readonly actions: OwnServerTurnActions; readonly server: OwnServerTurn
+  /** The server mark: hollow while the server is tried again, one cell walking round while it is waited for. */
+  readonly mark: ReactNode
   /** When the turn began: given, the line says it is still waiting and counts from then; absent, it says which try it is. */
   readonly startedAt?: string | undefined
   /** The steps the turn took before the server needed trying again, still one press away. */
@@ -413,7 +409,7 @@ function OwnServerLine({ actions, server, startedAt, steps }: {
   const note = startedAt === undefined ? undefined : stillWaitingNote(i18n)
   return <div className="thread-activity-live thread-activity-live--own-server" data-testid="thread-activity-live" data-connected data-expanded={steps?.open || undefined}
     onKeyDown={steps?.onKeyDown}>
-    <i className="thread-activity__pulse" data-connected data-tone={startedAt === undefined ? 'attention' : undefined} aria-hidden="true" />
+    {mark}
     <span className="thread-activity-live__state"><span role="status">{words}</span>{startedAt ? <> <Elapsed startedAt={startedAt} /></> : null}</span>
     <button type="button" className="thread-activity-live__stop tt-focusable" aria-label={name} title={name} disabled={!actions.canStop}
       onClick={event => { const pressed = event.currentTarget; actions.stop(); focusComposerFrom(pressed) }}>
@@ -480,7 +476,11 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // server again, and once the server has sent nothing for 30 seconds.
   const own = useOwnServerTurnActions()
   const server = own !== null && connected && turn?.status === 'running' ? turn.ownServer : undefined
-  const waiting = useStillWaiting(turn?.startedAt, server !== undefined && server.attempt === undefined && turnId !== null && !heardFrom(thread, turnId))
+  const heard = server !== undefined && turn !== undefined && heardFrom(thread, turn)
+  const waiting = useStillWaiting(turn?.startedAt, server !== undefined && server.attempt === undefined && turnId !== null && !heard)
+  // Its server mark stands where the pulse would (ADR-0124, November 1 amendment): hollow while OpenCode tries the server
+  // again, one cell walking round while the server reads the prompt, and a step round for each piece of text it writes.
+  const mark = server === undefined || turn === undefined ? null : <LiveServerMark thread={thread} turn={turn} heard={heard} attempt={server.attempt} />
   const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
@@ -506,14 +506,14 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   }
   if (turnId === null && sendingSince === undefined) return null
   if (server !== undefined && own !== null && server.attempt !== undefined) {
-    return <OwnServerLine actions={own} server={server} steps={disclosure} />
+    return <OwnServerLine actions={own} server={server} mark={mark} steps={disclosure} />
   }
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
-    return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} steps={disclosure} />
+    return <OwnServerLine actions={own} server={server} mark={mark} startedAt={turn.startedAt} steps={disclosure} />
   }
   // The words alone carry the wait: no clock sits beside them (ADR-0134, October 26 amendment).
   const words = <>
-    <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
+    {mark ?? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />}
     <span className="thread-activity-live__state">{connected ? <WorkingWord /> : t`Last seen working`}</span>
   </>
   // A tip sits under the words while the provider is connected, and above the steps once they open.

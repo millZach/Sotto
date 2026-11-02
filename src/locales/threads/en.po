@@ -1148,6 +1148,11 @@ msgstr "{setLevel} is set. Choose a level this model offers."
 msgid "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 msgstr "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 
+#. {shown} and {whole} are token counts such as 183k and 256k: how much of the model’s context the thread uses, of all it takes.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "{shown} of {whole}"
+msgstr "{shown} of {whole}"
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 msgstr "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
@@ -1596,6 +1601,11 @@ msgstr "a Windows machine"
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Abort"
 msgstr "Abort"
+
+#. Before the large figure in the speed card of a thread on the user’s own model server, such as "about 38 tokens a second": the figure is estimated from the text, not counted by the server.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "about"
+msgstr "about"
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Accept Cursor’s plan"
@@ -2783,6 +2793,11 @@ msgstr "Connecting…"
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Context compacted"
 msgstr "Context compacted"
+
+#. In the speed card of a thread on the user’s own model server: how much of the model’s context the thread fills.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Context used"
+msgstr "Context used"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Context, in tokens"
@@ -4134,6 +4149,11 @@ msgstr "finished the cloud iPhone session"
 msgid "Finishes on {hostName} itself, so not from this computer."
 msgstr "Finishes on {hostName} itself, so not from this computer."
 
+#. In the speed card of a thread on the user’s own model server: how long the server took to start answering the last message, such as 41s.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "First token after"
+msgstr "First token after"
+
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Fit (0)"
@@ -4838,6 +4858,16 @@ msgstr "Last seen working"
 msgid "Last seen working, {taken} so far"
 msgstr "Last seen working, {taken} so far"
 
+#. Heads the speed card of a thread on the user’s own model server once its last turn has ended.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Last turn"
+msgstr "Last turn"
+
+#. Heads the speed card of a thread on the user’s own model server when its last turn failed because the server never answered.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Last turn didn’t start"
+msgstr "Last turn didn’t start"
+
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Leave empty to auto-generate"
 msgstr "Leave empty to auto-generate"
@@ -5358,8 +5388,10 @@ msgstr "Next Monday"
 msgid "Next prompts"
 msgstr "Next prompts"
 
+#. In the speed card of a thread on the user’s own model server, for how long the first token took: the server never answered.
 #. Stands for a question in a saved form that was left unanswered.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+#: src/renderer/src/agents/ServerMark.tsx
 msgid "No answer"
 msgstr "No answer"
 
@@ -5735,6 +5767,7 @@ msgid "Open {sourceTitle}"
 msgstr "Open {sourceTitle}"
 
 #: src/renderer/src/agents/DelegatedWork.tsx
+#: src/renderer/src/agents/ThreadPane.tsx
 msgid "Open {threadTitle}"
 msgstr "Open {threadTitle}"
 
@@ -6117,6 +6150,8 @@ msgstr "Paste the key"
 
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
+#. The large figure in the speed card of a thread on the user’s own model server: no tokens have come for a moment.
+#: src/renderer/src/agents/ServerMark.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Paused"
 msgstr "Paused"
@@ -6154,6 +6189,10 @@ msgstr "Permission request"
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Permission request for {ownerTitle}"
 msgstr "Permission request for {ownerTitle}"
+
+#: src/renderer/src/agents/ThreadPane.tsx
+msgid "Permission request from {title}"
+msgstr "Permission request from {title}"
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Permissions"
@@ -6439,6 +6478,10 @@ msgstr "Question"
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Question from {ownerTitle}"
 msgstr "Question from {ownerTitle}"
+
+#: src/renderer/src/agents/ThreadPane.tsx
+msgid "Question from {title}"
+msgstr "Question from {title}"
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Question skipped."
@@ -8270,8 +8313,8 @@ msgid "That thread is gone or archived, or this thread did not delegate to it. {
 msgstr "That thread is gone or archived, or this thread did not delegate to it. {nothing}"
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "That thread was waiting for your answer on its own card. {nothing}"
-msgstr "That thread was waiting for your answer on its own card. {nothing}"
+msgid "That thread was waiting for your answer. {nothing}"
+msgstr "That thread was waiting for your answer. {nothing}"
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "That thread's own queue was paused, or a message to it had an unknown result, so it takes no brief until you resume, clear or check it there. {nothing}"
@@ -8946,6 +8989,11 @@ msgstr "This thread’s worktree, on {branch}. Both threads change the same file
 msgid "This thread’s worktree. Both threads change the same files."
 msgstr "This thread’s worktree. Both threads change the same files."
 
+#. Heads the speed card of a thread on the user’s own model server while its turn runs.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "This turn"
+msgstr "This turn"
+
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."
 msgstr "This window cannot show the page."
@@ -9050,6 +9098,16 @@ msgstr "Tip"
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "To do"
 msgstr "To do"
+
+#. Beside the large figure in the speed card of a thread on the user’s own model server, such as 38: how fast the model is writing. Tokens are the pieces a language model writes in.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "tokens a second"
+msgstr "tokens a second"
+
+#. Beside the large figure in the speed card of a thread on the user’s own model server once its turn has ended, such as 38: how fast the model wrote the last reply, on average. Tokens are the pieces a language model writes in.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "tokens a second, on average"
+msgstr "tokens a second, on average"
 
 #. Snooze a thread until 9 am tomorrow.
 #: src/renderer/src/agents/threadSnooze.tsx
@@ -9611,8 +9669,8 @@ msgid "Waiting for Sotto…"
 msgstr "Waiting for Sotto…"
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your answer to its question. Open it to answer."
-msgstr "Waiting for your answer to its question. Open it to answer."
+msgid "Waiting for your answer to its question. Answer it below."
+msgstr "Waiting for your answer to its question. Answer it below."
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Waiting for your last prompt to be confirmed."
@@ -9620,17 +9678,17 @@ msgstr "Waiting for your last prompt to be confirmed."
 
 #. {toolName} is the name of a tool the delegated thread asks to use.
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission to use {toolName}. Open it to answer."
-msgstr "Waiting for your permission to use {toolName}. Open it to answer."
+msgid "Waiting for your permission to use {toolName}. Answer it below."
+msgstr "Waiting for your permission to use {toolName}. Answer it below."
 
 #. {shown} is the command the delegated thread asks to run.
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission: {shown}. Open it to answer."
-msgstr "Waiting for your permission: {shown}. Open it to answer."
+msgid "Waiting for your permission: {shown}. Answer it below."
+msgstr "Waiting for your permission: {shown}. Answer it below."
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Waiting for your permission. Open it to answer."
-msgstr "Waiting for your permission. Open it to answer."
+msgid "Waiting for your permission. Answer it below."
+msgstr "Waiting for your permission. Answer it below."
 
 #. {waitingIn} is the title of a thread this one delegated to.
 #. {waitingIn} is where the thread waits, such as the name of the thread it delegated to.
@@ -9669,6 +9727,11 @@ msgstr "Waiting to update to {published}. Your threads keep working."
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Waiting to update to the published version. Your threads keep working."
 msgstr "Waiting to update to the published version. Your threads keep working."
+
+#. In the speed card of a thread on the user’s own model server: no token yet, and how long it has waited, such as 42s.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Waiting, {waited}"
+msgstr "Waiting, {waited}"
 
 #: src/renderer/src/agents/threadSnooze.tsx
 msgid "Wake {title} at"

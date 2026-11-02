@@ -230,7 +230,6 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 .thread-activity-live--own-server { flex-wrap: wrap; row-gap: 2px; }
 .thread-activity-live--own-server .thread-activity-live__state { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .thread-activity-live--own-server .thread-activity__clock { color: var(--tt-text-muted); }
-.thread-activity__pulse[data-connected][data-tone='attention'] { background: var(--tt-attention); }
 .thread-activity-live__stop {
   display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; min-height: 28px; margin-left: -2px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-control);
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); font-weight: 500; white-space: nowrap;
