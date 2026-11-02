@@ -13,6 +13,8 @@ import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, orderBetween, thread
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
+import { writtenMedia, type WrittenMedia, type WrittenMediaStore } from './writtenMedia'
+import { WRITTEN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { sameSnapshot } from './sameSnapshot'
@@ -1463,6 +1465,45 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     })
   }
   allowBringBack(): void { this.bringBackAllowed = true }
+  /**
+   * Keeps the pictures and videos each turn writes in its folder (ADR-0170, part 4): given once, at start, only with the
+   * Owl feature `inline-media` on. Absent, a turn's end looks at nothing.
+   */
+  private writtenMediaStore: WrittenMediaStore | undefined
+  /**
+   * Each turn under way that may have written pictures, by thread: when it was sent, the folder it went to, its message,
+   * and the newest record's sequence then, when its records were in memory to say. Its end looks for what changed since,
+   * once, off the update path.
+   */
+  private readonly turnStarts = new Map<string, { at: number; folder: string; messageId: string; sequence: number | undefined }>()
+  keepWrittenMedia(store: WrittenMediaStore): void { this.writtenMediaStore = store }
+  /** A turn that may have written pictures ended: what it wrote is found off the update path and becomes a step of its own. */
+  private turnEnded(threadId: string): void {
+    const start = this.turnStarts.get(threadId)
+    const store = this.writtenMediaStore
+    if (!start || !store) return
+    this.turnStarts.delete(threadId)
+    void writtenMedia(start.folder, start.at, store).then(found => { if (found) this.addWrittenStep(threadId, start, found) }).catch(() => undefined)
+  }
+  /**
+   * The step that shows what a turn wrote: placed with the turn's first record when it has one, else after the message
+   * that began it, and made once per turn, so a turn read again keeps it.
+   */
+  private addWrittenStep(threadId: string, start: { messageId: string; sequence: number | undefined }, found: WrittenMedia): void {
+    const thread = this.threadById(threadId)
+    if (!thread || !this.visible(thread)) return
+    this.holdActivities(thread)
+    // Without the sequence, the turn's records are the ones named after its message or placed after it.
+    const first = thread.activities?.find(record => start.sequence !== undefined ? record.sequence > start.sequence
+      : record.turnId === start.messageId || record.afterMessageId === start.messageId)
+    const turnId = first?.turnId ?? start.messageId
+    const record: AgentActivity = { id: `${WRITTEN_STEP_PREFIX}${createHash('sha256').update(`${threadId}\n${turnId}`).digest('hex').slice(0, 32)}`, turnId,
+      afterMessageId: first ? first.afterMessageId ?? start.messageId : start.messageId, sequence: 0, kind: 'file-change', status: 'completed',
+      title: 'Pictures and videos it wrote', completedAt: new Date().toISOString(), changes: found.changes, media: found.media }
+    this.touched(thread).activities = immutableActivities(mergeAgentActivities(thread.activities, [record]))
+    this.dirty = true
+    this.publish()
+  }
   /**
    * How a check installs packages first, present only while Work across machines is on (#1312, ADR-0072): main turns it on
    * once, at start. Absent, a check's new worktree is made as any new worktree is.
@@ -4604,6 +4645,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const old = previousThreads.get(thread.id)
       if (old) this.refreshIfHeadMoved(thread, old)
+      if (old?.status === 'running' && thread.status !== 'running') this.turnEnded(thread.id)
     }
     this.heldForInput.clear()
     this.dirty = true
@@ -4663,6 +4705,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (visible) recordsAfter += stamped.activities?.length ?? 0
       }
       if (visible && old) this.refreshIfHeadMoved(stamped, old)
+      if (old?.status === 'running' && stamped.status !== 'running') this.turnEnded(id)
       if (stamped.kind === 'watcher' && this.watcherMoved(stamped, old)) watcher = true
     }
     this.heldForInput.clear()
@@ -5635,6 +5678,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ? await this.checkoutMutations.acquire(dispatchFolder, 'send', this.checkoutThreadHolder(thread.id, 'send')) : undefined
     try {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
+      // A turn's start, for the pictures it writes: the first send of a turn holds it until the turn ends.
+      if (command.type === 'send' && this.writtenMediaStore && dispatchFolder && !this.turnStarts.has(thread.id)) {
+        this.turnStarts.set(thread.id, { at: Date.now(), folder: dispatchFolder, messageId: command.messageId, sequence: this.storedActivity.has(thread.id) ? undefined : thread.activities?.at(-1)?.sequence ?? -1 })
+      }
       if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks, command.hiddenWakeUp === true)
       const dispatched = command.type === 'send' ? withoutWakeUp(preparedSkills ? { ...command, skills: preparedSkills } : command)
         : command.type === 'configure-thread' ? this.hostRead(command) : command

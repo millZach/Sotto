@@ -30,6 +30,8 @@ import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
 import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
 import { startDeadProxy, VISUAL_SCHEME_PRIVILEGES } from './agents/visualSeal'
+import { THREAD_MEDIA_SCHEME_PRIVILEGES, threadVideoResponse } from './agents/threadMediaScheme'
+import { THREAD_MEDIA_SCHEME } from '../shared/threadVideoUrl'
 import { FIGTREE_FONT_FACES } from '../shared/figtreeFonts'
 import { VISUAL_PARTITION } from '../shared/visualPages'
 import { HostProviderJobs } from './hosts/hostProviderJob'
@@ -1144,6 +1146,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
+    mediaPart: async request => { const found = await agentControl.threadMediaVideo(request); return found && { mimeType: found.handle.mimeType, sizeBytes: found.handle.sizeBytes, bytes: found.bytes } },
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
@@ -2311,6 +2314,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale, { opencode: !heldProviders.has('opencode') })
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
+      // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
+      if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
@@ -2571,7 +2576,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }
 }
 
-protocol.registerSchemesAsPrivileged([VISUAL_SCHEME_PRIVILEGES])
+protocol.registerSchemesAsPrivileged([VISUAL_SCHEME_PRIVILEGES, THREAD_MEDIA_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
 configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)

@@ -7,7 +7,8 @@ import { CheckoutHeldRefusal, CheckoutSendRefusal, type CheckoutPendingWork } fr
 import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextWriter'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
-import type { AgentActivity } from '../../shared/agentActivity'
+import { AGENT_VIDEO_PART_BYTES, type AgentActivity, type AgentActivityMedia, type AgentVideoMimeType } from '../../shared/agentActivity'
+import { readVideo } from './writtenMedia'
 import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
@@ -18,7 +19,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -2482,6 +2483,28 @@ export class AgentControl {
     if (!store) return null
     const dataUrl = await store.read(this.threadActivity(request.threadId, request.activityId), request.mediaId)
     return dataUrl === null ? null : { dataUrl }
+  }
+  /**
+   * One part of a video a thread's record names (ADR-0170, part 4), its bytes read from the file the handle names while
+   * that is still the file: for a client to put together, or the desktop's player to play from. Null otherwise.
+   */
+  async threadMediaVideo(request: AgentThreadMediaPartRequest): Promise<{ readonly handle: AgentActivityMedia; readonly parts: number; readonly bytes: Buffer } | null> {
+    const store = this.dependencies.threadMedia
+    if (!store) return null
+    const handle = this.threadActivity(request.threadId, request.activityId)?.media?.find(item => item.id === request.mediaId)
+    const file = handle?.kind === 'video' ? store.videoFile(handle.digest, handle.sizeBytes) : undefined
+    if (!handle || !file) return null
+    const parts = Math.ceil(handle.sizeBytes / AGENT_VIDEO_PART_BYTES)
+    if (request.part >= parts) return null
+    const bytes = await readVideo(file, request.part * AGENT_VIDEO_PART_BYTES, AGENT_VIDEO_PART_BYTES)
+    return bytes ? { handle, parts, bytes } : null
+  }
+  /** `threadMediaVideo` as a client reads it over a socket: the part in base64, with what the whole video is. */
+  async threadMediaPart(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart> {
+    const found = await this.threadMediaVideo(request)
+    if (!found) return null
+    const { handle, parts, bytes } = found
+    return { name: handle.name, mimeType: handle.mimeType as AgentVideoMimeType, sizeBytes: handle.sizeBytes, digest: handle.digest, part: request.part, parts, data: bytes.toString('base64') }
   }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {

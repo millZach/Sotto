@@ -22,7 +22,13 @@ export type MediaFileCapture = (path: string, source: AgentActivityMedia['source
 export const THREAD_MEDIA_KEEP_BYTES = 1024 * 1024 * 1024
 /** The same while Keep local history is off, when the pictures are held in memory. */
 export const THREAD_MEDIA_KEEP_MEMORY_BYTES = 128 * 1024 * 1024
-const keptSchema = z.object({ version: z.literal(1), kept: z.record(z.string().regex(/^[a-f0-9]{64}$/u), z.object({ sizeBytes: z.number().int().min(1), at: z.number().finite() })) })
+/** How many written videos' files the store remembers; past that the ones found longest ago are forgotten first. */
+export const WRITTEN_VIDEOS_REMEMBERED = 1_000
+/** Where a written video is, and what its file was when it was found: one changed since is no longer the video. */
+export interface WrittenVideoFile { readonly path: string; readonly sizeBytes: number; readonly modifiedMs: number }
+const digestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
+const keptSchema = z.object({ version: z.literal(1), kept: z.record(digestSchema, z.object({ sizeBytes: z.number().int().min(1), at: z.number().finite() })),
+  videos: z.record(digestSchema, z.object({ path: z.string().min(1).max(4096), sizeBytes: z.number().int().min(1), modifiedMs: z.number().finite(), at: z.number().finite() })).optional() })
 type Kept = z.infer<typeof keptSchema>
 
 const NAMES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
@@ -130,6 +136,11 @@ export class ThreadMediaStore {
   private readonly staging = new Map<string, Promise<unknown>>()
   /** A sweep a capture asked for because the pictures passed their limit; it runs after the capture, off the update path. */
   private sweepQueued = false
+  /**
+   * Written videos' files by digest (ADR-0170, part 4): a video is never copied, so the store remembers where it is, on
+   * this host alone, and a record carries its handle without a path.
+   */
+  private readonly videos = new Map<string, WrittenVideoFile & { at: number }>()
 
   constructor(directory: string, { historyEnabled = () => true, now = () => Date.now(), keepBytes = THREAD_MEDIA_KEEP_BYTES }: {
     readonly historyEnabled?: () => boolean; readonly now?: () => number; readonly keepBytes?: number } = {}) {
@@ -140,9 +151,11 @@ export class ThreadMediaStore {
 
   async load(): Promise<void> {
     await this.content.load()
-    const saved = await this.keptFile.peek().catch(() => ({ version: 1 as const, kept: {} }))
+    const saved = await this.keptFile.peek().catch((): Kept => ({ version: 1, kept: {} }))
     this.kept.clear()
     for (const [digest, entry] of Object.entries(saved.kept)) if (this.content.has(digest)) this.kept.set(digest, entry)
+    this.videos.clear()
+    for (const [digest, entry] of Object.entries(saved.videos ?? {})) this.videos.set(digest, entry)
     // A picture captured after the index was last written, before a crash, is taken back as captured now, not swept.
     const now = this.now()
     for (const { digest, sizeBytes } of this.content.kept()) if (!this.kept.has(digest)) { this.kept.set(digest, { sizeBytes, at: now }); this.unsaved = true }
@@ -178,6 +191,19 @@ export class ThreadMediaStore {
     return handle ? [handle] : []
   }
 
+  /** Remembers where a written video is, by its digest, until it is forgotten among the oldest or history is turned off. */
+  keepVideo(digest: string, file: WrittenVideoFile): void {
+    this.videos.delete(digest)
+    this.videos.set(digest, { ...file, at: this.now() })
+    if (this.videos.size > WRITTEN_VIDEOS_REMEMBERED) this.videos.delete(this.videos.keys().next().value!)
+    this.unsaved = true
+  }
+  /** Where a written video of this digest and size is, or undefined when the store does not remember it. */
+  videoFile(digest: string, sizeBytes: number): WrittenVideoFile | undefined {
+    const file = this.videos.get(digest)
+    return file?.sizeBytes === sizeBytes ? file : undefined
+  }
+
   /** Keeps one picture's bytes and makes its handle, `m{index}`, or none when they are not the type they claim. */
   private keep(bytes: Buffer, mimeType: string, source: AgentActivityMedia['source'], index: number): AgentActivityMedia | undefined {
     if (!Object.hasOwn(NAMES, mimeType) || bytes.byteLength < 1 || bytes.byteLength > AGENT_MAX_IMAGE_BYTES || !bytesHaveRasterSignature(mimeType, bytes)) return undefined
@@ -205,7 +231,7 @@ export class ThreadMediaStore {
 
   private saveKept(): Promise<void> {
     this.unsaved = false
-    return this.keptFile.writeLatest(() => ({ version: 1, kept: Object.fromEntries(this.kept) })).catch(() => undefined)
+    return this.keptFile.writeLatest(() => ({ version: 1, kept: Object.fromEntries(this.kept), ...this.videos.size ? { videos: Object.fromEntries(this.videos) } : {} })).catch(() => undefined)
   }
 
   /**
@@ -243,7 +269,7 @@ export class ThreadMediaStore {
 
   /** Lets every picture go: Keep local history was turned off (ADR-0170). */
   async clear(): Promise<void> {
-    this.kept.clear(); this.total = 0
+    this.kept.clear(); this.total = 0; this.videos.clear()
     await this.keptFile.write({ version: 1, kept: {} }).catch(() => undefined)
     await this.content.sweep(() => new Set(), 0)
   }

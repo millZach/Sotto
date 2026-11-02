@@ -43545,6 +43545,198 @@
         }
       }
     },
+    "Could not play. The file may have changed or been removed on its computer. Ask the agent to write it again." : {
+      "comment" : "On a tile of a video an agent wrote that could not be fetched or played: the file may have changed or been removed on the computer that runs the thread.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر التشغيل. ربما تغيّر الملف أو حُذف على جهازه. اطلب من الوكيل كتابته مرة أخرى."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালানো যায়নি। ফাইলটি এর কম্পিউটারে বদলে গেছে বা সরানো হয়েছে হতে পারে। এজেন্টকে আবার লিখতে বলুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nelze přehrát. Soubor se na svém počítači možná změnil nebo byl odstraněn. Požádejte agenta, ať ho zapíše znovu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikke afspilles. Filen er måske ændret eller fjernet på sin computer. Bed agenten om at skrive den igen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte nicht abgespielt werden. Die Datei wurde auf ihrem Computer vielleicht geändert oder entfernt. Bitte den Agenten, sie erneut zu schreiben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Δεν ήταν δυνατή η αναπαραγωγή. Το αρχείο ίσως άλλαξε ή αφαιρέθηκε στον υπολογιστή του. Ζητήστε από τον πράκτορα να το γράψει ξανά."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not play. The file may have changed or been removed on its computer. Ask the agent to write it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo reproducir. Puede que el archivo haya cambiado o se haya eliminado en su ordenador. Pide al agente que lo escriba de nuevo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo reproducir. Puede que el archivo haya cambiado o se haya eliminado en su computadora. Pide al agente que lo escriba de nuevo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo reproducir. Puede que el archivo haya cambiado o se haya eliminado en su computadora. Pide al agente que lo escriba de nuevo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toisto ei onnistunut. Tiedosto on ehkä muuttunut tai poistettu tietokoneeltaan. Pyydä agenttia kirjoittamaan se uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture impossible. Le fichier a peut-être changé ou été supprimé sur son ordinateur. Demandez à l’agent de l’écrire à nouveau."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "चल नहीं सका। फ़ाइल अपने कंप्यूटर पर बदल गई हो या हटा दी गई हो सकती है। एजेंट से इसे फिर से लिखने को कहें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nem játszható le. Lehet, hogy a fájl a számítógépén megváltozott vagy törölték. Kérd meg az ügynököt, hogy írja meg újra."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile riprodurre. Il file potrebbe essere cambiato o stato rimosso sul suo computer. Chiedi all’agente di scriverlo di nuovo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生できませんでした。ファイルが元のコンピュータで変更または削除された可能性があります。エージェントにもう一度書き出すよう頼んでください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "चालवता आले नाही. फाइल तिच्या संगणकावर बदलली किंवा काढली गेली असेल. एजंटला ती पुन्हा लिहायला सांगा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikke spilles av. Filen kan ha blitt endret eller fjernet på datamaskinen sin. Be agenten skrive den på nytt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kon niet afspelen. Het bestand is misschien gewijzigd of verwijderd op zijn computer. Vraag de agent het opnieuw te schrijven."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie można odtworzyć. Plik mógł zostać zmieniony lub usunięty na swoim komputerze. Poproś agenta, aby zapisał go ponownie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível reproduzir. O arquivo pode ter mudado ou sido removido do computador. Peça ao agente para gravá-lo de novo."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível reproduzir. O ficheiro pode ter mudado ou sido removido do computador. Peça ao agente para o gravar de novo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nu s-a putut reda. Fișierul poate s-a schimbat sau a fost eliminat de pe computerul său. Cere-i agentului să-l scrie din nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunde inte spelas upp. Filen kan ha ändrats eller tagits bort på sin dator. Be agenten skriva den igen."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இயக்க முடியவில்லை. கோப்பு அதன் கணினியில் மாறியிருக்கலாம் அல்லது நீக்கப்பட்டிருக்கலாம். அதை மீண்டும் எழுதுமாறு முகவரிடம் கேளுங்கள்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లే చేయలేకపోయింది. ఫైల్ దాని కంప్యూటర్‌లో మారి ఉండవచ్చు లేదా తొలగించబడి ఉండవచ్చు. దాన్ని మళ్లీ రాయమని ఏజెంట్‌ను అడగండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatılamadı. Dosya bilgisayarında değişmiş ya da silinmiş olabilir. Aracıdan dosyayı yeniden yazmasını isteyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося відтворити. Можливо, файл змінено або видалено на його комп’ютері. Попросіть агента записати його знову."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نہیں چل سکا۔ ہو سکتا ہے فائل اپنے کمپیوٹر پر بدل گئی ہو یا ہٹا دی گئی ہو۔ ایجنٹ سے اسے دوبارہ لکھنے کو کہیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法播放。该文件可能已在其电脑上被更改或删除。请让代理重新写入。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法播放。該檔案可能已在其電腦上被變更或移除。請讓代理重新寫入。"
+          }
+        }
+      }
+    },
     "Couldn’t read its result. Nothing was changed. Close it and open it again to try again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -79799,6 +79991,390 @@
         }
       }
     },
+    "Pictures and videos it wrote" : {
+      "comment" : "The name of the step that holds the pictures and videos an agent wrote in its folder during a run.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصور ومقاطع الفيديو التي كتبها"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এর লেখা ছবি ও ভিডিও"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obrázky a videa, která zapsal"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Billeder og videoer, den skrev"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschriebene Bilder und Videos"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εικόνες και βίντεο που έγραψε"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pictures and videos it wrote"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imágenes y vídeos que escribió"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imágenes y videos que escribió"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imágenes y videos que escribió"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sen kirjoittamat kuvat ja videot"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Images et vidéos qu’il a écrites"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इसके लिखे चित्र और वीडियो"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az általa írt képek és videók"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immagini e video che ha scritto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き出した画像と動画"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "त्याने लिहिलेली चित्रे आणि व्हिडिओ"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilder og videoer den skrev"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afbeeldingen en video’s die het schreef"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zapisane obrazy i wideo"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagens e vídeos que ele gravou"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagens e vídeos que gravou"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagini și videoclipuri scrise de el"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilder och videor den skrev"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "அது எழுதிய படங்களும் வீடியோக்களும்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "అది రాసిన చిత్రాలు, వీడియోలు"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yazdığı resimler ve videolar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зображення й відео, які воно записало"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اس کی لکھی تصاویر اور ویڈیوز"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它写下的图片和视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它寫下的圖片和影片"
+          }
+        }
+      }
+    },
+    "Play GIF %lld" : {
+      "comment" : "Accessibility label of the button that plays one of an agent's GIFs in its tile; %lld is its place among the run's pictures.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل GIF رقم %lld"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld চালান"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Přehrát GIF %lld"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspil GIF %lld"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld abspielen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή GIF %lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play GIF %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir el GIF %lld"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir el GIF %lld"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir el GIF %lld"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toista GIF %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire le GIF %lld"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld चलाएँ"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld. GIF lejátszása"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci la GIF %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld を再生"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld चालवा"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spill av GIF %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld afspelen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odtwórz GIF %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir o GIF %lld"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir o GIF %lld"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă GIF-ul %lld"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spela upp GIF %lld"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld இயக்கு"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld ప్లే చేయండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld. GIF’i oynat"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворити GIF %lld"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld چلائیں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放第 %lld 个 GIF"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放第 %lld 個 GIF"
+          }
+        }
+      }
+    },
     "Play a sound" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -79986,6 +80562,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放聲音"
+          }
+        }
+      }
+    },
+    "Play video %lld of %lld, from %@" : {
+      "comment" : "Accessibility label of the play button on a tile of a video an agent wrote: its place among the run's videos, and the step that wrote it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل الفيديو %lld من %lld، من %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ভিডিও %lld/%lld চালান, %@ থেকে"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Přehrát video %lld z %lld, z: %@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspil video %lld af %lld, fra %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video %lld von %lld abspielen, aus %@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή βίντεο %lld από %lld, από %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play video %lld of %lld, from %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir el vídeo %lld de %lld, de %@"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir el video %lld de %lld, de %@"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir el video %lld de %lld, de %@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toista video %lld/%lld, lähde: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire la vidéo %lld sur %lld, de %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वीडियो %lld/%lld चलाएँ, %@ से"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld./%lld videó lejátszása, forrás: %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci il video %lld di %lld, da %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画 %lld/%lld を再生（%@ から）"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "व्हिडिओ %lld/%lld चालवा, %@ मधून"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spill av video %lld av %lld, fra %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video %lld van %lld afspelen, uit %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odtwórz wideo %lld z %lld, z: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir o vídeo %lld de %lld, de %@"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir o vídeo %lld de %lld, de %@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă videoclipul %lld din %lld, din %@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spela upp video %lld av %lld, från %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "வீடியோ %lld/%lld இயக்கு, %@ இலிருந்து"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "వీడియో %lld/%lld ప్లే చేయండి, %@ నుండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld/%lld videoyu oynat, kaynak: %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворити відео %lld з %lld, з: %@"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ویڈیو %lld از %lld چلائیں، %@ سے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放第 %lld 个视频（共 %lld 个），来自 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放第 %lld 部影片（共 %lld 部），來自 %@"
           }
         }
       }
@@ -108321,6 +109089,198 @@
         }
       }
     },
+    "Stop GIF %lld" : {
+      "comment" : "Accessibility label of the button that stops one of an agent's GIFs playing in its tile; %lld is its place among the run's pictures.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف GIF رقم %lld"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld থামান"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zastavit GIF %lld"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop GIF %lld"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld stoppen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Διακοπή GIF %lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop GIF %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener el GIF %lld"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener el GIF %lld"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener el GIF %lld"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pysäytä GIF %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter le GIF %lld"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld रोकें"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld. GIF leállítása"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ferma la GIF %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld を停止"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld थांबवा"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopp GIF %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld stoppen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zatrzymaj GIF %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar o GIF %lld"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar o GIF %lld"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oprește GIF-ul %lld"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppa GIF %lld"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld நிறுத்து"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld ఆపండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld. GIF’i durdur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зупинити GIF %lld"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF %lld روکیں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止第 %lld 个 GIF"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止第 %lld 個 GIF"
+          }
+        }
+      }
+    },
     "Stop Watcher’s turn" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -126656,6 +127616,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "間距更緊湊，畫面上能顯示更多對話內容。"
+          }
+        }
+      }
+    },
+    "Too large to play on this iPhone. Play it on the desktop." : {
+      "comment" : "On a tile of a video an agent wrote that is over the size this iPhone fetches to play.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أكبر من أن يُشغَّل على هذا الـ iPhone. شغّله على سطح المكتب."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই iPhone-এ চালানোর জন্য খুব বড়। ডেস্কটপে চালান।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na tomto iPhonu je příliš velké k přehrání. Přehrajte ho na počítači."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For stor til at afspille på denne iPhone. Afspil den på computeren."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu groß für dieses iPhone. Spiele es auf dem Desktop ab."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Πολύ μεγάλο για αναπαραγωγή σε αυτό το iPhone. Παίξτε το στον υπολογιστή."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too large to play on this iPhone. Play it on the desktop."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es demasiado grande para reproducirlo en este iPhone. Reprodúcelo en el ordenador."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es demasiado grande para reproducirlo en este iPhone. Reprodúcelo en la computadora."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es demasiado grande para reproducirlo en este iPhone. Reprodúcelo en la computadora."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liian suuri toistettavaksi tällä iPhonella. Toista se tietokoneella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop volumineuse pour être lue sur cet iPhone. Lisez-la sur l’ordinateur."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इस iPhone पर चलाने के लिए बहुत बड़ा है। इसे डेस्कटॉप पर चलाएँ।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Túl nagy ahhoz, hogy ezen az iPhone-on lejátszható legyen. Játszd le a számítógépen."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Troppo grande per essere riprodotto su questo iPhone. Riproducilo sul computer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この iPhone で再生するには大きすぎます。デスクトップで再生してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "या iPhone वर चालवण्यासाठी खूप मोठा आहे. तो डेस्कटॉपवर चालवा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For stor til å spilles av på denne iPhonen. Spill den av på datamaskinen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te groot om op deze iPhone af te spelen. Speel het af op de computer."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Za duże, by odtworzyć na tym iPhonie. Odtwórz na komputerze."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grande demais para reproduzir neste iPhone. Reproduza no computador."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiado grande para reproduzir neste iPhone. Reproduza no computador."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prea mare pentru a fi redat pe acest iPhone. Redă-l pe computer."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "För stor för att spelas upp på den här iPhonen. Spela upp den på datorn."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த iPhone-இல் இயக்க மிகப் பெரியது. டெஸ்க்டாப்பில் இயக்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ iPhone‌లో ప్లే చేయడానికి చాలా పెద్దది. డెస్క్‌టాప్‌లో ప్లే చేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu iPhone’da oynatmak için çok büyük. Masaüstünde oynatın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Завелике, щоб відтворити на цьому iPhone. Відтворіть його на комп’ютері."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اس iPhone پر چلانے کے لیے بہت بڑا ہے۔ اسے ڈیسک ٹاپ پر چلائیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "太大，无法在这台 iPhone 上播放。请在电脑上播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "太大，無法在這部 iPhone 上播放。請在電腦上播放。"
           }
         }
       }

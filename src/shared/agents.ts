@@ -7,7 +7,7 @@ import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
-import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
+import { agentActivitySchema, AGENT_VIDEO_MAX_BYTES, AGENT_VIDEO_MIME_TYPES, AGENT_VIDEO_PART_BYTES, AGENT_VIDEO_PARTS_MAX, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
@@ -276,6 +276,19 @@ export const agentThreadMediaWindowRequestSchema = agentThreadMediaRequestSchema
 export type AgentThreadMediaWindowRequest = z.infer<typeof agentThreadMediaWindowRequestSchema>
 export const agentThreadMediaResultSchema = z.object({ dataUrl: z.string().max(14_000_000).regex(/^data:image\/(png|jpeg|gif|webp);base64,/u) }).strict().nullable()
 export type AgentThreadMediaResult = z.infer<typeof agentThreadMediaResultSchema>
+/**
+ * One part of a video an agent wrote (ADR-0170, part 4), by its record and handle: read from the file it names while that
+ * is still the file, for the iPhone to put together and the desktop's player to play from.
+ */
+export const agentThreadMediaPartRequestSchema = agentThreadMediaRequestSchema.extend({ part: z.number().int().min(0).max(AGENT_VIDEO_PARTS_MAX - 1) }).strict()
+export type AgentThreadMediaPartRequest = z.infer<typeof agentThreadMediaPartRequestSchema>
+/** A part's bytes in base64, with what the whole video is, so a client can check it once every part is in. */
+export const agentThreadMediaPartSchema = z.object({
+  name: z.string().min(1).max(200), mimeType: z.enum(AGENT_VIDEO_MIME_TYPES), sizeBytes: z.number().int().min(1).max(AGENT_VIDEO_MAX_BYTES),
+  digest: z.string().regex(/^[a-f0-9]{64}$/u), part: z.number().int().min(0).max(AGENT_VIDEO_PARTS_MAX - 1), parts: z.number().int().min(1).max(AGENT_VIDEO_PARTS_MAX),
+  data: z.string().min(1).max(Math.ceil(AGENT_VIDEO_PART_BYTES / 3) * 4).regex(/^[A-Za-z0-9+/]*={0,2}$/u),
+}).strict().nullable()
+export type AgentThreadMediaPart = z.infer<typeof agentThreadMediaPartSchema>
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
