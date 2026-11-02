@@ -3,6 +3,7 @@ import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
 import { permissionValue, QUESTION_SKIPPED, questionValues } from './nativeRequests'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { browserRequestText } from './browserRequests'
+import { readableFields, toolInputCard } from './requestInput'
 
 const questionSchema = z.object({ question: z.string().min(1), header: z.string().optional(), multiSelect: z.boolean().optional(),
   options: z.array(z.object({ label: z.string(), description: z.string().optional() })).optional() })
@@ -32,11 +33,13 @@ export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
         questions: questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, multiSelect: q.multiSelect ?? false, allowFreeText: true, prose: true as const, options: (q.options ?? []).map(option => ({ id: option.label, ...option })) })), skippable: true,
         context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}) } } }
   }
-  const description = typeof data.description === 'string' ? data.description : typeof input.description === 'string' ? input.description : ''
+  const browser = browserRequestText(data.tool_name, input)
+  // `data.description` is no summary: Claude fills it with a stock line when the model wrote none (ADR-0180).
+  const card = toolInputCard(input, data.tool_name)
   return { id: frame.request_id, tool: data.tool_name, input,
-    request: { id: frame.request_id, kind: 'permission', text: browserRequestText(data.tool_name, input) ?? `${data.tool_name}${description ? `: ${description}` : ''}\n${JSON.stringify(input)}`, options: [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }],
+    request: { id: frame.request_id, kind: 'permission', text: browser ?? card.text, options: [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }],
       permissionChoices: [{ id: 'allow', label: 'Allow once', kind: 'allow-once' }, { id: 'deny', label: 'Deny', kind: 'deny' }],
-      context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}), ...(typeof input.command === 'string' ? { command: input.command } : {}), details: JSON.stringify(input).slice(0, 100000) } } }
+      context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}), ...(browser ? { details: readableFields(input) } : card.context) } } }
 }
 export function claudeDenial(): ClaudeFrame { return { behavior: 'deny', message: 'The user did not approve this request.' } }
 export function claudeAnswer(pending: ClaudePending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string, skipped?: boolean): ClaudeFrame {

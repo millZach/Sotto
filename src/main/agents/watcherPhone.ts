@@ -170,7 +170,7 @@ export class WatcherPhoneService {
           ...(request.questions ? { questions: request.questions.map(question => ({ ...question, options: question.options.map(({ preview: _preview, ...option }) => { void _preview; return option }) })) } : {}),
           ...(request.permissionChoices ? { permissionChoices: request.permissionChoices } : {}),
           ...(request.context ? { context: { toolName: request.context.toolName, command: request.context.command,
-            cwd: request.context.cwd, details: request.context.details } } : {}), ...(request.delivery ? { delivery: request.delivery } : {}) },
+            cwd: request.context.cwd, summary: request.context.summary, action: request.context.action, target: request.context.target, details: request.context.details } } : {}), ...(request.delivery ? { delivery: request.delivery } : {}) },
         connected, mayAnswer: mayAnswer && connected && target.hostId === snapshot.hostId }))
     })
     return watcherPhoneStateSchema.parse({ hostId: this.control.hostId()!, current: room.current && room.currentOptions ? {

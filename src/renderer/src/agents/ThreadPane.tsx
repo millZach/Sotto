@@ -187,7 +187,7 @@ function ThreadRequests({ row, below, state, command, onAnswer, kind }: {
     const asking = owner.thread
     const own = owner === row
     const open = (): void => openDelegatedThread(command, asking.id, asking.delegatedBy ?? thread.id)
-    const card = <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={asking.id} ownerTitle={asking.title} request={request}
+    const card = <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={asking.id} ownerTitle={asking.title} request={request} providerId={owner.providerId}
       blocked={threadRequestBlocked(owner, state)}
       messageLinks={kind === 'question' ? messageLinks(asking.messages) : []}
       draftOwner={threadRequestOwner(owner, state)}

@@ -2862,17 +2862,15 @@ struct RequestSheet: View {
                 LinkRows(pages: pages, links: links) { opening = $0 }.padding(.top, Space.s4)
             }
         }
-        if let context = current.context {
+        if permission {
+            permissionBody(current, provider: provider)
+        } else if let context = current.context {
             if let command = context.command { PermissionCommand(command: command).padding(.top, Space.s5) }
             if let cwd = context.cwd { runsIn(cwd) }
             if let details = context.details {
                 Text(details).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
             }
-        }
-        if permission && current.context?.command == nil {
-            Text(verbatim: current.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
         }
         if !current.supported {
             note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
@@ -2891,6 +2889,43 @@ struct RequestSheet: View {
                 .padding(.top, Space.s4)
                 .paragraphDirection()
                 .accessibilityAddTraits(.updatesFrequently)
+        }
+    }
+
+    /// What a permission asks: a command under the model's summary of it, or what another request does, on what, with
+    /// every other field in readable lines. The summary is the model's own words, so it is marked as theirs (ADR-0180).
+    @ViewBuilder private func permissionBody(_ current: AgentRequest, provider: String) -> some View {
+        let context = current.context
+        if let command = context?.command {
+            if let summary = context?.summary {
+                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
+            } else {
+                Text(RequestText.noSummary(provider: provider)).font(.sotto(.body)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.top, Space.s3)
+            }
+            PermissionCommand(command: command).padding(.top, Space.s4)
+            ForEach(Array((context?.details ?? "").split(separator: "\n").enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Light(tone: .warning)
+                    Text(verbatim: String(line)).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .padding(.top, Space.s3)
+            }
+            if let cwd = context?.cwd { runsIn(cwd) }
+        } else {
+            if let summary = context?.summary {
+                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
+            }
+            Text(verbatim: context?.action ?? current.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+            if let target = context?.target {
+                Text(verbatim: target).font(.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s1)
+            }
+            if let details = context?.details { PermissionDetails(details: details).padding(.top, Space.s3) }
+            if let cwd = context?.cwd { runsIn(cwd) }
         }
     }
 
@@ -3283,6 +3318,56 @@ private struct OptionLabel: View {
         .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
+    }
+}
+
+/// What a short permission card, which can answer, shows beyond its words: a setting beside a command, or the opening of a
+/// request's change and fields. **Details** opens the whole of it.
+struct CompactPermissionDetails: View {
+    let context: RequestContext?
+    var body: some View {
+        if let details = context?.details, !details.isEmpty {
+            if context?.command != nil {
+                Text(verbatim: details).font(.sotto(.small)).foregroundStyle(Palette.ink).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, Space.s2)
+            } else {
+                Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(4)
+                    .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                    .padding(.top, Space.s2)
+            }
+        }
+    }
+}
+
+/// The words a model wrote about what it asks, under whose they are: never a headline, since Sotto checked none of them.
+private struct ModelSummary: View {
+    let provider: String
+    let summary: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(RequestText.says(provider: provider)).font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text(verbatim: summary).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The rest of what a permission that is not a command asks: its change and every other field, on the code surface.
+private struct PermissionDetails: View {
+    let details: String
+    var body: some View {
+        Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s3)
+            .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
 

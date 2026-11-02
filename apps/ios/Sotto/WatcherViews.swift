@@ -1348,7 +1348,7 @@ private struct WatcherRequestCard: View {
         isPermission ? String(localized: "Permission", comment: "The tag on a card asking for permission")
             : String(localized: "Question", comment: "The tag on a card asking a question")
     }
-    private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
+    private var ask: String { isPermission ? RequestText.permissionAsk(request, provider: AgentNames.name(card.provider)) : (request.questions?.first?.question ?? request.text) }
     private var computer: String { model.name(hostID) }
     /// "Claude Code on Laptop": the thread's provider and computer.
     private var whereItRuns: String {
@@ -1396,6 +1396,7 @@ private struct WatcherRequestCard: View {
                 .padding(.top, Space.s1)
             Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .padding(.top, Space.s3)
             if let command = request.context?.command, !command.isEmpty {
                 Text(command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
@@ -1406,6 +1407,7 @@ private struct WatcherRequestCard: View {
                     .padding(.top, Space.s2)
                     .accessibilityLabel("Command: \(command)")
             }
+            if isPermission { CompactPermissionDetails(context: request.context) }
             if asksEachTime {
                 Text("Watcher asks each time. It can’t be given lasting permission.")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)

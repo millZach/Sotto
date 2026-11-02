@@ -281,7 +281,7 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
     </div>
     <p className="needs-you-card__kind">{kind}</p>
     {request !== undefined
-      ? <AgentRequestCard ownerId={thread.id} ownerTitle={title} request={request} blocked={threadRequestBlocked(row, state)} draftOwner={threadRequestOwner(row, state)}
+      ? <AgentRequestCard ownerId={thread.id} ownerTitle={title} request={request} providerId={row.providerId} blocked={threadRequestBlocked(row, state)} draftOwner={threadRequestOwner(row, state)}
         messageLinks={request.kind === 'question' ? messageLinks(thread.messages) : []}
         onWriteAnswer={onOpen}
         onSubmit={threadRequestSubmit(command, thread, request, watcherOn)}

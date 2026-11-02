@@ -596,7 +596,7 @@ private struct RequestCard: View {
         isPermission ? String(localized: "Permission", comment: "The tag on a card whose thread asks the user for a permission.")
             : String(localized: "Question", comment: "The tag on a card whose thread asks the user a question.")
     }
-    private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
+    private var ask: String { isPermission ? RequestText.permissionAsk(request, provider: Words.provider(asking.thread.providerId)) : (request.questions?.first?.question ?? request.text) }
     /// The delegated thread the request waits in, when it is not the row's own.
     private var delegated: Bool { asking.ref != row.ref }
     private var place: String {
@@ -656,6 +656,7 @@ private struct RequestCard: View {
                 .padding(.top, Space.s1)
             Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .padding(.top, Space.s3)
             if let command = request.context?.command, !command.isEmpty {
                 Text(verbatim: command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
@@ -665,6 +666,7 @@ private struct RequestCard: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
                     .padding(.top, Space.s2)
             }
+            if isPermission { CompactPermissionDetails(context: request.context) }
             if asking.thread.requests.count > 1 {
                 (asking.thread.requests.count == 2 ? Text("1 more request in this thread")
                     : Text("\(asking.thread.requests.count - 1) more requests in this thread"))

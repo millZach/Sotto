@@ -397,7 +397,13 @@ export const agentRequestSchema = z.object({
      *  (ADR-0176). The adapter of an agent's own question tool sets it; a typed form field never has it. */
     prose: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
-  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional(),
+  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(),
+    /** The asking model's own words for what it asks (a **command summary**, ADR-0180). Absent when it gave none; Sotto never writes one. */
+    summary: text.optional(),
+    /** What a request that is not a command does, and the path or address it acts on, for the card's head (ADR-0180). */
+    action: text.optional(), target: text.optional(),
+    /** The rest of what is asked, in readable lines: a setting beside a command in words, and otherwise every field and change. */
+    details: text.optional(),
     /** A plan the agent asks the user to accept, in its parts (Cursor's `cursor/create_plan`, ADR-0128); `steps` is Markdown. */
     plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
   /** A question the user may skip: its provider takes a decline and the turn goes on (ADR-0135, October 27, 2026). The

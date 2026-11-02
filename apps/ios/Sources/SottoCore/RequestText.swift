@@ -18,6 +18,24 @@ public enum RequestText {
         return rest.range(of: #"^(?:\s|[0-9]+\.|[()/;,])*$"#, options: .regularExpression) != nil ? nil : request.text
     }
 
+    /// The line over the words a model wrote about what it asks, so they read as its own and not as Sotto's account (ADR-0180).
+    public static func says(provider: String) -> String {
+        String(localized: "\(provider) says", bundle: .module, comment: "Over the words a coding agent wrote about what it asks to do. %@ is its name, such as Claude Code.")
+    }
+
+    /// What a permission's card says of a command the model gave no summary of.
+    public static func noSummary(provider: String) -> String {
+        String(localized: "\(provider) gave no summary of this command.", bundle: .module, comment: "%@ is the coding agent's name, such as Codex.")
+    }
+
+    /// What a permission's short card says it asks. A command's words sit over its command, so they are the summary and
+    /// never the command again; any other request has only its own text.
+    public static func permissionAsk(_ request: AgentRequest, provider: String) -> String {
+        guard let context = request.context, context.command != nil else { return request.text }
+        guard let summary = context.summary else { return noSummary(provider: provider) }
+        return String(localized: "\(provider) says: \(summary)", bundle: .module, comment: "The first %@ is the coding agent's name, such as Claude Code; the second is the words it wrote about what it asks to do.")
+    }
+
     /// Every run of white space as one space, with none at either end.
     private static func collapse(_ value: String) -> String {
         value.split(whereSeparator: \.isWhitespace).joined(separator: " ")

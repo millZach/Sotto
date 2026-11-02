@@ -251,3 +251,48 @@ test('threaded structured forms show the native explanation and tool context onc
   } finally { await closeSotto(threaded) }
 
 })
+
+const claudeTool = (id: string, tool: string, input: Record<string, unknown>): AgentRequest => claudePending({ type: 'control_request', request_id: id, request: { subtype: 'can_use_tool', tool_name: tool, tool_use_id: `toolu_${id}`, input } })!.request
+
+test('a permission card shows the model’s summary and the command, or a readable request, and never raw input (ADR-0180)', async () => {
+  test.setTimeout(240_000)
+  await mkdir(SHOTS, { recursive: true })
+  const launched = await launchSotto()
+  try {
+    const { page } = launched
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+    })
+    await page.reload()
+    await openThreads(page)
+    const emit = (threadId: string, request: AgentRequest) => page.evaluate(async ([threadId, request]) => window.sottoE2E!.agentEvent!({ type: request.kind, threadId, text: request.text, request, status: 'running' }), [threadId, request] as const)
+    const command = 'cd /home/zach/Projects/Vellum; gh run download 26118734 -n bench-results -D /tmp/bench; jq -r \'.scenarios[] | [.name, .p50, .p95] | @tsv\' /tmp/bench/results.json | column -t'
+    await emit('workshop', claudeTool('command', 'Bash', { command, timeout: 300000, description: 'Download recent benchmark artifacts and tabulate key scenarios', dangerouslyDisableSandbox: true }))
+    await emit('docs', claudeTool('edit', 'Edit', { file_path: '/home/zach/Projects/Vellum/src/bench.ts', old_string: 'const limit = 10', new_string: 'const limit = 12' }))
+    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    const card = page.locator('.agent-request[data-kind="permission"]')
+    await expect(card.locator('.agent-request__head')).toContainText('Run a command')
+    await expect(card.locator('.agent-request__summary-who')).toContainText('says')
+    await expect(card.locator('.agent-request__summary')).toContainText('Download recent benchmark artifacts')
+    await expect(card.locator('.agent-request__command')).toHaveText(command)
+    await expect(card.locator('.agent-request__also')).toHaveText('It also asks to run outside the sandbox.')
+    await expect(card.locator('.agent-request__details')).toHaveCount(0)
+    expect(await card.textContent()).not.toContain('{"')
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await size(launched, width, height)
+      await card.evaluate(element => element.scrollIntoView({ block: 'center' }))
+      expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+      await shoot(page, `permission-command-${width}`)
+    }
+    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    const edit = page.locator('.agent-request[data-kind="permission"]')
+    await expect(edit.locator('.agent-request__head')).toContainText('Edit a file')
+    await expect(edit.locator('.agent-request__target')).toHaveText('/home/zach/Projects/Vellum/src/bench.ts')
+    await expect(edit.locator('.agent-request__details')).toHaveText('- const limit = 10\n+ const limit = 12')
+    await expect(edit.locator('.agent-request__summary')).toHaveCount(0)
+    await edit.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    await shoot(page, 'permission-edit-820')
+  } finally { await closeSotto(launched) }
+})
