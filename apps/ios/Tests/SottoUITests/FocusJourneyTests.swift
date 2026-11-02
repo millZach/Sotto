@@ -2109,8 +2109,10 @@ import UIKit
         press(entry, until: NSPredicate { _, _ in item.exists })
         XCTAssertTrue(item.waitForExistence(timeout: 5), "\(submenu) opens its choices")
     }
-    /// Puts an open menu away with a press above it, clear of the box.
+    /// Puts an open menu away with a press above it, clear of the box; an open settings sheet with its Done.
     private func dismissMenu() {
+        let done = byID("settings-sheet-done")
+        if done.exists && done.isHittable { done.tap(); return }
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
     }
     /// Whether a pill's menu item reads enabled within `timeout`. An open menu keeps the state it opened with, so it is

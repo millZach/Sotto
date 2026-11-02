@@ -130,60 +130,68 @@ struct ComposerSettingsSheet<Notes: View, Foot: View, Settings: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(PhonePreferenceKey.modelFavorites) private var saved = ""
     @State private var folds = ModelFolds()
+    /// The star grows with the text it sits beside.
+    @ScaledMetric(relativeTo: .body) private var starSize: CGFloat = 15
 
     var body: some View {
         let starred = ModelFavorites.read(saved)
         let favorites = ModelFavorites.offered(starred, in: groups.flatMap(\.models), current: current?.id)
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text(verbatim: title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 0)
-                    Button("Done") { dismiss() }
-                        .font(.sotto(.body, .semibold))
-                        .foregroundStyle(Palette.accentText)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("settings-sheet-done")
-                }
-                notes
-                    .font(.sotto(.small))
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let current {
-                    block { modelRow(current, starred: starred, id: "model-current", line: AgentNames.name(current.providerId)) }
-                }
-                if !favorites.isEmpty {
-                    Text("Favorites", comment: "The heading over the models starred on this iPhone, in the reply box's settings sheet.")
-                        .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                        .padding(.leading, Space.s1)
-                        .padding(.bottom, -Space.s2)
-                        .accessibilityAddTraits(.isHeader)
-                    block {
-                        ForEach(Array(favorites.enumerated()), id: \.element.sheetKey) { index, item in
-                            if index > 0 { rule }
-                            modelRow(item, starred: starred, id: "model-favorite-\(item.sheetKey)", line: AgentNames.name(item.providerId))
-                        }
-                    }
-                }
-                block {
-                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                        if index > 0 { rule }
-                        providerRow(group)
-                        if folds.provider == group.id { providerModels(group, starred: starred) }
-                    }
-                }
-                foot
-                    .font(.sotto(.small))
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Space.s1)
-                block { settings }
+        VStack(spacing: 0) {
+            // The title and Done stay put while the list scrolls under them.
+            HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                Text(verbatim: title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Button("Done") { dismiss() }
+                    .font(.sotto(.body, .semibold))
+                    .foregroundStyle(Palette.accentText)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("settings-sheet-done")
             }
             .padding(.horizontal, Space.gutter)
             .padding(.top, Space.s6)
-            .padding(.bottom, Space.s6)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, Space.s2)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    notes
+                        .font(.sotto(.small))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let current {
+                        block { modelRow(current, starred: starred, id: "model-current", line: AgentNames.name(current.providerId)) }
+                    }
+                    if !favorites.isEmpty {
+                        Text("Favorites", comment: "The heading over the models starred on this iPhone, in the reply box's settings sheet.")
+                            .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                            .padding(.leading, Space.s1)
+                            .padding(.bottom, -Space.s2)
+                            .accessibilityAddTraits(.isHeader)
+                        block {
+                            ForEach(Array(favorites.enumerated()), id: \.element.sheetKey) { index, item in
+                                if index > 0 { rule }
+                                modelRow(item, starred: starred, id: "model-favorite-\(item.sheetKey)", line: AgentNames.name(item.providerId))
+                            }
+                        }
+                    }
+                    block {
+                        ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                            if index > 0 { rule }
+                            providerRow(group)
+                            if folds.provider == group.id { providerModels(group, starred: starred) }
+                        }
+                    }
+                    foot
+                        .font(.sotto(.small))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, Space.s1)
+                    block { settings }
+                }
+                .padding(.horizontal, Space.gutter)
+                .padding(.top, Space.s2)
+                .padding(.bottom, Space.s6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -234,9 +242,9 @@ struct ComposerSettingsSheet<Notes: View, Foot: View, Settings: View>: View {
             .accessibilityIdentifier(id)
             Button { saved = ModelFavorites.toggled(saved, item) } label: {
                 Image(systemName: star ? "star.fill" : "star")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: starSize, weight: .semibold))
                     .foregroundStyle(star ? Palette.accentText : Palette.muted)
-                    .frame(width: 44, height: 44)
+                    .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressStyle())
@@ -246,31 +254,12 @@ struct ComposerSettingsSheet<Notes: View, Foot: View, Settings: View>: View {
         }
     }
 
-    /// A provider, closed until pressed: its logo, its name and how many models it holds, and a chevron that turns as it
-    /// opens. Opening it closes any other.
+    /// A provider, closed until pressed, with its logo. Opening it closes any other.
     private func providerRow(_ group: ModelGroup) -> some View {
-        let open = folds.provider == group.id
-        return Button { withAnimation(fold) { folds.toggle(group.id) } } label: {
-            HStack(spacing: Space.s2) {
-                Color.clear.frame(width: 16, height: 1)
-                ProviderLogo(providerID: group.id)
-                Text(verbatim: group.name).font(.sotto(.body, open ? .semibold : .regular))
-                Text(verbatim: "\(group.models.count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
-                Spacer(minLength: Space.s2)
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
-                    .rotationEffect(.degrees(open ? 90 : 0))
-            }
-            .foregroundStyle(Palette.ink)
-            .padding(.horizontal, Space.s3)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressStyle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: group.name))
-        .accessibilityValue(open ? FoldWords.open : FoldWords.closed)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier("model-provider-\(group.id)")
+        FoldRow(name: group.name, count: group.models.count, open: folds.provider == group.id,
+                mark: { ProviderLogo(providerID: group.id) },
+                toggle: { withAnimation(fold) { folds.toggle(group.id) } })
+            .accessibilityIdentifier("model-provider-\(group.id)")
     }
 
     /// An open provider's newest models, then its older ones under Legacy, closed until pressed (ADR-0171).
@@ -282,27 +271,9 @@ struct ComposerSettingsSheet<Notes: View, Foot: View, Settings: View>: View {
         }
         if !lineup.legacy.isEmpty {
             rule
-            Button { withAnimation(fold) { folds.toggleLegacy() } } label: {
-                HStack(spacing: Space.s2) {
-                    Color.clear.frame(width: 16, height: 1)
-                    Text("Legacy").font(.sotto(.body, folds.legacy ? .semibold : .regular))
-                    Text(verbatim: "\(lineup.legacy.count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
-                    Spacer(minLength: Space.s2)
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
-                        .rotationEffect(.degrees(folds.legacy ? 90 : 0))
-                }
-                .foregroundStyle(Palette.ink)
-                .padding(.leading, Space.s3 + Space.s4)
-                .padding(.trailing, Space.s3)
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PressStyle())
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("Legacy"))
-            .accessibilityValue(folds.legacy ? FoldWords.open : FoldWords.closed)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier("model-legacy-\(group.id)")
+            FoldRow(name: String(localized: "Legacy"), count: lineup.legacy.count, open: folds.legacy, inset: Space.s4,
+                    mark: { EmptyView() }, toggle: { withAnimation(fold) { folds.toggleLegacy() } })
+                .accessibilityIdentifier("model-legacy-\(group.id)")
             if folds.legacy {
                 ForEach(lineup.legacy) { item in
                     rule
@@ -318,16 +289,61 @@ extension ThreadModel {
     var sheetKey: String { "\(providerId ?? provider)/\(id)" }
 }
 
+/// A row in the settings sheet that folds what it holds open under it, a provider or Legacy inside one: its name, how many
+/// it holds, and a chevron that turns as it opens. VoiceOver hears whether it is open.
+private struct FoldRow<Mark: View>: View {
+    let name: String
+    let count: Int
+    let open: Bool
+    var inset: CGFloat = 0
+    @ViewBuilder let mark: Mark
+    let toggle: () -> Void
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: Space.s2) {
+                Color.clear.frame(width: 16, height: 1)
+                mark
+                Text(verbatim: name).font(.sotto(.body, open ? .semibold : .regular))
+                Text(verbatim: "\(count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                Spacer(minLength: Space.s2)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+            }
+            .foregroundStyle(Palette.ink)
+            .padding(.leading, Space.s3 + inset)
+            .padding(.trailing, Space.s3)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: name))
+        .accessibilityValue(open ? FoldWords.open : FoldWords.closed)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 /// A row in the settings sheet that opens a menu of choices: the setting's name, what it is set to, and a chevron.
 struct SettingRow: View {
     let name: Text
     let value: String
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         HStack(spacing: Space.s2) {
-            name.foregroundStyle(Palette.ink)
-            Spacer(minLength: Space.s2)
-            Text(verbatim: value).foregroundStyle(Palette.muted).lineLimit(1)
+            // At the accessibility text sizes the value goes under the name, whole, rather than beside it, cut short.
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    name.foregroundStyle(Palette.ink)
+                    Text(verbatim: value).foregroundStyle(Palette.muted)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: Space.s2)
+            } else {
+                name.foregroundStyle(Palette.ink)
+                Spacer(minLength: Space.s2)
+                Text(verbatim: value).foregroundStyle(Palette.muted).lineLimit(1)
+            }
             Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
         }
