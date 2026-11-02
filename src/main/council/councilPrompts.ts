@@ -139,7 +139,15 @@ export interface CouncilPromptContext {
   readonly previousVerdict?: string
 }
 const KIND_WORDS: Readonly<Record<CouncilKind, string>> = { decision: 'a decision', fact: 'a fact to check', review: 'a review', ideas: 'ideas' }
-const kinds = (framing: CouncilFraming | undefined): CouncilKind[] => framing?.kinds ?? ['decision']
+/**
+ * What a panelist is told when the question needs outside research (Drake, November 2, 2026): to use its own tools, and to
+ * cite what it found as sources. Sotto adds no tool and widens no permission; a lookup its provider asks about reaches the
+ * user on the thread's card.
+ */
+const RESEARCH_BRIEF = 'This question needs outside research. Research it with your own tools: search the web, and read papers and library documentation where they bear on it. '
+  + 'Where your own setup has a skill or instructions for research, follow them. Cite what you found as a source: its link and the passage that supports your claim, quoted exactly. '
+  + 'A source you could not open is not evidence.'
+const SOURCE_EVIDENCE = '- source: a page, paper or document outside the snapshot, given as its link and the passage that supports the claim, quoted exactly'
 const fence = (name: string, lines: readonly string[]): string => ['```' + name, ...lines, '```'].join('\n')
 
 export function preambleFor(input: { readonly role: 'panelist' | 'chair'; readonly seat: string; readonly panelists: number; readonly snapshot: string; readonly history: string; readonly remote: boolean }): string {
@@ -167,34 +175,44 @@ export function framingPrompt(context: CouncilPromptContext, letters: readonly s
     '- three to five criteria a good answer must meet, each marked question (its user said or clearly implied it) or assumed (your own)',
     '- the headings every answer uses, and a word limit',
     `- for a decision or ideas, an extra angle for each panelist to weigh as well as the whole question, never instead of it: panelists ${letters.join(', ')}`,
+    '- whether answering it needs outside research, such as web pages, papers or library docs, beyond the snapshot and the conversation: yes or no, with why in a line',
     'End your reply with this block, using only these fields:',
-    fence(COUNCIL_BLOCK_NAMES.framing, ['kind: decision', 'criterion: question | <a criterion>', 'criterion: assumed | <a criterion>', 'headings: <heading>; <heading>; <heading>', 'words: 500',
+    fence(COUNCIL_BLOCK_NAMES.framing, ['kind: decision', 'criterion: question | <a criterion>', 'criterion: assumed | <a criterion>', 'headings: <heading>; <heading>; <heading>', 'words: 500', 'research: no | <why, in a line>',
       ...letters.map(letter => `angle: ${letter} | <an angle for ${letter}, for a decision or ideas>`)]),
   ].join('\n\n')
 }
 
-/** The framing as every panelist reads it, or the plain question when the chair's framing failed. */
-export function framingWords(framing: CouncilFraming | undefined, letter: string): string {
-  if (!framing) return 'The chair\'s framing could not be read, so answer it as a decision, against the question alone.'
+/**
+ * The framing as every panelist reads it, with the kind the round runs as, the user's where they changed it, or the plain
+ * question when the chair's framing failed.
+ */
+export function framingWords(framing: CouncilFraming | undefined, letter: string, kinds: readonly CouncilKind[] = framing?.kinds ?? ['decision']): string {
+  if (!framing) return `The chair's framing could not be read, so answer it as ${kinds.map(kind => KIND_WORDS[kind]).join(' and ')}, against the question alone.`
   const angle = framing.angles.find(item => item.seat === letter)
   return [
-    `The chair proposes that this is ${framing.kinds.map(kind => KIND_WORDS[kind]).join(' and ')}. Criteria a good answer meets:`,
+    `This is ${kinds.map(kind => KIND_WORDS[kind]).join(' and ')}. Criteria a good answer meets, as the chair proposes them:`,
     ...framing.criteria.map(criterion => `${criterion.id} (${criterion.source === 'question' ? 'from the question' : 'assumed by the chair'}): ${criterion.text}`),
     'Say if a criterion is missing, wrong or rests on a false premise.',
     ...angle ? [`Also weigh: ${angle.text}. Answer the whole question, not only this.`] : [],
   ].join('\n')
 }
 
-export function answerPrompt(context: CouncilPromptContext, input: { readonly letter: string; readonly framing: CouncilFraming | undefined; readonly snapshot: string; readonly remote: boolean }): string {
+export function answerPrompt(context: CouncilPromptContext, input: { readonly letter: string; readonly framing: CouncilFraming | undefined; readonly kinds?: readonly CouncilKind[];
+  readonly research?: boolean; readonly again?: boolean; readonly snapshot: string; readonly remote: boolean }): string {
   const { letter, framing } = input
   const headings = framing?.headings.length ? framing.headings.join('; ') : 'Answer; Evidence; Risks; First step'
-  return [...questionPart(context), framingWords(framing, letter),
+  return [...questionPart(context),
+    ...input.again ? ['The user changed the framing below, so answer again from the start. Your earlier answer to this question no longer counts.'] : [],
+    framingWords(framing, letter, input.kinds),
+    ...input.research ? [RESEARCH_BRIEF] : [],
     `Answer alone, as panelist ${letter}. ${input.remote ? 'You cannot read the snapshot.' : `Work in your working folder, the snapshot at ${input.snapshot}.`} Mark each load-bearing claim:`,
-    '- observed: a file and lines you read, with the lines quoted, or a command you ran in the snapshot, with its output\n- inferred: from what you observed, saying from what\n- judgement: your opinion',
+    ['- observed: a file and lines you read, with the lines quoted, or a command you ran in the snapshot, with its output', '- inferred: from what you observed, saying from what', '- judgement: your opinion',
+      ...input.research ? [SOURCE_EVIDENCE] : []].join('\n'),
     'A claim about how something behaves needs an observation, not a line number. Evidence you could not reach, such as a screenshot or an old command\'s output named in the thread, is unchecked and never proof.',
     `Use these headings: ${headings}, in under ${framing?.words ?? 500} words. Write your whole answer in your last message, and end it with this block, using only these fields. Name your findings ${letter}1, ${letter}2 and so on, and give a challenge line only for a criterion you challenge.`,
     fence(COUNCIL_BLOCK_NAMES.answer, ['answer: <your answer in one line>', `finding: ${letter}1 | observed | path/to/file.ts:120-134 | <the claim>`, `finding: ${letter}2 | observed | command | <the claim>`,
-      `finding: ${letter}3 | inferred | <the claim>`, `finding: ${letter}4 | judgement | <the claim>`, 'challenge: C2 | missing, wrong or false-premise | <why>']),
+      `finding: ${letter}3 | inferred | <the claim>`, `finding: ${letter}4 | judgement | <the claim>`,
+      ...input.research ? [`finding: ${letter}5 | source | https://example.org/page | "<the passage, quoted exactly>" | <the claim>`] : [], 'challenge: C2 | missing, wrong or false-premise | <why>']),
   ].join('\n\n')
 }
 
@@ -219,6 +237,7 @@ export function reviewPrompt(input: { readonly preamble?: string; readonly lette
   const read = input.answers.map(answer => answer.letter)
   const after = [
     REVIEW_WORK[input.kind],
+    'Open each source an answer cites and say whether the page holds its quote: confirmed, refuted, or unchecked when you could not open it. A source nobody could open is unchecked, never proof.',
     ...input.kind === 'decision' || input.kind === 'fact' ? ['You may change your own answer once: give the new answer in full and name the evidence that changed it. A peer\'s argument alone is not evidence.'] : [],
     `End your reply with this block, using only these fields and only these IDs: ${input.ids.join(', ')}. Leave out a field marked "only when".`,
     fence(COUNCIL_BLOCK_NAMES.review, reviewBlock(input.kind, input.letter, read)),
@@ -241,7 +260,7 @@ const VERDICT_SHAPE: Readonly<Record<CouncilKind, string>> = {
   ideas: 'For ideas: a shortlist of three to five genuinely different options, each with its best case and who favoured it, and the one you would pick and why.',
 }
 
-export function verdictPrompt(input: { readonly framing: CouncilFraming | undefined; readonly answers: readonly { readonly letter: string; readonly text: string }[];
+export function verdictPrompt(input: { readonly kinds: readonly CouncilKind[]; readonly answers: readonly { readonly letter: string; readonly text: string }[];
   readonly reviews: readonly { readonly letter: string; readonly text: string }[]; readonly leftOut: readonly string[]; readonly panelists: number;
   readonly crux?: { readonly plan: CouncilCrux; readonly results: readonly { readonly letter: string; readonly text: string }[] }; readonly cruxAllowed: boolean; readonly preamble?: string;
   readonly question?: string }): string {
@@ -258,16 +277,18 @@ export function verdictPrompt(input: { readonly framing: CouncilFraming | undefi
     ...input.preamble ? [input.preamble] : [],
     ...input.question ? [`The question, verbatim:\n<question>\n${input.question}\n</question>`] : [],
     `Here are the panel's answers${input.reviews.length ? ', its reviews' : ''}${input.crux ? ' and the crux check\'s result' : ''}, under letters. Weigh evidence, not headcount. Keep the disagreement: never blend it into a consensus. Report every criterion a panelist challenged. Refer to panelists only by letter.`,
+    'A source counts only as far as a reviewer confirmed its quote; one nobody could open stays unchecked, never proof.',
     ...notes,
     ...input.answers.map((answer, index) => `<answer ${answer.letter}>\n${answerTexts[index]}\n</answer ${answer.letter}>`),
     ...input.reviews.map((review, index) => `<review by ${review.letter}>\n${reviewTexts[index]}\n</review by ${review.letter}>`),
     ...input.crux ? [`The crux check the chair asked for: ${input.crux.plan.test}\nWhat each result would mean:\n${input.crux.plan.meanings.map((meaning, index) => `${index + 1}. ${meaning.result} => ${meaning.meaning}`).join('\n')}`,
       ...input.crux.results.map((result, index) => `<crux result from ${result.letter}>\n${cruxTexts[index]}\n</crux result from ${result.letter}>`),
       'An inconclusive result leaves the verdict conditional: say so.'] : [],
-    `Write the verdict. ${kinds(input.framing).map(kind => VERDICT_SHAPE[kind]).join(' ')}`,
+    `Write the verdict. ${input.kinds.map(kind => VERDICT_SHAPE[kind]).join(' ')}`,
     ...input.cruxAllowed ? [
-      'If the panel splits on something observable, such as what a file does or what a command prints, you may ask for one crux check instead of writing the verdict now: reply with only this block. Never for a matter of taste, and never more than once.',
-      fence(COUNCIL_BLOCK_NAMES.crux, ['test: <one command to run, or file to read, in the snapshot>', 'sides: A, C | B', 'if: <a result> => <what it would mean>', 'if: <another result> => <what it would mean>']),
+      'If the panel splits on something observable, such as what a file does, what a command prints or what a source says, you may ask for one crux check instead of writing the verdict now: reply with only this block, giving either a test to run or a source to look up. Never for a matter of taste, and never more than once.',
+      fence(COUNCIL_BLOCK_NAMES.crux, ['test: <one command to run, or file to read, in the snapshot>', 'lookup: <or instead of test: the source to check, a link or where to look, and what to find there>', 'sides: A, C | B',
+        'if: <a result or finding> => <what it would mean>', 'if: <another> => <what it would mean>']),
       'Otherwise write the verdict, with no block.',
     ] : ['Write the verdict now, with no block.'],
   ].join('\n\n')
@@ -276,9 +297,11 @@ export function verdictPrompt(input: { readonly framing: CouncilFraming | undefi
 export function cruxPrompt(input: { readonly preamble?: string; readonly plan: CouncilCrux; readonly establish?: { readonly letters: readonly string[]; readonly claims: readonly string[] } }): string {
   return [
     ...input.preamble ? [input.preamble] : [],
-    `The chair asks for one crux check. Run this in your working folder, the snapshot, and report its output verbatim:\n${input.plan.test}`,
+    input.plan.lookup
+      ? `The chair asks for one crux check, a lookup. Check this source with your own tools and report what it says, quoting the passage that settles it, with its link:\n${input.plan.test}`
+      : `The chair asks for one crux check. Run this in your working folder, the snapshot, and report its output verbatim:\n${input.plan.test}`,
     ...input.establish ? [`No panelist is on neither side, so you try to establish the other side's claim, that of ${input.establish.letters.join(', ')}: ${input.establish.claims.join(' / ') || 'see its answers'}. Report what came out either way.`] : [],
-    `What each result would mean, as the chair wrote before it ran:\n${input.plan.meanings.map((meaning, index) => `${index + 1}. ${meaning.result} => ${meaning.meaning}`).join('\n')}`,
+    `What each ${input.plan.lookup ? 'finding' : 'result'} would mean, as the chair wrote before it ran:\n${input.plan.meanings.map((meaning, index) => `${index + 1}. ${meaning.result} => ${meaning.meaning}`).join('\n')}`,
     'End your reply with this block:',
     fence(COUNCIL_BLOCK_NAMES.cruxResult, ['result: <what came out, in one line>', `outcome: <1 to ${input.plan.meanings.length}, the result that came out, or inconclusive>`]),
   ].join('\n\n')

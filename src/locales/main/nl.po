@@ -1690,6 +1690,10 @@ msgstr ""
 msgid "The extension uses a ZIP format Sotto does not read."
 msgstr ""
 
+#: src/main/council/councilService.ts
+msgid "The framing can change only after it is in and before the verdict, and only to something new. Nothing was changed."
+msgstr ""
+
 #. Stands in for a saved host’s name at the start of a sentence: “The host did not answer…”.
 #: src/main/hosts/desktopHosts.ts
 msgid "The host"

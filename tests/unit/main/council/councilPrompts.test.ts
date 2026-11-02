@@ -50,7 +50,7 @@ describe('prompt sizes', () => {
     const review = reviewPrompt({ preamble, ownAnswer: 'o'.repeat(80_000), letter: 'A', kind: 'decision', answers: [long('B', 80_000), long('C', 80_000)], ids: ['B1', 'C1'] })
     expect(review.length).toBeLessThanOrEqual(PROMPT_LIMIT)
     expect(review).toContain('[Cut here')
-    const verdict = verdictPrompt({ preamble, question: 'q'.repeat(20_000), framing: undefined, answers: ['A', 'B', 'C', 'D', 'E'].map(letter => long(letter, 60_000)),
+    const verdict = verdictPrompt({ preamble, question: 'q'.repeat(20_000), kinds: ['decision'], answers: ['A', 'B', 'C', 'D', 'E'].map(letter => long(letter, 60_000)),
       reviews: ['A', 'B', 'C', 'D', 'E'].map(letter => long(letter, 60_000)), leftOut: [], panelists: 5, cruxAllowed: true })
     expect(verdict.length).toBeLessThanOrEqual(PROMPT_LIMIT)
     expect(verdict).toContain('```council-crux')
@@ -65,8 +65,14 @@ describe('prompt sizes', () => {
 
   it('asks for an answer with the question verbatim, the framing\'s criteria by source and the panelist\'s angle', () => {
     const prompt = answerPrompt({ question: 'Synthetic question?' }, { letter: 'B', snapshot: 'commit abc on main', remote: false,
-      framing: { kinds: ['decision'], criteria: [{ id: 'C1', source: 'assumed', text: 'Synthetic criterion' }], headings: ['Answer'], words: 300, angles: [{ seat: 'B', text: 'Synthetic angle' }] } })
+      framing: { kinds: ['decision'], criteria: [{ id: 'C1', source: 'assumed', text: 'Synthetic criterion' }], headings: ['Answer'], words: 300, angles: [{ seat: 'B', text: 'Synthetic angle' }], research: { needed: false, reason: '' } } })
     for (const words of ['<question>\nSynthetic question?\n</question>', 'C1 (assumed by the chair): Synthetic criterion', 'Also weigh: Synthetic angle', 'finding: B1 | observed']) expect(prompt).toContain(words)
+    expect(prompt).not.toContain('outside research')
+  })
+
+  it('briefs outside research only when the round needs it, and asks for sources then', () => {
+    const prompt = answerPrompt({ question: 'Synthetic question?' }, { letter: 'A', snapshot: 'commit abc on main', remote: false, framing: undefined, kinds: ['fact'], research: true, again: true })
+    for (const words of ['needs outside research', 'with your own tools', '- source: a page', 'finding: A5 | source | https://', 'answer again from the start', 'answer it as a fact to check']) expect(prompt).toContain(words)
   })
 })
 

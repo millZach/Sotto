@@ -47,7 +47,14 @@ describe('framing', () => {
     const read = readFramingBlock(fence('council-framing', 'kind: decision, fact', 'criterion: question | Keeps data local', 'criterion: assumed | Costs one request',
       'headings: Recommendation; Evidence', 'words: 400', 'angle: A | Weigh cost', 'angle: B | Weigh risk'), ['A', 'B', 'C'])
     expect(read).toEqual({ ok: true, value: { kinds: ['decision', 'fact'], criteria: [{ id: 'C1', source: 'question', text: 'Keeps data local' }, { id: 'C2', source: 'assumed', text: 'Costs one request' }],
-      headings: ['Recommendation', 'Evidence'], words: 400, angles: [{ seat: 'A', text: 'Weigh cost' }, { seat: 'B', text: 'Weigh risk' }] } })
+      headings: ['Recommendation', 'Evidence'], words: 400, angles: [{ seat: 'A', text: 'Weigh cost' }, { seat: 'B', text: 'Weigh risk' }], research: { needed: false, reason: '' } } })
+  })
+
+  it('reads whether the question needs outside research, with why, and takes none when the field is left out', () => {
+    const framing = (research: string) => readFramingBlock(fence('council-framing', 'kind: fact', 'criterion: question | x', 'headings: A', 'words: 300', research), ['A', 'B'])
+    expect(framing('research: yes | The library changed its API last month')).toMatchObject({ ok: true, value: { research: { needed: true, reason: 'The library changed its API last month' } } })
+    expect(framing('research: No | The snapshot holds everything')).toMatchObject({ ok: true, value: { research: { needed: false, reason: 'The snapshot holds everything' } } })
+    expect(framing('research: maybe')).toMatchObject({ ok: false })
   })
 
   it('refuses an unknown kind, an unmarked criterion and an angle for a seat that is not there', () => {
@@ -64,6 +71,21 @@ describe('answers', () => {
       'challenge: C2 | false-premise | Nothing costs a request'), 'B', ['C1', 'C2'])
     expect(read.ok && read.value.findings.map(finding => [finding.id, finding.kind, finding.evidence])).toEqual([['B1', 'observed', 'src/main/a.ts:10-12'], ['B2', 'inferred', undefined], ['B3', 'observed', 'command']])
     expect(read.ok && read.value.challenges).toEqual([{ criterion: 'C2', problem: 'false-premise', why: 'Nothing costs a request' }])
+  })
+
+  it('reads a source as its link, the passage it supports, quoted, and its claim', () => {
+    const read = readAnswerBlock(fence('council-answer', 'answer: Use 4.2', 'finding: A1 | source | https://example.org/docs/changelog#4.2 | "The | option was removed in 4.2." | The option is gone'), 'A', [])
+    expect(read).toEqual({ ok: true, value: { answer: 'Use 4.2', challenges: [],
+      findings: [{ id: 'A1', kind: 'source', evidence: 'https://example.org/docs/changelog#4.2', quote: 'The | option was removed in 4.2.', claim: 'The option is gone' }] } })
+    expect(readAnswerBlock(fence('council-answer', 'answer: x', 'finding: A1 | source | “https://example.org” | “Curly quotes” | y'), 'A', [])).toMatchObject({ ok: false })
+  })
+
+  it('checks only a source\'s shape: a web link, a quoted passage and a claim', () => {
+    const source = (line: string) => readAnswerBlock(fence('council-answer', 'answer: x', line), 'A', [])
+    expect(source('finding: A1 | source | https://example.org/page | “A curly-quoted passage” | The claim')).toMatchObject({ ok: true })
+    expect(source('finding: A1 | source | http://localhost:3000/x | "local" | claim')).toMatchObject({ ok: true })
+    for (const bad of ['finding: A1 | source | not a link | "q" | c', 'finding: A1 | source | file:///etc/passwd | "q" | c', 'finding: A1 | source | https://example.org | unquoted passage | c',
+      'finding: A1 | source | https://example.org | "q"', 'finding: A1 | source | ftp://example.org/x | "q" | c']) expect(source(bad), bad).toMatchObject({ ok: false })
   })
 
   it('refuses another panelist\'s IDs, an ID twice, an observation without evidence and an unknown criterion', () => {
@@ -98,6 +120,13 @@ describe('reviews', () => {
     expect(readReviewBlock(fence('council-review', 'answer: same'), { letter: 'A', kind: 'decision', reviewed: new Map([['B', ['B1']]]) })).toMatchObject({ ok: true })
   })
 
+  it('lets a reviewer confirm, refute or leave unchecked a source, and a changed answer rest on one', () => {
+    const context: ReviewContext = { letter: 'A', kind: 'decision', reviewed: new Map([['B', ['B1', 'B2']]]) }
+    expect(readReviewBlock(fence('council-review', 'findings: B1 confirmed, B2 refuted', 'answer: changed', 'new_answer: Use 4.2', 'evidence: https://example.org/changelog'), context))
+      .toMatchObject({ ok: true, value: { findings: [{ id: 'B1', verdict: 'confirmed' }, { id: 'B2', verdict: 'rejected' }], evidence: ['https://example.org/changelog'] } })
+    expect(readReviewBlock(fence('council-review', 'answer: changed', 'new_answer: x', 'evidence: somewhere online'), context)).toMatchObject({ ok: false })
+  })
+
   it('reads the kind-specific fields for a fact, a review and ideas', () => {
     const fact = readReviewBlock(fence('council-review', 'supports: A', 'answer: same'), { ...decision, kind: 'fact' })
     expect(fact).toMatchObject({ ok: true, value: { supports: 'A' } })
@@ -120,7 +149,10 @@ describe('reviews', () => {
 describe('crux check', () => {
   it('reads the chair\'s test, the sides and what each result would mean', () => {
     const read = readCruxBlock(fence('council-crux', 'test: npx vitest run tests/unit/a.test.ts', 'sides: A, C | B', 'if: passes => A is right', 'if: fails => B is right'), ['A', 'B', 'C'])
-    expect(read).toMatchObject({ ok: true, value: { sides: [['A', 'C'], ['B']], meanings: [{ result: 'passes', meaning: 'A is right' }, { result: 'fails', meaning: 'B is right' }] } })
+    expect(read).toMatchObject({ ok: true, value: { lookup: false, sides: [['A', 'C'], ['B']], meanings: [{ result: 'passes', meaning: 'A is right' }, { result: 'fails', meaning: 'B is right' }] } })
+    const lookup = readCruxBlock(fence('council-crux', 'lookup: https://example.org/changelog, the 4.2 entry', 'sides: A | B', 'if: removed => A', 'if: deprecated => B'), ['A', 'B'])
+    expect(lookup).toMatchObject({ ok: true, value: { test: 'https://example.org/changelog, the 4.2 entry', lookup: true } })
+    expect(readCruxBlock(fence('council-crux', 'test: x', 'lookup: y', 'sides: A | B', 'if: a => b', 'if: c => d'), ['A', 'B'])).toMatchObject({ ok: false })
     expect(readCruxBlock(fence('council-crux', 'test: x', 'sides: A | A', 'if: a => b', 'if: c => d'), ['A', 'B'])).toMatchObject({ ok: false })
     expect(readCruxBlock(fence('council-crux', 'test: x', 'sides: A | B', 'if: a => b'), ['A', 'B'])).toMatchObject({ ok: false })
   })

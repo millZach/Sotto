@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CouncilAnswer, CouncilCrux, CouncilFraming, CouncilReview } from '../../../../src/shared/councilBlocks'
 import { savedRecord, type CouncilRecord, type CouncilTurn } from '../../../../src/main/council/councilRecord'
-import { advanceRound, currentRound, fairnessDone, isLate, leaveOut, nextClockChange, replaceSeat, retryTurn, rowActions, turnState, type StageClock } from '../../../../src/main/council/councilStages'
+import { advanceRound, currentRound, fairnessDone, isLate, kindsOf, leaveOut, nextClockChange, reframable, reframe, replaceSeat, researchOf, retryTurn, rowActions, turnState, type StageClock } from '../../../../src/main/council/councilStages'
 
 const START = Date.parse('2026-11-02T12:00:00.000Z')
 let ids = 0
@@ -25,7 +25,7 @@ const sent = (turn: CouncilTurn, at = START): void => { turn.delivery = 'accepte
 const answer = (turn: CouncilTurn, block?: unknown): void => { sent(turn); turn.outcome = 'answered'; turn.replyMessageId = `reply-${turn.id}`; if (block === undefined) turn.result = 'none'; else { turn.result = 'valid'; turn.block = block } }
 const answerBlock = (letter: string): CouncilAnswer => ({ answer: `Synthetic ${letter}`, findings: [{ id: `${letter}1`, kind: 'judgement', claim: 'x' }], challenges: [] })
 const reviewBlock = (ranking: string[]): CouncilReview => ({ ranking, findings: [], added: [], scores: [], favourites: [], answer: 'same', evidence: [] })
-const framing: CouncilFraming = { kinds: ['decision'], criteria: [{ id: 'C1', source: 'question', text: 'Keeps x' }], headings: ['Answer'], words: 300, angles: [] }
+const framing: CouncilFraming = { kinds: ['decision'], criteria: [{ id: 'C1', source: 'question', text: 'Keeps x' }], headings: ['Answer'], words: 300, angles: [], research: { needed: false, reason: '' } }
 
 function throughAnswers(record: CouncilRecord): void {
   advanceRound(record, clock())
@@ -150,6 +150,35 @@ describe('the stages', () => {
   })
 })
 
+describe('changing the framing in the record', () => {
+  it('sets aside every answer and review and asks the panel to answer again, with the user\'s kind and research', () => {
+    const record = council()
+    throughAnswers(record)
+    const review = queued(record, 'review')[0]!
+    sent(review)
+    expect(reframable(record)).toBe(true)
+    expect(reframe(record, { research: false }, START)).toBeUndefined()
+    expect(reframe(record, { kinds: ['fact'], research: true }, START)).toEqual(['thread-A'])
+    expect(currentRound(record)).toMatchObject({ stage: 'answers', kinds: ['fact'], research: true })
+    expect(currentRound(record).reviewPlan).toBeUndefined()
+    expect(kindsOf(currentRound(record))).toEqual(['fact'])
+    expect(researchOf(currentRound(record))).toBe(true)
+    advanceRound(record, clock())
+    expect(queued(record, 'answer').map(turn => turn.seat)).toEqual(['A', 'B', 'C'])
+    expect(record.turns.filter(turn => turn.stage === 'answer' || turn.stage === 'review').filter(turn => turn.delivery !== 'queued').every(turn => turn.superseded)).toBe(true)
+  })
+
+  it('waits for the framing, and changes nothing once the verdict is under way', () => {
+    const record = council()
+    advanceRound(record, clock())
+    expect(reframe(record, { research: true }, START)).toBeUndefined()
+    answer(queued(record, 'framing')[0]!, framing)
+    advanceRound(record, clock())
+    currentRound(record).stage = 'verdict'
+    expect(reframable(record)).toBe(false)
+  })
+})
+
 describe('the stage deadline', () => {
   it('marks a working thread late once the deadline passes, offers its actions, and wakes once for it', () => {
     const record = council()
@@ -175,7 +204,7 @@ describe('the stage deadline', () => {
 })
 
 describe('the crux check and the fairness check', () => {
-  const crux: CouncilCrux = { test: 'npx vitest run tests/unit/a.test.ts', sides: [['A'], ['B']], meanings: [{ result: 'passes', meaning: 'A' }, { result: 'fails', meaning: 'B' }] }
+  const crux: CouncilCrux = { test: 'npx vitest run tests/unit/a.test.ts', lookup: false, sides: [['A'], ['B']], meanings: [{ result: 'passes', meaning: 'A' }, { result: 'fails', meaning: 'B' }] }
 
   function toVerdict(record: CouncilRecord): CouncilTurn {
     throughAnswers(record)

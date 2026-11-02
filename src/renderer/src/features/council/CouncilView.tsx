@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentThread } from '../../../../shared/agents'
-import { COUNCIL_CHAIR, COUNCIL_SEAT_EFFORT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate,
+import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_SEAT_EFFORT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
   type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { isThreadClosed } from '../../../../shared/threadActivity'
@@ -173,24 +173,48 @@ function RoundRecord({ council, round, run }: { readonly council: CouncilRecord;
   const leftOut = round.leftOut.filter(seat => seat !== COUNCIL_CHAIR).join(', ')
   return <section className="council-round" aria-label={round.index === 0 ? t`First question` : t`Follow-up ${round.index}`}>
     {round.index > 0 ? <h3 className="council-round__question">{t`Follow-up: ${round.question ?? ''}`}</h3> : null}
-    {round.framing ? <Framing framing={round.framing} /> : null}
+    {round.framing ? <Framing framing={round.framing} council={council} round={round} run={run} /> : null}
     <ol className="council-rows">
       {round.rows.map(row => <RowRecord key={row.turn} council={council} row={row} run={run} />)}
     </ol>
     {leftOut ? <p className="council-entry__meta tt-paragraph">{t`The Council went on without ${leftOut}.`}</p> : null}
-    {round.crux ? <p className="council-crux tt-paragraph">{t`Crux check: ${round.crux.test}`}{round.crux.result ? ` ${t`Result: ${round.crux.result}`}` : ''}</p> : null}
+    {round.crux ? <p className="council-crux tt-paragraph">{round.crux.lookup ? t`Crux check, a lookup: ${round.crux.test}` : t`Crux check: ${round.crux.test}`}{round.crux.result ? ` ${t`Result: ${round.crux.result}`}` : ''}</p> : null}
     {round.verdict ? <Verdict council={council} round={round} /> : null}
     {round.stage === 'done' && council.status !== 'stopped' && council.status !== 'settled' && round.index === council.rounds.length - 1 ? <FollowUp council={council} run={run} /> : null}
   </section>
 }
 
-function Framing({ framing }: { readonly framing: NonNullable<CouncilRoundView['framing']> }): ReactNode {
+/**
+ * The framing as the record shows it: the kind, the criteria by source, and whether the panelists research outside the
+ * snapshot. Once framing is in and before the verdict, the user can change the kind or the research, and every panelist
+ * answers again (ADR-0177 decision 4).
+ */
+function Framing({ framing, council, round, run }: { readonly framing: NonNullable<CouncilRoundView['framing']>; readonly council: CouncilRecord; readonly round: CouncilRoundView
+  readonly run: (command: CouncilCommand) => Promise<void> }): ReactNode {
   const { t, i18n } = useLingui()
-  if (framing.fallback) return <p className="council-framing tt-paragraph">{t`The chair’s framing could not be read, so the panel answers the question alone, as a decision.`}</p>
-  const kinds = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(framing.kinds.map(kind => ({ decision: t`a decision`, fact: t`a fact to check`, review: t`a review`, ideas: t`ideas` })[kind]))
+  const kindId = useId()
+  const names: Record<CouncilKind, string> = { decision: t`a decision`, fact: t`a fact to check`, review: t`a review`, ideas: t`ideas` }
+  const kinds = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(framing.kinds.map(kind => names[kind]))
+  const reason = framing.research.reason
+  const research = framing.research.needed
+    ? reason ? t`The panelists research outside the snapshot with their own tools: ${reason}` : t`The panelists research outside the snapshot with their own tools.`
+    : t`No outside research: the panelists work from the snapshot and the conversation.`
   return <div className="council-framing">
-    <p className="tt-paragraph">{t`Framed as ${kinds}.`}</p>
-    <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question` : t`assumed by the chair`})</span>: {criterion.text}</li>)}</ul>
+    <p className="tt-paragraph">{framing.fallback ? t`The chair’s framing could not be read, so the panel answers the question alone, as ${kinds}.` : t`Framed as ${kinds}.`}</p>
+    {framing.criteria.length ? <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question` : t`assumed by the chair`})</span>: {criterion.text}</li>)}</ul> : null}
+    <p className="tt-paragraph">{research}{framing.research.byUser ? <span className="council-muted"> {t`You set this.`}</span> : null}</p>
+    {round.reframable ? <div className="council-framing__change">
+      <label className="council-field council-field--inline" htmlFor={kindId}><span>{t`Kind`}</span>
+        <select id={kindId} className="tt-input tt-focusable" value={framing.kinds.length === 1 ? framing.kinds[0] : ''}
+          onChange={event => { const kind = event.currentTarget.value as CouncilKind; if (kind) void run({ type: 'reframe', council: council.id, kinds: [kind] }) }}>
+          {framing.kinds.length > 1 ? <option value="">{kinds}</option> : null}
+          {COUNCIL_KINDS.map(kind => <option key={kind} value={kind}>{names[kind]}</option>)}
+        </select>
+      </label>
+      <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'reframe', council: council.id, research: !framing.research.needed })}>
+        {framing.research.needed ? t`Answer without outside research` : t`Research outside the snapshot`}</button>
+      <p className="council-muted tt-paragraph">{t`Changing the kind or the research asks every panelist to answer again.`}</p>
+    </div> : null}
   </div>
 }
 
@@ -212,6 +236,8 @@ function RowRecord({ council, row, run }: { readonly council: CouncilRecord; rea
       {row.result === 'unavailable' ? <span className="council-muted"> · {t`no result`}</span> : null}</span>
     {row.summary && row.stage !== 'framing' ? <span className="council-row__summary">{row.summary}</span> : null}
     {checked.length ? <span className="council-row__summary council-muted">{checked.join('; ')}</span> : null}
+    {row.sources?.length ? <span className="council-row__summary council-muted">{t`Sources, which reviewers open since Sotto checks only a link’s shape:`} {row.sources.map((source, index) => <React.Fragment key={source.finding}>
+      {index ? '; ' : ''}{source.finding} <span className="council-source">{source.url}</span></React.Fragment>)}</span> : null}
     <span className="council-row__actions">
       <button type="button" className="council-link tt-focusable" onClick={openThread}>{t`Open thread`}</button>
       {row.actions.filter(action => action !== 'replace').map(action => <button key={action} type="button" className="council-link tt-focusable"

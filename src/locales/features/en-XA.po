@@ -1129,6 +1129,10 @@ msgstr ""
 msgid "Answer to objections"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Answer without outside research"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Answer your threads from your iPhone"
 msgstr ""
@@ -1375,6 +1379,10 @@ msgstr ""
 
 #: src/renderer/src/App.tsx
 msgid "Changes save as you make them."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Changing the kind or the research asks every panelist to answer again."
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -1870,6 +1878,11 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Crux check"
+msgstr ""
+
+#. placeholder {0}: round.crux.test
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Crux check, a lookup: {0}"
 msgstr ""
 
 #. placeholder {0}: round.crux.test
@@ -2790,6 +2803,10 @@ msgstr ""
 msgid "Keyboard"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Kind"
+msgstr ""
+
 #. A group of threads in Watcher’s room, and a thread’s status: its work is being merged
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Landing"
@@ -3356,6 +3373,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "No other threads yet. Threads you or Watcher start show here."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No outside research: the panelists work from the snapshot and the conversation."
 msgstr ""
 
 #: src/renderer/src/features/memory/Questionnaire.tsx
@@ -4512,6 +4533,10 @@ msgctxt "kind of work"
 msgid "Research"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Research outside the snapshot"
+msgstr ""
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Reset safely"
 msgstr ""
@@ -5290,6 +5315,10 @@ msgstr ""
 msgid "Source"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Sources, which reviewers open since Sotto checks only a link’s shape:"
+msgstr ""
+
 #: src/renderer/src/languages.ts
 msgid "Spanish"
 msgstr ""
@@ -5724,7 +5753,7 @@ msgid "The chair let it stand: {0}"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "The chair’s framing could not be read, so the panel answers the question alone, as a decision."
+msgid "The chair’s framing could not be read, so the panel answers the question alone, as {kinds}."
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -5851,6 +5880,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "The owl watches a thread until you press it again."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the snapshot with their own tools: {reason}"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the snapshot with their own tools."
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilSeats.tsx
@@ -6848,6 +6885,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You set this policy"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "You set this."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx

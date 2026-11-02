@@ -136,14 +136,24 @@ export const framingSchema = z.object({
   headings: z.array(z.string().min(1).max(200)).max(8),
   words: z.number().int().min(50).max(5_000),
   angles: z.array(z.object({ seat: z.string(), text: z.string().min(1) }).strict()).max(5),
+  /** Whether answering needs outside research, web pages, papers or library docs, and why in a line (Drake, November 2, 2026). */
+  research: z.object({ needed: z.boolean(), reason: z.string() }).strict(),
 }).strict()
 export type CouncilFraming = z.infer<typeof framingSchema>
+
+/** A link Sotto takes as a source: http or https, with a host. Sotto checks only its shape; reviewers open it. */
+export function isSourceLink(text: string): boolean {
+  try { const url = new URL(text.trim()); return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.length > 0 && text.length <= 2_048 } catch { return false }
+}
 
 export function readFramingBlock(reply: string, letters: readonly string[]): BlockRead<CouncilFraming> {
   const block = opened(reply, COUNCIL_BLOCK_NAMES.framing)
   if (isRead(block)) return block
-  const fields = fieldsOf(block, ['kind', 'headings', 'words'], ['criterion', 'angle'])
+  const fields = fieldsOf(block, ['kind', 'headings', 'words', 'research'], ['criterion', 'angle'])
   if (typeof fields === 'string') return bad(fields)
+  // Left out, the question needs none: research is asked for, never assumed.
+  const [needed = 'no', ...why] = parts(fields.one.get('research') ?? 'no').map(part => part.toLowerCase() === 'yes' || part.toLowerCase() === 'no' ? part.toLowerCase() : part)
+  if (needed !== 'yes' && needed !== 'no') return bad('"research" is yes or no, then | and why in a line')
   const kinds = list(fields.one.get('kind') ?? '').map(kind => kind.toLowerCase())
   if (!kinds.length || kinds.some(kind => !(COUNCIL_KINDS as readonly string[]).includes(kind)) || new Set(kinds).size !== kinds.length) {
     return bad(`"kind" must be one or two of ${COUNCIL_KINDS.join(', ')}`)
@@ -160,16 +170,21 @@ export function readFramingBlock(reply: string, letters: readonly string[]): Blo
     if (!letters.includes(seat) || angles.some(angle => angle.seat === seat)) return bad(`each "angle" names one of ${letters.join(', ')} once, then | and the angle`)
     angles.push({ seat, text: rest.join(' | ') })
   }
-  const parsed = framingSchema.safeParse({ kinds, criteria, headings: list(fields.one.get('headings') ?? '').map(heading => heading.slice(0, 200)), words: Number(fields.one.get('words')), angles })
+  const parsed = framingSchema.safeParse({ kinds, criteria, headings: list(fields.one.get('headings') ?? '').map(heading => heading.slice(0, 200)), words: Number(fields.one.get('words')), angles,
+    research: { needed: needed === 'yes', reason: why.join(' | ') } })
   return parsed.success ? { ok: true, value: parsed.data } : bad('give "kind", one to five "criterion" lines, "headings" and "words" between 50 and 5000')
 }
 
 // Answers (each panelist).
 
-export const FINDING_KINDS = ['observed', 'inferred', 'judgement'] as const
+/**
+ * The kinds of evidence a claim carries: observed in the snapshot, inferred from that, judgement, or a source outside
+ * it, a link and the passage it supports, quoted. Sotto checks a source's shape only; reviewers open it.
+ */
+export const FINDING_KINDS = ['observed', 'inferred', 'judgement', 'source'] as const
 export const answerSchema = z.object({
   answer: z.string().min(1),
-  findings: z.array(z.object({ id: z.string(), kind: z.enum(FINDING_KINDS), evidence: z.string().optional(), claim: z.string().min(1) }).strict()).min(1).max(30),
+  findings: z.array(z.object({ id: z.string(), kind: z.enum(FINDING_KINDS), evidence: z.string().optional(), quote: z.string().min(1).optional(), claim: z.string().min(1) }).strict()).min(1).max(30),
   challenges: z.array(z.object({ criterion: z.string(), problem: z.enum(['missing', 'wrong', 'false-premise']), why: z.string() }).strict()).max(10),
 }).strict()
 export type CouncilAnswer = z.infer<typeof answerSchema>
@@ -189,6 +204,12 @@ export function readAnswerBlock(reply: string, letter: string, criteria: readonl
       const [evidence = '', ...claim] = rest
       if (evidence !== 'command' && !parseCitation(evidence)) return bad(`an observed finding gives path:lines inside the snapshot, or "command", before its claim (${findingId})`)
       findings.push({ id: findingId, kind, evidence, claim: claim.join(' | ') })
+    } else if (kind === 'source') {
+      const [link = '', ...more] = rest
+      // The passage is quoted, so a bar inside it never splits it from the claim.
+      const quoted = /^["“](.+?)["”]\s*\|\s*(.+)$/su.exec(more.join(' | '))
+      if (!isSourceLink(link) || !quoted) return bad(`a source finding gives its link, then the passage it supports in quotes, then its claim (${findingId})`)
+      findings.push({ id: findingId, kind, evidence: link, quote: quoted[1]!.trim(), claim: quoted[2]!.trim() })
     } else findings.push({ id: findingId, kind: kind as 'inferred' | 'judgement', claim: rest.join(' | ') })
   }
   const challenges: CouncilAnswer['challenges'] = []
@@ -285,7 +306,7 @@ export function readReviewBlock(reply: string, context: ReviewContext): BlockRea
   if (answer === 'changed' && !rules.mayChange) return bad('an answer to this kind of question is not changed in review; leave "answer" out')
   const newAnswer = fields.one.get('new_answer'), evidence = fields.many.get('evidence') ?? []
   if (answer === 'changed' && (!newAnswer || !evidence.length)) return bad('a changed answer gives "new_answer" in a line and the "evidence" that changed it')
-  if (evidence.some(item => item !== 'command' && !parseCitation(item))) return bad('"evidence" is path:lines inside the snapshot, or command')
+  if (evidence.some(item => item !== 'command' && !parseCitation(item) && !isSourceLink(item))) return bad('"evidence" is path:lines inside the snapshot, command, or a source\'s link')
   if (rules.mayChange && answer === undefined) return bad('give "answer": same, or changed')
   const parsed = reviewSchema.safeParse({ ...ranking ? { ranking } : {}, findings, ...supports !== undefined ? { supports } : {}, added, scores, favourites,
     ...answer ? { answer } : {}, ...newAnswer ? { newAnswer } : {}, evidence })
@@ -294,8 +315,13 @@ export function readReviewBlock(reply: string, context: ReviewContext): BlockRea
 
 // The crux check: the chair's plan, then a neutral panelist's result.
 
+/**
+ * The chair's crux check: a test to run in the snapshot, or a lookup of a source (`lookup`), with what each result or
+ * finding would mean, written before it runs.
+ */
 export const cruxSchema = z.object({
   test: z.string().min(1),
+  lookup: z.boolean(),
   sides: z.tuple([z.array(z.string()).min(1), z.array(z.string()).min(1)]),
   meanings: z.array(z.object({ result: z.string().min(1), meaning: z.string().min(1) }).strict()).min(2).max(4),
 }).strict()
@@ -305,8 +331,9 @@ export type CouncilCrux = z.infer<typeof cruxSchema>
 export function readCruxBlock(reply: string, letters: readonly string[]): BlockRead<CouncilCrux> {
   const block = opened(reply, COUNCIL_BLOCK_NAMES.crux)
   if (isRead(block)) return block
-  const fields = fieldsOf(block, ['test', 'sides'], ['if'])
+  const fields = fieldsOf(block, ['test', 'lookup', 'sides'], ['if'])
   if (typeof fields === 'string') return bad(fields)
+  if (fields.one.has('test') === fields.one.has('lookup')) return bad('give either "test", a command to run, or "lookup", a source to check, not both')
   const sides = (fields.one.get('sides') ?? '').split('|').map(list)
   if (sides.length !== 2 || sides.flat().some(letter => !letters.includes(letter)) || new Set(sides.flat()).size !== sides.flat().length) {
     return bad(`"sides" gives the letters on each side, from ${letters.join(', ')}, separated by |`)
@@ -316,8 +343,8 @@ export function readCruxBlock(reply: string, letters: readonly string[]): BlockR
     const [result = '', meaning = ''] = value.split('=>').map(part => part.trim())
     meanings.push({ result, meaning })
   }
-  const parsed = cruxSchema.safeParse({ test: fields.one.get('test') ?? '', sides, meanings })
-  return parsed.success ? { ok: true, value: parsed.data } : bad('give "test", "sides", and two to four "if" lines: a result => what it would mean')
+  const parsed = cruxSchema.safeParse({ test: fields.one.get('test') ?? fields.one.get('lookup') ?? '', lookup: fields.one.has('lookup'), sides, meanings })
+  return parsed.success ? { ok: true, value: parsed.data } : bad('give "test" or "lookup", "sides", and two to four "if" lines: a result => what it would mean')
 }
 
 export const cruxResultSchema = z.object({ result: z.string().min(1), outcome: z.union([z.number().int().min(1).max(4), z.literal('inconclusive')]) }).strict()

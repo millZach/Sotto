@@ -23,8 +23,8 @@ import { councilFileSchema, savedRecord, type CouncilFile, type CouncilRecord, t
 import { amendPrompt, answerPrompt, cutHistoryText, fairnessPrompt, framingPrompt, framingWords, historyFileWords, historyText, HISTORY_INLINE_MAX, preambleFor, quoteHistory,
   repairPrompt, reviewPrompt, verdictPrompt, cruxPrompt, type QuotedHistory } from './councilPrompts'
 import { COUNCIL_WORKTREE_FOLDER, makeCouncilSnapshot, removeCouncilSnapshot, writeCouncilHistory } from './councilSnapshot'
-import { activePanelists, addRound, advanceRound, answeredLetters, currentRound, currentTurn, fairnessDone, isComplete, isFinal, isLate, isPanelist, leaveOut, nextClockChange,
-  replaceSeat, retryTurn, rowActions, turnState, type StageClock } from './councilStages'
+import { activePanelists, addRound, advanceRound, answeredLetters, currentRound, currentTurn, fairnessDone, isComplete, isFinal, isLate, isPanelist, kindsOf, leaveOut, nextClockChange,
+  reframable, reframe, replaceSeat, researchOf, retryTurn, rowActions, turnState, type StageClock } from './councilStages'
 
 /**
  * The Council coordinator in main (ADR-0177). It starts each seat's thread on its own provider, in the Council's
@@ -177,6 +177,12 @@ export class CouncilService {
     switch (command.type) {
       case 'stop': await this.stop(record, 'user'); return { ok: true, council: record.id }
       case 'settle': await this.settle(record); return { ok: true, council: record.id }
+      case 'reframe': {
+        const running = reframe(record, { ...command.kinds ? { kinds: command.kinds } : {}, ...command.research !== undefined ? { research: command.research } : {} }, this.clock())
+        if (!running) return { ok: false, message: t`The framing can change only after it is in and before the verdict, and only to something new. Nothing was changed.` }
+        for (const thread of running) await this.interrupt(record, thread)
+        return this.moved(record)
+      }
       case 'follow-up': {
         if (record.stoppedAt || record.settledAt) return { ok: false, message: t`This Council has stopped, so it takes no follow-up. Ask a new Council instead.` }
         if (currentRound(record).stage !== 'done') return { ok: false, message: t`Wait for the verdict and its fairness check before asking a follow-up.` }
@@ -523,10 +529,10 @@ export class CouncilService {
     const reviewed = new Map<string, string[]>()
     for (const other of round.reviewPlan?.[letter] ?? []) {
       const answer = currentTurn(record, round, 'answer', other)
-      const block = answer?.result === 'valid' ? answer.block as CouncilAnswer : undefined
+      const block = held<CouncilAnswer>(answer)
       reviewed.set(other, block ? block.findings.map(finding => finding.id) : [other])
     }
-    return { letter, kind: round.framing?.kinds[0] ?? 'decision', reviewed }
+    return { letter, kind: kindsOf(round)[0]!, reviewed }
   }
 
   /** Checks each cited `path:lines` against the snapshot and the reply's quotes (decision 4); a seat that cannot read the snapshot is unchecked. */
@@ -595,11 +601,13 @@ export class CouncilService {
     const context = { ...preamble ? { preamble } : {}, question: round.question, ...previous ? { previousVerdict: previous } : {} }
     const remote = seat.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider)
     // A thread new to the seat, after Use another model, reads the conversation, the question and the framing first.
-    const catchUp = preamble ? [preamble, `The question, verbatim:\n<question>\n${round.question}\n</question>`, ...seat.role === 'panelist' ? [framingWords(round.framing, seat.seat)] : []].join('\n\n') : undefined
+    const catchUp = preamble ? [preamble, `The question, verbatim:\n<question>\n${round.question}\n</question>`, ...seat.role === 'panelist' ? [framingWords(round.framing, seat.seat, kindsOf(round))] : []].join('\n\n') : undefined
     const answerOf = (letter: string): string => { const answer = currentTurn(record, round, 'answer', letter); return answer ? this.replyText(answer) ?? REPLY_GONE : REPLY_GONE }
     switch (turn.stage) {
       case 'framing': return framingPrompt(context, activePanelists(record, round).map(item => item.seat))
-      case 'answer': return answerPrompt(context, { letter: seat.seat, framing: round.framing, snapshot: snapshotWords(record), remote })
+      // After the user changed the framing, a thread that read the earlier one is told to answer again from the start.
+      case 'answer': return answerPrompt(context, { letter: seat.seat, framing: round.framing, kinds: kindsOf(round), research: researchOf(round), snapshot: snapshotWords(record), remote,
+        again: round.reframedAt !== undefined && seat.context })
       case 'review': {
         const reviewContext = this.reviewContext(record, round, seat.seat)
         return reviewPrompt({ ...catchUp ? { preamble: catchUp, ownAnswer: answerOf(seat.seat) } : {}, letter: seat.seat, kind: reviewContext.kind,
@@ -608,21 +616,21 @@ export class CouncilService {
       case 'crux': {
         if (!round.crux) return undefined
         const establish = turn.establish === undefined ? undefined : round.crux.sides[turn.establish]
-        const claims = (establish ?? []).flatMap(letter => { const answer = currentTurn(record, round, 'answer', letter); return answer?.result === 'valid' ? [(answer.block as CouncilAnswer).answer] : [] })
+        const claims = (establish ?? []).flatMap(letter => { const answer = currentTurn(record, round, 'answer', letter); const block = held<CouncilAnswer>(answer); return block ? [block.answer] : [] })
         return cruxPrompt({ ...catchUp ? { preamble: catchUp } : {}, plan: round.crux, ...establish ? { establish: { letters: establish, claims } } : {} })
       }
       case 'verdict': {
         const letters = answeredLetters(record, round)
         const reviews = Object.keys(round.reviewPlan ?? {}).flatMap(reader => { const review = currentTurn(record, round, 'review', reader); return review && isComplete(review) ? [{ letter: reader, text: this.replyText(review) ?? REPLY_GONE }] : [] })
         const results = (round.cruxRunners ?? []).flatMap(runner => { const crux = currentTurn(record, round, 'crux', runner); return crux && isComplete(crux) ? [{ letter: runner, text: this.replyText(crux) ?? REPLY_GONE }] : [] })
-        return verdictPrompt({ ...catchUp ? { preamble: catchUp, question: round.question } : {}, framing: round.framing, answers: letters.map(letter => ({ letter, text: answerOf(letter) })), reviews,
+        return verdictPrompt({ ...catchUp ? { preamble: catchUp, question: round.question } : {}, kinds: kindsOf(round), answers: letters.map(letter => ({ letter, text: answerOf(letter) })), reviews,
           leftOut: round.leftOut.filter(letter => letter !== COUNCIL_CHAIR), panelists: record.seats.filter(isPanelist).length,
           ...round.crux && round.cruxDone ? { crux: { plan: round.crux, results } } : {}, cruxAllowed: !round.cruxDone && letters.length >= 2 })
       }
       case 'fairness': {
         if (round.verdict === undefined) return undefined
-        const crux = (round.cruxRunners ?? []).map(runner => currentTurn(record, round, 'crux', runner)).find(item => item?.result === 'valid')
-        return fairnessPrompt({ ...catchUp ? { preamble: catchUp, ownAnswer: answerOf(seat.seat) } : {}, letter: seat.seat, verdict: round.verdict, ...crux ? { crux: crux.block as CouncilCruxResult } : {} })
+        const crux = (round.cruxRunners ?? []).map(runner => held<CouncilCruxResult>(currentTurn(record, round, 'crux', runner))).find(item => item !== undefined)
+        return fairnessPrompt({ ...catchUp ? { preamble: catchUp, ownAnswer: answerOf(seat.seat) } : {}, letter: seat.seat, verdict: round.verdict, ...crux ? { crux } : {} })
       }
       case 'amend': {
         const objections = round.objections.filter(objection => objection.turn === turn.id && objection.claim !== undefined && objection.passage !== undefined)
@@ -661,30 +669,34 @@ export class CouncilService {
         const waiting = !isFinal(turn) && (threads.get(turn.thread)?.requests.length ?? 0) > 0
         return { turn: turn.id, seat: turn.seat, stage: turn.stage, state: turnState(turn, waiting), late: isLate(turn, now, deadline), repair: turn.repairOf !== undefined,
           result: turn.result === 'invalid' ? 'pending' as const : turn.result, ...turn.summary ? { summary: turn.summary } : {}, ...turn.citations?.length ? { citations: turn.citations } : {},
-          thread: turn.thread, actions: rowActions(record, turn, now, waiting) }
+          ...sourcesOf(turn), thread: turn.thread, actions: rowActions(record, turn, now, waiting) }
       })
     const verdict = round.verdict === undefined && !(round.stage === 'fairness' || round.stage === 'done') ? null : {
       text: round.verdict ?? null, counts: this.counts(record, round), fairnessDone: fairnessDone(record, round, now),
       objections: round.objections.map(objection => ({ seat: objection.seat, claim: objection.claim ?? '', passage: objection.passage ?? '',
         answer: objection.answer === 'unanswered' ? 'pending' as const : objection.answer, ...objection.reason ? { reason: objection.reason } : {} })),
     }
-    const framing = round.framing || round.framingFallback ? councilFramingViewSchema.safeParse(round.framing ? { ...round.framing, fallback: false } : { kinds: ['decision'], criteria: [], headings: [], words: 0, angles: [], fallback: true }).data ?? null : null
+    const research = { needed: researchOf(round), reason: round.research === undefined ? round.framing?.research.reason ?? '' : '', byUser: round.research !== undefined }
+    const framing = round.framing || round.framingFallback ? councilFramingViewSchema.safeParse(round.framing
+      ? { kinds: kindsOf(round), criteria: round.framing.criteria, headings: round.framing.headings, words: round.framing.words, angles: round.framing.angles, research, fallback: false }
+      : { kinds: kindsOf(round), criteria: [], headings: [], words: 0, angles: [], research, fallback: true }).data ?? null : null
     return {
       index: round.index, question: round.question ?? null, askedAt: round.askedAt, stage: round.stage, framing, rows, leftOut: round.leftOut,
-      crux: round.crux ? { test: round.crux.test, sides: round.crux.sides, meanings: round.crux.meanings.map(meaning => `${meaning.result} => ${meaning.meaning}`),
-        ...(() => { const result = (round.cruxRunners ?? []).map(runner => currentTurn(record, round, 'crux', runner)).find(item => item?.result === 'valid'); return result ? { result: (result.block as CouncilCruxResult).result } : {} })() } : null,
+      reframable: round.index === currentRound(record).index && reframable(record),
+      crux: round.crux ? { test: round.crux.test, lookup: round.crux.lookup, sides: round.crux.sides, meanings: round.crux.meanings.map(meaning => `${meaning.result} => ${meaning.meaning}`),
+        ...(() => { const result = (round.cruxRunners ?? []).map(runner => held<CouncilCruxResult>(currentTurn(record, round, 'crux', runner))).find(item => item !== undefined); return result ? { result: result.result } : {} })() } : null,
       verdict, draft: verdict?.text && verdict.fairnessDone ? clip(this.draft(record, round, verdict.text), 400_000) : null,
     }
   }
 
   private counts(record: CouncilRecord, round: CouncilRound): ReturnType<typeof councilCounts> {
     const letters = answeredLetters(record, round)
-    const answers = new Map(letters.map(letter => { const turn = currentTurn(record, round, 'answer', letter)!; return [letter, turn.result === 'valid' ? turn.block as CouncilAnswer : null] }))
+    const answers = new Map(letters.map(letter => { const turn = currentTurn(record, round, 'answer', letter)!; return [letter, held<CouncilAnswer>(turn) ?? null] }))
     const reviews = Object.entries(round.reviewPlan ?? {}).map(([reader, assigned]) => {
       const turn = currentTurn(record, round, 'review', reader)
-      return { reader, assigned, block: turn?.result === 'valid' ? turn.block as CouncilReview : null }
+      return { reader, assigned, block: held<CouncilReview>(turn) ?? null }
     })
-    return councilCounts({ kinds: round.framing?.kinds ?? ['decision'], answers, reviews })
+    return councilCounts({ kinds: kindsOf(round), answers, reviews })
   }
 
   /** What Send to the thread puts in its message box: the verdict, then Sotto's table of letters and its counts, never the chair's words changed. */
@@ -763,6 +775,10 @@ export function narrowestPermission(model: AgentModel): { readonly runtimeMode?:
   return mode ? { runtimeMode: mode } : {}
 }
 
+/** What Sotto read from a prompt's result block, while it holds it: a repair's block is its prompt's, and words not kept are gone. */
+function held<Block>(turn: CouncilTurn | undefined): Block | undefined {
+  return turn?.result === 'valid' && turn.block !== undefined ? turn.block as Block : undefined
+}
 function snapshotWords(record: CouncilRecord): string {
   return `commit ${record.snapshot.commit.slice(0, 12)} on ${record.snapshot.branch}${record.snapshot.dirty ? ', with the uncommitted changes it had' : ''}`
 }
@@ -776,6 +792,13 @@ function blockName(stage: CouncilTurn['stage']): string {
     case 'fairness': return COUNCIL_BLOCK_NAMES.fairness
     case 'amend': return COUNCIL_BLOCK_NAMES.amend
   }
+}
+/** An answer's sources by finding, for its row: Sotto checks only a link's shape, so it shows them for reviewers to open. */
+function sourcesOf(turn: CouncilTurn): { readonly sources?: { readonly finding: string; readonly url: string }[] } {
+  const block = turn.stage === 'answer' && !turn.repairOf ? held<CouncilAnswer>(turn) : undefined
+  if (!block) return {}
+  const sources = block.findings.flatMap(finding => finding.kind === 'source' && finding.evidence ? [{ finding: finding.id, url: finding.evidence }] : []).slice(0, 40)
+  return sources.length ? { sources } : {}
 }
 function reviewSummary(review: CouncilReview): string {
   return [review.ranking?.length ? review.ranking.join(' > ') : '', review.supports ? `supports ${review.supports}` : '', review.favourites.length ? `favourites ${review.favourites.join(', ')}` : '',

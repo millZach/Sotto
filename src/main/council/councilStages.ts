@@ -1,4 +1,4 @@
-import { COUNCIL_CHAIR, COUNCIL_FAIRNESS_WAIT_MS, type CouncilRowAction, type CouncilStage, type CouncilThreadState, type CouncilTurnStage } from '../../shared/council'
+import { COUNCIL_CHAIR, COUNCIL_FAIRNESS_WAIT_MS, type CouncilKind, type CouncilRowAction, type CouncilStage, type CouncilThreadState, type CouncilTurnStage } from '../../shared/council'
 import type { CouncilCrux, CouncilFraming } from '../../shared/councilBlocks'
 import { reviewAssignments } from '../../shared/councilFlow'
 import type { CouncilRecord, CouncilRound, CouncilSeat, CouncilTurn } from './councilRecord'
@@ -74,7 +74,7 @@ function step(record: CouncilRecord, round: CouncilRound, clock: StageClock): bo
       if (!turn) { queue(record, round, COUNCIL_CHAIR, 'framing', clock); return true }
       // A framing that fails or cannot be read leaves the question alone (decision 4); answers start as soon as it is in.
       if (isComplete(turn) || isFinal(turn) && turn.outcome !== 'answered') {
-        if (turn.result === 'valid') round.framing = turn.block as CouncilFraming
+        if (turn.result === 'valid' && turn.block !== undefined) round.framing = turn.block as CouncilFraming
         else round.framingFallback = true
         round.stage = 'answers'
         return true
@@ -107,7 +107,7 @@ function step(record: CouncilRecord, round: CouncilRound, clock: StageClock): bo
       const turn = currentTurn(record, round, 'verdict', COUNCIL_CHAIR)
       if (!turn) { queue(record, round, COUNCIL_CHAIR, 'verdict', clock); return true }
       if (!isComplete(turn)) return false
-      if (turn.result === 'valid' && !round.cruxDone) {
+      if (turn.result === 'valid' && turn.block !== undefined && !round.cruxDone) {
         // The chair asked for a crux check rather than writing the verdict: it runs once, then the chair writes it.
         const crux = turn.block as CouncilCrux
         round.crux = crux
@@ -263,6 +263,42 @@ export function nextClockChange(record: CouncilRecord, now: number): number | un
   for (const round of record.rounds) if (round.fairnessAt && !fairnessDone(record, round, now)) due.push(Date.parse(round.fairnessAt) + COUNCIL_FAIRNESS_WAIT_MS)
   const next = Math.min(...due.filter(time => time > now))
   return Number.isFinite(next) ? next : undefined
+}
+
+/** The round's kind: the user's, set in the record, over the chair's framing, which a decision stands in for when it failed. */
+export function kindsOf(round: CouncilRound): CouncilKind[] { return round.kinds ?? round.framing?.kinds ?? ['decision'] }
+/** Whether the round's panelists research outside the snapshot: the user's word in the record over the chair's framing. */
+export function researchOf(round: CouncilRound): boolean { return round.research ?? round.framing?.research.needed ?? false }
+
+/** Whether the user can change the round's kind or research now: once framing is in, before the verdict. */
+export function reframable(record: CouncilRecord): boolean {
+  const round = currentRound(record)
+  return !record.stoppedAt && !record.settledAt && (round.stage === 'answers' || round.stage === 'reviews')
+}
+
+/**
+ * The user changes the round's kind or whether it needs outside research in the record (decision 4): every answer and
+ * review so far is set aside and the panelists answer again. Returns the threads still working on one, for the caller to
+ * stop. Nothing changes when it would change nothing.
+ */
+export function reframe(record: CouncilRecord, change: { readonly kinds?: readonly CouncilKind[]; readonly research?: boolean }, now: number): string[] | undefined {
+  const round = currentRound(record)
+  const kinds = change.kinds ? [...change.kinds] : undefined
+  const sameKinds = !kinds || kinds.join() === kindsOf(round).join()
+  const sameResearch = change.research === undefined || change.research === researchOf(round)
+  if (!reframable(record) || sameKinds && sameResearch) return undefined
+  if (kinds) round.kinds = kinds
+  if (change.research !== undefined) round.research = change.research
+  round.reframedAt = new Date(now).toISOString()
+  const running: string[] = []
+  for (const turn of record.turns) {
+    if (turn.round !== round.index || turn.superseded || turn.stage !== 'answer' && turn.stage !== 'review') continue
+    if (!isFinal(turn) && turn.delivery !== 'queued') running.push(turn.thread)
+    turn.superseded = true
+  }
+  delete round.reviewPlan
+  round.stage = 'answers'
+  return [...new Set(running)]
 }
 
 /** Puts a follow-up question to the same threads (decision 4), once the round before it is done. */

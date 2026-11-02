@@ -53,6 +53,11 @@
 .council-framing { color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-framing p { margin: 0; }
 .council-framing ul { margin: 4px 0 0; padding-left: 18px; }
+.council-framing { display: grid; gap: 6px; }
+.council-framing__change { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; }
+.council-framing__change > p { flex-basis: 100%; margin: 0; }
+.council-field--inline { min-width: 180px; }
+.council-source { overflow-wrap: anywhere; }
 .council-muted { color: var(--tt-text-muted); }
 
 .council-rows { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }

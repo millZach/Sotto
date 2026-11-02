@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { providerIdSchema } from '../../shared/providerIds'
-import { COUNCIL_STAGES, COUNCIL_TURN_STAGES, councilCitationSchema, type CouncilCitation, type CouncilStage, type CouncilTurnStage } from '../../shared/council'
+import { COUNCIL_KINDS, COUNCIL_STAGES, COUNCIL_TURN_STAGES, councilCitationSchema, type CouncilCitation, type CouncilStage, type CouncilTurnStage } from '../../shared/council'
 import { cruxSchema, framingSchema, type CouncilAmend, type CouncilAnswer, type CouncilCrux, type CouncilCruxResult, type CouncilFairness, type CouncilFraming,
   type CouncilReview } from '../../shared/councilBlocks'
 
@@ -69,6 +69,10 @@ export const councilRoundSchema = z.object({
   leftOut: z.array(seat).max(6),
   reviewPlan: z.record(seat, z.array(seat).max(4)).optional(),
   framingFallback: z.boolean().optional(),
+  /** The kind and research the user set in the record over the chair's framing, which restarted the answers. */
+  kinds: z.array(z.enum(COUNCIL_KINDS)).min(1).max(2).optional(),
+  research: z.boolean().optional(),
+  reframedAt: at.optional(),
   cruxRunners: z.array(seat).max(2).optional(),
   cruxDone: z.boolean().optional(),
   fairnessAt: at.optional(),

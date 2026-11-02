@@ -42,12 +42,13 @@ async function fixture() {
     }, { timeout: 20_000 })
     await f.endTurn(thread, reply)
   }
-  const restart = async () => { council.close(); council = make(); await council.recover() }
+  /** The Council alone stops and starts again over its record; `between` runs while it is stopped. */
+  const restart = async (between?: () => Promise<void>) => { council.close(); await between?.(); council = make(); await council.recover() }
   return { ...f, origin, folder, view, seat, answer, restart, get council() { return council } }
 }
 
 const framing = fence('council-framing', 'kind: decision', 'criterion: question | Keeps the store read once', 'criterion: assumed | Costs nothing at start',
-  'headings: Answer; Evidence', 'words: 300', 'angle: A | Weigh startup', 'angle: B | Weigh memory', 'angle: C | Weigh tests')
+  'headings: Answer; Evidence', 'words: 300', 'research: yes | Synthetic library docs changed', 'angle: A | Weigh startup', 'angle: B | Weigh memory', 'angle: C | Weigh tests')
 const answerReply = (letter: string, cite: boolean): string => [`Synthetic answer ${letter}.`, ...cite ? ['It reads: export const keep = readThreadOnce(id)'] : [],
   fence('council-answer', `answer: Synthetic answer ${letter}`, cite ? `finding: ${letter}1 | observed | store.ts:1 | The store is read once` : `finding: ${letter}1 | judgement | Synthetic claim`)].join('\n')
 const reviewReply = (order: string): string => fence('council-review', `ranking: ${order}`, 'answer: same')
@@ -68,6 +69,9 @@ it('runs a Council end to end in a snapshot, keeps the user\'s checkout as it wa
   expect(chairPrompt).toContain('quoted as history')
   expect(chairPrompt).toContain('Synthetic origin reply')
   await f.answer('A', 'Also weigh: Weigh startup', answerReply('A', true))
+  // The chair said the question needs outside research: each panelist is told to research with its own tools and cite sources.
+  expect(f.native(f.seat('A')).messages.findLast(message => message.role === 'user')!.text).toContain('needs outside research')
+  expect(f.view().rounds[0]!.framing).toMatchObject({ research: { needed: true, reason: 'Synthetic library docs changed', byUser: false } })
   await f.answer('B', 'as panelist B', answerReply('B', false))
   await f.answer('C', 'as panelist C', answerReply('C', false))
 
@@ -134,14 +138,18 @@ it('never sends again a prompt Sotto had not seen arrive before it restarted', a
   await f.council.command({ type: 'start', originThread: f.origin, question: 'Synthetic question?', panelists: [{ modelId: f.model('codex').id, reasoningEffort: 'high' },
     { modelId: f.model('grok').id, reasoningEffort: 'high' }], chair: { modelId: f.model('claude').id, reasoningEffort: null } })
   await vi.waitFor(() => expect(f.workspace.registry.byThread(f.seat('chair')) && f.native(f.seat('chair')).messages.some(message => message.role === 'user')).toBe(true), { timeout: 20_000 })
-  // As if Sotto stopped while the framing was on its way: the record says dispatching.
+  // As if Sotto stopped while the framing was on its way: once the record has settled, it is made to say dispatching.
   const file = join(f.root, 'councils.json')
-  const saved = JSON.parse(await readFile(file, 'utf8')) as { councils: { turns: { delivery: string }[] }[] }
-  saved.councils[0]!.turns[0]!.delivery = 'dispatching'
-  await writeFile(file, JSON.stringify(saved))
+  type Saved = { councils: { turns: { delivery: string }[] }[] }
+  const saved = async (): Promise<Saved> => JSON.parse(await readFile(file, 'utf8')) as Saved
+  await vi.waitFor(async () => expect((await saved()).councils[0]!.turns[0]!.delivery).toBe('accepted'), { timeout: 20_000 })
   const prompts = () => f.native(f.seat('chair')).messages.filter(message => message.role === 'user').length
   const sent = prompts()
-  await f.restart()
+  await f.restart(async () => {
+    const record = await saved()
+    record.councils[0]!.turns[0]!.delivery = 'dispatching'
+    await writeFile(file, JSON.stringify(record))
+  })
   expect(f.view().rounds[0]!.rows.find(row => row.stage === 'framing')).toMatchObject({ state: 'unknown', actions: ['retry', 'replace', 'skip'] })
   await f.endTurn(f.origin, 'Synthetic later reply')
   expect(prompts()).toBe(sent)

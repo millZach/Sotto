@@ -203,6 +203,8 @@ export const councilCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('skip'), council: z.uuid(), turn: z.uuid() }).strict(),
   z.object({ type: z.literal('replace'), council: z.uuid(), turn: z.uuid(), seat: councilSeatChoiceSchema }).strict(),
   z.object({ type: z.literal('follow-up'), council: z.uuid(), question: z.string().trim().min(1).max(COUNCIL_QUESTION_MAX) }).strict(),
+  /** The user changes the round's kind, or whether it needs outside research, in the record; the panelists answer again. */
+  z.object({ type: z.literal('reframe'), council: z.uuid(), kinds: z.array(councilKindSchema).min(1).max(2).optional(), research: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('stop'), council: z.uuid() }).strict(),
   z.object({ type: z.literal('settle'), council: z.uuid() }).strict(),
 ])
@@ -259,6 +261,8 @@ export const councilRowSchema = z.object({
   /** What its result block says, in a line, from the block's own words: an answer, a ranking, Fair. */
   summary: z.string().max(2_000).optional(),
   citations: z.array(councilCitationSchema).max(40).optional(),
+  /** An answer's sources by finding: links Sotto checked only for their shape, which reviewers open. */
+  sources: z.array(z.object({ finding: seatId, url: z.string().max(2_048) }).strict()).max(40).optional(),
   thread: id,
   actions: z.array(z.enum(COUNCIL_ROW_ACTIONS)).max(COUNCIL_ROW_ACTIONS.length),
 }).strict()
@@ -283,6 +287,8 @@ export const councilFramingViewSchema = z.object({
   headings: z.array(z.string().max(200)).max(8),
   words: count,
   angles: z.array(z.object({ seat: seatId, text: z.string().max(2_000) }).strict()).max(COUNCIL_PANELISTS_MAX),
+  /** Whether the panelists research outside the snapshot, the chair's reason, and whether the user set it in the record. */
+  research: z.object({ needed: z.boolean(), reason: z.string().max(2_000), byUser: z.boolean() }).strict(),
   /** The chair's framing failed or could not be read, so the Council went on with the question alone. */
   fallback: z.boolean(),
 }).strict()
@@ -305,7 +311,9 @@ export const councilRoundViewSchema = z.object({
   framing: councilFramingViewSchema.nullable(),
   rows: z.array(councilRowSchema).max(200),
   leftOut: z.array(seatId).max(COUNCIL_PANELISTS_MAX + 1),
-  crux: z.object({ test: z.string().max(2_000), sides: z.array(z.array(seatId).max(COUNCIL_PANELISTS_MAX)).length(2), meanings: z.array(z.string().max(4_100)).max(4),
+  /** The user can change the kind or research now: framing is in and the verdict is not. */
+  reframable: z.boolean(),
+  crux: z.object({ test: z.string().max(2_000), lookup: z.boolean(), sides: z.array(z.array(seatId).max(COUNCIL_PANELISTS_MAX)).length(2), meanings: z.array(z.string().max(4_100)).max(4),
     result: z.string().max(2_000).optional() }).strict().nullable(),
   verdict: z.object({
     /** The chair's words, amended where the fairness check changed them; null once they are not kept. */
