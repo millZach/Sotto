@@ -30,6 +30,13 @@ export const COUNCIL_QUESTION_MAX = 20_000
 /** The effort a seat Sotto filled starts on (decision 7). */
 export const COUNCIL_SEAT_EFFORT = 'high'
 
+/**
+ * The first line of every prompt a Council sends. The host records each prompt as Sotto's, as it records a wake-up, so no
+ * client shows it as the user's; this line lets a window tag it as the Council's rather than as a wake-up.
+ */
+export const COUNCIL_PROMPT_LEAD = '[Sotto Council]'
+export function isCouncilPromptText(text: string): boolean { return text.startsWith(COUNCIL_PROMPT_LEAD) }
+
 /** A seat as the user chose it in Settings → Council or on the Ask screen: a model and its effort. */
 export const councilSeatChoiceSchema = z.object({
   modelId: z.string().min(1).max(512),

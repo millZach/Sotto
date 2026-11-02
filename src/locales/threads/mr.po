@@ -3354,7 +3354,9 @@ msgid "Couldn’t get this thinking from {host}. Nothing is lost: it is still th
 msgstr ""
 
 #. The Council page: one question put to several models (ADR-0177).
+#. The tag on a prompt a Council of models sent to one of its threads (ADR-0177).
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Council"
 msgstr ""
 

@@ -68,6 +68,11 @@ it('runs a Council end to end in a snapshot, keeps the user\'s checkout as it wa
   const chairPrompt = f.native(f.seat('chair')).messages.find(message => message.role === 'user')!.text
   expect(chairPrompt).toContain('quoted as history')
   expect(chairPrompt).toContain('Synthetic origin reply')
+  // The prompt is Sotto's, never the user's: the host recorded it as it records a wake-up, before the provider heard it.
+  const chairThread = f.control.watcherSnapshot().threads.find(thread => thread.id === f.seat('chair'))!
+  const chairMessage = f.native(f.seat('chair')).messages.find(message => message.role === 'user')!
+  expect(chairPrompt.startsWith('[Sotto Council]')).toBe(true)
+  expect(chairThread.wakeUpMessageIds).toContain(chairMessage.id)
   await f.answer('A', 'Also weigh: Weigh startup', answerReply('A', true))
   // The chair said the question needs outside research: each panelist is told to research with its own tools and cite sources.
   expect(f.native(f.seat('A')).messages.findLast(message => message.role === 'user')!.text).toContain('needs outside research')

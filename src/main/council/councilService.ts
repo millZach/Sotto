@@ -5,7 +5,7 @@ import { join, relative, resolve } from 'node:path'
 import { isThreadProviderConnected, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
   type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_REMOTE_PROVIDERS, COUNCIL_VIEWS_MAX, councilEffort, councilFramingViewSchema, type CouncilCitation, type CouncilCommand,
+import { COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_PROMPT_LEAD, COUNCIL_REMOTE_PROVIDERS, COUNCIL_VIEWS_MAX, councilEffort, councilFramingViewSchema, type CouncilCitation, type CouncilCommand,
   type CouncilCommandResult, type CouncilEstimate, type CouncilKind, type CouncilRoundView, type CouncilSeatChoice, type CouncilView } from '../../shared/council'
 import { citationQuoted, COUNCIL_BLOCK_NAMES, findCouncilBlock, parseCitation, readAmendBlock, readAnswerBlock, readCruxBlock, readCruxResultBlock, readFairnessBlock,
   readFramingBlock, readReviewBlock, withoutCouncilBlocks, type BlockRead, type CouncilAnswer, type CouncilCrux, type CouncilCruxResult, type CouncilReview } from '../../shared/councilBlocks'
@@ -62,6 +62,8 @@ export interface CouncilCoordinator {
 }
 export interface CouncilHost {
   setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void>
+  /** Records a prompt as Sotto's before the provider hears it, as a wake-up is, so no client shows it as the user's. */
+  recordSottoMessage(threadId: string, messageId: string): Promise<void>
   threadMessage(threadId: string, messageId: string): { readonly id: string; readonly role: string; readonly text: string } | undefined
   threadMessages?(threadId: string): readonly AgentMessage[]
   threadActivities?(threadId: string): readonly AgentActivity[]
@@ -384,12 +386,14 @@ export class CouncilService {
     const fail = (): void => { turn.delivery = 'failed'; turn.outcome = 'failed' }
     try {
       if (!seat.started && !await this.createThread(record, seat)) return fail()
-      const text = this.promptFor(record, turn, seat)
-      if (text === undefined) return fail()
+      const prompt = this.promptFor(record, turn, seat)
+      if (prompt === undefined) return fail()
+      const text = `${COUNCIL_PROMPT_LEAD}\n\n${prompt}`
       try { this.guard(record, turn) } catch { return }
       turn.delivery = 'dispatching'; turn.sentAt = new Date(this.clock()).toISOString()
-      // Saved as on its way before the provider can hear it, so a restart reads it as unknown, never as unsent.
-      try { await this.save() } catch { return fail() }
+      // Saved as on its way before the provider can hear it, so a restart reads it as unknown, never as unsent; and
+      // recorded as Sotto's, never the user's, as a wake-up is.
+      try { await this.save(); await this.options.host.recordSottoMessage(turn.thread, turn.messageId) } catch { return fail() }
       let result: AgentState
       try { result = await this.options.control.commandFromCouncil({ type: 'manual-send', threadId: turn.thread, draftId: turn.draftId, text }, () => this.guard(record, turn)) }
       catch { return fail() }

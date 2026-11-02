@@ -2590,6 +2590,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
   }
   /**
+   * A message Sotto sends a thread that is not the user's, such as a Council's prompt (ADR-0177), recorded as Sotto's
+   * before the provider hears it, the way a wake-up is: every client shows it as Sotto's from its first echo, after a
+   * restart and after its history is read again, never as the user's.
+   */
+  async recordSottoMessage(threadId: string, messageId: string): Promise<void> {
+    await this.initialize()
+    await this.recordWakeUp(threadId, messageId)
+    this.publish()
+  }
+  /**
    * Records a wake-up's message ID on its thread's record, and in the thread store, before the provider hears the
    * prompt, so the message is Sotto's from its first echo, after a restart and after its history is read again
    * (ADR-0061 decision 8). A store that refuses it costs only the mark on a wake-up older than the record's newest thousand.
