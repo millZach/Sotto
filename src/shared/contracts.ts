@@ -433,6 +433,8 @@ export interface SottoBridge {
   readonly watcher?: import('./watcherRoom').WatcherBridge
   readonly hosts?: import('./hosts').HostsBridge
   readonly phones?: import('./phones').PhonesBridge
+  /** Let apps on this computer connect (ADR-0180); main answers it only while the `local-apps` Owl feature is on. */
+  readonly localApps?: import('./localApps').LocalAppsBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
   readonly terminal?: import('./terminal').TerminalBridge
   readonly browser?: import('./browser').BrowserBridge
