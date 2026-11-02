@@ -81,7 +81,8 @@ import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadClearFacts, type UnsentThreadFacts } from './threadClearing'
 import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherRequest, type WatcherThreadTarget } from '../../shared/watcher'
-import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
+import { isImageAttachment, parsePublicProviderEntityId, SCREENSHOT_WRONG_TYPE, threadProviderOf } from '../../shared/agents'
+import { attachedFilesNote, saveAttachedFiles } from './attachedFiles'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
@@ -227,7 +228,14 @@ type WithHandles<C> = Omit<C, 'attachments'> & { readonly attachments?: readonly
 /** A send or steer as `dispatch` holds it: its images still handles, read only at the provider boundary. */
 type PromptWithHandles = WithHandles<Extract<AgentHostCommand, { type: 'send' }>> | WithHandles<Extract<AgentHostCommand, { type: 'steer' }>>
 /** What `dispatch` is handed: any host command, with a send's or steer's images as handles. */
-type DispatchCommand = Exclude<AgentHostCommand, { type: 'send' | 'steer' }> | PromptWithHandles
+/** An answer with the images dropped on its card (ADR-0176), which become words only once it is about to be sent. */
+type AnswerWithHandles = Extract<AgentHostCommand, { type: 'answer' }> & { readonly attachments?: readonly AgentAttachmentHandle[] }
+type DispatchCommand = Exclude<AgentHostCommand, { type: 'send' | 'steer' | 'answer' }> | PromptWithHandles | AnswerWithHandles
+/** The question an answer's images are named in (ADR-0176): the last that offers choices and takes the user's own words.
+ *  A typed form field offers no choices, so a number or a date never carries them. */
+function imageCarrier(request: AgentRequest | undefined): NonNullable<AgentRequest['questions']>[number] | undefined {
+  return request?.questions?.findLast(question => question.allowFreeText && question.options.length > 0 && !question.unavailableReason)
+}
 /** An explicit composer packet owns this thread, question and revision before waiting for main's lane. */
 type ComposerContext = {
   composition: Extract<AgentCommand, { type: 'save-thread-draft' }>
@@ -1321,6 +1329,8 @@ export class AgentControl {
     missingAttachment?: string
     /** The Owl answer for attaching any file (ADR-0131), read once at start: the store keeps files that are not images. */
     attachAnyFile?: boolean
+    /** The Owl answer for images on question answers (ADR-0176), read once at start: an answer may carry images. */
+    answerImages?: boolean
     /** The pictures this host's agents made or looked at (ADR-0170), present only while `inline-media` is on. */
     threadMedia?: ThreadMediaStore
     /**
@@ -5595,6 +5605,7 @@ export class AgentControl {
         const answerDraft = sentDraft ?? (!command.questionAnswers ? this.state.threadDrafts?.find(draft => draft.threadId === command.threadId && draft.requestId === command.requestId
           && draft.text.trim() === command.answer.trim() && !draft.attachments.length) : undefined)
         if (request.delivery === 'uncertain') throw new Error('This answer may already have arrived. Refresh the original request; it will not be resent.')
+        this.checkAnswerImages(command, request)
         // Watcher hears that the user answered a card it was told of, never what they answered (October 24, 2026).
         const unmark = this.watcherHooks?.requestAnswering?.(command.threadId, request.id, 'user')
         try {
@@ -5619,7 +5630,7 @@ export class AgentControl {
             this.say(`Answered ${thread.title}.`)
             return
           }
-          await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}), ...(command.skipped ? { skipped: true as const } : {}) }, turn, composer ? () => this.validateComposerQuestion(composer) : undefined, composer?.atomicDigest ? answerDraft?.draftId : undefined, client, composer?.atomicDigest, origin)
+          await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.attachments?.length ? { attachments: command.attachments } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}), ...(command.skipped ? { skipped: true as const } : {}) }, turn, composer ? () => this.validateComposerQuestion(composer) : undefined, composer?.atomicDigest ? answerDraft?.draftId : undefined, client, composer?.atomicDigest, origin)
           if (answerDraft) {
             this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(item => item.threadId !== command.threadId || item.draftId !== answerDraft.draftId),
               { threadId: command.threadId, draftId: answerDraft.draftId }])
@@ -5641,6 +5652,33 @@ export class AgentControl {
     }
   }
   /**
+   * Images may go with an answer to a question the agent asked with choices and room for its own words, the form's last
+   * such question carrying them (ADR-0176); the check costs nothing, and the files are saved only as the answer is sent.
+   */
+  private checkAnswerImages(command: Extract<AgentCommand, { type: 'answer' }>, request: AgentRequest): void {
+    if (!command.attachments?.length) return
+    if (this.dependencies.answerImages !== true) throw new Error('Images can’t go with an answer in this version of Sotto. Nothing was sent. Remove the images and send again.')
+    if (command.attachments.some(image => !isImageAttachment(image.mimeType))) throw new Error(SCREENSHOT_WRONG_TYPE)
+    if (request.kind !== 'question' || command.skipped || !command.questionAnswers || !imageCarrier(request)) {
+      throw new Error('This question can’t take images with its answer. Nothing was sent. Remove the images and send again.')
+    }
+  }
+  /**
+   * The answer the provider hears: each image saved in the thread's folder as an attached file is (ADR-0131) and the note
+   * naming them after the carrying question's words, so every provider reads them as the answer, by path (ADR-0176).
+   */
+  private async answerWithImages(command: AnswerWithHandles): Promise<AgentHostCommand> {
+    const { attachments = [], ...answer } = command
+    if (!attachments.length) return answer
+    this.attachments.verify([...attachments])
+    const thread = this.thread(command.threadId)
+    const carrier = imageCarrier(thread.requests.find(request => request.id === command.requestId))
+    if (!carrier || !answer.questionAnswers) throw new Error('This question can’t take images with its answer. Nothing was sent. Remove the images and send again.')
+    const note = attachedFilesNote(await saveAttachedFiles(thread.workingDirectory, attachments.map(image => this.promptImage(image))))
+    const chosen = answer.questionAnswers[carrier.id]
+    return { ...answer, questionAnswers: { ...answer.questionAnswers, [carrier.id]: { optionIds: chosen?.optionIds ?? [], text: chosen?.text?.trim() ? `${chosen.text}\n\n${note}` : note } } }
+  }
+  /**
    * The user's answer to Sotto's copy of a question it sent back (ADR-0108), sent to the thread as the user's message
    * through the follow-up queue, so it goes at once to a thread at rest and after the turn of a busy one. The copy and
    * the drafts that answered it go; when the message cannot be queued, both come back and nothing was sent.
@@ -5656,7 +5694,8 @@ export class AgentControl {
     // The thread reads without the copy before the message is queued, as a thread at rest with nothing to answer.
     this.acceptSnapshot(this.state.host)
     const draftId = randomUUID()
-    await this.followupCommand({ type: 'queue-followup', threadId, draftId, text })
+    // Images dropped on the copy's card go with the message, as a prompt's do (ADR-0176).
+    await this.followupCommand({ type: 'queue-followup', threadId, draftId, text, ...(command.attachments?.length ? { attachments: command.attachments } : {}) })
     const { items, receipts } = this.followupStore.get()
     if (items.some(item => item.threadId === threadId && item.draftId === draftId) || receipts.some(item => item.threadId === threadId && item.draftId === draftId)) {
       // The draft that answered is delivered, as an answer to a provider's question is.
@@ -5985,7 +6024,8 @@ export class AgentControl {
       }
       const providerStartedAt = Date.now()
       // The images become the adapter's to read here, at the provider boundary, and not before (ADR-0031).
-      const hostCommand = (prompt?.attachments?.length
+      // An answer's images become words here, after its draft was bound to what the user chose (ADR-0176).
+      const hostCommand = (command.type === 'answer' ? await this.answerWithImages(command) : prompt?.attachments?.length
         ? { ...command, attachments: prompt.attachments.map(image => this.promptImage(image)) } : command) as AgentHostCommand
       try {
         this.canAct(undefined, draftKept)

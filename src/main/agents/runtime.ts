@@ -163,6 +163,8 @@ export interface AgentRuntimeOptions {
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
    */
   attachAnyFile?: boolean
+  /** Images dropped on a question card go with the answer (ADR-0176): the `answer-images` Owl answer, read once at start. */
+  answerImages?: boolean
   /**
    * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex
    * keep their tool results' pictures in the thread media store and the host answers `thread-media` reads. Absent fails
@@ -411,6 +413,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
     ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
+    ...(options.answerImages === true ? { answerImages: true } : {}),
     ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),

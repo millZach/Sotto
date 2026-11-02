@@ -3,10 +3,13 @@ import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import type { AgentRequest, QuestionPage } from '../../../../shared/agents'
+import type { AgentAttachmentHandle, AgentRequest, QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
+import { ScreenshotInput } from '../ScreenshotInput'
+import type { ScreenshotReadPort } from '../threadDraftStore'
+import { useOwlFeature } from '../../state/owlFeature'
 import { MessageContent } from '../MessageContent'
 import { linkPlace, webLinks } from './messageLinks'
 import { useWebLinkRouter } from '../../tools/webLinks'
@@ -19,6 +22,9 @@ import {
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
 import './requests.css'
+
+/** Images dropped on a question card, by its owner and request, kept until sent so leaving the thread loses none (ADR-0176). */
+const cardImages = new Map<string, AgentAttachmentHandle[]>()
 
 export interface AgentRequestCardProps {
   /** The thread that owns the request; answers always carry this and `request.id`. */
@@ -40,6 +46,9 @@ export interface AgentRequestCardProps {
   /** The web links in the agent's message just before a question, which the card covers once it docks. Those the card
    *  already shows as links in the request's own words are left out. */
   readonly messageLinks?: readonly string[]
+  /** Whether the thread's model reads images. Present, and with `answer-images` on, a form that takes written words
+   *  takes dropped or pasted images too, which go with the answer (ADR-0176). */
+  readonly imagesSupported?: boolean
 }
 
 /**
@@ -47,7 +56,7 @@ export interface AgentRequestCardProps {
  * exactly the choices the provider offered, sends one answer for this request's own ID, and holds instead of
  * resending when delivery is unknown — the sidebar's Needs you card pops this same card open, on the same store.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const { t } = useLingui()
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
@@ -56,6 +65,14 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
     request.delivery === 'uncertain' ? 'uncertain' : request.answerRetryReady === true ? 'retry-ready' : undefined)
   const [checking, setChecking] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const imagesKey = `${entryOwner}\n${request.id}`
+  const [images, showImages] = useState(() => cardImages.get(imagesKey) ?? [])
+  const setImages = (next: AgentAttachmentHandle[]): void => { if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey); showImages(next) }
+  // Send waits for images still being added; any that finish once the card is gone are kept for its return.
+  const [staging, setStaging] = useState(false)
+  const reads: ScreenshotReadPort = { pending: false, problem: null, begin: () => { setStaging(true); return () => setStaging(false) },
+    addLate: late => { if (late.length) cardImages.set(imagesKey, [...cardImages.get(imagesKey) ?? [], ...late]) } }
+  const answerImages = useOwlFeature('answer-images')
   const toggle = useRef<HTMLButtonElement>(null)
   const baseId = useId()
   const mode = requestMode(request)
@@ -74,7 +91,10 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const titleId = `${baseId}-title`
   const send = (choice: string | null, answer: RequestAnswer): void => {
     if (disabled || entry.save === 'unsaved') return
-    void store.submit(entryOwner, request.id, choice, () => onSubmit(answer))
+    void store.submit(entryOwner, request.id, choice, () => onSubmit(answer).then(outcome => {
+      if (answer.attachments && outcome?.error === null) cardImages.delete(imagesKey)
+      return outcome
+    }))
   }
   const check = (): void => {
     if (!onCheck || checking) return
@@ -86,7 +106,10 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const questions = request.questions ?? []
   const answer = mode === 'structured' ? structuredAnswer(questions, entry.selections) : null
   const remaining = questions.filter(question => blocksSending(question, entry.selections[question.id])).length
-  const touched = questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
+  // Images go in the words of the form's last question that offers choices and takes the user's own words (ADR-0176).
+  const takesImages = answerImages && imagesSupported === true && mode === 'structured'
+    && questions.some(question => question.allowFreeText && question.options.length > 0 && !question.unavailableReason)
+  const touched = images.length > 0 || questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
   const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
   // Every question optional and none answered: sending is skipping, so the button says so (Cursor's questions, ADR-0128).
   const skipping = mode === 'structured' && questions.length > 0 && !touched && questions.every(question => !isRequired(question))
@@ -106,6 +129,10 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
             : blocked !== null ? <p className="agent-request__status tt-paragraph">{blocked}</p> : null
 
   const questionCount = questions.length
+  const fields = questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []} pages={index === 0 ? pages : []} owner={{ threadId: ownerId, requestId: request.id }}
+    linkMissing={index === 0 && request.linkMissing === true}
+    selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
+    onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)
   return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-save={entry.save} data-uncertain={uncertain || undefined}
     data-placement={docked ? 'composer' : undefined} data-collapsed={docked && collapsed || undefined}
     aria-labelledby={docked && collapsed ? `${baseId}-collapsed` : titleId} aria-busy={entry.phase === 'sending' || undefined}
@@ -149,22 +176,19 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault()
       }} onSubmit={(event: FormEvent) => {
         event.preventDefault()
-        if (answer) send(null, answer)
+        if (answer && !staging) send(null, takesImages && images.length ? { ...answer, attachments: images } : answer)
       }}>
         <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{plural(questionCount, { one: 'Question', other: '# questions' })}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         <FormContext request={request} />
-        {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []} pages={index === 0 ? pages : []} owner={{ threadId: ownerId, requestId: request.id }}
-          linkMissing={index === 0 && request.linkMissing === true}
-          selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
-          onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
+        {takesImages ? <ScreenshotInput target={ownerId} attachments={images} onChange={setImages} disabled={disabled} supported={imagesSupported} replyBox={false} reads={reads}>{fields}</ScreenshotInput> : fields}
         <div className="agent-request__footer">
           <span className="agent-request__count" aria-live="polite">{needsProvider ? t`Finish this form in the provider’s app.`
             : skipping ? t`Choose an answer, or skip` : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
           {/* Any question its provider lets the user decline offers Skip, unless the send button already skips (ADR-0135). */}
           {request.skippable && !skipping ? <Button variant="secondary" disabled={disabled || entry.save === 'unsaved'} aria-pressed={entry.choice === 'skip' || undefined}
             onClick={() => send('skip', SKIP_ANSWER)}>{plural(questionCount, { one: 'Skip question', other: 'Skip questions' })}</Button> : null}
-          <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? t`Sending…`
+          <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null || staging}>{entry.phase === 'sending' ? t`Sending…`
             : skipping ? plural(questionCount, { one: 'Skip question', other: 'Skip questions' }) : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
         </div>
       </form> : <>

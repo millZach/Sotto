@@ -1022,6 +1022,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
+    answerImages: owlFeatures['answer-images'],
     inlineMedia: owlFeatures['inline-media'],
     ...threadMedia ? { threadMedia } : {},
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.

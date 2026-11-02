@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { t } from '@lingui/core/macro'
-import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
+import type { AgentAttachmentHandle, AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
 import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
@@ -13,6 +13,8 @@ export interface RequestAnswer {
   readonly questionAnswers?: AgentQuestionAnswers
   readonly permissionChoice?: string
   readonly skipped?: true
+  /** Images dropped on the card, which go with the answer (ADR-0176). */
+  readonly attachments?: AgentAttachmentHandle[]
 }
 
 /** Skips a `skippable` question: the provider is told so and the turn goes on without an answer. */

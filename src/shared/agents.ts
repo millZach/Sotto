@@ -1555,7 +1555,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(),
     /** The user skipped a `skippable` question: its provider is told so and the turn goes on without an answer. */
-    skipped: z.literal(true).optional() }).strict(),
+    skipped: z.literal(true).optional(),
+    /** Images dropped on a question card (ADR-0176): saved in the thread's folder and named in the answer's words. */
+    attachments: agentAttachmentHandlesSchema.optional() }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
 /** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */

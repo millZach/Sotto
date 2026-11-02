@@ -181,6 +181,7 @@ function ThreadRequests({ row, state, command, onAnswer, kind }: {
       messageLinks={kind === 'question' ? messageLinks(thread.messages) : []}
       draftOwner={threadRequestOwner(row, state)}
       onWriteAnswer={onAnswer}
+      {...kind === 'question' ? { imagesSupported: row.model?.supportsImages === true } : {}}
       onSubmit={threadRequestSubmit(command, thread, request, watcherOn)}
       onCheck={() => threadRequestCheck(command, thread.id)} />
   })}</div>
