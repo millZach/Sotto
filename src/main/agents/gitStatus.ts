@@ -1,5 +1,6 @@
 import { open, stat } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
+import { pullRequestKey } from '../../shared/gitPullRequests'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
@@ -183,6 +184,8 @@ export interface GitStatusSource {
    * folder, or for one not read yet, every repository is treated so.
    */
   invalidate(folder?: string): void
+  /** A pull request another read saw merge or close (#2019), so a local read stops bringing back the open it kept; absent on a source that keeps none. */
+  notePullRequestEnded?(url: string, state: 'merged' | 'closed'): void
   /** The working copy's branches, the way T3's `listRefs` answers them; absent on a source that has none to give. */
   listRefs?(cwd: string, request: Omit<GitRefsRequest, 'threadId'>): Promise<GitRefsPage>
   /** The working copy's changed files with their line counts, for the commit dialog; absent on a source that has none to give. */
@@ -702,6 +705,20 @@ export class GitStatusReader implements GitStatusSource {
     this.asking.set(key, entry)
     void entry.done.finally(() => { if (this.asking.get(key) === entry) this.asking.delete(key) })
     return entry.done
+  }
+
+  /**
+   * A pull request another read saw merge or close (#2019): a branch's kept answer that names it says so from now on, as if
+   * GitHub had just said it to this reader. A local read asks GitHub nothing, so it would otherwise bring back the open it
+   * kept. Merged is final. Called once per ending, so walking the kept answers is not an update's cost.
+   */
+  notePullRequestEnded(url: string, state: 'merged' | 'closed'): void {
+    const key = pullRequestKey(url)
+    if (!key) return
+    for (const [branch, record] of this.pullRequests) {
+      if (!record.value || record.value.state === state || record.value.state === 'merged' || pullRequestKey(record.value.url) !== key) continue
+      this.pullRequests.set(branch, { ...record, value: { ...record.value, state }, nextAt: this.now() + PULL_REQUEST_SETTLED_FRESH_MS })
+    }
   }
 
   /** Whether a kept answer is due to be asked again: a Git action in its repository since, its time is up, or a merged or closed one whose branch has moved. */

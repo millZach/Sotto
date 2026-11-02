@@ -2,7 +2,7 @@
 // Watcher decides when a watched thread is finished (October 29, 2026). Sotto never settles one by itself; settle_thread
 // refuses what Sotto can see is unfinished, and while Settle without asking is off, a settle the user has not agreed to.
 import { randomUUID } from 'node:crypto'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { toldAtStart } from '../../src/main/agents/babysitNews'
@@ -13,14 +13,14 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function fixture(on = true, babysittingRetired = false) {
+async function fixture(on = true, babysittingRetired = false, pullRequestState?: (url: string) => Promise<{ state: 'open' | 'closed' | 'merged'; headRefName: string; headRefOid: string | null }>) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, historyEnabled: () => true } })
   const setting = { on }
   const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => true,
-    ordinaryBatch: { quietMs: 50, maxMs: 200 }, settleWithoutAsking: () => setting.on, settledLookAfterMs: 0, ...babysittingRetired ? { babysittingRetired } : {} })
+    ordinaryBatch: { quietMs: 50, maxMs: 200 }, settleWithoutAsking: () => setting.on, settledLookAfterMs: 0, ...babysittingRetired ? { babysittingRetired } : {}, ...pullRequestState ? { pullRequestState } : {} })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -64,7 +64,15 @@ async function fixture(on = true, babysittingRetired = false) {
   const settle = async (requestId: string, target: { hostId: string; threadId: string }, extra: Record<string, unknown> = {}) =>
     (await tools.call(watcherId, 'settle_thread', { requestId, retryKey: randomUUID(), target, ...extra })).structuredContent as { status: string; code?: string; message?: string }
   const links = workspace.host as unknown as { linkPullRequestRecord(threadId: string, pullRequest: { number: number; url: string; title: string; state: string }, source: string): unknown }
-  return { ...f, workspace, service, tools, setting, native, emit, endTurn, watched, thread, settled, watching, watcherHears, watcherId, request, settle, links }
+  /** The branch's own pull request on the thread's record, as a Git read left it. */
+  const branchRead = async (threadId: string, pullRequest: { url: string; number: number; title: string; state: 'open' | 'closed' | 'merged'; draft: boolean }) => {
+    const stored = workspace.host as unknown as { threadById(id: string): AgentThread | undefined; touched(thread: AgentThread): AgentThread }
+    const current = stored.threadById(threadId)!
+    stored.touched(current).worktree = { mode: 'shared', status: 'ready', path: workspace.root, repositoryRoot: workspace.root, branch: 'fix/synthetic', baseCommit: 'fixture', git: { isRepository: true, branch: 'fix/synthetic', upstream: 'origin/fix/synthetic', hasRemote: true,
+      defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: 1, pullRequest, fetchedAt: null, readAt: new Date().toISOString() } } as AgentThread['worktree']
+    await emit()
+  }
+  return { ...f, workspace, service, tools, setting, native, emit, endTurn, watched, thread, settled, watching, watcherHears, watcherId, request, settle, links, branchRead }
 }
 
 it('never settles a finished watched thread by itself, whatever the setting says', async () => {
@@ -155,6 +163,74 @@ it('refuses to settle a thread while a thread it delegated to has an open pull r
   f.links.linkPullRequestRecord(child.threadId, { ...pullRequest, state: 'closed' }, 'agent')
   await f.emit()
   expect(await f.settle(requestId, parent)).toMatchObject({ status: 'ok' })
+})
+
+describe('a settle asks GitHub before an open pull request holds it (#2019)', () => {
+  const url = 'https://github.com/example/synthetic/pull/2004'
+  const pullRequest = { url, number: 2004, title: 'Synthetic change', state: 'open' as const, draft: false }
+  const answer = (state: 'open' | 'closed' | 'merged') => ({ state, headRefName: 'fix/synthetic', headRefOid: 'a'.repeat(40) })
+
+  it('settles a thread whose branch record still says open after its pull request merged, and brings the record up to date', async () => {
+    const ask = vi.fn(async () => answer('merged'))
+    const f = await fixture(true, false, ask), target = await f.watched(), requestId = await f.request()
+    await f.branchRead(target.threadId, pullRequest)
+    await f.endTurn(target.threadId)
+    expect(f.thread(target.threadId).pullRequests ?? []).toEqual([])
+    expect(await f.settle(requestId, target)).toMatchObject({ status: 'ok' })
+    expect(ask).toHaveBeenCalledTimes(1)
+    expect(ask).toHaveBeenCalledWith(url)
+    await vi.waitFor(() => expect(f.thread(target.threadId).worktree?.git?.pullRequest?.state).toBe('merged'))
+  })
+
+  it('still refuses a pull request GitHub says is open, and says so in the same words', async () => {
+    const ask = vi.fn(async () => answer('open'))
+    const f = await fixture(true, false, ask), target = await f.watched(), requestId = await f.request()
+    await f.branchRead(target.threadId, pullRequest)
+    await f.endTurn(target.threadId)
+    const refused = await f.settle(requestId, target)
+    expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+    expect(refused.message).toBe(`This thread has an open pull request, ${url}. Wait for it to merge or close before settling. Nothing was settled.`)
+    expect(f.settled(target.threadId)).toBe(false)
+  })
+
+  it('refuses plainly while GitHub cannot be read, and settles once it can', async () => {
+    const ask = vi.fn<(asked: string) => Promise<ReturnType<typeof answer>>>().mockRejectedValueOnce(new Error('gh is not signed in')).mockResolvedValue(answer('merged'))
+    const f = await fixture(true, false, ask), target = await f.watched(), requestId = await f.request()
+    f.links.linkPullRequestRecord(target.threadId, { ...pullRequest }, 'agent')
+    await f.endTurn(target.threadId)
+    const refused = await f.settle(requestId, target) as { status: string; code?: string; message?: string; retryable?: boolean }
+    expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', retryable: true })
+    expect(refused.message).toBe(`Sotto could not read this thread’s pull request from GitHub, ${url}, and last saw it open. Nothing was settled. Try again in a minute.`)
+    expect(await f.settle(requestId, target)).toMatchObject({ status: 'ok' })
+  })
+
+  it('asks once about a pull request that is both linked and the branch’s own, and lets one GitHub says closed through', async () => {
+    const ask = vi.fn(async () => answer('closed'))
+    const f = await fixture(true, false, ask), target = await f.watched(), requestId = await f.request()
+    f.links.linkPullRequestRecord(target.threadId, { ...pullRequest }, 'agent')
+    await f.branchRead(target.threadId, pullRequest)
+    await f.endTurn(target.threadId)
+    expect(await f.settle(requestId, target)).toMatchObject({ status: 'ok' })
+    expect(ask).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks about a babysat pull request and a delegated thread’s too, and refuses on the one still open', async () => {
+    const childUrl = 'https://github.com/example/synthetic/pull/2005'
+    const ask = vi.fn(async (asked: string) => answer(asked === childUrl ? 'open' : 'merged'))
+    const f = await fixture(true, false, ask), parent = await f.watched(), child = await f.watched(), requestId = await f.request()
+    await f.workspace.host.setDelegatedBy(child.threadId, parent.threadId)
+    expect(await f.service.unwatchThread({ target: child }, undefined, 'watcher')).toMatchObject({ status: 'ok' })
+    const startedAt = new Date().toISOString()
+    await f.workspace.host.changeBabysitting(parent.threadId, () => [{ url, number: 2004, startedBy: 'agent', startedAt, told: toldAtStart(startedAt) }])
+    f.links.linkPullRequestRecord(child.threadId, { ...pullRequest, url: childUrl, number: 2005 }, 'agent')
+    await f.endTurn(child.threadId); await f.endTurn(parent.threadId)
+    await vi.waitFor(() => expect(f.thread(child.threadId).delegatedBy).toBe(parent.threadId))
+    const refused = await f.settle(requestId, parent)
+    expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+    expect(refused.message).toContain(childUrl)
+    ask.mockImplementation(async () => answer('merged'))
+    expect(await f.settle(requestId, parent)).toMatchObject({ status: 'ok' })
+  })
 })
 
 it('stops watching a thread the user settles, and restoring it does not watch it again (October 28, 2026)', async () => {
