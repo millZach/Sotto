@@ -7,11 +7,11 @@
 <style>
   :root {
     --canvas: #121211; --surface: #1a1a18; --raised: #22221f; --border: #33332e;
-    --text: #ecebe4; --muted: #a3a296; --faint: #6d6c63; --accent: #e8c547; --off: #34342f; --warn: #8a8a80;
+    --text: #ecebe4; --muted: #a3a296; --faint: #6d6c63; --accent: #e8c547; --off: #46463f; --warn: #8a8a80;
   }
   :root[data-theme="light"] {
     --canvas: #f6f5ef; --surface: #ffffff; --raised: #efeee6; --border: #dcdbd2;
-    --text: #1d1d1a; --muted: #5d5c54; --faint: #8f8e85; --accent: #a8820a; --off: #dddcd3; --warn: #77766d;
+    --text: #1d1d1a; --muted: #5d5c54; --faint: #8f8e85; --accent: #a8820a; --off: #c9c8be; --warn: #77766d;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--canvas); color: var(--text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
@@ -30,13 +30,14 @@
   .mark { display: inline-grid; grid-template-columns: repeat(2, var(--px, 4px)); gap: var(--gap, 1px); flex: none; position: relative; top: var(--nudge, 0); }
   .mark i { width: var(--px, 4px); height: var(--px, 4px); background: var(--off); transition: background-color var(--fade, 180ms) cubic-bezier(.2, 0, .2, 1), box-shadow var(--fade, 180ms); }
   .mark i.l3 { background: var(--accent); }
-  .mark i.l2 { background: color-mix(in oklab, var(--accent) 55%, var(--off)); }
-  .mark i.l1 { background: color-mix(in oklab, var(--accent) 25%, var(--off)); }
-  .mark[data-state="idle"] i { background: color-mix(in oklab, var(--muted) 55%, var(--off)); --fade: 420ms; }
+  .mark i.l2 { background: color-mix(in oklab, var(--accent) 70%, var(--off)); }
+  .mark i.l1 { background: color-mix(in oklab, var(--accent) 38%, var(--off)); }
+  .mark i.l3 { transition-duration: 0ms; }   /* the head lights at once; only the tail fades */
+  .mark[data-state="idle"] i { background: var(--muted); --fade: 420ms; }
   .mark[data-state="reading"] { --fade: 300ms; }
-  .mark[data-state="writing"] { --fade: 220ms; }
-  .mark[data-state="down"] i { background: transparent; box-shadow: inset 0 0 0 1px var(--warn); }
-  .mark[data-state="down"] i.l3 { background: var(--warn); }
+  .mark[data-state="writing"] { --fade: 320ms; }
+  .mark[data-state="down"] i { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); }
+  .mark[data-state="down"] i.l3 { background: var(--muted); }
   .mark[data-state="down"] { --fade: 340ms; }
 
   .states { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; margin: 0; }
@@ -59,24 +60,27 @@
   .sep { color: var(--faint); }
 
   /* Speed card */
-  .card { position: absolute; left: -1px; bottom: calc(100% + 8px); width: 256px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 12px; text-align: left; cursor: default;
-          font-size: 12.5px; color: var(--muted); box-shadow: 0 8px 24px rgb(0 0 0 / .22); opacity: 0; transform: translateY(2px); pointer-events: none; transition: opacity .12s ease-out, transform .12s ease-out; z-index: 5; }
+  .card { position: absolute; left: -1px; bottom: calc(100% + 8px); width: 264px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px 14px; text-align: left; cursor: default;
+          font-size: 12.5px; color: var(--muted); box-shadow: 0 10px 28px rgb(0 0 0 / .24); opacity: 0; transform: translateY(2px); pointer-events: none; transition: opacity .12s ease-out, transform .12s ease-out; z-index: 5; }
   .card[data-open] { opacity: 1; transform: none; }
-  .card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
-  .card .head b { color: var(--text); font-weight: 500; }
-  .card .head span { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .graph { position: relative; height: 26px; margin-bottom: 10px; border-bottom: 1px solid var(--off); display: flex; align-items: flex-end; gap: 1px; }
-  .graph i { width: 3px; flex: none; background: var(--accent); }
-  .graph i.wait { background: none; height: 1px; border-bottom: 1px dotted var(--faint); align-self: flex-end; margin-bottom: -1px; }
-  .graph i.gap { background: var(--off); height: 1px; }
-  .graph .scale { position: absolute; right: 0; top: -1px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; line-height: 1; }
-  .card dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; align-items: baseline; }
+  .card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; color: var(--faint); }
+  .card .head b { color: var(--muted); font-weight: 500; }
+  .card .head span { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hero { display: flex; align-items: baseline; gap: 6px; margin: 6px 0 8px; min-height: 28px; }
+  .hero b { font-size: 24px; line-height: 1; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .hero span { color: var(--muted); }
+  .hero.stale b { color: var(--faint); }
+  .graph { height: 28px; margin-bottom: 12px; display: flex; align-items: flex-end; gap: 1px; justify-content: flex-end; }
+  .graph i { width: 2px; flex: none; height: 1px; background: var(--off); }
+  .graph i.bar { background: color-mix(in oklab, var(--accent) 62%, var(--off)); }
+  .graph i.bar.now { background: var(--accent); }
+  .graph i.wait { background: color-mix(in oklab, var(--faint) 55%, transparent); }
+  .card dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; padding-top: 10px; border-top: 1px solid var(--border); align-items: baseline; }
   .card dt { white-space: nowrap; }
   .card dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
   .card dd small { color: var(--faint); font-size: 12px; }
-  .card dd.stale { color: var(--faint); }
-  .ctx { display: grid; grid-template-columns: repeat(16, 1fr); gap: 1px; grid-column: 1 / -1; margin-top: -1px; }
-  .ctx i { height: 3px; background: var(--off); }
+  .ctx { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; grid-column: 1 / -1; }
+  .ctx i { height: 4px; background: var(--off); }
   .ctx i.on { background: var(--muted); }
   .ctx.near i.on { background: var(--accent); }
 
@@ -94,14 +98,14 @@
 <main>
   <section>
     <h2>The mark’s states</h2>
-    <p>Trail, polished. Every change eases in; nothing jumps.</p>
+    <p>Trail, second round. Brighter at rest; the head lights at once and only its tail fades, like a comet.</p>
     <dl class="states">
       <dt><span class="mark" data-demo="idle" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
       <dd>Idle<small>Dim, still. Settles in slowly when a turn ends.</small></dd>
       <dt><span class="mark" data-demo="reading" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
-      <dd>Reading the prompt<small>One cell walks round with a short fading tail, at an unhurried pace.</small></dd>
+      <dd>Reading the prompt<small>One cell walks round with a short fading tail, at an unhurried pace, a step every 0.7 s.</small></dd>
       <dt><span class="mark" data-demo="writing" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
-      <dd>Writing<small>Each piece of text steps the trail on. It picks up where reading left off, steps at most every 70 ms so a fast burst never blurs to all-lit, and fades out on a stall.</small></dd>
+      <dd>Writing<small>Each piece of text steps the trail on. It picks up where reading left off, steps at most every 90 ms so a fast burst never blurs to all-lit, and fades out on a stall.</small></dd>
       <dt><span class="mark" data-demo="down" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
       <dd>Not answering<small>Hollow. Each try fills one cell, clockwise, then lets it fade: a count you can see.</small></dd>
       <dt><span class="mark" data-demo="done" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
@@ -111,7 +115,7 @@
 
   <section>
     <h2>Speed on the model chip</h2>
-    <p>Figures + graph, polished. Play a turn, then hover or focus the model chip.</p>
+    <p>Figures + graph, second round: the speed leads, the graph scrolls. Play a turn, then hover or focus the model chip.</p>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button id="play">Play a turn</button>
       <button id="playDown">Play a turn the server doesn’t answer</button>
@@ -121,13 +125,13 @@
       <div class="composer">
         <div class="ph">Message the thread…</div>
         <button class="chip" id="chip" aria-describedby="card" aria-label="Model: DeepSeek V4.1 Flash on Spark Cluster. Opens the model menu.">
-          <span class="mark" id="chipMark" data-state="idle" style="--nudge:-.5px" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>Spark Cluster</b><span class="sep">·</span>DeepSeek V4.1 Flash
+          <span class="mark" id="chipMark" data-state="idle" style="--px:5px;--nudge:-.5px" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>Spark Cluster</b><span class="sep">·</span>DeepSeek V4.1 Flash
           <span class="card" id="card" role="tooltip">
             <span class="head"><b id="cardTitle">No turn yet</b><span>spark-head:8888</span></span>
+            <span class="hero" id="hero"><b id="fRate">–</b><span id="fRateUnit">words a second</span></span>
             <span class="graph" id="graph" aria-hidden="true"></span>
             <dl>
               <dt>First word after</dt><dd id="fFirst">–</dd>
-              <dt>Words per second</dt><dd id="fRate">–</dd>
               <dt>Context used</dt><dd id="fCtx">183k <small>of 256k</small></dd>
               <span class="ctx" id="ctx" aria-hidden="true"></span>
             </dl>
@@ -142,7 +146,7 @@
 const root = document.documentElement;
 const still = () => root.classList.contains('still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
 const CW = [0, 1, 3, 2];  // clockwise from the top left
-const MIN_STEP = 70;
+const MIN_STEP = 90;
 
 class Mark {
   constructor(el) { this.el = el; this.cells = [...el.children]; this.pos = 0; this.timers = []; this.state = 'idle'; this.lastStep = 0; this.pending = 0; }
@@ -154,7 +158,7 @@ class Mark {
     if (state === 'idle' || state === 'down') return this.paint([0, 0, 0, 0]);
     if (state === 'reading') {
       if (still()) return this.paint([3, 0, 0, 0]);
-      this.trail(); this.timers.push(setInterval(() => { this.pos++; this.trail(); }, 560));
+      this.trail(); this.timers.push(setInterval(() => { this.pos++; this.trail(); }, 700));
     }
     if (state === 'writing') {
       if (still()) return this.paint([3, 3, 3, 3]);
@@ -213,7 +217,7 @@ const fmt = s => s < 60 ? `${Math.round(s)} s` : `${Math.floor(s / 60)} min ${St
 
 function liveLine() {
   const div = document.createElement('div'); div.className = 'live'; div.setAttribute('role', 'status');
-  div.innerHTML = '<span class="mark" style="--px:5px" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="w"></span>';
+  div.innerHTML = '<span class="mark" style="--px:6px" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="w"></span>';
   transcript.appendChild(div);
   return { el: div, mark: new Mark(div.firstChild), words: div.querySelector('.w') };
 }
@@ -223,14 +227,19 @@ function renderCard() {
   const s = stats;
   document.getElementById('cardTitle').textContent = !s ? 'No turn yet' : s.state === 'done' ? 'Last turn' : s.state === 'failed' ? 'Last turn didn’t start' : 'This turn';
   document.getElementById('fFirst').innerHTML = !s ? '–' : s.first !== null ? fmt(s.first) : s.state === 'failed' ? 'No answer' : `<small>waiting</small> ${fmt(s.waited)}`;
-  const rate = document.getElementById('fRate');
-  rate.innerHTML = !s || s.first === null ? '–' : s.state === 'done' ? `${Math.round(s.avg)} <small>average</small>` : s.stalled ? 'Paused' : `${Math.round(s.shown)}`;
-  rate.className = s?.stalled ? 'stale' : '';
+  const hero = document.getElementById('hero'), rate = document.getElementById('fRate'), unit = document.getElementById('fRateUnit');
+  rate.textContent = !s || s.first === null ? '–' : s.state === 'done' ? Math.round(s.avg) : s.stalled ? 'Paused' : Math.round(s.shown);
+  unit.textContent = !s || s.first === null || s.state !== 'done' ? (s?.stalled ? '' : 'words a second') : 'words a second, on average';
+  hero.className = s?.stalled ? 'hero stale' : 'hero';
+  // 78 fixed slots, newest on the right, so the graph scrolls rather than grows; the scale only moves in steps of 20.
   const graph = document.getElementById('graph'); graph.innerHTML = '';
-  const hist = (s?.hist ?? []).slice(-58);
-  const peak = Math.max(...hist.map(h => h ?? 0), 0), top = Math.max(40, Math.ceil(peak / 20) * 20);  // a scale that only moves in steps of 20
-  hist.forEach(h => { const i = document.createElement('i'); if (h === null) i.className = 'wait'; else if (h === 0) i.className = 'gap'; else i.style.height = `${Math.max(2, Math.round(h / top * 24))}px`; graph.appendChild(i); });
-  if (hist.some(h => h)) { const sc = document.createElement('span'); sc.className = 'scale'; sc.textContent = top; graph.appendChild(sc); }
+  const hist = (s?.hist ?? []).slice(-78), peak = Math.max(...hist.map(h => h ?? 0), 0), top = Math.max(40, Math.ceil(peak / 20) * 20);
+  const live = s?.state === 'writing';
+  for (let k = 0; k < 78 - hist.length; k++) graph.appendChild(document.createElement('i'));
+  hist.forEach((h, k) => { const i = document.createElement('i');
+    if (h === null) i.className = 'wait';
+    else if (h > 0) { i.className = live && k === hist.length - 1 ? 'bar now' : 'bar'; i.style.height = `${Math.max(2, Math.round(h / top * 28))}px`; }
+    graph.appendChild(i); });
 }
 const ctx = document.getElementById('ctx');
 for (let i = 0; i < 16; i++) { const c = document.createElement('i'); c.className = i < 11 ? 'on' : ''; ctx.appendChild(c); }  // 183k of 256k
