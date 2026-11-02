@@ -1702,7 +1702,7 @@ import UIKit
     }
 
     /// Watcher's box takes a thread box's pill (ADR-0166, amended November 1, 2026): Watcher's model and effort on it, and
-    /// one menu holding the models of every provider Watcher runs on, Effort, Speed, Permissions and, last, New Watcher,
+    /// one sheet holding the models of every provider Watcher runs on, Effort, Speed, Permissions and, last, New Watcher,
     /// which starts one at once, whose empty conversation says so, with the last one's handover offered over the box until
     /// X puts it away.
     func testWatchersBoxChangesItsModelAndStartsANewWatcher() {
@@ -1722,14 +1722,16 @@ import UIKit
         open(settings, then: "Effort", until: low)
         low.tap()
         XCTAssertEqual(waitForValue(settings, containing: "Low"), .completed, "The pill says the choice")
-        // The menu lists Claude Code too, and says what its model does.
-        let opus = menuItem("Opus 5.5")
-        press(settings, until: NSPredicate { _, _ in opus.exists })
-        XCTAssertTrue(opus.waitForExistence(timeout: 5), "Another provider Watcher runs on is listed")
-        XCTAssertTrue(text("Another provider’s model starts a new Watcher.").exists, "And the menu says what its model does")
+        // The sheet lists Claude Code too, closed until pressed, and says what its model does.
+        let claude = byID("model-provider-claude"), opus = menuItem("Opus 5.5")
+        press(settings, until: NSPredicate { _, _ in claude.exists })
+        XCTAssertTrue(claude.waitForExistence(timeout: 5), "Another provider Watcher runs on is listed")
+        claude.tap()
+        XCTAssertTrue(opus.waitForExistence(timeout: 5), "Opened, it lists its models")
+        XCTAssertTrue(text("Another provider’s model starts a new Watcher.").exists, "And the sheet says what its model does")
         capture("watcher-box-models-dark")
-        // The model Watcher is on closes the menu and changes nothing.
-        menuItem("GPT-6.1 Sol").tap()
+        // The model Watcher is on closes the sheet and changes nothing.
+        byID("model-current").tap()
         XCTAssertEqual(waitForValue(settings, containing: "GPT-6.1 Sol"), .completed)
         // New Watcher, the menu's last item: an empty conversation that says so, and the handover offered over the box.
         let new = menuItem("New Watcher")
@@ -1773,6 +1775,68 @@ import UIKit
         XCTAssertTrue(waitUntilGone(stop), "Stopped, Stop leaves the box")
         XCTAssertTrue(app.buttons["watcher-send"].waitForExistence(timeout: 5), "And Send is back in its place")
         XCTAssertTrue(becomesEnabled(new, in: settings), "New Watcher can start one once the turn has stopped")
+    }
+
+    /// The settings pill opens a sheet at its top (ADR-0166, amended November 1, 2026): the model in use, then the models
+    /// starred on this iPhone, then every provider closed, the one in use too. Opening one provider closes the other, its
+    /// older models wait closed under Legacy, and put away and opened again the sheet is back at its top with every
+    /// provider closed and its stars kept.
+    func testTheSettingsSheetOpensAtTheTopWithEveryProviderClosed() {
+        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-can-answer", "--ui-watcher-nothing-waits"])
+        openWatcher()
+        let settings = watcherPill()
+        let current = byID("model-current"), codex = byID("model-provider-codex"), claude = byID("model-provider-claude")
+        let sol = byID("model-codex/fixture-model"), opus = byID("model-claude/fixture-opus")
+        let legacy = byID("model-legacy-claude"), opus5 = byID("model-claude/fixture-opus-5")
+        let favorite = byID("model-favorite-claude/fixture-opus")
+        press(settings, until: NSPredicate { _, _ in current.exists })
+        XCTAssertTrue(current.waitForExistence(timeout: 5), "The pill opens the settings sheet")
+        XCTAssertTrue(current.isHittable, "It opens at its top, on the model in use")
+        XCTAssertTrue(current.label.hasPrefix("GPT-6.1 Sol"), "The model in use leads (\(current.label))")
+        XCTAssertFalse(favorite.exists, "Nothing is starred yet")
+        XCTAssertEqual(codex.value as? String, "Closed", "Every provider starts closed, the one in use too")
+        XCTAssertEqual(claude.value as? String, "Closed")
+        XCTAssertFalse(sol.exists || opus.exists || legacy.exists, "Closed providers show none of their models")
+        capture("settings-sheet-closed-dark")
+
+        codex.tap()
+        XCTAssertTrue(sol.waitForExistence(timeout: 5), "A press opens a provider")
+        XCTAssertEqual(codex.value as? String, "Open")
+        claude.tap()
+        XCTAssertTrue(opus.waitForExistence(timeout: 5), "A press on another opens it")
+        XCTAssertTrue(waitUntilGone(sol), "and closes the first: one open at a time")
+        XCTAssertEqual(codex.value as? String, "Closed")
+        XCTAssertEqual(claude.value as? String, "Open")
+        XCTAssertTrue(legacy.exists, "Its older models wait under Legacy")
+        XCTAssertFalse(opus5.exists, "closed")
+        legacy.tap()
+        XCTAssertTrue(opus5.waitForExistence(timeout: 5), "Legacy opens inside its provider")
+        XCTAssertEqual(legacy.value as? String, "Open")
+        capture("settings-sheet-legacy-dark")
+        codex.tap()
+        XCTAssertTrue(waitUntilGone(opus5), "Opening another provider closes Legacy with its own")
+        XCTAssertTrue(waitUntilGone(opus))
+        claude.tap()
+        XCTAssertTrue(opus.waitForExistence(timeout: 5))
+        XCTAssertFalse(opus5.exists, "and Legacy opens closed again")
+
+        // A star keeps a model under Favorites, over the providers.
+        byID("model-claude/fixture-opus-star").tap()
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5), "A starred model is listed under Favorites")
+        XCTAssertLessThan(favorite.frame.minY, codex.frame.minY, "over the providers")
+        capture("settings-sheet-favorite-dark")
+
+        // Put away and opened again, the sheet is at its top with every provider closed, and the star kept.
+        dismissMenu()
+        XCTAssertTrue(waitUntilGone(current), "The sheet goes")
+        press(settings, until: NSPredicate { _, _ in current.exists })
+        XCTAssertTrue(current.waitForExistence(timeout: 5))
+        XCTAssertTrue(current.isHittable, "Opened again at its top")
+        XCTAssertEqual(claude.value as? String, "Closed", "with every provider closed again")
+        XCTAssertFalse(opus.exists)
+        XCTAssertTrue(favorite.exists, "and the star kept")
+        dismissMenu()
+        XCTAssertTrue(waitUntilGone(current), "The sheet goes")
     }
 
     /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that
@@ -1977,9 +2041,15 @@ import UIKit
         XCTAssertTrue(settings.isEnabled, "An idle thread's settings can be changed")
         capture("thread-settings-dark")
 
-        let astra = menuItem("GPT-6 Astra")
-        press(settings, until: NSPredicate { _, _ in astra.exists })
-        XCTAssertTrue(astra.waitForExistence(timeout: 5), "The pill opens the thread's own provider's models")
+        // The pill opens the settings sheet, the thread's own provider closed until pressed.
+        let codex = byID("model-provider-codex"), astra = menuItem("GPT-6 Astra")
+        press(settings, until: NSPredicate { _, _ in codex.exists })
+        XCTAssertTrue(codex.waitForExistence(timeout: 5), "The pill opens the settings sheet with the thread's provider")
+        XCTAssertEqual(codex.value as? String, "Closed", "Its provider starts closed")
+        XCTAssertFalse(byID("model-provider-claude").exists, "A thread's sheet offers only its own provider")
+        XCTAssertFalse(astra.exists, "Closed, it shows none of its models")
+        codex.tap()
+        XCTAssertTrue(astra.waitForExistence(timeout: 5), "Opened, it lists the thread's own provider's models")
         XCTAssertFalse(menuItem("GPT-6.1 Luna").exists, "A model that isn't ready is left out")
         XCTAssertTrue(menuItem("Effort").exists && menuItem("Speed").exists && menuItem("Permissions").exists, "Then the thread's other settings")
         capture("thread-settings-model-menu-dark")
@@ -2039,8 +2109,10 @@ import UIKit
         press(entry, until: NSPredicate { _, _ in item.exists })
         XCTAssertTrue(item.waitForExistence(timeout: 5), "\(submenu) opens its choices")
     }
-    /// Puts an open menu away with a press above it, clear of the box.
+    /// Puts an open menu away with a press above it, clear of the box; an open settings sheet with its Done.
     private func dismissMenu() {
+        let done = byID("settings-sheet-done")
+        if done.exists && done.isHittable { done.tap(); return }
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
     }
     /// Whether a pill's menu item reads enabled within `timeout`. An open menu keeps the state it opened with, so it is

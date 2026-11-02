@@ -111,57 +111,6 @@ jobs:
           echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=$coreml" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"; echo "tests=$tests" >> "$GITHUB_OUTPUT"
           echo "Host job: $host. iOS job: $ios. Core ML helper job: $coreml. Package job: $package. Desktop job: $desktop. Tests: $tests."
 
-  # The gates that are not the test suite. Every pull request and every push to main runs them.
-  checks:
-    name: Typecheck and lint (Windows)
-    needs: changes
-    runs-on: windows-latest
-    timeout-minutes: 20
-    env:
-      CI: 'true'
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
-      # so a path a test builds from os.tmpdir() never equals the real path the
-      # code resolves. The runner's work temp folder is a long path.
-      - name: Use a long temp path
-        shell: pwsh
-        run: |
-          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
-          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24.22.1'
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify release assets
-        run: npm run assets:verify
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Third-party notices
-        run: npm run notices:verify
-
-      # CI runs only a few Playwright journeys, so a spec that cannot load would go unseen (#1579). Listing loads every one.
-      - name: Load every Playwright spec
-        run: npm run e2e:list
-
-      # A change made only of documents skips the shards; these are the tests that read the documents.
-      - name: Document tests
-        if: needs.changes.outputs.tests == 'docs'
-        run: npx vitest run tests/unit/release tests/unit/scripts --maxWorkers=2
-
   # The suite took 24 to 27 minutes as one step (#895). Six runners each take a sixth of the test files,
   # with the same two-worker cap, so a run finishes in minutes and every file still runs on Windows.
   tests:
@@ -270,11 +219,11 @@ jobs:
           if [ "$MODE" != "full" ] || [ "$TESTS" != "success" ]; then echo "Linux tests mode: $MODE. Shards ended $TESTS."; exit 1; fi
           echo "Linux typecheck and all six test shards passed."
 
-  # Main's ruleset requires this job by name. It passes only when Changed areas finished, the checks passed
-  # and every test shard passed, or when Changed areas found a documents-only change and skipped the shards.
+  # Main's ruleset requires this job by name. It passes only when Changed areas finished, the checks in Checks and
+  # desktop (Windows) passed and every test shard passed, or when Changed areas found a documents-only change and skipped the shards.
   gates:
     name: Gates (Windows)
-    needs: [changes, checks, tests]
+    needs: [changes, desktop, tests]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -284,11 +233,12 @@ jobs:
         env:
           CHANGES: ${{ needs.changes.result }}
           MODE: ${{ needs.changes.outputs.tests }}
-          CHECKS: ${{ needs.checks.result }}
+          CHECKS: ${{ needs.desktop.outputs.checks }}
+          JOB: ${{ needs.desktop.result }}
           TESTS: ${{ needs.tests.result }}
         run: |
           if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided which tests to run."; exit 1; fi
-          if [ "$CHECKS" != "success" ]; then echo "Typecheck and lint (Windows) ended $CHECKS."; exit 1; fi
+          if [ "$CHECKS" != "true" ]; then echo "A check in Checks and desktop (Windows) did not pass; the job ended $JOB."; exit 1; fi
           if [ "$MODE" = "docs" ]; then echo "Documents only: the document tests passed and the shards were skipped ($TESTS)."; exit 0; fi
           if [ "$TESTS" != "success" ]; then echo "A test shard ended $TESTS."; exit 1; fi
           echo "Checks and all six test shards passed."
@@ -329,19 +279,28 @@ jobs:
       - name: Build and verify the unpacked Windows app
         run: npm run package:dir
 
-  # Exercise the built app on the hosted desktop without publishing (#899). The ruleset requires Desktop result, not this job.
+  # The gates that are not the test suite, which every pull request and every push to main runs, then the built app
+  # on the hosted desktop without publishing (#899) when Changed areas asks for it. They were two jobs until
+  # November 1, 2026; one job waits for one Windows runner instead of two and installs once. It took about 400 s
+  # against the test shards' 551 s median, so it does not lengthen a run. The journeys run even when a check fails,
+  # so one failure does not hide the other. Gates (Windows) reads the checks' output and Desktop result the journeys'.
   desktop:
-    name: Desktop check (Windows)
+    name: Checks and desktop (Windows)
     needs: changes
-    if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       CI: 'true'
+    outputs:
+      checks: ${{ steps.checks.outputs.passed }}
+      desktop: ${{ steps.smoke.outcome }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1),
+      # so a path a test builds from os.tmpdir() never equals the real path the
+      # code resolves. The runner's work temp folder is a long path.
       - name: Use a long temp path
         shell: pwsh
         run: |
@@ -355,17 +314,45 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        id: install
         run: npm ci
 
       - name: Verify release assets
+        id: assets
         run: npm run assets:verify
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Third-party notices
+        run: npm run notices:verify
+
+      # CI runs only a few Playwright journeys, so a spec that cannot load would go unseen (#1579). Listing loads every one.
+      - name: Load every Playwright spec
+        run: npm run e2e:list
+
+      # A change made only of documents skips the shards; these are the tests that read the documents.
+      - name: Document tests
+        if: needs.changes.outputs.tests == 'docs'
+        run: npx vitest run tests/unit/release tests/unit/scripts --maxWorkers=2
+
+      # Runs only when every step before it passed.
+      - name: Record that the checks passed
+        id: checks
+        shell: bash
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
       - name: Exercise the Windows desktop
+        id: smoke
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && needs.changes.outputs.desktop == 'true' }}
         run: npm run test:desktop-smoke
 
       # Keep passing captures too, so the hosted desktop each run used can be inspected.
       - name: Retain desktop journeys and screenshots
-        if: always()
+        if: ${{ always() && needs.changes.outputs.desktop == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-desktop-journeys-${{ github.run_attempt }}
@@ -396,8 +383,8 @@ jobs:
           if [ "$WANTED" = "true" ] && [ "$PACKAGE" != "success" ]; then echo "Package (Windows) was needed and ended $PACKAGE."; exit 1; fi
           echo "Package (Windows) needed: $WANTED. Result: $PACKAGE."
 
-  # The ruleset requires this guard because a skipped Desktop check (Windows) alone would count as passing even
-  # if Changed areas failed. Keep the packaging guard's independent contract.
+  # The ruleset requires this guard because skipped desktop journeys alone would count as passing even if Changed
+  # areas failed. It reads the journeys' own outcome, so a failed check in the same job does not fail it. Keep the packaging guard's independent contract.
   desktop-result:
     name: Desktop result
     needs: [changes, desktop]
@@ -405,16 +392,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check Changed areas and Desktop check (Windows)
+      - name: Check Changed areas and the desktop journeys
         shell: bash
         env:
           CHANGES: ${{ needs.changes.result }}
           WANTED: ${{ needs.changes.outputs.desktop }}
-          DESKTOP: ${{ needs.desktop.result }}
+          DESKTOP: ${{ needs.desktop.outputs.desktop }}
         run: |
           if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided whether to check the desktop."; exit 1; fi
-          if [ "$WANTED" = "true" ] && [ "$DESKTOP" != "success" ]; then echo "Desktop check (Windows) was needed and ended $DESKTOP."; exit 1; fi
-          echo "Desktop check (Windows) needed: $WANTED. Result: $DESKTOP."
+          if [ "$WANTED" = "true" ] && [ "$DESKTOP" != "success" ]; then echo "The desktop journeys were needed and ended ${DESKTOP:-without running}."; exit 1; fi
+          echo "Desktop journeys needed: $WANTED. Result: ${DESKTOP:-skipped}."
 
   host:
     name: Host archive and socket contract (Linux)

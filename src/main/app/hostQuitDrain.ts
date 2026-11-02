@@ -9,6 +9,7 @@ export interface HostQuitHandles {
   hostSetup?: AsyncClose
   hostSetupTools?: AsyncClose
   visualTools?: AsyncClose
+  mediaTools?: AsyncClose
   pullRequestTools?: AsyncClose
   delegationTools?: AsyncClose
   providerJobs?: { close(): void }
@@ -53,7 +54,7 @@ export function registerHostQuitDrain(app: Parameters<typeof registerQuitDrain>[
     handles.hostPhones?.close()
     const results = await Promise.allSettled([
       handles.desktopHosts?.close(), closeLocal(),
-      handles.hostSetupTools?.close(), handles.visualTools?.close(), handles.pullRequestTools?.close(), handles.delegationTools?.close(),
+      handles.hostSetupTools?.close(), handles.visualTools?.close(), handles.mediaTools?.close(), handles.pullRequestTools?.close(), handles.delegationTools?.close(),
       closeCloud(),
     ])
     handles.hostRouter?.dispose()

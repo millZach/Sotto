@@ -122,6 +122,8 @@ describe('remote command allow-list', () => {
       'attachment-file',
       // One picture an agent's step carries, by its handle (ADR-0170): a read on the preview guard, as `preview` is.
       'thread-media',
+      // One part of a video an agent wrote, by its handle (ADR-0170, part 4): a read on the same guard, as `thread-media` is.
+      'thread-media-part',
       // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
       ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).

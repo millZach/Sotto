@@ -37,4 +37,13 @@ describe('an agent\'s pictures on a remote host (ADR-0170)', () => {
     // A desktop never asks a host that does not list it.
     await expect(off.client.threadMedia({ threadId: 'no-such-thread', activityId: 'a', mediaId: 'm0' })).resolves.toBeNull()
   }, 60_000)
+
+  it('lists thread-media-video with it, and answers a video part only for a video a record names (ADR-0170, part 4)', async () => {
+    const on = await hostWithMedia(true)
+    expect(on.host.descriptor!.features).toContain('thread-media-video')
+    await expect(on.client.threadMediaPart({ threadId: 'no-such-thread', activityId: 'a', mediaId: 'm0', part: 0 })).resolves.toBeNull()
+    const off = await hostWithMedia(false)
+    expect(off.host.descriptor!.features).not.toContain('thread-media-video')
+    await expect(off.client.threadMediaPart({ threadId: 'no-such-thread', activityId: 'a', mediaId: 'm0', part: 0 })).resolves.toBeNull()
+  }, 60_000)
 })

@@ -184,6 +184,13 @@ public enum EffortWords {
         default: return id.prefix(1).uppercased() + id.dropFirst()
         }
     }
+    /// Whether `level` is the top of `levels`, where the reply box's trace lights, as the desktop's composer does
+    /// (`src/shared/topEffort.ts`, ADR-0019): the last level the model offers, whatever its provider, and on Claude Max
+    /// with Ultracode past it. A model with one level has no top, so a lone Max is not lit either.
+    public static func isTop(_ levels: [String], level: String) -> Bool {
+        guard levels.count > 1, !level.isEmpty else { return false }
+        return levels.last == level || (level == "max" && levels.contains("ultracode"))
+    }
     /// One line per level: what it does and what it costs. The top of a longer list gets the top line, whatever its name.
     public static func line(_ id: String, index: Int, count: Int) -> String {
         if id == "ultracode" { return String(localized: "Plans the work and runs it as a team of agents. Uses many more tokens.", bundle: .module, comment: "What the Ultracode effort level does.") }
@@ -442,6 +449,8 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
     /// What the chips show with no press pending, which a press is measured against.
     public let drawn: ThreadSettingValues
     public let unpressed: ThreadSettingValues
+    /// Whether the effort shown is the model's top, where the reply box's trace lights.
+    public var atTopEffort: Bool { EffortWords.isTop(efforts, level: effort) }
 
     /// A line over the box about one setting, and whether it offers Try again.
     public struct Notice: Equatable, Sendable, Identifiable {

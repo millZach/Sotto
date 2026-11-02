@@ -371,8 +371,7 @@ private struct AgentsAgentRow: View {
             }
             .buttonStyle(PressStyle())
             .accessibilityLabel(row.spokenLabel)
-            .accessibilityValue(open ? String(localized: "agent-row.open", defaultValue: "Open", comment: "An agent's row is opened to its task and result, as an expanded disclosure is. Not a pull request's state.")
-                                : String(localized: "agent-row.closed", defaultValue: "Closed", comment: "An agent's row is folded, hiding its task and result, as a collapsed disclosure is. Not a pull request's state."))
+            .accessibilityValue(open ? FoldWords.open : FoldWords.closed)
             .accessibilityHint(open ? String(localized: "Hides its task and result") : String(localized: "Shows its task and result"))
             .accessibilityIdentifier("agents-row-\(row.id)")
             if open { details }

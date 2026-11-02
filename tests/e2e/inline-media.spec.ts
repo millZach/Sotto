@@ -1,7 +1,8 @@
 /**
- * An agent's pictures in the built app (ADR-0170): a Claude Code thread over the fake CLI takes a screenshot with Sotto's
- * browser tool, and its turn shows the picture as a tile that opens in the viewer, in dark and light and at the 820x560
- * minimum. With `inline-media` off the same turn shows no tile. The captures go to `artifacts/inline-media/` when
+ * An agent's pictures in the built app (ADR-0170, request-only): a Claude Code thread over the fake CLI takes a screenshot
+ * with Sotto's browser tool, and its turn shows no tile for it. Asked to show the picture, the agent calls `sotto_media`'s
+ * show_in_thread with the file, and the turn shows it as a tile that opens in the viewer, in dark and light and at the
+ * 820x560 minimum. With `inline-media` off nothing shows. The captures go to `artifacts/inline-media/` when
  * SOTTO_E2E_ARTIFACTS=1.
  *
  *   npm run build && npx playwright test tests/e2e/inline-media.spec.ts
@@ -60,7 +61,7 @@ async function takeScreenshot(root: string, session: string): Promise<void> {
 }
 
 for (const on of [true, false]) {
-  test(`a screenshot an agent took ${on ? 'shows as a tile that opens in the viewer' : 'shows no tile with inline-media off'}`, async () => {
+  test(`a screenshot an agent took shows no tile of its own, ${on ? 'and one it was asked to show tiles and opens in the viewer' : 'nor anything with inline-media off'}`, async () => {
     test.setTimeout(240_000)
     const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-inline-media-' })).directory
     const root = join(profile, 'native-fixture')
@@ -83,17 +84,19 @@ for (const on of [true, false]) {
       })
       await page.reload()
       await resizeWindow(launched, 1280, 800)
-      const { session } = await claudeThread(page, join(root, 'claude'), project)
+      const { threadId, session } = await claudeThread(page, join(root, 'claude'), project)
       await takeScreenshot(join(root, 'claude'), session)
       await openThreads(page)
       await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Fix the checkout layout', exact: true }).click()
       const pane = page.locator('section.thread-pane:not([data-hidden])')
       await expect(pane.getByText('The Pay button sits on top of the total.')).toBeVisible({ timeout: 30_000 })
-      if (!on) {
-        await expect(pane.locator('.thread-media')).toHaveCount(0)
-        return
-      }
-      const tile = pane.getByRole('button', { name: /^Open picture 1 of 1, from / })
+      // Request-only (ADR-0170): the screenshot the agent took shows no tile of its own, with the feature on or off.
+      await expect(pane.locator('.thread-media')).toHaveCount(0)
+      if (!on) return
+      // Asked to show it, the agent names the file to show_in_thread, and it shows as a tile under the title it gave.
+      const shown = await page.evaluate(async request => window.sottoE2E!.mediaTool!(request), { threadId, arguments: { paths: [SHOT], title: 'The checkout page' } })
+      expect(shown.isError).toBeFalsy()
+      const tile = pane.getByRole('button', { name: 'Open picture 1 of 1, from The checkout page' })
       await expect(tile).toBeVisible()
       await expect(tile.locator('img')).toHaveJSProperty('complete', true, { timeout: 30_000 })
       // The tile holds main's thumbnail, never the whole picture.
