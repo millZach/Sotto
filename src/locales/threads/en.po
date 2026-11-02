@@ -1594,6 +1594,11 @@ msgstr "a Windows machine"
 msgid "Abort"
 msgstr "Abort"
 
+#. Before the large figure in the speed card of a thread on the user’s own model server, such as "about 38 tokens a second": the figure is estimated from the text, not counted by the server.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "about"
+msgstr "about"
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Accept Cursor’s plan"
 msgstr "Accept Cursor’s plan"
@@ -4093,8 +4098,8 @@ msgstr "Finishes on {hostName} itself, so not from this computer."
 
 #. In the speed card of a thread on the user’s own model server: how long the server took to start answering the last message, such as 41s.
 #: src/renderer/src/agents/ServerMark.tsx
-msgid "First word after"
-msgstr "First word after"
+msgid "First token after"
+msgstr "First token after"
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
@@ -5293,7 +5298,7 @@ msgstr "Next"
 msgid "Next prompts"
 msgstr "Next prompts"
 
-#. In the speed card of a thread on the user’s own model server, for how long the first word took: the server never answered.
+#. In the speed card of a thread on the user’s own model server, for how long the first token took: the server never answered.
 #. Stands for a question in a saved form that was left unanswered.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 #: src/renderer/src/agents/ServerMark.tsx
@@ -6040,7 +6045,7 @@ msgstr "Paste the key"
 
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
-#. The large figure in the speed card of a thread on the user’s own model server: no words have come for a moment.
+#. The large figure in the speed card of a thread on the user’s own model server: no tokens have come for a moment.
 #: src/renderer/src/agents/ServerMark.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Paused"
@@ -8899,6 +8904,16 @@ msgstr "Tip"
 msgid "To do"
 msgstr "To do"
 
+#. Beside the large figure in the speed card of a thread on the user’s own model server, such as 38: how fast the model is writing. Tokens are the pieces a language model writes in.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "tokens a second"
+msgstr "tokens a second"
+
+#. Beside the large figure in the speed card of a thread on the user’s own model server once its turn has ended, such as 38: how fast the model wrote the last reply, on average. Tokens are the pieces a language model writes in.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "tokens a second, on average"
+msgstr "tokens a second, on average"
+
 #. When a stopped thread restarts, as in "Restarts tomorrow at 3:00 pm".
 #: src/renderer/src/agents/restartWords.ts
 msgid "tomorrow at {clock}"
@@ -9499,7 +9514,7 @@ msgstr "Waiting to update to {published}. Your threads keep working."
 msgid "Waiting to update to the published version. Your threads keep working."
 msgstr "Waiting to update to the published version. Your threads keep working."
 
-#. In the speed card of a thread on the user’s own model server: no word yet, and how long it has waited, such as 42s.
+#. In the speed card of a thread on the user’s own model server: no token yet, and how long it has waited, such as 42s.
 #: src/renderer/src/agents/ServerMark.tsx
 msgid "Waiting, {waited}"
 msgstr "Waiting, {waited}"
@@ -9638,16 +9653,6 @@ msgstr "Where the server listens, on this computer, your network or your tailnet
 #: src/renderer/src/agents/tips.tsx
 msgid "Which threads are waiting on me?"
 msgstr "Which threads are waiting on me?"
-
-#. Beside the large figure in the speed card of a thread on the user’s own model server, such as 38: how fast its reply comes.
-#: src/renderer/src/agents/ServerMark.tsx
-msgid "words a second"
-msgstr "words a second"
-
-#. Beside the large figure in the speed card of a thread on the user’s own model server once its turn has ended, such as 38: how fast the last reply came, on average.
-#: src/renderer/src/agents/ServerMark.tsx
-msgid "words a second, on average"
-msgstr "words a second, on average"
 
 #. A turn that finished, when its time was not recorded.
 #: src/renderer/src/agents/threadActivityView.ts
