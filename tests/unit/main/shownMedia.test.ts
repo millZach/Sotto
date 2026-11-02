@@ -170,10 +170,28 @@ describe('a turn that wrote pictures and a video, through the workspace, the med
       const again = () => control.control.threadDetail(thread.id)?.activities?.find(record => record.title === 'Again')
       await expect.poll(again, { timeout: 15_000 }).toBeDefined()
       expect(again()).toMatchObject({ turnId: newest(), afterMessageId: newest() })
+      // A history writer that has not yet written the newest message answers with the one before: the window's newer one wins.
+      const history = (f.host as unknown as { threadStore: { newestMessages(id: string): { messageId: string | null; userMessageId: string | null } } }).threadStore
+      const written = history.newestMessages.bind(history)
+      const before = newest()!
+      // The second turn ends, so the third message starts a turn of its own rather than waiting in the queue.
+      for (const running of f.adapters.codex.state.threads.filter(item => item.status === 'running')) running.status = 'idle'
+      f.adapters.codex.emit()
+      await expect.poll(() => control.control.get().host.threads.find(item => item.id === thread.id)?.status, { timeout: 15_000 }).not.toBe('running')
+      expect((await control.control.command({ type: 'manual-send', threadId: thread.id, draftId: randomUUID(), text: 'And once more' })).error).toBeNull()
+      const third = () => control.control.threadDetail(thread.id)?.messages.findLast(message => message.role === 'user' && message.text === 'And once more')?.id
+      await expect.poll(third, { timeout: 15_000 }).toBeDefined()
+      history.newestMessages = () => ({ messageId: before, userMessageId: before })
+      try {
+        expect((await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: ['test-results/signup.png'], title: 'Lagging history' })).isError).toBeFalsy()
+        const lagging = () => control.control.threadDetail(thread.id)?.activities?.find(record => record.title === 'Lagging history')
+        await expect.poll(lagging, { timeout: 15_000 }).toBeDefined()
+        expect(lagging()).toMatchObject({ turnId: third(), afterMessageId: third() })
+      } finally { history.newestMessages = written }
       // A call that names nothing Sotto shows shows nothing and says why; a bad call says what to send.
       expect(await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: ['.gitignore'], title: 'Ignore list' })).toEqual({ isError: true, content: [{ type: 'text', text: 'Nothing was shown. .gitignore (it is not a picture or video Sotto shows).' }] })
       expect((await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: [] , title: 'x' })).isError).toBe(true)
       expect((await tools.call('no-such-thread', SHOW_IN_THREAD_TOOL, { paths: ['a.png'], title: 'x' })).content).toEqual([{ type: 'text', text: 'This thread cannot show pictures. Nothing was shown.' }])
     } finally { await tools.close(); await control.dispose(); await f.stop() }
-  })
+  }, 90_000)
 })

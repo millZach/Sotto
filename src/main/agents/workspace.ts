@@ -1495,6 +1495,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { folder = this.threadFolder(thread) } catch { folder = undefined }
     const found = await shownMedia(folder, input.paths, store)
     if (!found.media.length) return { shown: false, reason: 'nothing-shown', refused: found.refused }
+    // What the provider said before the call is committed first, so the newest message read below is the turn's own.
+    await this.settled(threadId, true)
     const current = this.threadById(threadId)
     if (!current || !this.visible(current)) return { shown: false, reason: 'unknown-thread' }
     this.holdActivities(current)
@@ -1502,11 +1504,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // newest message is read from the thread's history, since a thread no window observes holds few messages in memory.
     let stored: { readonly userMessageId: string | null } = { userMessageId: null }
     try { stored = this.threadStore.newestMessages(threadId) } catch { /* the window's messages answer instead */ }
-    const userMessageId = stored.userMessageId ?? current.messages.findLast(message => message.role === 'user')?.id
     const sent = (id: string | undefined): string | undefined => {
       if (!id) return undefined
       try { return this.threadStore.message(threadId, id)?.createdAt ?? current.messages.find(message => message.id === id)?.createdAt } catch { return current.messages.find(message => message.id === id)?.createdAt }
     }
+    // The window's newest user message wins when it is newer than the history's, as one not yet written is.
+    const live = current.messages.findLast(message => message.role === 'user')
+    const userMessageId = live && (!stored.userMessageId || (sent(stored.userMessageId) ?? '') < live.createdAt) ? live.id : stored.userMessageId ?? undefined
     const last = current.activities?.at(-1), userAt = sent(userMessageId), lastAt = sent(last?.afterMessageId)
     // A record of an earlier turn, before this turn's first one exists, is not this turn's.
     const inTurn = last !== undefined && (last.turnId === userMessageId || last.afterMessageId === userMessageId || (lastAt !== undefined && userAt !== undefined && lastAt >= userAt))
