@@ -38,9 +38,15 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
                 .padding(.top, ComposerMetrics.wordsTop)
                 .padding(.bottom, ComposerMetrics.wordsGap)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Everything above the row is the words': a press beside them or in the gap under them types there.
+                // Everything above the row's buttons is the words': a press beside them, in the gap under them or in the
+                // row's own margin over its buttons types there. Left to nothing, a press in that margin went to the
+                // nearest control, the model pill, as a press near a small target does (Duo captures, November 1, 2026).
                 .background {
-                    Color.clear.contentShape(Rectangle()).onTapGesture(perform: focus).accessibilityHidden(true)
+                    // The clear area is offered the margin too and takes it, so its press area reaches the buttons' top.
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture(perform: focus)
+                        .padding(.bottom, -ComposerMetrics.rowInset)
+                        .accessibilityHidden(true)
                 }
             Group {
                 if typeSize.isAccessibilitySize {
