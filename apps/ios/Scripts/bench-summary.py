@@ -42,6 +42,9 @@ BUDGETS = {
     "open.app.time.textview.measure.n": 60,
     # Each paragraph is measured once for its words, text size and width (0.36 a streamed word).
     "stream.per_chunk.time.textview.measure.n": 1.0,
+    # The Threads page holds its list while the long thread covers it (0.27 list bodies a streamed word before).
+    "stream.per_chunk.body.ThreadListSections": 0,
+    "stream.per_chunk.body.ThreadListRow": 0,
     # The Threads page lets go of its held list before the first frame that shows it again, in every journey.
     "journey.page.stale_frames": 0,
 }
