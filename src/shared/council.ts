@@ -327,7 +327,8 @@ export const councilViewSchema = z.object({
   status: z.enum(['working', 'waiting', 'done', 'stopped', 'settled']),
   /** Why it stopped when Sotto stopped it: its words were lost to a restart with Keep local history off. */
   stoppedBecause: z.enum(['user', 'words-lost', 'snapshot']).optional(),
-  snapshot: z.object({ commit: z.string().max(64), branch: z.string().max(512), untracked: count, removed: z.boolean() }).strict(),
+  /** Where the Council works: the branch and commit, and whether the snapshot carried uncommitted changes and how many untracked files. */
+  snapshot: z.object({ commit: z.string().max(64), branch: z.string().max(512), untracked: count, dirty: z.boolean(), removed: z.boolean() }).strict(),
   history: z.object({ messages: count, words: count, mode: z.enum(['inline', 'file', 'cut']), leftOut: count }).strict(),
   seats: z.array(councilSeatViewSchema).max(COUNCIL_PANELISTS_MAX + 1),
   rounds: z.array(councilRoundViewSchema).min(1).max(50),

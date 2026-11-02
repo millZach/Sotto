@@ -15,7 +15,9 @@ import { HISTORY_FILE, HISTORY_FOLDER } from './councilPrompts'
 
 export { COUNCIL_WORKTREE_FOLDER } from './councilFolders'
 
-export interface CouncilSnapshot { readonly path: string; readonly repositoryRoot: string; readonly commit: string; readonly branch: string; readonly untracked: number }
+export interface CouncilSnapshot { readonly path: string; readonly repositoryRoot: string; readonly commit: string; readonly branch: string; readonly untracked: number
+  /** It carried uncommitted changes, so its commit is a snapshot's rather than the branch's own. */
+  readonly dirty: boolean }
 
 const refusalWords = (reason: string): string => {
   switch (reason) {
@@ -35,7 +37,7 @@ export async function makeCouncilSnapshot(input: { readonly bundles: Pick<Branch
     const repositoryRoot = (await input.run(input.folder, 'git', ['rev-parse', '--show-toplevel'], { timeoutMs: 30_000 })).trim()
     await mkdir(dirname(input.path), { recursive: true })
     await input.run(repositoryRoot, 'git', ['worktree', 'add', '--detach', '--', input.path, source.commit], { timeoutMs: 300_000 })
-    return { path: input.path, repositoryRoot, commit: source.commit, branch: source.branch, untracked: source.snapshot?.untrackedCount ?? 0 }
+    return { path: input.path, repositoryRoot, commit: source.commit, branch: source.branch, untracked: source.snapshot?.untrackedCount ?? 0, dirty: source.snapshot !== undefined }
   } catch {
     await rm(input.path, { recursive: true, force: true }).catch(() => undefined)
     return { refused: refusalWords('failed') }

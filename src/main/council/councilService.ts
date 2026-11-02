@@ -223,7 +223,7 @@ export class CouncilService {
     const now = new Date(this.clock()).toISOString()
     const record: CouncilRecord = {
       id, createdAt: now, originThread: origin.id, originTitle: clip(origin.title, 512), projectId: origin.projectId,
-      snapshot: { path: made.path, repositoryRoot: made.repositoryRoot, commit: made.commit, branch: made.branch, untracked: made.untracked },
+      snapshot: { path: made.path, repositoryRoot: made.repositoryRoot, commit: made.commit, branch: made.branch, untracked: made.untracked, dirty: made.dirty },
       history: { messages: quoted.messages, words: quoted.words, tools: quoted.tools, mode: fits ? 'inline' : file ? 'file' : 'cut', leftOut: fits || file ? 0 : cut.leftOut,
         ...quoted.lastMessageId ? { lastMessageId: quoted.lastMessageId } : {} },
       seats: ready.map(entry => this.seatOf(entry.seat, entry.role, entry.model!, entry.choice, this.newId())),
@@ -644,7 +644,7 @@ export class CouncilService {
       id: record.id, createdAt: record.createdAt,
       origin: { thread: record.originThread, title: threads.get(record.originThread)?.title ?? record.originTitle },
       status, ...record.stoppedBecause && record.stoppedAt ? { stoppedBecause: record.stoppedBecause } : {},
-      snapshot: { commit: record.snapshot.commit.slice(0, 12), branch: record.snapshot.branch, untracked: record.snapshot.untracked, removed: record.snapshot.removedAt !== undefined },
+      snapshot: { commit: record.snapshot.commit.slice(0, 12), branch: record.snapshot.branch, untracked: record.snapshot.untracked, dirty: record.snapshot.dirty === true, removed: record.snapshot.removedAt !== undefined },
       history: { messages: record.history.messages, words: record.history.words, mode: record.history.mode, leftOut: record.history.leftOut },
       seats: record.seats.map(seat => ({ seat: seat.seat, role: seat.role, modelId: seat.modelId, modelName: seat.modelName, ...seat.provider ? { provider: seat.provider } : {}, effort: seat.effort,
         thread: seat.thread, remote: seat.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider) })),
@@ -764,7 +764,7 @@ export function narrowestPermission(model: AgentModel): { readonly runtimeMode?:
 }
 
 function snapshotWords(record: CouncilRecord): string {
-  return `commit ${record.snapshot.commit.slice(0, 12)} on ${record.snapshot.branch}${record.snapshot.untracked || record.snapshot.commit ? ', with its uncommitted changes' : ''}`
+  return `commit ${record.snapshot.commit.slice(0, 12)} on ${record.snapshot.branch}${record.snapshot.dirty ? ', with the uncommitted changes it had' : ''}`
 }
 function blockName(stage: CouncilTurn['stage']): string {
   switch (stage) {

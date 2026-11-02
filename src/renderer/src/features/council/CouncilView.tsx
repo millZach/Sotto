@@ -104,7 +104,7 @@ function AskForm({ bridge }: { readonly bridge: CouncilBridge }): ReactNode {
     </label>
     <CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} />
     <p id={estimateId} className="council-ask__estimate tt-paragraph">
-      {reads ? t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words. A stage waits up to ${minutes} minutes for a thread.`
+      {reads && providers.length ? t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words. A stage waits up to ${minutes} minutes for a thread.`
         : t`Starts ${threadCount} threads. A stage waits up to ${minutes} minutes for a thread.`}
     </p>
     {estimate && 'unavailable' in estimate ? <p className="council-notice tt-paragraph">{estimate.unavailable}</p> : null}
@@ -156,8 +156,9 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
     </header>
     <p className="council-entry__seats tt-paragraph">{seatNames}</p>
     <p className="council-entry__meta tt-paragraph">
-      {council.snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : untracked > 0 ? t`Working in a snapshot of ${branch} at ${commit}, with uncommitted changes and ${untracked} untracked files.`
-        : t`Working in a snapshot of ${branch} at ${commit}, with uncommitted changes.`}
+      {council.snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : !council.snapshot.dirty ? t`Working in a snapshot of ${branch} at ${commit}.`
+        : untracked > 0 ? t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes and ${untracked} untracked files.`
+        : t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes.`}
       {council.history.mode === 'file' ? ` ${t`The conversation was too long for one prompt, so each thread reads it from a file in the snapshot.`}` : ''}
       {council.history.mode === 'cut' ? ` ${t`Each thread read the newest part of the conversation; ${council.history.leftOut} earlier messages were left out.`}` : ''}
     </p>
@@ -189,7 +190,7 @@ function Framing({ framing }: { readonly framing: NonNullable<CouncilRoundView['
   const kinds = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(framing.kinds.map(kind => ({ decision: t`a decision`, fact: t`a fact to check`, review: t`a review`, ideas: t`ideas` })[kind]))
   return <div className="council-framing">
     <p className="tt-paragraph">{t`Framed as ${kinds}.`}</p>
-    <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id}: {criterion.text} <span className="council-muted">{criterion.source === 'question' ? t`from the question` : t`assumed by the chair`}</span></li>)}</ul>
+    <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question` : t`assumed by the chair`})</span>: {criterion.text}</li>)}</ul>
   </div>
 }
 
@@ -209,7 +210,7 @@ function RowRecord({ council, row, run }: { readonly council: CouncilRecord; rea
     <span className="council-row__seat">{who}{seat ? <span className="council-muted"> {seat.modelName}</span> : null}</span>
     <span className="council-row__state">{words.state(row.state)}{row.late ? <span className="council-muted"> · {t`past the stage deadline`}</span> : null}
       {row.result === 'unavailable' ? <span className="council-muted"> · {t`no result`}</span> : null}</span>
-    {row.summary ? <span className="council-row__summary">{row.summary}</span> : null}
+    {row.summary && row.stage !== 'framing' ? <span className="council-row__summary">{row.summary}</span> : null}
     {checked.length ? <span className="council-row__summary council-muted">{checked.join('; ')}</span> : null}
     <span className="council-row__actions">
       <button type="button" className="council-link tt-focusable" onClick={openThread}>{t`Open thread`}</button>
@@ -227,15 +228,23 @@ function RowRecord({ council, row, run }: { readonly council: CouncilRecord; rea
   </li>
 }
 
-function countsWords(counts: CouncilCounts, t: ReturnType<typeof useLingui>['t']): string[] {
+/** Sotto's own counts from the result blocks (decision 5), each with its denominator, or marked partial. */
+function Counts({ counts }: { readonly counts: CouncilCounts }): ReactNode {
+  const { t } = useLingui()
   const partial = counts.partial ? ` ${t`Partial: a result was unavailable.`}` : ''
-  return [
-    ...counts.rankings.length ? [t`Ranked first: ${counts.rankings.map(item => t`${item.letter} by ${item.first} of ${item.of}`).join(', ')}.` + partial] : [],
-    ...counts.findings.length ? [t`Findings: ${counts.findings.map(item => t`${item.finding} confirmed by ${item.confirmed}, rejected by ${item.rejected}, unchecked by ${item.unchecked} of ${item.of}`).join('; ')}.` + partial] : [],
-    ...counts.supports.length ? [t`The evidence supports: ${counts.supports.map(item => t`${item.letter} for ${item.count} of ${item.of}`).join(', ')}.`] : [],
-    ...counts.favourites.length ? [t`Favourites: ${counts.favourites.map(item => t`${item.finding} for ${item.count} of ${item.of}`).join(', ')}.`] : [],
-    ...counts.changed.length ? [t`Changed their answers: ${counts.changed.join(', ')}.`] : [],
+  const ranked = counts.rankings.map(item => t`${item.letter} by ${item.first} of ${item.of}`).join(', ')
+  const found = counts.findings.map(item => t`${item.finding} confirmed by ${item.confirmed}, rejected by ${item.rejected}, unchecked by ${item.unchecked} of ${item.of}`).join('; ')
+  const supported = counts.supports.map(item => t`${item.letter} for ${item.count} of ${item.of}`).join(', ')
+  const liked = counts.favourites.map(item => t`${item.finding} for ${item.count} of ${item.of}`).join(', ')
+  const changed = counts.changed.join(', ')
+  const lines = [
+    ...ranked ? [t`Ranked first: ${ranked}.` + partial] : [],
+    ...found ? [t`Findings: ${found}.` + partial] : [],
+    ...supported ? [t`The evidence supports: ${supported}.`] : [],
+    ...liked ? [t`Favourites: ${liked}.`] : [],
+    ...changed ? [t`Changed their answers: ${changed}.`] : [],
   ]
+  return <>{lines.map(line => <p key={line} className="council-verdict__counts tt-paragraph">{line}</p>)}</>
 }
 
 function Verdict({ council, round }: { readonly council: CouncilRecord; readonly round: CouncilRoundView }): ReactNode {
@@ -258,7 +267,7 @@ function Verdict({ council, round }: { readonly council: CouncilRecord; readonly
     <h3>{t`Verdict`}</h3>
     {verdict.text === null ? <p className="council-muted tt-paragraph">{t`The verdict’s words are not kept while Keep local history is off.`}</p>
       : <div className="council-verdict__text">{verdict.text}</div>}
-    {countsWords(verdict.counts, t).map(line => <p key={line} className="council-verdict__counts tt-paragraph">{line}</p>)}
+    <Counts counts={verdict.counts} />
     {council.seats.filter(seat => seat.role === 'panelist').length === 2 ? <p className="council-muted tt-paragraph">{t`The Council had two panelists, so nothing is counted.`}</p> : null}
     {verdict.objections.map(objection => <blockquote key={objection.seat} className="council-objection">
       <p className="tt-paragraph">{t`${objection.seat} says this passage misstates it: “${objection.passage}”`}</p>

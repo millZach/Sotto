@@ -51,10 +51,34 @@ msgstr ""
 msgid "{0, plural, one {You chose # of the threads Watcher proposed moving to {machine}.} other {You chose # of the threads Watcher proposed moving to {machine}.}}"
 msgstr ""
 
+#. placeholder {0}: item.letter
+#. placeholder {1}: item.first
+#. placeholder {2}: item.of
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "{0} by {1} of {2}"
+msgstr ""
+
+#. placeholder {0}: item.finding
+#. placeholder {1}: item.confirmed
+#. placeholder {2}: item.rejected
+#. placeholder {3}: item.unchecked
+#. placeholder {4}: item.of
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "{0} confirmed by {1}, rejected by {2}, unchecked by {3} of {4}"
+msgstr ""
+
 #. placeholder {0}: card.machine
 #. placeholder {1}: card.model.instead
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "{0} doesn’t have {1}"
+msgstr ""
+
+#. placeholder {0}: item.finding
+#. placeholder {0}: item.letter
+#. placeholder {1}: item.count
+#. placeholder {2}: item.of
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "{0} for {1} of {2}"
 msgstr ""
 
 #. placeholder {0}: planned.words ?? ''
@@ -515,7 +539,7 @@ msgid "{name} runs an older Sotto host that does not report its load. Watcher tr
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilSeats.tsx
-msgid "{name} runs on {provider} in the cloud and can’t read this computer’s files, so its claims about the code will be unchecked."
+msgid "{Name} runs on {provider} in the cloud and can’t read this computer’s files, so its claims about the code will be unchecked."
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -1323,6 +1347,8 @@ msgstr ""
 msgid "Carried {carried}."
 msgstr ""
 
+#. The Council's chair, as a seat's label
+#: src/renderer/src/features/council/CouncilSeats.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Chair"
 msgstr ""
@@ -1341,6 +1367,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Change where new workers start"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Changed their answers: {changed}."
 msgstr ""
 
 #: src/renderer/src/App.tsx
@@ -2190,12 +2220,20 @@ msgstr ""
 msgid "Fastest: thinking off, {time} s."
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Favourites: {liked}."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Files Watcher changed"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Filter threads"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Findings: {found}."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -3340,6 +3378,10 @@ msgstr ""
 msgid "No prompts yet"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilSeats.tsx
+msgid "No provider is connected. Connect one in Settings, under Providers."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "No reading from {from}"
 msgstr ""
@@ -3919,6 +3961,10 @@ msgid "Parakeet model"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Partial: a result was unavailable."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "past the stage deadline"
 msgstr ""
 
@@ -4211,6 +4257,10 @@ msgstr ""
 #. A group of threads in Watcher’s room, and a thread’s status: nothing has happened for a while
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Quiet"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Ranked first: {ranked}."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -5655,8 +5705,9 @@ msgstr ""
 msgid "The beta reads and answers threads on your computers, questions included. It needs Tailscale on the iPhone and on this computer."
 msgstr ""
 
+#. The Council's chair, in the middle of a sentence
 #: src/renderer/src/features/council/CouncilSeats.tsx
-msgid "The chair"
+msgid "the chair"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -5706,6 +5757,10 @@ msgstr ""
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "The download stopped: Sotto could not reach GitHub, or GitHub did not send the file."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The evidence supports: {supported}."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
@@ -6710,11 +6765,15 @@ msgid "Working"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Working in a snapshot of {branch} at {commit}, with uncommitted changes and {untracked} untracked files."
+msgid "Working in a snapshot of {branch} at {commit}, with its uncommitted changes and {untracked} untracked files."
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Working in a snapshot of {branch} at {commit}, with uncommitted changes."
+msgid "Working in a snapshot of {branch} at {commit}, with its uncommitted changes."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Working in a snapshot of {branch} at {commit}."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx

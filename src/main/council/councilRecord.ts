@@ -105,7 +105,7 @@ export const councilRecordSchema = z.object({
   originTitle: z.string().max(512),
   projectId: id,
   snapshot: z.object({ path: z.string().max(4_096), repositoryRoot: z.string().max(4_096), commit: z.string().max(64), branch: z.string().max(512),
-    untracked: z.number().int().nonnegative(), removedAt: at.optional() }).strict(),
+    untracked: z.number().int().nonnegative(), dirty: z.boolean().optional(), removedAt: at.optional() }).strict(),
   /** What each thread read of the origin conversation: inline, from a file in the snapshot, or its newest part. */
   history: z.object({ messages: z.number().int().nonnegative(), words: z.number().int().nonnegative(), tools: z.number().int().nonnegative(),
     mode: z.enum(['inline', 'file', 'cut']), leftOut: z.number().int().nonnegative(), lastMessageId: id.optional() }).strict(),

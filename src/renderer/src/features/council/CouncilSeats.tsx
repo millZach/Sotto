@@ -13,28 +13,34 @@ import './council.css'
 /** The panel as Settings → Council keeps it and the Ask screen starts from it: a seat each, null where Sotto fills it. */
 export interface CouncilPanel { readonly panelists: readonly (CouncilSeatChoice | null)[]; readonly chair: CouncilSeatChoice | null }
 
-/** A seat's name on the page: panelists by their place, which becomes their letter in a Council, and the chair. */
-export function useSeatName(): (seat: number | 'chair') => string {
+/** A seat's name on the page: panelists by their place, which becomes their letter in a Council, and the chair; `inSentence` for one mid-sentence. */
+export function useSeatName(): (seat: number | 'chair', inSentence?: boolean) => string {
   const { t } = useLingui()
-  return seat => seat === 'chair' ? t`The chair` : t`Panelist ${seat + 1}`
+  return (seat, inSentence = false) => seat !== 'chair' ? t`Panelist ${seat + 1}` : inSentence ? t({ message: 'the chair', comment: 'The Council\'s chair, in the middle of a sentence' }) : t({ message: 'Chair', comment: 'The Council\'s chair, as a seat\'s label' })
 }
 
 /** What the page says about the seats (ADR-0177 decision 7), in a sentence each. */
 export function useSeatNotes(): (notes: readonly CouncilSeatNote[], seats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }) => string[] {
   const { t, i18n } = useLingui()
   const named = useSeatName()
-  return (notes, seats) => notes.map(note => {
+  return (notes, seats) => {
+    // With no provider connected every seat is empty: one sentence says so.
+    if (notes.length > 0 && notes.every(note => note.kind === 'no-seat')) return [t`No provider is connected. Connect one in Settings, under Providers.`]
+    return notes.map(note => sentence(note, seats))
+  }
+  function sentence(note: CouncilSeatNote, seats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }): string {
     if (note.kind === 'same-model') {
-      const names = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(note.seats.map(named))
+      const names = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(note.seats.map((seat, index) => index === 0 && seat === 'chair' ? named(seat) : named(seat, true)))
       return t`${names} hold the same model. A second copy adds less than a different model.`
     }
-    const name = named(note.seat)
+    const name = named(note.seat, true)
+    const Name = named(note.seat)
     const seat = note.seat === 'chair' ? seats.chair : seats.panelists[note.seat]
     const provider = seat?.provider ? PROVIDER_LABELS[seat.provider] : ''
     if (note.kind === 'no-seat') return t`No connected provider can fill the seat of ${name}. Connect one in Settings, under Providers.`
     if (note.kind === 'not-ready') return t`The provider of ${name} is not connected. Choose another model, or connect it in Settings, under Providers.`
-    return t`${name} runs on ${provider} in the cloud and can’t read this computer’s files, so its claims about the code will be unchecked.`
-  })
+    return t`${Name} runs on ${provider} in the cloud and can’t read this computer’s files, so its claims about the code will be unchecked.`
+  }
 }
 
 /**
