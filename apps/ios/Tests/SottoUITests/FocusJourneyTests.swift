@@ -541,6 +541,7 @@ import UIKit
         // as a reader does, until the end is in view, and once more against it so the page rests there.
         for _ in 0..<12 { dragThread(towardEnd: false, above: reply) }
         capture("thread-pictures-read-back")
+        XCTAssertTrue(endProbe().away, "Reading back up leaves the end, and nothing pulls the reader down (" + endProbe().words + ")")
         var drags = 0
         while !endProbe().atEnd && drags < 40 { dragThread(towardEnd: true, above: reply); drags += 1 }
         XCTAssertTrue(endProbe().atEnd, "Dragging down reaches the thread's end (" + endProbe().words + ")")
@@ -549,15 +550,15 @@ import UIKit
     }
 
     /// Where the conversation's end, the reply box's top and the bar's bottom sit, as the page lays them out, and whether
-    /// the end is whole on screen above the reply box.
-    private func endProbe() -> (atEnd: Bool, words: String) {
+    /// the end is whole on screen above the reply box, or well below it, where reading back up leaves it.
+    private func endProbe() -> (atEnd: Bool, away: Bool, words: String) {
         let probe = byID("thread-end-probe")
-        guard probe.exists else { return (false, "no probe") }
+        guard probe.exists else { return (false, false, "no probe") }
         let words = probe.label
         let numbers = words.split(separator: " ").compactMap { Double($0) }
-        guard numbers.count == 3 else { return (false, words) }
+        guard numbers.count == 3 else { return (false, false, words) }
         let end = numbers[0], dock = numbers[1], bar = numbers[2]
-        return (end <= dock + 1 && end > bar, "end \(Int(end)), dock top \(Int(dock)), bar bottom \(Int(bar))")
+        return (end <= dock + 1 && end > bar, end > dock + 400, "end \(Int(end)), dock top \(Int(dock)), bar bottom \(Int(bar))")
     }
 
     /// Drags the thread once from the middle of the conversation, slowly enough not to fling: toward its end, or back

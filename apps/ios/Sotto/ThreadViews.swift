@@ -732,12 +732,14 @@ private struct Conversation: View {
     /// its own shape or a picture's tile being made, and the reader never left. Taken for the reader leaving, it once
     /// stranded them short of the end, where the page stopped following (November 1, 2026). An end that moved only on
     /// the screen moved because the page scrolled, by the user's hand or the status bar, and decides where they stand.
+    /// Any growth that slips the end under the reply box is followed, even less than the slack: a photo a little taller
+    /// than its placeholder would otherwise leave the end's last lines covered with nothing to bring them back.
     private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
         let wasAtBottom = follow.atBottom
         let grew = abs(inPage - follow.endInPage) > 0.5
         follow.sentinel = end
         follow.endInPage = inPage
-        if wasAtBottom, grew, end > follow.dockTop + FollowBox.slack {
+        if wasAtBottom, grew, end > follow.dockTop + 1 {
             toBottom(scroll)
         } else {
             follow.settle()
