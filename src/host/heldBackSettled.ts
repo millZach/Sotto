@@ -29,19 +29,19 @@ export function settledSince(thread: AgentThread, project: Pick<AgentProject, 'w
 }
 
 /** The IDs of the threads a phone is not sent: settled, and none of the threads it must keep. */
-export function heldBackSettled(threads: readonly AgentThread[], projects: readonly AgentProject[], kept: ReadonlySet<string>): Set<string> {
+export function heldBackSettled(threads: readonly AgentThread[], projects: readonly AgentProject[], kept: (id: string) => boolean): Set<string> {
   const byProject = new Map(projects.map(project => [project.id, project]))
   const byId = new Map(threads.map(thread => [thread.id, thread]))
-  const keep = new Set(kept)
   // A thread that asks the user something, and every thread above it in its delegation, so Needs you shows it where it was.
+  const asking = new Set<string>()
   for (const thread of threads) {
     if (!thread.requests.length) continue
     let at: AgentThread | undefined = thread
-    while (at && !keep.has(at.id)) { keep.add(at.id); at = at.delegatedBy ? byId.get(at.delegatedBy) : undefined }
+    while (at && !asking.has(at.id)) { asking.add(at.id); at = at.delegatedBy ? byId.get(at.delegatedBy) : undefined }
   }
   const held = new Set<string>()
   for (const thread of threads) {
-    if (keep.has(thread.id)) continue
+    if (asking.has(thread.id) || kept(thread.id)) continue
     if (settledSince(thread, byProject.get(thread.projectId)) !== null) held.add(thread.id)
   }
   return held

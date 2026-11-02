@@ -26,6 +26,11 @@ describe('usable models', () => {
     expect(usableModels(models, ['named'])).toEqual(first)
   })
 
+  it('keeps the base model a 1M-context variant resolves to, which the catalog lists only as its base', () => {
+    const models = [model('ready', true), model('opus', false), model('sonnet', false)]
+    expect(usableModels(models, ['opus[1m]']).map(item => item.id)).toEqual(['ready', 'opus'])
+  })
+
   it('hands back the catalog itself when every model is ready', () => {
     const models = [model('a', true), model('b', true)]
     expect(usableModels(models, [])).toBe(models)

@@ -20,19 +20,24 @@ describe('settled threads held back from a phone', () => {
     const threads = [thread('open'), thread('just-now', { settledAt: new Date(NOW - 1000).toISOString() }), thread('old', { settledAt: ago(30) }),
       thread('archived', { archivedAt: ago(30) }), thread('workspace', { workspaceSettledAt: ago(9) }),
       thread('in-shelved-project', { projectId: 'shelved' })]
-    expect([...heldBackSettled(threads, projects, new Set())].sort()).toEqual(['archived', 'in-shelved-project', 'just-now', 'old', 'workspace'])
+    expect([...heldBackSettled(threads, projects, () => false)].sort()).toEqual(['archived', 'in-shelved-project', 'just-now', 'old', 'workspace'])
   })
 
   it('keeps a settled thread made active again, and one settled with no time named is held back', () => {
     const threads = [thread('reopened', { settledAt: ago(30), settledOverride: 'active' }), thread('untimed', { settledOverride: 'settled' })]
-    expect([...heldBackSettled(threads, projects, new Set())]).toEqual(['untimed'])
+    expect([...heldBackSettled(threads, projects, () => false)]).toEqual(['untimed'])
   })
 
   it('keeps a settled thread that asks the user something, every thread it was delegated from, and one the phone keeps', () => {
     const threads = [thread('top', { settledAt: ago(30) }), thread('middle', { settledAt: ago(30), delegatedBy: 'top' }),
       thread('asks', { settledAt: ago(30), delegatedBy: 'middle', requests: asking }), thread('open-here', { settledAt: ago(30) }),
       thread('quiet', { settledAt: ago(30) })]
-    expect([...heldBackSettled(threads, projects, new Set(['open-here']))]).toEqual(['quiet'])
+    expect([...heldBackSettled(threads, projects, id => id === 'open-here')]).toEqual(['quiet'])
+  })
+
+  it('keeps the settled threads one the phone already lists was delegated from, once it starts asking', () => {
+    const threads = [thread('top', { settledAt: ago(30) }), thread('asks', { delegatedBy: 'top', requests: asking })]
+    expect([...heldBackSettled(threads, projects, id => id === 'asks')]).toEqual([])
   })
 
   it('reads held-back threads newest settled first, a page at a time, and finds them by title or project', () => {

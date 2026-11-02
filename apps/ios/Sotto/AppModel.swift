@@ -2705,6 +2705,9 @@ struct RailAsk: Equatable {
             guard let endpoint = saved.endpoint else { throw ClientError.invalidHost }
             let greeting = try await connection(hostID).connect(endpoint: endpoint, pairing: saved.pairing)
             guard generations[hostID] == current else { return }
+            // The thread open here, as this iPhone last held it. One settled while the last connection lasted stayed
+            // in that list but is left out of the new one, and it stays open as one read from the shelf does.
+            let openHere = selected?.hostID == hostID ? selected.flatMap(thread) : nil
             try applyShell(greeting.value.shell, from: hostID, sequence: greeting.sequence, reconcileAnswers: false)
             update(hostID) {
                 $0.status = .online
@@ -2712,8 +2715,11 @@ struct RailAsk: Equatable {
                 if $0.shell?.clientCapabilities == nil { $0.mayAnswer = greeting.value.capabilities.mayAnswer }
                 $0.features = greeting.value.features ?? []
             }
-            // The shelf reads older settled threads afresh on a new connection, keeping one open here so it stays open.
-            olderSettled[hostID] = OlderSettled(keeping: selected?.hostID == hostID ? selected.flatMap(readSettled) : nil)
+            // The shelf reads settled threads afresh on a new connection, keeping a settled one open here so it stays open.
+            let listed = Set(greeting.value.shell.host.threads.map(\.id))
+            olderSettled[hostID] = OlderSettled(keeping: openHere.flatMap { (kept: ThreadSummary) -> ThreadSummary? in
+                let project = greeting.value.shell.host.projects.first { $0.id == kept.projectId }
+                return !listed.contains(kept.id) && offersOlderSettled(hostID) && ThreadGroups.isSettled(kept, project: project) ? kept : nil })
             // Hello's shell was read before its features said whether this computer runs Watcher.
             if let page = greeting.value.shell.watcher { applyWatcher(page, from: hostID, proof: proof); helloCarriedWatcher = true }
             wasOnline.insert(hostID)

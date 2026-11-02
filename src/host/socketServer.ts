@@ -624,9 +624,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     yield page?.current?.modelId
     yield page?.nextTurnOptions?.modelId
   }
-  /** The threads a phone that accepted `settled-threads-on-request` is not sent with its list, by ID. */
+  /**
+   * The threads a phone that accepted `settled-threads-on-request` is not sent with its list, by ID. It asks the phone's
+   * own sets about each thread rather than copying them, since what it has listed only grows while it stays connected.
+   */
   const heldBack = (peer: Peer, state: AgentState): Set<string> => heldBackSettled(state.host.threads, state.host.projects,
-    new Set([...peer.observed, ...peer.selectedThreadId ? [peer.selectedThreadId] : [], ...peer.listed ?? []]))
+    id => peer.observed.has(id) || id === peer.selectedThreadId || (peer.listed?.has(id) ?? false))
   /** `state` with its settled threads left out of its list, and how many were left out. What it lists stays listed. */
   const withoutHeldBack = <State extends AgentState>(peer: Peer, state: State): State & { settledHeldBack: number } => {
     const held = heldBack(peer, state), listed = peer.listed ??= new Set()
