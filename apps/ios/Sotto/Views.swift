@@ -129,9 +129,11 @@ struct MainTabs: View {
         // A thumb's drag moves the sidebar: upright it follows the thumb in and out from anywhere on a page; sideways a
         // drag right brings it beside the page and a drag left puts it away (Zach's picks, November 1, 2026).
         .background {
-            SidebarSwipe(enabled: opened && sidebarAvailable, follows: upright, shown: upright ? drawer : sidebarShown,
-                         pull: pull, settle: { settleSidebar($0, upright: upright) })
-                .accessibilityHidden(true)
+            if opened {
+                SidebarSwipe(enabled: sidebarAvailable, follows: upright, shown: upright ? drawer : sidebarShown,
+                             pull: pull, settle: { settleSidebar($0, upright: upright) })
+                    .accessibilityHidden(true)
+            }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: sidebar)
         // Folding or unfolding the Duo reshapes the page into its new place rather than jumping there; with Reduce
@@ -168,8 +170,9 @@ struct MainTabs: View {
         .onChange(of: threadPath) { _, path in if case .folded = duo { foldedOnList = path.isEmpty && tab == .threads } }
         .onChange(of: tab) { _, chosen in if case .folded = duo { foldedOnList = threadPath.isEmpty && chosen == .threads } }
         // The page's ground runs on under the Duo's strip and rail, so the rail stands on the page's own ground and the
-        // page reaches every edge of the screen, with no band at the top (Zach, November 1, 2026).
-        .background { PageGround().ignoresSafeArea().accessibilityHidden(true) }
+        // page reaches every edge of the screen, with no band at the top (Zach, November 1, 2026). Under Glass the
+        // backdrop reaches every edge on any iPhone. Any other iPhone has its pages' own ground and no second one.
+        .background { if glass != nil || duo != .none { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
         .environment(\.tabsCovered, $covered)
         // The bar goes under the keyboard, as the system's did; a hardware keyboard's slim bar leaves it.
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
