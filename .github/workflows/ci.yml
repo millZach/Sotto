@@ -456,21 +456,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  ios:
-    name: Native iOS client (macOS)
+  # One job per phone, at the same time, so the slower phone sets the wait rather than the two added together, and a
+  # journey failing on one phone no longer leaves the other unrun. Each job builds for itself: the build is two to four
+  # minutes, and a shared one would still run ahead of both phones and hand a derived data folder between machines.
+  # Two named jobs rather than a matrix: a matrix job's result can read success when a leg was cancelled before a runner
+  # took it (https://github.com/orgs/community/discussions/211624), and the result below reads each phone's own.
+  ios-small:
+    name: Native iOS journeys on the small iPhone (macOS)
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    # Simulator journeys on two phones, with the package tests and two builds before them. Nineteen journeys took 67
-    # minutes on a push to main and one run reached 75; the Watcher tab added six, and twenty-five took 106 minutes on a
-    # push to main. Watcher's permissions, own changes and watching added three.
-    timeout-minutes: 140
+    # The package tests, two builds and one phone's journeys. Across five runs on November 2, 2026 the slower phone's
+    # journeys took up to 64 minutes and the rest of the job about 5.
+    timeout-minutes: 90
     env:
+      PHONE: small
       # Older than the TestFlight workflow's Xcode 27.1: the journeys run on iPhone SE (3rd generation) and iPhone 16
       # Pro Max, which the iOS 27.1 simulator no longer offers. Its Swift 6 compiler builds in Swift 5 mode, above
       # Package.swift's 5.9 tools and the iOS 17 minimum.
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-    steps:
+    steps: &ios-journey-steps
       - name: Check out the repository
         uses: actions/checkout@v4
       - name: Record native toolchain
@@ -479,17 +484,50 @@ jobs:
           swift --version
       - name: Test native protocol and build the unsigned simulator app
         run: sh apps/ios/Scripts/verify.sh
-      - name: Exercise Focus on small and large iPhones
-        run: sh apps/ios/Scripts/verify-ui.sh
+      - name: Exercise Focus on the ${{ env.PHONE }} iPhone
+        run: sh apps/ios/Scripts/verify-ui.sh "$PHONE"
       - name: Retain native journeys and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-focus-journeys
+          name: ios-focus-journeys-${{ env.PHONE }}
           path: apps/ios/.build-ui/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
+
+  ios-large:
+    name: Native iOS journeys on the large iPhone (macOS)
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      PHONE: large
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps: *ios-journey-steps
+
+  # The one result under the iOS job's name, so whatever reads that name does not need to know there are two phones.
+  # always() so a phone that was cancelled, or timed out, fails this rather than skipping it. It skips, as the job did
+  # before the split, when Changed areas did not ask for the journeys. This is not a required check.
+  ios:
+    name: Native iOS client (macOS)
+    needs: [changes, ios-small, ios-large]
+    if: always() && needs.changes.outputs.ios == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check both phones' journeys
+        shell: bash
+        env:
+          SMALL: ${{ needs.ios-small.result }}
+          LARGE: ${{ needs.ios-large.result }}
+        run: |
+          if [ "$SMALL" != "success" ] || [ "$LARGE" != "success" ]; then
+            echo "The iPhone journeys did not pass: the small phone ended $SMALL and the large phone ended $LARGE. Each phone's own artifact keeps its evidence."
+            exit 1
+          fi
+          echo "The iPhone journeys passed on both phones."
 
   # The Mac app's Core ML speech helper (built on FluidAudio) builds on Apple silicon and answers protocol 2.
   coreml-asr:
