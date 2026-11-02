@@ -1,0 +1,335 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Question: what should the Settings > Application switch and the one-time notice for product
+     events look like, and what exactly is sent? Three notices and three switches on one page, ?view= and ?variant=. Nothing is sent. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype: product events</title>
+<style>
+@font-face { font-family: Figtree; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'), url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root[data-theme=dark] { color-scheme: dark;
+  --tt-canvas: oklch(.115 .008 265); --tt-surface: oklch(.145 .008 265); --tt-card: oklch(.185 .008 265); --tt-overlay: oklch(.215 .008 265);
+  --tt-sidebar: oklch(.235 .003 265); --tt-sidebar-active: oklch(.32 .025 190); --tt-control: oklch(.295 .003 265);
+  --tt-text: oklch(.985 .005 280); --tt-text-muted: oklch(.76 .014 265); --tt-hairline: oklch(.305 .02 265); --tt-border: oklch(.375 .024 265);
+  --tt-accent: oklch(.714 .104 183); --tt-accent-text: oklch(.16 .012 190); --tt-accent-surface: oklch(.32 .05 185); --tt-accent-ink: oklch(.83 .08 183);
+  --tt-primary: oklch(.985 .005 280); --tt-primary-text: oklch(.16 .012 265); --tt-amber: oklch(.82 .13 80); --tt-scrim: oklch(0 0 0 / .6); }
+:root[data-theme=light] { color-scheme: light;
+  --tt-canvas: oklch(.978 .004 85); --tt-surface: oklch(.99 .003 85); --tt-card: oklch(.955 .006 85); --tt-overlay: oklch(.945 .007 85);
+  --tt-sidebar: oklch(.945 .007 85); --tt-sidebar-active: oklch(.88 .03 186); --tt-control: oklch(.93 .01 85);
+  --tt-text: oklch(.235 .014 75); --tt-text-muted: oklch(.47 .014 75); --tt-hairline: oklch(.86 .012 80); --tt-border: oklch(.8 .016 80);
+  --tt-accent: oklch(.53 .095 186); --tt-accent-text: oklch(.99 .003 85); --tt-accent-surface: oklch(.9 .03 186); --tt-accent-ink: oklch(.42 .09 186);
+  --tt-primary: oklch(.235 .014 75); --tt-primary-text: oklch(.99 .003 85); --tt-amber: oklch(.48 .11 70); --tt-scrim: oklch(.2 .01 75 / .35); }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font: 13px/1.5 Figtree, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+a { color: var(--tt-accent-ink); }
+code, .mono { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 12px; }
+:focus-visible { outline: 3px solid var(--tt-accent); outline-offset: 2px; }
+.page { max-width: 1120px; margin: 0 auto; padding: 16px 16px 110px; }
+.proto-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin-bottom: 12px; }
+.proto-head h1 { font-size: 17px; font-weight: 600; margin: 0; }
+.proto-head p { margin: 0; color: var(--tt-text-muted); }
+.tabs { display: flex; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--tt-hairline); overflow-x: auto; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 9px 12px; color: var(--tt-text-muted); font-weight: 500; white-space: nowrap; cursor: pointer; min-height: 40px; }
+.tabs button[aria-selected=true] { color: var(--tt-text); border-color: var(--tt-accent); }
+
+/* The window */
+.win { position: relative; display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 620px; border: 1px solid var(--tt-hairline); border-radius: 10px; overflow: hidden; background: var(--tt-canvas); }
+.rail { background: var(--tt-sidebar); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+.rail h2 { font-size: 20px; font-weight: 500; margin: 2px 8px 12px; letter-spacing: -.3px; }
+.rail span { padding: 7px 10px; border-radius: 8px; color: var(--tt-text-muted); }
+.rail span.on { background: var(--tt-sidebar-active); color: var(--tt-text); }
+.rail hr { width: 100%; border: 0; border-top: 1px solid var(--tt-hairline); margin: 6px 0; }
+.room { min-width: 0; position: relative; padding: 22px 28px 40px; }
+.room .strip { position: absolute; top: 0; left: 0; right: 0; height: 30px; }
+.foot { position: absolute; right: 12px; bottom: 8px; font-size: 12px; color: var(--tt-text-muted); }
+
+/* The Dictate room behind a notice */
+.ready { display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 1px solid var(--tt-hairline); border-radius: 14px; padding: 14px 16px; margin-top: 10px; }
+.ready b { font-size: 15px; font-weight: 600; } .ready small { display: block; color: var(--tt-text-muted); font-size: 12px; }
+.fake-primary { background: var(--tt-primary); color: var(--tt-primary-text); border-radius: 6px; padding: 7px 14px; font-weight: 500; white-space: nowrap; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 20px 0; }
+.stats b { display: block; font-size: 24px; font-weight: 400; } .stats small { color: var(--tt-text-muted); font-size: 12px; }
+.entry { display: grid; grid-template-columns: 70px 1fr; gap: 8px; padding: 12px 0; border-top: 1px solid var(--tt-hairline); }
+.entry time { color: var(--tt-text-muted); font-size: 12px; } .entry p { margin: 0; font-size: 15px; }
+
+/* Controls */
+.btn { border: 1px solid var(--tt-border); background: transparent; border-radius: 6px; padding: 6px 12px; min-height: 32px; cursor: pointer; font-weight: 500; }
+.btn:hover { background: var(--tt-control); }
+.btn.primary { background: var(--tt-primary); border-color: var(--tt-primary); color: var(--tt-primary-text); }
+.link { background: none; border: 0; padding: 0; color: var(--tt-accent-ink); text-decoration: underline; cursor: pointer; font-weight: 500; }
+
+/* Notices */
+.n-words { margin: 0 0 8px; }
+.n-never { margin: 0 0 10px; color: var(--tt-text-muted); }
+.n-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.notice-a { position: absolute; right: 14px; bottom: 34px; width: min(372px, calc(100% - 28px)); background: var(--tt-overlay); border: 1px solid var(--tt-border); border-radius: 14px; padding: 14px 16px; box-shadow: 0 12px 34px oklch(0 0 0 / .35); z-index: 3; }
+.notice-a h3, .notice-c h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.notice-b { position: relative; margin: 14px -28px 14px; padding: 10px 28px; background: var(--tt-accent-surface); border-block: 1px solid var(--tt-hairline); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 18px; align-items: center; }
+.notice-b p { margin: 0; }
+.notice-b .n-actions { flex-wrap: nowrap; }
+.scrim { position: absolute; inset: 0; background: var(--tt-scrim); display: grid; place-items: center; padding: 16px; z-index: 4; }
+.notice-c { width: min(520px, 100%); background: var(--tt-overlay); border: 1px solid var(--tt-border); border-radius: 14px; padding: 20px 22px; }
+.notice-c h3 { font-size: 16px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0 14px; }
+.two h4 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+.two ul { margin: 0; padding-left: 16px; color: var(--tt-text-muted); }
+.settled { position: absolute; right: 14px; bottom: 34px; background: var(--tt-overlay); border: 1px solid var(--tt-border); border-radius: 8px; padding: 8px 12px; z-index: 3; }
+
+/* Settings page */
+.sec-head h2 { margin: 0 0 6px; font-size: 28px; font-weight: 500; letter-spacing: -1px; }
+.sec-head p { margin: 0 0 14px; color: var(--tt-text-muted); font-size: 16px; }
+.group { margin: 22px 0 0; }
+.group h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--tt-text); }
+.rows { background: var(--tt-card); border-radius: 14px; padding: 0 18px; }
+.row { display: flex; justify-content: space-between; gap: 24px; align-items: center; padding: 14px 0; border-top: 1px solid var(--tt-hairline); }
+.row:first-child { border-top: 0; }
+.row > div { flex: 1; min-width: 0; }
+.row strong { display: block; font-size: 15px; font-weight: 500; }
+.row p { margin: 2px 0 0; color: var(--tt-text-muted); max-width: 62ch; }
+.row.block { display: block; }
+.switch { flex: none; width: 36px; height: 20px; border-radius: 6px; border: 1px solid var(--tt-border); background: var(--tt-control); position: relative; cursor: pointer; padding: 0; }
+.switch i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 4px; background: var(--tt-text-muted); transition: transform 120ms ease; }
+.switch[aria-checked=true] { background: var(--tt-accent); border-color: var(--tt-accent); }
+.switch[aria-checked=true] i { transform: translateX(16px); background: var(--tt-accent-text); }
+.switch:disabled { opacity: .55; cursor: not-allowed; }
+.locked { color: var(--tt-amber); margin-top: 4px !important; }
+.mini-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.mini-table th, .mini-table td { text-align: left; vertical-align: top; padding: 7px 8px 7px 0; border-top: 1px solid var(--tt-hairline); font-weight: 400; }
+.mini-table th { white-space: nowrap; }
+.payload { margin: 10px 0 0; padding: 10px 12px; background: var(--tt-canvas); border: 1px solid var(--tt-hairline); border-radius: 8px; overflow-x: auto; white-space: pre; max-height: 300px; overflow-y: auto; }
+.dialog { width: min(640px, 100%); max-height: 88%; overflow-y: auto; background: var(--tt-overlay); border: 1px solid var(--tt-border); border-radius: 14px; padding: 18px 20px; }
+.dialog h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.dialog-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+/* State readout */
+.state { margin-top: 14px; border: 1px dashed var(--tt-border); border-radius: 10px; padding: 12px 14px; }
+.state h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.state dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px 16px; margin: 0 0 10px; }
+.state dt { color: var(--tt-text-muted); font-size: 12px; } .state dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.state .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* What's sent */
+.doc { max-width: 860px; }
+.doc h2 { font-size: 22px; font-weight: 500; margin: 8px 0 8px; letter-spacing: -.4px; }
+.doc h3 { font-size: 15px; font-weight: 600; margin: 24px 0 6px; }
+.doc p, .doc li { max-width: 72ch; }
+.ev { border-top: 1px solid var(--tt-hairline); padding: 12px 0; }
+.ev header { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.ev header b { font: 600 13px ui-monospace, Consolas, monospace; }
+.ev header span { color: var(--tt-text-muted); }
+.ev details { margin-top: 4px; } .ev summary { cursor: pointer; color: var(--tt-accent-ink); font-weight: 500; min-height: 28px; }
+.never { columns: 2; column-gap: 28px; padding-left: 18px; color: var(--tt-text); }
+.change { width: 100%; border-collapse: collapse; }
+.change th, .change td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-top: 1px solid var(--tt-hairline); font-weight: 400; }
+.change th { color: var(--tt-text-muted); font-size: 12px; }
+
+/* Switcher: not part of the design */
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; background: oklch(.98 0 0); color: oklch(.2 0 0); border-radius: 999px; padding: 5px 7px; box-shadow: 0 8px 24px oklch(0 0 0 / .45); z-index: 9; max-width: calc(100vw - 16px); }
+.bar button { border: 0; background: oklch(.9 0 0); color: oklch(.2 0 0); border-radius: 999px; min-width: 36px; height: 36px; cursor: pointer; font-weight: 600; }
+.bar output { padding: 0 8px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+@media (max-width: 760px) {
+  .win { grid-template-columns: minmax(0, 1fr); min-height: 560px; }
+  .rail { display: none; }
+  .room { padding: 16px 16px 44px; }
+  .notice-b { margin-inline: -16px; padding-inline: 16px; grid-template-columns: minmax(0, 1fr); }
+  .notice-b .n-actions { flex-wrap: wrap; }
+  .two { grid-template-columns: minmax(0, 1fr); }
+  .never { columns: 1; }
+  .row { gap: 14px; }
+  .sec-head h2 { font-size: 24px; }
+  .btn { min-height: 40px; } .link { min-height: 32px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="proto-head"><h1>Product events: prototype</h1><p>Throwaway. Nothing here is sent anywhere. Try the buttons; the box under the window shows what would happen.</p></div>
+  <div class="tabs" role="tablist" aria-label="What to look at" id="tabs"></div>
+  <main id="view"></main>
+</div>
+<div class="bar" id="bar" role="group" aria-label="Prototype variant switcher"></div>
+<script>
+const HOST = 'events.your-domain.example'
+const WORDS = {
+  title: 'Sotto now sends product events',
+  body: 'To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts.',
+  ids: 'Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person.',
+  never: 'It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys.',
+  row: 'Sends Sotto’s developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts. Events carry a random ID for this install and hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person. It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys. Off stops this computer and its hosts, and drops anything waiting to go.',
+}
+const COMMON = [
+  ['event, uuid, timestamp', 'The event’s name, a random ID for retries, and when it happened'],
+  ['distinct_id', 'Hash of a random ID made for this install. Made only while the switch is on; turning off deletes it'],
+  ['appVersion', '0.1.43'], ['channel', 'stable or owl'], ['surface', 'desktop or host'], ['platform, arch', 'windows, macos or linux; x64 or arm64'],
+  ['$process_person_profile, $geoip_disable', 'false and true: no PostHog person profile and no location lookup'],
+]
+const EVENTS = [
+  { name: 'install.owner_observed', when: 'Once per start, for each account signed in', why: 'Link one person’s computers.',
+    props: { ownerSource: 'claude', ownerId: 'sha256 of the account ID, 64 hex characters' } , sample: { ownerSource: 'claude', ownerId: '9f2c41d7e0a8b3f6c5d4e1a2b7c8d9e06f1a2b3c4d5e6f708192a3b4c5d6e7f8' } },
+  { name: 'app.started', when: 'Once per start', why: 'Count active installs by version and system.',
+    sample: { pairedHosts: 1, dictationOn: true } },
+  { name: 'thread.started', when: 'A new thread starts', why: 'See which providers and ways of starting get used.',
+    sample: { provider: 'claude', model: 'claude-opus-5-5', effort: 'high', permissionMode: 'ask', inWorktree: true, startedBy: 'user' } },
+  { name: 'turn.completed', when: 'A turn ends', why: 'See reliability, speed and token use by provider and model.',
+    sample: { provider: 'codex', model: 'gpt-6.1-sol', effort: 'high', speed: 'standard', permissionMode: 'ask', startedBy: 'user', result: 'completed', durationMs: 48211, inputTokens: 18204, cachedInputTokens: 15360, outputTokens: 912, reasoningTokens: 240, childInputTokens: 0, childOutputTokens: 0 } },
+  { name: 'permission.answered', when: 'You answer a permission request', why: 'See how often threads stop to ask. Your answer stays yours; this only counts it.',
+    sample: { provider: 'claude', kind: 'command', answer: 'allow', waitedMs: 5230 } },
+  { name: 'dictation.finished', when: 'A dictation finishes', why: 'See how dictation is used and how long it runs.',
+    sample: { seconds: 14, words: 38, speechModel: 'parakeet-v3', cleanup: false } },
+  { name: 'feature.used', when: 'You start a feature, from a fixed list', why: 'See what gets used and what to fix or remove.',
+    sample: { feature: 'council' }, note: 'List: council, watcher, swarm, delegation, browser, test-iphone, terminal, files, changes, usage, add-host, add-phone, 3d-model. A press on anything else sends nothing.' },
+]
+const NEVER = ['Prompts, replies and dictated words','Audio','File contents, file names and paths','Project, repo and branch names','Thread IDs and titles, provider session IDs','Tool inputs and outputs','Raw provider events','Child-agent output (only their token counts)','Keys, tokens, emails, user names, machine names','Names of apps you dictate into','Model names not on a provider’s public list, such as your own model server’s','Error messages']
+const CHANGES = [
+  ['README, Privacy and cost', '“collects nothing about you: no analytics, no crash reports”', 'Says what is sent, names the new host, keeps “no crash reports”'],
+  ['First-run setup', '“No Sotto account, no telemetry”', '“No Sotto account. Product events are on until you turn them off in Settings”'],
+  ['Help', '“No account with Sotto and no telemetry.”', '“No account with Sotto. Product events are on until you turn them off.”'],
+  ['AGENTS.md, ADR-0017, guide', '“No analytics”, “Sotto remains telemetry-free”', 'New ADR that amends them, written before any code'],
+]
+const NOTICES = { A: 'Corner card', B: 'Line under the strip', C: 'Dialog' }
+const SWITCHES = { A: 'One row, events in a dialog', B: 'Row with the list on the page', C: 'Row with what this computer sent' }
+const params = new URLSearchParams(location.search)
+const S = { view: params.get('view') || 'notice', variant: params.get('variant') || 'A', theme: params.get('theme') || 'dark',
+  on: true, envOff: false, noticeOpen: true, noticeAnswer: null, sending: false, id: null, queue: 0, sent: 0, last: null, dialog: false, listOpen: false, ownerSent: false }
+const VIEWS = [['notice', 'Notice'], ['settings', 'Settings'], ['sent', 'What is sent']]
+const $ = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild }
+const fakeId = () => Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('')
+const active = () => S.on && !S.envOff
+
+function answered() { Object.assign(S, { on: true, envOff: false, noticeOpen: false, noticeAnswer: 'keep', sending: true, id: fakeId(), queue: 2, sent: 0, last: EVENTS[3], dialog: false }) }
+function fresh() { Object.assign(S, { on: true, envOff: false, noticeOpen: true, noticeAnswer: null, sending: false, id: null, queue: 0, sent: 0, last: null, dialog: false }) }
+function sync() { const q = new URLSearchParams({ view: S.view, variant: S.variant, theme: S.theme }); history.replaceState(null, '', '?' + q); document.documentElement.dataset.theme = S.theme }
+function payload(ev) { return JSON.stringify({ event: ev.name, uuid: '0194f3a2-7c1e-7d10-9a33-4be1c0d2a7f1', timestamp: '2026-11-02T18:42:07.113Z', distinct_id: S.id || '<hash of install ID>', properties: { ...ev.sample, appVersion: '0.1.43', channel: 'stable', surface: 'desktop', platform: 'windows', arch: 'x64', $process_person_profile: false, $geoip_disable: true } }, null, 2) }
+function record(evName) {
+  if (!active() || !S.sending) return
+  S.queue += 1; S.last = EVENTS.find(e => e.name === evName); render()
+}
+function answer(a) {
+  S.noticeOpen = false; S.noticeAnswer = a
+  if (a === 'off') { S.on = false; S.sending = false; S.id = null; S.queue = 0 }
+  else if (active()) { S.sending = true; if (!S.id) S.id = fakeId(); S.queue += 2 }
+  render()
+}
+function setOn(v) {
+  S.on = v
+  if (!v) { S.sending = false; S.id = null; S.queue = 0; S.last = null }
+  else { S.sending = !S.noticeOpen; if (S.sending) { S.id = fakeId(); S.queue += 2 } }
+  render()
+}
+
+function stateBox() {
+  return `<section class="state" aria-label="What Sotto would be doing"><h2>What Sotto would be doing</h2><dl>
+    <div><dt>Switch</dt><dd>${S.envOff ? 'Off, by SOTTO_TELEMETRY_ENABLED=false' : S.on ? 'On' : 'Off'}</dd></div>
+    <div><dt>Notice</dt><dd>${S.noticeOpen && !S.envOff ? 'Showing, waiting for a press' : S.envOff ? 'Not shown: the environment switch is off' : S.noticeAnswer === 'off' ? 'Answered: turned off' : S.noticeAnswer === 'later' ? 'Put off by Escape: shows again next start' : S.noticeAnswer ? 'Answered: left on' : 'Not showing'}</dd></div>
+    <div><dt>Sending</dt><dd>${S.sending && active() ? 'Yes, in batches every 30 seconds' : (S.noticeOpen || S.noticeAnswer === 'later') && active() ? 'Not until the notice is pressed' : 'No'}</dd></div>
+    <div><dt>Install ID</dt><dd class="mono">${S.id ? S.id.slice(0, 16) + '…' : 'None on disk'}</dd></div>
+    <div><dt>Waiting to go</dt><dd>${S.queue}</dd></div><div><dt>Sent to ${HOST}</dt><dd>${S.sent}</dd></div></dl>
+    <div class="acts"><button class="btn" data-a="turn">Finish a turn</button><button class="btn" data-a="flush">Send the batch</button><button class="btn" data-a="env">${S.envOff ? 'Clear' : 'Set'} the environment switch</button><button class="btn" data-a="reset">Start over</button></div></section>`
+}
+function noticeBody(cls) { return `<p class="n-words">${WORDS.body}</p><p class="n-words">${WORDS.ids}</p><p class="n-never">${WORDS.never}</p>` }
+function noticeA() { return `<aside class="notice-a" role="status" aria-labelledby="na"><h3 id="na">${WORDS.title}</h3>${noticeBody()}<div class="n-actions"><button class="btn primary" data-a="keep">Got it</button><button class="btn" data-a="off">Turn off</button><button class="link" data-a="events">See every event</button></div></aside>` }
+function noticeB() { return `<div class="notice-b" role="status"><p><b>${WORDS.title}.</b> Which features you use, which provider and public model ran, how turns ended and token counts, with a random install ID and hashed Claude and OpenAI account IDs. Hashed is not anonymous: they link your computers to one person. Never your words, code, files, paths, repo or branch names, thread IDs or keys.</p><div class="n-actions"><button class="btn primary" data-a="keep">Got it</button><button class="btn" data-a="off">Turn off</button><button class="link" data-a="events">See every event</button></div></div>` }
+function noticeC() { return `<div class="scrim"><div class="notice-c" role="dialog" aria-modal="true" aria-labelledby="nc"><h3 id="nc">${WORDS.title}</h3><p class="n-words">${WORDS.ids}</p><div class="two"><div><h4>What goes</h4><ul><li>Features you use</li><li>Provider and public model</li><li>How each turn ended, how long, token counts</li><li>Dictation length and word count</li><li>Version and system</li></ul></div><div><h4>What never goes</h4><ul><li>Your words or audio</li><li>Code and file contents</li><li>File names and paths</li><li>Repo and branch names</li><li>Thread IDs and keys</li></ul></div></div><div class="n-actions"><button class="btn primary" data-a="keep">Keep it on</button><button class="btn" data-a="off">Turn off</button><button class="link" data-a="events">See every event</button></div></div></div>` }
+function dictateRoom(notice) {
+  return `<div class="win" id="win"><nav class="rail" aria-hidden="true"><h2>Sotto</h2><span class="on">Dictate</span><span>Watcher</span><span>Threads</span><hr><span>Usage</span><span>Memory</span><span>Settings</span><span>Help</span></nav>
+    <div class="room"><div class="strip"></div>${S.variant === 'B' && S.noticeOpen && !S.envOff ? notice : ''}
+      <div class="ready"><div><b>Ready when you are.</b><small>or press Ctrl Shift Space in any app</small></div><span class="fake-primary">Start dictation</span></div>
+      <div class="stats"><div><b>63</b><small>words in 3 dictations</small></div><div><b>128</b><small>wpm, usual 129</small></div><div><b>15 min</b><small>saved this month</small></div></div>
+      <div class="entry"><time>11:52 am</time><p>Run the typecheck and the unit suite, and if they pass, open a pull request.</p></div>
+      <div class="entry"><time>10:14 am</time><p>Attached are the updated loop drawings for the boiler feed pumps.</p></div>
+      <div class="entry"><time>9:03 am</time><p>Running about ten minutes late, still at the switchgear.</p></div>
+      ${S.variant === 'A' && S.noticeOpen && !S.envOff ? notice : ''}
+      ${!S.noticeOpen && S.noticeAnswer === 'off' ? `<div class="settled" role="status">Product events are off. Nothing was sent.</div>` : ''}
+      <span class="foot">Parakeet v3 on this computer</span></div>
+    ${S.variant === 'C' && S.noticeOpen && !S.envOff ? notice : ''}${eventDialog()}</div>`
+}
+function toggleRow(extra = '') {
+  const locked = S.envOff
+  return `<div class="row" data-setting="product-events"><div><strong id="pe-label">Send product events</strong><p id="pe-desc">${WORDS.row}</p>${locked ? `<p class="locked">Off on this computer because SOTTO_TELEMETRY_ENABLED is set to false.</p>` : ''}${extra}</div><button class="switch" role="switch" aria-labelledby="pe-label" aria-describedby="pe-desc" aria-checked="${active()}" ${locked ? 'disabled' : ''} data-a="toggle"><i></i></button></div>`
+}
+function eventRows() { return EVENTS.map(e => `<tr><th scope="row"><code>${e.name}</code></th><td>${e.when}. ${e.why}</td></tr>`).join('') }
+function settingsPage() {
+  const v = S.variant
+  let group
+  if (v === 'A') group = `<div class="rows">${toggleRow(`<p><button class="link" data-a="events">See every event</button></p>`)}</div>`
+  if (v === 'B') group = `<div class="rows">${toggleRow()}<div class="row block"><strong>What each event says</strong><table class="mini-table"><tbody>${eventRows()}</tbody></table></div></div>`
+  if (v === 'C') {
+    const shown = S.last || (S.sent || S.queue ? EVENTS[3] : null)
+    group = `<div class="rows">${toggleRow(`<p><button class="link" data-a="events">See every event</button></p>`)}<div class="row block"><strong>The last event from this computer</strong>${active() && shown ? `<p>Exactly what went, or is about to. Sotto keeps only this one, in memory.</p><pre class="payload mono" tabindex="0">${payload(shown)}</pre>` : `<p>${active() ? 'None since Sotto started.' : 'None. Product events are off.'}</p>`}</div></div>`
+  }
+  return `<div class="win" id="win"><nav class="rail" aria-hidden="true"><h2>Settings</h2><span>Dictation</span><span>Transcription</span><span>Cleanup</span><hr><span>Providers</span><span>Hosts</span><span>Threads</span><hr><span>Appearance</span><span class="on">Application</span></nav>
+    <div class="room"><div class="strip"></div><div class="sec-head"><h2>Application</h2><p>Startup, history, product events, updates &amp; reset</p></div>
+    <section class="group"><h3>When your computer starts</h3><div class="rows"><div class="row"><div><strong>Launch when Windows starts</strong></div><span class="switch" aria-hidden="true"><i></i></span></div><div class="row"><div><strong>Start minimized</strong><p>Open directly in the tray when Sotto launches.</p></div><span class="switch" aria-hidden="true"><i></i></span></div></div></section>
+    <section class="group"><h3>History</h3><div class="rows"><div class="row"><div><strong>Keep local history</strong><p>Saves transcripts on this computer to search and reuse.</p></div><span class="switch" aria-checked="true" aria-hidden="true" style="background:var(--tt-accent);border-color:var(--tt-accent)"><i style="transform:translateX(16px);background:var(--tt-accent-text)"></i></span></div></div></section>
+    <section class="group" id="settings-product-events"><h3>Product events</h3>${group}</section>
+    <section class="group"><h3>Updates</h3><div class="rows"><div class="row"><div><strong>Sotto 0.1.43</strong><p>You have the newest version.</p></div><button class="btn" tabindex="-1">Check now</button></div></div></section>
+    <span class="foot">Changes save as you make them.</span></div>${eventDialog()}</div>`
+}
+function eventDialog() {
+  if (!S.dialog) return ''
+  return `<div class="scrim" data-a="close-bg"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="ed"><h3 id="ed">Every product event</h3><p>Fields are checked against a fixed list for each event. Anything not on the list is dropped before it can leave.</p><table class="mini-table"><tbody>${eventRows()}</tbody></table><div class="dialog-foot"><button class="btn primary" data-a="close">Close</button></div></div></div>`
+}
+function sentPage() {
+  return `<div class="doc"><h2>Product events: what would be sent</h2>
+    <p>This is the docs page and the proposed list. Every field goes through a fixed list for its event, and a test fails if a forbidden field gets through.</p>
+    <h3>Where it goes</h3><p>Sotto sends batches to its own endpoint, <code>${HOST}</code>, a Cloudflare Worker. The Worker keeps a copy for 90 days and forwards events to PostHog. Your IP address reaches Cloudflare with each request. The Worker does not store it or pass it on.</p>
+    <h3>What links it to you</h3><p>${WORDS.ids} Hashes are SHA-256 with a prefix only Sotto uses, so they do not match another app’s hashes. Someone who already holds your account ID, your provider for one, could work out the same hash.</p>
+    <h3>Sent with every event</h3><table class="change"><tbody>${COMMON.map(([a, b]) => `<tr><th scope="row"><code>${a}</code></th><td>${b}</td></tr>`).join('')}</tbody></table>
+    <h3>The seven events</h3>${EVENTS.map(e => `<article class="ev"><header><b>${e.name}</b><span>${e.when}</span></header><div>${e.why}</div>${e.note ? `<div style="color:var(--tt-text-muted)">${e.note}</div>` : ''}<details><summary>Sample payload</summary><pre class="payload mono" tabindex="0">${payload(e)}</pre></details></article>`).join('')}
+    <h3>Never sent</h3><ul class="never">${NEVER.map(n => `<li>${n}</li>`).join('')}</ul>
+    <h3>Turning it off</h3><ul><li>Settings &gt; Application &gt; <b>Send product events</b>. Off sends nothing more, drops what is waiting and deletes the install ID.</li><li>Set <code>SOTTO_TELEMETRY_ENABLED=false</code> or <code>DO_NOT_TRACK=1</code> in the environment, on this computer or a host. The switch then shows as off and says why.</li><li>A remote host follows the desktop. It makes no ID and sends nothing until a connected desktop says the switch is on and the notice was answered. With no desktop connected it holds at most 1,000 events in memory and never on disk, and a desktop saying off drops them.</li></ul>
+    <h3>Words elsewhere that have to change in the same release</h3><table class="change"><thead><tr><th>Where</th><th>Says today</th><th>Would say</th></tr></thead><tbody>${CHANGES.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+}
+function renderTabs() {
+  const tabs = document.getElementById('tabs'); tabs.innerHTML = ''
+  VIEWS.forEach(([id, label]) => { const b = $(`<button role="tab" aria-selected="${S.view === id}">${label}</button>`); b.onclick = () => { S.view = id; S.variant = 'A'; if (id === 'settings') answered(); else fresh(); render() }; tabs.append(b) })
+}
+function variants() { return S.view === 'notice' ? NOTICES : S.view === 'settings' ? SWITCHES : null }
+function renderBar() {
+  const bar = document.getElementById('bar'), v = variants(); bar.innerHTML = ''
+  if (v) {
+    const keys = Object.keys(v), i = keys.indexOf(S.variant)
+    const prev = $('<button aria-label="Previous variant">←</button>'); prev.onclick = () => cycle(-1)
+    const out = $(`<output>${S.variant} — ${v[S.variant]}</output>`)
+    const next = $('<button aria-label="Next variant">→</button>'); next.onclick = () => cycle(1)
+    bar.append(prev, out, next)
+  }
+  const th = $(`<button style="padding:0 12px" aria-label="Switch to ${S.theme === 'dark' ? 'light' : 'dark'}">${S.theme === 'dark' ? 'Light' : 'Dark'}</button>`); th.onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render() }
+  bar.append(th)
+}
+function cycle(d) { const v = variants(); if (!v) return; const k = Object.keys(v); S.variant = k[(k.indexOf(S.variant) + d + k.length) % k.length]; if (S.view === 'notice') fresh(); S.dialog = false; render() }
+function render() {
+  sync(); renderTabs(); renderBar()
+  if (!(S.variant in (variants() || { [S.variant]: 1 }))) S.variant = 'A'
+  const view = document.getElementById('view')
+  const notice = S.variant === 'A' ? noticeA() : S.variant === 'B' ? noticeB() : noticeC()
+  view.innerHTML = S.view === 'notice' ? dictateRoom(notice) + stateBox() : S.view === 'settings' ? settingsPage() + stateBox() : sentPage()
+  const focus = view.querySelector('.dialog .btn, .notice-c .btn'); if (focus) focus.focus()
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-a]'); if (!t) return
+  const a = t.dataset.a
+  if (a === 'close-bg' && e.target !== t) return
+  if (a === 'keep') answer('keep'); if (a === 'off') answer('off')
+  if (a === 'events') { S.dialog = true; render() }
+  if (a === 'close' || a === 'close-bg') { S.dialog = false; render() }
+  if (a === 'toggle') setOn(!S.on)
+  if (a === 'turn') record('turn.completed')
+  if (a === 'flush') { if (active() && S.sending) { S.sent += S.queue; S.queue = 0; render() } }
+  if (a === 'env') { S.envOff = !S.envOff; if (S.envOff) { S.sending = false; S.id = null; S.queue = 0; S.last = null } else if (S.on && !S.noticeOpen) { S.sending = true; S.id = fakeId() } render() }
+  if (a === 'reset') { if (S.view === 'settings') answered(); else fresh(); render() }
+})
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (S.dialog) { S.dialog = false; render() } else if (S.view === 'notice' && S.noticeOpen && !S.envOff) { S.noticeOpen = false; S.noticeAnswer = 'later'; render() } }
+  if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return
+  if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1)
+})
+if (S.view === 'settings') answered()
+render()
+</script>
+</body>
+</html>
