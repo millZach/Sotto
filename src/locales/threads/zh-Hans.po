@@ -1148,6 +1148,11 @@ msgstr ""
 msgid "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 msgstr ""
 
+#. {shown} and {whole} are token counts such as 183k and 256k: how much of the model’s context the thread uses, of all it takes.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "{shown} of {whole}"
+msgstr ""
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 msgstr ""
@@ -1595,6 +1600,11 @@ msgstr ""
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Abort"
+msgstr ""
+
+#. Before the large figure in the speed card of a thread on the user’s own model server, such as "about 38 tokens a second": the figure is estimated from the text, not counted by the server.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "about"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -2782,6 +2792,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Context compacted"
+msgstr ""
+
+#. In the speed card of a thread on the user’s own model server: how much of the model’s context the thread fills.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Context used"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -4134,6 +4149,11 @@ msgstr ""
 msgid "Finishes on {hostName} itself, so not from this computer."
 msgstr ""
 
+#. In the speed card of a thread on the user’s own model server: how long the server took to start answering the last message, such as 41s.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "First token after"
+msgstr ""
+
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Fit (0)"
@@ -4838,6 +4858,16 @@ msgstr ""
 msgid "Last seen working, {taken} so far"
 msgstr ""
 
+#. Heads the speed card of a thread on the user’s own model server once its last turn has ended.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Last turn"
+msgstr ""
+
+#. Heads the speed card of a thread on the user’s own model server when its last turn failed because the server never answered.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Last turn didn’t start"
+msgstr ""
+
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Leave empty to auto-generate"
 msgstr ""
@@ -5358,8 +5388,10 @@ msgstr ""
 msgid "Next prompts"
 msgstr ""
 
+#. In the speed card of a thread on the user’s own model server, for how long the first token took: the server never answered.
 #. Stands for a question in a saved form that was left unanswered.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+#: src/renderer/src/agents/ServerMark.tsx
 msgid "No answer"
 msgstr ""
 
@@ -6118,6 +6150,8 @@ msgstr ""
 
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
+#. The large figure in the speed card of a thread on the user’s own model server: no tokens have come for a moment.
+#: src/renderer/src/agents/ServerMark.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Paused"
 msgstr ""
@@ -8955,6 +8989,11 @@ msgstr ""
 msgid "This thread’s worktree. Both threads change the same files."
 msgstr ""
 
+#. Heads the speed card of a thread on the user’s own model server while its turn runs.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "This turn"
+msgstr ""
+
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."
 msgstr ""
@@ -9058,6 +9097,16 @@ msgstr ""
 #. A plan step's state.
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "To do"
+msgstr ""
+
+#. Beside the large figure in the speed card of a thread on the user’s own model server, such as 38: how fast the model is writing. Tokens are the pieces a language model writes in.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "tokens a second"
+msgstr ""
+
+#. Beside the large figure in the speed card of a thread on the user’s own model server once its turn has ended, such as 38: how fast the model wrote the last reply, on average. Tokens are the pieces a language model writes in.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "tokens a second, on average"
 msgstr ""
 
 #. Snooze a thread until 9 am tomorrow.
@@ -9677,6 +9726,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Waiting to update to the published version. Your threads keep working."
+msgstr ""
+
+#. In the speed card of a thread on the user’s own model server: no token yet, and how long it has waited, such as 42s.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Waiting, {waited}"
 msgstr ""
 
 #: src/renderer/src/agents/threadSnooze.tsx

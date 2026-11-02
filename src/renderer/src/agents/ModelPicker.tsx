@@ -98,6 +98,8 @@ const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.prov
 
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
+/** How long the pointer rests on the chip before its card shows, so passing over it shows nothing. */
+const CARD_REST_MS = 300
 
 /** What a search line holds, as the words a model must match, each on its own. */
 export const searchWords = (query: string): string[] => query.toLowerCase().split(/\s+/u).filter(Boolean)
@@ -141,7 +143,7 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * Favorites while any exist. A favorite whose provider or model has gone stays listed, unavailable, and can be unstarred.
  * Typing there searches every provider's models.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -154,6 +156,14 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   readonly openOnMount?: boolean | undefined
   /** Your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
   readonly ownServers?: OwnServersBridge | undefined
+  /** Drawn after the provider's mark: the server mark of a thread on one of the user's own servers (ADR-0124). */
+  readonly mark?: ReactNode | undefined
+  /**
+   * What a card above the chip says under the chip's full name, once the pointer has rested on the chip or at once when
+   * the keyboard brings focus to it: the speed card of a thread on one of the user's own servers, told whether it shows.
+   * The card describes the chip, in place of its tooltip. Escape, or opening the menu, puts it away until the chip is left.
+   */
+  readonly card?: { readonly id: string; readonly render: (shown: boolean) => ReactNode } | undefined
 }): ReactNode {
   const { t } = useLingui()
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
@@ -161,6 +171,20 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const currentEntryId = catalogEntry(models, modelId)?.id
   const [open, setOpen] = useState(openOnMount && !disabled)
   const [addingServer, setAddingServer] = useState(false)
+  const [cardRested, setCardRested] = useState(false)
+  const [cardFocused, setCardFocused] = useState(false)
+  const [cardAway, setCardAway] = useState(false)
+  const pointerOnChip = useRef(false)
+  const cardRest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(cardRest.current), [])
+  const cardShown = card !== undefined && !open && !cardAway && (cardRested || cardFocused)
+  // A card the pointer brought up goes with Escape wherever the focus is, and the press goes on to whatever it was for.
+  useEffect(() => {
+    if (!cardShown || cardFocused) return
+    const away = (event: KeyboardEvent): void => { if (event.key === 'Escape') setCardAway(true) }
+    document.addEventListener('keydown', away)
+    return () => document.removeEventListener('keydown', away)
+  }, [cardShown, cardFocused])
   const favoritesOn = useOwlFeature('model-favorites')
   const stored = useModelFavorites()
   // Only the favorites of providers this menu offers: a menu that lists some providers (continuing a thread, a worker role)
@@ -333,14 +357,23 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const providerName = selectedProvider?.name ?? ''
   const openSourceName = openSource?.name ?? ''
   const providerModels = t({ message: `${providerName} models`, comment: '{providerName} is a provider\'s name.' })
+  const described = [pending ? describedBy : undefined, card?.id].filter(Boolean).join(' ') || undefined
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
-      title={spoken} data-source={current?.source} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setOnFavorites(favorites.length > 0); setQuery(''); setStep(null); setSourceStop(undefined); setLegacyOpen(current?.legacy === true); wheelTurn.current = restingWheel(); setOpen(true) }}>
+      title={card ? undefined : spoken} data-source={current?.source} aria-describedby={described} data-pending={pending ? 'true' : undefined} disabled={disabled}
+      onKeyDown={card ? event => { if (event.key === 'Escape' && cardShown) { event.preventDefault(); event.stopPropagation(); setCardAway(true) } } : undefined}
+      onPointerEnter={card ? () => { pointerOnChip.current = true; clearTimeout(cardRest.current); cardRest.current = setTimeout(() => setCardRested(true), CARD_REST_MS) } : undefined}
+      onPointerLeave={card ? event => { pointerOnChip.current = false; clearTimeout(cardRest.current); setCardRested(false); if (document.activeElement !== event.currentTarget) setCardAway(false) } : undefined}
+      onFocus={card ? event => { if (event.currentTarget.matches(':focus-visible')) setCardFocused(true) } : undefined}
+      onBlur={card ? () => { setCardFocused(false); if (!pointerOnChip.current) setCardAway(false) } : undefined}
+      onClick={() => { if (card) setCardAway(true); setProvider(current?.provider ?? groups[0]?.name ?? ''); setOnFavorites(favorites.length > 0); setQuery(''); setStep(null); setSourceStop(undefined); setLegacyOpen(current?.legacy === true); wheelTurn.current = restingWheel(); setOpen(true) }}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
+      {mark}
       {current?.source ? <span className="model-picker__path"><span className="model-picker__source" data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name">{name}</span></span> : <span>{name}</span>}
       <ChevronDown size={12} aria-hidden="true" />
     </button>
+    {card ? <div id={card.id} className="model-picker__card" role="tooltip" data-shown={cardShown || undefined}><p className="model-picker__card-name">{spoken}</p>{card.render(cardShown)}</div> : null}
     {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label={t`Choose model`} data-rail={groups.length > 1 || undefined}
       onKeyDown={stepBack}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); setOpen(false) }}

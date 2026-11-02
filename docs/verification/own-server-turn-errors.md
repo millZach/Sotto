@@ -8,7 +8,7 @@ Checked on Windows on October 23, 2026, for phase 2 of your own model servers (A
 
 - A silent server. The turn's line worked as always, then 30 seconds in (the window's clock was moved on, not waited out) said "Still waiting for Sparks to start answering." with its time, **Stop**, and "A long prompt can take a few minutes. The turn stops waiting at 5 minutes." under it. With reduced motion on, its dot held still.
 - **Stop** from the keyboard. Shift+Tab from the composer reached **Stop** first, named "Stop agent". Enter stopped the turn, the line said "Stopped after …", and focus went to the composer.
-- OpenCode trying the server again. The line said "Sparks isn’t answering. Trying again (1 of 10).", then "(3 of 10)" as the next try came, in the attention colour, with **Stop**.
+- OpenCode trying the server again. The line said "Sparks isn’t answering. Trying again (1 of 10).", then "(3 of 10)" as the next try came, in the attention colour, with **Stop**. Since November 1, 2026 the dot on this line and on the still-waiting line is the server mark (ADR-0124, November 1 amendment), hollow while OpenCode tries again; the captures here show the dot as it was.
 - Each way the server lets a turn down, as the turn's "Failed after …" line with its reason under it, the first sentence in the error colour:
   - no answer after the tries;
   - nothing back within OpenCode's five minutes (Sotto stopped the turn at OpenCode's first header timeout);
