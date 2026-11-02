@@ -285,6 +285,14 @@ msgstr "{figure} tokens"
 msgid "{files, plural, one {{fileCount} file, {size}} other {{fileCount} files, {size}}}"
 msgstr "{files, plural, one {{fileCount} file, {size}} other {{fileCount} files, {size}}}"
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "{finding} cites a source though the question needs no research, unchecked"
+msgstr "{finding} cites a source though the question needs no research, unchecked"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "{finding} rests on a command, unchecked"
+msgstr "{finding} rests on a command, unchecked"
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{finished} of {total} done"
 msgstr "{finished} of {total} done"
@@ -803,6 +811,12 @@ msgstr "{watching, plural, =1 {Watcher still watches one of your threads.} other
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{when}, in {away}"
 msgstr "{when}, in {away}"
+
+#. placeholder {0}: window.toLocaleString(i18n.locale)
+#. placeholder {1}: tokens.toLocaleString(i18n.locale)
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "{who}’s model, {model}, holds about {0} tokens, and the conversation is about {1}. It may lose the start of the conversation. Choose a model with a larger context, or ask from a shorter thread."
+msgstr "{who}’s model, {model}, holds about {0} tokens, and the conversation is about {1}. It may lose the start of the conversation. Choose a model with a larger context, or ask from a shorter thread."
 
 #. A computer's, in "Still reading {scanningList} history"
 #: src/renderer/src/features/usage/UsageView.tsx
@@ -3505,6 +3519,8 @@ msgid "No usage yet"
 msgstr "No usage yet"
 
 #. A group of Watcher’s state with nothing in it
+#. No second kind for a Council question
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "None"
@@ -4729,6 +4745,10 @@ msgid "Search transcripts"
 msgstr "Search transcripts"
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Second kind"
+msgstr "Second kind"
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Send to {title}"
 msgstr "Send to {title}"
 
@@ -5464,8 +5484,12 @@ msgid "Starting…"
 msgstr "Starting…"
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words. A stage waits up to {minutes} minutes for a thread."
-msgstr "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words. A stage waits up to {minutes} minutes for a thread."
+msgid "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, in {parts} parts before the question. A stage waits up to {minutes} minutes for a thread."
+msgstr "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, in {parts} parts before the question. A stage waits up to {minutes} minutes for a thread."
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, with the question. A stage waits up to {minutes} minutes for a thread."
+msgstr "Starts {threadCount} threads. {providerList} each read the thread’s conversation, {messages} messages and about {words} words, with the question. A stage waits up to {minutes} minutes for a thread."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Starts {threadCount} threads. A stage waits up to {minutes} minutes for a thread."

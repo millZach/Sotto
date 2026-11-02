@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro'
-import { mkdir, rm } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { access, mkdir, realpath, rm } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { BranchBundles } from '../agents/branchBundles'
 import type { RunGitCommand } from '../agents/gitStatus'
 
@@ -43,12 +43,31 @@ export async function makeCouncilSnapshot(input: { readonly bundles: Pick<Branch
   }
 }
 
-/** Removes a settled Council's snapshot. Its commit is on no branch, so Git lets it go in time. */
-export async function removeCouncilSnapshot(run: RunGitCommand, snapshot: Pick<CouncilSnapshot, 'path' | 'repositoryRoot'>): Promise<void> {
-  try { await run(snapshot.repositoryRoot, 'git', ['worktree', 'remove', '--force', '--force', '--', snapshot.path], { timeoutMs: 300_000 }) }
-  catch {
-    // A folder already gone, or a repository moved: prune the registration and remove what is left.
+/**
+ * Removes a settled Council's snapshot, and says whether it is gone: the folder off the disk and Git no longer listing
+ * it. A snapshot that may still be there is kept on the record and removed again at the next start. Its commit is on no
+ * branch, so Git lets it go in time.
+ */
+export async function removeCouncilSnapshot(run: RunGitCommand, snapshot: Pick<CouncilSnapshot, 'path' | 'repositoryRoot'>): Promise<boolean> {
+  await run(snapshot.repositoryRoot, 'git', ['worktree', 'remove', '--force', '--force', '--', snapshot.path], { timeoutMs: 300_000 }).catch(async () => {
+    // A folder already gone, or a repository moved: remove what is left and prune the registration.
     await rm(snapshot.path, { recursive: true, force: true }).catch(() => undefined)
     await run(snapshot.repositoryRoot, 'git', ['worktree', 'prune'], { timeoutMs: 60_000 }).catch(() => undefined)
-  }
+  })
+  if (await present(snapshot.path)) return false
+  // A repository that is gone registers nothing.
+  if (!await present(snapshot.repositoryRoot)) return true
+  const listed = await run(snapshot.repositoryRoot, 'git', ['worktree', 'list', '--porcelain'], { timeoutMs: 60_000 }).catch((): undefined => undefined)
+  if (listed === undefined) return false
+  const path = await samePath(snapshot.path)
+  const others = await Promise.all(listed.split(/\r?\n/).filter(line => line.startsWith('worktree ')).map(line => samePath(line.slice('worktree '.length))))
+  return !others.includes(path)
+}
+
+const present = (path: string): Promise<boolean> => access(path).then(() => true, () => false)
+/** A path as Git and the disk would both write it: its folder's real path (macOS's /var is /private/var), and on Windows in one case. */
+const samePath = async (path: string): Promise<string> => {
+  const full = resolve(path)
+  const real = join(await realpath(dirname(full)).catch(() => dirname(full)), basename(full))
+  return process.platform === 'win32' ? real.toLowerCase() : real
 }

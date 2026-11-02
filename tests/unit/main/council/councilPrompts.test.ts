@@ -78,7 +78,23 @@ describe('prompt sizes', () => {
     const prompt = answerPrompt({ question: 'Synthetic question?' }, { letter: 'B', snapshot: 'commit abc on main', remote: false,
       framing: { kinds: ['decision'], criteria: [{ id: 'C1', source: 'assumed', text: 'Synthetic criterion' }], headings: ['Answer'], words: 300, angles: [{ seat: 'B', text: 'Synthetic angle' }], research: { needed: false, reason: '' } } })
     for (const words of ['<question>\nSynthetic question?\n</question>', 'C1 (assumed by the chair): Synthetic criterion', 'Also weigh: Synthetic angle', 'finding: B1 | observed']) expect(prompt).toContain(words)
-    expect(prompt).not.toContain('outside research')
+    // Research is off: the panelist is told not to, and is given no source evidence to cite.
+    expect(prompt).toContain('needs no outside research')
+    expect(prompt).not.toContain('- source: a page')
+    expect(prompt).not.toContain('| source |')
+  })
+
+  it('offers the chair a crux lookup only when the question needs outside research', () => {
+    const input = { kinds: ['decision' as const], answers: [{ letter: 'A', text: 'x' }, { letter: 'B', text: 'y' }], reviews: [], leftOut: [], panelists: 2, cruxAllowed: true }
+    expect(verdictPrompt({ ...input, research: true })).toContain('lookup:')
+    const without = verdictPrompt({ ...input, research: false })
+    expect(without).not.toContain('lookup:')
+    expect(without).toContain('giving a test to run in the snapshot')
+  })
+
+  it('asks a reviewer for a verdict on every ID it was handed, and an ideas reviewer for every score', () => {
+    expect(reviewPrompt({ letter: 'A', kind: 'decision', answers: [{ letter: 'B', text: 'x' }], ids: ['B1', 'B2'] })).toContain('Give every one of them a verdict')
+    expect(reviewPrompt({ letter: 'A', kind: 'ideas', answers: [{ letter: 'B', text: 'x' }], ids: ['B1'] })).toContain('Score every one of them')
   })
 
   it('briefs outside research only when the round needs it, and asks for sources then', () => {

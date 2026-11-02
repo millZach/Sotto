@@ -227,6 +227,34 @@ describe('the stage deadline', () => {
     expect(nextClockChange(record, START)).toBe(START + 10 * 60_000 + 1)
   })
 
+  it('counts the deadline from queueing for a prompt whose thread stays busy, so the stage never waits on it with only Stop', () => {
+    const record = council()
+    advanceRound(record, clock())
+    // The chair's thread is busy with the user's own work: its framing is queued and never sent.
+    const framingTurn = queued(record, 'framing')[0]!
+    expect(framingTurn.queuedAt).toBe(new Date(START).toISOString())
+    expect(nextClockChange(record, START)).toBe(START + 10 * 60_000 + 1)
+    expect(rowActions(record, framingTurn, START + 9 * 60_000, false)).toEqual([])
+    expect(isLate(framingTurn, START + 11 * 60_000, 10 * 60_000, record)).toBe(true)
+    expect(turnState(framingTurn, false)).toBe('working')
+    expect(rowActions(record, framingTurn, START + 11 * 60_000, false)).toEqual(['retry', 'replace', 'skip'])
+    // Sent at last, its deadline counts from the send.
+    sent(framingTurn, START + 5 * 60_000)
+    expect(isLate(framingTurn, START + 11 * 60_000, 10 * 60_000, record)).toBe(false)
+  })
+
+  it('is not late waiting behind its own thread\'s parts of the conversation, which are late themselves', () => {
+    const record = council()
+    record.history.parts = 2
+    advanceRound(record, clock())
+    const [first, second] = queued(record, 'history')
+    const framingTurn = queued(record, 'framing')[0]!
+    expect(isLate(framingTurn, START + 11 * 60_000, 10 * 60_000, record)).toBe(false)
+    expect(isLate(first!, START + 11 * 60_000, 10 * 60_000, record)).toBe(true)
+    answer(first!); answer(second!)
+    expect(isLate(framingTurn, START + 11 * 60_000, 10 * 60_000, record)).toBe(true)
+  })
+
   it('never leaves a late thread out on its own', () => {
     const record = council()
     throughAnswers(record)
@@ -266,7 +294,7 @@ describe('the crux check and the fairness check', () => {
     expect(queued(record, 'crux').map(turn => [turn.seat, turn.establish])).toEqual([['A', 1], ['B', 0]])
   })
 
-  it('waits for every panelist\'s fairness answer or two minutes before the verdict can be sent, and sends objections to the chair', () => {
+  it('waits for every panelist\'s fairness answer or two minutes from the first fairness prompt, and for the chair to answer every objection', () => {
     const record = council()
     const verdict = toVerdict(record)
     answer(verdict)
@@ -275,17 +303,29 @@ describe('the crux check and the fairness check', () => {
     expect(currentRound(record).stage).toBe('fairness')
     const fairness = queued(record, 'fairness')
     expect(fairness.map(turn => turn.seat)).toEqual(['A', 'B', 'C'])
-    expect(fairnessDone(record, currentRound(record), START + 60_000)).toBe(false)
-    expect(fairnessDone(record, currentRound(record), START + 2 * 60_000)).toBe(true)
+    // The two minutes start at the first fairness send, which the service records; until then nothing is sent and nothing waits out.
+    expect(currentRound(record).fairnessAt).toBeUndefined()
+    expect(fairnessDone(record, currentRound(record), START + 10 * 60_000)).toBe(false)
+    const firstSend = START + 5 * 60_000
+    currentRound(record).fairnessAt = new Date(firstSend).toISOString()
+    expect(fairnessDone(record, currentRound(record), firstSend + 60_000)).toBe(false)
+    expect(fairnessDone(record, currentRound(record), firstSend + 2 * 60_000)).toBe(true)
     answer(fairness[0]!, { fair: true }); answer(fairness[1]!, { fair: true })
     answer(fairness[2]!, { fair: false, claim: 'x', passage: 'Synthetic verdict.' })
     currentRound(record).objections.push({ seat: 'C', claim: 'x', passage: 'Synthetic verdict.', answer: 'pending' })
+    // An objection the chair has not answered holds the draft, however long it takes: the verdict may yet change under it.
+    expect(fairnessDone(record, currentRound(record), firstSend + 60 * 60_000)).toBe(false)
     advanceRound(record, clock())
-    expect(fairnessDone(record, currentRound(record), START + 1)).toBe(true)
     const amend = queued(record, 'amend')[0]!
     expect(amend).toMatchObject({ seat: 'chair', objections: ['C'] })
     expect(currentRound(record).stage).toBe('fairness')
+    expect(fairnessDone(record, currentRound(record), firstSend + 60 * 60_000)).toBe(false)
+    sent(amend)
+    currentRound(record).objections[0]!.answer = 'stands'
+    // Answered in the record but its turn still working: still held.
+    expect(fairnessDone(record, currentRound(record), firstSend + 60 * 60_000)).toBe(false)
     answer(amend, { objections: [{ seat: 'C', answer: 'stands' }] })
+    expect(fairnessDone(record, currentRound(record), firstSend + 60_000)).toBe(true)
     advanceRound(record, clock())
     expect(currentRound(record).stage).toBe('done')
   })

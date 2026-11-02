@@ -39,7 +39,11 @@ export const councilTurnSchema = z.object({
    */
   delivery: z.enum(['queued', 'dispatching', 'accepted', 'failed', 'unconfirmed']),
   outcome: z.enum(['working', 'answered', 'failed', 'stopped', 'unknown']).optional(),
+  /** When it was queued: the stage deadline counts from here until it is sent, so a thread kept busy cannot hold a stage unseen. */
+  queuedAt: at.optional(),
   sentAt: at.optional(),
+  /** The prompt carried the thread's first brief, the conversation and who it is, so the thread has them once it is confirmed. */
+  briefs: z.boolean().optional(),
   replyMessageId: id.optional(),
   /** Whether Sotto could read its result block: `invalid` until its repair is answered, `none` where the stage has no block. */
   result: z.enum(['pending', 'valid', 'invalid', 'unavailable', 'none']),

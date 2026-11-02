@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentThread } from '../../../../shared/agents'
-import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_SEAT_EFFORT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
+import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
   type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { isThreadClosed } from '../../../../shared/threadActivity'
@@ -78,7 +78,16 @@ function AskForm({ bridge }: { readonly bridge: CouncilBridge }): ReactNode {
   const threadCount = seats.panelists.length + 1
   const minutes = settings.councilStageDeadline
   const reads = estimate && 'words' in estimate ? estimate : null
-  const messages = reads?.messages ?? 0, words = (reads?.words ?? 0).toLocaleString(i18n.locale)
+  const messages = reads?.messages ?? 0, words = (reads?.words ?? 0).toLocaleString(i18n.locale), parts = reads?.parts ?? 1
+  // About four characters a token. A seat's model is warned of only when a thread on it reported a smaller context window.
+  const tokens = Math.ceil((reads?.characters ?? 0) / 4)
+  const windows = new Map<string, number>()
+  for (const thread of state.host.threads) {
+    const window = thread.usage?.contextWindow
+    if (window && window > (windows.get(thread.modelId) ?? 0)) windows.set(thread.modelId, window)
+  }
+  const small = reads ? [...seats.panelists.map((seat, index) => ({ seat, who: COUNCIL_LETTERS[index]! })), { seat: seats.chair, who: t`Chair` }]
+    .flatMap(({ seat, who }) => { const window = seat ? windows.get(seat.modelId) : undefined; return seat && window && window < tokens ? [{ who, model: seat.model?.name ?? seat.modelId, window }] : [] }) : []
   const ask = async (): Promise<void> => {
     if (!ready || !question.trim() || !shownOrigin || busy) return
     setBusy(true); setMessage(null)
@@ -104,9 +113,13 @@ function AskForm({ bridge }: { readonly bridge: CouncilBridge }): ReactNode {
     </label>
     <CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} />
     <p id={estimateId} className="council-ask__estimate tt-paragraph">
-      {reads && providers.length ? t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words. A stage waits up to ${minutes} minutes for a thread.`
+      {reads && providers.length ? parts > 1
+        ? t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words, in ${parts} parts before the question. A stage waits up to ${minutes} minutes for a thread.`
+        : t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words, with the question. A stage waits up to ${minutes} minutes for a thread.`
         : t`Starts ${threadCount} threads. A stage waits up to ${minutes} minutes for a thread.`}
     </p>
+    {small.map(({ who, model, window }) => <p key={who} className="council-notice tt-paragraph">
+      {t`${who}’s model, ${model}, holds about ${window.toLocaleString(i18n.locale)} tokens, and the conversation is about ${tokens.toLocaleString(i18n.locale)}. It may lose the start of the conversation. Choose a model with a larger context, or ask from a shorter thread.`}</p>)}
     {estimate && 'unavailable' in estimate ? <p className="council-notice tt-paragraph">{estimate.unavailable}</p> : null}
     <div className="council-ask__actions">
       <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!ready || !question.trim() || !shownOrigin || busy} onClick={() => void ask()}>
@@ -191,7 +204,9 @@ function RoundRecord({ council, round, run }: { readonly council: CouncilRecord;
 function Framing({ framing, council, round, run }: { readonly framing: NonNullable<CouncilRoundView['framing']>; readonly council: CouncilRecord; readonly round: CouncilRoundView
   readonly run: (command: CouncilCommand) => Promise<void> }): ReactNode {
   const { t, i18n } = useLingui()
-  const kindId = useId()
+  const kindId = useId(), secondId = useId()
+  const first = framing.kinds[0]!, second = framing.kinds[1]
+  const choose = (kinds: CouncilKind[]): void => { void run({ type: 'reframe', council: council.id, kinds }) }
   const names: Record<CouncilKind, string> = { decision: t`a decision`, fact: t`a fact to check`, review: t`a review`, ideas: t`ideas` }
   const kinds = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(framing.kinds.map(kind => names[kind]))
   const reason = framing.research.reason
@@ -205,10 +220,16 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
     <p className="tt-paragraph">{research}{framing.research.byUser ? <span className="council-muted"> {t`You set this.`}</span> : null}</p>
     {round.reframable ? <div className="council-framing__change">
       <label className="council-field council-field--inline" htmlFor={kindId}><span>{t`Kind`}</span>
-        <select id={kindId} className="tt-input tt-focusable" value={framing.kinds.length === 1 ? framing.kinds[0] : ''}
-          onChange={event => { const kind = event.currentTarget.value as CouncilKind; if (kind) void run({ type: 'reframe', council: council.id, kinds: [kind] }) }}>
-          {framing.kinds.length > 1 ? <option value="">{kinds}</option> : null}
+        <select id={kindId} className="tt-input tt-focusable" value={first}
+          onChange={event => { const kind = event.currentTarget.value as CouncilKind; choose(second && second !== kind ? [kind, second] : [kind]) }}>
           {COUNCIL_KINDS.map(kind => <option key={kind} value={kind}>{names[kind]}</option>)}
+        </select>
+      </label>
+      <label className="council-field council-field--inline" htmlFor={secondId}><span>{t`Second kind`}</span>
+        <select id={secondId} className="tt-input tt-focusable" value={second ?? ''}
+          onChange={event => { const kind = event.currentTarget.value as CouncilKind | ''; choose(kind ? [first, kind] : [first]) }}>
+          <option value="">{t({ message: 'None', comment: 'No second kind for a Council question' })}</option>
+          {COUNCIL_KINDS.filter(kind => kind !== first).map(kind => <option key={kind} value={kind}>{names[kind]}</option>)}
         </select>
       </label>
       <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'reframe', council: council.id, research: !framing.research.needed })}>
@@ -251,7 +272,12 @@ function RowRecord({ council, row, run }: { readonly council: CouncilRecord; rea
   const seat = council.seats.find(item => item.seat === row.seat)
   const openThread = (): void => { void agents?.command({ type: 'select-thread', threadId: row.thread }); app?.actions.navigate('threads') }
   const who = words.seat(row.seat)
-  const checked = (row.citations ?? []).map(citation => `${citation.path}:${citation.lines} ${({ matches: t`matches`, differs: t`does not match what it quoted`, missing: t`is not in the snapshot`, unchecked: t`unchecked` })[citation.check]}`)
+  const checked = (row.citations ?? []).map(citation => {
+    const finding = citation.finding
+    if (citation.of === 'command') return t`${finding} rests on a command, unchecked`
+    if (citation.of === 'source') return t`${finding} cites a source though the question needs no research, unchecked`
+    return `${citation.path}:${citation.lines} ${({ matches: t`matches`, differs: t`does not match what it quoted`, missing: t`is not in the snapshot`, unchecked: t`unchecked` })[citation.check]}`
+  })
   return <li className="council-row" data-state={row.state}>
     <span className="council-row__stage">{row.repair ? t`${words.stage(row.stage)}, asked again` : words.stage(row.stage)}</span>
     <span className="council-row__seat">{who}{seat ? <span className="council-muted"> {seat.modelName}</span> : null}</span>

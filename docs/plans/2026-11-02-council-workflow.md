@@ -203,7 +203,7 @@ Two adversarial reviews (GPT-6 Astra on Codex, Muse Wonder Full; both at extra h
 | `file:line` drifts in a live checkout; evidence can be fabricated or unreachable | both | the snapshot; quoted lines checked by Sotto; observed, inferred or judgement; unreachable evidence is unchecked |
 | The chair's framing can mislead every answer; mixed kinds | both | the question stays verbatim and authoritative; criteria marked by source and open to challenge; two kinds allowed; fallback when framing fails |
 | The crux check asks advocates to verify themselves | both | the test and its meaning written first; a neutral panelist runs it, or each side tests the other's claim |
-| The fairness check comes after the verdict is usable | both | Send waits for it or two minutes; objections quote both sides; the chair amends or answers |
+| The fairness check comes after the verdict is usable | both | Send waits for it, or two minutes from its first prompt, and for the chair to answer every objection; objections quote both sides; the chair amends or answers |
 | Slow and failed threads have no recovery; the median rule fails | both | named states, a stage deadline, Retry, Use another model, Go on without it, chair recovery |
 | Two panelists make rankings meaningless | both | two allowed, without rankings or counts, and labelled |
 | Cost is understated; reviews grow quadratically | both | corrected table; four or five review two others each; estimate before Ask; read-ahead step dropped |

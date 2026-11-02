@@ -155,6 +155,8 @@ const KIND_WORDS: Readonly<Record<CouncilKind, string>> = { decision: 'a decisio
 const RESEARCH_BRIEF = 'This question needs outside research. Research it with your own tools: search the web, and read papers and library documentation where they bear on it. '
   + 'Where your own setup has a skill or instructions for research, follow them. Cite what you found as a source: its link and the passage that supports your claim, quoted exactly. '
   + 'A source you could not open is not evidence.'
+/** What a panelist is told when the question needs none: the snapshot and the conversation only, and a source counts for nothing. */
+const NO_RESEARCH = 'This question needs no outside research. Answer from the snapshot and the conversation alone: do not search the web or read outside sources. A source you cite anyway is unchecked.'
 const SOURCE_EVIDENCE = '- source: a page, paper or document outside the snapshot, given as its link and the passage that supports the claim, quoted exactly'
 const fence = (name: string, lines: readonly string[]): string => ['```' + name, ...lines, '```'].join('\n')
 
@@ -219,7 +221,7 @@ export function answerPrompt(context: CouncilPromptContext, input: { readonly le
   return [...questionPart(context),
     ...input.again ? ['The user changed the framing below, so answer again from the start. Your earlier answer to this question no longer counts.'] : [],
     framingWords(framing, letter, input.kinds, input.criteria),
-    ...input.research ? [RESEARCH_BRIEF] : [],
+    input.research ? RESEARCH_BRIEF : NO_RESEARCH,
     `Answer alone, as panelist ${letter}. ${input.remote ? 'You cannot read the snapshot.' : `Work in your working folder, the snapshot at ${input.snapshot}.`} Mark each load-bearing claim:`,
     ['- observed: a file and lines you read, with the lines quoted, or a command you ran in the snapshot, with its output', '- inferred: from what you observed, saying from what', '- judgement: your opinion',
       ...input.research ? [SOURCE_EVIDENCE] : []].join('\n'),
@@ -254,7 +256,7 @@ export function reviewPrompt(input: { readonly preamble?: string; readonly lette
     REVIEW_WORK[input.kind],
     'Open each source an answer cites and say whether the page holds its quote: confirmed, refuted, or unchecked when you could not open it. A source nobody could open is unchecked, never proof.',
     ...input.kind === 'decision' || input.kind === 'fact' ? ['You may change your own answer once: give the new answer in full and name the evidence that changed it. A peer\'s argument alone is not evidence.'] : [],
-    `End your reply with this block, using only these fields and only these IDs: ${input.ids.join(', ')}. Leave out a field marked "only when".`,
+    `End your reply with this block, using only these fields and only these IDs: ${input.ids.join(', ')}. ${input.kind === 'ideas' ? 'Score every one of them.' : 'Give every one of them a verdict in "findings".'} Leave out a field marked "only when".`,
     fence(COUNCIL_BLOCK_NAMES.review, reviewBlock(input.kind, input.letter, read)),
   ]
   const header = `Here ${read.length === 1 ? `is answer ${read[0]}` : `are answers ${read.join(', ')}`}, without their authors' names. Your own answer is ${input.letter}.`
@@ -278,7 +280,9 @@ const VERDICT_SHAPE: Readonly<Record<CouncilKind, string>> = {
 export function verdictPrompt(input: { readonly kinds: readonly CouncilKind[]; readonly userCriteria?: readonly CouncilCriterion[]; readonly answers: readonly { readonly letter: string; readonly text: string }[];
   readonly reviews: readonly { readonly letter: string; readonly text: string }[]; readonly leftOut: readonly string[]; readonly panelists: number;
   readonly crux?: { readonly plan: CouncilCrux; readonly results: readonly { readonly letter: string; readonly text: string }[] }; readonly cruxAllowed: boolean; readonly preamble?: string;
-  readonly question?: string }): string {
+  readonly question?: string
+  /** Whether the question needs outside research: without it, a crux check is a test in the snapshot and never a lookup. */
+  readonly research?: boolean }): string {
   const fixed = [input.preamble ?? '', input.question ?? '', ...input.crux ? [input.crux.plan.test, ...input.crux.plan.meanings.map(meaning => `${meaning.result} ${meaning.meaning}`)] : []]
   const texts = fitWords([...input.answers, ...input.reviews, ...input.crux?.results ?? []].map(item => item.text), fixed)
   const answerTexts = texts.slice(0, input.answers.length), reviewTexts = texts.slice(input.answers.length, input.answers.length + input.reviews.length)
@@ -302,8 +306,11 @@ export function verdictPrompt(input: { readonly kinds: readonly CouncilKind[]; r
       'An inconclusive result leaves the verdict conditional: say so.'] : [],
     `Write the verdict. ${input.kinds.map(kind => VERDICT_SHAPE[kind]).join(' ')}`,
     ...input.cruxAllowed ? [
-      'If the panel splits on something observable, such as what a file does, what a command prints or what a source says, you may ask for one crux check instead of writing the verdict now: reply with only this block, giving either a test to run or a source to look up. Never for a matter of taste, and never more than once.',
-      fence(COUNCIL_BLOCK_NAMES.crux, ['test: <one command to run, or file to read, in the snapshot>', 'lookup: <or instead of test: the source to check, a link or where to look, and what to find there>', 'sides: A, C | B',
+      input.research
+        ? 'If the panel splits on something observable, such as what a file does, what a command prints or what a source says, you may ask for one crux check instead of writing the verdict now: reply with only this block, giving either a test to run or a source to look up. Never for a matter of taste, and never more than once.'
+        : 'If the panel splits on something observable, such as what a file does or what a command prints, you may ask for one crux check instead of writing the verdict now: reply with only this block, giving a test to run in the snapshot. Never for a matter of taste, and never more than once.',
+      fence(COUNCIL_BLOCK_NAMES.crux, ['test: <one command to run, or file to read, in the snapshot>',
+        ...input.research ? ['lookup: <or instead of test: the source to check, a link or where to look, and what to find there>'] : [], 'sides: A, C | B',
         'if: <a result or finding> => <what it would mean>', 'if: <another> => <what it would mean>']),
       'Otherwise write the verdict, with no block.',
     ] : ['Write the verdict now, with no block.'],

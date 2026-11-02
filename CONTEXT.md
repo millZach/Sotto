@@ -649,7 +649,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Crux check.** The one extra step a **Council** may take, at most once: when the **chair** finds a split that turns on something observable, such as what a file does, what a command prints or what a source says, it writes the test or the lookup and what each result would mean, and a **panelist** on neither side runs it (or each side tries to establish the other's claim). Everyone gets the same output. Never a second round of debate, and never on a matter of taste.
 
-**Fairness check.** The **Council**'s last step: each **panelist** reads the **verdict** and answers Fair, or Unfair, quoting its own claim and the passage that misstates it; the **chair** amends the passage or says why it stands. The verdict can be sent to its thread once every panelist has answered or two minutes have passed. It checks representation, not correctness.
+**Fairness check.** The **Council**'s last step: each **panelist** reads the **verdict** and answers Fair, or Unfair, quoting its own claim and the passage that misstates it; the **chair** amends the passage or says why it stands. The verdict can be sent to its thread once every panelist has answered or two minutes have passed since the check was sent, and the chair has answered every objection. It checks representation, not correctness.
 
 **Chair.** The thread that writes a **Council**'s **verdict** from every answer and review, never one of its **panelists**. Avoid: "judge", "chairman".
 

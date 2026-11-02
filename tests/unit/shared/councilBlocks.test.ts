@@ -33,11 +33,15 @@ describe('citations', () => {
     for (const outside of ['/etc/passwd:1', 'C:/x.ts:1', '../x.ts:1', 'src/../../x.ts:2', 'src/a.ts:9-3', 'src/a.ts', 'src/a.ts:0']) expect(parseCitation(outside), outside).toBeUndefined()
   })
 
-  it('matches a citation when the reply quotes one of its lines, and says when the file is shorter', () => {
-    const file = 'line one\nconst keep = readThread(id)\nline three\n'
-    const place = { path: 'a.ts', start: 2, end: 3 }
-    expect(citationQuoted(file, place, 'It calls `const keep =   readThread(id)` first.')).toBe(true)
+  it('matches a citation only when the reply quotes every cited line with words in it, and says when the file is shorter', () => {
+    const file = 'line one\nconst keep = readThread(id)\n}\n\nline five\n'
+    const place = { path: 'a.ts', start: 2, end: 5 }
+    expect(citationQuoted(file, place, 'It calls `const keep =   readThread(id)` first.\n}\nline five')).toBe(true)
+    // One line of the range quoted is not the range.
+    expect(citationQuoted(file, place, 'It calls `const keep = readThread(id)` first.')).toBe(false)
     expect(citationQuoted(file, place, 'It calls something else.')).toBe(false)
+    // A range of blank and short lines quotes nothing, so it cannot match.
+    expect(citationQuoted(file, { path: 'a.ts', start: 3, end: 4 }, '}')).toBe(false)
     expect(citationQuoted(file, { path: 'a.ts', start: 9, end: 9 }, 'anything')).toBeUndefined()
   })
 })
@@ -112,12 +116,22 @@ describe('reviews', () => {
     expect(review('ranking: B > D', 'answer: same')).toMatchObject({ ok: false })
     expect(review('ranking: B > C', 'findings: A1 confirmed', 'answer: same')).toMatchObject({ ok: false })
     expect(review('ranking: B > C', 'findings: B1 confirmed, B1 rejected', 'answer: same')).toMatchObject({ ok: false })
-    expect(review('ranking: B > C', 'answer: changed')).toMatchObject({ ok: false })
-    expect(review('ranking: B > C', 'answer: changed', 'new_answer: Wait for 0.3', 'evidence: src/a.ts:1-2')).toMatchObject({ ok: true, value: { newAnswer: 'Wait for 0.3', evidence: ['src/a.ts:1-2'] } })
+    const all = 'findings: B1 confirmed, B2 rejected, C1 unchecked'
+    expect(review('ranking: B > C', all, 'answer: changed')).toMatchObject({ ok: false })
+    expect(review('ranking: B > C', all, 'answer: changed', 'new_answer: Wait for 0.3', 'evidence: src/a.ts:1-2')).toMatchObject({ ok: true, value: { newAnswer: 'Wait for 0.3', evidence: ['src/a.ts:1-2'] } })
+  })
+
+  it('needs a verdict on every finding it was handed, so each count has the readers who checked it', () => {
+    const review = (kind: ReviewContext['kind'], ...lines: string[]) => readReviewBlock(fence('council-review', ...lines), { ...decision, kind })
+    expect(review('decision', 'ranking: B > C', 'findings: B1 confirmed, C1 unchecked', 'answer: same')).toMatchObject({ ok: false, reason: expect.stringContaining('B2') })
+    expect(review('decision', 'ranking: B > C', 'answer: same')).toMatchObject({ ok: false })
+    expect(review('fact', 'supports: B', 'findings: B1 confirmed, B2 confirmed', 'answer: same')).toMatchObject({ ok: false, reason: expect.stringContaining('C1') })
+    expect(review('review', 'findings: B1 confirmed, B2 rejected')).toMatchObject({ ok: false })
+    expect(review('ideas', 'scores: B1 4, C1 5', 'favourites: C1')).toMatchObject({ ok: false, reason: expect.stringContaining('B2') })
   })
 
   it('asks no ranking of a reader who read one answer, as with two panelists', () => {
-    expect(readReviewBlock(fence('council-review', 'answer: same'), { letter: 'A', kind: 'decision', reviewed: new Map([['B', ['B1']]]) })).toMatchObject({ ok: true })
+    expect(readReviewBlock(fence('council-review', 'findings: B1 confirmed', 'answer: same'), { letter: 'A', kind: 'decision', reviewed: new Map([['B', ['B1']]]) })).toMatchObject({ ok: true })
   })
 
   it('lets a reviewer confirm, refute or leave unchecked a source, and a changed answer rest on one', () => {
@@ -128,10 +142,10 @@ describe('reviews', () => {
   })
 
   it('reads the kind-specific fields for a fact, a review and ideas', () => {
-    const fact = readReviewBlock(fence('council-review', 'supports: A', 'answer: same'), { ...decision, kind: 'fact' })
+    const fact = readReviewBlock(fence('council-review', 'supports: A', 'findings: B1 confirmed, B2 rejected, C1 unchecked', 'answer: same'), { ...decision, kind: 'fact' })
     expect(fact).toMatchObject({ ok: true, value: { supports: 'A' } })
-    expect(readReviewBlock(fence('council-review', 'answer: same'), { ...decision, kind: 'fact' })).toMatchObject({ ok: false })
-    const review = readReviewBlock(fence('council-review', 'findings: B1 confirmed, B2 rejected', 'new: A4 | Missed a lock'), { ...decision, kind: 'review' })
+    expect(readReviewBlock(fence('council-review', 'findings: B1 confirmed, B2 rejected, C1 unchecked', 'answer: same'), { ...decision, kind: 'fact' })).toMatchObject({ ok: false })
+    const review = readReviewBlock(fence('council-review', 'findings: B1 confirmed, B2 rejected, C1 unchecked', 'new: A4 | Missed a lock'), { ...decision, kind: 'review' })
     expect(review).toMatchObject({ ok: true, value: { added: [{ id: 'A4', claim: 'Missed a lock' }] } })
     expect(readReviewBlock(fence('council-review', 'findings: B1 confirmed', 'answer: changed', 'new_answer: x', 'evidence: a.ts:1'), { ...decision, kind: 'review' })).toMatchObject({ ok: false })
     const ideas = readReviewBlock(fence('council-review', 'scores: B1 4, B2 2, C1 5', 'favourites: C1, B1'), { ...decision, kind: 'ideas' })
@@ -148,13 +162,15 @@ describe('reviews', () => {
 
 describe('crux check', () => {
   it('reads the chair\'s test, the sides and what each result would mean', () => {
-    const read = readCruxBlock(fence('council-crux', 'test: npx vitest run tests/unit/a.test.ts', 'sides: A, C | B', 'if: passes => A is right', 'if: fails => B is right'), ['A', 'B', 'C'])
+    const read = readCruxBlock(fence('council-crux', 'test: npx vitest run tests/unit/a.test.ts', 'sides: A, C | B', 'if: passes => A is right', 'if: fails => B is right'), ['A', 'B', 'C'], true)
     expect(read).toMatchObject({ ok: true, value: { lookup: false, sides: [['A', 'C'], ['B']], meanings: [{ result: 'passes', meaning: 'A is right' }, { result: 'fails', meaning: 'B is right' }] } })
-    const lookup = readCruxBlock(fence('council-crux', 'lookup: https://example.org/changelog, the 4.2 entry', 'sides: A | B', 'if: removed => A', 'if: deprecated => B'), ['A', 'B'])
-    expect(lookup).toMatchObject({ ok: true, value: { test: 'https://example.org/changelog, the 4.2 entry', lookup: true } })
-    expect(readCruxBlock(fence('council-crux', 'test: x', 'lookup: y', 'sides: A | B', 'if: a => b', 'if: c => d'), ['A', 'B'])).toMatchObject({ ok: false })
-    expect(readCruxBlock(fence('council-crux', 'test: x', 'sides: A | A', 'if: a => b', 'if: c => d'), ['A', 'B'])).toMatchObject({ ok: false })
-    expect(readCruxBlock(fence('council-crux', 'test: x', 'sides: A | B', 'if: a => b'), ['A', 'B'])).toMatchObject({ ok: false })
+    const lookupBlock = fence('council-crux', 'lookup: https://example.org/changelog, the 4.2 entry', 'sides: A | B', 'if: removed => A', 'if: deprecated => B')
+    expect(readCruxBlock(lookupBlock, ['A', 'B'], true)).toMatchObject({ ok: true, value: { test: 'https://example.org/changelog, the 4.2 entry', lookup: true } })
+    // Without outside research a crux check is a test in the snapshot: a lookup is refused.
+    expect(readCruxBlock(lookupBlock, ['A', 'B'], false)).toMatchObject({ ok: false, reason: expect.stringContaining('no outside research') })
+    expect(readCruxBlock(fence('council-crux', 'test: x', 'lookup: y', 'sides: A | B', 'if: a => b', 'if: c => d'), ['A', 'B'], true)).toMatchObject({ ok: false })
+    expect(readCruxBlock(fence('council-crux', 'test: x', 'sides: A | A', 'if: a => b', 'if: c => d'), ['A', 'B'], true)).toMatchObject({ ok: false })
+    expect(readCruxBlock(fence('council-crux', 'test: x', 'sides: A | B', 'if: a => b'), ['A', 'B'], true)).toMatchObject({ ok: false })
   })
 
   it('reads the neutral panelist\'s result by the number of the meaning that came out', () => {

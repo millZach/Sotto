@@ -117,15 +117,15 @@ export function parseCitation(text: string): CouncilCitationPlace | undefined {
 }
 const normal = (text: string): string => text.replace(/\s+/gu, ' ').trim()
 /**
- * Whether a reply quotes what a citation names: at least one of the cited lines with words in it appears in the reply,
- * whitespace aside. Undefined when the file does not have those lines.
+ * Whether a reply quotes what a citation names: every cited line with words in it appears in the reply, whitespace aside.
+ * A range of blank or short lines quotes nothing, so it never matches. Undefined when the file does not have those lines.
  */
 export function citationQuoted(fileText: string, place: CouncilCitationPlace, reply: string): boolean | undefined {
   const lines = fileText.split(/\r?\n/u)
   if (place.end > lines.length) return undefined
   const said = normal(reply)
   const cited = lines.slice(place.start - 1, place.end).map(normal).filter(line => line.length >= 4)
-  return cited.length === 0 ? true : cited.some(line => said.includes(line))
+  return cited.length > 0 && cited.every(line => said.includes(line))
 }
 
 // Framing (the chair).
@@ -246,10 +246,13 @@ export interface ReviewContext {
   readonly reviewed: ReadonlyMap<string, readonly string[]>
 }
 
-/** What each kind of review must give (the plan's "What a review does"). */
+/**
+ * What each kind of review must give (the plan's "What a review does"). Every kind but ideas gives a verdict on every
+ * finding it was handed, and ideas a score for every option, so each count's denominator is the readers who checked it.
+ */
 export function reviewRules(context: ReviewContext): { ranking: boolean; findings: boolean; supports: boolean; ideas: boolean; mayChange: boolean } {
   const kind = context.kind
-  return { ranking: kind === 'decision' && context.reviewed.size >= 2, findings: kind === 'review', supports: kind === 'fact', ideas: kind === 'ideas',
+  return { ranking: kind === 'decision' && context.reviewed.size >= 2, findings: kind !== 'ideas', supports: kind === 'fact', ideas: kind === 'ideas',
     mayChange: kind === 'decision' || kind === 'fact' }
 }
 
@@ -281,7 +284,8 @@ export function readReviewBlock(reply: string, context: ReviewContext): BlockRea
     if (!(REVIEW_VERDICTS as readonly string[]).includes(said)) return bad('each entry in "findings" is an ID then confirmed, rejected or unchecked')
     findings.push({ id: findingId, verdict: said as CouncilReview['findings'][number]['verdict'] })
   }
-  if (rules.findings && ids.size > 0 && !findings.length) return bad('give "findings": each finding you reviewed, confirmed, rejected or unchecked')
+  const unjudged = [...ids].filter(findingId => !findings.some(item => item.id === findingId))
+  if (rules.findings && unjudged.length) return bad(`give "findings" a verdict for every ID, confirmed, rejected or unchecked; missing ${unjudged.join(', ')}`)
   const supports = fields.one.get('supports')
   if (rules.supports && supports === undefined) return bad(`give "supports": the letter of the answer the evidence supports, ${context.letter} for your own, or none`)
   if (supports !== undefined && supports !== 'none' && !LETTER.test(supports)) return bad('"supports" is one letter or none')
@@ -300,7 +304,8 @@ export function readReviewBlock(reply: string, context: ReviewContext): BlockRea
   }
   const favourites = fields.one.has('favourites') ? listed('favourites', ids) : []
   if (typeof favourites === 'string') return bad(favourites)
-  if (rules.ideas && (!scores.length || !favourites.length)) return bad('give "scores" for each option you reviewed and up to three "favourites"')
+  const unscored = [...ids].filter(findingId => !scores.some(item => item.id === findingId))
+  if (rules.ideas && (unscored.length || !favourites.length)) return bad(`give "scores" for every option you reviewed and up to three "favourites"${unscored.length ? `; missing ${unscored.join(', ')}` : ''}`)
   const answer = fields.one.get('answer')
   if (answer !== undefined && answer !== 'same' && answer !== 'changed') return bad('"answer" is same or changed')
   if (answer === 'changed' && !rules.mayChange) return bad('an answer to this kind of question is not changed in review; leave "answer" out')
@@ -327,13 +332,14 @@ export const cruxSchema = z.object({
 }).strict()
 export type CouncilCrux = z.infer<typeof cruxSchema>
 
-/** `letters` are the answers in play. */
-export function readCruxBlock(reply: string, letters: readonly string[]): BlockRead<CouncilCrux> {
+/** `letters` are the answers in play; `lookups` is false when the question needs no outside research, so a crux check is a test. */
+export function readCruxBlock(reply: string, letters: readonly string[], lookups: boolean): BlockRead<CouncilCrux> {
   const block = opened(reply, COUNCIL_BLOCK_NAMES.crux)
   if (isRead(block)) return block
   const fields = fieldsOf(block, ['test', 'lookup', 'sides'], ['if'])
   if (typeof fields === 'string') return bad(fields)
   if (fields.one.has('test') === fields.one.has('lookup')) return bad('give either "test", a command to run, or "lookup", a source to check, not both')
+  if (!lookups && fields.one.has('lookup')) return bad('this question needs no outside research, so a crux check is a "test" in the snapshot, not a "lookup"')
   const sides = (fields.one.get('sides') ?? '').split('|').map(list)
   if (sides.length !== 2 || sides.flat().some(letter => !letters.includes(letter)) || new Set(sides.flat()).size !== sides.flat().length) {
     return bad(`"sides" gives the letters on each side, from ${letters.join(', ')}, separated by |`)

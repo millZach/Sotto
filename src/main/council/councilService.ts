@@ -1,13 +1,12 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import { join } from 'node:path'
 import { isThreadProviderConnected, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
   type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_PROMPT_LEAD, councilFairnessEffort, COUNCIL_REMOTE_PROVIDERS, COUNCIL_VIEWS_MAX, councilEffort, councilFramingViewSchema, type CouncilCitation, type CouncilCommand,
   type CouncilCommandResult, type CouncilEstimate, type CouncilKind, type CouncilRoundView, type CouncilSeatChoice, type CouncilView } from '../../shared/council'
-import { citationQuoted, COUNCIL_BLOCK_NAMES, findCouncilBlock, parseCitation, readAmendBlock, readAnswerBlock, readCruxBlock, readCruxResultBlock, readFairnessBlock,
+import { citationQuoted, COUNCIL_BLOCK_NAMES, findCouncilBlock, isSourceLink, parseCitation, readAmendBlock, readAnswerBlock, readCruxBlock, readCruxResultBlock, readFairnessBlock,
   readFramingBlock, readReviewBlock, withoutCouncilBlocks, type BlockRead, type CouncilAnswer, type CouncilCrux, type CouncilCruxResult, type CouncilReview } from '../../shared/councilBlocks'
 import { councilCounts } from '../../shared/councilFlow'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -91,6 +90,8 @@ const MODEL_NAME_MAX = 512
 const VERDICT_MAX = 390_000
 const STAGE_ORDER = ['history', 'framing', 'answer', 'review', 'crux', 'verdict', 'fairness', 'amend'] as const
 const isOpen = (record: CouncilRecord): boolean => !record.settledAt
+/** A Council that may leave the record to make room: settled, with its snapshot gone. */
+const evictable = (record: CouncilRecord): boolean => record.settledAt !== undefined && record.snapshot.removedAt !== undefined
 const clip = (text: string, max: number): string => text.length <= max ? text : `${text.slice(0, max - 1)}…`
 
 export class CouncilService {
@@ -168,7 +169,10 @@ export class CouncilService {
     const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === originThreadId)
     if (!thread?.providerId) return { unavailable: t`That thread is not on this computer.` }
     const quoted = this.quote(thread)
-    return { messages: quoted.messages, words: quoted.words, tools: quoted.tools }
+    // The same split start() makes: every thread reads the conversation in its first prompt, or in these parts before it.
+    const text = historyText(thread.title, quoted)
+    const parts = text.length <= HISTORY_INLINE_MAX ? 1 : historyParts(thread.title, quoted).length
+    return { messages: quoted.messages, words: quoted.words, tools: quoted.tools, characters: text.length, parts }
   }
 
   async command(command: CouncilCommand): Promise<CouncilCommandResult> {
@@ -220,6 +224,7 @@ export class CouncilService {
     if (ready.some(entry => !entry.model)) return { ok: false, message: t`A seat's model is not ready: its provider is not connected. Choose another model for it, then ask again. Nothing was started.` }
     const folder = origin.workingDirectory ?? project?.path
     if (!folder) return { ok: false, message: t`That thread has no folder Sotto can take a snapshot of. Nothing was started.` }
+    if (this.records.length >= RECORDS_MAX && !this.records.some(evictable)) return { ok: false, message: t`Sotto keeps ${RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started.` }
     const id = this.newId()
     const made = await makeCouncilSnapshot({ bundles: this.options.bundles, run: this.run, folder, path: join(this.options.directory, COUNCIL_WORKTREE_FOLDER, id) })
     if ('refused' in made) return { ok: false, message: made.refused }
@@ -239,7 +244,7 @@ export class CouncilService {
     }
     this.histories.set(id, { title: origin.title, quoted, parts })
     this.records.push(record)
-    if (this.records.length > RECORDS_MAX) this.records.splice(0, this.records.length - RECORDS_MAX)
+    this.evict()
     return this.moved(record)
   }
 
@@ -269,7 +274,8 @@ export class CouncilService {
       if (!model) return { ok: false, message: t`That model is not ready: its provider is not connected. Choose another. Nothing was changed.` }
     }
     // A prompt still running is stopped first, so nothing it does later is taken for the seat's answer.
-    if (thread && isThreadTurnRunning(thread) && !isFinal(turn)) await this.interrupt(record, turn.thread)
+    // Only a prompt the Council sent: a queued one's thread is busy with the user's own work, which is never stopped for it.
+    if (thread && isThreadTurnRunning(thread) && !isFinal(turn) && turn.delivery !== 'queued') await this.interrupt(record, turn.thread)
     const clock = this.stageClock()
     if (command.type === 'retry') retryTurn(record, turn, clock)
     else if (command.type === 'skip') leaveOut(record, turn)
@@ -299,11 +305,18 @@ export class CouncilService {
     for (const thread of threads) if (known.has(thread)) await this.options.control.commandFromCouncil({ type: 'settle-thread', threadId: thread }, () => undefined).catch(() => undefined)
     await this.removeSnapshot(record)
   }
+  /** Removes a settled Council's snapshot, and records it removed only once Git and the disk both show it gone; recover() tries again. */
   private async removeSnapshot(record: CouncilRecord): Promise<void> {
-    await removeCouncilSnapshot(this.run, record.snapshot)
+    if (!await removeCouncilSnapshot(this.run, record.snapshot)) return
     record.snapshot.removedAt = new Date(this.clock()).toISOString()
     await this.persist()
     this.changed([record])
+  }
+  /** Keeps at most RECORDS_MAX Councils: the oldest settled ones whose snapshots are gone leave first, and an open one never does. */
+  private evict(): void {
+    let excess = this.records.length - RECORDS_MAX
+    if (excess <= 0) return
+    this.records = this.records.filter(record => !(excess > 0 && evictable(record) && excess-- > 0))
   }
   private async interrupt(record: CouncilRecord, threadId: string): Promise<void> {
     await this.options.control.commandFromCouncil({ type: 'interrupt', threadId }, () => undefined).catch(() => undefined)
@@ -318,7 +331,8 @@ export class CouncilService {
     const moved: CouncilRecord[] = []
     let told = false
     for (const record of this.records) {
-      if (!isOpen(record)) continue
+      // A stopped Council sends and follows nothing more.
+      if (!isOpen(record) || record.stoppedAt) continue
       let changed = false
       for (const turn of record.turns) {
         if (turn.superseded || turn.delivery === 'queued' || isFinal(turn)) continue
@@ -327,7 +341,7 @@ export class CouncilService {
         const waiting = held.requests.length > 0
         if (this.waiting.get(turn.id) !== waiting) { this.waiting.set(turn.id, waiting); told = true }
         if (turn.delivery === 'dispatching') {
-          if (held.messages.some(message => message.role === 'user' && message.id === turn.messageId)) { turn.delivery = 'accepted'; changed = true }
+          if (held.messages.some(message => message.role === 'user' && message.id === turn.messageId)) { this.accepted(record, turn); changed = true }
           else {
             if (!this.sending.has(turn.thread) && !isThreadTurnRunning(held) && !this.options.control.hasPendingThreadWork(held.id)) { turn.delivery = 'unconfirmed'; turn.outcome = 'unknown'; changed = true }
             continue
@@ -394,6 +408,9 @@ export class CouncilService {
       try { this.guard(record, turn) } catch { return }
       await this.useEffort(record, turn, seat)
       turn.delivery = 'dispatching'; turn.sentAt = new Date(this.clock()).toISOString()
+      // The fairness check's two minutes start when its first prompt goes (decision 5).
+      const round = record.rounds[turn.round]!
+      if (turn.stage === 'fairness' && !round.fairnessAt) round.fairnessAt = turn.sentAt
       // Saved as on its way before the provider can hear it, so a restart reads it as unknown, never as unsent; and
       // recorded as Sotto's, never the user's, as a wake-up is.
       try { await this.save(); await this.options.host.recordSottoMessage(turn.thread, turn.messageId) } catch { return fail() }
@@ -401,10 +418,10 @@ export class CouncilService {
       try { result = await this.options.control.commandFromCouncil({ type: 'manual-send', threadId: turn.thread, draftId: turn.draftId, text }, () => this.guard(record, turn)) }
       catch { return fail() }
       const delivery = result.deliveries?.find(item => item.draftId === turn.draftId && item.threadId === turn.thread)
-      // A part of the conversation is not the thread's first prompt: that one still brings who it is and where it works.
-      const briefed = turn.stage !== 'history'
-      if (delivery?.status === 'uncertain' || delivery?.status === 'submitting') { if (briefed) seat.context = true }
-      else if (delivery?.status === 'accepted' || !delivery && !result.error) { turn.delivery = 'accepted'; if (briefed) seat.context = true }
+      // An uncertain send stays on its way: the thread has its brief only once the send is confirmed, so a send never seen
+      // to arrive is retried with the conversation again.
+      if (delivery?.status === 'uncertain' || delivery?.status === 'submitting') { /* Observed later: accepted, or unconfirmed. */ }
+      else if (delivery?.status === 'accepted' || !delivery && !result.error) this.accepted(record, turn)
       else fail()
     } finally {
       this.sending.delete(turn.thread)
@@ -415,6 +432,13 @@ export class CouncilService {
     }
   }
 
+  /** A prompt confirmed to have arrived: the thread has its brief once the prompt that carried it arrived, and only then. */
+  private accepted(record: CouncilRecord, turn: CouncilTurn): void {
+    turn.delivery = 'accepted'
+    if (!turn.briefs) return
+    const seat = record.seats.find(item => item.thread === turn.thread)
+    if (seat) seat.context = true
+  }
   /**
    * Puts the thread on the effort its prompt runs at (decision 7): the fairness check at low, or the model's lowest at or
    * above it, and everything else at the seat's own effort, so a seat comes back to it after the fairness check. Only the
@@ -485,7 +509,7 @@ export class CouncilService {
       case 'answer': {
         const answer = readAnswerBlock(text, target.seat, criteriaOf(round).map(criterion => criterion.id))
         read = answer
-        if (answer.ok) { summary = answer.value.answer; void this.checkCitations(record, target, answer.value.findings.flatMap(finding => finding.evidence ? [{ finding: finding.id, evidence: finding.evidence }] : [])) }
+        if (answer.ok) { summary = answer.value.answer; void this.checkCitations(record, target, answer.value.findings.flatMap(finding => finding.evidence ? [{ finding: finding.id, evidence: finding.evidence }] : []), researchOf(round)) }
         break
       }
       case 'review': {
@@ -493,7 +517,7 @@ export class CouncilService {
         read = review
         if (review.ok) {
           summary = reviewSummary(review.value)
-          void this.checkCitations(record, target, review.value.evidence.map(evidence => ({ finding: target.seat, evidence })))
+          void this.checkCitations(record, target, review.value.evidence.map(evidence => ({ finding: target.seat, evidence })), researchOf(round))
         }
         break
       }
@@ -506,12 +530,16 @@ export class CouncilService {
       case 'verdict': {
         if (!round.cruxDone && letters.length >= 2 && findCouncilBlock(text, COUNCIL_BLOCK_NAMES.crux)) {
           // A crux check the chair asked for and Sotto could not read is not repaired: the chair writes the verdict without one.
-          const crux = readCruxBlock(text, letters)
+          // Without outside research a lookup is refused, and the chair writes the verdict without a crux check.
+          const crux = readCruxBlock(text, letters, researchOf(round))
           if (!crux.ok) return unread()
           read = crux; summary = crux.value.test
           break
         }
-        round.verdict = clip(withoutCouncilBlocks(text), VERDICT_MAX)
+        const verdict = withoutCouncilBlocks(text).trim()
+        // A reply with no verdict in it, such as a second crux check once the first is spent, failed: Retry asks again.
+        if (!verdict) { target.outcome = 'failed'; return }
+        round.verdict = clip(verdict, VERDICT_MAX)
         target.result = 'none'
         return
       }
@@ -563,30 +591,40 @@ export class CouncilService {
     return { letter, kind: kindsOf(round)[0]!, reviewed }
   }
 
-  /** Checks each cited `path:lines` against the snapshot and the reply's quotes (decision 4); a seat that cannot read the snapshot is unchecked. */
-  private async checkCitations(record: CouncilRecord, turn: CouncilTurn, cited: readonly { readonly finding: string; readonly evidence: string }[]): Promise<void> {
-    const places = cited.flatMap(item => { const place = parseCitation(item.evidence); return place ? [{ finding: item.finding, place }] : [] }).slice(0, 40)
-    if (!places.length) return
+  /**
+   * Checks each cited `path:lines` against the snapshot as it was recorded, its commit, never the files in the shared
+   * checkout a panelist may have changed since (decision 4), and the reply's quotes. A seat that cannot read the snapshot
+   * is unchecked. Evidence Sotto cannot check is unchecked and says so: a command, whose output Sotto never runs, and a
+   * source cited when the question needs no outside research.
+   */
+  private async checkCitations(record: CouncilRecord, turn: CouncilTurn, cited: readonly { readonly finding: string; readonly evidence: string }[], research: boolean): Promise<void> {
+    if (!cited.length) return
     const seat = record.seats.find(item => item.seat === turn.seat)
     const remote = seat?.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider)
     const reply = [this.replyText(turn) ?? '', ...record.turns.filter(item => item.repairOf === turn.id).map(item => this.replyText(item) ?? '')].join('\n')
-    const root = resolve(record.snapshot.path)
+    const git = (args: readonly string[]): Promise<string> => this.run(record.snapshot.repositoryRoot, 'git', args, { timeoutMs: 30_000 })
+    const commit = record.snapshot.commit
+    let readable: boolean | undefined
     const citations: CouncilCitation[] = []
-    for (const { finding, place } of places) {
+    for (const { finding, evidence } of cited.slice(0, 40)) {
+      if (evidence === 'command') { citations.push({ finding, path: '', lines: '', check: 'unchecked', of: 'command' }); continue }
+      if (isSourceLink(evidence)) { if (!research) citations.push({ finding, path: evidence, lines: '', check: 'unchecked', of: 'source' }); continue }
+      const place = parseCitation(evidence)
+      if (!place) continue
       const lines = place.start === place.end ? String(place.start) : `${place.start}-${place.end}`
       let check: CouncilCitation['check'] = 'unchecked'
-      if (!remote && !record.snapshot.removedAt) {
-        const file = resolve(root, place.path)
-        if (relative(root, file).startsWith('..')) check = 'missing'
-        else {
-          const size = await stat(file).then(item => item.isFile() ? item.size : -1, () => -1)
-          const text = size >= 0 && size <= 4_000_000 ? await readFile(file, 'utf8').catch(() => undefined) : undefined
-          const quoted = text === undefined ? undefined : citationQuoted(text, place, reply)
-          check = quoted === undefined ? 'missing' : quoted ? 'matches' : 'differs'
-        }
+      readable ??= !remote && await git(['cat-file', '-e', `${commit}^{commit}`]).then(() => true, () => false)
+      if (readable) {
+        const object = `${commit}:${place.path.replaceAll('\\', '/')}`
+        const size = await git(['cat-file', '-s', object]).then(Number, () => -1)
+        const text = size >= 0 && size <= 4_000_000 ? await git(['cat-file', 'blob', object]).catch((): undefined => undefined) : undefined
+        // Too large to read is unchecked; not in the snapshot's commit is missing.
+        const quoted = text === undefined ? undefined : citationQuoted(text, place, reply)
+        check = size > 4_000_000 ? 'unchecked' : quoted === undefined ? 'missing' : quoted ? 'matches' : 'differs'
       }
       citations.push({ finding, path: place.path, lines, check })
     }
+    if (!citations.length) return
     turn.citations = citations
     await this.persist()
     this.changed([record])
@@ -630,6 +668,7 @@ export class CouncilService {
     }
     const preamble = seat.context ? undefined : this.preamble(record, seat)
     if (!seat.context && preamble === undefined) return undefined
+    turn.briefs = preamble !== undefined
     const previous = round.index > 0 ? record.rounds[round.index - 1]!.verdict : undefined
     const context = { ...preamble ? { preamble } : {}, question: round.question, ...previous ? { previousVerdict: previous } : {} }
     const remote = seat.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider)
@@ -658,7 +697,7 @@ export class CouncilService {
         const results = (round.cruxRunners ?? []).flatMap(runner => { const crux = currentTurn(record, round, 'crux', runner); return crux && isComplete(crux) ? [{ letter: runner, text: this.replyText(crux) ?? REPLY_GONE }] : [] })
         return verdictPrompt({ ...catchUp ? { preamble: catchUp, question: round.question } : {}, kinds: kindsOf(round), ...round.criteria ? { userCriteria: round.criteria } : {}, answers: letters.map(letter => ({ letter, text: answerOf(letter) })), reviews,
           leftOut: round.leftOut.filter(letter => letter !== COUNCIL_CHAIR), panelists: record.seats.filter(isPanelist).length,
-          ...round.crux && round.cruxDone ? { crux: { plan: round.crux, results } } : {}, cruxAllowed: !round.cruxDone && letters.length >= 2 })
+          ...round.crux && round.cruxDone ? { crux: { plan: round.crux, results } } : {}, cruxAllowed: !round.cruxDone && letters.length >= 2, research: researchOf(round) })
       }
       case 'fairness': {
         if (round.verdict === undefined) return undefined
@@ -700,9 +739,9 @@ export class CouncilService {
       .sort((left, right) => STAGE_ORDER.indexOf(left.stage) - STAGE_ORDER.indexOf(right.stage) || Number(Boolean(left.repairOf)) - Number(Boolean(right.repairOf)))
       .map(turn => {
         const waiting = !isFinal(turn) && (threads.get(turn.thread)?.requests.length ?? 0) > 0
-        return { turn: turn.id, seat: turn.seat, stage: turn.stage, state: turnState(turn, waiting), late: isLate(turn, now, deadline), repair: turn.repairOf !== undefined,
+        return { turn: turn.id, seat: turn.seat, stage: turn.stage, state: turnState(turn, waiting), late: isLate(turn, now, deadline, record), repair: turn.repairOf !== undefined,
           result: turn.result === 'invalid' ? 'pending' as const : turn.result, ...turn.summary ? { summary: turn.summary } : {}, ...turn.citations?.length ? { citations: turn.citations } : {},
-          ...sourcesOf(turn), thread: turn.thread, actions: rowActions(record, turn, now, waiting) }
+          ...sourcesOf(turn, researchOf(record.rounds[turn.round]!)), thread: turn.thread, actions: rowActions(record, turn, now, waiting) }
       })
     const verdict = round.verdict === undefined && !(round.stage === 'fairness' || round.stage === 'done') ? null : {
       text: round.verdict ?? null, counts: this.counts(record, round), fairnessDone: fairnessDone(record, round, now),
@@ -762,7 +801,8 @@ export class CouncilService {
       for (const turn of record.turns) {
         byDraft.set(turn.draftId, { record, turn })
         messages.add(turn.messageId)
-        if (!turn.superseded && !isFinal(turn)) { watched.add(turn.thread); followed.add(turn.id) }
+        // A stopped Council's prompts stay Sotto's, but nothing of it is followed any more.
+        if (!record.stoppedAt && !turn.superseded && !isFinal(turn)) { watched.add(turn.thread); followed.add(turn.id) }
       }
     }
     for (const id of [...this.waiting.keys()]) if (!followed.has(id)) this.waiting.delete(id)
@@ -827,9 +867,12 @@ function blockName(stage: CouncilTurn['stage']): string {
     case 'amend': return COUNCIL_BLOCK_NAMES.amend
   }
 }
-/** An answer's sources by finding, for its row: Sotto checks only a link's shape, so it shows them for reviewers to open. */
-function sourcesOf(turn: CouncilTurn): { readonly sources?: { readonly finding: string; readonly url: string }[] } {
-  const block = turn.stage === 'answer' && !turn.repairOf ? held<CouncilAnswer>(turn) : undefined
+/**
+ * An answer's sources by finding, for its row: Sotto checks only a link's shape, so it shows them for reviewers to open.
+ * Without outside research a source is unchecked evidence, among the citations, not a source.
+ */
+function sourcesOf(turn: CouncilTurn, research: boolean): { readonly sources?: { readonly finding: string; readonly url: string }[] } {
+  const block = research && turn.stage === 'answer' && !turn.repairOf ? held<CouncilAnswer>(turn) : undefined
   if (!block) return {}
   const sources = block.findings.flatMap(finding => finding.kind === 'source' && finding.evidence ? [{ finding: finding.id, url: finding.evidence }] : []).slice(0, 40)
   return sources.length ? { sources } : {}

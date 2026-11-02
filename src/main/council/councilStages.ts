@@ -49,9 +49,10 @@ function queue(record: CouncilRecord, round: CouncilRound, seat: string, stage: 
   // A conversation too long for one prompt goes to a thread in parts before its first stage prompt, each its own prompt.
   if (stage !== 'history' && record.history.parts > 1 && !record.turns.some(item => item.thread === thread && item.stage === 'history' && !item.superseded)) {
     for (let part = 1; part <= record.history.parts; part++) record.turns.push({ id: clock.newId(), round: round.index, seat, thread, stage: 'history', part, draftId: clock.newId(),
-      messageId: clock.newId(), delivery: 'queued', result: 'pending' })
+      messageId: clock.newId(), delivery: 'queued', result: 'pending', queuedAt: new Date(clock.now).toISOString() })
   }
-  const turn: CouncilTurn = { id: clock.newId(), round: round.index, seat, thread, stage, draftId: clock.newId(), messageId: clock.newId(), delivery: 'queued', result: 'pending', ...extra }
+  const turn: CouncilTurn = { id: clock.newId(), round: round.index, seat, thread, stage, draftId: clock.newId(), messageId: clock.newId(), delivery: 'queued', result: 'pending',
+    queuedAt: new Date(clock.now).toISOString(), ...extra }
   record.turns.push(turn)
   return turn
 }
@@ -127,7 +128,7 @@ function step(record: CouncilRecord, round: CouncilRound, clock: StageClock): bo
         turn.superseded = true
         return true
       }
-      round.fairnessAt = at
+      // The fairness check's two minutes start when its first prompt is sent, not here.
       round.stage = 'fairness'
       return true
     }
@@ -192,9 +193,20 @@ export function turnState(turn: CouncilTurn, waitingOnUser: boolean): CouncilThr
   return waitingOnUser ? 'waiting' : 'working'
 }
 
-/** Whether a prompt that was sent has passed the stage deadline without an end. */
-export function isLate(turn: CouncilTurn, now: number, deadlineMs: number): boolean {
-  return !isFinal(turn) && turn.sentAt !== undefined && now > Date.parse(turn.sentAt) + deadlineMs
+/** When a prompt's stage deadline counts from: its send, or while it waits for its thread to be free, its queueing. */
+function deadlineFrom(turn: CouncilTurn): string | undefined { return turn.sentAt ?? turn.queuedAt }
+/**
+ * Whether a prompt has passed the stage deadline without an end: sent and not answered, or queued and never sent because
+ * its thread stayed busy with other work or waited on the user. A prompt waiting behind its own thread's parts of the
+ * conversation waits on the Council itself, and is not late for it.
+ */
+export function isLate(turn: CouncilTurn, now: number, deadlineMs: number, record?: CouncilRecord): boolean {
+  const since = deadlineFrom(turn)
+  if (isFinal(turn) || since === undefined || now <= Date.parse(since) + deadlineMs) return false
+  return !(record && turn.delivery === 'queued' && waitsOnParts(record, turn))
+}
+function waitsOnParts(record: CouncilRecord, turn: CouncilTurn): boolean {
+  return turn.stage !== 'history' && record.turns.some(item => item.thread === turn.thread && item.stage === 'history' && !item.superseded && !isComplete(item))
 }
 
 /**
@@ -209,7 +221,7 @@ export function rowActions(record: CouncilRecord, turn: CouncilTurn, now: number
   if (record.stoppedAt || record.settledAt || turn.superseded || turn.repairOf || turn.round !== round.index || round.stage === 'done'
     || turn.stage !== 'history' && TURN_ROUND_STAGE[turn.stage] !== round.stage) return []
   const stuck = turn.delivery === 'failed' || turn.delivery === 'unconfirmed' || turn.outcome === 'failed' || turn.outcome === 'stopped' || turn.outcome === 'unknown'
-    || isLate(turn, now, record.deadlineMinutes * 60_000)
+    || isLate(turn, now, record.deadlineMinutes * 60_000, record)
   if (!stuck) return []
   const actions: CouncilRowAction[] = waitingOnUser ? [] : ['retry']
   actions.push('replace')
@@ -257,9 +269,15 @@ export function replaceSeat(record: CouncilRecord, turn: CouncilTurn, seat: Pick
   retryTurn(record, turn, clock)
 }
 
-/** Every panelist still sitting has answered the fairness check, or two minutes have passed since it began (decision 5). */
+/**
+ * The verdict may go to its thread (decision 5): every panelist still sitting has answered the fairness check, or two
+ * minutes have passed since its first prompt was sent; and no objection waits on the chair, nor an answer to one is
+ * still being written, so the verdict cannot change under a draft already placed.
+ */
 export function fairnessDone(record: CouncilRecord, round: CouncilRound, now: number): boolean {
   if (!round.fairnessAt) return false
+  if (round.objections.some(objection => objection.answer === 'pending')) return false
+  if (record.turns.some(turn => turn.round === round.index && turn.stage === 'amend' && !turn.superseded && !isComplete(turn))) return false
   if (now >= Date.parse(round.fairnessAt) + COUNCIL_FAIRNESS_WAIT_MS) return true
   const letters = answeredLetters(record, round)
   return activePanelists(record, round).filter(seat => letters.includes(seat.seat)).every(seat => { const turn = currentTurn(record, round, 'fairness', seat.seat); return turn !== undefined && isComplete(turn) })
@@ -270,7 +288,7 @@ export function nextClockChange(record: CouncilRecord, now: number): number | un
   if (record.stoppedAt || record.settledAt) return undefined
   const due: number[] = []
   const deadline = record.deadlineMinutes * 60_000
-  for (const turn of record.turns) if (!turn.superseded && turn.sentAt && !isFinal(turn)) due.push(Date.parse(turn.sentAt) + deadline + 1)
+  for (const turn of record.turns) { const since = deadlineFrom(turn); if (!turn.superseded && since && !isFinal(turn)) due.push(Date.parse(since) + deadline + 1) }
   for (const round of record.rounds) if (round.fairnessAt && !fairnessDone(record, round, now)) due.push(Date.parse(round.fairnessAt) + COUNCIL_FAIRNESS_WAIT_MS)
   const next = Math.min(...due.filter(time => time > now))
   return Number.isFinite(next) ? next : undefined

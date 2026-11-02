@@ -240,7 +240,8 @@ export type CouncilCommandResult = z.infer<typeof councilCommandResultSchema>
 export const councilEstimateRequestSchema = z.object({ originThread: id }).strict()
 /** What the Ask screen says each thread reads before Ask the Council (decision 3): the origin conversation's size. */
 export const councilEstimateSchema = z.union([
-  z.object({ messages: count, words: count, tools: count }).strict(),
+  /** `characters` is the conversation as quoted; `parts` how many prompts every thread reads it in, one when it fits in the first. */
+  z.object({ messages: count, words: count, tools: count, characters: count, parts: count.min(1) }).strict(),
   z.object({ unavailable: z.string().max(1_000) }).strict(),
 ])
 export type CouncilEstimate = z.infer<typeof councilEstimateSchema>
@@ -260,12 +261,16 @@ export const councilCountsSchema = z.object({
 }).strict()
 export type CouncilCounts = z.infer<typeof councilCountsSchema>
 
-/** A cited `path:lines` as Sotto checked it against the snapshot (decision 4). */
+/**
+ * A cited `path:lines` as Sotto checked it against the snapshot (decision 4). Evidence Sotto cannot check is unchecked
+ * and says what it was: a command, whose output Sotto never runs, or a source cited when the question needs no research.
+ */
 export const councilCitationSchema = z.object({
   finding: seatId,
-  path: z.string().max(1_024),
+  path: z.string().max(2_048),
   lines: z.string().max(32),
   check: z.enum(['matches', 'differs', 'missing', 'unchecked']),
+  of: z.enum(['command', 'source']).optional(),
 }).strict()
 export type CouncilCitation = z.infer<typeof councilCitationSchema>
 

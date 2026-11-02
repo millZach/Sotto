@@ -1310,6 +1310,10 @@ msgstr "Sotto is still connecting to {host}. Wait for it, or cancel it first."
 msgid "Sotto is updating the host on {host}. Nothing was changed. Wait for the update to finish, then try again."
 msgstr "Sotto is updating the host on {host}. Nothing was changed. Wait for the update to finish, then try again."
 
+#: src/main/council/councilService.ts
+msgid "Sotto keeps {RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started."
+msgstr "Sotto keeps {RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started."
+
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto keeps connecting to {name}. If it still runs {from}, it shows here again."
 msgstr "Sotto keeps connecting to {name}. If it still runs {from}, it shows here again."
