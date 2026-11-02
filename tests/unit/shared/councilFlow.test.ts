@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { AgentModel } from '../../../src/shared/agents'
-import { councilSeatNotes, councilSeatsInForce, councilModelOrder } from '../../../src/shared/council'
+import { councilFairnessEffort, councilSeatNotes, councilSeatsInForce, councilModelOrder } from '../../../src/shared/council'
 import type { CouncilAnswer, CouncilReview } from '../../../src/shared/councilBlocks'
 import { councilCounts, reviewAssignments } from '../../../src/shared/councilFlow'
 
@@ -96,6 +96,14 @@ describe('seats Sotto fills', () => {
       [...four, model('devin', 'devin')])
     expect(seats.panelists[0]).toMatchObject({ ready: false, from: 'choice' })
     expect(councilSeatNotes(seats)).toEqual(expect.arrayContaining([{ kind: 'not-ready', seat: 0 }, { kind: 'remote', seat: 'chair' }]))
+  })
+
+  it('runs the fairness check at low, or the lowest effort at or above it', () => {
+    expect(councilFairnessEffort(model('claude', 'opus', { reasoningEfforts: ['low', 'medium', 'high'] }))).toBe('low')
+    expect(councilFairnessEffort(model('codex', 'sol', { reasoningEfforts: ['minimal', 'medium', 'high', 'xhigh'] }))).toBe('medium')
+    expect(councilFairnessEffort(model('claude', 'opus', { reasoningEfforts: ['minimal'] }))).toBe('minimal')
+    expect(councilFairnessEffort(model('claude', 'opus', { reasoningEfforts: ['low', 'high', 'ultracode'] }))).toBe('low')
+    expect(councilFairnessEffort(model('grok', 'g', { reasoningEfforts: [] }))).toBeNull()
   })
 
   it('leaves Devin last and drops legacy models from the order', () => {

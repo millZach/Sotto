@@ -815,7 +815,10 @@ export class AgentControl {
    * user's own command, so it answers nothing and changes no permission.
    */
   commandFromCouncil(command: CouncilCoordinatorCommand, guard: () => void): Promise<AgentState> {
-    if (!this.councilHooks || !['create-thread', 'manual-send', 'interrupt', 'settle-thread'].includes(command.type)) throw new Error('The Council cannot answer requests or change permissions.')
+    if (!this.councilHooks || !['create-thread', 'manual-send', 'interrupt', 'settle-thread', 'configure-thread'].includes(command.type)) throw new Error('The Council cannot answer requests or change permissions.')
+    // It changes a thread's effort for the fairness check and back, and nothing else of its settings: never its permission.
+    if (command.type === 'configure-thread' && (command.modelId !== undefined || command.runtimeMode !== undefined || command.providerMode !== undefined || command.speed !== undefined
+      || command.fastMode !== undefined || command.reasoningEffort === undefined)) throw new Error('The Council changes only a thread\'s effort.')
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
   }

@@ -1121,6 +1121,10 @@ msgstr "an unreported share"
 msgid "Answer"
 msgstr "Answer"
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Answer again with these criteria"
+msgstr "Answer again with these criteria"
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Answer it here instead; the handover carries it."
 msgstr "Answer it here instead; the handover carries it."
@@ -1320,6 +1324,7 @@ msgstr "Can’t reach it"
 msgid "Can't read limits"
 msgstr "Can't read limits"
 
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -1369,6 +1374,10 @@ msgstr "Change {topic} answer"
 msgid "Change it any time, or make your own theme, in Settings › Appearance."
 msgstr "Change it any time, or make your own theme, in Settings › Appearance."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Change the criteria"
+msgstr "Change the criteria"
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Change where new workers start"
 msgstr "Change where new workers start"
@@ -1382,8 +1391,8 @@ msgid "Changes save as you make them."
 msgstr "Changes save as you make them."
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Changing the kind or the research asks every panelist to answer again."
-msgstr "Changing the kind or the research asks every panelist to answer again."
+msgid "Changing the kind, the research or the criteria asks every panelist to answer again."
+msgstr "Changing the kind, the research or the criteria asks every panelist to answer again."
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "ChatGPT through Codex"
@@ -1877,6 +1886,10 @@ msgid "CPU"
 msgstr "CPU"
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Criteria, one to five, one on each line"
+msgstr "Criteria, one to five, one on each line"
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Crux check"
 msgstr "Crux check"
 
@@ -2154,11 +2167,6 @@ msgstr "Each stops its current turn and keeps the work it has done. Threads you 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Each thread is settled where it is once its new thread’s first turn ends, and its worktree is kept there."
 msgstr "Each thread is settled where it is once its new thread’s first turn ends, and its worktree is kept there."
-
-#. placeholder {0}: council.history.leftOut
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Each thread read the newest part of the conversation; {0} earlier messages were left out."
-msgstr "Each thread read the newest part of the conversation; {0} earlier messages were left out."
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Edit"
@@ -4371,6 +4379,10 @@ msgstr "Reading main's numbers…"
 msgid "Reading memory…"
 msgstr "Reading memory…"
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Reading the conversation"
+msgstr "Reading the conversation"
+
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Reading usage…"
 msgstr "Reading usage…"
@@ -4745,6 +4757,10 @@ msgstr "Sent to"
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
 msgstr "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "set by you"
+msgstr "set by you"
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up {firstShort}"
@@ -5757,8 +5773,8 @@ msgid "The chair’s framing could not be read, so the panel answers the questio
 msgstr "The chair’s framing could not be read, so the panel answers the question alone, as {kinds}."
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "The conversation was too long for one prompt, so each thread reads it from a file in the snapshot."
-msgstr "The conversation was too long for one prompt, so each thread reads it from a file in the snapshot."
+msgid "The conversation is too long for one prompt, so each thread reads all of it in {parts} parts first."
+msgstr "The conversation is too long for one prompt, so each thread reads all of it in {parts} parts first."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "The Council had two panelists, so nothing is counted."

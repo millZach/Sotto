@@ -4,6 +4,7 @@ import { modelInForce } from './modelLineup'
 import { resolveModel } from './modelCatalog'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { withoutUltracode } from './ultracode'
+import { effortRank } from './reasoningEfforts'
 import { defaultModel, fitEffort, type WorkerRoleDefault } from './workerRoles'
 
 /**
@@ -29,6 +30,16 @@ export const COUNCIL_FAIRNESS_WAIT_MS = 2 * 60_000
 export const COUNCIL_QUESTION_MAX = 20_000
 /** The effort a seat Sotto filled starts on (decision 7). */
 export const COUNCIL_SEAT_EFFORT = 'high'
+/**
+ * The effort the fairness check runs at (decision 7): low, or the lowest a model offers at or above low; a model whose
+ * every level is below low runs it at its highest. Null for a model with no effort setting.
+ */
+export function councilFairnessEffort(model: AgentModel | undefined): string | null {
+  const offered = withoutUltracode(model?.reasoningEfforts ?? [])
+  if (!offered.length) return null
+  const low = effortRank('low') ?? 0
+  return offered.find(level => (effortRank(level) ?? -1) >= low) ?? offered.at(-1)!
+}
 
 /**
  * The first line of every prompt a Council sends. The host records each prompt as Sotto's, as it records a wake-up, so no
@@ -189,8 +200,11 @@ export const councilKindSchema = z.enum(COUNCIL_KINDS)
 /** Where one asking of the Council stands. */
 export const COUNCIL_STAGES = ['framing', 'answers', 'reviews', 'crux', 'verdict', 'fairness', 'done'] as const
 export type CouncilStage = typeof COUNCIL_STAGES[number]
-/** What one prompt to one thread is for. A repair asks again for a result block, under the same stage. */
-export const COUNCIL_TURN_STAGES = ['framing', 'answer', 'review', 'crux', 'verdict', 'fairness', 'amend'] as const
+/**
+ * What one prompt to one thread is for. A repair asks again for a result block, under the same stage. `history` is one part
+ * of a conversation too long for one prompt, sent before the thread's first stage prompt.
+ */
+export const COUNCIL_TURN_STAGES = ['history', 'framing', 'answer', 'review', 'crux', 'verdict', 'fairness', 'amend'] as const
 export type CouncilTurnStage = typeof COUNCIL_TURN_STAGES[number]
 /** A thread's state in its row (decision 4). */
 export const COUNCIL_THREAD_STATES = ['working', 'waiting', 'done', 'failed', 'stopped', 'unknown'] as const
@@ -211,7 +225,8 @@ export const councilCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('replace'), council: z.uuid(), turn: z.uuid(), seat: councilSeatChoiceSchema }).strict(),
   z.object({ type: z.literal('follow-up'), council: z.uuid(), question: z.string().trim().min(1).max(COUNCIL_QUESTION_MAX) }).strict(),
   /** The user changes the round's kind, or whether it needs outside research, in the record; the panelists answer again. */
-  z.object({ type: z.literal('reframe'), council: z.uuid(), kinds: z.array(councilKindSchema).min(1).max(2).optional(), research: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('reframe'), council: z.uuid(), kinds: z.array(councilKindSchema).min(1).max(2).optional(), research: z.boolean().optional(),
+    criteria: z.array(z.string().trim().min(1).max(2_000)).min(1).max(5).optional() }).strict(),
   z.object({ type: z.literal('stop'), council: z.uuid() }).strict(),
   z.object({ type: z.literal('settle'), council: z.uuid() }).strict(),
 ])
@@ -290,7 +305,8 @@ export type CouncilSeatView = z.infer<typeof councilSeatViewSchema>
 
 export const councilFramingViewSchema = z.object({
   kinds: z.array(councilKindSchema).min(1).max(2),
-  criteria: z.array(z.object({ id: seatId, source: z.enum(['question', 'assumed']), text: z.string().max(2_000) }).strict()).max(5),
+  /** Each criterion and where it came from: the question, the chair, or the user, who changed them in the record. */
+  criteria: z.array(z.object({ id: seatId, source: z.enum(['question', 'assumed', 'user']), text: z.string().max(2_000) }).strict()).max(5),
   headings: z.array(z.string().max(200)).max(8),
   words: count,
   angles: z.array(z.object({ seat: seatId, text: z.string().max(2_000) }).strict()).max(COUNCIL_PANELISTS_MAX),
@@ -344,7 +360,8 @@ export const councilViewSchema = z.object({
   stoppedBecause: z.enum(['user', 'words-lost', 'snapshot']).optional(),
   /** Where the Council works: the branch and commit, and whether the snapshot carried uncommitted changes and how many untracked files. */
   snapshot: z.object({ commit: z.string().max(64), branch: z.string().max(512), untracked: count, dirty: z.boolean(), removed: z.boolean() }).strict(),
-  history: z.object({ messages: count, words: count, mode: z.enum(['inline', 'file', 'cut']), leftOut: count }).strict(),
+  /** How each thread read the whole conversation: in its first prompt, or in parts before it when it was too long for one. */
+  history: z.object({ messages: count, words: count, parts: count }).strict(),
   seats: z.array(councilSeatViewSchema).max(COUNCIL_PANELISTS_MAX + 1),
   rounds: z.array(councilRoundViewSchema).min(1).max(50),
   deadlineMinutes: count,

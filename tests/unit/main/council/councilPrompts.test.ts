@@ -4,7 +4,7 @@ import type { AgentMessage } from '../../../../src/shared/agents'
 import type { AgentActivity } from '../../../../src/shared/agentActivity'
 import { COUNCIL_FIELD_MAX, readFairnessBlock } from '../../../../src/shared/councilBlocks'
 import { councilFileSchema } from '../../../../src/main/council/councilRecord'
-import { answerPrompt, cutHistoryText, fairnessPrompt, historyText, PROMPT_LIMIT, quoteHistory, reviewPrompt, verdictPrompt } from '../../../../src/main/council/councilPrompts'
+import { answerPrompt, fairnessPrompt, framingWords, historyAboveWords, historyPartPrompt, historyParts, historyText, PROMPT_LIMIT, quoteHistory, reviewPrompt, verdictPrompt } from '../../../../src/main/council/councilPrompts'
 
 const message = (id: string, role: 'user' | 'assistant', text: string, extra: Partial<AgentMessage> = {}): AgentMessage => ({ id, role, text, createdAt: '2026-11-02T12:00:00.000Z', ...extra })
 const activity = (id: string, after: string, extra: Partial<AgentActivity>): AgentActivity =>
@@ -31,14 +31,25 @@ describe('the origin conversation as quoted history', () => {
     for (const hidden of ['SECRET', 'Synthetic visual', 'Synthetic hidden news']) expect(text).not.toContain(hidden)
   })
 
-  it('keeps the first message and the newest that fit when the conversation is too long to carry, and says how many it left out', () => {
-    const messages = Array.from({ length: 60 }, (_, index) => message(`m${index}`, index % 2 ? 'assistant' : 'user', `Synthetic message ${index} ${'x'.repeat(2_000)}`))
-    const cut = cutHistoryText('Synthetic thread', quoteHistory({ provider: 'codex', messages, activities: [] }), 20_000)
-    expect(cut.text.length).toBeLessThan(20_000)
-    expect(cut.text).toContain('Synthetic message 0 ')
-    expect(cut.text).toContain('Synthetic message 59 ')
-    expect(cut.text).not.toContain('Synthetic message 30 ')
-    expect(cut.text).toContain(`${cut.leftOut} messages here are left out`)
+  it('sends a conversation too long for one prompt whole, in parts that each fit a send, in order', () => {
+    const messages = Array.from({ length: 60 }, (_, index) => message(`m${index}`, index % 2 ? 'assistant' : 'user', `Synthetic message ${index} ${'x'.repeat(4_000)}`))
+    messages.push(message('huge', 'assistant', `Synthetic huge ${'y'.repeat(150_000)} end of huge`))
+    const parts = historyParts('Synthetic thread', quoteHistory({ provider: 'codex', messages, activities: [] }))
+    expect(parts.length).toBeGreaterThan(2)
+    const prompts = parts.map((part, index) => historyPartPrompt(index + 1, parts.length, part))
+    for (const prompt of prompts) expect(prompt.length).toBeLessThanOrEqual(PROMPT_LIMIT)
+    const all = parts.join('\n')
+    for (let index = 0; index < 60; index++) expect(all).toContain(`Synthetic message ${index} `)
+    expect(all).toContain('end of huge')
+    expect(all.indexOf('Synthetic message 59 ')).toBeGreaterThan(all.indexOf('Synthetic message 0 '))
+    expect(prompts[1]).toContain('This is part 2 of')
+    expect(historyAboveWords(parts.length)).toContain(`in ${parts.length} parts`)
+  })
+
+  it('holds answers to the criteria the user set, said to be the user\'s', () => {
+    const words = framingWords(undefined, 'A', ['fact'], [{ id: 'C1', source: 'user', text: 'Synthetic user criterion' }])
+    expect(words).toContain('C1 (set by the user): Synthetic user criterion')
+    expect(framingWords(undefined, 'A', ['decision'], [])).toContain('could not be read')
   })
 })
 
@@ -82,7 +93,7 @@ describe('long fields', () => {
     const read = readFairnessBlock(['```council-fairness', 'fair: no', `claim: ${quote}`, `passage: ${quote.slice(0, 50)}`, '```'].join('\n'), quote)
     expect(read.ok && read.value.claim!.length).toBe(COUNCIL_FIELD_MAX)
     const record = { id: '00000000-0000-4000-8000-000000000000', createdAt: '2026-11-02T12:00:00.000Z', originThread: 'origin', originTitle: 'Synthetic', projectId: 'p',
-      snapshot: { path: '/s', repositoryRoot: '/', commit: 'a'.repeat(40), branch: 'main', untracked: 0 }, history: { messages: 1, words: 1, tools: 0, mode: 'inline', leftOut: 0 },
+      snapshot: { path: '/s', repositoryRoot: '/', commit: 'a'.repeat(40), branch: 'main', untracked: 0 }, history: { messages: 1, words: 1, tools: 0, parts: 1 },
       seats: ['A', 'B', 'chair'].map(seat => ({ seat, role: seat === 'chair' ? 'chair' : 'panelist', modelId: 'm', modelName: 'm', effort: null, thread: `t-${seat}`, formerThreads: [], started: true, context: true })),
       rounds: [{ index: 0, askedAt: '2026-11-02T12:00:00.000Z', stage: 'fairness', leftOut: [], objections: [{ seat: 'A', claim: read.ok ? read.value.claim : '', passage: 'q', answer: 'pending' }] }],
       turns: [], deadlineMinutes: 10 }

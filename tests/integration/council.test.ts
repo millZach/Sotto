@@ -99,6 +99,14 @@ it('runs a Council end to end in a snapshot, keeps the user\'s checkout as it wa
   await vi.waitFor(() => expect(f.view().rounds[0]!.stage).toBe('fairness'), { timeout: 20_000 })
   expect(f.view().rounds[0]!.draft).toBeNull()
   for (const name of ['A', 'B', 'C']) await f.answer(name, 'represented fairly', fence('council-fairness', 'fair: yes'))
+  // The fairness check ran at low: A and B, on high, were put on low before it, and nothing but the effort was changed.
+  for (const name of ['A', 'B']) {
+    const session = f.workspace.registry.byThread(f.seat(name))!.sessionId
+    const changes = f.adapterOf(f.seat(name)).commands.filter(command => command.type === 'configure-thread' && command.threadId === session)
+    expect(changes.length).toBeGreaterThan(0)
+    for (const command of changes) expect(Object.keys(command).filter(key => !['type', 'commandId', 'threadId'].includes(key))).toEqual(['reasoningEffort'])
+    expect(changes.at(-1)).toMatchObject({ reasoningEffort: 'low' })
+  }
 
   await vi.waitFor(() => expect(f.view().rounds[0]).toMatchObject({ stage: 'done', verdict: { fairnessDone: true } }), { timeout: 20_000 })
   const round = f.view().rounds[0]!
@@ -159,3 +167,24 @@ it('never sends again a prompt Sotto had not seen arrive before it restarted', a
   await f.endTurn(f.origin, 'Synthetic later reply')
   expect(prompts()).toBe(sent)
 })
+
+it('sends a conversation too long for one prompt whole, in parts and in order, writing none of it to disk', async () => {
+  const f = await fixture()
+  // A long origin conversation: two replies past what one prompt carries together.
+  await f.endTurn(f.origin, `Synthetic long reply one ${'x'.repeat(60_000)}`)
+  await f.endTurn(f.origin, `Synthetic long reply two ${'y'.repeat(60_000)}`)
+  await f.council.command({ type: 'start', originThread: f.origin, question: 'Synthetic question?', panelists: [{ modelId: f.model('codex').id, reasoningEffort: 'high' },
+    { modelId: f.model('grok').id, reasoningEffort: 'high' }], chair: { modelId: f.model('claude').id, reasoningEffort: null } })
+  const parts = f.view().history.parts
+  expect(parts).toBeGreaterThan(1)
+  for (let part = 1; part <= parts; part++) await f.answer('chair', `This is part ${part} of ${parts}`, 'Read.')
+  await f.answer('chair', 'Don\'t answer it', framing.replace(/angle: C.*\n/u, ''))
+  const sent = f.native(f.seat('chair')).messages.filter(message => message.role === 'user').map(message => message.text)
+  expect(sent.join('\n')).toContain('Synthetic long reply one')
+  expect(sent.join('\n')).toContain('Synthetic long reply two')
+  expect(sent.at(-1)).toContain(`came to you above, in ${parts} parts`)
+  for (let part = 1; part <= parts; part++) await f.answer('A', `This is part ${part} of ${parts}`, 'Read.')
+  await f.answer('A', 'as panelist A', answerReply('A', false))
+  expect(existsSync(join(f.folder, '.sotto-council'))).toBe(false)
+})
+

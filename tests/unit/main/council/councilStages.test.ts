@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CouncilAnswer, CouncilCrux, CouncilFraming, CouncilReview } from '../../../../src/shared/councilBlocks'
 import { savedRecord, type CouncilRecord, type CouncilTurn } from '../../../../src/main/council/councilRecord'
-import { advanceRound, currentRound, fairnessDone, isLate, kindsOf, leaveOut, nextClockChange, reframable, reframe, replaceSeat, researchOf, retryTurn, rowActions, turnState, type StageClock } from '../../../../src/main/council/councilStages'
+import { advanceRound, criteriaOf, currentRound, fairnessDone, isLate, kindsOf, leaveOut, nextClockChange, reframable, reframe, replaceSeat, researchOf, retryTurn, rowActions, turnState, type StageClock } from '../../../../src/main/council/councilStages'
 
 const START = Date.parse('2026-11-02T12:00:00.000Z')
 let ids = 0
@@ -14,7 +14,7 @@ function council(panelists = 3): CouncilRecord {
   return {
     id: '00000000-0000-4000-8000-000000000000', createdAt: new Date(START).toISOString(), originThread: 'origin', originTitle: 'Synthetic origin', projectId: 'project',
     snapshot: { path: '/synthetic/snapshot', repositoryRoot: '/synthetic', commit: 'a'.repeat(40), branch: 'main', untracked: 0 },
-    history: { messages: 2, words: 10, tools: 0, mode: 'inline', leftOut: 0 },
+    history: { messages: 2, words: 10, tools: 0, parts: 1 },
     seats: [...['A', 'B', 'C', 'D', 'E'].slice(0, panelists).map(name => seat(name, 'panelist')), seat('chair', 'chair')],
     rounds: [{ index: 0, askedAt: new Date(START).toISOString(), stage: 'framing', leftOut: [], objections: [], question: 'Synthetic question?' }],
     turns: [], deadlineMinutes: 10,
@@ -168,6 +168,15 @@ describe('changing the framing in the record', () => {
     expect(record.turns.filter(turn => turn.stage === 'answer' || turn.stage === 'review').filter(turn => turn.delivery !== 'queued').every(turn => turn.superseded)).toBe(true)
   })
 
+  it('holds answers to the criteria the user set, and asks again', () => {
+    const record = council()
+    throughAnswers(record)
+    expect(reframe(record, { criteria: ['Keeps x'] }, START)).toBeUndefined()
+    expect(reframe(record, { criteria: ['Synthetic one', 'Synthetic two'] }, START)).toEqual([])
+    expect(criteriaOf(currentRound(record))).toEqual([{ id: 'C1', source: 'user', text: 'Synthetic one' }, { id: 'C2', source: 'user', text: 'Synthetic two' }])
+    expect(currentRound(record).stage).toBe('answers')
+  })
+
   it('waits for the framing, and changes nothing once the verdict is under way', () => {
     const record = council()
     advanceRound(record, clock())
@@ -176,6 +185,32 @@ describe('changing the framing in the record', () => {
     advanceRound(record, clock())
     currentRound(record).stage = 'verdict'
     expect(reframable(record)).toBe(false)
+  })
+})
+
+describe('a conversation in parts', () => {
+  it('queues every part before a thread\'s first stage prompt, once, and lets a stuck part be retried or given another model', () => {
+    const record = council()
+    record.history.parts = 3
+    advanceRound(record, clock())
+    expect(record.turns.map(turn => [turn.seat, turn.stage, turn.part])).toEqual([['chair', 'history', 1], ['chair', 'history', 2], ['chair', 'history', 3], ['chair', 'framing', undefined]])
+    const [first, second] = record.turns
+    sent(first!); first!.outcome = 'failed'
+    expect(rowActions(record, first!, START, false)).toEqual(['retry', 'replace'])
+    retryTurn(record, first!, clock())
+    expect(record.turns.at(-1)).toMatchObject({ stage: 'history', part: 1, delivery: 'queued' })
+    replaceSeat(record, second!, { modelId: 'native:codex:model:gpt-6.1-sol', modelName: 'GPT-6.1 Sol', provider: 'codex', effort: 'high' }, 'thread-new', clock())
+    expect(second!.superseded).toBe(true)
+  })
+
+  it('sends the parts to a panelist too, and to no thread twice', () => {
+    const record = council()
+    record.history.parts = 2
+    advanceRound(record, clock())
+    for (const turn of record.turns.filter(item => item.stage === 'history')) answer(turn)
+    answer(queued(record, 'framing')[0]!, framing)
+    advanceRound(record, clock())
+    expect(record.turns.filter(turn => turn.stage === 'history').map(turn => turn.seat)).toEqual(['chair', 'chair', 'A', 'A', 'B', 'B', 'C', 'C'])
   })
 })
 

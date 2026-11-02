@@ -5,7 +5,7 @@ import { join, relative, resolve } from 'node:path'
 import { isThreadProviderConnected, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
   type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_PROMPT_LEAD, COUNCIL_REMOTE_PROVIDERS, COUNCIL_VIEWS_MAX, councilEffort, councilFramingViewSchema, type CouncilCitation, type CouncilCommand,
+import { COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_PROMPT_LEAD, councilFairnessEffort, COUNCIL_REMOTE_PROVIDERS, COUNCIL_VIEWS_MAX, councilEffort, councilFramingViewSchema, type CouncilCitation, type CouncilCommand,
   type CouncilCommandResult, type CouncilEstimate, type CouncilKind, type CouncilRoundView, type CouncilSeatChoice, type CouncilView } from '../../shared/council'
 import { citationQuoted, COUNCIL_BLOCK_NAMES, findCouncilBlock, parseCitation, readAmendBlock, readAnswerBlock, readCruxBlock, readCruxResultBlock, readFairnessBlock,
   readFramingBlock, readReviewBlock, withoutCouncilBlocks, type BlockRead, type CouncilAnswer, type CouncilCrux, type CouncilCruxResult, type CouncilReview } from '../../shared/councilBlocks'
@@ -20,10 +20,10 @@ import { runGitStatusCommand, type RunGitCommand } from '../agents/gitStatus'
 import { watcherTurnOutcome } from '../agents/watcherOutcomes'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { councilFileSchema, savedRecord, type CouncilFile, type CouncilRecord, type CouncilRound, type CouncilSeat, type CouncilTurn } from './councilRecord'
-import { amendPrompt, answerPrompt, cutHistoryText, fairnessPrompt, framingPrompt, framingWords, historyFileWords, historyText, HISTORY_INLINE_MAX, preambleFor, quoteHistory,
+import { amendPrompt, answerPrompt, fairnessPrompt, framingPrompt, framingWords, historyAboveWords, historyPartPrompt, historyParts, historyText, HISTORY_INLINE_MAX, preambleFor, quoteHistory,
   repairPrompt, reviewPrompt, verdictPrompt, cruxPrompt, type QuotedHistory } from './councilPrompts'
-import { COUNCIL_WORKTREE_FOLDER, makeCouncilSnapshot, removeCouncilSnapshot, writeCouncilHistory } from './councilSnapshot'
-import { activePanelists, addRound, advanceRound, answeredLetters, currentRound, currentTurn, fairnessDone, isComplete, isFinal, isLate, isPanelist, kindsOf, leaveOut, nextClockChange,
+import { COUNCIL_WORKTREE_FOLDER, makeCouncilSnapshot, removeCouncilSnapshot } from './councilSnapshot'
+import { activePanelists, addRound, advanceRound, answeredLetters, criteriaOf, currentRound, currentTurn, fairnessDone, isComplete, isFinal, isLate, isPanelist, kindsOf, leaveOut, nextClockChange,
   reframable, reframe, replaceSeat, researchOf, retryTurn, rowActions, turnState, type StageClock } from './councilStages'
 
 /**
@@ -37,7 +37,7 @@ import { activePanelists, addRound, advanceRound, answeredLetters, currentRound,
  */
 
 /** The commands the Council sends on the user's behalf: making a seat's thread, a stage's prompt, Stop, and settling. */
-export type CouncilCoordinatorCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' }>
+export type CouncilCoordinatorCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' | 'configure-thread' }>
 /** What the coordinator tells the Council, and asks of it. Main-only; never crosses IPC or a socket. */
 export interface CouncilControlHooks {
   /** Every snapshot the coordinator accepts, read without copying it; `threads` looks threads up by ID. */
@@ -89,7 +89,7 @@ const REPLY_GONE = '(This reply is no longer held, so it cannot be read again.)'
 const MODEL_NAME_MAX = 512
 /** The longest verdict kept and shown, as the record's and the view's schemas allow. */
 const VERDICT_MAX = 390_000
-const STAGE_ORDER = ['framing', 'answer', 'review', 'crux', 'verdict', 'fairness', 'amend'] as const
+const STAGE_ORDER = ['history', 'framing', 'answer', 'review', 'crux', 'verdict', 'fairness', 'amend'] as const
 const isOpen = (record: CouncilRecord): boolean => !record.settledAt
 const clip = (text: string, max: number): string => text.length <= max ? text : `${text.slice(0, max - 1)}…`
 
@@ -106,7 +106,7 @@ export class CouncilService {
   /** Threads with a create or a send on its way. */
   private readonly sending = new Set<string>()
   /** The conversation each Council's threads read, while Sotto runs. */
-  private readonly histories = new Map<string, { readonly title: string; readonly quoted: QuotedHistory; readonly text: string; readonly cut: string }>()
+  private readonly histories = new Map<string, { readonly title: string; readonly quoted: QuotedHistory; readonly parts: readonly string[] }>()
   /** Whether each followed prompt's thread waited on the user at the last pass, so a change there is told. */
   private readonly waiting = new Map<string, boolean>()
   private readonly listeners = new Set<(councils: readonly string[]) => void>()
@@ -180,7 +180,8 @@ export class CouncilService {
       case 'stop': await this.stop(record, 'user'); return { ok: true, council: record.id }
       case 'settle': await this.settle(record); return { ok: true, council: record.id }
       case 'reframe': {
-        const running = reframe(record, { ...command.kinds ? { kinds: command.kinds } : {}, ...command.research !== undefined ? { research: command.research } : {} }, this.clock())
+        const running = reframe(record, { ...command.kinds ? { kinds: command.kinds } : {}, ...command.research !== undefined ? { research: command.research } : {},
+          ...command.criteria ? { criteria: command.criteria } : {} }, this.clock())
         if (!running) return { ok: false, message: t`The framing can change only after it is in and before the verdict, and only to something new. Nothing was changed.` }
         for (const thread of running) await this.interrupt(record, thread)
         return this.moved(record)
@@ -223,22 +224,20 @@ export class CouncilService {
     const made = await makeCouncilSnapshot({ bundles: this.options.bundles, run: this.run, folder, path: join(this.options.directory, COUNCIL_WORKTREE_FOLDER, id) })
     if ('refused' in made) return { ok: false, message: made.refused }
     const quoted = this.quote(origin)
-    const text = historyText(origin.title, quoted), cut = cutHistoryText(origin.title, quoted)
-    const fits = text.length <= HISTORY_INLINE_MAX
-    // Past what a prompt carries, the conversation goes in the snapshot for threads to read whole, but only while Keep
-    // local history is on: with it off, Sotto writes no conversation to disk, and each thread reads its newest part.
-    const file = !fits && this.options.historyEnabled() && await writeCouncilHistory(made.path, text).then(() => true, () => false)
+    // The whole conversation goes to every thread, inline and written nowhere (Drake, November 2, 2026): in its first prompt
+    // when it fits, otherwise in parts before it.
+    const text = historyText(origin.title, quoted)
+    const parts = text.length <= HISTORY_INLINE_MAX ? [text] : historyParts(origin.title, quoted)
     const now = new Date(this.clock()).toISOString()
     const record: CouncilRecord = {
       id, createdAt: now, originThread: origin.id, originTitle: clip(origin.title, 512), projectId: origin.projectId,
       snapshot: { path: made.path, repositoryRoot: made.repositoryRoot, commit: made.commit, branch: made.branch, untracked: made.untracked, dirty: made.dirty },
-      history: { messages: quoted.messages, words: quoted.words, tools: quoted.tools, mode: fits ? 'inline' : file ? 'file' : 'cut', leftOut: fits || file ? 0 : cut.leftOut,
-        ...quoted.lastMessageId ? { lastMessageId: quoted.lastMessageId } : {} },
+      history: { messages: quoted.messages, words: quoted.words, tools: quoted.tools, parts: parts.length, ...quoted.lastMessageId ? { lastMessageId: quoted.lastMessageId } : {} },
       seats: ready.map(entry => this.seatOf(entry.seat, entry.role, entry.model!, entry.choice, this.newId())),
       rounds: [{ index: 0, askedAt: now, stage: 'framing', leftOut: [], objections: [], question: command.question }],
       turns: [], deadlineMinutes: this.options.stageDeadline(),
     }
-    this.histories.set(id, { title: origin.title, quoted, text, cut: cut.text })
+    this.histories.set(id, { title: origin.title, quoted, parts })
     this.records.push(record)
     if (this.records.length > RECORDS_MAX) this.records.splice(0, this.records.length - RECORDS_MAX)
     return this.moved(record)
@@ -371,6 +370,9 @@ export class CouncilService {
         if (turn.superseded || turn.delivery !== 'queued' || this.sending.has(turn.thread)) continue
         const seat = record.seats.find(item => item.seat === turn.seat)!
         if (seat.thread !== turn.thread) { turn.superseded = true; continue }
+        // The conversation's parts go in order, and every one is read before the thread's first stage prompt.
+        if (record.turns.some(item => item.thread === turn.thread && item.stage === 'history' && !item.superseded && !isComplete(item)
+          && (turn.stage !== 'history' || (item.part ?? 0) < (turn.part ?? 0)))) continue
         if (seat.started) {
           const held = thread(turn.thread)
           if (!held || !isThreadProviderConnected(snapshot, held) || held.clientConnected === false || isThreadTurnRunning(held) || held.requests.length > 0
@@ -390,6 +392,7 @@ export class CouncilService {
       if (prompt === undefined) return fail()
       const text = `${COUNCIL_PROMPT_LEAD}\n\n${prompt}`
       try { this.guard(record, turn) } catch { return }
+      await this.useEffort(record, turn, seat)
       turn.delivery = 'dispatching'; turn.sentAt = new Date(this.clock()).toISOString()
       // Saved as on its way before the provider can hear it, so a restart reads it as unknown, never as unsent; and
       // recorded as Sotto's, never the user's, as a wake-up is.
@@ -398,8 +401,10 @@ export class CouncilService {
       try { result = await this.options.control.commandFromCouncil({ type: 'manual-send', threadId: turn.thread, draftId: turn.draftId, text }, () => this.guard(record, turn)) }
       catch { return fail() }
       const delivery = result.deliveries?.find(item => item.draftId === turn.draftId && item.threadId === turn.thread)
-      if (delivery?.status === 'uncertain' || delivery?.status === 'submitting') seat.context = true
-      else if (delivery?.status === 'accepted' || !delivery && !result.error) { turn.delivery = 'accepted'; seat.context = true }
+      // A part of the conversation is not the thread's first prompt: that one still brings who it is and where it works.
+      const briefed = turn.stage !== 'history'
+      if (delivery?.status === 'uncertain' || delivery?.status === 'submitting') { if (briefed) seat.context = true }
+      else if (delivery?.status === 'accepted' || !delivery && !result.error) { turn.delivery = 'accepted'; if (briefed) seat.context = true }
       else fail()
     } finally {
       this.sending.delete(turn.thread)
@@ -410,6 +415,21 @@ export class CouncilService {
     }
   }
 
+  /**
+   * Puts the thread on the effort its prompt runs at (decision 7): the fairness check at low, or the model's lowest at or
+   * above it, and everything else at the seat's own effort, so a seat comes back to it after the fairness check. Only the
+   * effort ever changes. A thread whose provider will not change it keeps the effort it has.
+   */
+  private async useEffort(record: CouncilRecord, turn: CouncilTurn, seat: CouncilSeat): Promise<void> {
+    if (turn.stage === 'history' || turn.repairOf) return
+    const snapshot = this.options.control.watcherSnapshot()
+    const effort = turn.stage === 'fairness' ? councilFairnessEffort(resolveModel(snapshot.models, seat.modelId)) : seat.effort
+    const thread = snapshot.threads.find(item => item.id === turn.thread)
+    // A thread whose provider reports no effort was made at the seat's: it needs a change only for the fairness check.
+    if (!effort || !thread || thread.reasoningEffort === effort || thread.reasoningEffort === undefined && effort === seat.effort) return
+    await this.options.control.commandFromCouncil({ type: 'configure-thread', threadId: turn.thread, reasoningEffort: effort }, () => this.guard(record, turn))
+      .catch(() => undefined)
+  }
   /** Makes a seat's thread in the snapshot, at the narrowest permission its provider offers, linked to the origin thread. */
   private async createThread(record: CouncilRecord, seat: CouncilSeat): Promise<boolean> {
     const models = this.options.control.watcherSnapshot().models
@@ -451,6 +471,10 @@ export class CouncilService {
     let read: BlockRead<unknown> | undefined
     let summary: string | undefined
     switch (target.stage) {
+      case 'history':
+        // A part of the conversation asks for nothing back but that it was read.
+        target.result = 'none'
+        return
       case 'framing': {
         const framing = readFramingBlock(text, activePanelists(record, round).map(seat => seat.seat))
         // A framing that cannot be read is not repaired: the Council goes on with the question alone (decision 4).
@@ -459,7 +483,7 @@ export class CouncilService {
         break
       }
       case 'answer': {
-        const answer = readAnswerBlock(text, target.seat, round.framing?.criteria.map(criterion => criterion.id) ?? [])
+        const answer = readAnswerBlock(text, target.seat, criteriaOf(round).map(criterion => criterion.id))
         read = answer
         if (answer.ok) { summary = answer.value.answer; void this.checkCitations(record, target, answer.value.findings.flatMap(finding => finding.evidence ? [{ finding: finding.id, evidence: finding.evidence }] : [])) }
         break
@@ -570,7 +594,7 @@ export class CouncilService {
 
   // The prompts.
 
-  private history(record: CouncilRecord): { readonly title: string; readonly quoted: QuotedHistory; readonly text: string; readonly cut: string } | undefined {
+  private history(record: CouncilRecord): { readonly title: string; readonly quoted: QuotedHistory; readonly parts: readonly string[] } | undefined {
     const held = this.histories.get(record.id)
     if (held) return held
     // After a restart: the origin conversation again, up to the message that was its last when the Council was asked.
@@ -579,7 +603,8 @@ export class CouncilService {
     const messages = this.options.host.threadMessages?.(origin.id) ?? origin.messages
     const last = record.history.lastMessageId ? messages.findIndex(message => message.id === record.history.lastMessageId) : messages.length - 1
     const quoted = quoteHistory({ provider: origin.providerId ?? 'claude', messages: messages.slice(0, last + 1), activities: this.options.host.threadActivities?.(origin.id) ?? origin.activities ?? [] })
-    const history = { title: record.originTitle, quoted, text: historyText(record.originTitle, quoted), cut: cutHistoryText(record.originTitle, quoted).text }
+    const text = historyText(record.originTitle, quoted)
+    const history = { title: record.originTitle, quoted, parts: record.history.parts === 1 ? [text] : historyParts(record.originTitle, quoted) }
     this.histories.set(record.id, history)
     return history
   }
@@ -588,7 +613,7 @@ export class CouncilService {
     const history = this.history(record)
     if (!history) return undefined
     const remote = seat.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider)
-    const words = record.history.mode === 'inline' ? history.text : record.history.mode === 'file' && !remote ? historyFileWords(history.quoted) : history.cut
+    const words = history.parts.length === 1 ? history.parts[0]! : historyAboveWords(history.parts.length)
     return preambleFor({ role: seat.role, seat: seat.seat, panelists: record.seats.filter(isPanelist).length, snapshot: snapshotWords(record), history: words, remote })
   }
 
@@ -599,18 +624,22 @@ export class CouncilService {
       const original = record.turns.find(item => item.id === turn.repairOf)
       return repairPrompt(blockName(turn.stage), original?.reason ?? 'the block is missing')
     }
+    if (turn.stage === 'history') {
+      const history = this.history(record)
+      return history && turn.part ? historyPartPrompt(turn.part, history.parts.length, history.parts[turn.part - 1] ?? '') : undefined
+    }
     const preamble = seat.context ? undefined : this.preamble(record, seat)
     if (!seat.context && preamble === undefined) return undefined
     const previous = round.index > 0 ? record.rounds[round.index - 1]!.verdict : undefined
     const context = { ...preamble ? { preamble } : {}, question: round.question, ...previous ? { previousVerdict: previous } : {} }
     const remote = seat.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider)
     // A thread new to the seat, after Use another model, reads the conversation, the question and the framing first.
-    const catchUp = preamble ? [preamble, `The question, verbatim:\n<question>\n${round.question}\n</question>`, ...seat.role === 'panelist' ? [framingWords(round.framing, seat.seat, kindsOf(round))] : []].join('\n\n') : undefined
+    const catchUp = preamble ? [preamble, `The question, verbatim:\n<question>\n${round.question}\n</question>`, ...seat.role === 'panelist' ? [framingWords(round.framing, seat.seat, kindsOf(round), criteriaOf(round))] : []].join('\n\n') : undefined
     const answerOf = (letter: string): string => { const answer = currentTurn(record, round, 'answer', letter); return answer ? this.replyText(answer) ?? REPLY_GONE : REPLY_GONE }
     switch (turn.stage) {
       case 'framing': return framingPrompt(context, activePanelists(record, round).map(item => item.seat))
       // After the user changed the framing, a thread that read the earlier one is told to answer again from the start.
-      case 'answer': return answerPrompt(context, { letter: seat.seat, framing: round.framing, kinds: kindsOf(round), research: researchOf(round), snapshot: snapshotWords(record), remote,
+      case 'answer': return answerPrompt(context, { letter: seat.seat, framing: round.framing, kinds: kindsOf(round), criteria: criteriaOf(round), research: researchOf(round), snapshot: snapshotWords(record), remote,
         again: round.reframedAt !== undefined && seat.context })
       case 'review': {
         const reviewContext = this.reviewContext(record, round, seat.seat)
@@ -627,7 +656,7 @@ export class CouncilService {
         const letters = answeredLetters(record, round)
         const reviews = Object.keys(round.reviewPlan ?? {}).flatMap(reader => { const review = currentTurn(record, round, 'review', reader); return review && isComplete(review) ? [{ letter: reader, text: this.replyText(review) ?? REPLY_GONE }] : [] })
         const results = (round.cruxRunners ?? []).flatMap(runner => { const crux = currentTurn(record, round, 'crux', runner); return crux && isComplete(crux) ? [{ letter: runner, text: this.replyText(crux) ?? REPLY_GONE }] : [] })
-        return verdictPrompt({ ...catchUp ? { preamble: catchUp, question: round.question } : {}, kinds: kindsOf(round), answers: letters.map(letter => ({ letter, text: answerOf(letter) })), reviews,
+        return verdictPrompt({ ...catchUp ? { preamble: catchUp, question: round.question } : {}, kinds: kindsOf(round), ...round.criteria ? { userCriteria: round.criteria } : {}, answers: letters.map(letter => ({ letter, text: answerOf(letter) })), reviews,
           leftOut: round.leftOut.filter(letter => letter !== COUNCIL_CHAIR), panelists: record.seats.filter(isPanelist).length,
           ...round.crux && round.cruxDone ? { crux: { plan: round.crux, results } } : {}, cruxAllowed: !round.cruxDone && letters.length >= 2 })
       }
@@ -657,7 +686,7 @@ export class CouncilService {
       origin: { thread: record.originThread, title: threads.get(record.originThread)?.title ?? record.originTitle },
       status, ...record.stoppedBecause && record.stoppedAt ? { stoppedBecause: record.stoppedBecause } : {},
       snapshot: { commit: record.snapshot.commit.slice(0, 12), branch: record.snapshot.branch, untracked: record.snapshot.untracked, dirty: record.snapshot.dirty === true, removed: record.snapshot.removedAt !== undefined },
-      history: { messages: record.history.messages, words: record.history.words, mode: record.history.mode, leftOut: record.history.leftOut },
+      history: { messages: record.history.messages, words: record.history.words, parts: record.history.parts },
       seats: record.seats.map(seat => ({ seat: seat.seat, role: seat.role, modelId: seat.modelId, modelName: seat.modelName, ...seat.provider ? { provider: seat.provider } : {}, effort: seat.effort,
         thread: seat.thread, remote: seat.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider) })),
       rounds: record.rounds.map(round => this.roundView(record, round, threads, now)),
@@ -682,8 +711,8 @@ export class CouncilService {
     }
     const research = { needed: researchOf(round), reason: round.research === undefined ? round.framing?.research.reason ?? '' : '', byUser: round.research !== undefined }
     const framing = round.framing || round.framingFallback ? councilFramingViewSchema.safeParse(round.framing
-      ? { kinds: kindsOf(round), criteria: round.framing.criteria, headings: round.framing.headings, words: round.framing.words, angles: round.framing.angles, research, fallback: false }
-      : { kinds: kindsOf(round), criteria: [], headings: [], words: 0, angles: [], research, fallback: true }).data ?? null : null
+      ? { kinds: kindsOf(round), criteria: criteriaOf(round), headings: round.framing.headings, words: round.framing.words, angles: round.framing.angles, research, fallback: false }
+      : { kinds: kindsOf(round), criteria: criteriaOf(round), headings: [], words: 0, angles: [], research, fallback: true }).data ?? null : null
     return {
       index: round.index, question: round.question ?? null, askedAt: round.askedAt, stage: round.stage, framing, rows, leftOut: round.leftOut,
       reframable: round.index === currentRound(record).index && reframable(record),
@@ -788,6 +817,7 @@ function snapshotWords(record: CouncilRecord): string {
 }
 function blockName(stage: CouncilTurn['stage']): string {
   switch (stage) {
+    case 'history': return 'none'
     case 'framing': return COUNCIL_BLOCK_NAMES.framing
     case 'answer': return COUNCIL_BLOCK_NAMES.answer
     case 'review': return COUNCIL_BLOCK_NAMES.review

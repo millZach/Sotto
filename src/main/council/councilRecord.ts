@@ -26,6 +26,8 @@ export const councilTurnSchema = z.object({
   repairOf: z.uuid().optional(),
   /** For a crux check with no panelist on neither side: the side whose claim this runner tries to establish, 0 or 1. */
   establish: z.union([z.literal(0), z.literal(1)]).optional(),
+  /** For a conversation sent in parts: which part, from 1. */
+  part: z.number().int().positive().optional(),
   /** For the chair's answer to objections: the panelists whose objections it carries. */
   objections: z.array(seat).max(5).optional(),
   draftId: z.uuid(),
@@ -73,6 +75,8 @@ export const councilRoundSchema = z.object({
   kinds: z.array(z.enum(COUNCIL_KINDS)).min(1).max(2).optional(),
   research: z.boolean().optional(),
   reframedAt: at.optional(),
+  // Words, saved only while Keep local history is on: the criteria the user set in the record.
+  criteria: z.array(z.object({ id: z.string(), source: z.enum(['question', 'assumed', 'user']), text: z.string().min(1).max(2_000) }).strict()).max(5).optional(),
   cruxRunners: z.array(seat).max(2).optional(),
   cruxDone: z.boolean().optional(),
   fairnessAt: at.optional(),
@@ -112,7 +116,8 @@ export const councilRecordSchema = z.object({
     untracked: z.number().int().nonnegative(), dirty: z.boolean().optional(), removedAt: at.optional() }).strict(),
   /** What each thread read of the origin conversation: inline, from a file in the snapshot, or its newest part. */
   history: z.object({ messages: z.number().int().nonnegative(), words: z.number().int().nonnegative(), tools: z.number().int().nonnegative(),
-    mode: z.enum(['inline', 'file', 'cut']), leftOut: z.number().int().nonnegative(), lastMessageId: id.optional() }).strict(),
+    /** How many prompts the conversation takes: 1 when it goes in the first stage prompt, more when it goes in parts before it. */
+    parts: z.number().int().positive(), lastMessageId: id.optional() }).strict(),
   seats: z.array(councilSeatSchema).min(3).max(6),
   rounds: z.array(councilRoundSchema).min(1).max(50),
   turns: z.array(councilTurnSchema).max(2_000),
@@ -132,6 +137,8 @@ export type { CouncilStage, CouncilTurnStage, CouncilCitation }
 
 /** What a turn's block holds, by its stage. */
 export interface CouncilBlocks {
+  /** A part of the conversation has no block. */
+  history: never
   framing: CouncilFraming
   answer: CouncilAnswer
   review: CouncilReview
@@ -155,7 +162,7 @@ export function savedRecord(record: CouncilRecord, keepWords: boolean): CouncilR
   }
   return {
     ...record,
-    rounds: record.rounds.map(round => ({ ...without(round, ['question', 'framing', 'crux', 'verdict']),
+    rounds: record.rounds.map(round => ({ ...without(round, ['question', 'framing', 'crux', 'verdict', 'criteria']),
       objections: round.objections.map(objection => without(objection, ['claim', 'passage', 'reason'])) })),
     turns: record.turns.map(turn => without(turn, ['block', 'summary', 'reason'])),
   }

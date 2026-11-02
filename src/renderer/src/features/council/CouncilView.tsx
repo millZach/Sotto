@@ -120,7 +120,7 @@ function useWords() {
   const { t } = useLingui()
   return {
     state: (state: CouncilThreadState): string => ({ working: t`Working`, waiting: t`Waiting on you`, done: t`Done`, failed: t`Failed`, stopped: t`Stopped`, unknown: t`Unknown` })[state],
-    stage: (stage: CouncilTurnStage): string => ({ framing: t`Framing`, answer: t`Answer`, review: t`Review`, crux: t`Crux check`, verdict: t`Verdict`, fairness: t`Fairness check`,
+    stage: (stage: CouncilTurnStage): string => ({ history: t`Reading the conversation`, framing: t`Framing`, answer: t`Answer`, review: t`Review`, crux: t`Crux check`, verdict: t`Verdict`, fairness: t`Fairness check`,
       amend: t`Answer to objections` })[stage],
     action: (action: CouncilRowAction): string => ({ retry: t`Retry`, replace: t`Use another model`, skip: t`Go on without it` })[action],
     status: (status: CouncilRecord['status']): string => ({ working: t`Working`, waiting: t`Waiting on you`, done: t`Done`, stopped: t`Stopped`, settled: t`Settled` })[status],
@@ -142,7 +142,7 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
   const open = council.status !== 'settled'
   const running = council.status === 'working' || council.status === 'waiting'
   const seatNames = council.seats.map(seat => `${words.seat(seat.seat)}: ${seat.modelName}${seat.provider ? ` (${PROVIDER_LABELS[seat.provider]})` : ''}`).join(' · ')
-  const branch = council.snapshot.branch, commit = council.snapshot.commit.slice(0, 8), untracked = council.snapshot.untracked
+  const branch = council.snapshot.branch, commit = council.snapshot.commit.slice(0, 8), untracked = council.snapshot.untracked, parts = council.history.parts
   return <article className="council-entry" aria-labelledby={headingId} data-status={council.status}>
     <header className="council-entry__head">
       <div className="council-entry__title">
@@ -159,8 +159,7 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
       {council.snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : !council.snapshot.dirty ? t`Working in a snapshot of ${branch} at ${commit}.`
         : untracked > 0 ? t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes and ${untracked} untracked files.`
         : t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes.`}
-      {council.history.mode === 'file' ? ` ${t`The conversation was too long for one prompt, so each thread reads it from a file in the snapshot.`}` : ''}
-      {council.history.mode === 'cut' ? ` ${t`Each thread read the newest part of the conversation; ${council.history.leftOut} earlier messages were left out.`}` : ''}
+      {council.history.parts > 1 ? ` ${t`The conversation is too long for one prompt, so each thread reads all of it in ${parts} parts first.`}` : ''}
     </p>
     {council.stoppedBecause === 'words-lost' ? <p className="council-notice tt-paragraph">{t`Sotto restarted while Keep local history was off, so this Council’s words are gone and it cannot go on.`}</p> : null}
     {council.rounds.map(round => <RoundRecord key={round.index} council={council} round={round} run={run} />)}
@@ -201,7 +200,8 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
     : t`No outside research: the panelists work from the snapshot and the conversation.`
   return <div className="council-framing">
     <p className="tt-paragraph">{framing.fallback ? t`The chair’s framing could not be read, so the panel answers the question alone, as ${kinds}.` : t`Framed as ${kinds}.`}</p>
-    {framing.criteria.length ? <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question` : t`assumed by the chair`})</span>: {criterion.text}</li>)}</ul> : null}
+    {framing.criteria.length ? <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question`
+      : criterion.source === 'user' ? t`set by you` : t`assumed by the chair`})</span>: {criterion.text}</li>)}</ul> : null}
     <p className="tt-paragraph">{research}{framing.research.byUser ? <span className="council-muted"> {t`You set this.`}</span> : null}</p>
     {round.reframable ? <div className="council-framing__change">
       <label className="council-field council-field--inline" htmlFor={kindId}><span>{t`Kind`}</span>
@@ -213,8 +213,31 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
       </label>
       <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'reframe', council: council.id, research: !framing.research.needed })}>
         {framing.research.needed ? t`Answer without outside research` : t`Research outside the snapshot`}</button>
-      <p className="council-muted tt-paragraph">{t`Changing the kind or the research asks every panelist to answer again.`}</p>
+      <CriteriaEditor key={framing.criteria.map(criterion => criterion.text).join('\n')} criteria={framing.criteria.map(criterion => criterion.text)}
+        onChange={criteria => void run({ type: 'reframe', council: council.id, criteria })} />
+      <p className="council-muted tt-paragraph">{t`Changing the kind, the research or the criteria asks every panelist to answer again.`}</p>
     </div> : null}
+  </div>
+}
+
+/** The criteria as lines to change, one to five; the panel answers again against them. */
+function CriteriaEditor({ criteria, onChange }: { readonly criteria: readonly string[]; readonly onChange: (criteria: string[]) => void }): ReactNode {
+  const { t } = useLingui()
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(criteria.join('\n'))
+  const id = useId()
+  const lines = draft.split('\n').map(line => line.trim()).filter(Boolean)
+  const valid = lines.length >= 1 && lines.length <= 5 && lines.every(line => line.length <= 2_000)
+  if (!open) return <button type="button" className="tt-button tt-focusable" onClick={() => setOpen(true)}>{t`Change the criteria`}</button>
+  return <div className="council-criteria">
+    <label className="council-field" htmlFor={id}><span>{t`Criteria, one to five, one on each line`}</span>
+      <textarea id={id} className="tt-input tt-focusable" rows={Math.max(3, lines.length + 1)} value={draft} onChange={event => setDraft(event.currentTarget.value)}
+        onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false); setDraft(criteria.join('\n')) } }} />
+    </label>
+    <div className="council-ask__actions">
+      <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={!valid} onClick={() => { setOpen(false); onChange(lines) }}>{t`Answer again with these criteria`}</button>
+      <button type="button" className="tt-button tt-focusable" onClick={() => { setOpen(false); setDraft(criteria.join('\n')) }}>{t`Cancel`}</button>
+    </div>
   </div>
 }
 

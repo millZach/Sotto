@@ -15,7 +15,7 @@ import type { CouncilRecord, CouncilRound, CouncilSeat, CouncilTurn } from './co
 export interface StageClock { readonly now: number; readonly newId: () => string }
 
 /** The round stage a turn belongs to. */
-export const TURN_ROUND_STAGE: Readonly<Record<CouncilTurnStage, CouncilStage>> = {
+export const TURN_ROUND_STAGE: Readonly<Record<Exclude<CouncilTurnStage, 'history'>, CouncilStage>> = {
   framing: 'framing', answer: 'answers', review: 'reviews', crux: 'crux', verdict: 'verdict', fairness: 'fairness', amend: 'fairness',
 }
 
@@ -46,6 +46,11 @@ export function answeredLetters(record: CouncilRecord, round: CouncilRound): str
 
 function queue(record: CouncilRecord, round: CouncilRound, seat: string, stage: CouncilTurnStage, clock: StageClock, extra: Partial<CouncilTurn> = {}): CouncilTurn {
   const thread = record.seats.find(item => item.seat === seat)!.thread
+  // A conversation too long for one prompt goes to a thread in parts before its first stage prompt, each its own prompt.
+  if (stage !== 'history' && record.history.parts > 1 && !record.turns.some(item => item.thread === thread && item.stage === 'history' && !item.superseded)) {
+    for (let part = 1; part <= record.history.parts; part++) record.turns.push({ id: clock.newId(), round: round.index, seat, thread, stage: 'history', part, draftId: clock.newId(),
+      messageId: clock.newId(), delivery: 'queued', result: 'pending' })
+  }
   const turn: CouncilTurn = { id: clock.newId(), round: round.index, seat, thread, stage, draftId: clock.newId(), messageId: clock.newId(), delivery: 'queued', result: 'pending', ...extra }
   record.turns.push(turn)
   return turn
@@ -200,7 +205,9 @@ export function isLate(turn: CouncilTurn, now: number, deadlineMs: number): bool
  */
 export function rowActions(record: CouncilRecord, turn: CouncilTurn, now: number, waitingOnUser: boolean): CouncilRowAction[] {
   const round = currentRound(record)
-  if (record.stoppedAt || record.settledAt || turn.superseded || turn.repairOf || turn.round !== round.index || TURN_ROUND_STAGE[turn.stage] !== round.stage) return []
+  // A part of the conversation holds its thread's first prompt in whatever stage that is; any other row acts in its own stage.
+  if (record.stoppedAt || record.settledAt || turn.superseded || turn.repairOf || turn.round !== round.index || round.stage === 'done'
+    || turn.stage !== 'history' && TURN_ROUND_STAGE[turn.stage] !== round.stage) return []
   const stuck = turn.delivery === 'failed' || turn.delivery === 'unconfirmed' || turn.outcome === 'failed' || turn.outcome === 'stopped' || turn.outcome === 'unknown'
     || isLate(turn, now, record.deadlineMinutes * 60_000)
   if (!stuck) return []
@@ -219,7 +226,7 @@ export function retryTurn(record: CouncilRecord, turn: CouncilTurn, clock: Stage
   for (const repair of record.turns) if (repair.repairOf === turn.id) repair.superseded = true
   const round = record.rounds.find(item => item.index === turn.round)!
   if (turn.stage === 'amend') { for (const objection of round.objections) if (objection.turn === turn.id) delete objection.turn; return }
-  queue(record, round, turn.seat, turn.stage, clock, turn.establish === undefined ? {} : { establish: turn.establish })
+  queue(record, round, turn.seat, turn.stage, clock, { ...turn.establish === undefined ? {} : { establish: turn.establish }, ...turn.part === undefined ? {} : { part: turn.part } })
 }
 
 /**
@@ -235,6 +242,8 @@ export function leaveOut(record: CouncilRecord, turn: CouncilTurn): void {
     return
   }
   if (!round.leftOut.includes(turn.seat)) round.leftOut.push(turn.seat)
+  // Nothing more goes to it in this round: what was waiting to be sent is set aside.
+  for (const item of record.turns) if (item.seat === turn.seat && item.round === round.index && item.delivery === 'queued') item.superseded = true
 }
 
 /** Use another model: the seat moves to a new thread, which starts with the origin conversation, and is sent the stage again. */
@@ -243,6 +252,8 @@ export function replaceSeat(record: CouncilRecord, turn: CouncilTurn, seat: Pick
   held.formerThreads = [...held.formerThreads, held.thread].slice(-20)
   Object.assign(held, { modelId: seat.modelId, modelName: seat.modelName, effort: seat.effort, thread, started: false, context: false })
   if (seat.provider) held.provider = seat.provider; else delete held.provider
+  // A part of the conversation is not sent again on its own: the stage's prompt to the new thread brings every part first.
+  if (turn.stage === 'history') { turn.superseded = true; return }
   retryTurn(record, turn, clock)
 }
 
@@ -267,6 +278,10 @@ export function nextClockChange(record: CouncilRecord, now: number): number | un
 
 /** The round's kind: the user's, set in the record, over the chair's framing, which a decision stands in for when it failed. */
 export function kindsOf(round: CouncilRound): CouncilKind[] { return round.kinds ?? round.framing?.kinds ?? ['decision'] }
+/** The criteria answers are held to: the user's, set in the record, over the chair's. */
+export function criteriaOf(round: CouncilRound): readonly { readonly id: string; readonly source: 'question' | 'assumed' | 'user'; readonly text: string }[] {
+  return round.criteria ?? round.framing?.criteria ?? []
+}
 /** Whether the round's panelists research outside the snapshot: the user's word in the record over the chair's framing. */
 export function researchOf(round: CouncilRound): boolean { return round.research ?? round.framing?.research.needed ?? false }
 
@@ -281,13 +296,15 @@ export function reframable(record: CouncilRecord): boolean {
  * review so far is set aside and the panelists answer again. Returns the threads still working on one, for the caller to
  * stop. Nothing changes when it would change nothing.
  */
-export function reframe(record: CouncilRecord, change: { readonly kinds?: readonly CouncilKind[]; readonly research?: boolean }, now: number): string[] | undefined {
+export function reframe(record: CouncilRecord, change: { readonly kinds?: readonly CouncilKind[]; readonly research?: boolean; readonly criteria?: readonly string[] }, now: number): string[] | undefined {
   const round = currentRound(record)
   const kinds = change.kinds ? [...change.kinds] : undefined
   const sameKinds = !kinds || kinds.join() === kindsOf(round).join()
   const sameResearch = change.research === undefined || change.research === researchOf(round)
-  if (!reframable(record) || sameKinds && sameResearch) return undefined
+  const sameCriteria = !change.criteria || change.criteria.join('\n') === criteriaOf(round).map(criterion => criterion.text).join('\n')
+  if (!reframable(record) || sameKinds && sameResearch && sameCriteria) return undefined
   if (kinds) round.kinds = kinds
+  if (change.criteria && !sameCriteria) round.criteria = change.criteria.map((text, index) => ({ id: `C${index + 1}`, source: 'user' as const, text }))
   if (change.research !== undefined) round.research = change.research
   round.reframedAt = new Date(now).toISOString()
   const running: string[] = []

@@ -1,9 +1,8 @@
 import { t } from '@lingui/core/macro'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, rm } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import type { BranchBundles } from '../agents/branchBundles'
 import type { RunGitCommand } from '../agents/gitStatus'
-import { HISTORY_FILE, HISTORY_FOLDER } from './councilPrompts'
 
 /**
  * A Council's snapshot (ADR-0177 decision 2): the origin thread's folder as it was at Ask the Council, its commit and
@@ -42,13 +41,6 @@ export async function makeCouncilSnapshot(input: { readonly bundles: Pick<Branch
     await rm(input.path, { recursive: true, force: true }).catch(() => undefined)
     return { refused: refusalWords('failed') }
   }
-}
-
-/** Writes the conversation into the snapshot for threads to read, in a folder whose own ignore file keeps it out of Git. */
-export async function writeCouncilHistory(path: string, text: string): Promise<void> {
-  await mkdir(join(path, HISTORY_FOLDER), { recursive: true })
-  await writeFile(join(path, HISTORY_FOLDER, '.gitignore'), '*\n', 'utf8')
-  await writeFile(join(path, HISTORY_FILE), text, 'utf8')
 }
 
 /** Removes a settled Council's snapshot. Its commit is on no branch, so Git lets it go in time. */
