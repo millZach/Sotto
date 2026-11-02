@@ -18,12 +18,20 @@ public struct MarkPoint: Equatable, Sendable {
     public init(x: Double, y: Double) { self.x = x; self.y = y }
 }
 
-/// One mark. A pen line keeps each point with the pen's pressure, which widens the line only when a pen drew it.
-public struct Mark: Equatable, Identifiable, Sendable {
+/// One point of a pen line, with how hard the pen pressed there.
+public struct PenSample: Equatable, Sendable {
+    public var point: MarkPoint
+    public var pressure: Double
+    public init(_ point: MarkPoint, pressure: Double) { self.point = point; self.pressure = pressure }
+}
+
+/// One shape drawn over the picture, which the interface calls a mark (not the surface **Mark**). A pen line keeps each
+/// point with the pen's pressure, which widens the line only when a pen drew it.
+public struct MarkupShape: Equatable, Identifiable, Sendable {
     public enum Shape: Equatable, Sendable {
         /// Arrow, circle or box: from where the drag began to where it ended.
         case drag(MarkTool, from: MarkPoint, to: MarkPoint)
-        case pen(points: [MarkPoint], pressures: [Double], pressed: Bool)
+        case pen(samples: [PenSample], pressed: Bool)
         /// A note's words on a label of its ink, the label's left middle where the user pressed.
         case note(at: MarkPoint, text: String)
     }
@@ -61,10 +69,10 @@ public enum Markup {
 
     /// Whether a drag made a mark rather than a press that slipped: a shape at least an 80th of the picture, a line of
     /// three points, a note with words.
-    public static func madeMark(_ mark: Mark, size: MarkupSize) -> Bool {
+    public static func madeMark(_ mark: MarkupShape, size: MarkupSize) -> Bool {
         switch mark.shape {
         case .drag(_, let from, let to): return hypot(to.x - from.x, to.y - from.y) > size.longer / 80
-        case .pen(let points, _, _): return points.count > 2
+        case .pen(let samples, _): return samples.count > 2
         case .note(_, let text): return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
@@ -106,9 +114,9 @@ public enum Markup {
 
 /// The marks made so far, with Undo and Redo. Taking a mark off can be undone too.
 public struct MarkupHistory: Equatable, Sendable {
-    public private(set) var marks: [Mark] = []
-    private var past: [[Mark]] = []
-    private var future: [[Mark]] = []
+    public private(set) var marks: [MarkupShape] = []
+    private var past: [[MarkupShape]] = []
+    private var future: [[MarkupShape]] = []
     private var nextID = 1
     public init() {}
 
@@ -120,7 +128,7 @@ public struct MarkupHistory: Equatable, Sendable {
 
     /// Keeps the mark when it is one, and says whether it was.
     @discardableResult
-    public mutating func add(_ mark: Mark, size: MarkupSize) -> Bool {
+    public mutating func add(_ mark: MarkupShape, size: MarkupSize) -> Bool {
         guard Markup.madeMark(mark, size: size) else { return false }
         past.append(marks); marks.append(mark); future = []
         return true

@@ -6,8 +6,9 @@ import type { MessageDescriptor } from '@lingui/core'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
-import { arrowGeometry, inkColours, madeMark, markedCopy, markRedraws, MARKUP_INKS, MARKUP_TOOLS, noteBox, noteFont, noteFontSize, NOTE_MAX_LENGTH, noteTextWidth, penWidth, strokeWidth,
-  type InkColours, type Mark, type MarkInk, type MarkTool, type MarkupSize } from './markup'
+import { rootStyleUnchanged } from '../state/appearance'
+import { arrowGeometry, inkColours, madeMark, sameInks, markedCopy, markRedraws, MARKUP_INKS, MARKUP_TOOLS, noteBox, noteFont, NOTE_MAX_LENGTH, noteTextWidth, penWidth, strokeWidth,
+  type InkColours, type MarkupShape, type MarkInk, type MarkTool, type MarkupSize } from './markup'
 import type { ReplyAttach } from './replyAttach'
 import './markup.css'
 
@@ -19,13 +20,13 @@ const TOOL_ICONS: Readonly<Record<MarkTool, ReactNode>> = {
 const INK_WORDS: Readonly<Record<MarkInk, MessageDescriptor>> = { red: msg`Red ink`, amber: msg`Amber ink`, plain: msg`Plain ink` }
 
 /** One mark already made. Memoized, so drawing the next one never redraws it. */
-const MarkShape = memo(function MarkShape({ mark, size, colours }: { readonly mark: Mark; readonly size: MarkupSize; readonly colours: InkColours }): ReactNode {
+const MarkShape = memo(function MarkShape({ mark, size, colours }: { readonly mark: MarkupShape; readonly size: MarkupSize; readonly colours: InkColours }): ReactNode {
   markRedraws.count += 1
   return <LiveShape mark={mark} size={size} colours={colours} />
 })
 
 /** A mark as SVG in the picture's own pixels: the one being drawn, or, through MarkShape, one already made. */
-function LiveShape({ mark, size, colours }: { readonly mark: Mark; readonly size: MarkupSize; readonly colours: InkColours }): ReactNode {
+function LiveShape({ mark, size, colours }: { readonly mark: MarkupShape; readonly size: MarkupSize; readonly colours: InkColours }): ReactNode {
   const ink = colours.stroke[mark.ink], line = strokeWidth(size)
   const common = { stroke: ink, strokeWidth: line, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   if (mark.tool === 'box') {
@@ -53,10 +54,10 @@ function LiveShape({ mark, size, colours }: { readonly mark: Mark; readonly size
 }
 
 /** The mark being drawn, kept outside React's state so a move redraws only the layer that shows it. */
-interface LiveMark { readonly get: () => Mark | null; readonly set: (mark: Mark | null) => void; readonly subscribe: (listener: () => void) => () => void }
+interface LiveMark { readonly get: () => MarkupShape | null; readonly set: (mark: MarkupShape | null) => void; readonly subscribe: (listener: () => void) => () => void }
 function useLiveMark(): LiveMark {
   const [store] = useState<LiveMark>(() => {
-    let value: Mark | null = null
+    let value: MarkupShape | null = null
     const listeners = new Set<() => void>()
     return { get: () => value, set: next => { value = next; for (const listener of listeners) listener() }, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } } }
   })
@@ -68,13 +69,13 @@ function LiveLayer({ live, size, colours }: { readonly live: LiveMark; readonly 
 }
 
 /** What a mark is called in the list of marks. */
-function useMarkWords(): (mark: Mark) => string {
+function useMarkWords(): (mark: MarkupShape) => string {
   const { t } = useLingui()
   return mark => mark.tool === 'note' ? t({ message: `Note: ${mark.text}`, comment: 'A note the user wrote on a picture, with its words.' })
     : mark.tool === 'pen' ? t`Pen line` : t(TOOL_WORDS[mark.tool])
 }
 
-interface History { readonly past: readonly (readonly Mark[])[]; readonly marks: readonly Mark[]; readonly future: readonly (readonly Mark[])[] }
+interface History { readonly past: readonly (readonly MarkupShape[])[]; readonly marks: readonly MarkupShape[]; readonly future: readonly (readonly MarkupShape[])[] }
 
 /**
  * Marks a picture up (ADR-0170, part 5): arrow, circle, box, pen and note, in red, amber or the theme's own text colour,
@@ -125,11 +126,13 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
   useLayoutEffect(() => { firstTool.current?.focus() }, [])
   // The inks are the theme's: read when the editor opens, and again whenever the theme or the appearance changes.
   useLayoutEffect(() => {
-    const read = (): void => { if (root.current) setColours(inkColours(root.current)) }
+    const page = document.documentElement
+    const read = (): void => { if (root.current) { const next = inkColours(root.current); setColours(current => sameInks(current, next) ? current : next) } }
     read()
     if (typeof MutationObserver === 'undefined') return
-    const observer = new MutationObserver(read)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'style', 'class'] })
+    // The theme inspector swaps roles for sentinels and back within a task; that batch changed nothing (ADR-0011).
+    const observer = new MutationObserver(records => { if (!rootStyleUnchanged(records, page)) read() })
+    observer.observe(page, { attributes: true, attributeOldValue: true, attributeFilter: ['data-theme', 'data-theme-id', 'style'] })
     return () => observer.disconnect()
   }, [])
   // The picture fills the room it has at its own shape, and follows the window.
@@ -149,20 +152,33 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
     return () => observer.disconnect()
   }, [sized])
 
-  const commit = (mark: Mark): void => {
+  const commit = (mark: MarkupShape): void => {
     if (!madeMark(mark, sized)) return
     setHistory(current => ({ past: [...current.past, current.marks], marks: [...current.marks, mark], future: [] }))
     setStatus(null)
   }
   const undo = (): void => setHistory(current => current.past.length ? { past: current.past.slice(0, -1), marks: current.past.at(-1)!, future: [current.marks, ...current.future] } : current)
   const redo = (): void => setHistory(current => current.future.length ? { past: [...current.past, current.marks], marks: current.future[0]!, future: current.future.slice(1) } : current)
-  const remove = (id: number): void => setHistory(current => ({ past: [...current.past, current.marks], marks: current.marks.filter(mark => mark.id !== id), future: [] }))
-  const begin = (x: number, y: number, pressure: number | null): Mark => {
+  const marksList = useRef<HTMLUListElement>(null)
+  /** Where the focus goes once a mark's Remove button goes with it: the next mark's, the last one's, or the picture. */
+  const [refocus, setRefocus] = useState<number | null>(null)
+  const remove = (id: number): void => {
+    setRefocus(Math.max(0, history.marks.findIndex(mark => mark.id === id)))
+    setHistory(current => ({ past: [...current.past, current.marks], marks: current.marks.filter(mark => mark.id !== id), future: [] }))
+  }
+  useLayoutEffect(() => {
+    if (refocus === null) return
+    setRefocus(null)
+    const buttons = marksList.current?.querySelectorAll<HTMLElement>('.markup-editor__remove')
+    const next = buttons?.[Math.min(refocus, buttons.length - 1)]
+    if (next) next.focus(); else surface.current?.focus()
+  }, [refocus])
+  const begin = (x: number, y: number, pressure: number | null): MarkupShape => {
     const id = nextId.current++
     return tool === 'pen' ? { id, ink, tool, points: [[x, y, pressure ?? 0.5]], pressure: pressure !== null }
       : { id, ink, tool: tool as 'arrow' | 'ellipse' | 'box', x0: x, y0: y, x1: x, y1: y }
   }
-  const extend = (mark: Mark, x: number, y: number, pressure: number | null): Mark =>
+  const extend = (mark: MarkupShape, x: number, y: number, pressure: number | null): MarkupShape =>
     mark.tool === 'pen' ? { ...mark, points: [...mark.points, [x, y, pressure ?? 0.5]] } : mark.tool === 'note' ? mark : { ...mark, x1: x, y1: y }
   const clamp = (x: number, y: number): { readonly x: number; readonly y: number } => ({ x: Math.min(sized.width, Math.max(0, x)), y: Math.min(sized.height, Math.max(0, y)) })
   const place = (event: React.PointerEvent): { readonly x: number; readonly y: number } => {
@@ -282,7 +298,7 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
             {cross ? <g className="markup-editor__cross"><line x1={cross.x - longer / 60} y1={cross.y} x2={cross.x + longer / 60} y2={cross.y} strokeWidth={longer / 600} />
               <line x1={cross.x} y1={cross.y - longer / 60} x2={cross.x} y2={cross.y + longer / 60} strokeWidth={longer / 600} /></g> : null}
           </svg> : null}
-          {note ? <NoteInput at={note} size={sized} fit={fit} onDone={text => {
+          {note ? <NoteInput at={note} size={sized} onDone={text => {
             setNote(null)
             if (text) commit({ id: nextId.current++, ink, tool: 'note', x0: note.x, y0: note.y, text })
             surface.current?.focus()
@@ -293,7 +309,7 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
         <h3 className="markup-editor__heading">{t`Your marks`}</h3>
         {marks.length === 0
           ? <p className="markup-editor__empty tt-paragraph">{t`None yet. Draw on the picture.`}</p>
-          : <ul className="markup-editor__marks">{marks.map(mark => {
+          : <ul ref={marksList} className="markup-editor__marks">{marks.map(mark => {
             const words = markWords(mark)
             return <li key={mark.id}><span className={`markup-editor__swatch markup-editor__ink--${mark.ink}`} aria-hidden="true" /><span className="markup-editor__mark-name">{words}</span>
               <button type="button" className="markup-editor__remove tt-focusable" aria-label={t({ message: `Remove ${words}`, comment: '{words} names a mark, such as "Arrow" or "Note: the button".' })}
@@ -308,16 +324,14 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
 }
 
 /** Where a note's words are typed: at the press, Enter keeps them, Escape drops them. */
-function NoteInput({ at, size, fit, onDone }: { readonly at: { readonly x: number; readonly y: number }; readonly size: MarkupSize
-  readonly fit: { readonly width: number; readonly height: number } | null; readonly onDone: (text: string) => void }): ReactNode {
+function NoteInput({ at, size, onDone }: { readonly at: { readonly x: number; readonly y: number }; readonly size: MarkupSize; readonly onDone: (text: string) => void }): ReactNode {
   const { t } = useLingui()
   const input = useRef<HTMLInputElement>(null)
   const done = useRef(false)
   useEffect(() => { input.current?.focus() }, [])
   const finish = (text: string): void => { if (done.current) return; done.current = true; onDone(text.trim()) }
-  const scale = fit ? fit.width / size.width : 1
   return <input ref={input} className="markup-editor__note-input" maxLength={NOTE_MAX_LENGTH} aria-label={t`Note`} placeholder={t`Type a note`}
-    style={{ left: `${at.x / size.width * 100}%`, top: `${at.y / size.height * 100}%`, fontSize: Math.max(12, noteFontSize(size) * scale) }}
+    style={{ left: `${at.x / size.width * 100}%`, top: `${at.y / size.height * 100}%` }}
     onKeyDown={event => {
       event.stopPropagation()
       if (event.key === 'Enter') { event.preventDefault(); finish(event.currentTarget.value) }

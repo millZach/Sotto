@@ -3135,6 +3135,29 @@ struct RailAsk: Equatable {
         if PhotoLimits.count - photos(box).count - files(box).count > 0 { return nil }
         return files(box).isEmpty ? box.photoLimitWords : FileWords.full
     }
+    /// Puts a marked copy into a reply box (ADR-0170, part 5), prepared and checked against the box's limits before it
+    /// goes in, so a refusal comes back to the editor, which keeps the marks. Nil once it is in; staging then follows as
+    /// for any photo.
+    func attachMarkedCopy(_ box: PhotoBox, name: String, data: Data) async -> String? {
+        if let refusal = markedCopyRefusal(box) { return refusal }
+        do {
+            let prepared = try await preparePhoto(data, name)
+            // The box may have changed while the copy was prepared.
+            if let refusal = markedCopyRefusal(box) { return refusal }
+            let others = photos(box).compactMap { $0.prepared?.byteCount }
+            guard Photos.fits(prepared.byteCount, with: others) else { return box.photosTooLargeWords }
+            guard others.reduce(prepared.byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else { return FileWords.tooLargeInTotal }
+            var photo = DraftPhoto()
+            photo.prepared = prepared
+            draftPhotos[box.id, default: []].append(photo)
+            attachHaptics[box.id, default: 0] += 1
+            photoNotices[box.id] = nil
+            _ = staging(photo.id, in: box)
+            return nil
+        } catch {
+            return (error as? PhotoPipelineError)?.errorDescription ?? (error as? ClientError)?.errorDescription ?? PhotoPipelineError.unreadable.errorDescription!
+        }
+    }
     func removePhoto(_ id: UUID, from box: PhotoBox) {
         guard !preparingSends.contains(box.id) else { return }
         dropPhoto(id, in: box, reason: nil)

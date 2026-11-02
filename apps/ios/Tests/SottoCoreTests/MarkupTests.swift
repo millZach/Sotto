@@ -7,11 +7,11 @@ final class MarkupTests: XCTestCase {
     private func point(_ x: Double, _ y: Double) -> MarkPoint { MarkPoint(x: x, y: y) }
 
     func testADragIsAMarkOnlyOnceItIsMoreThanASlip() {
-        XCTAssertFalse(Markup.madeMark(Mark(id: 1, ink: .red, shape: .drag(.box, from: point(0, 0), to: point(5, 5))), size: size))
-        XCTAssertTrue(Markup.madeMark(Mark(id: 1, ink: .red, shape: .drag(.box, from: point(0, 0), to: point(20, 0))), size: size))
-        XCTAssertFalse(Markup.madeMark(Mark(id: 1, ink: .red, shape: .pen(points: [point(0, 0), point(1, 1)], pressures: [0.5, 0.5], pressed: false)), size: size))
-        XCTAssertFalse(Markup.madeMark(Mark(id: 1, ink: .red, shape: .note(at: point(0, 0), text: "  ")), size: size))
-        XCTAssertTrue(Markup.madeMark(Mark(id: 1, ink: .red, shape: .note(at: point(0, 0), text: "Total")), size: size))
+        XCTAssertFalse(Markup.madeMark(MarkupShape(id: 1, ink: .red, shape: .drag(.box, from: point(0, 0), to: point(5, 5))), size: size))
+        XCTAssertTrue(Markup.madeMark(MarkupShape(id: 1, ink: .red, shape: .drag(.box, from: point(0, 0), to: point(20, 0))), size: size))
+        XCTAssertFalse(Markup.madeMark(MarkupShape(id: 1, ink: .red, shape: .pen(samples: [PenSample(point(0, 0), pressure: 0.5), PenSample(point(1, 1), pressure: 0.5)], pressed: false)), size: size))
+        XCTAssertFalse(Markup.madeMark(MarkupShape(id: 1, ink: .red, shape: .note(at: point(0, 0), text: "  ")), size: size))
+        XCTAssertTrue(Markup.madeMark(MarkupShape(id: 1, ink: .red, shape: .note(at: point(0, 0), text: "Total")), size: size))
     }
 
     func testLinesAreTheSameShareOfThePictureAtAnySizeAndAPenWidensWithPressure() {
@@ -31,12 +31,12 @@ final class MarkupTests: XCTestCase {
 
     func testUndoRedoAndTakingAMarkOffWhichCanBeUndoneToo() {
         var history = MarkupHistory()
-        let arrow = Mark(id: history.newID(), ink: .red, shape: .drag(.arrow, from: point(0, 0), to: point(100, 100)))
-        let box = Mark(id: history.newID(), ink: .amber, shape: .drag(.box, from: point(10, 10), to: point(200, 100)))
+        let arrow = MarkupShape(id: history.newID(), ink: .red, shape: .drag(.arrow, from: point(0, 0), to: point(100, 100)))
+        let box = MarkupShape(id: history.newID(), ink: .amber, shape: .drag(.box, from: point(10, 10), to: point(200, 100)))
         XCTAssertNotEqual(arrow.id, box.id)
         XCTAssertTrue(history.add(arrow, size: size))
         XCTAssertTrue(history.add(box, size: size))
-        XCTAssertFalse(history.add(Mark(id: history.newID(), ink: .red, shape: .drag(.box, from: point(0, 0), to: point(1, 1))), size: size))
+        XCTAssertFalse(history.add(MarkupShape(id: history.newID(), ink: .red, shape: .drag(.box, from: point(0, 0), to: point(1, 1))), size: size))
         XCTAssertEqual(history.marks.map(\.tool), [.arrow, .box])
         history.undo()
         XCTAssertEqual(history.marks.map(\.tool), [.arrow])
@@ -49,7 +49,7 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(history.marks.map(\.tool), [.arrow, .box])
         // A new mark after an undo clears what could be redone.
         history.undo()
-        XCTAssertTrue(history.add(Mark(id: history.newID(), ink: .plain, shape: .note(at: point(5, 5), text: "Here")), size: size))
+        XCTAssertTrue(history.add(MarkupShape(id: history.newID(), ink: .plain, shape: .note(at: point(5, 5), text: "Here")), size: size))
         XCTAssertFalse(history.canRedo)
     }
 

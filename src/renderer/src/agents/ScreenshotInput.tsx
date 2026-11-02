@@ -253,6 +253,8 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
       if (disabled) return busyRefusal()
       if (answering) return t`This thread waits for your answer, so a marked copy can't go into its reply yet. Answer it first.`
       if (!(anyFile ? imagesSupported ?? supported : supported)) return t`This thread's model does not read images, so a marked copy can't go into its reply. Choose a model with image support.`
+      // A draft already holding all it can take; one with room but near its byte limit says so when the copy is added.
+      if (current.current.length >= AGENT_MAX_ATTACHMENTS) return anyFile ? words.attachmentsTooMany() : plural(AGENT_MAX_ATTACHMENTS, { one: 'Attach up to # screenshot at a time.', other: 'Attach up to # screenshots at a time.' })
       return null
     },
     add: files => add(files),

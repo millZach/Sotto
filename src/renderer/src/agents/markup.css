@@ -39,7 +39,7 @@
 .markup-editor__cross line { stroke: var(--tt-accent); }
 .markup-editor__note-input {
   position: absolute; z-index: 1; min-width: 12ch; max-width: 60%; padding: 2px 8px; transform: translateY(-50%);
-  border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-sm); background: var(--tt-surface-elevated); color: var(--tt-text); font-family: inherit;
+  border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-sm); background: var(--tt-surface-elevated); color: var(--tt-text); font-family: inherit; font-size: var(--tt-type-body);
 }
 
 .markup-editor__side { display: flex; flex: none; flex-direction: column; gap: 8px; width: 232px; padding: 14px 16px; overflow-y: auto; border-left: 1px solid var(--tt-hairline); }

@@ -36,7 +36,7 @@ struct MarkupInks {
 /// Draws marks in a context whose units are the picture's pixels: the editor's canvas and the marked copy both use it,
 /// so the copy is what the user saw.
 enum MarkupDrawing {
-    static func path(_ mark: Mark, size: MarkupSize) -> (stroke: Path, fill: Path) {
+    static func path(_ mark: MarkupShape, size: MarkupSize) -> (stroke: Path, fill: Path) {
         var stroke = Path(), fill = Path()
         switch mark.shape {
         case .drag(.box, let from, let to):
@@ -57,23 +57,23 @@ enum MarkupDrawing {
     }
 
     /// Every mark, in a graphics context scaled so one unit is one of the picture's pixels.
-    static func draw(_ marks: [Mark], size: MarkupSize, inks: MarkupInks, in context: inout GraphicsContext) {
+    static func draw(_ marks: [MarkupShape], size: MarkupSize, inks: MarkupInks, in context: inout GraphicsContext) {
         let line = Markup.strokeWidth(size)
         let style = StrokeStyle(lineWidth: line, lineCap: .round, lineJoin: .round)
         for mark in marks {
             let ink = inks.stroke[mark.ink]!.color
             switch mark.shape {
-            case .pen(let points, let pressures, let pressed):
-                for index in points.indices.dropFirst() {
+            case .pen(let samples, let pressed):
+                for (from, to) in zip(samples, samples.dropFirst()) {
                     var piece = Path()
-                    piece.move(to: CGPoint(x: points[index - 1].x, y: points[index - 1].y))
-                    piece.addLine(to: CGPoint(x: points[index].x, y: points[index].y))
-                    let width = Markup.penWidth(pressure: pressures[index - 1], pressed: pressed, size: size)
+                    piece.move(to: CGPoint(x: from.point.x, y: from.point.y))
+                    piece.addLine(to: CGPoint(x: to.point.x, y: to.point.y))
+                    let width = Markup.penWidth(pressure: from.pressure, pressed: pressed, size: size)
                     context.stroke(piece, with: .color(ink), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
                 }
             case .note(let at, let text):
                 let words = context.resolve(Text(verbatim: text).font(.system(size: Markup.noteFontSize(size), weight: .semibold))
-                    .foregroundColor(inks.noteText[mark.ink]!.color))
+                    .foregroundStyle(inks.noteText[mark.ink]!.color))
                 let measured = words.measure(in: CGSize(width: size.width, height: size.height))
                 let box = Markup.noteBox(at: at, textWidth: measured.width, size: size)
                 context.fill(Path(roundedRect: CGRect(x: box.x, y: box.y, width: box.width, height: box.height), cornerRadius: box.radius), with: .color(ink))
@@ -87,11 +87,11 @@ enum MarkupDrawing {
     }
 
     /// The picture with its marks drawn on it, at the size the viewer holds it, as a PNG. Nil when it could not be made.
-    @MainActor static func copy(_ image: CGImage, marks: [Mark], inks: MarkupInks) -> Data? {
+    @MainActor static func copy(_ image: CGImage, marks: [MarkupShape], inks: MarkupInks) -> Data? {
         let size = MarkupSize(width: Double(image.width), height: Double(image.height))
         let renderer = ImageRenderer(content: Canvas { context, _ in
             context.draw(Image(decorative: image, scale: 1), in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
-            draw(marks, size: size, inks: inks, in: &context)
+            MarkupDrawing.draw(marks, size: size, inks: inks, in: &context)
         }.frame(width: size.width, height: size.height))
         renderer.scale = 1
         guard let drawn = renderer.uiImage else { return nil }
@@ -114,7 +114,7 @@ struct MarkupEditor: View {
     @State private var history = MarkupHistory()
     @State private var tool: MarkTool = .arrow
     @State private var ink: MarkInk = .red
-    @State private var live: Mark?
+    @State private var live: MarkupShape?
     @State private var notice: String?
     @State private var pencilDraws = MarkupEditor.prefersPencil
     @State private var fingerDraws = false
@@ -234,16 +234,16 @@ struct MarkupEditor: View {
         let id = history.newID()
         switch tool {
         case .note: live = nil
-        case .pen: live = Mark(id: id, ink: ink, shape: .pen(points: [point], pressures: [force ?? 0.5], pressed: force != nil))
-        default: live = Mark(id: id, ink: ink, shape: .drag(tool, from: point, to: point))
+        case .pen: live = MarkupShape(id: id, ink: ink, shape: .pen(samples: [PenSample(point, pressure: force ?? 0.5)], pressed: force != nil))
+        default: live = MarkupShape(id: id, ink: ink, shape: .drag(tool, from: point, to: point))
         }
     }
-    private func moved(to point: MarkPoint, force: Double?) {
+    private func moved(to point: MarkPoint, force: Double? = nil) {
         guard var mark = live else { return }
         switch mark.shape {
-        case .pen(var points, var pressures, let pressed):
-            points.append(point); pressures.append(force ?? 0.5)
-            mark.shape = .pen(points: points, pressures: pressures, pressed: pressed)
+        case .pen(var samples, let pressed):
+            samples.append(PenSample(point, pressure: force ?? samples.last?.pressure ?? 0.5))
+            mark.shape = .pen(samples: samples, pressed: pressed)
         case .drag(let kind, let from, _): mark.shape = .drag(kind, from: from, to: point)
         case .note: break
         }
@@ -259,7 +259,7 @@ struct MarkupEditor: View {
         defer { notePlace = nil; noteText = "" }
         guard let place = notePlace else { return }
         let words = String(noteText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Markup.noteMaxLength))
-        history.add(Mark(id: history.newID(), ink: ink, shape: .note(at: place, text: words)), size: size)
+        history.add(MarkupShape(id: history.newID(), ink: ink, shape: .note(at: place, text: words)), size: size)
     }
 
     // MARK: Add to reply
@@ -267,15 +267,19 @@ struct MarkupEditor: View {
     private func add() {
         guard !history.marks.isEmpty else { notice = String(localized: "Draw on the picture first. Nothing was added."); return }
         if let refusal = model.markedCopyRefusal(target.box) { notice = refusal; return }
-        adding = true
-        defer { adding = false }
         guard let data = MarkupDrawing.copy(target.image, marks: history.marks, inks: inks) else {
             notice = String(localized: "Couldn’t make the marked copy. Nothing was added, and your marks are still here. Try again.")
             return
         }
-        model.attachPhotos(target.box, from: [PhotoSource(name: Markup.markedName(target.name)) { data }])
-        onAdded()
-        dismiss()
+        adding = true
+        Task {
+            // The editor stays open until the copy is in the box, so a refusal keeps the marks.
+            let refusal = await model.attachMarkedCopy(target.box, name: Markup.markedName(target.name), data: data)
+            adding = false
+            if let refusal { notice = refusal; return }
+            onAdded()
+            dismiss()
+        }
     }
 
     // MARK: The tools

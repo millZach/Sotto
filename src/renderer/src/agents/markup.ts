@@ -4,17 +4,19 @@
  * at the picture's full size, so what goes into the reply is what the user saw.
  */
 
+import { THEME_TOKEN_PROBE_ATTRIBUTE } from '../state/appearance'
+
 export type MarkTool = 'arrow' | 'ellipse' | 'box' | 'pen' | 'note'
 export type MarkInk = 'red' | 'amber' | 'plain'
 
-interface MarkBase { readonly id: number; readonly ink: MarkInk }
+interface ShapeBase { readonly id: number; readonly ink: MarkInk }
 /** Arrow, circle and box: from where the drag began to where it ended. */
-export interface ShapeMark extends MarkBase { readonly tool: 'arrow' | 'ellipse' | 'box'; readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
+export interface DragShape extends ShapeBase { readonly tool: 'arrow' | 'ellipse' | 'box'; readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
 /** A pen line: each point with the pen's pressure, which widens the line only when a pen drew it. */
-export interface PenMark extends MarkBase { readonly tool: 'pen'; readonly points: readonly (readonly [number, number, number])[]; readonly pressure: boolean }
+export interface PenShape extends ShapeBase { readonly tool: 'pen'; readonly points: readonly (readonly [number, number, number])[]; readonly pressure: boolean }
 /** A note: its words on a label of its ink, the label's left middle where the user pressed. */
-export interface NoteMark extends MarkBase { readonly tool: 'note'; readonly x0: number; readonly y0: number; readonly text: string }
-export type Mark = ShapeMark | PenMark | NoteMark
+export interface NoteShape extends ShapeBase { readonly tool: 'note'; readonly x0: number; readonly y0: number; readonly text: string }
+export type MarkupShape = DragShape | PenShape | NoteShape
 
 /** The tools in the order the editor shows them, with the letter that picks each. */
 export const MARKUP_TOOLS: readonly { readonly tool: MarkTool; readonly key: string }[] = [
@@ -37,26 +39,26 @@ export function strokeWidth(size: MarkupSize): number { return Math.max(size.wid
 export function noteFontSize(size: MarkupSize): number { return Math.max(size.width, size.height) / 48 }
 
 /** Whether a drag made a mark, rather than a press that slipped: a shape at least an 80th of the picture, a line of three points. */
-export function madeMark(mark: Mark, size: MarkupSize): boolean {
+export function madeMark(mark: MarkupShape, size: MarkupSize): boolean {
   if (mark.tool === 'pen') return mark.points.length > 2
   if (mark.tool === 'note') return mark.text.trim().length > 0
   return Math.hypot(mark.x1 - mark.x0, mark.y1 - mark.y0) > Math.max(size.width, size.height) / 80
 }
 
 /** The arrow's shaft end and the three corners of its head. */
-export function arrowGeometry(mark: ShapeMark, size: MarkupSize): { readonly shaft: readonly [number, number]; readonly head: readonly (readonly [number, number])[] } {
+export function arrowGeometry(mark: DragShape, size: MarkupSize): { readonly shaft: readonly [number, number]; readonly head: readonly (readonly [number, number])[] } {
   const angle = Math.atan2(mark.y1 - mark.y0, mark.x1 - mark.x0), length = strokeWidth(size) * 6
   const corner = (turn: number): readonly [number, number] => [mark.x1 - length * Math.cos(angle + turn), mark.y1 - length * Math.sin(angle + turn)]
   return { shaft: [mark.x1 - Math.cos(angle) * length * 0.6, mark.y1 - Math.sin(angle) * length * 0.6], head: [[mark.x1, mark.y1], corner(-0.45), corner(0.45)] }
 }
 
 /** How wide a pen line is between two points: wider where a pen pressed harder. */
-export function penWidth(mark: PenMark, pressure: number, size: MarkupSize): number {
+export function penWidth(mark: PenShape, pressure: number, size: MarkupSize): number {
   return strokeWidth(size) * (mark.pressure ? 0.5 + pressure * 1.6 : 1)
 }
 
 /** A note's label: where it stands and how big, given how wide its words are set. */
-export function noteBox(mark: NoteMark, size: MarkupSize, textWidth: number): { readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly radius: number; readonly textX: number; readonly textY: number } {
+export function noteBox(mark: NoteShape, size: MarkupSize, textWidth: number): { readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly radius: number; readonly textX: number; readonly textY: number } {
   const font = noteFontSize(size), height = font * 1.7
   return { x: mark.x0, y: mark.y0 - height / 2, width: textWidth + font * 1.2, height, radius: font * 0.3, textX: mark.x0 + font * 0.6, textY: mark.y0 + font * 0.35 }
 }
@@ -77,14 +79,26 @@ export interface InkColours { readonly stroke: Readonly<Record<MarkInk, string>>
 
 const INK_ROLES: Readonly<Record<MarkInk, string>> = { red: '--tt-ink-red', amber: '--tt-ink-amber', plain: '--tt-text' }
 
-/** The relative luminance of an `rgb()` colour, or null when it is not one. */
-function luminance(colour: string): number | null {
-  const parts = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/u.exec(colour)
-  if (!parts) return null
-  const [r, g, b] = parts.slice(1, 4).map(part => { const value = Number(part) / 255; return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4 }) as [number, number, number]
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+/** The relative luminance of a colour painted as red, green and blue bytes. */
+function luminance([r, g, b]: readonly [number, number, number]): number {
+  const channel = (value: number): number => { const share = value / 255; return share <= 0.03928 ? share / 12.92 : ((share + 0.055) / 1.055) ** 2.4 }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
 const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+
+let painting: CanvasRenderingContext2D | null | undefined
+/** A colour as the bytes a canvas paints it with, whatever space the theme gives it in (OKLCH, a mix), or null without a canvas. */
+function painted(colour: string): readonly [number, number, number] | null {
+  if (painting === undefined) {
+    try { painting = document.createElement('canvas').getContext?.('2d', { willReadFrequently: true }) ?? null } catch { painting = null }
+  }
+  if (!painting) return null
+  painting.clearRect(0, 0, 1, 1)
+  painting.fillStyle = colour
+  painting.fillRect(0, 0, 1, 1)
+  const [r = 0, g = 0, b = 0] = painting.getImageData(0, 0, 1, 1).data
+  return [r, g, b]
+}
 
 /**
  * Reads the inks from the theme where `host` sits: red and amber are the theme's error and warning colours at full
@@ -92,22 +106,31 @@ const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Ma
  */
 export function inkColours(host: Element): InkColours {
   const probe = document.createElement('span')
-  probe.style.display = 'none'
+  probe.hidden = true
+  // Page observers, the theme inspector's among them, skip probe elements coming and going (ADR-0011).
+  probe.setAttribute(THEME_TOKEN_PROBE_ATTRIBUTE, '')
   host.appendChild(probe)
   const read = (role: string): string => { probe.style.color = `var(${role})`; return getComputedStyle(probe).color || 'currentcolor' }
   const stroke = { red: read(INK_ROLES.red), amber: read(INK_ROLES.amber), plain: read(INK_ROLES.plain) }
   const canvas = read('--tt-canvas'), text = stroke.plain
   probe.remove()
+  const light = painted(canvas), dark = painted(text)
   const on = (ink: string): string => {
-    const lum = luminance(ink), light = luminance(canvas), dark = luminance(text)
-    if (lum === null || light === null || dark === null) return canvas
-    return contrast(lum, light) >= contrast(lum, dark) ? canvas : text
+    const shade = painted(ink)
+    if (!shade || !light || !dark) return canvas
+    const lum = luminance(shade)
+    return contrast(lum, luminance(light)) >= contrast(lum, luminance(dark)) ? canvas : text
   }
   return { stroke, noteText: { red: on(stroke.red), amber: on(stroke.amber), plain: on(stroke.plain) } }
 }
 
+/** Whether two readings of the inks are the same, so a root change that moved nothing redraws nothing. */
+export function sameInks(a: InkColours | null, b: InkColours): boolean {
+  return a !== null && MARKUP_INKS.every(ink => a.stroke[ink] === b.stroke[ink] && a.noteText[ink] === b.noteText[ink])
+}
+
 /** Draws the marks on a canvas the picture's size. */
-export function drawMarks(context: CanvasRenderingContext2D, marks: readonly Mark[], size: MarkupSize, colours: InkColours): void {
+export function drawMarks(context: CanvasRenderingContext2D, marks: readonly MarkupShape[], size: MarkupSize, colours: InkColours): void {
   const line = strokeWidth(size)
   context.lineCap = 'round'; context.lineJoin = 'round'
   for (const mark of marks) {
@@ -150,7 +173,7 @@ export function markedName(name: string): string {
  * The picture with its marks drawn on it, at the picture's full size, as a PNG file named after it. Null when the
  * picture could not be read or drawn.
  */
-export async function markedCopy(source: string, name: string, marks: readonly Mark[], colours: InkColours): Promise<File | null> {
+export async function markedCopy(source: string, name: string, marks: readonly MarkupShape[], colours: InkColours): Promise<File | null> {
   const picture = new Image()
   picture.decoding = 'async'
   picture.src = source

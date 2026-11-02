@@ -104,6 +104,13 @@ describe('marking a picture up (ADR-0170, part 5)', () => {
     expect(marksList()).toEqual(['Arrow', 'Box', 'Pen line'])
     await userEvent.click(screen.getByRole('button', { name: 'Remove Box' }))
     expect(marksList()).toEqual(['Arrow', 'Pen line'])
+    // The focus goes to the next mark's Remove button, not the page.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Remove Pen line' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Pen line' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Remove Arrow' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Arrow' }))
+    expect(document.activeElement).toBe(picture)
+    await userEvent.keyboard('{Control>}z{/Control}{Control>}z{/Control}{Control>}z{/Control}')
     // Taking one off can be undone too.
     await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
     expect(marksList()).toEqual(['Arrow', 'Box', 'Pen line'])
@@ -210,7 +217,7 @@ describe('a reply box takes a marked copy the way it takes a paste (ADR-0170, pa
     expect(slot.current).toBeNull()
   })
 
-  it('says why it can\'t: an archived thread, an answer, a model that reads no images', () => {
+  it('says why it can\'t: an archived thread, an answer, a model that reads no images, a full draft', () => {
     const slot: ReplyAttachSlot = { current: null }
     const { rerender } = render(<Box slot={slot} disabled />)
     expect(slot.current?.refusal()).toBe('This thread is archived, so its reply box takes no pictures. Nothing was added. Restore the thread to reply.')
@@ -218,6 +225,13 @@ describe('a reply box takes a marked copy the way it takes a paste (ADR-0170, pa
     expect(slot.current?.refusal()).toBe('This thread waits for your answer, so a marked copy can\'t go into its reply yet. Answer it first.')
     rerender(<Box slot={slot} supported={false} />)
     expect(slot.current?.refusal()).toBe('This thread\'s model does not read images, so a marked copy can\'t go into its reply. Choose a model with image support.')
+    cleanup()
+    function Full() {
+      const [images, setImages] = useState<AgentAttachmentHandle[]>(Array.from({ length: 8 }, (_, index) => ({ id: `a${index}`, name: `a${index}.png`, mimeType: 'image/png', sizeBytes: 10, digest: 'a'.repeat(64) })))
+      return <ReplyAttachContext.Provider value={slot}><ScreenshotInput target="workshop" attachments={images} onChange={setImages} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput></ReplyAttachContext.Provider>
+    }
+    render(<Full />)
+    expect(slot.current?.refusal()).toBe('Attach up to 8 screenshots at a time.')
   })
 })
 
