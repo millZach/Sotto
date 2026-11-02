@@ -461,7 +461,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     return <>
       <ActivityGroups groups={replyWork ? boundaries : groups} context={context} />
       {turn.replies.map(message => <React.Fragment key={message.id}>{article(message, message === head ? replyWork : undefined)}</React.Fragment>)}
-      <ThreadMediaTiles groups={groups} threadId={threadId} />
+      <ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} />
       <DelegatedWork views={delegations} />
       {continued}
     </>
@@ -469,7 +469,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
-    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<ThreadMediaTiles groups={groups} threadId={threadId} /><UnfoldedWork views={delegations} work={final ? backgroundWork : undefined} />{continued}</>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} /><UnfoldedWork views={delegations} work={final ? backgroundWork : undefined} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
@@ -492,7 +492,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
       <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
       <DelegatedWork views={delegations} />
     </TurnWork>
-    <ThreadMediaTiles groups={groups} threadId={threadId} />
+    <ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} />
     {shown(-1, finalAt)}
     <ActivityGroups groups={boundaries} context={context} />
     {article(final)}

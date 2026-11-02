@@ -10,6 +10,8 @@ import { rootStyleUnchanged } from '../state/appearance'
 import { arrowGeometry, inkColours, madeMark, sameInks, markedCopy, markRedraws, MARKUP_INKS, MARKUP_TOOLS, noteBox, noteFont, NOTE_MAX_LENGTH, noteTextWidth, penWidth, strokeWidth,
   type InkColours, type MarkupShape, type MarkInk, type MarkTool, type MarkupSize } from './markup'
 import type { ReplyAttach } from './replyAttach'
+import type { AgentMediaCallout } from '../../../shared/agentActivity'
+import { CalloutLayer, CalloutNotes, calloutColours, drawCallouts } from './callouts'
 import './markup.css'
 
 const TOOL_WORDS: Readonly<Record<MarkTool, MessageDescriptor>> = { arrow: msg`Arrow`, ellipse: msg`Circle`, box: msg`Box`, pen: msg`Pen`, note: msg`Note` }
@@ -82,9 +84,11 @@ interface History { readonly past: readonly (readonly MarkupShape[])[]; readonly
  * with Undo and Redo, and the marks listed beside the picture where each can be taken off. Add to reply puts a copy with
  * the marks drawn on it into the pane's reply box, the way a pasted screenshot goes in; the picture in the thread stays
  * as it was. A pen draws a line as wide as it presses. From the keyboard, the picture takes focus and Enter starts a
- * mark at the cross, the arrow keys move it, and Enter ends it.
+ * mark at the cross, the arrow keys move it, and Enter ends it. The agent's callouts on the picture (part 6) are drawn
+ * under the marks and listed beside them; Show hides them while marking, and Keep them in the copy decides whether the
+ * copy carries them.
  */
-export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
+export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, callouts, calloutsHeading }: {
   readonly name: string
   /** The picture the viewer already holds; the editor reads nothing more. */
   readonly source: string
@@ -92,6 +96,9 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
   readonly reply: ReplyAttach
   readonly onCancel: () => void
   readonly onAdded: () => void
+  /** The callouts the agent placed on the picture, and the heading that says whose they are. */
+  readonly callouts?: readonly AgentMediaCallout[] | undefined
+  readonly calloutsHeading?: string | undefined
 }): ReactNode {
   const { t } = useLingui()
   const markWords = useMarkWords()
@@ -110,6 +117,10 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
   const [adding, setAdding] = useState(false)
   const [fit, setFit] = useState<{ readonly width: number; readonly height: number } | null>(null)
   const [colours, setColours] = useState<InkColours | null>(null)
+  const [showCallouts, setShowCallouts] = useState(true)
+  const [keepCallouts, setKeepCallouts] = useState(true)
+  /** The callouts the copy carries: shown and kept, as the user sees them. */
+  const kept = callouts?.length && showCallouts && keepCallouts ? callouts : null
   const nextId = useRef(1)
   const drawing = useRef<{ readonly pointerId: number } | null>(null)
   const app = useOptionalApp()
@@ -237,12 +248,15 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
 
   const add = async (): Promise<void> => {
     if (adding) return
-    if (history.marks.length === 0) { setStatus(t`Draw on the picture first. Nothing was added.`); return }
+    if (history.marks.length === 0 && !kept) { setStatus(t`Draw on the picture first. Nothing was added.`); return }
     const refusal = reply.refusal()
     if (refusal) { setStatus(refusal); return }
     setAdding(true); setStatus(t`Adding the marked copy…`)
     // The copy takes the inks as the theme has them now.
-    const copy = await markedCopy(source, name, history.marks, inkColours(root.current!)).catch(() => null)
+    const host = root.current!
+    const made = kept ? markedCopy(source, name, history.marks, inkColours(host), (context, drawnSize) => drawCallouts(context, kept, drawnSize, calloutColours(host)))
+      : markedCopy(source, name, history.marks, inkColours(host))
+    const copy = await made.catch(() => null)
     const refused = copy ? await reply.add([copy]) : t`Could not make the marked copy. Nothing was added, and your marks are still here. Try again.`
     setAdding(false)
     if (refused) { setStatus(refused); return }
@@ -282,7 +296,7 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
       <button type="button" className="markup-editor__tool markup-editor__tool--icon tt-focusable" aria-disabled={history.future.length === 0} aria-label={t`Redo`} title={t`Redo (${modKey}+Shift+Z)`} onClick={redo}><Redo2 size={16} aria-hidden="true" /></button>
       <span className="markup-editor__space" />
       <button type="button" className="markup-editor__action tt-focusable" onClick={onCancel} title={t`Cancel (Esc)`}>{t`Cancel`}</button>
-      <button type="button" className="markup-editor__action markup-editor__action--primary tt-focusable" aria-disabled={adding || marks.length === 0} title={t`Add to reply (${modKey}+Enter)`} onClick={() => void add()}>{t`Add to reply`}</button>
+      <button type="button" className="markup-editor__action markup-editor__action--primary tt-focusable" aria-disabled={adding || (marks.length === 0 && !kept)} title={t`Add to reply (${modKey}+Enter)`} onClick={() => void add()}>{t`Add to reply`}</button>
     </header>
     <div className="markup-editor__body">
       <div ref={wrap} className="markup-editor__room">
@@ -293,6 +307,7 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
           onFocus={() => { if (!cross) setCross({ x: sized.width / 2, y: sized.height / 2 }) }} onBlur={() => { if (!live.get()) setCross(null) }} onKeyDown={onSurfaceKeyDown}>
           <img src={source} alt="" draggable={false} decoding="async" />
           {colours ? <svg viewBox={`0 0 ${sized.width} ${sized.height}`} preserveAspectRatio="none" aria-hidden="true">
+            {callouts?.length && showCallouts ? <CalloutLayer callouts={callouts} size={sized} /> : null}
             {marks.map(mark => <MarkShape key={mark.id} mark={mark} size={sized} colours={colours} />)}
             <LiveLayer live={live} size={sized} colours={colours} />
             {cross ? <g className="markup-editor__cross"><line x1={cross.x - longer / 60} y1={cross.y} x2={cross.x + longer / 60} y2={cross.y} strokeWidth={longer / 600} />
@@ -305,7 +320,14 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
           }} /> : null}
         </div>
       </div>
-      <aside className="markup-editor__side" aria-label={t`Your marks`}>
+      <aside className="markup-editor__side" aria-label={callouts?.length ? t`Callouts and your marks` : t`Your marks`}>
+        {callouts?.length ? <section className="markup-editor__callouts">
+          <div className="markup-editor__callouts-head">
+            <h3 className="markup-editor__heading">{calloutsHeading ?? t`Callouts`}</h3>
+            <label className="markup-editor__option"><input type="checkbox" checked={showCallouts} onChange={event => setShowCallouts(event.currentTarget.checked)} />{t`Show`}</label>
+          </div>
+          <CalloutNotes callouts={callouts} />
+        </section> : null}
         <h3 className="markup-editor__heading">{t`Your marks`}</h3>
         {marks.length === 0
           ? <p className="markup-editor__empty tt-paragraph">{t`None yet. Draw on the picture.`}</p>
@@ -315,6 +337,9 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded }: {
               <button type="button" className="markup-editor__remove tt-focusable" aria-label={t({ message: `Remove ${words}`, comment: '{words} names a mark, such as "Arrow" or "Note: the button".' })}
                 title={t`Remove`} onClick={() => remove(mark.id)}><X size={13} aria-hidden="true" /></button></li>
           })}</ul>}
+        {callouts?.length ? <label className="markup-editor__option markup-editor__keep">
+          <input type="checkbox" checked={keepCallouts && showCallouts} disabled={!showCallouts} onChange={event => setKeepCallouts(event.currentTarget.checked)} />
+          {t`Keep the callouts in the copy`}</label> : null}
         <p className="markup-editor__copy-note tt-paragraph">{t`The marked copy goes into your reply. The picture in the thread stays as it was.`}</p>
       </aside>
     </div>
