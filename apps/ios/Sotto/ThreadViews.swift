@@ -1926,7 +1926,7 @@ private struct FoldChevron: View {
     let open: Bool
     var body: some View {
         Image(systemName: "chevron.right")
-            .font(.system(size: 11, weight: .semibold))
+            .iconFont(11, weight: .semibold)
             .foregroundStyle(Palette.muted)
             .rotationEffect(.degrees(open ? 90 : 0))
             .accessibilityHidden(true)
@@ -1976,7 +1976,7 @@ private struct StepLine: View {
     var body: some View {
         let _ = BenchProbe.body("StepLine")
         HStack(spacing: 7) {
-            mark.frame(width: 16, height: 16)
+            mark.frame(minWidth: 16, minHeight: 16)
             Text(verbatim: record.title)
                 .font(.sotto(.caption, .semibold))
                 .foregroundStyle(verbStyle)
@@ -2008,7 +2008,7 @@ private struct StepLine: View {
             }
         } else {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
+                .iconFont(11, weight: .semibold, relativeTo: .footnote)
                 .foregroundStyle(iconStyle)
                 .accessibilityHidden(true)
         }
@@ -3130,7 +3130,7 @@ private struct LinkRows: View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         return HStack(spacing: Space.s3) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
+                .iconFont(16, weight: .semibold)
                 .foregroundStyle(Palette.accentText)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
@@ -3142,7 +3142,7 @@ private struct LinkRows: View {
             }
             Spacer(minLength: 0)
             Image(systemName: "arrow.up.right.square")
-                .font(.system(size: 16, weight: .semibold))
+                .iconFont(16, weight: .semibold)
                 .foregroundStyle(Palette.muted)
         }
         .padding(.horizontal, Space.s4)
