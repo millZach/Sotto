@@ -26,6 +26,8 @@ export interface ThreadShortcutsSettingsProps {
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   /** Dictation's keys keep their own rows; this page's entry for them only points there. */
   readonly onOpenDictation?: (() => void) | undefined
+  /** A row of the page's own drawn under its lead and filter, before the thread shortcuts: the popup's (ADR-0181). */
+  readonly before?: ReactNode
 }
 
 /** What the application menu calls each chord it owns (`menuOwnedChords`), for naming it in a refusal. */
@@ -95,7 +97,7 @@ const UNSUPPORTED_KEY = msg`That key can’t be part of a shortcut here. Try a l
  * and dictation pointed to rather than repeated. Recording, messages and focus follow Dictation's rows; the
  * chords are T3's spelling, read from the window's keys — dictation stays the one global exception.
  */
-export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation }: ThreadShortcutsSettingsProps): ReactNode {
+export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation, before }: ThreadShortcutsSettingsProps): ReactNode {
   const { t, i18n } = useLingui()
   const recorder = useChordRecorder(platform, false)
   const popupOn = useOwlFeature('popup')
@@ -353,6 +355,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       <p className="tt-paragraph thread-shortcuts__lead"><Trans>Click a shortcut and press the new keys; let go to save. These keys work while Sotto is in front, and stand down in terminals and dialogs. Dictation’s keys always win a tie.</Trans></p>
       <input className="tt-input thread-shortcuts__filter" type="search" aria-label={t`Filter shortcuts`} placeholder={t`Filter by action or keys`} value={filter} onChange={event => setFilter(event.currentTarget.value)} />
       {notice !== null ? <p className="tt-paragraph thread-shortcuts__notice" role="status">{shownWords(notice)}</p> : null}
+      {before}
       {GROUPS.map(group => {
         const rows = groupRows(group).filter(matches)
         if (rows.length === 0) return null

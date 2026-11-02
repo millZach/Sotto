@@ -810,6 +810,8 @@ export function createSottoPopupBridge(
   interfaceLanguage: InterfaceLanguageState | null = null,
   watcherEnabled = false,
 ): PopupBridge {
+  // A show sent before the page's listener is attached waits for it, as the widget's state does.
+  const onShown = createBufferedSubscription(renderer, POPUP_SHOWN, popupShownSchema, 1)
   return Object.freeze<PopupBridge>({
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
@@ -828,7 +830,7 @@ export function createSottoPopupBridge(
     hide: async () => { await renderer.invoke(POPUP_HIDE) },
     fit: async height => { await renderer.invoke(POPUP_FIT, popupFitSchema.parse(height)) },
     open: async request => { await renderer.invoke(POPUP_OPEN, popupOpenSchema.parse(request)) },
-    onShown: listener => subscribe(renderer, POPUP_SHOWN, popupShownSchema, () => listener()),
+    onShown: listener => onShown(() => listener()),
   })
 }
 

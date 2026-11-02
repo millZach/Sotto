@@ -799,8 +799,8 @@ export function SettingsView({
 
               <Card className="settings-section" id="settings-keyboard" {...panelProps('settings-keyboard')}>
                 <div className="settings-section__heading"><h2><Trans>Keyboard</Trans></h2><p className="tt-paragraph"><Trans>Every shortcut in Sotto, in one place</Trans></p></div>
-                <PopupShortcutSetting settings={settings} platform={platform} />
-                <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')} />
+                <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')}
+                  before={<PopupShortcutSetting settings={settings} platform={platform} />} />
               </Card>
 
               <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
