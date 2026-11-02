@@ -76,7 +76,8 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
         }
         .composerSurface(in: ComposerShape(top: small ? lowered : 0))
         .effortTrace(lit, radius: ComposerMetrics.radius, top: small ? lowered : 0)
-        .animation(reduceMotion ? nil : .easeInOut(duration: ComposerMetrics.smallMotion), value: small)
+        // Going small, the words set off once the pill has mostly gone, so they never cross it.
+        .animation(reduceMotion ? nil : small ? .easeInOut(duration: ComposerMetrics.smallMotion).delay(0.06) : .easeInOut(duration: ComposerMetrics.smallMotion), value: small)
     }
 
     /// The pill keeps its place in the row, so its sheet stays up and nothing beside it moves. It leaves before the words
