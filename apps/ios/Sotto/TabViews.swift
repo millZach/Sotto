@@ -63,6 +63,7 @@ struct ThreadsView: View {
         let _ = BenchProbe.body("ThreadsView")
         let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
         let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
+        let _ = BenchPage.drawn(held: false)
         SheetPage(warm: unsearched.requestCount > 0) {
             VStack(alignment: .leading, spacing: 0) {
                 heading
@@ -102,6 +103,7 @@ struct ThreadsView: View {
         }
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
         .onAppear { openForShare(model.shareOpened) }
+        .benchPageWindow()
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
     }

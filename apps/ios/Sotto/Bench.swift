@@ -98,6 +98,17 @@ import UIKit
         mark("stream-done")
         phaseNotes["wallMs"] = (CACurrentMediaTime() - started) * 1000
         await quiet()
+
+        // Back to the list, as Back and a swipe back go: the Threads page comes into sight again under the thread and lets
+        // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back still counts
+        // for the phases before; its `back` has no counts.
+        next("back")
+        if let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil {
+            _ = await until({ self.pageInWindow && !self.pageHeld })
+            await quiet()
+        } else {
+            phaseNotes["noBack"] = 1
+        }
         finish(nil)
     }
 
@@ -223,6 +234,50 @@ import UIKit
         }
         windows.filter { !$0.isHidden }.forEach(visit)
         return best
+    }
+
+    /// The navigation stack with a thread open on it.
+    private static func threadNavigation() -> UINavigationController? {
+        func visit(_ controller: UIViewController) -> UINavigationController? {
+            if let navigation = controller as? UINavigationController, navigation.viewControllers.count > 1 { return navigation }
+            for child in controller.children { if let found = visit(child) { return found } }
+            return controller.presentedViewController.flatMap(visit)
+        }
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        return windows.lazy.compactMap { $0.rootViewController.flatMap(visit) }.first
+    }
+
+    // The Threads page's hold (`ThreadsView.held`). The page is in the window while any of it can show: from the start of
+    // a push over it to that push's end, and again from the start of a pop. Each turn of the main run loop that ends with
+    // the page in the window and drawn from its held list, after Core Animation's commit, counts as `page.stale_frames`:
+    // a frame that could have shown an old row. A hold taken while the page is still in the window counts as
+    // `page.held_in_window`.
+    private var pageHeld = false
+    private var pageInWindow = false
+    private var staleWatch: CFRunLoopObserver?
+
+    static func pageDrawn(held: Bool) { running?.pageHeld = held }
+    static func pageHolding() {
+        guard let running else { return }
+        BenchProbe.count("page.holds")
+        if running.pageInWindow { BenchProbe.count("page.held_in_window") }
+    }
+    static func pageWindow(_ inWindow: Bool) { running?.pageMoved(inWindow) }
+    private func pageMoved(_ inWindow: Bool) {
+        pageInWindow = inWindow
+        guard inWindow, staleWatch == nil else { return }
+        BenchProbe.count("page.shown")
+        // Core Animation commits the frame before the run loop waits, at order 2,000,000; this runs after it.
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+            MainActor.assumeIsolated { BenchDriver.running?.checkPage() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        staleWatch = observer
+    }
+    private func checkPage() {
+        if pageInWindow && pageHeld { BenchProbe.count("page.stale_frames"); return }
+        if let staleWatch { CFRunLoopRemoveObserver(CFRunLoopGetMain(), staleWatch, .commonModes) }
+        staleWatch = nil
     }
 
     private func body(_ name: String) {
@@ -540,6 +595,53 @@ private struct EnvironmentProbe: View {
     var body: some View {
         let _ = BenchProbe.body(name)
         Color.clear.accessibilityHidden(true)
+    }
+}
+#endif
+
+/// The Threads page's hold (`ThreadsView.held`), told to the benchmarks. Outside a benchmark run each does nothing; in a
+/// build without `DEBUG` each is empty.
+enum BenchPage {
+    /// The page drew, from its held list or the model's.
+    @MainActor static func drawn(held: Bool) {
+        #if DEBUG && os(iOS)
+        BenchDriver.pageDrawn(held: held)
+        #endif
+    }
+    /// The page is about to hold its list.
+    @MainActor static func holding() {
+        #if DEBUG && os(iOS)
+        BenchDriver.pageHolding()
+        #endif
+    }
+}
+
+extension View {
+    /// Tells the benchmarks when this page enters and leaves the window. Outside a benchmark run it adds nothing; in a
+    /// build without `DEBUG` it is not there.
+    func benchPageWindow() -> some View {
+        #if DEBUG && os(iOS)
+        background { if BenchProbe.enabled { PageWindowProbe() } }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG && os(iOS)
+private struct PageWindowProbe: UIViewRepresentable {
+    func makeUIView(context: Context) -> WindowWatcher {
+        let view = WindowWatcher()
+        view.isUserInteractionEnabled = false
+        view.isAccessibilityElement = false
+        return view
+    }
+    func updateUIView(_ view: WindowWatcher, context: Context) {}
+    final class WindowWatcher: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            BenchDriver.pageWindow(window != nil)
+        }
     }
 }
 #endif
