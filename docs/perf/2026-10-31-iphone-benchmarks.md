@@ -98,6 +98,7 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.wall_per_chunk` | Time per streamed word, including the 50 ms wait after each: 50 ms is the floor. |
 | `stream.cpu_per_chunk` | CPU time per streamed word. |
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
+| `stream.worst_per_chunk.<count>` | The Threads list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
 | `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
 | `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
@@ -227,4 +228,8 @@ The streamed word's CPU fell by 8% and 22% rather than by half: the list's share
 itself, its text and its view graph. The back phase and the peak memory moved within the runners' noise in both
 directions. Catching the list up is about a tenth of the back phase's slow frames, and the rest is the page's text and
 the transition, which the base pays too. The benchmark goes back with `popViewController`, the transition Back and the
-swipe use, not with a finger. The list's bodies per streamed word and the stale frames have budgets of zero.
+swipe use, not with a finger. The list's bodies per streamed word in the worst journey, and the stale frames, have budgets of zero; the base is over
+the first two. The two-axis review found that the list's equality, now the only thing that decides when it draws, left
+out a thread's state and the delegated thread a Needs you row waits in, and that the look and back checks could pass
+without proving anything; all are fixed. The fixes were not measured again: they add words to an equality check and
+make the checks stricter.

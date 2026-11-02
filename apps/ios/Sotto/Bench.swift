@@ -262,7 +262,12 @@ import UIKit
     static func pageWindow(_ inWindow: Bool) { running?.pageMoved(inWindow) }
     private func pageMoved(_ inWindow: Bool) {
         pageInWindow = inWindow
-        guard inWindow, staleWatch == nil else { return }
+        guard inWindow else {
+            if let staleWatch { CFRunLoopRemoveObserver(CFRunLoopGetMain(), staleWatch, .commonModes) }
+            staleWatch = nil
+            return
+        }
+        guard staleWatch == nil else { return }
         BenchProbe.count("page.shown")
         // Core Animation commits the frame before the run loop waits, at order 2,000,000; this runs after it.
         let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
@@ -271,10 +276,9 @@ import UIKit
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         staleWatch = observer
     }
+    /// Every turn while the page is in the window, so a hold taken later while it still shows is caught too.
     private func checkPage() {
-        if pageInWindow && pageHeld { BenchProbe.count("page.stale_frames"); return }
-        if let staleWatch { CFRunLoopRemoveObserver(CFRunLoopGetMain(), staleWatch, .commonModes) }
-        staleWatch = nil
+        if pageInWindow && pageHeld { BenchProbe.count("page.stale_frames") }
     }
 
     private func body(_ name: String) {

@@ -31,6 +31,7 @@ ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body
 PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "back"]
 # The Threads page's hold while a thread covers it (`ThreadsView.held`), counted over each whole journey: the page coming
 # into sight, holds taken, holds taken while the page could still show, and frames that could have shown an old row.
+WORST_PER_CHUNK = ["body.ThreadListSections", "body.ThreadListRow"]
 PAGE = ["page.shown", "page.holds", "page.held_in_window", "page.stale_frames"]
 # Work counts the climb has brought down, held there (#1702). Counts do not vary with the runner as times do, so each
 # budget sits a little above what the change that set it measured. A budget only tightens; a raise needs its reason in
@@ -43,8 +44,8 @@ BUDGETS = {
     # Each paragraph is measured once for its words, text size and width (0.36 a streamed word).
     "stream.per_chunk.time.textview.measure.n": 1.0,
     # The Threads page holds its list while the long thread covers it (0.27 list bodies a streamed word before).
-    "stream.per_chunk.body.ThreadListSections": 0,
-    "stream.per_chunk.body.ThreadListRow": 0,
+    "stream.worst_per_chunk.body.ThreadListSections": 0,
+    "stream.worst_per_chunk.body.ThreadListRow": 0,
     # The Threads page lets go of its held list before the first frame that shows it again, in every journey.
     "journey.page.stale_frames": 0,
 }
@@ -116,6 +117,11 @@ def app_metrics(folder):
     put("stream.cpu_per_chunk", [p["cpuMs"] / chunks for p in stream if "cpuMs" in p], "ms")
     for key in PER_CHUNK:
         put(f"stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["stream"]], "count")
+    # The worst journey's, for the counts budgeted at zero, where the median would hide one journey that drew.
+    for key in WORST_PER_CHUNK:
+        values = [c.get(key, 0) / chunks for c in counts["stream"]]
+        if values:
+            rows[f"stream.worst_per_chunk.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
     for kind in ["delta", "shell"]:
         put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
         put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")
