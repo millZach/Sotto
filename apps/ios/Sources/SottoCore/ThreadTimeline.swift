@@ -13,7 +13,7 @@ public enum TimelineEntry: Sendable {
 }
 
 /// A message, or the run of steps that sit together between two messages.
-public enum TimelineItem: Identifiable, Sendable {
+public enum TimelineItem: Identifiable, Equatable, Sendable {
     case message(Message)
     case steps([Activity])
     public var id: String {

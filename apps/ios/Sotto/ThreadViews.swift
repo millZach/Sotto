@@ -383,7 +383,7 @@ private struct ModelMovedLine: View {
     }
 }
 
-private struct ConversationRow: Identifiable {
+private struct ConversationRow: Identifiable, Equatable {
     let item: TimelineItem
     /// The provider's name heads an answer that doesn't follow another answer.
     let showsWho: Bool
@@ -451,6 +451,36 @@ private final class TimelineCache {
         guard let parsed = Stamp.date(stamp) else { return nil }
         dates[stamp] = parsed
         return parsed
+    }
+}
+
+/// Everything besides their rows that the turns before the latest are drawn from.
+private struct OlderTurnsInputs: Equatable {
+    let ref: ThreadRef
+    let provider: String
+    let working: String?
+    let last: String?
+    let movedAfter: String?
+    let movedWords: String?
+    let openRuns: Set<String>
+    let showsPictures: Bool
+    let opensFiles: Bool
+    let spacing: CGFloat
+}
+
+/// The turns before the latest, made as they scroll into view. They are drawn again only when they or what they are
+/// drawn from change, not for each word streamed into the latest turn: given its rows again, the lazy stack guessed
+/// the heights of the rows it hadn't made afresh each time, the page's height swung by tens of thousands of points
+/// under a reply, and a reader at the end was thrown far above it and back.
+private struct OlderTurns<Row: View>: View, Equatable {
+    let rows: ArraySlice<ConversationRow>
+    let inputs: OlderTurnsInputs
+    @ViewBuilder let row: (ConversationRow) -> Row
+    static func == (a: Self, b: Self) -> Bool { a.inputs == b.inputs && a.rows == b.rows }
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: inputs.spacing) {
+            ForEach(rows) { row($0) }
+        }
     }
 }
 
@@ -605,12 +635,16 @@ private struct Conversation: View {
                 // for each streamed word, and opening one took seconds (#1702).
                 let split = min(timeline.latestTurnsStart, rows.count)
                 if split > 0 {
-                    LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                        ForEach(rows[..<split]) { row in
-                            entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
-                                  scroll: scroll)
-                        }
+                    let inputs = OlderTurnsInputs(ref: ref, provider: provider, working: working, last: last,
+                                                  movedAfter: movedAfter, movedWords: moved?.words(provider: provider),
+                                                  openRuns: openRuns, showsPictures: model.showsAgentPictures(ref.hostID),
+                                                  opensFiles: model.opensSentFiles(ref.hostID),
+                                                  spacing: Space.dense(Space.s5, density))
+                    OlderTurns(rows: rows[..<split], inputs: inputs) { row in
+                        entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
+                              scroll: scroll)
                     }
+                    .equatable()
                 }
                 ForEach(rows[split...]) { row in
                     entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
