@@ -55,10 +55,10 @@
 /* The speed card, under the chip's name in the model chip's card: whose turn, how fast, the graph, then the figures. */
 .server-speed { --server-speed-off: color-mix(in oklab, var(--tt-text-muted) 30%, transparent); width: 240px; max-width: 100%; margin-top: 6px; }
 .server-speed__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0; color: var(--tt-text-muted); }
-.server-speed__host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-hint); }
+.server-speed__host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); }
 .server-speed__rate { display: flex; align-items: baseline; gap: 6px; min-height: 28px; margin: 6px 0 8px; color: var(--tt-text-muted); }
 .server-speed__figure { color: var(--tt-text); font-size: var(--tt-type-figure); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
-.server-speed__rate[data-paused] .server-speed__figure { color: var(--tt-text-hint); }
+.server-speed__rate[data-paused] .server-speed__figure { color: var(--tt-text-muted); }
 .server-speed__graph { display: flex; align-items: flex-end; justify-content: flex-end; gap: 1px; height: 28px; margin: 0 0 12px; overflow: hidden; }
 .server-speed__graph > i { flex: none; width: 2px; height: 1px; background: var(--server-speed-off); }
 .server-speed__graph > i[data-wait] { background: color-mix(in oklab, var(--tt-text-hint) 55%, transparent); }
