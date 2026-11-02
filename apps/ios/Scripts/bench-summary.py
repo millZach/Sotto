@@ -116,6 +116,12 @@ def app_metrics(folder):
     put("stream.cpu_per_chunk", [p["cpuMs"] / chunks for p in stream if "cpuMs" in p], "ms")
     for key in PER_CHUNK:
         put(f"stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["stream"]], "count")
+    # The same 200 words over the moves, to set against `stream`: moving the box adds no drawing per word and no time.
+    box_stream = phases["reply-box-stream"]
+    put("reply-box-stream.wall_per_chunk", [p["wallMs"] / chunks for p in box_stream if "wallMs" in p], "ms")
+    put("reply-box-stream.cpu_per_chunk", [p["cpuMs"] / chunks for p in box_stream if "cpuMs" in p], "ms")
+    for key in PER_CHUNK:
+        put(f"reply-box-stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["reply-box-stream"]], "count")
     for kind in ["delta", "shell"]:
         put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
         put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")

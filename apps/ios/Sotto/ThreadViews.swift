@@ -553,9 +553,9 @@ private struct Conversation: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
-                // Only a new empty thread keeps the box full. One still opening has yet to say what it holds.
-                ReplyDock(ref: ref, goesSmall: detail == nil || !rows.isEmpty || !pending.isEmpty || detail?.earlierAvailable == true
-                            || model.thread(ref)?.status == "running",
+                // Only a new empty thread keeps the box full. One still opening goes by whether it has had a message.
+                ReplyDock(ref: ref, goesSmall: !rows.isEmpty || !pending.isEmpty || detail?.earlierAvailable == true
+                            || model.thread(ref)?.status == "running" || (detail == nil && model.thread(ref)?.summary?.lastMessageAt != nil),
                           openRequest: openRequest)
                     .equatable()
                     .readingWidth()

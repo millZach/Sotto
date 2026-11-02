@@ -2166,7 +2166,7 @@ import UIKit
         XCTAssertTrue(waitForReplyBox(small: false, words: reply), "A draft keeps the box full")
         XCTAssertFalse(keyboard.exists, "Even with the keyboard away")
         // Read once the page has settled on the probe's next tick. The full box took no more room than the small one.
-        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in abs(dockTop() - smallTop) < 1 }, object: nil)
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in abs(dockTop() - smallTop) < 0.6 }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 5), .completed, "The dock keeps its height, so the conversation stays put (\(dockTop()), was \(smallTop))")
         capture("reply-box-draft-dark")
     }
@@ -2202,6 +2202,14 @@ import UIKit
         reply.tap()
         XCTAssertTrue(waitForReplyBox(small: false, words: reply))
         capture("reply-box-full-top-effort-dark")
+
+        launch(Self.fixture + ["--ui-thread-settings", "--ui-still", "--ui-top-effort", "--ui-light"])
+        thread = row("shortcuts")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForReplyBox(small: true, words: reply), "In the light theme too")
+        capture("reply-box-small-top-effort-light")
     }
 
     /// Watcher's box goes small by a thread's box's rule, and comes back full for its pill (ADR-0180).

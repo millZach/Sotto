@@ -1203,6 +1203,7 @@ enum DebugFlags {
     static let replyBoxStaysFull = ProcessInfo.processInfo.arguments.contains("--ui-reply-box-stays-full")
     #else
     static let still = false
+    static let replyBoxStaysFull = false
     #endif
 }
 

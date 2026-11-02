@@ -686,11 +686,7 @@ private struct WatcherConversationPane: View {
                 .padding(.bottom, Space.s4)
                 .readingWidth()
                 .frame(maxWidth: .infinity, minHeight: visible, alignment: .topLeading)
-                .tapPutsAwayKeyboard { [model, hostID] in
-                    let box = PhotoBox.watcher(hostID: hostID)
-                    return (model.drafts[model.watcherDraftKey(hostID)] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        && model.photos(box).isEmpty && model.files(box).isEmpty
-                }
+                .tapPutsAwayKeyboard { [model, hostID] in !model.watcherBoxHoldsAnything(hostID) }
                 .background(reader { frame in
                     // A change of the page's height (new words, a card or a follow-up arriving or leaving, anywhere on
                     // the page) puts the card the reader is on back where they left it. Only a frame the page scrolled
@@ -1622,7 +1618,6 @@ private struct WatcherDock: View {
 
     private var field: some View {
         let box = PhotoBox.watcher(hostID: hostID)
-        let photos = model.photos(box), files = model.files(box)
         // Locked from the press of a message with photos or files until Watcher answers, so nothing typed meanwhile joins it.
         let preparing = model.preparingSends.contains(box.id)
         let working = model.watcherPage(hostID)?.working == true
@@ -1630,8 +1625,7 @@ private struct WatcherDock: View {
         let key = model.watcherDraftKey(hostID)
         let listening = dictation.key == key
         // Send is always there, as in a thread's reply box, and lights once the box holds something.
-        let written = !(model.drafts[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !photos.isEmpty || !files.isEmpty
+        let written = model.watcherBoxHoldsAnything(hostID)
         // Small by a thread's box's rule (ADR-0180): Watcher has a conversation or is working, nothing is being written,
         // and no line over the box speaks of the settings.
         let page = model.watcherPage(hostID)

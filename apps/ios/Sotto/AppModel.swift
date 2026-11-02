@@ -2494,8 +2494,10 @@ struct RailAsk: Equatable {
             && !files.contains(where: \.reading) && (files.isEmpty || fileSupport(ref) == .available)
     }
     /// Whether a thread's reply box holds something to send: words, photos or files.
-    func replyHoldsAnything(_ ref: ThreadRef) -> Bool {
-        !(drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos(ref).isEmpty || !files(ref).isEmpty
+    func replyHoldsAnything(_ ref: ThreadRef) -> Bool { boxHoldsAnything(.thread(ref), draftKey: ref.id) }
+    func watcherBoxHoldsAnything(_ hostID: String) -> Bool { boxHoldsAnything(.watcher(hostID: hostID), draftKey: watcherDraftKey(hostID)) }
+    private func boxHoldsAnything(_ box: PhotoBox, draftKey: String) -> Bool {
+        !(drafts[draftKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos(box).isEmpty || !files(box).isEmpty
     }
     func photos(_ ref: ThreadRef) -> [DraftPhoto] { photos(.thread(ref)) }
     func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }

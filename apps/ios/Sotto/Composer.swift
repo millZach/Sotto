@@ -31,6 +31,9 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The words' own height, which sets how far the top edge and the words travel.
     @State private var wordsHeight: CGFloat = 22
+    /// One line of words at any height it takes: a field held to one line lays out a little shorter (19.3 points to 20),
+    /// which would move the dock, and the conversation over it, every time the box changes shape.
+    @ScaledMetric(relativeTo: .body) private var oneLine: CGFloat = 20
 
     var body: some View {
         // From the words' place at the card's top to the row beside the +.
@@ -41,6 +44,7 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
         VStack(alignment: .leading, spacing: 0) {
             attachments
             words
+                .frame(minHeight: oneLine, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
                 .padding(.leading, ComposerMetrics.wordsInset)
                 .padding(.trailing, small ? ComposerMetrics.smallWordsTrailing + slide : ComposerMetrics.wordsInset)
