@@ -9,12 +9,29 @@ import { toRgb } from '../../watcher/canvasColor'
 import { frameDue, frameSleep, sceneInk } from '../../watcher/nightScene'
 import { surfaceOf } from '../../watcher/WatcherNightScene'
 import { watchResolution } from '../../watcher/watchResolution'
+import { fitCells } from './chamberGrid'
 import { figureBox } from './chamberLayout'
 import { ChamberPainter, type ChamberFlightNow, type SeatWords } from './chamberPainter'
 import { askScene, chamberPace, councilScene, flightsBetween, sceneBusy, threadFacts, type ChamberScene, type ChamberSeat } from './chamberScene'
 
 /** A figure's button over the canvas, in the chamber's box. */
 interface FigureBox { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+
+/** No threads to read: the Ask view's and a finished Council's, shared so an update elsewhere changes nothing here. */
+const NO_THREADS: ReadonlyMap<string, AgentThread> = new Map()
+
+/**
+ * The wanted threads as `threads` holds them, or `last` when it holds every one of them as the same object: a thread
+ * elsewhere that streams or changes then leaves the chamber's scene, and its pace, alone.
+ */
+export function heldThreads(threads: readonly AgentThread[] | undefined, wanted: readonly string[], last: ReadonlyMap<string, AgentThread>): ReadonlyMap<string, AgentThread> {
+  if (wanted.length === 0 || threads === undefined) return NO_THREADS
+  const found = new Map<string, AgentThread>()
+  for (const thread of threads) if (wanted.includes(thread.id)) found.set(thread.id, thread)
+  if (found.size !== last.size) return found
+  for (const [id, thread] of found) if (last.get(id) !== thread) return found
+  return last
+}
 
 /** What the chamber says of each seat: its plate, its bubble, and its button's name. */
 function useChamberWords(): {
@@ -27,13 +44,13 @@ function useChamberWords(): {
     const chair = t({ message: 'Chair', comment: 'The Council\'s chair, on its plate in the chamber' })
     const list = (letters: readonly string[]): string => new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(letters)
     const bubble = (seat: ChamberSeat): SeatWords['bubble'] => {
-      const title = seat.chair ? chair : seat.model
+      const title = fitCells(seat.chair ? chair : seat.model)
       const speech = seat.speech
       switch (speech.kind) {
         case 'none': return null
         case 'ask': return { text: t`Needs your answer`, title, say: true }
-        case 'words': return { text: speech.text, title, say: true }
-        case 'activity': return { text: speech.text, title, say: false }
+        case 'words': return { text: fitCells(speech.text), title, say: true }
+        case 'activity': return { text: fitCells(speech.text), title, say: false }
         case 'thinking': return { text: t({ message: 'Thinking', comment: 'A Council figure\'s thought bubble while its thread works' }), title, say: false }
         case 'conversation': return { text: t`Reading the conversation`, title, say: false }
         case 'framing': return { text: t`Framing the question`, title, say: false }
@@ -63,7 +80,7 @@ function useChamberWords(): {
       seat: (seat, live) => {
         const changed = live && seat.changed
         return {
-          name: seat.chair ? chair : seat.provider, sub: seat.chair ? [seat.provider, seat.model].filter(Boolean).join(' · ') : seat.model, subShort: seat.model,
+          name: fitCells(seat.chair ? chair : seat.provider), sub: fitCells(seat.chair ? [seat.provider, seat.model].filter(Boolean).join(' · ') : seat.model), subShort: fitCells(seat.model),
           mark: seat.chair ? '' : changed ? `${seat.key} ↺` : seat.key, markAccent: changed, bubble: bubble(seat),
         }
       },
@@ -113,17 +130,13 @@ export function CouncilChamber({ council, askSeats, layout }: {
     return () => { void command({ type: 'observe-threads', threadIds: [] }) }
     // The IDs, not the array: a new record with the same threads asks for nothing again.
   }, [command, wantedKey])
-  const held = useMemo(() => {
-    const found = new Map<string, AgentThread>()
-    if (wanted.length === 0 || threads === undefined) return found
-    const ids = new Set(wanted)
-    for (const thread of threads) if (ids.has(thread.id)) found.set(thread.id, thread)
-    return found
-  }, [threads, wanted])
+  const lastHeld = useRef(NO_THREADS)
+  const held = useMemo(() => heldThreads(threads, wanted, lastHeld.current), [threads, wanted])
+  lastHeld.current = held
   const scene = useMemo<ChamberScene>(() => council ? councilScene(council, thread => threadFacts(held.get(thread))) : askScene(askSeats), [council, held, askSeats])
   const live = council !== null
   const seatWords = useMemo(() => new Map([...scene.panelists, scene.chair].map(seat => [seat.key, words.seat(seat, live)] as const)), [scene, live, words])
-  const verdictText = scene.verdict?.text || words.verdict
+  const verdictText = useMemo(() => fitCells(scene.verdict?.text || words.verdict), [scene.verdict?.text, words.verdict])
 
   const box = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -262,14 +275,15 @@ export function CouncilChamber({ council, askSeats, layout }: {
     void agents?.command({ type: 'select-thread', threadId: thread })
     app?.actions.navigate('threads')
   }
-  // Every live figure has a button, in the order the eye meets them, left to right.
-  const figures = live ? [...scene.panelists, scene.chair].filter(seat => seat.thread !== null) : []
-  if (boxes !== null) figures.sort((one, other) => (boxes.get(one.key)?.x ?? 0) - (boxes.get(other.key)?.x ?? 0))
+  // A figure of a Council has a button once it has a place on screen, so there is no tab stop to nothing, in the order
+  // the eye meets them, left to right.
+  const figures = live && boxes !== null ? [...scene.panelists, scene.chair].filter(seat => seat.thread !== null && boxes.has(seat.key)) : []
+  figures.sort((one, other) => boxes!.get(one.key)!.x - boxes!.get(other.key)!.x)
   return <div ref={box} className="council-chamber" data-layout={layout}>
     <canvas ref={canvas} className="council-chamber__scene" aria-hidden="true" />
     {figures.map(seat => {
-      const at = boxes?.get(seat.key)
-      const style: CSSProperties | undefined = at ? { left: at.x, top: at.y, width: at.w, height: at.h } : undefined
+      const at = boxes!.get(seat.key)!
+      const style: CSSProperties = { left: at.x, top: at.y, width: at.w, height: at.h }
       return <button key={seat.key} type="button" className="council-chamber__figure tt-focusable" data-seat={seat.key} data-act={seat.act} aria-label={words.label(seat)}
         style={style} onClick={() => open(seat.thread!)} />
     })}

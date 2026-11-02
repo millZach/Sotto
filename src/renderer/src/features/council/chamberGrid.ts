@@ -12,12 +12,28 @@ const EMPTY = 0
 /** Written blank: the shapes under it are cleared, as inside a bubble. */
 export const BLANK = 32
 
+/** What a 7 pixel cell cannot hold: emoji, characters outside the basic plane, and East Asian wide characters. */
+const WIDE = /[\p{Emoji_Presentation}\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{10000}-\u{10FFFF}]/gu
+/** What takes no cell of its own: combining marks and variation selectors, joiners and tags, and skin tones. */
+const ZERO_WIDTH = /[\p{Mn}\p{Me}\p{Cf}\p{Emoji_Modifier}]/gu
+/** The stand-in for a character too wide for a cell. */
+export const WIDE_STAND_IN = '□'
+
+/**
+ * Text as one cell per character, so its length is its width: a character too wide for a cell becomes WIDE_STAND_IN and
+ * one that takes no cell is left out. Text from a thread or a model's name passes through this once, where it enters.
+ */
+export function fitCells(text: string): string {
+  return /^[\x20-\x7E]*$/.test(text) ? text : text.replace(ZERO_WIDTH, '').replace(WIDE, WIDE_STAND_IN)
+}
+
 export class GlyphGrid {
-  readonly code: Uint16Array
+  /** Each cell's character as a code point, so nothing outside the basic plane is split in two. */
+  readonly code: Uint32Array
   readonly strength: Float32Array
   readonly accent: Uint8Array
   constructor(readonly cols: number, readonly rows: number) {
-    this.code = new Uint16Array(cols * rows)
+    this.code = new Uint32Array(cols * rows)
     this.strength = new Float32Array(cols * rows)
     this.accent = new Uint8Array(cols * rows)
   }
@@ -26,12 +42,14 @@ export class GlyphGrid {
     c = Math.round(c); r = Math.round(r)
     if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return
     const k = r * this.cols + c
-    this.code[k] = glyph.charCodeAt(0) || BLANK
+    this.code[k] = glyph.codePointAt(0) || BLANK
     this.strength[k] = strength
     this.accent[k] = accent ? 1 : 0
   }
+  /** Writes `words` from cell (c, r), a cell per code point. */
   text(c: number, r: number, words: string, strength?: number, accent?: boolean): void {
-    for (let i = 0; i < words.length; i++) this.put(c + i, r, words[i]!, strength, accent)
+    let at = c
+    for (const glyph of words) this.put(at++, r, glyph, strength, accent)
   }
   centered(cx: number, r: number, words: string, strength?: number, accent?: boolean): void {
     this.text(Math.round(cx - words.length / 2), r, words, strength, accent)

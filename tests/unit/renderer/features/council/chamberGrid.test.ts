@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bubbleShape, drawBubble, GlyphGrid, overlaps, placeBubble, wrapWords, type CellRect } from '../../../../../src/renderer/src/features/council/chamberGrid'
+import { bubbleShape, drawBubble, fitCells, GlyphGrid, overlaps, placeBubble, WIDE_STAND_IN, wrapWords, type CellRect } from '../../../../../src/renderer/src/features/council/chamberGrid'
 import { chamberLayout } from '../../../../../src/renderer/src/features/council/chamberLayout'
 
 describe('bubbles find room', () => {
@@ -55,5 +55,21 @@ describe('what a bubble holds', () => {
     expect(String.fromCharCode(grid.code[1 * 40 + 2]!)).toBe('╭')
     const top = Array.from({ length: say.w }, (_, c) => String.fromCharCode(grid.code[1 * 40 + 2 + c]!)).join('')
     expect(top).toContain('Opus 5.5')
+  })
+})
+
+describe('a cell per character', () => {
+  it('gives an emoji or a CJK word a stand-in a 7 pixel cell holds, and leaves out what takes no cell', () => {
+    expect(fitCells('Done 🎉, 好的 👍🏽')).toBe(`Done ${WIDE_STAND_IN}, ${WIDE_STAND_IN}${WIDE_STAND_IN} ${WIDE_STAND_IN}`)
+    expect(fitCells('café ✅ GPT-6.1 Sol')).toBe(`café ${WIDE_STAND_IN} GPT-6.1 Sol`)
+    const plain = 'Opus 5.5 · Wonder Full'
+    expect(fitCells(plain)).toBe(plain)
+  })
+
+  it('keeps a character outside the basic plane whole in one cell, never split into halves', () => {
+    const grid = new GlyphGrid(8, 1)
+    grid.text(0, 0, 'a🎉b')
+    expect([...grid.code.slice(0, 4)]).toEqual([0x61, 0x1f389, 0x62, 0])
+    expect(String.fromCodePoint(grid.code[1]!)).toBe('🎉')
   })
 })

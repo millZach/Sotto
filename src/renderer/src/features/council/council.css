@@ -20,7 +20,7 @@
 /* The chamber: a canvas of glyphs in the theme's inks, read from the probe, with a button over each figure. */
 .council-chamber { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .council-chamber__scene { position: absolute; top: 0; left: 0; pointer-events: none; }
-.council-chamber__figure { position: absolute; padding: 0; border: 0; border-radius: var(--tt-radius-card); background: transparent; cursor: pointer; }
+.council-chamber__figure { position: absolute; padding: 0; border: 0; border-radius: var(--tt-radius-card); background: transparent; }
 .council-chamber__figure:hover { background: color-mix(in srgb, var(--tt-text) 5%, transparent); }
 .council-chamber__figure:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 /* The chamber's inks, read and never seen: the text colour for its ink, the accent for its accent, and the glyph face. */

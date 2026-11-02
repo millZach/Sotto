@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { askScene, chamberPace, councilScene, flightsBetween, sceneBusy, spoken, threadFacts, type ThreadFacts } from '../../../../../src/renderer/src/features/council/chamberScene'
+import { askScene, chamberPace, councilScene, flightsBetween, plainWords, sceneBusy, spoken, threadFacts, type ThreadFacts } from '../../../../../src/renderer/src/features/council/chamberScene'
 import type { AgentActivity } from '../../../../../src/shared/agentActivity'
 import { agentThread } from '../../../../fixtures/agentState'
 import { councilFixture, row } from './chamberFixtures'
@@ -35,6 +35,13 @@ describe('what a thread is doing', () => {
     const resting = agentThread({ activities: [activity({})], requests: [{ id: 'r', kind: 'question', title: 'Keep them?' } as never] })
     expect(threadFacts(resting)).toEqual({ ...quiet, waiting: true })
     expect(threadFacts(undefined)).toEqual(quiet)
+  })
+
+  it('reads only the end of a long message, so the work stays the same as it grows', () => {
+    const long = `${'Earlier words. '.repeat(200_000)}\n## Answer\nThe last words.`
+    const tail = spoken(long, 40)!
+    expect(tail.startsWith('…') && tail.endsWith('Earlier words. The last words.') && tail.length <= 40 && !tail.includes('Answer')).toBe(true)
+    expect(plainWords(`# Verdict\nWait until 0.2.${' More.'.repeat(200_000)}`, 'head').startsWith('Wait until 0.2. More.')).toBe(true)
   })
 
   it('keeps the tail of long words, starting on a whole word', () => {
@@ -92,10 +99,22 @@ describe('each figure’s pose follows its own thread', () => {
     expect(finished.verdict).toEqual({ text: 'Wait until 0.2 ships.', finished: true })
     expect(finished.panelists.map(seat => seat.act)).toEqual(['done', 'done', 'done'])
     expect(sceneBusy(finished)).toBe(false)
-    // While the fairness check runs the same pose is busy, so the chamber keeps drawing.
-    const checking = councilScene(councilFixture({ stage: 'fairness', verdict: { ...verdict, fairnessDone: false }, rows }), facts({}))
-    expect(checking.finished).toBe(false)
+    // Holding up the verdict is a still pose: through the fairness check only a panelist still at work keeps the fast pace.
+    const held = councilScene(councilFixture({ stage: 'fairness', verdict: { ...verdict, fairnessDone: false }, rows }), facts({}))
+    expect(held.finished).toBe(false)
+    expect(held.chair.act).toBe('present')
+    expect(sceneBusy(held)).toBe(false)
+    const checking = councilScene(councilFixture({ stage: 'fairness', verdict: { ...verdict, fairnessDone: false }, rows: [...rows, row('A', 'fairness', 'working')] }), facts({}))
     expect(sceneBusy(checking)).toBe(true)
+  })
+
+  it('raises a hand for a question its thread holds between stages, but not for a seat left out', () => {
+    const council = councilFixture({ stage: 'reviews', leftOut: ['C'], rows: [row('A', 'answer', 'done'), row('B', 'answer', 'done'), row('C', 'answer', 'done')] })
+    const scene = councilScene(council, facts({ 'thread-a': { waiting: true }, 'thread-c': { waiting: true }, 'thread-chair': { waiting: true } }))
+    expect(scene.panelists.map(seat => seat.act)).toEqual(['ask', 'done', 'done'])
+    expect(scene.chair).toMatchObject({ act: 'ask', speech: { kind: 'ask' } })
+    // Before its first row, too.
+    expect(councilScene(councilFixture({ stage: 'answers', rows: [] }), facts({ 'thread-b': { waiting: true } })).panelists[1]!.act).toBe('ask')
   })
 
   it('reads the conversation in parts first, and sits out once left out', () => {
@@ -105,6 +124,9 @@ describe('each figure’s pose follows its own thread', () => {
     expect(scene.panelists[1]).toMatchObject({ act: 'done', state: null })
     expect(scene.panelists[2]).toMatchObject({ act: 'done', state: 'failed' })
     expect(scene.chair).toMatchObject({ act: 'think', speech: { kind: 'framing' } })
+    // The chair reads the conversation in parts as a panelist does, and is said to.
+    const reading = councilScene(councilFixture({ stage: 'framing', rows: [row('chair', 'history', 'working')] }), facts({ 'thread-chair': { running: true } }))
+    expect(reading.chair).toMatchObject({ act: 'think', speech: { kind: 'conversation' } })
   })
 
   it('seats the Ask form’s panel idle, with no thread to open', () => {
@@ -114,6 +136,18 @@ describe('each figure’s pose follows its own thread', () => {
     expect(scene.id).toBeNull()
     expect(scene.panelists.map(item => [item.key, item.model, item.act, item.thread])).toEqual([['A', 'Opus 5.5', 'idle', null], ['B', 'GPT-6.1 Sol', 'idle', null], ['C', '', 'idle', null]])
     expect(scene.chair).toMatchObject({ key: 'chair', chair: true, model: 'Wonder Full', provider: 'Muse' })
+  })
+
+  it('keeps each figure by whose it is: a seat’s thread in a Council, its model in the Ask view', () => {
+    const model = (id: string) => ({ id, name: id, providerId: 'claude', ready: true } as never)
+    const seat = (id: string) => ({ modelId: id, model: model(id), reasoningEffort: null, from: 'choice' as const, ready: true, provider: 'claude' as const })
+    const before = askScene({ panelists: [seat('a'), seat('b'), seat('a'), seat('c')], chair: seat('d') })
+    const after = askScene({ panelists: [seat('a'), seat('a'), seat('c')], chair: seat('d') })
+    // Removing the second seat leaves every other figure as it was, the second copy of a model included.
+    expect(after.panelists.map(item => item.figure)).toEqual([before.panelists[0]!.figure, before.panelists[2]!.figure, before.panelists[3]!.figure])
+    expect(new Set(before.panelists.map(item => item.figure)).size).toBe(4)
+    const live = councilScene(councilFixture({}), facts({}))
+    expect([...live.panelists, live.chair].map(item => item.figure)).toEqual(['thread-a', 'thread-b', 'thread-c', 'thread-chair'])
   })
 })
 

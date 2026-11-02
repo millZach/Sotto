@@ -72,11 +72,16 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
   </div>
 }
 
-/** The seats as they would start now, kept while the panel and the models stay the same so the chamber is not redrawn for nothing. */
-function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentModel[]): ReturnType<typeof councilSeatsInForce> {
+/**
+ * The seats as they would start now, the same object for as long as what they hold is the same: every update of every
+ * thread brings a new catalog, and a new seats object would redraw the chamber for nothing.
+ */
+export function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentModel[]): ReturnType<typeof councilSeatsInForce> {
   // The panel by its content: a new object for the same seats is the same seats.
-  const key = JSON.stringify(panel)
-  return useMemo(() => councilSeatsInForce(panel.panelists, panel.chair, catalog), [key, catalog])
+  const panelKey = JSON.stringify(panel)
+  const seats = useMemo(() => councilSeatsInForce(panel.panelists, panel.chair, catalog), [panelKey, catalog])
+  const seatsKey = JSON.stringify([...seats.panelists, seats.chair].map(seat => seat && [seat.modelId, seat.model?.name, seat.provider, seat.ready, seat.reasoningEffort, seat.from]))
+  return useMemo(() => seats, [seatsKey])
 }
 
 /** A thread the Council can start from: an ordinary thread on this computer, open, not one another thread started. */

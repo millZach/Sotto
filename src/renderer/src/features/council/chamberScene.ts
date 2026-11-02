@@ -42,6 +42,11 @@ export type ChamberLook = 'curls' | 'bald' | 'beard'
 export interface ChamberSeat {
   /** The seat: a panelist's letter, or `chair`. */
   readonly key: string
+  /**
+   * Whose figure sits there, which keeps its pose: the seat's thread in a Council, so a seat moved to another model is a
+   * new figure; in the Ask view its model and its place among seats on that model, so removing a seat moves no one else.
+   */
+  readonly figure: string
   readonly chair: boolean
   /** Its provider's name, on the first line of its plate. */
   readonly provider: string
@@ -107,10 +112,18 @@ function lookOf(provider: ProviderId | undefined, place: number): ChamberLook {
   return (provider ? LOOKS[provider] : undefined) ?? BY_PLACE[place % BY_PLACE.length]!
 }
 
-/** Text as one plain line: markdown's headings, marks and the result block left out, spaces collapsed. */
-export function plainWords(text: string): string {
+/** How much of a message is made plain: a little more than any bubble or the verdict's scroll shows, whatever its length. */
+const PLAIN_SPAN = 2_000
+
+/**
+ * Text as one plain line: markdown's headings, marks and the result block left out, spaces collapsed. Only its first or
+ * last PLAIN_SPAN characters before the result block are read, so the work stays the same however long the message grows.
+ */
+export function plainWords(text: string, end: 'head' | 'tail' = 'tail'): string {
   const fence = text.indexOf('```')
-  return (fence >= 0 ? text.slice(0, fence) : text).replace(/^[ \t]*#{1,6}[ \t].*$/gm, '').replace(/[`*_#>|]+/g, '').replace(/\s+/g, ' ').trim()
+  const body = fence >= 0 ? text.slice(0, fence) : text
+  const part = end === 'head' ? body.slice(0, PLAIN_SPAN) : body.slice(-PLAIN_SPAN)
+  return part.replace(/^[ \t]*#{1,6}[ \t].*$/gm, '').replace(/[`*_#>|]+/g, '').replace(/\s+/g, ' ').trim()
 }
 
 /** The tail of a thread's words a bubble shows, starting on a whole word; null when there are none. */
@@ -156,10 +169,14 @@ function newestWords(thread: AgentThread): string | null {
 
 /** The Ask view: the seats as they would start now, sitting idle. A seat with no connected provider still sits, unnamed. */
 export function askScene(seats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }): ChamberScene {
-  const seat = (inForce: CouncilSeatInForce | undefined, key: string, place: number): ChamberSeat => ({
-    key, chair: key === COUNCIL_CHAIR, provider: inForce?.provider ? PROVIDER_LABELS[inForce.provider] : '', model: inForce?.model?.name ?? inForce?.modelId ?? '',
-    look: lookOf(inForce?.provider, place), thread: null, act: 'idle', speech: NONE, scrolls: [], answered: false, changed: false, state: null, stage: null,
-  })
+  const held = new Map<string, number>()
+  const seat = (inForce: CouncilSeatInForce | undefined, key: string, place: number): ChamberSeat => {
+    const model = inForce?.modelId ?? ''
+    const copy = held.get(model) ?? 0
+    held.set(model, copy + 1)
+    return { key, figure: `${key === COUNCIL_CHAIR ? 'chair' : 'seat'}:${model}:${copy}`, chair: key === COUNCIL_CHAIR, provider: inForce?.provider ? PROVIDER_LABELS[inForce.provider] : '', model: inForce?.model?.name ?? inForce?.modelId ?? '',
+    look: lookOf(inForce?.provider, place), thread: null, act: 'idle', speech: NONE, scrolls: [], answered: false, changed: false, state: null, stage: null }
+  }
   const letters = 'ABCDE'
   return { id: null, stage: null, panelists: seats.panelists.map((inForce, place) => seat(inForce, letters[place] ?? String(place + 1), place)),
     chair: seat(seats.chair, COUNCIL_CHAIR, seats.panelists.length), answered: [], reviews: new Map(), verdict: null, finished: false }
@@ -201,11 +218,12 @@ export function councilScene(council: CouncilView, facts: (thread: string) => Th
     const row = newest.get(seat.seat)
     const thread = facts(seat.thread)
     let act: ChamberAct = 'done', speech = NONE, scrolls: readonly string[] = []
-    if (row !== undefined && !round.leftOut.includes(seat.seat)) {
-      if (row.state === 'waiting' || (row.state === 'working' && thread.waiting)) { act = 'ask'; speech = ASK }
-      else if (row.state === 'working') ({ act, speech, scrolls } = working(row.stage, thread, reviews.get(seat.seat) ?? []))
+    if (!round.leftOut.includes(seat.seat)) {
+      // A question its thread holds raises the hand whatever the record says, between stages too.
+      if (thread.waiting || row?.state === 'waiting') { act = 'ask'; speech = ASK }
+      else if (row?.state === 'working') ({ act, speech, scrolls } = working(row.stage, thread, reviews.get(seat.seat) ?? []))
     }
-    return { key: seat.seat, chair: false, provider: seat.provider ? PROVIDER_LABELS[seat.provider] : '', model: seat.modelName, look: lookOf(seat.provider, place),
+    return { key: seat.seat, figure: seat.thread, chair: false, provider: seat.provider ? PROVIDER_LABELS[seat.provider] : '', model: seat.modelName, look: lookOf(seat.provider, place),
       thread: seat.thread, act, speech, scrolls, answered: answered.includes(seat.seat), changed: changed.has(seat.seat), state: row?.state ?? null, stage: row?.stage ?? null }
   })
   const seat = council.seats.find(item => item.role === 'chair')
@@ -214,7 +232,9 @@ export function councilScene(council: CouncilView, facts: (thread: string) => Th
   let act: ChamberAct = 'listen', speech = NONE
   let verdict: ChamberScene['verdict'] = null
   const work = row?.state === 'working'
-  if (row !== undefined && (row.state === 'waiting' || (work && thread.waiting))) { act = 'ask'; speech = ASK }
+  if (!round.leftOut.includes(COUNCIL_CHAIR) && (thread.waiting || row?.state === 'waiting')) { act = 'ask'; speech = ASK }
+  // Reading the conversation in parts, as a panelist does, then framing the question.
+  else if (work && row?.stage === 'history') { act = 'think'; speech = { kind: 'conversation' } }
   else if (round.stage === 'framing' && work) { act = 'think'; speech = thread.activity ? { kind: 'activity', text: thread.activity } : { kind: 'framing' } }
   else if (round.stage === 'verdict' && work && row?.stage === 'verdict') {
     if (thread.words && !thread.activity) { act = 'write'; verdict = { text: thread.words, finished: false } }
@@ -225,15 +245,18 @@ export function councilScene(council: CouncilView, facts: (thread: string) => Th
   } else if (round.stage === 'fairness' || round.stage === 'done') {
     act = 'present'
     const text = round.verdict?.text
-    verdict = { text: text ? plainWords(text).slice(0, VERDICT_MAX) : '', finished: true }
+    verdict = { text: text ? plainWords(text, 'head').slice(0, VERDICT_MAX) : '', finished: true }
   }
-  const chair: ChamberSeat = { key: COUNCIL_CHAIR, chair: true, provider: seat?.provider ? PROVIDER_LABELS[seat.provider] : '', model: seat?.modelName ?? '',
+  const chair: ChamberSeat = { key: COUNCIL_CHAIR, figure: seat?.thread ?? COUNCIL_CHAIR, chair: true, provider: seat?.provider ? PROVIDER_LABELS[seat.provider] : '', model: seat?.modelName ?? '',
     look: lookOf(seat?.provider, panel.length), thread: seat?.thread ?? null, act, speech, scrolls: [], answered: false, changed: false, state: row?.state ?? null, stage: row?.stage ?? null }
   return { id: `${council.id}:${round.index}`, stage: round.stage, panelists, chair, answered, reviews, verdict, finished: council.status === 'done' }
 }
 
-/** The acts in which a figure moves on its own. */
-const BUSY: ReadonlySet<ChamberAct> = new Set<ChamberAct>(['think', 'write', 'read', 'speak', 'ask', 'present'])
+/**
+ * The acts in which a figure moves on its own, which want about 30 frames a second. Holding up the verdict is not one:
+ * that pose is still, and the panelists turned toward it nod at the slow pace.
+ */
+const BUSY: ReadonlySet<ChamberAct> = new Set<ChamberAct>(['think', 'write', 'read', 'speak', 'ask'])
 
 /** Whether a figure moves on its own now. Nobody does in a finished Council's last scene. */
 export function sceneBusy(scene: ChamberScene): boolean {

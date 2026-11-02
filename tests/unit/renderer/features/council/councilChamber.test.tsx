@@ -1,15 +1,15 @@
 import React from 'react'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, renderHook, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
-import { chamberCouncil, CouncilView } from '../../../../../src/renderer/src/features/council/CouncilView'
+import { chamberCouncil, CouncilView, useSeatsInForce } from '../../../../../src/renderer/src/features/council/CouncilView'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
-import type { AgentCommand, AgentState, AgentThread } from '../../../../../src/shared/agents'
+import type { AgentCommand, AgentModel, AgentState, AgentThread } from '../../../../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
-import { threadsStateFixture } from '../../../../fixtures/agentState'
+import { threadsStateFixture, withThread } from '../../../../fixtures/agentState'
 import { councilFixture, row } from './chamberFixtures'
 
 vi.mock('../../../../../src/renderer/src/state/AppContext', async importOriginal => ({
@@ -28,14 +28,38 @@ function provide(threads: readonly Partial<AgentThread>[] = []) {
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   const navigate = vi.fn(), updateSettings = vi.fn(async () => true)
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'council', platform: 'win32', settings: DEFAULT_SETTINGS, actions: { navigate, updateSettings } } as unknown as AppContextValue)
-  return { command, navigate, updateSettings }
+  /** The next state as main publishes it: one thread changed, every other the same object. */
+  const publish = (id: string, change: (thread: AgentThread) => AgentThread): void => {
+    const current = vi.mocked(useOptionalAgents).mock.results.at(-1)!.value as ReturnType<typeof agentContextFixture>
+    vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(withThread(current.state!, id, change), command))
+  }
+  return { command, navigate, updateSettings, publish }
 }
 const noSeats = { panelists: [], chair: undefined }
 
-afterEach(() => { cleanup(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
+/**
+ * A chamber `width` by `height` pixels, with the canvas, observer and frames jsdom lacks, so it lays itself out as in the
+ * window. Frames are held until `flush`; `asked` counts the frames the chamber asked for, one per wake while none waits.
+ */
+function withLayout(width = 1020, height = 380): { readonly asked: () => number; readonly flush: () => void } {
+  const frames: FrameRequestCallback[] = []
+  let asked = 0
+  const context = new Proxy({}, { get: (_, key) => key === 'getImageData' ? () => ({ data: new Uint8ClampedArray(4) }) : () => undefined, set: () => true })
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+  vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { asked++; frames.push(callback); return asked })
+  vi.stubGlobal('cancelAnimationFrame', () => undefined)
+  const size = (pixels: number) => function (this: HTMLElement): number { return this.classList.contains('council-chamber') ? pixels : 0 }
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(size(width))
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(size(height))
+  return { asked: () => asked, flush: () => { for (const frame of frames.splice(0)) frame(performance.now()) } }
+}
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
 
 describe('the chamber’s figures', () => {
-  it('puts a button over each figure that names its model, what it does and what a press does, and keeps the canvas from assistive technology', () => {
+  it('puts a button over each figure, left to right, that names its model, what it does and what a press does, and keeps the canvas from assistive technology', () => {
+    withLayout()
     provide([
       { id: 'thread-a', ...running, activities: [{ id: 'x', turnId: 'turn', sequence: 1, kind: 'command', status: 'running', title: 'Run', command: 'git log -5' }] },
       { id: 'thread-b', ...running, messages: [{ id: 'm', role: 'assistant', text: 'Now.', createdAt: '2026-11-02T10:00:01.000Z' }] },
@@ -45,15 +69,72 @@ describe('the chamber’s figures', () => {
     const council = councilFixture({ stage: 'answers', rows: [row('A', 'answer', 'working'), row('B', 'answer', 'working'), row('C', 'answer', 'working')] })
     const { container } = render(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
     expect(container.querySelector('canvas')).toHaveAttribute('aria-hidden', 'true')
+    // At the long table C sits furthest left, then A, the chair at the centre, and B.
     expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      'A, Opus 5.5, working: git log -5. Open its thread',
-      'B, GPT-6.1 Sol, writing its answer. Open its thread',
       'C, Grok 4.7, needs your answer. Open its thread',
+      'A, Opus 5.5, working: git log -5. Open its thread',
       'Chair, Wonder Full, listening. Open its thread',
+      'B, GPT-6.1 Sol, writing its answer. Open its thread',
     ])
+    const left = screen.getAllByRole('button').map(button => parseFloat(button.style.left))
+    expect(left).toEqual([...left].sort((one, other) => one - other))
+  })
+
+  it('has no tab stop for a figure with no place on screen: none before it is laid out, and none in a chamber too small to draw', () => {
+    provide()
+    const council = councilFixture({ stage: 'answers', rows: [row('A', 'answer', 'working')] })
+    render(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+    expect(screen.queryAllByRole('button')).toEqual([])
+    cleanup()
+    withLayout(1020, 6)
+    render(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+    expect(screen.queryAllByRole('button')).toEqual([])
+  })
+
+  it('draws again for its own threads, and not for a thread elsewhere that changes', () => {
+    const layout = withLayout()
+    const { publish } = provide([{ id: 'thread-a', ...running, messages: [{ id: 'm', role: 'assistant', text: 'Wait.', createdAt: '2026-11-02T10:00:01.000Z' }] }, { id: 'elsewhere', ...running }])
+    const council = councilFixture({ stage: 'answers', rows: [row('A', 'answer', 'working')] })
+    const { rerender } = render(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+    layout.flush()
+    const asked = layout.asked()
+    publish('elsewhere', thread => ({ ...thread, messages: [{ id: 'x', role: 'assistant', text: 'Streaming elsewhere.', createdAt: '2026-11-02T10:00:02.000Z' }] }))
+    rerender(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+    expect(layout.asked()).toBe(asked)
+    publish('thread-a', thread => ({ ...thread, messages: [...thread.messages.slice(0, -1), { id: 'm', role: 'assistant', text: 'Wait until 0.2.', createdAt: '2026-11-02T10:00:01.000Z' }] }))
+    rerender(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+    expect(layout.asked()).toBe(asked + 1)
+  })
+
+  it('keeps a finished Council’s scene and the Ask view still whatever the threads do', () => {
+    const layout = withLayout()
+    const { publish } = provide([{ id: 'thread-a', ...running }])
+    const finished = councilFixture({ stage: 'done', rows: [row('A', 'answer', 'done')] }, { status: 'done' })
+    const seats = { panelists: [undefined, undefined], chair: undefined }
+    for (const council of [finished, null]) {
+      const { rerender } = render(<CouncilChamber council={council} askSeats={seats} layout="half-circle" />)
+      layout.flush()
+      const asked = layout.asked()
+      publish('thread-a', thread => ({ ...thread, messages: [{ id: 'y', role: 'assistant', text: 'More.', createdAt: '2026-11-02T10:00:03.000Z' }] }))
+      rerender(<CouncilChamber council={council} askSeats={seats} layout="half-circle" />)
+      expect(layout.asked()).toBe(asked)
+      cleanup()
+    }
+  })
+
+  it('keeps the Ask view’s seats while a new catalog holds the same models', () => {
+    const models = [{ id: 'claude:opus', providerId: 'claude', provider: 'Claude', name: 'Opus 5.5', ready: true }] as AgentModel[]
+    const panel = { panelists: [null, null], chair: null }
+    const { result, rerender } = renderHook(({ catalog }) => useSeatsInForce(panel, catalog), { initialProps: { catalog: models } })
+    const first = result.current
+    rerender({ catalog: models.map(model => ({ ...model })) })
+    expect(result.current).toBe(first)
+    rerender({ catalog: models.map(model => ({ ...model, name: 'Opus 5.6' })) })
+    expect(result.current).not.toBe(first)
   })
 
   it('opens a figure’s thread on a press', async () => {
+    withLayout()
     const { command, navigate } = provide()
     render(<CouncilChamber council={councilFixture({ stage: 'answers', rows: [row('A', 'answer', 'done')] })} askSeats={noSeats} layout="half-circle" />)
     await userEvent.click(screen.getByRole('button', { name: 'A, Opus 5.5, done. Open its thread' }))
@@ -92,6 +173,7 @@ describe('the chamber’s figures', () => {
   })
 
   it('keeps a finished Council’s figures to open, and asks for none of their histories', () => {
+    withLayout()
     const { command } = provide()
     render(<CouncilChamber council={councilFixture({ stage: 'done', rows: [row('A', 'answer', 'done')] }, { status: 'done' })} askSeats={noSeats} layout="long-table" />)
     expect(screen.getByRole('button', { name: 'Chair, Wonder Full, holding up the verdict. Open its thread' })).toBeInTheDocument()

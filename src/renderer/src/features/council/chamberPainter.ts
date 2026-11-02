@@ -95,14 +95,16 @@ export class ChamberPainter {
   private E = new Float32Array(0)
   private LT = new Float32Array(0)
   private noise = new Float32Array(0)
-  private outCode = new Uint16Array(0)
+  private outCode = new Uint32Array(0)
   private outStrength = new Float32Array(0)
   private outAccent = new Uint8Array(0)
   private bucketOf = new Uint8Array(0)
   private order = new Int32Array(0)
   private readonly counts = new Int32Array(43)
   private readonly glyphs = new Map<number, string>()
+  /** Each figure's pose, by whose figure it is (`ChamberSeat.figure`), for the Council or Ask view last drawn. */
   private readonly poses = new Map<string, Pose>()
+  private posesFor: string | null | undefined = undefined
   private readonly taken: CellRect[] = []
   /** Whether the last frame had anything still easing toward its pose. */
   settling = false
@@ -136,7 +138,7 @@ export class ChamberPainter {
       this.grid = new GlyphGrid(cols, rows); this.staticArt = new GlyphGrid(cols, rows); this.art = new GlyphGrid(cols, rows)
       this.D = new Float32Array(cells); this.E = new Float32Array(cells); this.LT = new Float32Array(cells)
       this.noise = Float32Array.from({ length: cells }, (_, i) => { const x = Math.sin(i * 12.9898) * 43758.5453; return x - Math.floor(x) })
-      this.outCode = new Uint16Array(cells); this.outStrength = new Float32Array(cells); this.outAccent = new Uint8Array(cells)
+      this.outCode = new Uint32Array(cells); this.outStrength = new Float32Array(cells); this.outAccent = new Uint8Array(cells)
       this.bucketOf = new Uint8Array(cells); this.order = new Int32Array(cells)
       this.arranged = ''
     }
@@ -554,15 +556,18 @@ export class ChamberPainter {
     }
     this.drawBack(t, still)
 
-    // Poses: each figure eases toward what its thread is doing; one at rest turns toward the nearest that is busy.
+    // Poses: each figure eases toward what its thread is doing; one at rest turns toward the nearest that is busy. Another
+    // Council, or the Ask view, starts every figure afresh; a figure that has left takes its pose with it.
+    if (scene.id !== this.posesFor) { this.poses.clear(); this.posesFor = scene.id }
     const seats = [...scene.panelists, scene.chair]
     const figures = [...g.panelists, g.chair]
     const placed: Placed[] = []
     for (let i = 0; i < seats.length && i < figures.length; i++) {
       const seat = i < scene.panelists.length ? scene.panelists[i]! : scene.chair
       const figure = i < g.panelists.length ? g.panelists[i]! : g.chair
-      placed.push({ figure, seat, pose: this.poseOf(seat.key), seed: i * 1.7 + 0.4, head: { x: figure.x, y: figure.y } })
+      placed.push({ figure, seat, pose: this.poseOf(seat.figure), seed: i * 1.7 + 0.4, head: { x: figure.x, y: figure.y } })
     }
+    if (this.poses.size > placed.length) for (const key of this.poses.keys()) if (!placed.some(item => item.seat.figure === key)) this.poses.delete(key)
     let moving = false
     for (const item of placed) {
       const act = item.seat.act
@@ -723,7 +728,7 @@ export class ChamberPainter {
 
   private glyph(code: number): string {
     let glyph = this.glyphs.get(code)
-    if (glyph === undefined) { glyph = String.fromCharCode(code); this.glyphs.set(code, glyph) }
+    if (glyph === undefined) { glyph = String.fromCodePoint(code); this.glyphs.set(code, glyph) }
     return glyph
   }
 
