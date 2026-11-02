@@ -90,12 +90,15 @@ export function blocksSending(question: StructuredQuestion, selection: QuestionS
   return progress === 'partial' || (progress === 'empty' && isRequired(question))
 }
 
-/** Every required question answered by its own ID, optional ones only when answered; null until then. */
-export function buildQuestionAnswers(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>): AgentQuestionAnswers | null {
+/**
+ * Every required question answered by its own ID, optional ones only when answered; null until then. `imagesIn` is the
+ * question images go in (ADR-0176): images answer it, so it never holds the form back, and main adds their note to it.
+ */
+export function buildQuestionAnswers(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>, imagesIn?: string): AgentQuestionAnswers | null {
   const answers: Record<string, { optionIds: string[]; text?: string }> = {}
   for (const question of questions) {
     const selection = selections[question.id]
-    if (blocksSending(question, selection)) return null
+    if (question.id !== imagesIn && blocksSending(question, selection)) return null
     if (!isAnswered(question, selection)) continue
     const text = selection!.text.trim()
     const useText = question.allowFreeText && text.length > 0 && (textOnly(question) || selection!.other)
@@ -107,8 +110,8 @@ export function buildQuestionAnswers(questions: readonly StructuredQuestion[], s
   return answers
 }
 
-export function structuredAnswer(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>): RequestAnswer | null {
-  const questionAnswers = buildQuestionAnswers(questions, selections)
+export function structuredAnswer(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>, imagesIn?: string): RequestAnswer | null {
+  const questionAnswers = buildQuestionAnswers(questions, selections, imagesIn)
   return questionAnswers === null ? null : { answer: '', questionAnswers }
 }
 

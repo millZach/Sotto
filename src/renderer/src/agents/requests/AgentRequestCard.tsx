@@ -3,7 +3,7 @@ import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import type { AgentAttachmentHandle, AgentRequest, QuestionPage } from '../../../../shared/agents'
+import { answerImageCarrier, type AgentAttachmentHandle, type AgentRequest, type QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
@@ -104,11 +104,12 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const plan = permission ? cursorPlan(request) : null
   const summary = permission && !plan ? permissionSummary(request) : null
   const questions = request.questions ?? []
-  const answer = mode === 'structured' ? structuredAnswer(questions, entry.selections) : null
-  const remaining = questions.filter(question => blocksSending(question, entry.selections[question.id])).length
-  // Images go in the words of the form's last question that offers choices and takes the user's own words (ADR-0176).
-  const takesImages = answerImages && imagesSupported === true && mode === 'structured'
-    && questions.some(question => question.allowFreeText && question.options.length > 0 && !question.unavailableReason)
+  // Images go in the words of the form's last question that takes the user's own words, and answer it (ADR-0176).
+  const carrier = answerImages && imagesSupported === true && mode === 'structured' ? answerImageCarrier(request) : undefined
+  const takesImages = carrier !== undefined
+  const imagesIn = takesImages && images.length ? carrier.id : undefined
+  const answer = mode === 'structured' ? structuredAnswer(questions, entry.selections, imagesIn) : null
+  const remaining = questions.filter(question => question.id !== imagesIn && blocksSending(question, entry.selections[question.id])).length
   const touched = images.length > 0 || questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
   const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
   // Every question optional and none answered: sending is skipping, so the button says so (Cursor's questions, ADR-0128).
@@ -181,7 +182,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{plural(questionCount, { one: 'Question', other: '# questions' })}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         <FormContext request={request} />
-        {takesImages ? <ScreenshotInput target={ownerId} attachments={images} onChange={setImages} disabled={disabled} supported={imagesSupported} replyBox={false} reads={reads}>{fields}</ScreenshotInput> : fields}
+        {takesImages ? <ScreenshotInput target={ownerId} attachments={images} onChange={setImages} disabled={disabled} supported replyBox={false} reads={reads}>{fields}</ScreenshotInput> : fields}
         <div className="agent-request__footer">
           <span className="agent-request__count" aria-live="polite">{needsProvider ? t`Finish this form in the provider’s app.`
             : skipping ? t`Choose an answer, or skip` : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>

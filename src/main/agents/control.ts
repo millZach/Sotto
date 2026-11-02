@@ -81,7 +81,7 @@ import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadClearFacts, type UnsentThreadFacts } from './threadClearing'
 import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherRequest, type WatcherThreadTarget } from '../../shared/watcher'
-import { isImageAttachment, parsePublicProviderEntityId, SCREENSHOT_WRONG_TYPE, threadProviderOf } from '../../shared/agents'
+import { answerImageCarrier, isImageAttachment, parsePublicProviderEntityId, SCREENSHOT_WRONG_TYPE, threadProviderOf } from '../../shared/agents'
 import { attachedFilesNote, saveAttachedFiles } from './attachedFiles'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
@@ -231,11 +231,6 @@ type PromptWithHandles = WithHandles<Extract<AgentHostCommand, { type: 'send' }>
 /** An answer with the images dropped on its card (ADR-0176), which become words only once it is about to be sent. */
 type AnswerWithHandles = Extract<AgentHostCommand, { type: 'answer' }> & { readonly attachments?: readonly AgentAttachmentHandle[] }
 type DispatchCommand = Exclude<AgentHostCommand, { type: 'send' | 'steer' | 'answer' }> | PromptWithHandles | AnswerWithHandles
-/** The question an answer's images are named in (ADR-0176): the last that offers choices and takes the user's own words.
- *  A typed form field offers no choices, so a number or a date never carries them. */
-function imageCarrier(request: AgentRequest | undefined): NonNullable<AgentRequest['questions']>[number] | undefined {
-  return request?.questions?.findLast(question => question.allowFreeText && question.options.length > 0 && !question.unavailableReason)
-}
 /** An explicit composer packet owns this thread, question and revision before waiting for main's lane. */
 type ComposerContext = {
   composition: Extract<AgentCommand, { type: 'save-thread-draft' }>
@@ -5652,14 +5647,14 @@ export class AgentControl {
     }
   }
   /**
-   * Images may go with an answer to a question the agent asked with choices and room for its own words, the form's last
-   * such question carrying them (ADR-0176); the check costs nothing, and the files are saved only as the answer is sent.
+   * Images may go with an answer whose form has a question that takes the user's own words, the last such question
+   * carrying them (ADR-0176); the check costs nothing, and the files are saved only as the answer is sent.
    */
   private checkAnswerImages(command: Extract<AgentCommand, { type: 'answer' }>, request: AgentRequest): void {
     if (!command.attachments?.length) return
     if (this.dependencies.answerImages !== true) throw new Error('Images can’t go with an answer in this version of Sotto. Nothing was sent. Remove the images and send again.')
     if (command.attachments.some(image => !isImageAttachment(image.mimeType))) throw new Error(SCREENSHOT_WRONG_TYPE)
-    if (request.kind !== 'question' || command.skipped || !command.questionAnswers || !imageCarrier(request)) {
+    if (request.kind !== 'question' || command.skipped || !command.questionAnswers || !answerImageCarrier(request)) {
       throw new Error('This question can’t take images with its answer. Nothing was sent. Remove the images and send again.')
     }
   }
@@ -5672,7 +5667,7 @@ export class AgentControl {
     if (!attachments.length) return answer
     this.attachments.verify([...attachments])
     const thread = this.thread(command.threadId)
-    const carrier = imageCarrier(thread.requests.find(request => request.id === command.requestId))
+    const carrier = answerImageCarrier(thread.requests.find(request => request.id === command.requestId))
     if (!carrier || !answer.questionAnswers) throw new Error('This question can’t take images with its answer. Nothing was sent. Remove the images and send again.')
     const note = attachedFilesNote(await saveAttachedFiles(thread.workingDirectory, attachments.map(image => this.promptImage(image))))
     const chosen = answer.questionAnswers[carrier.id]

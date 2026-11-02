@@ -175,7 +175,7 @@ export function museUserInputPending(threadId: string, input: MuseUserInput): Mu
         ...(option.description ? { description: bounded(option.description, 1_000) } : {}),
         ...(option.preview ? { preview: bounded(option.preview.content, 2_000) } : {}),
       })),
-      multiSelect: question.selection.mode === 'multiple', allowFreeText: true,
+      multiSelect: question.selection.mode === 'multiple', allowFreeText: true, prose: true as const,
       required: (question.selection.minSelections ?? 1) > 0,
     })),
     skippable: true,
