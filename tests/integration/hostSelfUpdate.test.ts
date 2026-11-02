@@ -40,7 +40,7 @@ afterEach(async () => {
 /** forge's host as an SSH launch leaves it: a flat install of `OLD`, started by the launch script, with ssh on its path recording any use. */
 async function installedHost(publish: Map<string, Uint8Array | string>, hold?: Parameters<typeof releasesPage>[2]) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-self-update-')); roots.push(root)
-  const { install, data, sshUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
+  const { install, data, sshUsed, opencodeUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
   const page = await releasesPage(publish, 0, hold); pages.push(page)
   const env = { ...installEnv, SOTTO_TEST_HOST_RELEASES_URL: page.url }
   const configuration = { installPath: install, dataDirectory: data, remotePort: 0, ...hostLaunchTimings() }
@@ -55,7 +55,7 @@ async function installedHost(publish: Map<string, Uint8Array | string>, hold?: P
   const code = await script({ op: 'pairing-code', hostId })
   const paired = await SocketHostService.pair(`http://127.0.0.1:${ready.port as number}`, code.code as string, 'Sotto desktop')
   expect(await script({ op: 'desktop-answers', hostId, clientId: paired.clientId })).toMatchObject({ type: 'desktop-answers' })
-  return { root, install, data, page, hostId, paired, ready, sshUsed, script }
+  return { root, install, data, page, hostId, paired, ready, sshUsed, opencodeUsed, script }
 }
 /** A socket to whichever host now answers in the data folder, with its hello accepting host updates. */
 async function connect(data: string, token: string) {
@@ -119,6 +119,8 @@ it('downloads, installs and restarts into a newer release over its socket with n
   // It runs the newer release now, so the same version is refused rather than installed again.
   expect(await again.update({ action: 'fetch', version: NEW })).toEqual({ type: 'error', reason: 'update-invalid' })
   await expect(readFile(host.sshUsed)).rejects.toMatchObject({ code: 'ENOENT' })
+  // Neither host looked for OpenCode: a server it started would outlive the kill that ends this test (#1583).
+  await expect(readFile(host.opencodeUsed)).rejects.toMatchObject({ code: 'ENOENT' })
   expect(await readdir(join(host.install, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
 })
 
