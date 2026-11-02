@@ -2373,30 +2373,28 @@ private struct ReplyDock: View, Equatable {
 }
 
 /// The thread's model, effort, speed and permissions as one pill in the reply box's row (ADR-0166, amended November 1,
-/// 2026: Zach's pick A). It shows the model with its provider's logo and the effort dimmer after it, and opens one menu:
-/// the provider's newest models, then Effort, Speed and Permissions as submenus, each saying what it is set to. What
-/// the agent would refuse is held as the chips were: the whole pill during a turn, while the thread waits on the user
-/// and while a permission change goes unconfirmed, its hint saying why; the model and effort alone where the provider
-/// changes only a started thread's permissions.
+/// 2026: Zach's picks A and C). It shows the model with its provider's logo and the effort dimmer after it, and opens the
+/// settings sheet: the model in use, the models starred on this iPhone that the thread's provider offers, the provider
+/// closed until pressed, then Effort, Speed and Permissions, each a row saying what it is set to. What the agent would
+/// refuse is held as the chips were: the whole pill during a turn, while the thread waits on the user and while a
+/// permission change goes unconfirmed, its hint saying why; the model and effort alone where the provider changes only a
+/// started thread's permissions.
 private struct ThreadSettingsPill: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let panel: ThreadSettingsPanel
     @State private var picks = 0
+    @State private var open = false
 
     var body: some View {
         let pressable = ThreadSettingKind.allCases.contains { panel.pressable($0) }
         let speedName = panel.speeds.isEmpty ? nil : ThreadSettings.speedName(panel.speed, offered: panel.speeds)
-        Menu {
-            modelSection
-            effortMenu
-            speedMenu
-            permissionMenu
-        } label: {
+        Button { open = true } label: {
             ComposerPill(providerID: panel.providerID, model: panel.model?.name ?? "", effort: effortName, speed: panel.speed,
                          shield: panel.permission == "full-access" ? .full : panel.permissionGrants ? .grants : .asks,
                          pending: panel.permissionPending)
         }
+        .buttonStyle(PressStyle())
         .disabled(!pressable)
         .opacity(pressable ? 1 : 0.55)
         .sensoryFeedback(.selection, trigger: picks)
@@ -2404,6 +2402,23 @@ private struct ThreadSettingsPill: View {
         .accessibilityValue([panel.model?.name, effortName, speedName, panel.permissionName].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint(panel.fixed?.hint ?? String(localized: "Opens this thread’s model, effort, speed and permissions"))
         .accessibilityIdentifier("thread-settings")
+        .sheet(isPresented: $open) { sheet }
+    }
+
+    private var sheet: some View {
+        ComposerSettingsSheet(title: String(localized: "Thread settings"), current: panel.model,
+                              groups: [ModelGroup(id: panel.providerID ?? panel.provider, name: panel.provider, models: panel.models)],
+                              modelsEnabled: panel.pressable(.model), choose: { choose(.model, $0.id) }) {
+            if panel.modelFixed {
+                Text("\(panel.provider) changes only a started thread’s permissions.", comment: "%@ is the agent's name, such as Devin.")
+            }
+        } foot: {
+            EmptyView()
+        } settings: {
+            effortRow
+            speedRow
+            permissionRow
+        }
     }
 
     private var effortName: String? {
@@ -2411,9 +2426,10 @@ private struct ThreadSettingsPill: View {
         return panel.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(panel.effort)
     }
 
-    /// Chooses a value for the thread, with the light tap a choice makes.
+    /// Chooses a value for the thread, with the light tap a choice makes, and puts the sheet away.
     private func choose(_ kind: ThreadSettingKind, _ value: String) {
         picks += 1
+        open = false
         model.chooseSetting(kind, value, in: ref)
     }
 
@@ -2421,28 +2437,7 @@ private struct ThreadSettingsPill: View {
         SettingOption(name: name, line: line, chosen: chosen, action: action)
     }
 
-    @ViewBuilder private var modelSection: some View {
-        let lineup = ModelLineup.split(panel.models)
-        Section(panel.provider) {
-            ForEach(lineup.latest) { item in
-                option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
-            }
-            // Older models of each line wait in a closed submenu (ADR-0171).
-            if !lineup.legacy.isEmpty {
-                Menu("Legacy") {
-                    ForEach(lineup.legacy) { item in
-                        option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
-                    }
-                }
-            }
-        }
-        .disabled(!panel.pressable(.model))
-        if panel.modelFixed {
-            Text("\(panel.provider) changes only a started thread’s permissions.", comment: "%@ is the agent's name, such as Devin.")
-        }
-    }
-
-    @ViewBuilder private var effortMenu: some View {
+    @ViewBuilder private var effortRow: some View {
         if let effortName {
             Menu {
                 ForEach(Array(panel.efforts.enumerated()), id: \.element) { index, level in
@@ -2451,21 +2446,20 @@ private struct ThreadSettingsPill: View {
                     }
                 }
             } label: {
-                Text("Effort", comment: "The field for how hard a new thread's model reasons.")
-                Text(verbatim: effortName)
+                SettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName)
             }
             .disabled(!panel.pressable(.effort))
         }
     }
 
-    @ViewBuilder private var speedMenu: some View {
+    @ViewBuilder private var speedRow: some View {
         if !panel.speeds.isEmpty {
             SpeedMenu(speeds: panel.speeds, speed: panel.speed, providerID: panel.providerID) { choose(.speed, $0) }
                 .disabled(!panel.pressable(.speed))
         }
     }
 
-    @ViewBuilder private var permissionMenu: some View {
+    @ViewBuilder private var permissionRow: some View {
         if !panel.permissions.isEmpty {
             Menu {
                 ForEach(panel.permissions) { mode in
@@ -2478,8 +2472,7 @@ private struct ThreadSettingsPill: View {
                     Text("This iPhone can’t answer on \(model.name(ref.hostID)), so it can only keep this thread asking first.", comment: "%@ is the computer's name.")
                 }
             } label: {
-                Text("Permissions", comment: "The field for the permission mode a new thread starts in.")
-                Text(verbatim: panel.permissionName ?? "")
+                SettingRow(name: Text("Permissions", comment: "The field for the permission mode a new thread starts in."), value: panel.permissionName ?? "")
             }
             .disabled(!panel.pressable(.permissions))
         }

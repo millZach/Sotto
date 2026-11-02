@@ -25,3 +25,7 @@ The model menu lists models by provider, and OpenCode's and Cursor's by model so
 - Stable shows no tile and no stars, and keeps any favorites an Owl build saved; turning the feature on brings them back as they were.
 - Favorites do not follow the user to another computer or to the iPhone. If that is wanted, they become a setting in main, which is a new decision.
 - A favorite's name is the one it had when starred while its provider is away; once the provider lists it again, the row shows the provider's current name.
+
+## November 1, 2026: the iPhone stars its own
+
+The iPhone's reply box now opens a settings sheet whose Favorites come after the model in use ([ADR-0166](0166-the-iphones-reply-box-changes-what-a-thread-runs-with.md), November 1, 2026). Carrying this window's favorites to the phone would have made them a setting in main, the new decision the Consequences name. Zach chose instead to let the phone star its own: a star after every model row in the sheet, kept in the iPhone's preferences in the order starred, keyed as decision 3 keys them, and never sent to a computer, as this window's are never sent to the phone. They are not held for Owl: the iPhone sheet is a fix to a stable surface, so its stars ship with it. A phone favorite the sheet doesn't offer, another provider's in a thread's sheet or a model its computer no longer lists, is left out rather than shown unavailable, and comes back when a sheet offers it again.

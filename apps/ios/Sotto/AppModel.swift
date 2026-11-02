@@ -1664,9 +1664,12 @@ struct RailAsk: Equatable {
                     ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
                 "models": settingThreads ? Self.fixtureSettingModels(modes) : [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
                     "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]]
-                    // Watcher's box lists another provider Watcher runs on, whose model starts a new Watcher.
+                    // Watcher's box lists another provider Watcher runs on, whose model starts a new Watcher, with an older
+                    // model of its line that the settings sheet keeps under Legacy (ADR-0171).
                     + (watcherBox ? [["id": "fixture-opus", "name": "Opus 5.5", "provider": "Claude Code", "providerId": "claude", "ready": true,
-                                      "reasoningEfforts": ["low", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]] : []) as [[String: Any]],
+                                      "reasoningEfforts": ["low", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes],
+                                     ["id": "fixture-opus-5", "name": "Opus 5", "provider": "Claude Code", "providerId": "claude", "ready": true,
+                                      "reasoningEfforts": ["low", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes, "legacy": true]] : []) as [[String: Any]],
                 "providers": [["id": "codex", "connection": "connected", "capabilities": hostCaps]], "capabilities": hostCaps]]
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)

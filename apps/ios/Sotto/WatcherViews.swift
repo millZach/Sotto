@@ -1750,10 +1750,10 @@ private struct WatcherHandoverStrip: View {
 }
 
 /// Watcher's model, effort, speed and permissions as one pill in its box's row, as a thread's box has them (ADR-0166,
-/// amended November 1, 2026), with New Watcher as its menu's last item. The model menu lists every provider Watcher runs
-/// on; another provider's model starts a new Watcher. The model, effort and speed are held still, the menu saying why,
-/// while Watcher works or a card of its own waits. A computer that takes only Watcher's permissions from this iPhone shows
-/// the shield alone.
+/// amended November 1, 2026), opening the same settings sheet with New Watcher as its last row. The sheet lists every
+/// provider Watcher runs on, each closed until pressed; another provider's model starts a new Watcher. The model,
+/// effort and speed are held still, the sheet saying why, while Watcher works or a card of its own waits. A computer that
+/// takes only Watcher's permissions from this iPhone shows the shield alone.
 private struct WatcherSettingsPill: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -1762,6 +1762,9 @@ private struct WatcherSettingsPill: View {
     @State private var choosingPermission = false
     @State private var picks = 0
     @State private var starts = 0
+    @State private var open = false
+    /// Permissions was pressed in the settings sheet: its own sheet opens once this one has gone.
+    @State private var permissionsNext = false
 
     var body: some View {
         Group {
@@ -1798,69 +1801,63 @@ private struct WatcherSettingsPill: View {
         return values.speed
     }
 
+    /// Chooses a value for Watcher and puts the sheet away.
     private func choose(_ kind: ThreadSettingKind, _ value: String) {
         picks += 1
+        open = false
         Task { await model.chooseWatcherSetting(kind, value, on: hostID) }
     }
     private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
         SettingOption(name: name, line: line, chosen: chosen, action: action)
     }
 
-    /// The pill opens one menu, as a thread's does: while the computer holds Watcher's model, effort and speed, why;
-    /// then the models, Effort, Speed, Permissions (which opens the four modes in Watcher's own words) and New Watcher.
+    /// The pill opens the settings sheet, as a thread's does.
     private var pill: some View {
         let mode = model.watcherPermission(hostID)
         let modelName = shownModel?.name ?? current?.modelId ?? ""
-        return Menu {
-            if let held { Text(held) }
-            modelSections
-            effortMenu
-            speedMenu
-            Button { choosingPermission = true } label: {
-                Text("Permissions", comment: "The field for the permission mode a new thread starts in.")
-                Text(verbatim: WatcherPermissions.name(mode))
-            }
-            .disabled(!model.canChangeWatcherPermission(hostID))
-            Section { newWatcherButton }
-        } label: {
+        return Button { open = true } label: {
             ComposerPill(providerID: shownModel?.providerId ?? current?.provider, model: modelName, effort: effortName, speed: speed,
                          shield: mode == "full-access" ? .full : WatcherPermissions.grants(mode) ? .grants : .asks,
                          pending: model.watcherPermissionInForce(hostID) != nil)
         }
+        .buttonStyle(PressStyle())
         .accessibilityLabel(String(localized: "Watcher’s settings"))
         .accessibilityValue([modelName, effortName, speeds.isEmpty ? nil : ThreadSettings.speedName(speed, offered: speeds), WatcherPermissions.name(mode)]
             .compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint(String(localized: "Opens Watcher’s model, effort, speed and permissions, and New Watcher"))
         .accessibilityIdentifier("watcher-settings")
+        .sheet(isPresented: $open, onDismiss: {
+            if permissionsNext { permissionsNext = false; choosingPermission = true }
+        }) { sheet }
     }
 
-    @ViewBuilder private var modelSections: some View {
+    /// While the computer holds Watcher's model, effort and speed, why; then the models, Effort, Speed, Permissions (which
+    /// opens the four modes in Watcher's own words) and New Watcher.
+    private var sheet: some View {
+        let mode = model.watcherPermission(hostID)
         let groups = current.map { WatcherSettings.groups($0, catalog: catalog, others: model.mayAnswer(hostID)) } ?? []
-        Group {
-            ForEach(groups) { group in
-                let lineup = ModelLineup.split(group.models)
-                Section(group.name) {
-                    ForEach(lineup.latest) { item in
-                        option(item.name, chosen: item.id == shownModel?.id) { choose(.model, item.id) }
-                    }
-                    // Older models of each line wait in a closed submenu, as in a thread's menu (ADR-0171).
-                    if !lineup.legacy.isEmpty {
-                        Menu("Legacy") {
-                            ForEach(lineup.legacy) { item in
-                                option(item.name, chosen: item.id == shownModel?.id) { choose(.model, item.id) }
-                            }
-                        }
-                    }
-                }
-            }
+        return ComposerSettingsSheet(title: String(localized: "Watcher’s settings"), current: shownModel,
+                                     groups: groups.map { ModelGroup(id: $0.providerID, name: $0.name, models: $0.models) },
+                                     modelsEnabled: held == nil, choose: { choose(.model, $0.id) }) {
+            if let held { Text(held) }
+        } foot: {
             if groups.contains(where: { !$0.own }) {
                 Text("Another provider’s model starts a new Watcher. This conversation stays in Watcher history.")
             }
+        } settings: {
+            effortRow
+            speedRow
+            Button { permissionsNext = true; open = false } label: {
+                SettingRow(name: Text("Permissions", comment: "The field for the permission mode a new thread starts in."),
+                           value: WatcherPermissions.name(mode))
+            }
+            .buttonStyle(PressStyle())
+            .disabled(!model.canChangeWatcherPermission(hostID))
+            newWatcherRow
         }
-        .disabled(held != nil)
     }
 
-    @ViewBuilder private var effortMenu: some View {
+    @ViewBuilder private var effortRow: some View {
         if let effortName, let values {
             Menu {
                 ForEach(Array(efforts.enumerated()), id: \.element) { index, level in
@@ -1869,14 +1866,13 @@ private struct WatcherSettingsPill: View {
                     }
                 }
             } label: {
-                Text("Effort", comment: "The field for how hard a new thread's model reasons.")
-                Text(verbatim: effortName)
+                SettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName)
             }
             .disabled(held != nil)
         }
     }
 
-    @ViewBuilder private var speedMenu: some View {
+    @ViewBuilder private var speedRow: some View {
         if !speeds.isEmpty, values != nil {
             SpeedMenu(speeds: speeds, speed: speed, providerID: shownModel?.providerId) { choose(.speed, $0) }
                 .disabled(held != nil)
@@ -1907,15 +1903,31 @@ private struct WatcherSettingsPill: View {
         .accessibilityIdentifier("watcher-permissions")
     }
 
-    /// New Watcher (as the desktop's chip), the menu's last item: a new Watcher at once on this one's model, effort,
+    /// New Watcher (as the desktop's chip), the sheet's last row: a new Watcher at once on this one's model, effort,
     /// speed and permissions, with a handover of this one offered over its box. Unavailable, it says why under it.
-    @ViewBuilder private var newWatcherButton: some View {
+    @ViewBuilder private var newWatcherRow: some View {
         let why = model.newWatcherUnavailable(hostID)
-        Button { starts += 1; Task { await model.startNewWatcher(hostID) } } label: {
-            Label("New Watcher", systemImage: "square.and.pencil")
+        Button { open = false; starts += 1; Task { await model.startNewWatcher(hostID) } } label: {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "square.and.pencil").font(.system(size: 14, weight: .semibold)).frame(width: 16).accessibilityHidden(true)
+                Text("New Watcher")
+                Spacer(minLength: 0)
+            }
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, Space.s3)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(PressStyle())
         .disabled(why != nil)
-        if let why { Text(why) }
+        .opacity(why != nil ? 0.5 : 1)
+        if let why {
+            Text(why).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Space.s3 + 16 + Space.s2)
+                .padding(.bottom, Space.s3)
+        }
     }
 }
 
