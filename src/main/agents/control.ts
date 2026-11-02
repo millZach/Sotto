@@ -82,7 +82,7 @@ import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadCl
 import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherRequest, type WatcherThreadTarget } from '../../shared/watcher'
 import { answerImageCarrier, isImageAttachment, parsePublicProviderEntityId, SCREENSHOT_WRONG_TYPE, threadProviderOf } from '../../shared/agents'
-import { attachedFilesNote, saveAttachedFiles } from './attachedFiles'
+import { attachedFileRelativePath, attachedFilesNote, saveAttachedFiles } from './attachedFiles'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
@@ -5669,9 +5669,13 @@ export class AgentControl {
     const thread = this.thread(command.threadId)
     const carrier = answerImageCarrier(thread.requests.find(request => request.id === command.requestId))
     if (!carrier || !answer.questionAnswers) throw new Error('This question can’t take images with its answer. Nothing was sent. Remove the images and send again.')
-    const note = attachedFilesNote(await saveAttachedFiles(thread.workingDirectory, attachments.map(image => this.promptImage(image))))
     const chosen = answer.questionAnswers[carrier.id]
-    return { ...answer, questionAnswers: { ...answer.questionAnswers, [carrier.id]: { optionIds: chosen?.optionIds ?? [], text: chosen?.text?.trim() ? `${chosen.text}\n\n${note}` : note } } }
+    const withNote = (note: string): string => chosen?.text?.trim() ? `${chosen.text}\n\n${note}` : note
+    // The note is known before anything is saved, so Muse's 500-character answer is refused with nothing written.
+    const planned = attachedFilesNote(attachments.map(({ digest, name, mimeType, sizeBytes }) => ({ relativePath: attachedFileRelativePath(digest, name), name, mimeType, sizeBytes })))
+    if (thread.providerId === 'muse' && withNote(planned).trim().length > 500) throw new Error('Muse takes up to 500 characters for an answer, and these images’ names take more. Nothing was sent. Send fewer images, or shorten your words.')
+    const note = attachedFilesNote(await saveAttachedFiles(thread.workingDirectory, attachments.map(image => this.promptImage(image))))
+    return { ...answer, questionAnswers: { ...answer.questionAnswers, [carrier.id]: { optionIds: chosen?.optionIds ?? [], text: withNote(note) } } }
   }
   /**
    * The user's answer to Sotto's copy of a question it sent back (ADR-0108), sent to the thread as the user's message

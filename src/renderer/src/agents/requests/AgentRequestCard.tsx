@@ -25,6 +25,9 @@ import './requests.css'
 
 /** Images dropped on a question card, by its owner and request, kept until sent so leaving the thread loses none (ADR-0176). */
 const cardImages = new Map<string, AgentAttachmentHandle[]>()
+/** Images still being added to each card, and the cards whose answer went with images, so late ones are dropped. */
+const cardStaging = new Map<string, number>()
+const cardAnswered = new Set<string>()
 
 export interface AgentRequestCardProps {
   /** The thread that owns the request; answers always carry this and `request.id`. */
@@ -68,10 +71,13 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const imagesKey = `${entryOwner}\n${request.id}`
   const [images, showImages] = useState(() => cardImages.get(imagesKey) ?? [])
   const setImages = (next: AgentAttachmentHandle[]): void => { if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey); showImages(next) }
-  // Send waits for images still being added; any that finish once the card is gone are kept for its return.
-  const [staging, setStaging] = useState(false)
-  const reads: ScreenshotReadPort = { pending: false, problem: null, begin: () => { setStaging(true); return () => setStaging(false) },
-    addLate: late => { if (late.length) cardImages.set(imagesKey, [...cardImages.get(imagesKey) ?? [], ...late]) } }
+  // Send waits for images still being added, counted outside the card so leaving the thread and coming back still
+  // waits; any that finish once the card is gone are kept for its return, unless the answer has gone.
+  const [staging, setStaging] = useState(() => (cardStaging.get(imagesKey) ?? 0) > 0)
+  const reads: ScreenshotReadPort = { pending: staging, problem: null, begin: () => {
+    cardStaging.set(imagesKey, (cardStaging.get(imagesKey) ?? 0) + 1); setStaging(true)
+    return () => { const left = (cardStaging.get(imagesKey) ?? 1) - 1; if (left > 0) cardStaging.set(imagesKey, left); else cardStaging.delete(imagesKey); setStaging(left > 0) }
+  }, addLate: late => { if (late.length && !cardAnswered.has(imagesKey)) cardImages.set(imagesKey, [...cardImages.get(imagesKey) ?? [], ...late]) } }
   const answerImages = useOwlFeature('answer-images')
   const toggle = useRef<HTMLButtonElement>(null)
   const baseId = useId()
@@ -92,7 +98,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const send = (choice: string | null, answer: RequestAnswer): void => {
     if (disabled || entry.save === 'unsaved') return
     void store.submit(entryOwner, request.id, choice, () => onSubmit(answer).then(outcome => {
-      if (answer.attachments && outcome?.error === null) cardImages.delete(imagesKey)
+      if (answer.attachments && outcome?.error === null) { cardImages.delete(imagesKey); cardAnswered.add(imagesKey) }
       return outcome
     }))
   }
