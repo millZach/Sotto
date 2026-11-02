@@ -49,9 +49,9 @@
 /* The agent's callouts on the picture (ADR-0170, part 6), over the user's own marks, with Show beside their heading. */
 .markup-editor__callouts { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--tt-hairline); }
 .markup-editor__callouts-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.markup-editor__option { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: var(--tt-text); font-size: var(--tt-type-small); cursor: pointer; }
+.markup-editor__option { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: var(--tt-text); font-size: var(--tt-type-small); }
 .markup-editor__option input { margin: 0; accent-color: var(--tt-accent); }
-.markup-editor__option:has(input:disabled) { color: var(--tt-text-muted); cursor: default; }
+.markup-editor__option:has(input:disabled) { color: var(--tt-text-muted); }
 .markup-editor__marks { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .markup-editor__marks li { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--tt-text); font-size: var(--tt-type-small); }
 .markup-editor__swatch { flex: none; width: 10px; height: 10px; border-radius: var(--tt-radius-full); background: var(--ink); }
