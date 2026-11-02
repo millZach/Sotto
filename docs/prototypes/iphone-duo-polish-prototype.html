@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>PROTOTYPE · iPhone Duo polish and Watcher without its bar</title>
+<!--
+  PROTOTYPE, throwaway. Zach's Duo polish round (November 1, 2026), with the Watcher, working-row and composer items
+  he added the same evening. One page, every screen live:
+    - unfolded upright and sideways: the app edge to edge, no band at the top;
+    - the rail on the right edge: sidebar and New thread at the top, the four tabs low in one pill, every icon one size;
+    - upright, the thread sidebar follows the thumb: drag right anywhere on a page to pull it in, left to push it out;
+    - Watcher has no bar: it opens on its conversation, and the Watched view is gone;
+    - the working row sits above the reply box at every height of the box;
+    - the reply box has a clear gap above its model pill, and the pill's press area no longer reaches into the words.
+  ?full=1 fills the browser with one live screen that follows the device's turn. ?theme=light shows light.
+  Zach's picks, November 1, 2026: build it as shown; upright, a drag anywhere on the page pulls the sidebar; Stop all
+  goes in the model pill's sheet; sideways, a drag hides and shows the sidebar too, beside the button.
+-->
+<style>
+@font-face{font-family:Figtree;src:url('Figtree.ttf') format('truetype'),url('../../apps/ios/Sotto/Resources/Figtree.ttf') format('truetype');font-weight:400}
+@font-face{font-family:Figtree;src:url('Figtree-SemiBold.ttf') format('truetype'),url('../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf') format('truetype');font-weight:600}
+@font-face{font-family:Figtree;src:url('Figtree-Bold.ttf') format('truetype'),url('../../apps/ios/Sotto/Resources/Figtree-Bold.ttf') format('truetype');font-weight:700}
+:root,[data-theme=dark]{
+  --canvas:#111418;--ground1:#0c1015;--ground2:#151b22;--surface:#1b1e23;--raised:#21252a;--ink:#f9fafc;--muted:#b9c0ca;
+  --hair:#2f3339;--accent:#69caff;--onaccent:#071727;--accentsurface:#1a3b51;--accenttext:#84d2ff;--warning:#fe9a00;
+  --warnsurface:#3c311e;--warntext:#ffc183;--message:#202e3e;--danger:#ff8a80;--fillsoft:rgba(255,255,255,.07);
+  --composer:#23272d;--shadow:rgba(0,0,0,.5);--pill:#1d2126}
+[data-theme=light]{
+  --canvas:#f0f2f6;--ground1:#f4f7fb;--ground2:#e6ecf4;--surface:#f9fafc;--raised:#ffffff;--ink:#101419;--muted:#4a5058;
+  --hair:#ccd1d9;--accent:#0064b5;--onaccent:#fcfcfc;--accentsurface:#d4e7fc;--accenttext:#0f518f;--warning:#fe9a00;
+  --warnsurface:#f9edd9;--warntext:#785128;--message:#dae6f3;--danger:#b3261e;--fillsoft:rgba(16,20,25,.06);
+  --composer:#ffffff;--shadow:rgba(16,20,25,.16);--pill:#ffffff}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{font-family:Figtree,system-ui,sans-serif;background:#07080a;color:#e9ebef}
+body.light{background:#d9dde3;color:#14181d}
+button{font:inherit;color:inherit}
+/* ---------- overview page ---------- */
+header.top{position:sticky;top:0;z-index:20;background:rgba(7,8,10,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  padding:10px 14px;border-bottom:1px solid #22262c;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+body.light header.top{background:rgba(217,221,227,.92);border-color:#c3c8cf}
+header.top h1{font-size:15px;font-weight:700;margin-right:auto}
+.chipbtn{border:0;border-radius:10px;padding:10px 14px;min-height:44px;font-weight:600;font-size:15px;background:#1d2128;cursor:pointer}
+body.light .chipbtn{background:#c8cdd4}
+.chipbtn.primary{background:#3a76a8;color:#fff}
+main{padding:16px 14px 80px;max-width:1500px;margin:0 auto}
+section{margin:0 0 40px}
+h2{font-size:19px;font-weight:700;margin:0 0 6px}
+.lede{font-size:15px;line-height:1.5;max-width:780px;margin:0 0 8px}
+.note{font-size:14px;line-height:1.5;opacity:.78;max-width:780px;margin:0 0 14px}
+.lede b,.note b{font-weight:700}
+ul.where{font-size:14.5px;line-height:1.5;max-width:780px;padding-left:20px;margin:6px 0 14px}
+ul.where li{margin:0 0 4px}
+.grid{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.grid figure{flex:1 1 100%;margin:0}
+@media (min-width:1000px){.grid figure{flex:0 1 var(--w)}}
+figcaption{font-size:13.5px;font-weight:600;opacity:.85;margin:0 0 6px}
+.fit{width:100%;position:relative;overflow:hidden;border-radius:26px;box-shadow:0 0 0 1px #2a2e35}
+body.light .fit{box-shadow:0 0 0 1px #b7bdc6}
+.pair{display:flex;flex-wrap:wrap;gap:18px}
+.pair>div{flex:1 1 320px;max-width:520px}
+.tag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:6px;margin-bottom:6px}
+.tag.before{background:#4a2a2a;color:#ffb4ab}.tag.after{background:#1d3b2a;color:#9be3b5}
+body.light .tag.before{background:#f6d6d2;color:#7a1d16}body.light .tag.after{background:#d2efdc;color:#1d5c34}
+.out{font-size:13.5px;min-height:20px;margin-top:6px;opacity:.85}
+/* ---------- the phone ---------- */
+.screen{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;color:var(--ink);font-family:Figtree,system-ui,sans-serif;
+  background:radial-gradient(120% 80% at 20% 0%,var(--ground2),var(--ground1) 60%,var(--canvas));touch-action:pan-y;user-select:none;-webkit-user-select:none}
+body.full{overflow:hidden;height:100vh;height:100dvh}
+body.full .screen{position:fixed;inset:0;transform:none!important;width:100vw!important;height:100vh!important;height:100dvh!important}
+.sys{position:absolute;font-weight:700;font-size:16px;color:var(--ink);display:flex;align-items:center;gap:8px;pointer-events:none;opacity:.92;z-index:9}
+.sys .ring{width:30px;height:30px;border-radius:50%;border:3px solid var(--ink);border-bottom-color:transparent;opacity:.85}
+.syslabel{position:absolute;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);opacity:.6;pointer-events:none;z-index:9}
+.content{position:absolute;top:0;bottom:0;overflow:hidden}
+.scroll{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.read{max-width:680px;margin:0 auto}
+/* rail */
+.rbtn{position:absolute;width:48px;height:48px;border-radius:50%;border:1px solid var(--hair);background:var(--surface);display:grid;place-items:center;
+  color:var(--ink);cursor:pointer;box-shadow:0 2px 10px var(--shadow);padding:0}
+.rbtn[disabled]{opacity:.35;cursor:default}
+.rbtn.plus{color:var(--accenttext)}
+.tabpill{position:absolute;width:60px;border-radius:30px;background:var(--pill);border:1px solid var(--hair);padding:4px;display:flex;flex-direction:column;gap:2px;
+  box-shadow:0 4px 18px var(--shadow)}
+.tabpill.row{flex-direction:row;width:auto;height:60px}
+.tab{position:relative;width:50px;height:50px;border-radius:25px;border:0;background:none;display:grid;place-items:center;color:var(--muted);cursor:pointer;padding:0}
+.tab.on{background:var(--accentsurface);color:var(--accenttext)}
+.badge{position:absolute;top:5px;right:4px;min-width:18px;height:18px;border-radius:9px;background:var(--warning);color:#111;font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 5px}
+.wdot{position:absolute;top:11px;right:11px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--pill)}
+/* bottom bar, iPhone */
+.bar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-around;padding:6px 6px 30px;background:var(--canvas);border-top:1px solid var(--hair)}
+.bar .btab{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:11px;font-weight:600;width:72px;position:relative;cursor:pointer;padding:4px 0}
+.bar .btab.on{color:var(--accenttext)}
+/* pages */
+.h1{font-size:30px;font-weight:700;letter-spacing:-.5px}
+.search{display:flex;align-items:center;gap:8px;height:44px;border-radius:22px;background:var(--fillsoft);border:1px solid var(--hair);padding:0 14px;color:var(--muted);font-size:15px}
+.sec{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;margin:24px 0 10px}
+.sec .n{color:var(--muted);font-weight:400}
+.lt{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.lt.acc{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.lt.warn{background:var(--warning);box-shadow:0 0 8px var(--warning)}
+.lt.idle{border:1.5px solid var(--muted)}
+.cols{display:grid;gap:16px}
+.card{border-radius:18px;background:var(--surface);border:1px solid var(--hair);padding:14px 16px;cursor:pointer}
+.card.need{background:linear-gradient(var(--warnsurface),var(--surface))}
+.card .k{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;justify-content:space-between}
+.card .t{font-size:17px;font-weight:600;margin:8px 0 4px;line-height:1.25}
+.card .p{font-size:14px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.card .q{font-size:15px;margin-top:8px;line-height:1.35}
+.card + .card{margin-top:12px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 12px;border-radius:12px;cursor:pointer;min-height:56px}
+.row.on{background:var(--accentsurface)}
+.row .t{font-size:15.5px;font-weight:600;line-height:1.25}
+.row .p{font-size:13px;color:var(--muted);margin-top:2px;display:flex;gap:5px;align-items:center}
+.row .age{margin-left:auto;font-size:12.5px;color:var(--muted);flex:none}
+/* thread */
+.tbar{display:flex;align-items:center;gap:10px}
+.gbtn{width:44px;height:44px;border-radius:50%;border:1px solid var(--hair);background:var(--surface);display:grid;place-items:center;color:var(--ink);flex:none;cursor:pointer;padding:0}
+.ttitle{font-size:17px;font-weight:700;line-height:1.2}
+.tsub{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:2px}
+.msg{font-size:16px;line-height:1.5;margin:0 0 20px}
+.msg .who{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.me{margin:0 0 20px auto;max-width:78%;background:var(--message);border-radius:20px;padding:12px 16px;font-size:16px;line-height:1.45;width:fit-content}
+.did{border-radius:18px;background:var(--surface);border:1px solid var(--hair);padding:14px 16px;margin:0 0 20px}
+.did .h{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);font-weight:600}
+.did .t{font-size:16px;font-weight:600;margin-top:10px}
+.did .p{font-size:14px;color:var(--muted);margin-top:3px}
+.did .w{font-size:14px;color:var(--accenttext);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:6px}
+.working{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--accenttext);height:24px}
+.hero{display:flex;align-items:center;gap:12px}
+.owltile{width:48px;height:48px;border-radius:16px;background:var(--raised);border:1px solid var(--hair);display:grid;place-items:center;flex:none}
+.statepill{margin-left:auto;display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:16px;background:var(--fillsoft);border:1px solid var(--hair);font-size:13.5px;font-weight:600}
+/* composer */
+.dock{position:absolute;left:0;right:0;bottom:0;padding:0 12px 12px;pointer-events:none}
+.dock>*{pointer-events:auto}
+.comp{border-radius:24px;background:var(--composer);box-shadow:0 6px 24px var(--shadow);border:1px solid var(--hair);position:relative}
+.words{padding:12px 16px 0;font-size:16px;line-height:22px;color:var(--muted);position:relative;cursor:text}
+.words .typed{color:var(--ink)}
+.crow{display:flex;align-items:center;gap:10px;padding:8px;position:relative}
+.cbtn{width:34px;height:34px;border-radius:50%;background:var(--fillsoft);display:grid;place-items:center;flex:none;border:0;color:var(--ink);cursor:pointer;padding:0}
+.cbtn.send{background:var(--ink);color:var(--canvas)}
+.cpill{display:flex;align-items:center;gap:6px;height:34px;border-radius:17px;background:var(--fillsoft);padding:0 12px;font-size:14px;font-weight:600;border:0;cursor:pointer;color:var(--ink);position:relative}
+.cpill .e{color:var(--muted);font-weight:500}
+.att{display:flex;gap:6px;padding:6px 6px 0}
+.att span{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#3a5f7d,#7a5a3c)}
+.hit{position:absolute;pointer-events:none;border-radius:8px;display:none}
+.showhits .hit{display:block}
+.hit.w{border:2px dashed var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.hit.p{border:2px dashed var(--warning);background:color-mix(in srgb,var(--warning) 14%,transparent)}
+/* sidebar */
+.side{position:absolute;top:0;bottom:0;left:0;background:var(--canvas);border-right:1px solid var(--hair);overflow:hidden}
+.side .scroll{padding:0 8px 24px}
+.scrim{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none}
+.drawer{position:absolute;top:0;bottom:0;left:0;width:320px;box-shadow:0 0 30px rgba(0,0,0,.4)}
+.anim .drawer,.anim .scrim{transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s}
+.grip{position:absolute;left:0;top:50%;width:24px;height:88px;margin-top:-44px;display:grid;place-items:center;pointer-events:none}
+.grip i{width:4px;height:40px;border-radius:2px;background:var(--muted);opacity:.4}
+/* sheet */
+.sheetwrap{position:absolute;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.4)}
+.sheet{width:min(560px,100%);background:var(--raised);border-radius:24px 24px 0 0;padding:10px 0 24px;max-height:88%;overflow:auto}
+.sheet .grab{width:40px;height:5px;border-radius:3px;background:var(--hair);margin:0 auto 12px}
+.sheet h3{font-size:20px;font-weight:700;padding:4px 20px 12px}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:0 20px;font-size:16px;border-top:1px solid var(--hair);cursor:pointer}
+.srow .v{color:var(--muted)}
+.srow.danger{color:var(--danger);font-weight:600}
+.srow.newer{color:var(--accenttext);font-weight:600}
+.srow small{display:block;font-size:13px;color:var(--muted);font-weight:400;margin-top:2px}
+.toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--raised);border:1px solid var(--hair);border-radius:14px;padding:12px 16px;font-size:14px;font-weight:600;z-index:40;box-shadow:0 8px 30px var(--shadow);text-align:center;max-width:80%}
+.exit{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 4px);z-index:50;border:0;border-radius:14px;padding:6px 12px;font-size:12px;font-weight:700;background:rgba(58,118,168,.85);color:#fff;display:none}
+body.full .exit{display:block;transition:opacity .4s}
+body.full .exit.quiet{opacity:.3}
+body.full main,body.full header.top{display:none}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>PROTOTYPE · iPhone Duo polish, Watcher without its bar</h1>
+  <button class="chipbtn" id="themeBtn">Light</button>
+  <button class="chipbtn primary" id="fullBtn">Try it full screen</button>
+</header>
+<button class="exit" id="exitBtn">Prototype · back to the overview</button>
+<main>
+  <section>
+    <h2>Unfolded Duo, upright and sideways</h2>
+    <p class="lede">Both screens are live. <b>The app reaches every edge:</b> the page's ground runs up under the clock, with no band. <b>The rail stands on the right:</b> Sidebar and New thread at the top, the four tabs low in one pill where your right thumb rests, every icon one size in the same 50-point tile.</p>
+    <p class="note"><b>Upright, drag the sidebar with your thumb:</b> drag right anywhere on a thread, Watcher, Computers or Settings to pull the threads in; it follows your thumb. Drag left, or press beside it, to push it away. The rail's top button does the same. On the Threads page the list is already the page, so that button rests. Sideways, the sidebar stands beside the thread and the same button hides it. Press the model pill in any reply box for its sheet.</p>
+    <div class="grid" id="duoGrid"></div>
+  </section>
+  <section>
+    <h2>Watcher has no bar</h2>
+    <p class="lede">Watcher opens on its conversation, full screen, like any thread. <b>The Conversation | Watched bar and the Watched view are gone.</b> Here is where each thing in them went:</p>
+    <ul class="where">
+      <li><b>The owl's "go to the top":</b> press the Watcher tab again, as every other tab already does.</li>
+      <li><b>The owl's light (working or not):</b> on the Watcher tab's owl, and on the state pill beside Watcher's name at the top of the conversation.</li>
+      <li><b>Watched threads:</b> in the Threads list, where each one already carries the small owl after its provider.</li>
+      <li><b>Stop watching one thread, or Watch a thread:</b> that thread's own Watch button, as today.</li>
+      <li><b>Stop all</b> (stop the threads Watcher started): a row in the sheet the reply box's model pill opens, above New Watcher. It asks first, as it does now.</li>
+      <li><b>New Watcher</b> stays the sheet's last row. <b>Choose Watcher's computer</b> stays on the line under Watcher's name.</li>
+      <li>The "3 of 4 watched" meter and the "No longer watched" list go with the Watched view.</li>
+    </ul>
+    <p class="note">Same on every iPhone: the folded Duo and a plain iPhone below have no bar either.</p>
+    <div class="grid" id="watcherGrid"></div>
+  </section>
+  <section>
+    <h2>Rail icons: before and after</h2>
+    <p class="note">Before, the owl filled its whole 28-point box, while the system's symbols keep a margin, so the owl read a size larger. After, every tab's icon is drawn to one optical size, about 20 points of ink in a 24-point frame, in a 50-point tile, all four in one pill.</p>
+    <div class="pair" id="iconPair"></div>
+  </section>
+  <section>
+    <h2>Reply box: room above the model pill</h2>
+    <p class="note">Dashed blue is where a press types; dashed orange is where a press opens the model picker. Press near the bottom of the words in each box and read what happened under it. After, there is a 12-point gap above the row, the words take every press above the row, and the pill's press area stops at the row's top. The same box is used by threads and Watcher, on every iPhone.</p>
+    <label class="note" style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><input type="checkbox" id="hitsBox" checked style="width:20px;height:20px"> Show the press areas</label>
+    <div class="pair" id="compPair"></div>
+  </section>
+  <section>
+    <h2>"Working" stays above the reply box</h2>
+    <p class="note">Before, the page followed the newest words, not its end, so Watcher's working row sat under the box with only its top showing. After, the page's end is the working row (and any follow-ups under it), and the space under the page is the box's height as it is now, so the row keeps the same gap above the box at one line, five lines, or with pictures. A thread's own working row is inside its last run, which already ends the page; the after build checks it at every box height too.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="chipbtn" id="addLine">Add a line to the box</button>
+      <button class="chipbtn" id="addPic">Attach a picture</button>
+      <button class="chipbtn" id="resetBox">Empty the box</button>
+    </div>
+    <div class="pair" id="workPair"></div>
+  </section>
+</main>
+<script>
+const params = new URLSearchParams(location.search);
+let theme = params.get('theme') === 'light' ? 'light' : 'dark';
+const FULL = params.get('full') === '1';
+
+/* ---------- icons, all on a 24-point frame ---------- */
+const owlPath = 'M 1.27 4.8 C 0.84 3.93 0.73 2.31 1.49 1.22 C 1.63 0.95 1.93 0.68 2.06 1.22 C 2.12 2.03 2.71 2.9 3.93 2.9 C 5.83 2.2 10.17 1.76 12.94 3.34 C 13.69 3.28 14.4 2.71 14.45 1.82 C 14.51 1.57 14.73 1.57 14.83 1.98 C 15.32 2.58 15.54 4.26 14.94 5.56 C 15.38 6.1 15.7 7.46 15.7 9.63 C 15.76 12.12 15.29 13.37 13.97 14.24 C 12.75 15.19 10.17 15.24 8 15.24 C 5.8 15.24 3.23 15.19 2.01 14.24 C 0.68 13.37 0.22 12.12 0.27 9.63 C 0.24 7.19 0.52 5.83 1.27 4.8 Z M 1.84 8.95 C 1.82 7.05 2.25 6.07 3.66 6.07 C 5.34 6.02 6.75 6.21 6.73 8.54 C 6.73 10.44 6.1 11.31 4.34 11.31 C 2.58 11.34 1.82 10.58 1.84 8.95 Z M 9.33 9.22 C 9.33 8.14 9.63 7.67 10.44 7.46 L 13.1 6.92 C 13.8 6.78 14.13 7.46 14.13 8.81 C 14.16 10.71 13.69 11.34 11.66 11.34 C 10.17 11.34 9.33 10.71 9.33 9.22 Z';
+function owl(size, box = '-2 -2.5 20 20') {
+  return `<svg width="${size}" height="${size}" viewBox="${box}" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="${owlPath}"/><circle fill="currentColor" cx="5.29" cy="8.22" r="1.19"/><circle fill="currentColor" cx="10.79" cy="8.87" r="1.19"/></svg>`;
+}
+const ic = {
+  threads: (f, s = 24) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c5 0 9 3.2 9 7.3s-4 7.3-9 7.3c-1 0-2-.1-2.9-.4L4.6 20c-.5.2-.9-.3-.7-.7l1-3C3.7 15 3 13 3 10.8 3 6.7 7 3.5 12 3.5Z" ${f ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"'}/></svg>`,
+  watcher: (f, s = 24) => owl(s),
+  computers: (f, s = 24) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.8" y="3.8" width="18.4" height="12.4" rx="2" ${f ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.8"'}/><path d="M9 20.2h6M12 16.5v3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  settings: (f, s = 24) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="15" cy="6" r="2.4" fill="${f ? 'currentColor' : 'var(--pill)'}"/><circle cx="8" cy="12" r="2.4" fill="${f ? 'currentColor' : 'var(--pill)'}"/><circle cx="14" cy="18" r="2.4" fill="${f ? 'currentColor' : 'var(--pill)'}"/></svg>`,
+  sidebar: (s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M9.5 4.5v15M5.6 8.5h1.6M5.6 11.5h1.6M5.6 14.5h1.6" stroke-linecap="round"/></svg>`,
+  plus: (s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
+  back: () => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>`,
+  mic: () => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>`,
+  up: () => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>`,
+  search: () => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>`,
+  chev: () => `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`,
+  more: () => `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`,
+  spark: () => `<svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 19"/></svg>`,
+};
+const TABS = [['threads', 'Threads'], ['watcher', 'Watcher'], ['computers', 'Computers'], ['settings', 'Settings']];
+
+/* ---------- data ---------- */
+const THREADS = {
+  needs: [
+    {id: 'n1', t: 'Choose the release target', p: 'Claude Code on Laptop', q: 'Which release should I prepare?', age: '2m'},
+    {id: 'n2', t: 'Fix login test', p: 'Claude Code on Laptop', q: 'Which account should the login test sign in with?', age: '3m', watched: true},
+  ],
+  working: [
+    {id: 'w1', t: 'Duo polish: full screen, thumb rail', p: 'Claude Code on Laptop · Sotto', q: 'Building the prototype.', age: '12m', watched: true},
+    {id: 'w2', t: 'Babysit #845 release notes', p: 'Codex on Laptop · Sotto', q: 'Waiting for the checks on #845.', age: '18m', watched: true},
+    {id: 'w3', t: 'Clean up the wiring schedule', p: 'Claude Code on Laptop · Panel tools', q: 'Background agents are still working.', age: '25m'},
+  ],
+  recent: [
+    {id: 'r1', t: 'Add keyboard shortcuts', p: 'Codex · Just finished', age: '18m'},
+    {id: 'r2', t: 'Compare motor drive options', p: 'Codex · Panel tools', age: '1h'},
+    {id: 'r3', t: 'Update the lighting plan', p: 'Codex · Studio Mac', age: '1d'},
+  ],
+};
+const ALL = [...THREADS.needs, ...THREADS.working, ...THREADS.recent];
+const byId = id => ALL.find(t => t.id === id);
+
+/* ---------- geometry for each screen ---------- */
+function geo(mode, W, H, full) {
+  // top: where the page's own words start (the ground goes to the very top in every mode); rail: the right column.
+  if (mode === 'portrait') return {W, H, top: full ? 20 : 60, bottom: 20, rail: 80, strip: 0, page: W - 80};
+  if (mode === 'landscape') return {W, H, top: 24, bottom: 20, rail: 85, strip: 85, page: W - 85};
+  if (mode === 'folded') return {W, H, top: 24, bottom: 24, rail: 84, strip: 84, page: W - 84};
+  return {W, H, top: full ? 16 : 58, bottom: 0, rail: 0, strip: 0, page: W, bar: 84};
+}
+
+/* ---------- one live screen ---------- */
+class Phone {
+  constructor(host, opts) {
+    this.host = host; this.mode = opts.mode; this.full = !!opts.full;
+    this.st = {tab: opts.tab || 'threads', thread: opts.thread || null, side: true, sideElse: false, drawer: 0, sheet: null};
+    this.scale = 1;
+    host.innerHTML = '';
+    this.el = document.createElement('div'); this.el.className = 'screen';
+    host.appendChild(this.el);
+    this.bind();
+    this.render();
+  }
+  size() {
+    if (this.full) {
+      const W = innerWidth, H = innerHeight;
+      this.mode = W < 560 ? 'iphone' : (H > W ? 'portrait' : 'landscape');
+      return [W, H];
+    }
+    return {portrait: [680, 952], landscape: [952, 680], folded: [466, 678], iphone: [393, 852]}[this.mode];
+  }
+  fit() {
+    const [W, H] = this.size();
+    this.el.style.width = W + 'px'; this.el.style.height = H + 'px';
+    if (this.full) { this.scale = 1; return; }
+    const w = this.host.clientWidth || W;
+    this.scale = Math.min(1, w / W);
+    this.el.style.transform = `scale(${this.scale})`;
+    this.host.style.height = H * this.scale + 'px';
+  }
+  get drawerAllowed() { return this.mode === 'portrait' && !(this.st.tab === 'threads' && !this.st.thread) && !this.st.sheet; }
+  render() {
+    this.fit();
+    const [W, H] = this.size();
+    const g = geo(this.mode, W, H, this.full);
+    this.g = g;
+    this.el.dataset.theme = theme;
+    const s = this.st;
+    const threadOpen = s.tab === 'threads' && s.thread;
+    const docked = this.mode === 'landscape' && (threadOpen ? s.side : (s.tab !== 'threads' && s.sideElse));
+    const left = docked ? 280 : 0;
+    let html = '';
+    html += this.system(g);
+    html += `<div class="content" style="left:${left}px;width:${g.page - left}px;bottom:${g.bar || 0}px">${this.page(g, g.page - left)}</div>`;
+    if (docked) html += `<div class="side" style="width:280px">${this.sidebarList(g, false)}</div>`;
+    html += this.rail(g);
+    if (this.mode === 'portrait') {
+      const allowed = this.drawerAllowed;
+      html += `<div class="drawerlayer" style="position:absolute;inset:0;pointer-events:${s.drawer ? 'auto' : 'none'};right:${g.rail}px">
+        <div class="scrim" data-act="closeDrawer" style="opacity:${s.drawer * .4};pointer-events:${s.drawer ? 'auto' : 'none'}"></div>
+        <div class="drawer side" style="transform:translateX(${(s.drawer - 1) * 340}px)">${this.sidebarList(g, true)}</div></div>`;
+      if (allowed && !s.drawer) html += `<div class="grip"><i></i></div>`;
+    }
+    if (s.sheet) html += this.sheet();
+    this.el.innerHTML = html;
+    this.el.classList.add('anim');
+  }
+  system(g) {
+    // What iOS draws, not the app: the clock and the connection ring.
+    if (this.full) return '';
+    const ring = '<span class="ring"></span>';
+    if (this.mode === 'portrait') return `<div class="sys" style="right:26px;top:14px">20:36 ${ring}</div>`;
+    if (this.mode === 'iphone') return `<div class="sys" style="left:34px;top:16px">9:41</div>`;
+    return `<div class="sys" style="right:0;width:${g.strip}px;top:26px;flex-direction:column;gap:6px">${this.mode === 'folded' ? '20:36' : '12:16'} ${ring}</div>`;
+  }
+  rail(g) {
+    const s = this.st;
+    if (this.mode === 'iphone') {
+      return `<nav class="bar">${TABS.map(([id, name]) => `<button class="btab ${s.tab === id ? 'on' : ''}" data-tab="${id}" aria-label="${name}">
+        <span style="position:relative;display:grid;place-items:center;width:28px;height:28px">${ic[id](s.tab === id)}${id === 'threads' ? '<span class="badge" style="top:-6px;right:-12px">2</span>' : ''}${id === 'watcher' ? '<span class="wdot" style="top:1px;right:-1px;box-shadow:0 0 0 2px var(--canvas)"></span>' : ''}</span>${name}</button>`).join('')}</nav>`;
+    }
+    const x = g.W - g.rail + (g.rail - 48) / 2;
+    const px = g.W - g.rail + (g.rail - 60) / 2;
+    // Under the clock: lower on the cover screen and sideways, where iOS draws the clock in the strip.
+    const top = this.mode === 'portrait' ? (this.full ? 16 : 66) : (this.mode === 'folded' ? 140 : 108);
+    const sideRests = (s.tab === 'threads' && !s.thread);
+    const sideOn = this.mode === 'portrait' ? s.drawer > 0 : (s.thread && s.tab === 'threads' ? s.side : s.sideElse);
+    let h = '';
+    if (this.mode !== 'folded') {
+      h += `<button class="rbtn" data-act="side" style="left:${x}px;top:${top}px" ${sideRests ? 'disabled' : ''} aria-label="${sideRests ? 'The threads are showing' : (sideOn ? 'Hide the threads' : 'Show the threads')}">${ic.sidebar()}</button>`;
+      h += `<button class="rbtn plus" data-act="new" style="left:${x}px;top:${top + 60}px" aria-label="New thread">${ic.plus()}</button>`;
+    } else {
+      h += `<button class="rbtn plus" data-act="new" style="left:${x}px;top:${top}px" aria-label="New thread">${ic.plus()}</button>`;
+    }
+    const pillH = 4 * 50 + 3 * 2 + 8;
+    h += `<div class="tabpill" role="tablist" style="left:${px}px;top:${g.H - g.bottom - pillH}px">${TABS.map(([id, name]) => this.tabBtn(id, name)).join('')}</div>`;
+    return h;
+  }
+  tabBtn(id, name) {
+    const on = this.st.tab === id;
+    return `<button class="tab ${on ? 'on' : ''}" data-tab="${id}" role="tab" aria-selected="${on}" aria-label="${name}">${ic[id](on)}${id === 'threads' ? '<span class="badge">2</span>' : ''}${id === 'watcher' ? '<span class="wdot"></span>' : ''}</button>`;
+  }
+  gutter(w) { return w >= 560 ? 24 : 16; }
+  page(g, w) {
+    const s = this.st;
+    if (s.tab === 'threads' && s.thread) return this.thread(g, w, byId(s.thread));
+    if (s.tab === 'threads') return this.threadsPage(g, w);
+    if (s.tab === 'watcher') return this.watcher(g, w);
+    if (s.tab === 'computers') return this.simplePage(g, w, 'Computers', [['Laptop', 'Online · 6 threads'], ['Studio Mac', 'Can’t reach it · last seen 2h ago'], ['forge', 'Online · 2 threads']]);
+    return this.simplePage(g, w, 'Settings', [['Theme', 'Glass'], ['Text size', 'System'], ['Reply box sends on Return', 'Off'], ['Tabs when unfolded sideways', 'Right']]);
+  }
+  meta(t) { return `${ic.spark()}${t.watched ? `<span style="color:var(--muted);display:inline-grid">${owl(14)}</span>` : ''}<span>${t.p}</span>`; }
+  threadsPage(g, w) {
+    const gut = this.gutter(w);
+    const cols = this.mode === 'iphone' || this.mode === 'folded' ? 1 : (w >= 820 ? 3 : 2);
+    let body;
+    if (cols === 1) {
+      const row = (t, k) => `<div class="row" data-open="${t.id}"><span class="lt ${k}"></span><div style="min-width:0"><div class="t">${t.t}</div><div class="p">${this.meta(t)}</div></div><span class="age">${t.age}</span></div>`;
+      body = `<div class="sec"><span class="lt warn"></span>Needs you <span class="n">2</span></div>${THREADS.needs.map(t => row(t, 'warn')).join('')}
+        <div class="sec"><span class="lt acc"></span>Working now <span class="n">3</span></div>${THREADS.working.map(t => row(t, 'acc')).join('')}
+        <div class="sec">Recent <span class="n">3</span></div>${THREADS.recent.map(t => row(t, 'idle')).join('')}`;
+    } else {
+      const card = (t, k, word) => `<div class="card ${k === 'warn' ? 'need' : ''}" data-open="${t.id}"><div class="k"><span style="display:flex;gap:6px;align-items:center;color:${k === 'warn' ? 'var(--warntext)' : 'var(--accenttext)'}"><span class="lt ${k}"></span>${word}</span><span style="color:var(--muted);font-weight:400">${t.age} ago</span></div><div class="t">${t.t}</div><div class="p">${this.meta(t)}</div>${t.q ? `<div class="q">${t.q}</div>` : ''}</div>`;
+      const colN = `<div><div class="sec" style="margin-top:0"><span class="lt warn"></span>Needs you <span class="n">2</span></div>${THREADS.needs.map(t => card(t, 'warn', 'Question')).join('')}</div>`;
+      const colW = `<div><div class="sec" style="margin-top:0"><span class="lt acc"></span>Working now <span class="n">3</span></div>${THREADS.working.map(t => card(t, 'acc', 'Working')).join('')}</div>`;
+      const colR = `<div><div class="sec" style="margin-top:0">Recent <span class="n">3</span></div><div class="card" style="padding:4px 4px">${THREADS.recent.map(t => `<div class="row" data-open="${t.id}"><span class="lt idle"></span><div><div class="t">${t.t}</div><div class="p">${t.p}</div></div><span class="age">${t.age}</span></div>`).join('')}</div></div>`;
+      body = `<div class="cols" style="grid-template-columns:repeat(${cols},1fr);margin-top:24px">${cols === 3 ? colN + colW + colR : `<div>${colN.slice(5, -6)}<div style="height:24px"></div>${colR.slice(5, -6)}</div>${colW}`}</div>`;
+    }
+    return `<div class="scroll"><div style="padding:${g.top}px ${gut}px 32px">
+      <div class="h1">Threads</div>
+      <div style="display:flex;gap:10px;margin-top:16px;align-items:center"><div class="search" style="flex:1">${ic.search()} Search threads</div></div>
+      ${body}</div></div>`;
+  }
+  simplePage(g, w, title, rows) {
+    const gut = this.gutter(w);
+    return `<div class="scroll"><div class="read" style="padding:${g.top}px ${gut}px 32px">
+      <div class="h1">${title}</div>
+      <div class="card" style="margin-top:24px;padding:4px 0;cursor:default">${rows.map(([a, b], i) => `<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:56px;padding:0 16px;${i ? 'border-top:1px solid var(--hair)' : ''}"><span style="font-size:16px;font-weight:600">${a}</span><span style="font-size:14px;color:var(--muted);text-align:right">${b}</span></div>`).join('')}</div></div></div>`;
+  }
+  composer(placeholder, extra = {}) { return composerHTML(placeholder, extra, 12); }
+  thread(g, w, t) {
+    const gut = this.gutter(w);
+    const upright = this.mode === 'portrait';
+    return `<div class="scroll"><div class="read" style="padding:${g.top}px ${gut}px 200px">
+      <div class="tbar">${upright || this.mode === 'iphone' ? `<button class="gbtn" data-act="back" aria-label="Back">${ic.back()}</button>` : ''}
+        <div style="min-width:0;flex:1"><div class="ttitle">${t.t}</div><div class="tsub">${this.meta(t)}</div></div>
+        <button class="gbtn" aria-label="More">${ic.more()}</button></div>
+      <div style="height:28px"></div>
+      <div class="me">Make the Duo use the whole screen and put the tabs where my right thumb is.</div>
+      <div class="msg"><div class="who">${ic.spark()} Claude Code</div>I read the rail, the sidebar and Watcher's bar. The prototype has the app edge to edge, the rail on the right with the tabs low, and the sidebar following your thumb upright.</div>
+      <div class="msg">Next I'll put it on a card so you can try it on the Duo before anything changes in the app.</div>
+      <div class="working"><span class="lt acc"></span>Working · 2m 10s</div>
+      </div></div>
+      <div class="dock"><div class="read">${this.composer('Reply to Claude Code')}</div></div>`;
+  }
+  watcher(g, w) {
+    const gut = this.gutter(w);
+    return `<div class="scroll"><div class="read" style="padding:${g.top}px ${gut}px 200px">
+      <div class="hero"><div class="owltile">${owl(28)}</div><div style="font-size:30px;font-weight:700;letter-spacing:-.6px">Watcher</div>
+        <div class="statepill"><span class="lt acc"></span>Working</div></div>
+      <div style="font-size:14px;color:var(--muted);margin:8px 0 0;display:flex;gap:4px;align-items:center">Claude Code · Opus 5.5 on Laptop ${ic.chev()}</div>
+      <div style="height:1px;background:var(--hair);margin:16px 0 24px"></div>
+      <div class="msg"><div class="who">${owl(16)} Watcher · 20:44</div>I sent your Duo request on to the polish thread, with your three screenshots of the reference app.</div>
+      <div class="did"><div class="h"><span>What Watcher did</span><span>20:44</span></div>
+        <div class="t">Duo polish: full screen, thumb rail, swipe sidebar, spacing</div><div class="p">Sent a message · Claude Code on Laptop</div><div class="w"><span class="lt acc"></span>Working</div></div>
+      <div class="me">Can you have Terra do the tasks you need me to do using computer use?</div>
+      <div class="did"><div class="h"><span>What Watcher did</span><span>20:45</span></div>
+        <div class="t">Computer use: add the releases token, remove the test pairing</div><div class="p">Started · Codex on Laptop</div><div class="w"><span class="lt acc"></span>Working</div></div>
+      <div class="working"><span class="lt acc"></span>Watcher is working</div>
+      </div></div>
+      <div class="dock"><div class="read">${this.composer('Ask Watcher while it works')}</div></div>`;
+  }
+  sidebarList(g, overlay) {
+    const s = this.st;
+    const row = (t, k) => `<div class="row ${s.thread === t.id ? 'on' : ''}" data-open="${t.id}"><span class="lt ${k}"></span><div style="min-width:0"><div class="t">${t.t}</div><div class="p">${this.meta(t)}</div></div></div>`;
+    return `<div class="scroll" style="padding-top:${g.top}px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 8px;min-height:44px"><span style="font-size:22px;font-weight:700">Threads</span></div>
+      <div class="sec" style="padding:0 8px"><span class="lt warn"></span>Needs you <span class="n">2</span></div>${THREADS.needs.map(t => row(t, 'warn')).join('')}
+      <div class="sec" style="padding:0 8px"><span class="lt acc"></span>Working now <span class="n">3</span></div>${THREADS.working.map(t => row(t, 'acc')).join('')}
+      <div class="sec" style="padding:0 8px">Recent <span class="n">3</span></div>${THREADS.recent.map(t => row(t, 'idle')).join('')}</div>`;
+  }
+  sheet() {
+    const watcher = this.st.tab === 'watcher';
+    const rows = [['Model', 'Opus 5.5'], ['Effort', 'High'], ['Speed', 'Standard'], ['Permissions', 'Asks first']];
+    return `<div class="sheetwrap" data-act="closeSheet"><div class="sheet" data-stop="1"><div class="grab"></div>
+      <h3>${watcher ? 'Watcher' : 'This thread'}</h3>
+      ${rows.map(([a, b]) => `<div class="srow"><span>${a}</span><span class="v">${b} ›</span></div>`).join('')}
+      ${watcher ? `<div class="srow danger" data-act="stopAll"><span>Stop Watcher’s threads<small>The 2 threads Watcher started. Asks first.</small></span></div>
+      <div class="srow newer" data-act="newWatcher"><span>New Watcher<small>A fresh Watcher on this model and effort.</small></span></div>` : ''}
+    </div></div>`;
+  }
+  toast(text) {
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
+    this.el.appendChild(t); setTimeout(() => t.remove(), 1600);
+  }
+  setDrawer(p, animate) {
+    const d = this.el.querySelector('.drawer'), sc = this.el.querySelector('.scrim'), layer = this.el.querySelector('.drawerlayer');
+    if (!d) return;
+    this.el.classList.toggle('anim', !!animate);
+    d.style.transform = `translateX(${(p - 1) * 340}px)`;
+    sc.style.opacity = p * .4;
+    layer.style.pointerEvents = p > 0 ? 'auto' : 'none';
+    sc.style.pointerEvents = p > 0 ? 'auto' : 'none';
+    const grip = this.el.querySelector('.grip'); if (grip) grip.style.opacity = p > 0 ? 0 : 1;
+  }
+  bind() {
+    const el = this.el;
+    let drag = null, swallow = false;
+    el.addEventListener('pointerdown', e => {
+      if (!this.drawerAllowed || e.target.closest('.dock,.rbtn,.tabpill')) return;
+      drag = {x: e.clientX, y: e.clientY, from: this.st.drawer, on: false, t: performance.now(), lastX: e.clientX, lastT: performance.now(), v: 0};
+    });
+    el.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const dx = (e.clientX - drag.x) / this.scale, dy = (e.clientY - drag.y) / this.scale;
+      if (!drag.on) {
+        if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2 && ((drag.from === 0 && dx > 0) || (drag.from === 1 && dx < 0))) {
+          drag.on = true; try { el.setPointerCapture(e.pointerId); } catch (_) {}
+        } else if (Math.abs(dy) > 12) { drag = null; }
+        return;
+      }
+      e.preventDefault();
+      const now = performance.now();
+      drag.v = ((e.clientX - drag.lastX) / this.scale) / Math.max(1, now - drag.lastT); drag.lastX = e.clientX; drag.lastT = now;
+      drag.p = Math.max(0, Math.min(1, drag.from + dx / 320));
+      this.setDrawer(drag.p, false);
+    });
+    const end = () => {
+      if (drag && drag.on) {
+        const p = drag.p ?? drag.from;
+        const open = Math.abs(drag.v) > 0.4 ? drag.v > 0 : p > 0.5;
+        this.st.drawer = open ? 1 : 0;
+        this.setDrawer(this.st.drawer, true);
+        swallow = true; setTimeout(() => swallow = false, 60);
+        setTimeout(() => this.render(), 320);
+      }
+      drag = null;
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('click', e => {
+      if (swallow) { e.stopPropagation(); return; }
+      const s = this.st;
+      const tab = e.target.closest('[data-tab]');
+      if (tab) {
+        const id = tab.dataset.tab;
+        if (id === s.tab) { if (id === 'threads') s.thread = null; const sc = el.querySelector('.content .scroll'); if (sc) sc.scrollTo({top: 0, behavior: 'smooth'}); if (id !== 'threads' || !s.thread) {} }
+        s.tab = id; s.drawer = 0; this.render(); return;
+      }
+      const open = e.target.closest('[data-open]');
+      if (open) { s.tab = 'threads'; s.thread = open.dataset.open; s.drawer = 0; this.render(); return; }
+      const act = e.target.closest('[data-act]');
+      if (!act) return;
+      const a = act.dataset.act;
+      if (a === 'closeSheet' && e.target.closest('[data-stop]') && !e.target.closest('.srow')) return;
+      if (a === 'side') { if (this.mode === 'portrait') { s.drawer = s.drawer ? 0 : 1; this.setDrawer(s.drawer, true); setTimeout(() => this.render(), 320); } else { if (s.tab === 'threads' && s.thread) s.side = !s.side; else s.sideElse = !s.sideElse; this.render(); } return; }
+      if (a === 'closeDrawer') { s.drawer = 0; this.setDrawer(0, true); setTimeout(() => this.render(), 320); return; }
+      if (a === 'back') { s.thread = null; this.render(); return; }
+      if (a === 'new') { this.toast('New thread opens its sheet here'); return; }
+      if (a === 'pill') { s.sheet = 'pill'; this.render(); return; }
+      if (a === 'type') { this.toast('Typing: the words have the press'); return; }
+      if (a === 'stopAll') { s.sheet = null; this.render(); this.toast('Stop 2 threads? (asks first, as now)'); return; }
+      if (a === 'newWatcher') { s.sheet = null; this.render(); this.toast('New Watcher on Opus 5.5'); return; }
+      if (a === 'closeSheet') { s.sheet = null; this.render(); }
+    });
+  }
+}
+
+function composerHTML(placeholder, extra = {}, gap = 12) {
+  return `<div class="comp">${extra.pic ? '<div class="att"><span></span></div>' : ''}
+    <div class="words" data-act="type">${extra.text ? `<span class="typed">${extra.text}</span>` : placeholder}</div>
+    <div style="height:${gap}px" data-act="type"></div>
+    <div class="crow"><button class="cbtn" aria-label="Add">${ic.plus(18)}</button>
+      <button class="cpill" data-act="pill">${ic.spark()} Opus 5.5 <span class="e">High</span> ${ic.chev()}</button>
+      <span style="flex:1"></span><button class="cbtn" aria-label="Dictate">${ic.mic()}</button><button class="cbtn send" aria-label="Send">${ic.up()}</button></div></div>`;
+}
+
+/* ---------- static before/after pieces ---------- */
+function iconPair() {
+  const before = `<div style="display:flex;gap:4px;padding:6px;background:var(--canvas);border-radius:16px;width:fit-content">${TABS.map(([id], i) => {
+    const on = i === 1;
+    // The system's symbols at 28 keep a margin (about 22 of ink); the owl's image filled all 28.
+    const icon = id === 'watcher' ? owl(28, '0.2 1.1 15.6 14.3') : ic[id](on, 23);
+    return `<span style="width:60px;height:50px;border-radius:10px;display:grid;place-items:center;${on ? 'background:var(--accentsurface);color:var(--accenttext)' : 'color:var(--muted)'}">${icon}</span>`;
+  }).join('')}</div>`;
+  const after = `<div class="tabpill row" style="position:static;width:fit-content;flex-direction:row">${TABS.map(([id], i) => {
+    const on = i === 1;
+    return `<span class="tab ${on ? 'on' : ''}">${ic[id](on)}</span>`;
+  }).join('')}</div>`;
+  return `<div data-theme="${theme}" style="color:var(--ink);background:var(--canvas);padding:16px;border-radius:18px"><span class="tag before">Before</span>${before}<p class="out" style="color:var(--muted)">The owl reads a size larger than the bubble, screen and sliders.</p></div>
+    <div data-theme="${theme}" style="color:var(--ink);background:var(--canvas);padding:16px;border-radius:18px"><span class="tag after">After</span>${after}<p class="out" style="color:var(--muted)">One optical size, one tile, one pill.</p></div>`;
+}
+function compBox(after, id) {
+  // Before: the words end 2 points above the row; the pill's 44-point press area reaches 5 points up into them.
+  const gap = after ? 12 : 2;
+  return `<div data-theme="${theme}" class="cmp ${document.getElementById('hitsBox')?.checked !== false ? 'showhits' : ''}" style="color:var(--ink);background:var(--canvas);padding:20px 16px;border-radius:18px">
+    <span class="tag ${after ? 'after' : 'before'}">${after ? 'After' : 'Before'}</span>
+    <div class="comp" style="margin-top:8px">
+      <div class="words" data-hit="type" style="padding-bottom:${gap}px;color:var(--ink)">The Duo build is in. Tap just above the pill to keep typing here
+        <span class="hit w" style="inset:0 0 ${after ? -0 : 0}px 0"></span></div>
+      <div class="crow"><span class="cbtn">${ic.plus(18)}</span>
+        <span class="cpill" data-hit="pill">${ic.spark()} Opus 5.5 <span class="e">High</span> ${ic.chev()}
+          <span class="hit p" style="left:-2px;right:-2px;top:${after ? -0 : -5}px;bottom:-5px"></span>
+          <span data-hit="pill" style="position:absolute;left:0;right:0;top:${after ? 0 : -5}px;bottom:-5px"></span></span>
+        <span style="flex:1"></span><span class="cbtn">${ic.mic()}</span><span class="cbtn send">${ic.up()}</span></div>
+    </div>
+    <p class="out" id="${id}">Press near the bottom of the words.</p></div>`;
+}
+let boxLines = 1, boxPic = false;
+function workBox(after) {
+  const text = Array.from({length: boxLines}, (_, i) => i ? 'and another line of the reply' : 'Check the Duo build').join('<br>');
+  // Placed once drawn, from the box's real height (placeWork). Before, the page followed its newest words, which end
+  // above the working row, so the row fell under the box; after, it keeps 16 points above the box at any height.
+  return `<div class="wb" data-after="${after ? 1 : 0}" data-theme="${theme}" style="color:var(--ink);background:radial-gradient(120% 80% at 20% 0%,var(--ground2),var(--ground1) 60%,var(--canvas));border-radius:18px;position:relative;height:420px;overflow:hidden">
+    <span class="tag ${after ? 'after' : 'before'}" style="position:absolute;left:14px;top:12px;z-index:2">${after ? 'After' : 'Before'}</span>
+    <div class="wpage" style="position:absolute;left:16px;right:16px;bottom:0">
+      <div class="did" style="margin-bottom:20px"><div class="h"><span>What Watcher did</span><span>20:45</span></div><div class="t">Computer use: add the releases token</div><div class="p">Started · Codex on Laptop</div><div class="w"><span class="lt acc"></span>Working</div></div>
+      <div class="working"><span class="lt acc"></span>Watcher is working</div>
+    </div>
+    <div class="dock" style="padding:0 10px 10px">${composerHTML('', {text, pic: boxPic}, after ? 12 : 2)}</div>
+  </div>`;
+}
+
+/* ---------- mount ---------- */
+const phones = [];
+function figure(grid, cap, mode, tab, thread) {
+  const f = document.createElement('figure');
+  const [W] = {portrait: [680], landscape: [952], folded: [466], iphone: [393]}[mode];
+  f.style.setProperty('--w', W + 'px');
+  f.innerHTML = `<figcaption>${cap}</figcaption><div class="fit"></div>`;
+  grid.appendChild(f);
+  phones.push(new Phone(f.querySelector('.fit'), {mode, tab, thread}));
+}
+function mountOverview() {
+  const dg = document.getElementById('duoGrid'), wg = document.getElementById('watcherGrid');
+  dg.innerHTML = ''; wg.innerHTML = ''; phones.length = 0;
+  figure(dg, 'Unfolded, upright · a thread open (drag right on it)', 'portrait', 'threads', 'w1');
+  figure(dg, 'Unfolded, sideways · Threads', 'landscape', 'threads', null);
+  figure(wg, 'Watcher · unfolded, upright', 'portrait', 'watcher');
+  figure(wg, 'Watcher · unfolded, sideways', 'landscape', 'watcher');
+  figure(wg, 'Watcher · Duo folded', 'folded', 'watcher');
+  figure(wg, 'Watcher · iPhone', 'iphone', 'watcher');
+  drawPairs();
+}
+function drawPairs() {
+  document.getElementById('iconPair').innerHTML = iconPair();
+  document.getElementById('compPair').innerHTML = compBox(false, 'outB') + compBox(true, 'outA');
+  document.getElementById('workPair').innerHTML = workBox(false) + workBox(true);
+  document.querySelectorAll('.wb').forEach(b => {
+    const dock = b.querySelector('.dock').offsetHeight, after = b.dataset.after === '1';
+    b.style.height = 300 + dock + 'px';
+    b.querySelector('.wpage').style.bottom = (after ? dock + 16 : dock - 16) + 'px';
+  });
+}
+document.getElementById('compPair').addEventListener('click', e => {
+  const box = e.target.closest('.cmp'); if (!box) return;
+  const hit = e.target.closest('[data-hit]');
+  const out = box.querySelector('.out');
+  out.textContent = !hit ? 'Missed both.' : hit.dataset.hit === 'pill' ? '⚠ The model picker opened.' : '✓ Typing: the words took the press.';
+});
+document.getElementById('hitsBox').addEventListener('change', drawPairs);
+document.getElementById('addLine').onclick = () => { boxLines = Math.min(5, boxLines + 1); drawPairs(); };
+document.getElementById('addPic').onclick = () => { boxPic = true; drawPairs(); };
+document.getElementById('resetBox').onclick = () => { boxLines = 1; boxPic = false; drawPairs(); };
+function applyTheme() {
+  document.body.classList.toggle('light', theme === 'light');
+  document.getElementById('themeBtn').textContent = theme === 'light' ? 'Dark' : 'Light';
+  phones.forEach(p => p.render()); drawPairs();
+}
+document.getElementById('themeBtn').onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; applyTheme(); };
+let fullPhone = null;
+function goFull() {
+  document.body.classList.add('full');
+  const host = document.createElement('div'); host.id = 'fullHost'; document.body.appendChild(host);
+  fullPhone = new Phone(host, {mode: 'portrait', full: true, tab: 'threads'});
+  const ex = document.getElementById('exitBtn'); ex.classList.remove('quiet'); setTimeout(() => ex.classList.add('quiet'), 3000);
+  history.replaceState(null, '', '?full=1' + (theme === 'light' ? '&theme=light' : ''));
+}
+document.getElementById('fullBtn').onclick = goFull;
+document.getElementById('exitBtn').onclick = () => {
+  document.body.classList.remove('full'); document.getElementById('fullHost')?.remove(); fullPhone = null;
+  history.replaceState(null, '', theme === 'light' ? '?theme=light' : location.pathname);
+  mountOverview();
+};
+let resizeTimer;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (fullPhone) fullPhone.render(); else phones.forEach(p => p.render()); }, 80); });
+document.body.classList.toggle('light', theme === 'light');
+document.getElementById('themeBtn').textContent = theme === 'light' ? 'Dark' : 'Light';
+mountOverview();
+if (FULL) goFull();
+</script>
+</body>
+</html>
