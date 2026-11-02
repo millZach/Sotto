@@ -752,9 +752,13 @@ struct SheetPage<Content: View>: View {
                         .frame(height: 0)
                     }
                 }
-                // Lets the wash out sideways into the Duo's strip, and nothing out above or below the page.
+                // On the Duo the page reaches every edge of the screen (Zach, November 1, 2026): the wash goes out sideways
+                // into the strip or the rail's column, and the page runs on under the status bar, where the fade over it
+                // keeps words off the clock, and under the home indicator, rather than stopping at the safe area and
+                // leaving a band of plain ground above and below it.
                 .scrollClipDisabled(duo.strip.leading + duo.strip.trailing > 0)
-                .clipShape(WiderRect(leading: duo.strip.leading, trailing: duo.strip.trailing))
+                .clipShape(WiderRect(leading: duo.strip.leading, trailing: duo.strip.trailing,
+                                     vertical: duo.strip.leading + duo.strip.trailing > 0 ? 1000 : 0))
                 .onChange(of: topRequest) {
                     withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(sheetPageTop, anchor: .top) }
                 }
@@ -775,8 +779,11 @@ struct SheetPage<Content: View>: View {
 private struct WiderRect: Shape {
     let leading: CGFloat
     let trailing: CGFloat
+    /// How far past its top and bottom edges it reaches too.
+    var vertical: CGFloat = 0
     func path(in rect: CGRect) -> Path {
-        Path(CGRect(x: rect.minX - leading, y: rect.minY, width: rect.width + leading + trailing, height: rect.height))
+        Path(CGRect(x: rect.minX - leading, y: rect.minY - vertical, width: rect.width + leading + trailing,
+                    height: rect.height + vertical * 2))
     }
 }
 

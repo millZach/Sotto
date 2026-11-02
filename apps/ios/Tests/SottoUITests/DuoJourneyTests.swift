@@ -30,22 +30,27 @@ import UIKit
 
     private func byID(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
+    /// The app's own window: on the unfolded Duo the main screen is the folded cover screen, dark while it is open.
     private func capture(_ name: String) {
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
-    /// Turns the Duo and waits for the window to take the turn; skips where this isn't the unfolded Duo held that way.
+    /// Turns the Duo until the window stands the way asked, and skips where this isn't the unfolded Duo held that way.
+    /// The inner screen's own upright is the device's landscape, so each of the device's four orientations is tried.
     private func hold(upright: Bool) throws {
-        XCUIDevice.shared.orientation = upright ? .portrait : .landscapeLeft
         let window = app.windows.firstMatch
-        let turned = NSPredicate { _, _ in
+        func standing() -> Bool {
             let frame = window.frame
             return upright ? frame.height > frame.width : frame.width > frame.height
         }
-        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: turned, object: nil)], timeout: 10)
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft, .landscapeRight, .portraitUpsideDown] where !standing() {
+            XCUIDevice.shared.orientation = orientation
+            let turned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in standing() }, object: nil)
+            _ = XCTWaiter.wait(for: [turned], timeout: 4)
+        }
         let frame = window.frame
         // The unfolded Duo is regular width both ways: wider than any iPhone's 440 points upright, and held sideways
         // taller than any iPhone held sideways (about 440).
@@ -74,17 +79,18 @@ import UIKit
         XCTAssertGreaterThan(plus.frame.minX, window.maxX - 100, "\(stage): New thread on the right edge")
     }
 
-    /// How light the screen is along its top edge, from 0 to 1, read across the page's middle half at the very top.
+    /// How light the app's window is along its top edge, from 0 to 1: two pixel rows a few pixels down from the top,
+    /// across the middle half, clear of the status bar's words at either end.
     private func topLightness() -> CGFloat {
-        let shot = XCUIScreen.main.screenshot().image
-        guard let image = shot.cgImage else { return 0 }
+        guard let image = app.screenshot().image.cgImage else { return 0 }
         let width = image.width, height = image.height
-        // Two pixel rows a few pixels down from the top edge, clear of the status bar's words in the middle.
-        var bytes = [UInt8](repeating: 0, count: width * 4 * 2)
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(data: &bytes, width: width, height: 2, bitsPerComponent: 8, bytesPerRow: width * 4,
+              let context = CGContext(data: nil, width: width, height: 2, bitsPerComponent: 8, bytesPerRow: width * 4,
                                       space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0 }
-        context.draw(image, in: CGRect(x: 0, y: -CGFloat(height) + 2 + 4, width: CGFloat(width), height: CGFloat(height)))
+        // The context's origin is its bottom left: shift the image down so its rows 4 and 5 from the top fill it.
+        context.draw(image, in: CGRect(x: 0, y: CGFloat(6 - height), width: CGFloat(width), height: CGFloat(height)))
+        guard let data = context.data else { return 0 }
+        let bytes = data.bindMemory(to: UInt8.self, capacity: width * 4 * 2)
         var total: CGFloat = 0, count: CGFloat = 0
         for row in 0..<2 {
             for x in stride(from: width / 4, to: width * 3 / 4, by: 4) {
