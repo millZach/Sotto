@@ -37,7 +37,7 @@ BUDGETS = {
     "open.app.time.textview.measure.n": 60,
     # Each paragraph is measured once for its words, text size and width (0.36 a streamed word).
     "stream.per_chunk.time.textview.measure.n": 1.0,
-    # The small reply box lives inside the dock: going small and back draws no part of the conversation (ADR-0179).
+    # The small reply box lives inside the dock: going small and back draws no part of the conversation (ADR-0180).
     "reply-box.app.body.Conversation": 0,
     "reply-box.app.body.MessageView": 0,
     "reply-box.app.textview.update": 0,

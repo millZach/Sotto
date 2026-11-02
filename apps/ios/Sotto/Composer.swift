@@ -11,7 +11,7 @@ import SottoCore
 /// and floats over the conversation (#1946) on `ComposerSurface`. At the accessibility text sizes the pill takes a line of
 /// its own above the buttons.
 ///
-/// While `small`, the **small reply box** (ADR-0179): one row of the +, the prompt text, the mic and Send or Stop. It is
+/// While `small`, the **small reply box** (ADR-0180): one row of the +, the prompt text, the mic and Send or Stop. It is
 /// the same views with nothing laid out again: the card keeps its full room, so neither the dock's height nor the
 /// conversation above it changes (the dock's top is what scrolls and redraws the page), and the words are offset into the
 /// row while the card's top edge comes down. The caret, the words' focus and the sheets the pill opens all stay.
