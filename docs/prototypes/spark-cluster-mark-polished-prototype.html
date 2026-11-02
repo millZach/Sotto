@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Server mark, polished: prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --canvas: #121211; --surface: #1a1a18; --raised: #22221f; --border: #33332e;
+    --text: #ecebe4; --muted: #a3a296; --faint: #6d6c63; --accent: #e8c547; --off: #34342f; --warn: #8a8a80;
+  }
+  :root[data-theme="light"] {
+    --canvas: #f6f5ef; --surface: #ffffff; --raised: #efeee6; --border: #dcdbd2;
+    --text: #1d1d1a; --muted: #5d5c54; --faint: #8f8e85; --accent: #a8820a; --off: #dddcd3; --warn: #77766d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
+  header { display: flex; gap: 8px; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; flex: 1; }
+  button { font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button[aria-pressed="true"] { border-color: var(--accent); }
+  button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; padding: 24px; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  section h2 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  section > p { color: var(--muted); margin: 0 0 14px; font-size: 13px; }
+
+  /* The mark: four square cells, clockwise from the top left. Levels: 3 head, 2 trail, 1 tail, none off. */
+  .mark { display: inline-grid; grid-template-columns: repeat(2, var(--px, 4px)); gap: var(--gap, 1px); flex: none; position: relative; top: var(--nudge, 0); }
+  .mark i { width: var(--px, 4px); height: var(--px, 4px); background: var(--off); transition: background-color var(--fade, 180ms) cubic-bezier(.2, 0, .2, 1), box-shadow var(--fade, 180ms); }
+  .mark i.l3 { background: var(--accent); }
+  .mark i.l2 { background: color-mix(in oklab, var(--accent) 55%, var(--off)); }
+  .mark i.l1 { background: color-mix(in oklab, var(--accent) 25%, var(--off)); }
+  .mark[data-state="idle"] i { background: color-mix(in oklab, var(--muted) 55%, var(--off)); --fade: 420ms; }
+  .mark[data-state="reading"] { --fade: 300ms; }
+  .mark[data-state="writing"] { --fade: 220ms; }
+  .mark[data-state="down"] i { background: transparent; box-shadow: inset 0 0 0 1px var(--warn); }
+  .mark[data-state="down"] i.l3 { background: var(--warn); }
+  .mark[data-state="down"] { --fade: 340ms; }
+
+  .states { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; margin: 0; }
+  .states dt { display: flex; justify-content: center; width: 44px; }
+  .states dd { margin: 0; font-size: 13px; }
+  .states dd small { display: block; color: var(--muted); font-size: 12.5px; }
+
+  .pane { background: var(--canvas); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; height: 420px; }
+  .transcript { flex: 1; padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+  .msg-user { align-self: flex-end; background: var(--raised); border-radius: 10px; padding: 8px 12px; max-width: 75%; font-size: 13px; }
+  .reply { font-size: 13px; max-width: 90%; }
+  .live { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; min-height: 20px; }
+  .live .note { color: var(--faint); font-size: 12.5px; display: block; }
+  .live.failed { color: var(--text); }
+  .composer { margin: 0 12px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 10px 12px 8px; }
+  .composer .ph { color: var(--faint); font-size: 13px; padding-bottom: 10px; }
+
+  .chip { position: relative; display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--raised); font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .chip b { color: var(--text); font-weight: 500; }
+  .sep { color: var(--faint); }
+
+  /* Speed card */
+  .card { position: absolute; left: -1px; bottom: calc(100% + 8px); width: 256px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 12px; text-align: left; cursor: default;
+          font-size: 12.5px; color: var(--muted); box-shadow: 0 8px 24px rgb(0 0 0 / .22); opacity: 0; transform: translateY(2px); pointer-events: none; transition: opacity .12s ease-out, transform .12s ease-out; z-index: 5; }
+  .card[data-open] { opacity: 1; transform: none; }
+  .card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .card .head b { color: var(--text); font-weight: 500; }
+  .card .head span { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .graph { position: relative; height: 26px; margin-bottom: 10px; border-bottom: 1px solid var(--off); display: flex; align-items: flex-end; gap: 1px; }
+  .graph i { width: 3px; flex: none; background: var(--accent); }
+  .graph i.wait { background: none; height: 1px; border-bottom: 1px dotted var(--faint); align-self: flex-end; margin-bottom: -1px; }
+  .graph i.gap { background: var(--off); height: 1px; }
+  .graph .scale { position: absolute; right: 0; top: -1px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; line-height: 1; }
+  .card dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; align-items: baseline; }
+  .card dt { white-space: nowrap; }
+  .card dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .card dd small { color: var(--faint); font-size: 12px; }
+  .card dd.stale { color: var(--faint); }
+  .ctx { display: grid; grid-template-columns: repeat(16, 1fr); gap: 1px; grid-column: 1 / -1; margin-top: -1px; }
+  .ctx i { height: 3px; background: var(--off); }
+  .ctx i.on { background: var(--muted); }
+  .ctx.near i.on { background: var(--accent); }
+
+  footer { padding: 0 24px 24px; color: var(--faint); font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { .mark i, .card { transition: none !important; } }
+  :root.still .mark i, :root.still .card { transition: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Server mark, polished</h1>
+  <button id="theme" aria-pressed="false">Light</button>
+  <button id="still" aria-pressed="false">Reduced motion</button>
+</header>
+<main>
+  <section>
+    <h2>The mark’s states</h2>
+    <p>Trail, polished. Every change eases in; nothing jumps.</p>
+    <dl class="states">
+      <dt><span class="mark" data-demo="idle" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
+      <dd>Idle<small>Dim, still. Settles in slowly when a turn ends.</small></dd>
+      <dt><span class="mark" data-demo="reading" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
+      <dd>Reading the prompt<small>One cell walks round with a short fading tail, at an unhurried pace.</small></dd>
+      <dt><span class="mark" data-demo="writing" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
+      <dd>Writing<small>Each piece of text steps the trail on. It picks up where reading left off, steps at most every 70 ms so a fast burst never blurs to all-lit, and fades out on a stall.</small></dd>
+      <dt><span class="mark" data-demo="down" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
+      <dd>Not answering<small>Hollow. Each try fills one cell, clockwise, then lets it fade: a count you can see.</small></dd>
+      <dt><span class="mark" data-demo="done" style="--px:8px;--gap:2px"><i></i><i></i><i></i><i></i></span></dt>
+      <dd>Done<small>A quick clockwise sweep lights all four, then they fade to idle.</small></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Speed on the model chip</h2>
+    <p>Figures + graph, polished. Play a turn, then hover or focus the model chip.</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button id="play">Play a turn</button>
+      <button id="playDown">Play a turn the server doesn’t answer</button>
+    </div>
+    <div class="pane">
+      <div class="transcript" id="transcript"></div>
+      <div class="composer">
+        <div class="ph">Message the thread…</div>
+        <button class="chip" id="chip" aria-describedby="card" aria-label="Model: DeepSeek V4.1 Flash on Spark Cluster. Opens the model menu.">
+          <span class="mark" id="chipMark" data-state="idle" style="--nudge:-.5px" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>Spark Cluster</b><span class="sep">·</span>DeepSeek V4.1 Flash
+          <span class="card" id="card" role="tooltip">
+            <span class="head"><b id="cardTitle">No turn yet</b><span>spark-head:8888</span></span>
+            <span class="graph" id="graph" aria-hidden="true"></span>
+            <dl>
+              <dt>First word after</dt><dd id="fFirst">–</dd>
+              <dt>Words per second</dt><dd id="fRate">–</dd>
+              <dt>Context used</dt><dd id="fCtx">183k <small>of 256k</small></dd>
+              <span class="ctx" id="ctx" aria-hidden="true"></span>
+            </dl>
+          </span>
+        </button>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>The wait before the first word plays eight times faster than a real one; the card reports the real-time figure. Colours stand in for the Citrine theme; in Sotto each comes from a --tt-* role. Prototype only.</footer>
+<script>
+const root = document.documentElement;
+const still = () => root.classList.contains('still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+const CW = [0, 1, 3, 2];  // clockwise from the top left
+const MIN_STEP = 70;
+
+class Mark {
+  constructor(el) { this.el = el; this.cells = [...el.children]; this.pos = 0; this.timers = []; this.state = 'idle'; this.lastStep = 0; this.pending = 0; }
+  stop() { this.timers.forEach(t => { clearTimeout(t); clearInterval(t); }); this.timers = []; }
+  paint(levels) { this.cells.forEach((c, i) => c.className = levels[i] ? `l${levels[i]}` : ''); }
+  trail() { const lv = [0, 0, 0, 0]; lv[CW[this.pos % 4]] = 3; lv[CW[(this.pos + 3) % 4]] = 2; lv[CW[(this.pos + 2) % 4]] = 1; this.paint(lv); }
+  set(state) {
+    this.stop(); this.state = state; this.el.dataset.state = state;
+    if (state === 'idle' || state === 'down') return this.paint([0, 0, 0, 0]);
+    if (state === 'reading') {
+      if (still()) return this.paint([3, 0, 0, 0]);
+      this.trail(); this.timers.push(setInterval(() => { this.pos++; this.trail(); }, 560));
+    }
+    if (state === 'writing') {
+      if (still()) return this.paint([3, 3, 3, 3]);
+      this.trail();   // carry on from wherever reading was
+    }
+  }
+  chunk() {
+    if (this.state !== 'writing' || still()) return;
+    const now = performance.now(), wait = this.lastStep + MIN_STEP - now;
+    if (wait > 0) { if (!this.pending) { this.pending = 1; this.timers.push(setTimeout(() => { this.pending = 0; this.chunk(); }, wait)); } return; }
+    this.lastStep = now; this.pos++; this.trail();
+    clearTimeout(this.idle);
+    this.idle = setTimeout(() => { if (this.state === 'writing') this.paint(this.cells.map(c => c.className === 'l3' ? 1 : 0)); }, 650);
+  }
+  attempt(n) {
+    if (still()) return;
+    const lv = [0, 0, 0, 0]; lv[CW[(n - 1) % 4]] = 3; this.paint(lv);
+    this.timers.push(setTimeout(() => this.paint([0, 0, 0, 0]), 260));
+  }
+  finish() {
+    this.stop(); this.state = 'done'; this.el.dataset.state = 'writing';
+    if (still()) return this.set('idle');
+    CW.forEach((cell, k) => this.timers.push(setTimeout(() => { this.cells[cell].className = 'l3'; }, k * 45)));
+    this.timers.push(setTimeout(() => this.set('idle'), 4 * 45 + 160));
+  }
+}
+
+for (const el of document.querySelectorAll('[data-demo]')) {
+  const m = new Mark(el), kind = el.dataset.demo;
+  const run = () => {
+    if (kind === 'done') { m.set('writing'); setTimeout(() => m.finish(), 300); setTimeout(run, 2000); return; }
+    m.set(kind);
+    if (kind === 'down') { let n = 0; const t = setInterval(() => m.attempt(++n), 900); setTimeout(() => { clearInterval(t); run(); }, 7200); return; }
+    if (kind === 'writing') {
+      let i = 0;
+      const tick = () => {
+        if (m.state !== 'writing') return;
+        const rate = i < 30 ? 45 : i < 44 ? 12 : i < 48 ? 0 : 60;   // fast, slow, stall, very fast
+        if (rate) m.chunk();
+        if (++i > 90) { run(); return; }
+        setTimeout(tick, rate ? 1000 / (rate / 2) : 220);
+      };
+      tick(); return;
+    }
+    setTimeout(run, 6000);
+  };
+  run();
+}
+
+// The thread pane
+const chipMark = new Mark(document.getElementById('chipMark'));
+const card = document.getElementById('card'), transcript = document.getElementById('transcript');
+let timers = [], live = null, stats = null;
+const later = (ms, f) => timers.push(setTimeout(f, ms));
+const fmt = s => s < 60 ? `${Math.round(s)} s` : `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s`;
+
+function liveLine() {
+  const div = document.createElement('div'); div.className = 'live'; div.setAttribute('role', 'status');
+  div.innerHTML = '<span class="mark" style="--px:5px" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="w"></span>';
+  transcript.appendChild(div);
+  return { el: div, mark: new Mark(div.firstChild), words: div.querySelector('.w') };
+}
+const both = f => { if (live) f(live.mark); f(chipMark); };
+
+function renderCard() {
+  const s = stats;
+  document.getElementById('cardTitle').textContent = !s ? 'No turn yet' : s.state === 'done' ? 'Last turn' : s.state === 'failed' ? 'Last turn didn’t start' : 'This turn';
+  document.getElementById('fFirst').innerHTML = !s ? '–' : s.first !== null ? fmt(s.first) : s.state === 'failed' ? 'No answer' : `<small>waiting</small> ${fmt(s.waited)}`;
+  const rate = document.getElementById('fRate');
+  rate.innerHTML = !s || s.first === null ? '–' : s.state === 'done' ? `${Math.round(s.avg)} <small>average</small>` : s.stalled ? 'Paused' : `${Math.round(s.shown)}`;
+  rate.className = s?.stalled ? 'stale' : '';
+  const graph = document.getElementById('graph'); graph.innerHTML = '';
+  const hist = (s?.hist ?? []).slice(-58);
+  const peak = Math.max(...hist.map(h => h ?? 0), 0), top = Math.max(40, Math.ceil(peak / 20) * 20);  // a scale that only moves in steps of 20
+  hist.forEach(h => { const i = document.createElement('i'); if (h === null) i.className = 'wait'; else if (h === 0) i.className = 'gap'; else i.style.height = `${Math.max(2, Math.round(h / top * 24))}px`; graph.appendChild(i); });
+  if (hist.some(h => h)) { const sc = document.createElement('span'); sc.className = 'scale'; sc.textContent = top; graph.appendChild(sc); }
+}
+const ctx = document.getElementById('ctx');
+for (let i = 0; i < 16; i++) { const c = document.createElement('i'); c.className = i < 11 ? 'on' : ''; ctx.appendChild(c); }  // 183k of 256k
+
+function reset() {
+  timers.forEach(clearTimeout); timers = []; transcript.innerHTML = '';
+  const u = document.createElement('div'); u.className = 'msg-user'; u.textContent = 'Why does cleanup take longer on the first dictation of the day?'; transcript.appendChild(u);
+  live = liveLine(); stats = { state: 'reading', first: null, waited: 0, rate: 0, shown: 0, avg: 0, hist: [], stalled: false };
+}
+const reply = 'The first dictation pays for loading the model into memory on the Sparks. After that the weights stay resident, so later cleanups skip the load and go straight to reading your words. Keeping one small request warm every few minutes would hide most of it.'.split(' ');
+
+function play() {
+  reset(); both(m => m.set('reading')); live.words.textContent = 'Working';
+  const t0 = performance.now(), SCALE = 8;
+  const wait = setInterval(() => { stats.waited = (performance.now() - t0) / 1000 * SCALE; stats.hist.push(null); renderCard(); }, 250); timers.push(wait);
+  later(3750, () => { live.words.innerHTML = 'Still waiting for Spark Cluster to start answering.<span class="note">A long prompt can take a few minutes. The turn stops waiting at 5 minutes.</span>'; });
+  later(5200, () => {
+    clearInterval(wait);
+    stats.first = (performance.now() - t0) / 1000 * SCALE; stats.state = 'writing';
+    both(m => m.set('writing')); live.words.textContent = 'Writing';
+    const p = document.createElement('div'); p.className = 'reply'; transcript.insertBefore(p, live.el);
+    let i = 0, recent = [], bucket = 0, total = 0; const tStart = performance.now();
+    const sample = setInterval(() => {
+      const now = performance.now(); recent = recent.filter(r => now - r.t < 1500);
+      stats.rate = recent.reduce((a, r) => a + r.n, 0) / 1.5;
+      stats.shown = stats.shown ? stats.shown * .6 + stats.rate * .4 : stats.rate;   // eased, so the figure doesn't twitch
+      stats.stalled = recent.length === 0;
+      stats.hist.push(bucket * 4); bucket = 0; renderCard();
+    }, 250); timers.push(sample);
+    const next = () => {
+      if (i >= reply.length) {
+        clearInterval(sample); stats.state = 'done'; stats.stalled = false; stats.avg = total / ((performance.now() - tStart) / 1000);
+        live.el.remove(); live = null; chipMark.finish(); renderCard(); return;
+      }
+      const n = 1 + (Math.random() < .4 ? 1 : 0), words = reply.slice(i, i + n); i += n; total += n; bucket += n;
+      p.textContent += (p.textContent ? ' ' : '') + words.join(' ');
+      recent.push({ t: performance.now(), n }); both(m => m.chunk());
+      later(i > 18 && i < 21 ? 1700 : 40 + Math.random() * 50, next);
+    };
+    next();
+  });
+}
+
+function playDown() {
+  reset(); both(m => m.set('reading')); live.words.textContent = 'Working';
+  later(1200, () => {
+    both(m => m.set('down')); let n = 0;
+    const tryOnce = () => {
+      n++; both(m => m.attempt(n));
+      live.words.innerHTML = `Spark Cluster isn’t answering. Trying again (${n} of 10). <button style="margin-left:6px;padding:2px 8px;font-size:12px">Stop</button>`;
+      if (n < 10) later(800, tryOnce);
+      else later(900, () => {
+        live.el.className = 'live failed';
+        live.words.innerHTML = '<span><strong>Spark Cluster didn’t answer.</strong> Nothing in the thread was lost.</span>';
+        stats.state = 'failed'; renderCard();
+      });
+    };
+    tryOnce();
+  });
+}
+document.getElementById('play').onclick = play;
+document.getElementById('playDown').onclick = playDown;
+
+const chip = document.getElementById('chip'); let hover;
+const open = v => { renderCard(); v ? card.setAttribute('data-open', '') : card.removeAttribute('data-open'); };
+chip.addEventListener('pointerenter', () => { hover = setTimeout(() => open(true), 300); });
+chip.addEventListener('pointerleave', () => { clearTimeout(hover); if (!chip.matches(':focus-visible')) open(false); });
+chip.addEventListener('focus', () => { if (chip.matches(':focus-visible')) open(true); });
+chip.addEventListener('blur', () => open(false));
+chip.addEventListener('keydown', e => { if (e.key === 'Escape') open(false); });
+
+document.getElementById('theme').onclick = e => { const l = root.dataset.theme !== 'light'; root.dataset.theme = l ? 'light' : ''; e.target.setAttribute('aria-pressed', l); };
+document.getElementById('still').onclick = e => e.target.setAttribute('aria-pressed', root.classList.toggle('still'));
+renderCard();
+</script>
+</body>
+</html>
