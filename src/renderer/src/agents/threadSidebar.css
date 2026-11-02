@@ -254,7 +254,11 @@
   :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }
 }
 .thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; padding: 9px 10px; row-gap: 5px; width: 100%; }
-.thread-nav__row--details .thread-nav__title { font-size: var(--tt-type-body); line-height: 1.4; }
+.thread-nav__row--details .thread-nav__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+/* A title may take two lines; the ring and the clock stay on its first. */
+.thread-nav__row--details :is(.thread-nav__ring, .thread-nav__time) { align-self: start; }
+.thread-nav__row--details .thread-nav__ring { margin-top: calc((var(--tt-type-body) * 1.4 - 10px) / 2); }
+.thread-nav__row--details .thread-nav__time { line-height: calc(var(--tt-type-body) * 1.4); }
 .thread-nav__row--details .thread-nav__time { display: block; visibility: visible; }
 .thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after it. */
@@ -319,7 +323,6 @@
 }
 @container thread-sidebar (min-width: 340px) {
   .thread-nav__branch { display: flex; }
-  .thread-nav__row--details .thread-nav__title { white-space: normal; overflow-wrap: anywhere; }
   .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__metadata { padding-right: 0; }
   .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__status { visibility: visible; max-width: 70%; }
 }
