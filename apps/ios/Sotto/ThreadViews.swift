@@ -703,7 +703,7 @@ private struct Conversation: View {
         let grew = abs(inPage - follow.endInPage) > 0.5
         follow.sentinel = end
         follow.endInPage = inPage
-        if wasAtBottom, grew, end > follow.dockTop + FollowBox.slack {
+        if wasAtBottom, grew, !ProcessInfo.processInfo.arguments.contains("--diag-no-fix"), end > follow.dockTop + FollowBox.slack { // [DEBUG-snap]
             toBottom(scroll)
         } else {
             follow.settle()

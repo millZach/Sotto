@@ -526,9 +526,11 @@ import UIKit
     /// accessibility frame lagged its layout by up to thousands of points.
     func testAThreadWithPicturesStaysAtItsEnd() { picturesStayAtTheEnd(streaming: false) }
     func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
+    // [DEBUG-snap] The same build without the fix, expected to fail.
+    func testDiagWithoutTheFix() { picturesStayAtTheEnd(streaming: false, ["--diag-no-fix"]) }
 
-    private func picturesStayAtTheEnd(streaming: Bool) {
-        launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []))
+    private func picturesStayAtTheEnd(streaming: Bool, _ diag: [String] = []) {
+        launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []) + diag)
         let thread = row("drives")
         reveal(thread)
         thread.tap()

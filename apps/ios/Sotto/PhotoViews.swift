@@ -120,7 +120,7 @@ struct SentPhotoView: View {
     var body: some View {
         // A photo already in memory takes its own shape on its first layout, so a row made again as it scrolls back into
         // view keeps its height rather than growing from the placeholder under the reader.
-        let shown = image ?? previews.cached(key)
+        let shown = image ?? (ProcessInfo.processInfo.arguments.contains("--diag-no-fix") ? nil : previews.cached(key)) // [DEBUG-snap]
         Group {
             if let shown {
                 Image(decorative: shown, scale: 1).resizable().scaledToFill()
