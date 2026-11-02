@@ -6,7 +6,7 @@
 /* The ghost's words are suggestion ink, muted ink let through at 55%: words nobody has typed yet read as unaccepted, the
    way Claude Code's desktop draws them (Drake's ask, October 24, 2026). It stands outside the 4.5:1 text pairs
    (paintedTextPairs.ts) because speech hears it in the prompt's description. The placeholder it replaces stays solid
-   muted ink (threads.css, #1819), and the keycap below keeps solid muted ink. */
+   placeholder ink (threads.css, #1819), and the keycap below keeps solid muted ink. */
 .prompt-editor__ghost { color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); pointer-events: none; user-select: none; }
 .prompt-editor__ghost-key { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 8px; padding: 0 5px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-tag); color: var(--tt-text-muted); font-family: inherit; font-size: var(--tt-type-micro); font-weight: 600; line-height: 1; vertical-align: 1px; }
 

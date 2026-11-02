@@ -237,11 +237,11 @@
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt .prompt-editor { display: block; width: 100%; min-height: 36px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-reading); line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-/* The placeholder is muted ink, as every other field's is, and reads at 4.5:1 on the composer card in every theme
+/* The placeholder takes placeholder ink, as every other field's does, and reads at 4.5:1 on the composer card in every theme
    (paintedTextPairs.ts). While a turn runs it is the only thing that says what typing will do ("Queued until you answer
    the card"), so it is text, not decoration (#1819). The next prompt's ghost keeps its translucent ink (nextPrompt.css).
-   It is the hint tier (tokens.css), muted ink drawn from the theme's own Muted text role, so it never takes the body
-   text's colour. */
+   It is the hint tier (tokens.css), drawn from the theme's own Placeholder role, so it never takes the body text's
+   colour. */
 .prompt-editor { --placeholder-ink: var(--tt-text-hint); white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-editor p { margin: 0; }
 .prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--placeholder-ink); float: left; height: 0; pointer-events: none; }
