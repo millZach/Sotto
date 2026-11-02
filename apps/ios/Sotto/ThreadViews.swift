@@ -484,6 +484,10 @@ private struct Conversation: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "thread-end"
+    #if DEBUG
+    /// The simulator journeys that pass `--ui-end-probe` read where the conversation's end sits from `EndProbe`.
+    private static let probesEnd = ProcessInfo.processInfo.arguments.contains("--ui-end-probe")
+    #endif
 
     var body: some View {
         let _ = BenchProbe.body("Conversation")
@@ -509,6 +513,9 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
             .background(barReader)
+            #if DEBUG
+            .overlay(alignment: .topLeading) { if Self.probesEnd { EndProbe(follow: follow) } }
+            #endif
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
@@ -735,6 +742,24 @@ private struct Conversation: View {
         }
     }
 }
+
+#if DEBUG
+/// The conversation's end, the reply box's top and the bar's bottom, in points from the top of the screen, as one label
+/// the simulator journeys read: in a long page an element's accessibility frame can lag its layout by thousands of
+/// points. It reads the page's place ten times a second and holds no state of the page's, so the page draws as it would
+/// without it. Drawn all but invisibly, so it stays in the accessibility tree.
+private struct EndProbe: View {
+    let follow: FollowBox
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            let words = [follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
+                .joined(separator: " ")
+            Text(verbatim: words).font(.system(size: 2)).opacity(0.02).allowsHitTesting(false)
+                .accessibilityIdentifier("thread-end-probe").accessibilityLabel(Text(verbatim: words))
+        }
+    }
+}
+#endif
 
 extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
