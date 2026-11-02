@@ -29,7 +29,6 @@ const EXCEPTIONS: readonly { readonly sheet: string; readonly declaration: strin
   // The floating widget keeps its look: its shape is Zach's to decide (ADR-0110), and these have no step at their size.
   { sheet: 'widget/widget.css', declaration: 'border-radius: 3px', reason: 'The resting sliver is 6px thick and its ends are round; the mark step would square them.' },
   { sheet: 'widget/widget.css', declaration: 'border-radius: 12px', reason: 'The upright sliver\'s open prompt; the inset step would round it 2px less.' },
-  { sheet: 'widget/widget.css', declaration: 'font-size: 9px', reason: 'The capsule\'s Esc key; the micro step would grow it 2px inside the capsule\'s fixed width.' },
   { sheet: 'widget/widget.css', declaration: 'font-size: 10px', reason: 'The upright sliver\'s prompt, wrapped inside 76px; the micro step would grow it 1px.' },
   { sheet: 'widget/widget.css', declaration: 'font-size: 10.5px', reason: 'The capsule\'s timer, inside the capsule\'s fixed width.' },
   { sheet: 'widget/widget.css', declaration: 'font-size: 11.5px', reason: 'The capsule\'s status line, which the capsule\'s fixed width is measured to hold.' },
