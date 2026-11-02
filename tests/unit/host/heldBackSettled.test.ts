@@ -1,11 +1,11 @@
 // @vitest-environment node
 /**
  * Which settled threads a phone that accepts `settled-threads-on-request` is not sent with its list, and how it reads
- * them a page at a time (ADR-0028, November 1 part 2). The owner's laptop held 584 settled threads of 632; the phone
- * shows them only on the Settled shelf, so it is sent this week's and reads older ones when the user asks.
+ * them a page at a time (ADR-0028, November 1 part 2). The owner's laptop held 625 settled threads of 632; the phone
+ * shows them only on the Settled shelf, so it is sent none of them and reads the shelf when the user asks.
  */
 import { describe, expect, it } from 'vitest'
-import { heldBackSettled, settledPage, SETTLED_KEPT_MS } from '../../../src/host/heldBackSettled'
+import { heldBackSettled, settledPage } from '../../../src/host/heldBackSettled'
 import type { AgentProject, AgentRequest, AgentThread } from '../../../src/shared/agents'
 
 const NOW = Date.parse('2026-11-01T12:00:00.000Z')
@@ -16,23 +16,23 @@ const asking = [{ id: 'q', kind: 'question' }] as unknown as AgentRequest[]
 const projects: AgentProject[] = [{ id: 'p', title: 'Sotto', path: 'C:/sotto' }, { id: 'shelved', title: 'Shelved', path: 'C:/shelved', workspaceSettledAt: ago(40) }]
 
 describe('settled threads held back from a phone', () => {
-  it('holds back a thread settled more than a week ago, and keeps one settled this week and every open one', () => {
-    const threads = [thread('open'), thread('this-week', { settledAt: ago(2) }), thread('old', { settledAt: ago(30) }),
+  it('holds back every settled thread, however recently settled, and keeps every open one', () => {
+    const threads = [thread('open'), thread('just-now', { settledAt: new Date(NOW - 1000).toISOString() }), thread('old', { settledAt: ago(30) }),
       thread('archived', { archivedAt: ago(30) }), thread('workspace', { workspaceSettledAt: ago(9) }),
-      thread('in-shelved-project', { projectId: 'shelved' }), thread('edge', { settledAt: new Date(NOW - SETTLED_KEPT_MS + 1000).toISOString() })]
-    expect([...heldBackSettled(threads, projects, { now: NOW, kept: new Set() })].sort()).toEqual(['archived', 'in-shelved-project', 'old', 'workspace'])
+      thread('in-shelved-project', { projectId: 'shelved' })]
+    expect([...heldBackSettled(threads, projects, new Set())].sort()).toEqual(['archived', 'in-shelved-project', 'just-now', 'old', 'workspace'])
   })
 
   it('keeps a settled thread made active again, and one settled with no time named is held back', () => {
     const threads = [thread('reopened', { settledAt: ago(30), settledOverride: 'active' }), thread('untimed', { settledOverride: 'settled' })]
-    expect([...heldBackSettled(threads, projects, { now: NOW, kept: new Set() })]).toEqual(['untimed'])
+    expect([...heldBackSettled(threads, projects, new Set())]).toEqual(['untimed'])
   })
 
-  it('keeps an old settled thread that asks the user something, every thread it was delegated from, and one the phone has open', () => {
+  it('keeps a settled thread that asks the user something, every thread it was delegated from, and one the phone keeps', () => {
     const threads = [thread('top', { settledAt: ago(30) }), thread('middle', { settledAt: ago(30), delegatedBy: 'top' }),
       thread('asks', { settledAt: ago(30), delegatedBy: 'middle', requests: asking }), thread('open-here', { settledAt: ago(30) }),
       thread('quiet', { settledAt: ago(30) })]
-    expect([...heldBackSettled(threads, projects, { now: NOW, kept: new Set(['open-here']) })]).toEqual(['quiet'])
+    expect([...heldBackSettled(threads, projects, new Set(['open-here']))]).toEqual(['quiet'])
   })
 
   it('reads held-back threads newest settled first, a page at a time, and finds them by title or project', () => {

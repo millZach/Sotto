@@ -1,8 +1,8 @@
 import XCTest
 @testable import SottoCore
 
-/// `settled-threads-on-request` (ADR-0028's November 1 amendment, part 2): a computer sends this phone its open threads and
-/// those settled this week, says how many it left out, and the Settled shelf reads the rest a page at a time.
+/// `settled-threads-on-request` (ADR-0028's November 1 amendment, part 2): a computer sends this phone only threads that
+/// are not settled, says how many it left out, and the Settled shelf reads those a page at a time.
 final class SettledShelfTests: XCTestCase {
     private func record(_ id: String, settledAt: String? = nil, title: String? = nil) -> String {
         let settled = settledAt.map { #","settledAt":"\#($0)""# } ?? ""
@@ -59,14 +59,12 @@ final class SettledShelfTests: XCTestCase {
         XCTAssertTrue(rows.allSatisfy(\.settled))
         XCTAssertEqual(ThreadGroups.older([laptop, forge], read: read, show: .only("laptop")).map(\.thread.id), ["old"])
     }
-    func testListedSettledRowsSplitIntoThisWeekAndOlderByWhenEachWasSettled() throws {
-        let now = try XCTUnwrap(Stamp.date("2026-11-01T12:00:00Z"))
-        let threads = try summaries([record("fresh", settledAt: "2026-10-30T12:00:00Z"), record("open-here", settledAt: "2026-09-01T00:00:00Z"),
-                                     record("untimed")])
-        let rows = ThreadGroups.hosted(ComputerThreads(hostID: "laptop", name: "Laptop", status: .online, threads: threads, projects: []))
-        let split = ThreadGroups.thisWeek(rows, now: now)
-        XCTAssertEqual(split.thisWeek.map(\.thread.id), ["fresh", "untimed"])
-        XCTAssertEqual(split.older.map(\.thread.id), ["open-here"])
+    func testListedAndReadSettledRowsShowAsOneListNewestSettledFirst() throws {
+        let threads = try summaries([record("settled-here", settledAt: "2026-10-31T12:00:00Z"), record("open-here", settledAt: "2026-09-01T00:00:00Z")])
+        let listed = ThreadGroups.hosted(ComputerThreads(hostID: "laptop", name: "Laptop", status: .online, threads: threads, projects: []))
+        let read = ThreadGroups.older([ComputerThreads(hostID: "laptop", name: "Laptop", status: .online, threads: threads, projects: [])],
+                                      read: ["laptop": try summaries([record("read", settledAt: "2026-10-20T00:00:00Z")])])
+        XCTAssertEqual(ThreadGroups.newestSettledFirst(listed + read).map(\.thread.id), ["settled-here", "read", "open-here"])
     }
     func testASearchKeepsWhereEachComputersNextMatchesStart() {
         let search = SettledSearch(query: "billing", found: [:], next: ["laptop": "1:a"])

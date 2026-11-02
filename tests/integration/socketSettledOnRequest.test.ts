@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * A phone that accepts `settled-threads-on-request` is sent its open threads and those settled this week, and reads
- * older settled threads with `settled-threads` when the user opens them or searches (ADR-0028, November 1 part 2).
+ * A phone that accepts `settled-threads-on-request` is sent only threads that are not settled, and reads settled ones
+ * with `settled-threads` when the user opens the Settled shelf or searches (ADR-0028, November 1 part 2).
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { SocketFrames } from '../../src/host/socketFrames'
@@ -16,7 +16,7 @@ afterEach(() => { for (const frames of raws.splice(0)) frames.close() })
 const ago = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString()
 interface Listed { host: { threads: AgentThread[] }; settledHeldBack?: number }
 
-/** Three threads settled long ago, one this week, beside the provider's open ones. */
+/** Three threads settled long ago, one two days ago, beside the provider's open ones. */
 async function settledThreads(): Promise<void> {
   await expect.poll(() => fixture.host.service.shell().host.threads.length).toBeGreaterThan(1)
   const native = fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
@@ -41,14 +41,13 @@ const OLDER = ['Billing reconcile', 'Owl stars', 'Billing export']
 const PROVIDERS = ['provider-opencode', 'provider-cursor']
 
 describe('settled threads on request', () => {
-  it('leaves threads settled before this week out of the list, and says how many it left out', async () => {
+  it('leaves every settled thread out of the list, however recently settled, and says how many it left out', async () => {
     await settledThreads()
     const whole = fixture.host.service.shell().host.threads.length
     const held = await phone([...PROVIDERS, 'settled-threads-on-request'])
-    expect(held.titles(held.hello)).toContain('This week')
-    for (const title of OLDER) expect(held.titles(held.hello)).not.toContain(title)
-    expect(held.hello.host.threads).toHaveLength(whole - 3)
-    expect(held.hello.settledHeldBack).toBe(3)
+    for (const title of [...OLDER, 'This week']) expect(held.titles(held.hello)).not.toContain(title)
+    expect(held.hello.host.threads).toHaveLength(whole - 4)
+    expect(held.hello.settledHeldBack).toBe(4)
     // A client that did not accept it is sent every thread, as before, and no count.
     const older = await phone(PROVIDERS)
     expect(older.hello.host.threads).toHaveLength(whole)
@@ -59,9 +58,9 @@ describe('settled threads on request', () => {
     await settledThreads()
     const held = await phone([...PROVIDERS, 'settled-threads-on-request'])
     const first = await held.call('first', { op: 'settled-threads', limit: 2 }) as { result: { threads: AgentThread[]; next: string | null } }
-    expect(first.result.threads.map(thread => thread.title)).toEqual(['Owl stars', 'Billing reconcile'])
+    expect(first.result.threads.map(thread => thread.title)).toEqual(['This week', 'Owl stars'])
     const second = await held.call('second', { op: 'settled-threads', limit: 2, after: first.result.next }) as { result: { threads: AgentThread[]; next: string | null } }
-    expect(second.result.threads.map(thread => thread.title)).toEqual(['Billing export'])
+    expect(second.result.threads.map(thread => thread.title)).toEqual(['Billing reconcile', 'Billing export'])
     expect(second.result.next).toBeNull()
     const found = await held.call('found', { op: 'settled-threads', query: 'billing' }) as { result: { threads: AgentThread[] } }
     expect(found.result.threads.map(thread => thread.title)).toEqual(['Billing reconcile', 'Billing export'])
@@ -76,7 +75,26 @@ describe('settled threads on request', () => {
     await held.call('read', { op: 'shell' })
     const read = held.messages.find(message => message.id === 'read') as { result: Listed }
     expect(held.titles(read.result)).toContain('Owl stars')
-    expect(read.result.settledHeldBack).toBe(2)
+    expect(read.result.settledHeldBack).toBe(3)
+  })
+
+  it('keeps a thread settled while the phone is connected in its list until it connects again', async () => {
+    await settledThreads()
+    const held = await phone([...PROVIDERS, 'settled-threads-on-request'])
+    const native = fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
+    const open = native.state.threads[0]!
+    expect(held.titles(held.hello)).toContain(open.title)
+    native.state.threads = native.state.threads.map(thread => thread.id === open.id ? { ...thread, title: 'Settled here', settledAt: new Date().toISOString() } : thread)
+    native.emit()
+    await expect.poll(() => fixture.host.service.shell().host.threads.find(thread => thread.title === 'Settled here')?.settledAt).toBeTruthy()
+    // Still listed, so Undo puts it back at once; the next connect leaves it out.
+    await held.call('read', { op: 'shell' })
+    const read = held.messages.find(message => message.id === 'read') as { result: Listed }
+    expect(held.titles(read.result)).toContain('Settled here')
+    expect(read.result.settledHeldBack).toBe(4)
+    const again = await phone([...PROVIDERS, 'settled-threads-on-request'])
+    expect(again.titles(again.hello)).not.toContain('Settled here')
+    expect(again.hello.settledHeldBack).toBe(5)
   })
 
   it('refuses the read to a client that did not accept the feature', async () => {

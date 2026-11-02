@@ -3,18 +3,15 @@ import { isThreadSettled, isWorkspaceThreadSettled } from '../shared/threadActiv
 
 /**
  * Settled threads a phone is not sent with its list (`settled-threads-on-request`, ADR-0028's November 1 amendment, part
- * 2). The iPhone shows settled threads only on its Settled shelf, and on the owner's laptop they were 584 of 632 threads:
- * 1.4 MB of every hello. A phone that accepts the feature is sent the threads settled in the last `SETTLED_KEPT_MS`, so
- * what was just settled stays on it and Undo never waits, and reads the rest with `settled-threads` when the user opens
- * them or searches.
+ * 2). The iPhone shows settled threads only on its Settled shelf, and on the owner's laptop they were 625 of 632 threads:
+ * 1.4 MB of every hello. A phone that accepts the feature is sent only what is not settled, and reads the shelf with
+ * `settled-threads` when the user opens it or searches.
  *
  * Settled is read as the iPhone reads it (`ThreadGroups.isSettled`): the thread's or its project's workspace grouping, an
- * archive, or the provider's own settlement unless the thread was made active again. A thread is held back only when it
- * was settled before the window, asks the user nothing, is not open on the phone, and is not a thread one that asks the
- * user something was delegated from, so Needs you and an open thread read as before. One settled with no time named is
- * taken as settled long ago.
+ * archive, or the provider's own settlement unless the thread was made active again. A settled thread is held back unless
+ * it asks the user something, is a thread one that asks was delegated from, or is one the caller keeps (open on the phone,
+ * or already in its list this connection), so Needs you and an open thread read as before.
  */
-export const SETTLED_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 
 /** The most threads one `settled-threads` read returns, and how many it returns when it names none. */
 export const SETTLED_PAGE_MAX = 50
@@ -31,8 +28,8 @@ export function settledSince(thread: AgentThread, project: Pick<AgentProject, 'w
   return times.length ? Math.max(...times) : Number.NEGATIVE_INFINITY
 }
 
-/** The IDs of the threads a phone is not sent: settled before the window, and none of the threads it must keep. */
-export function heldBackSettled(threads: readonly AgentThread[], projects: readonly AgentProject[], { now, kept }: { now: number; kept: ReadonlySet<string> }): Set<string> {
+/** The IDs of the threads a phone is not sent: settled, and none of the threads it must keep. */
+export function heldBackSettled(threads: readonly AgentThread[], projects: readonly AgentProject[], kept: ReadonlySet<string>): Set<string> {
   const byProject = new Map(projects.map(project => [project.id, project]))
   const byId = new Map(threads.map(thread => [thread.id, thread]))
   const keep = new Set(kept)
@@ -45,8 +42,7 @@ export function heldBackSettled(threads: readonly AgentThread[], projects: reado
   const held = new Set<string>()
   for (const thread of threads) {
     if (keep.has(thread.id)) continue
-    const since = settledSince(thread, byProject.get(thread.projectId))
-    if (since !== null && since < now - SETTLED_KEPT_MS) held.add(thread.id)
+    if (settledSince(thread, byProject.get(thread.projectId)) !== null) held.add(thread.id)
   }
   return held
 }

@@ -162,8 +162,8 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
     /// which puts the whole list back (`ThreadRecordsCache`).
     public var threadRecords: ChangedThreadRecords? = nil
-    /// How many settled threads the computer's list leaves out, from a host that sends this phone only the threads settled
-    /// this week (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
+    /// How many settled threads the computer's list leaves out, from a host that sends this phone only threads that are
+    /// not settled (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
     public let settledHeldBack: Int?
     private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, settledHeldBack }
     public init(from decoder: Decoder) throws {

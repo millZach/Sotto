@@ -369,22 +369,30 @@ Replaying the laptop's captured hello through the listener, a phone connect fell
 7,994 KB to 4,277 KB with a `shell` read; hello from 2,768 KB to 1,978 KB and the first push from 1,742 KB to 279 KB. The
 replay's before matched the installed laptop's within 1% (`docs/perf/2026-11-01-phone-connect-size.md`).
 
-### Part 2: a phone is sent this week's settled threads, and reads older ones when asked
+### Part 2: a phone is sent only threads that are not settled, and reads the Settled shelf when asked
 
 After the first part, hello still listed every thread record: 1.48 MB of the laptop's 1,978 KB, for 632 threads of which
-584 were settled. The iPhone shows a settled thread only on its Settled shelf, folded until opened. The owner chose, from
-three mock-ups (tag `prototype/ios-settled-shelf`, variant C), to keep the threads settled in the last seven days on the
-phone, so the shelf opens at once and Settle's Undo never waits, and to read older ones from the computer when the shelf
-asks for them, and when Threads is searched, a moment after typing stops.
+625 were settled. The iPhone shows a settled thread only on its Settled shelf, folded until opened. The owner first chose,
+from three mock-ups (tag `prototype/ios-settled-shelf`, variant C), to keep the threads settled in the last seven days on
+the phone and read older ones when asked. Measured, the week was 122 of the laptop's settled threads, 256 KB of a 785 KB
+hello at about 2.1 KB a record, and the owner settles well over 50 a week, so he dropped it the same day: **only threads
+that are not settled are sent on connect**. The shelf and Threads' search read settled threads from the computer.
 
-**To a phone that accepts `settled-threads-on-request`, every shell holds back the threads settled before this week**,
-and says how many in `settledHeldBack` (`heldBackSettled.ts`). A thread that asks the user something is never held back,
-nor any thread above it in its delegation, so Needs you reads as before; nor one the phone observes or has selected, so
-a thread opened from the shelf stays in its list while it is open. The iPhone keeps the older threads it read beside its
-lists, so a thread opened from them is open before its computer lists it, and a new connection reads them afresh but for
-the one open. **`settled-threads` reads the held-back threads a page at a time**, newest settled first, matching a search
-when it names one. The settled time is the latest any settlement names, as the iPhone's `isSettled` reads settlement.
+**To a phone that accepts `settled-threads-on-request`, every shell holds back its settled threads**, and says how many
+in `settledHeldBack` (`heldBackSettled.ts`). What stays is what the phone needs to read correctly: a thread that asks the
+user something, and every thread above it in its delegation, so Needs you reads as before; one the phone observes or has
+selected, so a thread opened from the shelf stays in its list while it is open; and **every thread its list has carried
+since hello**, so a thread settled while the phone is connected, from the phone or anywhere else, stays where Settle's
+Undo puts it straight back, until the phone connects again. **`settled-threads` reads the held-back threads a page at a
+time**, newest settled first, matching a search when it names one. The settled time is the latest any settlement names,
+as the iPhone's `isSettled` reads settlement.
 
-On the laptop's replayed hello, the list kept 156 of 632 records (149 settled this week) and held back 476: hello fell
-from 1,978 KB to 832 KB, a connect from 2,257 KB to 1,109 KB, and with a `shell` read from 4,277 KB to 1,982 KB. From
-before either part, a connect fell from 4,510 KB to 1,109 KB (`docs/perf/2026-11-01-phone-connect-size.md`).
+The iPhone's shelf keeps its count, which the computer's `settledHeldBack` makes whole. Opened, it reads the first 30
+from each computer, shows them with any settled thread its lists carry as one list, newest settled first, and **Show 30
+more** reads the next. Threads' search asks each computer for the settled threads that match, a moment after typing
+stops. The iPhone keeps what it read beside its lists, so a thread opened from them is open before its computer lists
+it, and a new connection reads them afresh but for the one open.
+
+On the laptop's replayed shell, the list keeps 7 of 632 records and holds back 625. Against the week kept, measured the
+same hour: hello fell from 785 KB to 529 KB, a connect from 1,062 KB to 806 KB, and with a `shell` read from 1,887 KB to
+1,376 KB. From before either part, a connect fell from 4,510 KB to 806 KB (`docs/perf/2026-11-01-phone-connect-size.md`).

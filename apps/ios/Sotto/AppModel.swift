@@ -1260,14 +1260,14 @@ struct RailAsk: Equatable {
     @Published private(set) var computers: [SavedComputer] = [] { didSet { listed = Listed() } }
     @Published private(set) var live: [String: Live] = [:] { didSet { listed = Listed() } }
     @Published private(set) var selected: ThreadRef?
-    /// The Settled shelf's older threads read from each computer so far (`settled-threads-on-request`), and whether a
-    /// read is under way or the last one failed.
+    /// The Settled shelf's threads read from each computer so far (`settled-threads-on-request`), and whether a read is
+    /// under way or the last one failed.
     @Published private(set) var olderSettled: [String: OlderSettled] = [:]
     @Published private(set) var olderSettledReading = false
     @Published private(set) var olderSettledFailed = false
-    /// What Threads' search last asked the computers for among their older settled threads, and what each found.
+    /// What Threads' search last asked the computers for among their held-back settled threads, and what each found.
     @Published private(set) var settledSearch = SettledSearch()
-    /// A thread opened here that its computer's list does not carry yet, such as an older settled one from a notification.
+    /// A thread opened here that its computer's list does not carry yet, such as a settled one from a notification.
     /// It stays open until the list carries it, which it does once the computer hears it is open.
     private var openedUnlisted: ThreadRef?
     /// What the thread lists work out from `computers` and `live`, kept until either changes. The Threads list, the tab
@@ -2267,33 +2267,34 @@ struct RailAsk: Equatable {
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }
 
-    // MARK: The Settled shelf's older threads
+    // MARK: The Settled shelf's threads read from the computers
 
     func offersOlderSettled(_ hostID: String) -> Bool { live[hostID]?.features.contains(Wire.settledThreadsFeature) == true }
     /// How many settled threads the computers the strip admits left out of their lists.
     func settledHeldBack(show: ComputerFilter) -> Int {
         computers.filter { show.admits($0.hostID) }.reduce(0) { $0 + (live[$1.hostID]?.shell?.settledHeldBack ?? 0) }
     }
-    /// The computers whose older settled threads can be read now: admitted, reachable, offering the read, holding some back.
+    /// The computers whose settled threads can be read now: admitted, reachable, offering the read, holding some back.
     func settledSources(show: ComputerFilter) -> [String] {
         computers.map(\.hostID).filter { show.admits($0) && online($0) && offersOlderSettled($0) && (live[$0]?.shell?.settledHeldBack ?? 0) > 0 }
     }
-    /// The older settled threads read so far, as the shelf's rows.
+    /// The settled threads read so far, as the shelf's rows.
     func olderSettledRows(show: ComputerFilter) -> [HostedThread] {
         ThreadGroups.older(lists, read: olderSettled.mapValues(\.threads), show: show)
     }
-    /// Whether a computer the strip admits has older settled threads it has not sent yet.
+    /// Whether a computer the strip admits has settled threads it has not sent yet.
     func moreOlderSettled(show: ComputerFilter) -> Bool {
         settledSources(show: show).contains { (olderSettled[$0] ?? OlderSettled()).more }
     }
-    /// Reads the next page of older settled threads from each computer that has more. Nothing shown changes on failure.
-    func readOlderSettled(show: ComputerFilter) async {
+    /// Reads the next page of settled threads from each computer that has more, or with `first`, the first page from each
+    /// not read yet, as the shelf opens or a computer connects while it is open. Nothing shown changes on failure.
+    func readOlderSettled(show: ComputerFilter, first: Bool = false) async {
         guard !olderSettledReading else { return }
         olderSettledReading = true; olderSettledFailed = false
         defer { olderSettledReading = false }
         for hostID in settledSources(show: show) {
             let held = olderSettled[hostID] ?? OlderSettled()
-            guard held.more, let connection = connections[hostID] else { continue }
+            guard held.more, !(first && held.read), let connection = connections[hostID] else { continue }
             let epoch = generations[hostID]
             do {
                 let page = try await connection.call(Wire.settledThreads(after: held.next), as: SettledThreadsPage.self)

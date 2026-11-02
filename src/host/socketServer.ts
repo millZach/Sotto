@@ -134,10 +134,11 @@ interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegatio
   /** Whether its hello accepted `provider-mode-lists`: a catalog it is sent lists each provider's modes once, not on every model. */
   providerModeLists?: boolean
   /**
-   * Whether its hello accepted `settled-threads-on-request`: its list leaves out the threads settled before this week
-   * (`heldBackSettled`), which it reads with `settled-threads`.
+   * Whether its hello accepted `settled-threads-on-request`: its list leaves out settled threads (`heldBackSettled`),
+   * which it reads with `settled-threads`. `listed` is every thread its list has carried since hello, which stays in it
+   * until it connects again, so a thread settled while it watches stays where Undo can reach it.
    */
-  settledOnRequest?: boolean }
+  settledOnRequest?: boolean; listed?: Set<string> }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -606,12 +607,13 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   /** The threads a phone that accepted `settled-threads-on-request` is not sent with its list, by ID. */
   const heldBack = (peer: Peer, state: AgentState): Set<string> => heldBackSettled(state.host.threads, state.host.projects,
-    { now: Date.now(), kept: new Set([...peer.observed, ...peer.selectedThreadId ? [peer.selectedThreadId] : []]) })
-  /** `state` with the threads settled before this week left out of its list, and how many were left out. */
+    new Set([...peer.observed, ...peer.selectedThreadId ? [peer.selectedThreadId] : [], ...peer.listed ?? []]))
+  /** `state` with its settled threads left out of its list, and how many were left out. What it lists stays listed. */
   const withoutHeldBack = <State extends AgentState>(peer: Peer, state: State): State & { settledHeldBack: number } => {
-    const held = heldBack(peer, state)
-    if (!held.size) return { ...state, settledHeldBack: 0 }
-    return { ...state, host: { ...state.host, threads: state.host.threads.filter(thread => !held.has(thread.id)) }, settledHeldBack: held.size }
+    const held = heldBack(peer, state), listed = peer.listed ??= new Set()
+    const threads = held.size ? state.host.threads.filter(thread => !held.has(thread.id)) : state.host.threads
+    for (const thread of threads) listed.add(thread.id)
+    return { ...state, host: { ...state.host, threads }, settledHeldBack: held.size }
   }
   /**
    * The catalog revisions this listener names to peers that accept `model-catalog-revision`. A peer that does not know a
