@@ -7,8 +7,8 @@ import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type Watc
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
-import { pullRequestKey } from '../../shared/gitPullRequests'
-import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
+import { GIT_PULL_REQUEST_LINKS_MAX, pullRequestKey } from '../../shared/gitPullRequests'
+import { WatcherEvidenceStore, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
 import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
@@ -354,7 +354,10 @@ export class WatcherWakeUp {
   private consumedRetries = 0
   /** Whether Watcher rested at the last pass, so a pass can see it come to rest. */
   private watcherResting: boolean | undefined
-  /** What each thread's pull requests said when Watcher was last told of them, so news of them is what it has not heard. */
+  /**
+   * What each thread's pull requests said when Watcher was last told of them, so news of them is what it has not heard,
+   * and each merge it was told, which stays told when the thread no longer holds the fact (#1495).
+   */
   private readonly toldAttention = new Map<string, ReadonlySet<string>>()
   /** What each made wake-up's evidence carried of its pull requests, which Watcher has been told once it is acknowledged. */
   private readonly carriedAttention = new Map<string, ReadonlySet<string>>()
@@ -626,12 +629,13 @@ export class WatcherWakeUp {
   }
   /**
    * Forgets the pull request facts Watcher was told that are no longer true, so checks that fail again on the same commit,
-   * or a conflict that comes back, are news again.
+   * or a conflict that comes back, are news again. A merge is always true: GitHub never unmerges, so one Watcher was told
+   * stays told while its pull request is gone from the thread, and is no news when it comes back (#1495).
    */
   private forgetEnded(target: WatcherThreadTarget): void {
     const key = targetKey(target), told = this.toldAttention.get(key)
     if (!told?.size) return
-    const now = this.evidence.attention(target), still = new Set([...told].filter(fact => now.has(fact)))
+    const now = this.evidence.attention(target), still = new Set([...told].filter(fact => now.has(fact) || isMergeFact(fact)))
     if (still.size !== told.size) this.toldAttention.set(key, still)
   }
   /** News a restart restored from the queue while its facts are not read again yet: it still needs Watcher, as it did. */
@@ -666,7 +670,12 @@ export class WatcherWakeUp {
       // that merged is not told once more each time (#1263). Failed checks are, since a failure must not be lost.
       const told = outcome === 'told' ? carried : outcome === 'unknown' && carried ? new Set([...carried].filter(fact => !this.failedFact(event.target, fact))) : undefined
       if (!told) continue
-      this.toldAttention.delete(targetKey(event.target)); this.toldAttention.set(targetKey(event.target), told)
+      // A wake-up carries what holds as it goes, so a merge told before it, whose pull request has gone from the thread for
+      // now, is kept (#1495): no more of them than a thread can link and its branch's own, the oldest going first, so
+      // never one the wake-up carried.
+      const key = targetKey(event.target), kept = new Set([...[...this.toldAttention.get(key) ?? []].filter(fact => isMergeFact(fact) && !told.has(fact)), ...told])
+      for (const fact of [...kept].filter(isMergeFact).slice(0, -(GIT_PULL_REQUEST_LINKS_MAX + 1))) kept.delete(fact)
+      this.toldAttention.delete(key); this.toldAttention.set(key, kept)
       while (this.toldAttention.size > 2_000) this.toldAttention.delete(this.toldAttention.keys().next().value!)
     }
     // A held busy finish that earned its retry by ripening or by its thread moving on was not in this wake-up; one that

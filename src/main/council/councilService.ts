@@ -741,7 +741,8 @@ export class CouncilService {
         const waiting = !isFinal(turn) && (threads.get(turn.thread)?.requests.length ?? 0) > 0
         return { turn: turn.id, seat: turn.seat, stage: turn.stage, state: turnState(turn, waiting), late: isLate(turn, now, deadline, record), repair: turn.repairOf !== undefined,
           result: turn.result === 'invalid' ? 'pending' as const : turn.result, ...turn.summary ? { summary: turn.summary } : {}, ...turn.citations?.length ? { citations: turn.citations } : {},
-          ...sourcesOf(turn, researchOf(record.rounds[turn.round]!)), thread: turn.thread, actions: rowActions(record, turn, now, waiting) }
+          ...sourcesOf(turn, researchOf(record.rounds[turn.round]!)), ...turn.stage === 'review' && held<CouncilReview>(turn)?.answer === 'changed' ? { changed: true as const } : {},
+          thread: turn.thread, actions: rowActions(record, turn, now, waiting) }
       })
     const verdict = round.verdict === undefined && !(round.stage === 'fairness' || round.stage === 'done') ? null : {
       text: round.verdict ?? null, counts: this.counts(record, round), fairnessDone: fairnessDone(record, round, now),

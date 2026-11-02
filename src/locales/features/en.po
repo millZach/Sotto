@@ -812,6 +812,11 @@ msgstr "{watching, plural, =1 {Watcher still watches one of your threads.} other
 msgid "{when}, in {away}"
 msgstr "{when}, in {away}"
 
+#. A Council figure's button: its letter or Chair, its model, what it is doing, then what a press does
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "{who}, {model}, {now}. Open its thread"
+msgstr "{who}, {model}, {now}. Open its thread"
+
 #. placeholder {0}: window.toLocaleString(i18n.locale)
 #. placeholder {1}: tokens.toLocaleString(i18n.locale)
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -1160,6 +1165,10 @@ msgstr "Answer your threads from your iPhone"
 msgid "answering permissions from a paired client"
 msgstr "answering permissions from a paired client"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "answering the fairness check"
+msgstr "answering the fairness check"
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
 msgstr "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
@@ -1383,6 +1392,8 @@ msgid "Carried {carried}."
 msgstr "Carried {carried}."
 
 #. The Council's chair, as a seat's label
+#. The Council's chair, on its plate in the chamber
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilSeats.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Chair"
@@ -2103,6 +2114,7 @@ msgid "Don’t hand over: start the new Watcher without it"
 msgstr "Don’t hand over: start the new Watcher without it"
 
 #. Read after an update step's title: the step has finished
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "done"
 msgstr "done"
@@ -2256,6 +2268,10 @@ msgstr "Expired"
 msgid "Expires"
 msgstr "Expires"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "failed"
+msgstr "failed"
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Failed"
 msgstr "Failed"
@@ -2346,6 +2362,14 @@ msgstr "Framed as {kinds}."
 msgid "Framing"
 msgstr "Framing"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "framing the question"
+msgstr "framing the question"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Framing the question"
+msgstr "Framing the question"
+
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "Free up about 700 MB, then try again."
 msgstr "Free up about 700 MB, then try again."
@@ -2404,6 +2428,10 @@ msgstr "Getting started"
 msgid "Give F9 to Sotto"
 msgstr "Give F9 to Sotto"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "giving its review"
+msgstr "giving its review"
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Global shortcut"
 msgstr "Global shortcut"
@@ -2427,6 +2455,11 @@ msgstr "Go to the question from {title} in this conversation"
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Grok subscription"
 msgstr "Grok subscription"
+
+#. A Council chamber layout: tiered seats round an altar, the chair at the back.
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Half circle"
+msgstr "Half circle"
 
 #. The tag on a message that carries a handover
 #: src/renderer/src/watcher/WatcherHandover.tsx
@@ -2514,6 +2547,10 @@ msgstr "Hold F9 to try it"
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Holding sends"
 msgstr "Holding sends"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "holding up the verdict"
+msgstr "holding up the verdict"
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "How do you like work to get started?"
@@ -2920,6 +2957,11 @@ msgstr "Launch when you sign in"
 msgid "Launch when your Mac starts"
 msgstr "Launch when your Mac starts"
 
+#. The Council chamber's layout menu
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Layout"
+msgstr "Layout"
+
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Leave my keys alone"
 msgstr "Leave my keys alone"
@@ -2970,6 +3012,10 @@ msgstr "Limits come from each provider and count all use of the account, in Sott
 msgid "Lines"
 msgstr "Lines"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "listening"
+msgstr "listening"
+
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Listening."
 msgstr "Listening."
@@ -2993,6 +3039,11 @@ msgstr "Loading transcripts."
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Loading your threads"
 msgstr "Loading your threads"
+
+#. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Long table"
+msgstr "Long table"
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "longest freeze"
@@ -3332,6 +3383,14 @@ msgstr "Needs attention"
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Needs you"
 msgstr "Needs you"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "needs your answer"
+msgstr "needs your answer"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Needs your answer"
+msgstr "Needs your answer"
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Needs your choice"
@@ -4426,6 +4485,10 @@ msgstr "Read the handover, word for word"
 msgid "Reading {name} limits"
 msgstr "Reading {name} limits"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading answers {letters}"
+msgstr "Reading answers {letters}"
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Reading each model's days…"
 msgstr "Reading each model's days…"
@@ -4433,6 +4496,14 @@ msgstr "Reading each model's days…"
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Reading each provider's days…"
 msgstr "Reading each provider's days…"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading every answer and review"
+msgstr "reading every answer and review"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading every answer and review"
+msgstr "Reading every answer and review"
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Reading it…"
@@ -4446,9 +4517,30 @@ msgstr "Reading main's numbers…"
 msgid "Reading memory…"
 msgstr "Reading memory…"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading the conversation"
+msgstr "reading the conversation"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Reading the conversation"
 msgstr "Reading the conversation"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading the other answers"
+msgstr "reading the other answers"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading the other answers"
+msgstr "Reading the other answers"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading the verdict"
+msgstr "reading the verdict"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading the verdict"
+msgstr "Reading the verdict"
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Reading usage…"
@@ -4606,6 +4698,10 @@ msgstr "Replaced by"
 msgid "Replacement memory"
 msgstr "Replacement memory"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reporting the crux check"
+msgstr "reporting the crux check"
+
 #. The kind of work a delegated thread or check was asked for.
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgctxt "kind of work"
@@ -4713,6 +4809,11 @@ msgstr "Room left"
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Room left on each subscription"
 msgstr "Room left on each subscription"
+
+#. A Council chamber layout: seen from a little above, the chair at the far side.
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Round table"
+msgstr "Round table"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Run agents on another computer"
@@ -5606,6 +5707,10 @@ msgstr "Starts and stops dictation from anywhere in Windows."
 msgid "State"
 msgstr "State"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "state unknown"
+msgstr "state unknown"
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Stayed here"
 msgstr "Stayed here"
@@ -5748,6 +5853,10 @@ msgstr "Stop watching: Watcher lets this thread be"
 msgid "Stop without saving"
 msgstr "Stop without saving"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "stopped"
+msgstr "stopped"
+
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
@@ -5824,6 +5933,10 @@ msgstr "Tags"
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Talk to your computer and your coding agents"
 msgstr "Talk to your computer and your coding agents"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "talking"
+msgstr "talking"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Talking to the thread. Switch to Watcher"
@@ -6113,6 +6226,15 @@ msgstr "There is no project to start a thread in. Add one in Sotto, then send ag
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "These choices become explicit policies. Leaving a box unchecked grants no permission."
 msgstr "These choices become explicit policies. Leaving a box unchecked grants no permission."
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "thinking"
+msgstr "thinking"
+
+#. A Council figure's thought bubble while its thread works
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Thinking"
+msgstr "Thinking"
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it."
@@ -6654,6 +6776,8 @@ msgstr "Valid from"
 msgid "Valid until"
 msgstr "Valid until"
 
+#. The title on the chair's verdict scroll when its words are not kept
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Verdict"
 msgstr "Verdict"
@@ -6986,6 +7110,10 @@ msgstr "Working in a snapshot of {branch} at {commit}."
 msgid "Working preferences"
 msgstr "Working preferences"
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "working: {what}"
+msgstr "working: {what}"
+
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Working…"
 msgstr "Working…"
@@ -7005,6 +7133,14 @@ msgstr "wpm, your usual"
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Write what Watcher should do first"
 msgstr "Write what Watcher should do first"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "writing its answer"
+msgstr "writing its answer"
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "writing the verdict"
+msgstr "writing the verdict"
 
 #: src/renderer/src/features/dictate/journalFacts.ts
 #: src/renderer/src/features/usage/usagePresentation.ts

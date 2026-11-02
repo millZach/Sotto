@@ -56,8 +56,8 @@ export function parseProductEventInstall(value: unknown): ProductEventInstall | 
 
 /** The event's own properties when they pass its schema, otherwise null. It never throws. */
 export function parseProductEvent<E extends ProductEventName>(event: E, properties: unknown): ProductEventProperties<E> | null {
-  const schema = PRODUCT_EVENT_SCHEMAS[event] as z.ZodType | undefined
-  if (!schema) return null
+  if (!Object.hasOwn(PRODUCT_EVENT_SCHEMAS, event)) return null
+  const schema: z.ZodType = PRODUCT_EVENT_SCHEMAS[event]
   const parsed = schema.safeParse(properties)
   return parsed.success ? parsed.data as ProductEventProperties<E> : null
 }
