@@ -67,8 +67,10 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
   const threadId = target === 'watcher' ? watcher?.threadId ?? null : memory.threadId
   const commands = slashCommands(target, watcher !== null)
   const menu = slashMatches(input, commands)
-  const running = thread?.status === 'running'
-  const waiting = (thread?.requests.length ?? 0) > 0
+  // What is held for another thread is not this one's: nothing shows until this one's arrives.
+  const current = thread?.id === threadId ? thread : null
+  const running = current?.status === 'running'
+  const waiting = (current?.requests.length ?? 0) > 0
   const project = shell === null ? null : popupProject(shell, memory.projectId)
 
   // Each time the popup is shown it reads its target again: the threads, Watcher's current conversation, and whether the
@@ -100,16 +102,21 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
 
   // The target's thread: observed while the popup shows it, its record from main's pushes and its history read whole once,
   // then kept up by the changes main sends. A change the popup cannot place reads the history whole again.
+  // Main lets go of the observation each time the popup hides, so each show observes again and reads what it missed,
+  // keeping what it holds on screen until the read lands.
   const observed = useRef<string | null>(null)
   useEffect(() => {
     observed.current = threadId
-    setThread(threadId === null ? null : shell?.host.threads.find(item => item.id === threadId) ?? null)
-    setDetail(null)
     pinned.current = true
     void bridge.command({ type: 'observe-threads', threadIds: threadId === null ? [] : [threadId] }).catch(() => undefined)
     if (threadId === null) return
     void bridge.threadDetail(threadId).then(read => { if (observed.current === threadId && read !== null) setDetail(nextPopupDetail(null, read)) }, () => undefined)
-  }, [bridge, threadId, shell])
+  }, [bridge, threadId, shown])
+  // The record the show's read found, until main pushes a newer one.
+  useEffect(() => {
+    const record = threadId === null ? undefined : shell?.host.threads.find(item => item.id === threadId)
+    if (record !== undefined) setThread(record)
+  }, [shell, threadId])
   useEffect(() => bridge.onThread(record => { if (record.id === observed.current) setThread(record) }), [bridge])
   useEffect(() => bridge.onThreadDetail(update => {
     if (update.threadId !== observed.current) return
@@ -121,9 +128,10 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     })
   }), [bridge])
 
-  const messages = useMemo(() => shownMessages(detail?.messages ?? []), [detail])
+  const shownDetail = detail?.threadId === threadId ? detail : null
+  const messages = useMemo(() => shownMessages(shownDetail?.messages ?? []), [shownDetail])
   const live = messages.length > 0 || echo !== null || waiting || running
-  const userMessages = useMemo(() => (detail?.messages ?? []).filter(message => message.role === 'user').length, [detail])
+  const userMessages = useMemo(() => (shownDetail?.messages ?? []).filter(message => message.role === 'user').length, [shownDetail])
   // What the user just sent shows at once, until the thread's own copy of it arrives.
   useEffect(() => { if (echo !== null && userMessages > echo.after) setEcho(null) }, [echo, userMessages])
 
@@ -136,7 +144,8 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
       const inner = list?.firstElementChild as HTMLElement | null | undefined
       const style = getComputedStyle(root)
       const frame = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((sum, side) => sum + (Number.parseFloat(style[side as 'paddingTop']) || 0), 0)
-      void bridge.fit(Math.ceil(frame + controls.offsetHeight + (inner?.offsetHeight ?? 0))).catch(() => undefined)
+      // Main holds the window to a share of the screen; a long conversation asks for no more than the channel takes.
+      void bridge.fit(Math.min(10_000, Math.ceil(frame + controls.offsetHeight + (inner?.offsetHeight ?? 0)))).catch(() => undefined)
       if (list && pinned.current) list.scrollTop = list.scrollHeight
     }
     const observer = new ResizeObserver(report)
@@ -218,7 +227,7 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
         // Observed again now main has it: the first observation may have reached main before the thread did.
         await command({ type: 'observe-threads', threadIds: [id] })
         void bridge.threadDetail(id).then(read => { if (observed.current === id && read !== null) setDetail(nextPopupDetail(null, read)) }, () => undefined)
-      } else if (target === 'thread' && thread !== null) remember({ projectId: thread.projectId })
+      } else if (target === 'thread' && current !== null) remember({ projectId: current.projectId })
       const reply = await command({ type: queue ? 'queue-followup' : 'manual-send', threadId: id, draftId: crypto.randomUUID(), text })
       if (reply === null) failed(msg`Sotto didn’t confirm the prompt. It is back in the box; check the thread before you send it again.`)
       else if (reply.error !== null) failed(reply.error)
@@ -246,13 +255,13 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     else if (action === 'hide') void bridge.hide()
   }
 
-  const answer = (request: AgentRequest) => (reply: RequestAnswer): Promise<SubmitOutcome> => thread === null ? Promise.resolve(null)
-    : command({ type: 'answer', threadId: thread.id, requestId: request.id, ...reply }).then(result => result === null ? null : { error: result.error })
+  const answer = (request: AgentRequest) => (reply: RequestAnswer): Promise<SubmitOutcome> => current === null ? Promise.resolve(null)
+    : command({ type: 'answer', threadId: current.id, requestId: request.id, ...reply }).then(result => result === null ? null : { error: result.error })
   const openLink = (url: string): Promise<{ ok: boolean }> => bridge.openExternalLink(url).catch(() => ({ ok: false }))
   const placeholder = target === 'watcher' ? t`Ask Watcher…` : t`Ask Sotto…`
   const canSend = input.trim() !== '' && menu.length === 0 && !busy
   const showStop = target === 'thread' && running && !canSend
-  const where = target === 'watcher' ? 'Watcher' : threadId === null ? project === null ? t`New thread` : t`New thread in ${project.title}` : thread?.title ?? t`Thread`
+  const where = target === 'watcher' ? 'Watcher' : threadId === null ? project === null ? t`New thread` : t`New thread in ${project.title}` : current?.title ?? t`Thread`
 
   return (
     <div ref={card} className="popup-card" onKeyDown={onKeyDown}>
@@ -268,8 +277,8 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
                 <MessageContent text={message.text} streaming={running && index === messages.length - 1} onOpenLink={openLink} />
               </div>)}
             {echo !== null ? <div className="popup-entry popup-entry--user is-sending"><ChevronRight size={12} aria-hidden="true" /><p>{echo.text}</p></div> : null}
-            {thread?.requests.map(request => (
-              <AgentRequestCard key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={null}
+            {current?.requests.map(request => (
+              <AgentRequestCard key={request.id} ownerId={current.id} ownerTitle={current.title} request={request} blocked={null}
                 onSubmit={answer(request)} onWriteAnswer={open} />
             ))}
             {running || waiting ? (

@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro'
 
 import { AGENT_THREAD_DETAIL, type AgentCommand, type AgentState } from '../../shared/agents'
+import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import { SETTINGS_CHANGED } from '../../shared/channels'
 import { POPUP_OPENED, POPUP_SHORTCUT_STATE_CHANGED, POPUP_THREAD, type PopupOpen, type PopupOpened, type PopupShortcutResult } from '../../shared/popup'
 import type { SottoPlatform } from '../../shared/platform'
@@ -32,6 +33,10 @@ export interface Popup {
   show(): void
   /** Every settings change: the shortcut follows the saved keys and the card its look. */
   settingsChanged(settings: AppSettings): void
+  /** Settings records keys, or stops recording: the popup's shortcut stands aside meanwhile (ADR-0181). */
+  suspendShortcut(suspended: boolean): void
+  /** A dictation shortcut change: the popup lets go of keys dictation is taking, and takes them back when it did not. */
+  besideDictation<Result>(chords: readonly string[], change: () => Promise<Result>): Promise<Result>
   dispose(): void
 }
 
@@ -41,7 +46,11 @@ export interface Popup {
  */
 export function createPopup(dependencies: PopupDependencies, startup: AppSettings): Popup {
   const detail = coalesceAgentThreadDetailPublishes(update => window.send(AGENT_THREAD_DETAIL, update))
-  const feed = new PopupFeed(thread => window.send(POPUP_THREAD, thread), update => detail.publish(update))
+  // The popup shows messages and never activity, so activity is left out before it crosses: a change of activity alone
+  // goes as an empty change, which keeps the popup's revision in step without the records.
+  const feed = new PopupFeed(thread => window.send(POPUP_THREAD, thread), update => detail.publish(isAgentThreadDetailDelta(update)
+    ? { threadId: update.threadId, baseRevision: update.baseRevision, revision: update.revision, messageDeltas: update.messageDeltas, activityDeltas: [] }
+    : { threadId: update.threadId, revision: update.revision, messages: update.messages }))
   const popupClient = desktopPopupClient()
   // A hidden or vanished popup observes nothing: main says so itself, so a renderer that stopped can never keep a thread
   // loaded and streaming. Showing it again observes its thread again from the page.
@@ -80,7 +89,6 @@ export function createPopup(dependencies: PopupDependencies, startup: AppSetting
         return { ok: false, reason: 'unavailable' }
       }
     },
-    suspendShortcut: suspended => shortcut.suspend(suspended),
   }
 
   /** Selects the thread in the main window, as a notification's press does; one that is gone opens Threads and says so. */
@@ -103,6 +111,11 @@ export function createPopup(dependencies: PopupDependencies, startup: AppSetting
     settingsChanged: settings => {
       shortcut.apply(settings)
       window.send(SETTINGS_CHANGED, settings)
+    },
+    suspendShortcut: suspended => shortcut.suspend(suspended),
+    besideDictation: async (chords, change) => {
+      shortcut.yieldTo(chords)
+      try { return await change() } finally { shortcut.takeBack() }
     },
     dispose: () => {
       shortcut.dispose()

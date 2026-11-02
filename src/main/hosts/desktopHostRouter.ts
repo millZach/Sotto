@@ -1601,12 +1601,13 @@ export class DesktopHostRouter {
       if (startsThread(command)) inPlace = this.refusal(connection, error.message)
       else this.notice = { message: this.refusal(connection, error.message) }
     } finally {
-      if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
+      if (SELECTING_COMMANDS.has(command.type) && selections === this.selections && client.keepsSelection !== true) this.follow(connection, { activeThreadId, activeProjectId })
     }
     if (refused) for (const undo of unmark) undo()
     if (across && !refused && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')) await this.cascadeAcross(command.type, across, connection, command.threadId, client)
     // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
-    const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
+    // A client that keeps its own threads, such as the popup, opens nothing in the window (ADR-0181).
+    const unmoved = client.keepsSelection !== true && selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
       await this.openCreated(connection, command.threadId, client)
     }

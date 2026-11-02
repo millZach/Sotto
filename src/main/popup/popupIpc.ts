@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import {
-  POPUP_FIT, POPUP_HIDE, POPUP_OPEN, POPUP_SHORTCUT_REPLACE, POPUP_SHORTCUT_STATE_GET, POPUP_SHORTCUT_SUSPEND,
+  POPUP_FIT, POPUP_HIDE, POPUP_OPEN, POPUP_SHORTCUT_REPLACE, POPUP_SHORTCUT_STATE_GET,
   popupFitSchema, popupOpenSchema, popupShortcutReplaceSchema, type PopupOpen, type PopupShortcutResult, type PopupShortcutState,
 } from '../../shared/popup'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -10,7 +10,6 @@ const noArguments = z.tuple([])
 const fitArguments = z.tuple([popupFitSchema])
 const openArguments = z.tuple([popupOpenSchema])
 const replaceArguments = z.tuple([popupShortcutReplaceSchema])
-const suspendArguments = z.tuple([z.boolean()])
 
 export interface PopupIpcService {
   hide(): void
@@ -18,7 +17,6 @@ export interface PopupIpcService {
   open(request: PopupOpen): Promise<void>
   shortcutState(): PopupShortcutState
   replaceShortcut(chord: string | null): Promise<PopupShortcutResult>
-  suspendShortcut(suspended: boolean): void
 }
 
 /**
@@ -38,8 +36,7 @@ export function registerPopupIpc(ipc: IpcMainAdapter, service: PopupIpcService, 
   handle(POPUP_OPEN, 'popup', openArguments, request => service.open(request))
   handle(POPUP_SHORTCUT_STATE_GET, 'main', noArguments, () => service.shortcutState())
   handle(POPUP_SHORTCUT_REPLACE, 'main', replaceArguments, chord => service.replaceShortcut(chord))
-  handle(POPUP_SHORTCUT_SUSPEND, 'main', suspendArguments, suspended => service.suspendShortcut(suspended))
   return () => {
-    for (const channel of [POPUP_HIDE, POPUP_FIT, POPUP_OPEN, POPUP_SHORTCUT_STATE_GET, POPUP_SHORTCUT_REPLACE, POPUP_SHORTCUT_SUSPEND]) ipc.removeHandler(channel)
+    for (const channel of [POPUP_HIDE, POPUP_FIT, POPUP_OPEN, POPUP_SHORTCUT_STATE_GET, POPUP_SHORTCUT_REPLACE]) ipc.removeHandler(channel)
   }
 }

@@ -36,6 +36,8 @@ export interface AgentIpcOptions {
   readonly windowRead?: () => void
   /** Told which threads the popup observes before the host hears it (ADR-0181), so main forwards it their records. */
   readonly popupObserves?: (threadIds: readonly string[]) => void
+  /** Whether the popup is on screen: a hidden one observes nothing, whatever it asks while it hides. */
+  readonly popupShown?: () => boolean
 }
 
 /**
@@ -44,7 +46,7 @@ export interface AgentIpcOptions {
  * the client that sent it, which is the line a remote client would cross (ADR-0016).
  */
 export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: AgentAttachmentPreviewRequest) => AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>; threadMedia?: (request: AgentThreadMediaWindowRequest) => Promise<AgentThreadMediaResult>; gitRefs?: (request: GitRefsRequest) => Promise<GitRefsPage>; gitChangedFiles?: (request: GitChangedFilesRequest) => Promise<GitChangedFiles>; gitPullRequest?: (request: GitPullRequestRequest) => Promise<GitPullRequestRead>; hostFolders?: (request: HostFoldersClientRequest) => Promise<HostFoldersResult>; startHandover?: (threadId: string) => Promise<AgentStartHandover | null>; activityBody?: (request: AgentActivityBodyRequest) => Promise<AgentActivity | null>; threadPrompts?: (request: AgentThreadPromptsRequest) => Promise<AgentThreadPrompts | null>; stageAttachment?: (request: AgentAttachmentStageRequest) => Promise<AgentAttachmentHandle>; attachmentContent?: (request: AgentAttachmentContentRequest) => Promise<AgentAttachmentContent | null> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], options: AgentIpcOptions): () => void {
-  const { workingCopyOptions, encodeReceipt, encodeChangedThreadRecordsReceipt, windowRead, popupObserves } = options
+  const { workingCopyOptions, encodeReceipt, encodeChangedThreadRecordsReceipt, windowRead, popupObserves, popupShown } = options
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     const [projectId] = workingCopyOptionsArguments.parse(args)
@@ -151,14 +153,17 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     const parsed = agentCommandSchema.parse(mapHostReferences(payload, id => parseHostEntityKey(id)?.id ?? id))
     // The popup reads, starts and prompts a thread, stops it and answers it; nothing else (ADR-0181).
     if (role === 'popup' && !POPUP_COMMAND_TYPES.has(parsed.type)) throw new Error('AGENT_POPUP_COMMAND_REFUSED')
-    if (role === 'popup' && parsed.type === 'observe-threads') popupObserves?.((payload as { threadIds: string[] }).threadIds)
+    // A popup that hid while its prompt was on its way observes nothing: its thread is not loaded for a card no one sees.
+    const hiddenObserve = role === 'popup' && parsed.type === 'observe-threads' && popupShown?.() === false
+    const sent: AgentCommand = hiddenObserve ? { type: 'observe-threads', threadIds: [] } : payload as AgentCommand
+    if (role === 'popup' && sent.type === 'observe-threads') popupObserves?.(sent.threadIds)
     const changes = replyOptions === undefined || role === 'popup' ? undefined : agentCommandReplyOptionsSchema.parse(replyOptions)
     // The host answers with the shell already; the coordinator builds it without copying any history.
     // The window already has the catalogs from the broadcast, so the answer names each by its catalog
     // revision rather than listing it again (issue #323); the page recovers through AGENT_GET on a mismatch.
     // A page that holds the last broadcast's threads asks for them as changes, which it puts back the same way.
     const encode: (state: AgentState) => AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt = changes?.changedThreadRecords ? encodeChangedThreadRecordsReceipt : encodeReceipt
-    return host.command(payload as AgentCommand, role === 'popup' ? popupClient : windowClient).then(encode)
+    return host.command(sent, role === 'popup' ? popupClient : windowClient).then(encode)
   })
   return () => { ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_THREAD_MEDIA); ipc.removeHandler(AGENT_ATTACHMENT_STAGE); ipc.removeHandler(AGENT_ATTACHMENT_CONTENT); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_HOST_FOLDERS); ipc.removeHandler(AGENT_START_HANDOVER); ipc.removeHandler(AGENT_ACTIVITY_BODY); ipc.removeHandler(AGENT_THREAD_PROMPTS); ipc.removeHandler(AGENT_COMMAND) }
 }

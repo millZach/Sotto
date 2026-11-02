@@ -63,7 +63,7 @@ import { AGENT_HOST_FOLDERS, hostFoldersClientRequestSchema, hostFoldersResultSc
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
 import { POPUP_COMMAND_TYPES, POPUP_FIT, POPUP_HIDE, POPUP_OPEN, POPUP_OPENED, POPUP_RENDERER_ARGUMENT, POPUP_SHORTCUT_REPLACE, POPUP_SHORTCUT_STATE_CHANGED, POPUP_SHORTCUT_STATE_GET,
-  POPUP_SHORTCUT_SUSPEND, POPUP_SHOWN, POPUP_THREAD, popupFitSchema, popupOpenedSchema, popupOpenSchema, popupShortcutReplaceSchema, popupShortcutResultSchema, popupShortcutStateSchema,
+  POPUP_SHOWN, POPUP_THREAD, popupFitSchema, popupOpenedSchema, popupOpenSchema, popupShortcutReplaceSchema, popupShortcutResultSchema, popupShortcutStateSchema,
   type PopupBridge, type PopupShortcutBridge } from '../shared/popup'
 import { questionPageOpenResultSchema, questionPageOpenSchema } from '../shared/questionPageOpen'
 import { systemSettingsPaneSchema } from '../shared/systemSettings'
@@ -561,7 +561,6 @@ export function createSottoBridge(
       state: () => invokeParsed(renderer, POPUP_SHORTCUT_STATE_GET, popupShortcutStateSchema),
       onState: listener => subscribe(renderer, POPUP_SHORTCUT_STATE_CHANGED, popupShortcutStateSchema, listener),
       replace: chord => invokeParsed(renderer, POPUP_SHORTCUT_REPLACE, popupShortcutResultSchema, popupShortcutReplaceSchema.parse(chord)),
-      suspend: async suspended => { await renderer.invoke(POPUP_SHORTCUT_SUSPEND, booleanSchema.parse(suspended)) },
       onOpened: listener => subscribe(renderer, POPUP_OPENED, popupOpenedSchema, listener),
     }) } : {}),
     // The Council (ADR-0177): only while the Owl list turns it on, so stable's window has no such bridge.

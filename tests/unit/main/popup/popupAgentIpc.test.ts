@@ -7,7 +7,7 @@ import { DESKTOP_POPUP_CLIENT_ID, DESKTOP_WINDOW_CLIENT_ID } from '../../../../s
 import { AGENT_COMMAND, AGENT_GET, type AgentState } from '../../../../src/shared/agents'
 import { ipcRegistry, trustedIpcSender } from '../../../fixtures/ipcHarness'
 
-function setup() {
+function setup(shown = true) {
   const registry = ipcRegistry()
   const popup = trustedIpcSender('popup')
   const shell = { host: { threads: [] } } as unknown as AgentState
@@ -16,7 +16,7 @@ function setup() {
   const popupObserves = vi.fn()
   const control = { get: () => shell, shell: () => shell, threadDetail: () => null, attachmentPreview: () => null } as unknown as Parameters<typeof registerAgentIpc>[1]
   registerAgentIpc(registry.ipc, control, { command } as unknown as Parameters<typeof registerAgentIpc>[2], () => [registry.main, popup],
-    { encodeReceipt: state => state as never, encodeChangedThreadRecordsReceipt: state => state as never, windowRead, popupObserves })
+    { encodeReceipt: state => state as never, encodeChangedThreadRecordsReceipt: state => state as never, windowRead, popupObserves, popupShown: () => shown })
   return { registry, popupEvent: registry.event(popup), command, windowRead, popupObserves }
 }
 
@@ -37,6 +37,13 @@ describe('the popup on the threads\' channels (ADR-0181)', () => {
     await registry.invoke(AGENT_COMMAND, [{ type: 'interrupt', threadId: 't' }])
     expect(command).toHaveBeenLastCalledWith({ type: 'interrupt', threadId: 't' }, expect.objectContaining({ clientId: DESKTOP_WINDOW_CLIENT_ID }))
     expect(popupObserves).toHaveBeenCalledOnce()
+  })
+
+  it('observes nothing for a popup that hid while its prompt was on its way', async () => {
+    const { registry, popupEvent, command, popupObserves } = setup(false)
+    await registry.invoke(AGENT_COMMAND, [{ type: 'observe-threads', threadIds: ['t'] }], popupEvent)
+    expect(popupObserves).toHaveBeenCalledWith([])
+    expect(command).toHaveBeenLastCalledWith({ type: 'observe-threads', threadIds: [] }, expect.objectContaining({ clientId: DESKTOP_POPUP_CLIENT_ID }))
   })
 
   it('refuses every command but reading, starting, prompting, stopping and answering a thread', async () => {

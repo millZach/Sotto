@@ -82,6 +82,19 @@ export class PopupShortcut {
     return { ok: true }
   }
 
+  /**
+   * Lets go of the keys while dictation tries to take them, so a dictation shortcut recorded on the popup's keys is
+   * registered by dictation and the popup then leaves them to it; `takeBack` takes them back when dictation did not.
+   */
+  yieldTo(chords: readonly string[]): void {
+    const held = this.registered
+    if (held !== null && chords.some(chord => sameChord(chord, held, this.platform))) this.release()
+  }
+
+  takeBack(): void {
+    if (!this.disposed && !this.suspended && this.keys !== null) this.apply(this.keys)
+  }
+
   /** Stands the shortcut aside while Settings records keys, so pressing it is recorded rather than run. */
   suspend(on: boolean): void {
     if (this.disposed || on === this.suspended) return

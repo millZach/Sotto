@@ -11,7 +11,7 @@ import type { WatcherRoomResult } from './watcherRoom'
  * The popup (ADR-0181, Owl `popup`): a floating card a shortcut shows over any app, which prompts a thread or Watcher.
  * Its window speaks to main through these channels and, for threads and Watcher, the ones the main window uses.
  */
-/** The popup hides itself: Escape with nothing to stop, or a press outside it. */
+/** The popup hides itself: Escape with nothing to stop. */
 export const POPUP_HIDE = 'sotto:popup:hide'
 /** The card's height changed; main keeps the window's bottom edge where it is and grows or shrinks it upward. */
 export const POPUP_FIT = 'sotto:popup:fit'
@@ -28,8 +28,6 @@ export const POPUP_SHORTCUT_STATE_GET = 'sotto:popup:shortcut-state'
 export const POPUP_SHORTCUT_STATE_CHANGED = 'sotto:popup:shortcut-state-changed'
 /** Settings records a new shortcut, clears it (null) or restores the default: main registers it before it is saved. */
 export const POPUP_SHORTCUT_REPLACE = 'sotto:popup:shortcut-replace'
-/** Settings records keys: the popup's own shortcut stands aside meanwhile, so pressing it is recorded rather than run. */
-export const POPUP_SHORTCUT_SUSPEND = 'sotto:popup:shortcut-suspend'
 /** Passed to the main window's preload only while the popup is on, so Settings offers its row. */
 export const POPUP_RENDERER_ARGUMENT = '--sotto-popup-enabled'
 
@@ -120,6 +118,5 @@ export interface PopupShortcutBridge {
   state(): Promise<PopupShortcutState>
   onState(listener: (state: PopupShortcutState) => void): () => void
   replace(chord: string | null): Promise<PopupShortcutResult>
-  suspend(suspended: boolean): Promise<void>
   onOpened(listener: (opened: PopupOpened) => void): () => void
 }

@@ -37,7 +37,7 @@ function withMain(): void {
   const ownServers: OwnServersBridge = { list: vi.fn(async () => []), check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
   // The popup's shortcut row (ADR-0181) shows only with its bridge.
   const popup: PopupShortcutBridge = { state: vi.fn(async () => ({ status: 'on' as const, chord: 'Alt+Shift+Space' })), onState: () => () => undefined,
-    replace: vi.fn(async () => ({ ok: true as const })), suspend: vi.fn(async () => undefined), onOpened: () => () => undefined }
+    replace: vi.fn(async () => ({ ok: true as const })), onOpened: () => () => undefined }
   vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers, popup })
 }
 

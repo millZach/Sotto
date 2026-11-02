@@ -3682,6 +3682,10 @@ msgstr ""
 msgid "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "On Linux the desktop decides whether Sotto may take these keys; the tray’s Show popup always opens it."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back."
 msgstr ""

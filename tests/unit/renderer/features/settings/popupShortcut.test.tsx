@@ -23,7 +23,6 @@ function setup(options: { state?: PopupShortcutState; result?: PopupShortcutResu
     state: vi.fn(async () => options.state ?? { status: 'on' as const, chord: 'Alt+Shift+Space' }),
     onState: () => () => undefined,
     replace: vi.fn(async () => options.result ?? { ok: true as const }),
-    suspend: vi.fn(async () => undefined),
     onOpened: () => () => undefined,
   }
   ;(window as { sotto?: unknown }).sotto = { popup, suspendDictationShortcuts: vi.fn(async () => ({ ok: true as const })) }
@@ -46,11 +45,9 @@ describe('Settings › Keyboard › Popup (ADR-0181)', () => {
   it('records new keys with the popup\'s own shortcut stood aside, and has main take them', async () => {
     const { popup, user } = setup()
     await user.click(within(row()).getByRole('button', { name: 'Change shortcut, Alt Shift Space' }))
-    await waitFor(() => expect(popup.suspend).toHaveBeenCalledWith(true))
     press('ControlLeft', 'AltLeft', 'KeyP')
     release('KeyP')
     await waitFor(() => expect(popup.replace).toHaveBeenCalledWith('CommandOrControl+Alt+P'))
-    expect(popup.suspend).toHaveBeenLastCalledWith(false)
     expect(await within(row()).findByText('Shortcut saved.')).toBeVisible()
   })
 

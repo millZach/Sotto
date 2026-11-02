@@ -72,6 +72,8 @@ export interface ClientIdentity {
   readonly user: string
   readonly transport: 'ipc' | 'socket'
   readonly selectedThreadId?: string | null
+  /** A client whose threads are its own business, such as the popup (ADR-0181): a thread it starts is not opened in the window. */
+  readonly keepsSelection?: true
 }
 
 /**
@@ -344,7 +346,7 @@ export function desktopWindowClient(user: string = localUser()): ClientIdentity 
 export const DESKTOP_POPUP_CLIENT_ID = 'desktop-popup'
 
 export function desktopPopupClient(user: string = localUser()): ClientIdentity {
-  return { clientId: DESKTOP_POPUP_CLIENT_ID, user, transport: 'ipc' }
+  return { clientId: DESKTOP_POPUP_CLIENT_ID, user, transport: 'ipc', keepsSelection: true }
 }
 
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */

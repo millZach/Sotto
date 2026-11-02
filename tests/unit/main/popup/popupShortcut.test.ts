@@ -94,6 +94,23 @@ describe('the popup shortcut (ADR-0181)', () => {
     expect([...shortcuts.held.keys()]).toEqual(['Control+Alt+K'])
   })
 
+  it('lets dictation take its keys, and takes them back when dictation did not', () => {
+    const { shortcuts, shortcut } = setup()
+    shortcut.apply(keys('Alt+Shift+Space'))
+    shortcut.yieldTo(['Control+Alt+P'])
+    expect([...shortcuts.held.keys()]).toEqual(['Alt+Shift+Space'])
+    shortcut.yieldTo(['Shift+Alt+Space'])
+    expect(shortcuts.held.size).toBe(0)
+    shortcut.takeBack()
+    expect([...shortcuts.held.keys()]).toEqual(['Alt+Shift+Space'])
+    // Dictation took them: the saved setting now says so, and the popup leaves them to it.
+    shortcut.yieldTo(['Alt+Shift+Space'])
+    shortcut.apply({ ...keys('Alt+Shift+Space'), hotkey: 'Alt+Shift+Space' })
+    shortcut.takeBack()
+    expect(shortcuts.held.size).toBe(0)
+    expect(shortcut.state().status).toBe('dictation')
+  })
+
   it('lets its keys go when disposed, and registers nothing after', () => {
     const { shortcuts, shortcut } = setup()
     shortcut.apply(keys('Alt+Shift+Space'))

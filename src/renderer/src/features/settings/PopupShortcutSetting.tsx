@@ -91,10 +91,8 @@ function PopupShortcutRow({ settings, platform, bridge }: {
   const record = async (): Promise<void> => {
     setLine(null)
     setRecording(true)
-    // The popup's own shortcut stands aside meanwhile, so pressing its keys is recorded rather than shows the popup.
-    await bridge.suspend(true).catch(() => undefined)
+    // Recording stands every shortcut aside, the popup's too, so pressing its keys is recorded rather than shows the popup.
     const recorded = await recorder.record()
-    await bridge.suspend(false).catch(() => undefined)
     setRecording(false)
     setFocusChip(true)
     if (recorded === null) return
@@ -129,6 +127,7 @@ function PopupShortcutRow({ settings, platform, bridge }: {
             <span className="tt-field__label" id={`${id}-label`}>{label}</span>
             <p className="tt-field__description tt-paragraph" id={`${id}-description`}>
               <Trans>Shows the popup over any app, or hides it. It works outside Sotto, like dictation’s keys.</Trans>
+              {platform === 'linux' ? <> <Trans>On Linux the desktop decides whether Sotto may take these keys; the tray’s Show popup always opens it.</Trans></> : null}
               {changed && DEFAULT_CHORD !== null ? <> <Trans>Default is</Trans> {inline(DEFAULT_CHORD)}.</> : null}
             </p>
           </div>
