@@ -66,6 +66,15 @@ describe('a wake-up in the thread', () => {
     expect(within(message as HTMLElement).getByRole('link', { name: 'https://github.com/o/r/pull/74' })).toHaveAttribute('href', 'https://github.com/o/r/pull/74')
   })
 
+  it('tags a Council\'s prompt Council, Sotto\'s and never the user\'s (ADR-0177)', () => {
+    transcript([{ id: 'c1', role: 'user', text: '[Sotto Council]\n\nYou are panelist A on a Sotto Council.', createdAt: at, wakeUp: true }])
+    const header = document.querySelector('.thread-message header') as HTMLElement
+    expect(within(header).getByText('Sotto')).toBeVisible()
+    expect(within(header).getByText('Council')).toBeVisible()
+    expect(header).not.toHaveTextContent('You')
+    expect(header).not.toHaveTextContent('Wake-up')
+  })
+
   it('stays the user’s when the same words come without the mark', () => {
     transcript([{ id: 'u1', role: 'user', text: WAKE_UP, createdAt: at }])
     const message = document.querySelector('.thread-message')!

@@ -358,6 +358,11 @@ export class WatcherWakeUp {
   private readonly toldAttention = new Map<string, ReadonlySet<string>>()
   /** What each made wake-up's evidence carried of its pull requests, which Watcher has been told once it is acknowledged. */
   private readonly carriedAttention = new Map<string, ReadonlySet<string>>()
+  /**
+   * Threads whose evidence news came back from the queue at this start and has not been told since. While nothing has read
+   * their pull requests again, what those say is unknown, so that news keeps needing Watcher (`attentionUntold`).
+   */
+  private readonly restoredUnread = new Set<string>()
   /** Busy finishes whose ripening has counted as news that needs Watcher, once each. */
   private readonly ripened = new Set<string>()
   /** Set while evidenceChanged makes an event: the pull request facts evidence does not hold, as one digest. */
@@ -452,7 +457,7 @@ export class WatcherWakeUp {
     for (const event of restored) {
       this.seen.add(event.id)
       // Which evidence needed Watcher is kept in memory only; evidence in a wake-up that was made is counted as having done.
-      if (event.kind === 'evidence-changed') this.wake(event.id)
+      if (event.kind === 'evidence-changed') { this.wake(event.id); this.restoredUnread.add(targetKey(event.target)) }
       if (event.kind !== 'evidence-changed' || !event.evidenceIds?.length) continue
       const fingerprint = observationDigest([...event.evidenceIds].sort())
       if (event.revision !== fingerprint && event.revision !== observationDigest(event.evidenceIds)) continue
@@ -612,8 +617,9 @@ export class WatcherWakeUp {
    * to running before the news went say nothing new, so the news no longer needs Watcher by itself.
    */
   private attentionUntold(target: WatcherThreadTarget): boolean {
-    // Unread, as after a restart before GitHub is read again, is unknown: the news keeps needing Watcher as it did.
-    if (!this.evidence.readsPullRequests(target)) return true
+    // Unread after a restart, before GitHub is read again, is unknown: news from before it keeps needing Watcher as it did.
+    // Any other thread with no pull request facts has nothing to tell, however its news was marked (November 2, 2026).
+    if (!this.evidence.readsPullRequests(target)) return this.restoredUnread.has(targetKey(target))
     const told = this.toldAttention.get(targetKey(target))
     for (const fact of this.evidence.attention(target)) if (!told?.has(fact)) return true
     return false
@@ -653,6 +659,7 @@ export class WatcherWakeUp {
     if (!this.started || this.closed) return
     if (outcome !== 'told') for (const event of events) this.rememberPending.delete(event.id)
     for (const event of events) {
+      if (outcome === 'told' && event.kind === 'evidence-changed') this.restoredUnread.delete(targetKey(event.target))
       const carried = this.carriedAttention.get(event.id)
       this.carriedAttention.delete(event.id)
       // A send whose result is unknown went out with these facts, so the same facts are no news again: a pull request
@@ -1471,6 +1478,8 @@ export class WatcherWakeUp {
    */
   private evidenceChanged(target: WatcherThreadTarget, before: readonly string[] = [], added = false, wake: boolean | 'again' = true): void {
     this.forgetEnded(target)
+    // Its pull requests have been read, so what they say is known, and stays known if the thread lets go of them.
+    if (this.evidence.readsPullRequests(target)) this.restoredUnread.delete(targetKey(target))
     const evidenceIds = this.evidence.read(target).map(item => item.id).sort()
     // A changed or removed already-observed fact is real news, including an unlink during incomplete recovery.
     const identities = this.evidence.identities(target)

@@ -1,4 +1,5 @@
 import { ThreadMediaTiles } from './ThreadMediaTiles'
+import { isCouncilPromptText } from '../../../shared/council'
 import React, { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useResponseStreaming } from './responseStreaming'
 import { useMark } from '../components/marks'
@@ -287,7 +288,9 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
   const { t } = useLingui()
   const restarted = useRestartStopped() && isRestartNoteText(text)
   const resumed = useOwlFeature('resume-after-restart') && isResumeNoteText(text)
-  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{restarted
+  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{isCouncilPromptText(text)
+    ? t({ message: 'Council', comment: 'The tag on a prompt a Council of models sent to one of its threads (ADR-0177).' })
+    : restarted
     ? t({ message: 'Restarted', comment: 'The tag on a message Sotto sent to restart a thread a usage limit or Sotto closing had stopped.' })
     : resumed
     ? t({ message: 'Resumed', comment: 'The tag on a message Sotto sent to resume a thread after a restart.' })
