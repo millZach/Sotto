@@ -1188,8 +1188,20 @@ msgstr ""
 msgid "Ask a follow-up"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Sotto…"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask the Council"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Watcher instead"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Watcher…"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -1648,6 +1660,10 @@ msgstr ""
 msgid "comes last"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Commands"
+msgstr ""
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Commit timing, pull requests, reviews, and when to ask about merging."
 msgstr ""
@@ -1789,6 +1805,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Continued on {machine}"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Conversation with {where}"
 msgstr ""
 
 #. A transcript copy button, after it copied
@@ -2049,6 +2069,7 @@ msgstr ""
 #: src/renderer/src/components/ToastRegion.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Dismiss"
 msgstr ""
@@ -2209,6 +2230,10 @@ msgstr ""
 
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Enter your OpenRouter API key first."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Esc stops it"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -2381,6 +2406,10 @@ msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Global shortcut"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Go back to the thread"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -3072,6 +3101,14 @@ msgstr ""
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Message {where}"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Message Watcher"
+msgstr ""
+
 #. The macOS Privacy & Security pane, as System Settings names it
 #. The microphone picker
 #: src/renderer/src/components/OpenSystemSettingsButton.tsx
@@ -3301,7 +3338,17 @@ msgid "Needs your choice"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "New thread (/new)"
+msgstr ""
+
+#. placeholder {0}: project.title
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "New thread in {0}"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ProjectStep.tsx
@@ -3692,6 +3739,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Nothing recorded yet"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Nothing to show in Sotto yet. Send a prompt first."
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -4748,6 +4799,14 @@ msgstr ""
 msgid "Second kind"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Send"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Send (Return)"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Send to {title}"
 msgstr ""
@@ -4908,6 +4967,18 @@ msgstr ""
 msgid "Show in folder"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show in Sotto (⌘O)"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show in Sotto (Ctrl+O)"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show it in Sotto"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Show on the chart"
 msgstr ""
@@ -4924,8 +4995,16 @@ msgstr ""
 msgid "Show the files it changes"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show this thread in Sotto"
+msgstr ""
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Show transcripts from"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show Watcher’s room in Sotto"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
@@ -5209,6 +5288,10 @@ msgstr ""
 msgid "Sotto could not save the verdict in the thread’s message box. Nothing was sent. Try again."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not show it. Open Sotto and choose it there."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again."
 msgstr ""
@@ -5231,6 +5314,10 @@ msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Sotto did not start the host on {name}, so it cannot restart it. Update it there with these commands."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto didn’t confirm the prompt. It is back in the box; check the thread before you send it again."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
@@ -5408,6 +5495,10 @@ msgstr ""
 msgid "Start"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Start a new thread"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Start a new Watcher with a handover of this one"
 msgstr ""
@@ -5569,6 +5660,10 @@ msgstr ""
 msgid "Stop"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Stop (Esc)"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop all"
 msgstr ""
@@ -5634,6 +5729,10 @@ msgstr ""
 #. placeholder {1}: card.from
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Stop the new thread on {0} if it made one, and keep this one on {1}?"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Stop the running turn"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -5724,6 +5823,14 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Talk to your computer and your coding agents"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Talking to the thread. Switch to Watcher"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Talking to Watcher. Switch to the thread"
 msgstr ""
 
 #: src/renderer/src/features/performance/PerformanceSettings.tsx
@@ -5999,6 +6106,10 @@ msgstr ""
 msgid "Theme"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "There is no project to start a thread in. Add one in Sotto, then send again."
+msgstr ""
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "These choices become explicit policies. Leaving a box unchecked grants no permission."
 msgstr ""
@@ -6088,6 +6199,7 @@ msgstr ""
 
 #. The thread a Council question comes from
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr ""
 
@@ -6583,6 +6695,10 @@ msgstr ""
 msgid "Waiting for the update before it."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Waiting for your answer"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Waiting on you"
@@ -6645,12 +6761,24 @@ msgstr ""
 msgid "Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Watcher is offering the last Watcher’s handover. Open Watcher’s room to continue with it or put it away, then send again."
+msgstr ""
+
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watcher is watching <0>{title}</0>."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Watcher is working. Stop its turn to start a new one."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Watcher isn’t running, so the popup is on your thread."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Watcher isn’t running. Start it in Sotto, then switch again."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -6856,6 +6984,10 @@ msgstr ""
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Working preferences"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Working…"
 msgstr ""
 
 #: src/renderer/src/features/dictate/JournalStats.tsx

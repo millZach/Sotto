@@ -262,6 +262,18 @@ msgstr ""
 msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "{kept} still works."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "{keys} on its own would show the popup while you type. Add ⌥ Option, ⌃ Control or ⌘ Command."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "{keys} on its own would show the popup while you type. Add Alt or Ctrl."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "{label} hue"
 msgstr ""
@@ -778,6 +790,10 @@ msgstr ""
 msgid "A community color theme for your editor."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "A dictation shortcut already uses {keys}. Pick other keys."
+msgstr ""
+
 #. A switch on Settings > Appearance: on, the light and the dark color schemes each get their own theme
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "A different theme when dark"
@@ -1063,6 +1079,15 @@ msgstr ""
 msgid "An older Sotto host: load unknown. Update it in Hosts & phones."
 msgstr ""
 
+#. placeholder {0}: inline(chord)
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Another app already uses {0}, so the popup has no shortcut. Pick other keys, or free them in that app."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Another app already uses {keys}. Pick other keys, or free them in that app."
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Another app already uses {refused}. {kept} still works. Pick other keys, or free that shortcut in the other app."
 msgstr ""
@@ -1200,6 +1225,8 @@ msgid "Back"
 msgstr ""
 
 #. placeholder {0}: inline(DEFAULT_THREAD_SHORTCUTS[row])
+#. placeholder {0}: inline(next)
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Back to the default, {0}."
 msgstr ""
@@ -1321,6 +1348,7 @@ msgid "Cancel inspecting app colors"
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Cancel recording"
 msgstr ""
@@ -1347,6 +1375,7 @@ msgid "Change"
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Change shortcut, {words}"
 msgstr ""
@@ -1359,12 +1388,17 @@ msgstr ""
 msgid "Change the host to add, and stop connecting"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Changed from the default"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "changed from their defaults."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Changed in Settings › Dictation."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -2028,6 +2062,7 @@ msgstr ""
 msgid "Default diff file state"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Default is"
 msgstr ""
@@ -2115,6 +2150,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Dictation shortcuts"
+msgstr ""
+
+#. placeholder {0}: inline(chord)
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Dictation uses {0}, so the popup has no shortcut. Pick other keys."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -2328,6 +2368,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "Error text"
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Esc hides the popup, so it can’t show it. Pick other keys."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -2548,7 +2592,7 @@ msgid "Global — the one set that works outside Sotto."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
+msgid "Global — works outside Sotto, as the popup’s does."
 msgstr ""
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
@@ -2622,6 +2666,7 @@ msgid "Hold any of these, speak, then let go."
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Hold the keys you want, then let go. Esc cancels."
 msgstr ""
@@ -3025,6 +3070,7 @@ msgid "Let agents use the browser without asking"
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Let go to save. Esc cancels."
 msgstr ""
@@ -3435,6 +3481,7 @@ msgstr ""
 msgid "No settled thread on this computer has been quiet that long."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "No shortcut"
 msgstr ""
@@ -4028,6 +4075,14 @@ msgstr ""
 msgid "Popular"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Popup"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Popup shortcut"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "port {port}, user from your SSH configuration"
 msgstr ""
@@ -4065,6 +4120,7 @@ msgid "Press Esc in any app to cancel a recording. Nothing is transcribed."
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Press the new keys…"
 msgstr ""
@@ -4309,11 +4365,13 @@ msgstr ""
 msgid "Remove selected"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut"
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut, {words}"
 msgstr ""
@@ -4371,6 +4429,7 @@ msgstr ""
 msgid "Repository conventions"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Reset {label} to its default"
 msgstr ""
@@ -4436,7 +4495,9 @@ msgstr ""
 msgid "Reset settings?"
 msgstr ""
 
+#. placeholder {0}: inline(DEFAULT_CHORD)
 #. placeholder {0}: inline(DEFAULT_THREAD_SHORTCUTS[row.id])
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Reset to {0}"
 msgstr ""
@@ -4725,6 +4786,7 @@ msgid "Shift+F6 goes back. In a split it goes round every pane. A terminal keeps
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Shortcut saved."
 msgstr ""
@@ -4799,6 +4861,10 @@ msgstr ""
 msgid "Show the creature"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Show the popup"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Show the top five"
 msgstr ""
@@ -4830,6 +4896,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Shows a code from {name} to type on your iPhone. It works once, for five minutes. A paired phone reads threads and replies; answering is its own switch."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Shows the popup over any app, or hides it. It works outside Sotto, like dictation’s keys."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -5110,10 +5180,12 @@ msgstr ""
 msgid "Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s hold-to-talk dictation shortcut already uses {keys}. Pick other keys."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s hold-to-talk dictation shortcut already uses those keys. Pick other keys."
 msgstr ""
@@ -5126,10 +5198,12 @@ msgstr ""
 msgid "Sotto’s menu"
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s start-and-stop dictation shortcut already uses {keys}. Pick other keys."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s start-and-stop dictation shortcut already uses those keys. Pick other keys."
 msgstr ""
@@ -5641,6 +5715,7 @@ msgid "That key can’t be part of a shortcut here. Try a letter, a number, an F
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key."
 msgstr ""
 
@@ -5855,6 +5930,18 @@ msgstr ""
 msgid "The pasted text was cut to fit the 4,000-character limit."
 msgstr ""
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The popup has no shortcut. Show it from the tray."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The popup still has no shortcut."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The popup’s shortcut needs a key besides the modifiers, such as Space or a letter."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "The provider"
 msgstr ""
@@ -5898,6 +5985,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "The setup of {name} stopped."
+msgstr ""
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The shortcut could not be changed."
 msgstr ""
 
 #. placeholder {0}: inline(previous)

@@ -16,6 +16,7 @@ import { ShortcutKey } from '../../components/ShortcutKey'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
 import { useChordRecorder } from './useChordRecorder'
+import { useOwlFeature } from '../../state/owlFeature'
 import './dictationShortcuts.css'
 import './threadShortcuts.css'
 
@@ -97,6 +98,7 @@ const UNSUPPORTED_KEY = msg`That key can’t be part of a shortcut here. Try a l
 export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation }: ThreadShortcutsSettingsProps): ReactNode {
   const { t, i18n } = useLingui()
   const recorder = useChordRecorder(platform, false)
+  const popupOn = useOwlFeature('popup')
   const [filter, setFilter] = useState('')
   const [target, setTarget] = useState<ThreadShortcutId | null>(null)
   const [message, setMessage] = useState<RowMessage | null>(null)
@@ -322,10 +324,12 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
   )
 
   const dictationAccelerator = settings.hotkey
+  // With the popup on (ADR-0181) its shortcut works outside Sotto too, so dictation's is no longer the only one.
+  const global = popupOn ? <Trans>Global — works outside Sotto, as the popup’s does.</Trans> : <Trans>Global — the one set that works outside Sotto.</Trans>
   const fixedRows: ReactNode[] = [
     fixedRow(t`Dictation (press & hold)`, onOpenDictation
-      ? <><Trans>Global — the one set that works outside Sotto.</Trans>{' '}<button type="button" className="dictation-shortcuts__add tt-focusable" onClick={onOpenDictation}><Trans>Settings › Dictation</Trans></button></>
-      : <Trans>Global — the one set that works outside Sotto. Changed in Settings › Dictation.</Trans>, dictationAccelerator, 'dictation'),
+      ? <>{global}{' '}<button type="button" className="dictation-shortcuts__add tt-focusable" onClick={onOpenDictation}><Trans>Settings › Dictation</Trans></button></>
+      : <>{global} <Trans>Changed in Settings › Dictation.</Trans></>, dictationAccelerator, 'dictation'),
     fixedRow(t`Send the prompt`, <Trans>The composer’s own key. Shift+Enter adds a line.</Trans>, 'Enter', 'send'),
     fixedRow(t`Steer now`, <Trans>In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does.</Trans>, acceleratorOf('mod+enter'), 'steer'),
     fixedRow(t`Commit, use folder`, <Trans>Inside its dialog only.</Trans>, acceleratorOf('mod+enter'), 'commit'),

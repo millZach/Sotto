@@ -3,6 +3,7 @@ import { PhonesSettings } from './PhonesSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { ThreadShortcutsSettings } from './ThreadShortcutsSettings'
+import { PopupShortcutSetting } from './PopupShortcutSetting'
 import { useRevisionDraft } from './useRevisionDraft'
 import { shownWords, type LaterWords } from './laterWords'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
@@ -463,6 +464,7 @@ export function SettingsView({
   const workerMachine = watcherOn && crossMachineOn
   const performanceOn = useOwlFeature('main-freeze')
   const councilOn = useOwlFeature('council')
+  const popupOn = useOwlFeature('popup') && window.sotto?.popup !== undefined
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
   const dictation = dictationOn(settings, dictationSwitch)
@@ -490,7 +492,7 @@ export function SettingsView({
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -797,6 +799,7 @@ export function SettingsView({
 
               <Card className="settings-section" id="settings-keyboard" {...panelProps('settings-keyboard')}>
                 <div className="settings-section__heading"><h2><Trans>Keyboard</Trans></h2><p className="tt-paragraph"><Trans>Every shortcut in Sotto, in one place</Trans></p></div>
+                <PopupShortcutSetting settings={settings} platform={platform} />
                 <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')} />
               </Card>
 

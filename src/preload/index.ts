@@ -62,6 +62,9 @@ import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, gitPullRequestResu
 import { AGENT_HOST_FOLDERS, hostFoldersClientRequestSchema, hostFoldersResultSchema } from '../shared/hostFolders'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
+import { POPUP_COMMAND_TYPES, POPUP_FIT, POPUP_HIDE, POPUP_OPEN, POPUP_OPENED, POPUP_RENDERER_ARGUMENT, POPUP_SHORTCUT_REPLACE, POPUP_SHORTCUT_STATE_CHANGED, POPUP_SHORTCUT_STATE_GET,
+  POPUP_SHORTCUT_SUSPEND, POPUP_SHOWN, POPUP_THREAD, popupFitSchema, popupOpenedSchema, popupOpenSchema, popupShortcutReplaceSchema, popupShortcutResultSchema, popupShortcutStateSchema,
+  type PopupBridge, type PopupShortcutBridge } from '../shared/popup'
 import { questionPageOpenResultSchema, questionPageOpenSchema } from '../shared/questionPageOpen'
 import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
@@ -421,6 +424,8 @@ export function createSottoBridge(
   glassWindow: GlassWindowState | null = null,
   /** The Council (ADR-0177): only while the `council` Owl feature is on and this computer runs threads. */
   councilEnabled = false,
+  /** The popup's shortcut row and its Open in Sotto (ADR-0181): only while the `popup` Owl feature is on. */
+  popupEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -550,6 +555,14 @@ export function createSottoBridge(
       watcherFirst: modelId => invokeParsed(renderer, NEXT_PROMPT_WATCHER_FIRST, watcherFirstAnswerSchema, watcherFirstModelSchema.parse(modelId)),
       // Nothing waits on a cancel; a lost one leaves the side request to its own timeout.
       cancelWatcherFirst: () => { void renderer.invoke(NEXT_PROMPT_WATCHER_FIRST_CANCEL).catch(() => undefined) },
+    }) } : {}),
+    // The popup (ADR-0181): only while the Owl list turns it on, so stable's Settings has no row and registers nothing.
+    ...(popupEnabled ? { popup: Object.freeze<PopupShortcutBridge>({
+      state: () => invokeParsed(renderer, POPUP_SHORTCUT_STATE_GET, popupShortcutStateSchema),
+      onState: listener => subscribe(renderer, POPUP_SHORTCUT_STATE_CHANGED, popupShortcutStateSchema, listener),
+      replace: chord => invokeParsed(renderer, POPUP_SHORTCUT_REPLACE, popupShortcutResultSchema, popupShortcutReplaceSchema.parse(chord)),
+      suspend: async suspended => { await renderer.invoke(POPUP_SHORTCUT_SUSPEND, booleanSchema.parse(suspended)) },
+      onOpened: listener => subscribe(renderer, POPUP_OPENED, popupOpenedSchema, listener),
     }) } : {}),
     // The Council (ADR-0177): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(councilEnabled ? { council: Object.freeze<CouncilBridge>({
@@ -780,15 +793,51 @@ export function createSottoWidgetBridge(
   })
 }
 
+const popupThreadSchema = trustedState<import('../shared/agents').AgentThread>('id')
+const popupShownSchema = z.null()
+
+/**
+ * The popup's window (ADR-0181): its own channels, and of the main window's only those it needs to read and prompt a
+ * thread or Watcher, which main checks against the popup's role. It is sent no broadcast; main pushes it the records and
+ * history of the threads it observes.
+ */
+export function createSottoPopupBridge(
+  renderer: IpcRendererAdapter,
+  platform: SottoPlatform,
+  interfaceLanguage: InterfaceLanguageState | null = null,
+  watcherEnabled = false,
+): PopupBridge {
+  return Object.freeze<PopupBridge>({
+    platform,
+    ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
+    ...(watcherEnabled ? { watcher: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema) } : {}),
+    getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
+    onSettingsChanged: listener => subscribe(renderer, SETTINGS_CHANGED, settingsChangedSchema, listener),
+    shell: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
+    threadDetail: threadId => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    onThreadDetail: listener => subscribe(renderer, AGENT_THREAD_DETAIL, trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
+    onThread: listener => subscribe(renderer, POPUP_THREAD, popupThreadSchema, listener),
+    command: command => {
+      if (!POPUP_COMMAND_TYPES.has(command.type)) return Promise.reject(new Error('AGENT_POPUP_COMMAND_REFUSED'))
+      return invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command))
+    },
+    openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
+    hide: async () => { await renderer.invoke(POPUP_HIDE) },
+    fit: async height => { await renderer.invoke(POPUP_FIT, popupFitSchema.parse(height)) },
+    open: async request => { await renderer.invoke(POPUP_OPEN, popupOpenSchema.parse(request)) },
+    onShown: listener => subscribe(renderer, POPUP_SHOWN, popupShownSchema, () => listener()),
+  })
+}
+
 const RENDERER_ROLE_PREFIX = '--sotto-renderer-role='
 
 export function parseRendererRoleArgument(
   arguments_: readonly string[],
-): 'main' | 'widget' | null {
+): 'main' | 'widget' | 'popup' | null {
   const matches = arguments_.filter((argument) => argument.startsWith(RENDERER_ROLE_PREFIX))
   if (matches.length !== 1) return null
   const role = matches[0]?.slice(RENDERER_ROLE_PREFIX.length)
-  return role === 'main' || role === 'widget' ? role : null
+  return role === 'main' || role === 'widget' || role === 'popup' ? role : null
 }
 
 export function parsePlatformArgument(
@@ -815,7 +864,11 @@ export function exposeRendererBridge(
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
-      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT)))
+      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT)))
+    return true
+  }
+  if (rendererRole === 'popup') {
+    context.exposeInMainWorld('sottoPopup', createSottoPopupBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(WATCHER_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {
