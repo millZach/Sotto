@@ -110,11 +110,6 @@ msgstr ""
 msgid "{attached, plural, one {One attachment} other {# attachments}}"
 msgstr ""
 
-#. In the speed card of a thread on the user’s own model server: the words per second its last turn averaged, such as 38.
-#: src/renderer/src/agents/ServerMark.tsx
-msgid "{average} average"
-msgstr ""
-
 #. {banner} is what the provider said about why the thread could not be resumed.
 #: src/renderer/src/agents/FailedTurnNotice.tsx
 msgid "{banner} Nothing in the transcript was lost."
@@ -6045,7 +6040,7 @@ msgstr ""
 
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
-#. In the speed card of a thread on the user’s own model server: no words have come for a moment.
+#. The large figure in the speed card of a thread on the user’s own model server: no words have come for a moment.
 #: src/renderer/src/agents/ServerMark.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Paused"
@@ -9644,9 +9639,14 @@ msgstr ""
 msgid "Which threads are waiting on me?"
 msgstr ""
 
-#. In the speed card of a thread on the user’s own model server: how fast its reply came.
+#. Beside the large figure in the speed card of a thread on the user’s own model server, such as 38: how fast its reply comes.
 #: src/renderer/src/agents/ServerMark.tsx
-msgid "Words per second"
+msgid "words a second"
+msgstr ""
+
+#. Beside the large figure in the speed card of a thread on the user’s own model server once its turn has ended, such as 38: how fast the last reply came, on average.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "words a second, on average"
 msgstr ""
 
 #. A turn that finished, when its time was not recorded.

@@ -1,56 +1,72 @@
 /* The server mark (ADR-0124, November 1 amendment; Owl only): four square pixels, no rounding, in the model chip and on
    the running turn's live line of a thread on one of the user's own model servers. Lit cells take the theme's accent;
-   resting cells a faint ink. Clockwise from the top left the cells are the first, second, fourth and third. Under reduced
-   motion each state holds still: dim at rest, one lit cell while the server reads, all four while it writes, hollow
-   while it does not answer. */
+   resting cells the muted ink. Clockwise from the top left the cells are the first, second, fourth and third. Under
+   reduced motion each state holds still: muted at rest, one lit cell while the server reads, all four while it writes,
+   hollow while it does not answer. */
 .server-mark {
-  --server-mark-cell: 4px;
+  --server-mark-cell: 5px;
   --server-mark-on: var(--tt-accent);
-  --server-mark-off: color-mix(in oklab, var(--tt-text-muted) 30%, transparent);
-  --server-mark-half: color-mix(in oklab, var(--tt-accent) 45%, var(--server-mark-off));
+  --server-mark-off: color-mix(in oklab, var(--tt-text-muted) 42%, transparent);
+  --server-mark-half: color-mix(in oklab, var(--tt-accent) 70%, var(--server-mark-off));
+  --server-mark-tail: color-mix(in oklab, var(--tt-accent) 38%, var(--server-mark-off));
   display: inline-grid; flex: none; place-items: center; vertical-align: middle;
 }
-.thread-activity-live > .server-mark { --server-mark-cell: 5px; }
+.thread-activity-live > .server-mark { --server-mark-cell: 6px; }
 .server-mark__cells { display: grid; grid-template-columns: repeat(2, var(--server-mark-cell)); gap: 1px; }
 .server-mark__cells > i { display: block; width: var(--server-mark-cell); height: var(--server-mark-cell); border-radius: 0; background: var(--server-mark-off); }
-.server-mark[data-state='idle'] .server-mark__cells > i { background: var(--tt-text-muted); opacity: .5; }
+.server-mark[data-state='idle'] .server-mark__cells > i { background: var(--tt-text-muted); }
 .server-mark[data-state='reading'] .server-mark__cells > i:first-child { background: var(--server-mark-on); }
 .server-mark[data-state='writing'] .server-mark__cells > i { background: var(--server-mark-on); }
 /* Hollow rather than grey, so it reads apart from rest without its colour. */
 .server-mark[data-state='not-answering'] .server-mark__cells > i { background: transparent; box-shadow: inset 0 0 0 1px var(--tt-text-muted); }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* Reading: one lit cell walks round, a step every 420ms. It implies no progress, since the server reports none. */
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i { background: var(--server-mark-off); animation: server-mark-walk 1680ms steps(1, end) infinite; }
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i:nth-child(2) { animation-delay: 420ms; }
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i:nth-child(4) { animation-delay: 840ms; }
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i:nth-child(3) { animation-delay: 1260ms; }
-  /* Writing: each piece of text that arrives moves the lit cell a step round, leaving the last one at half. With no text
-     for 700ms the lit cell drops to half too, so a stall stops it. */
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i { background: var(--server-mark-off); transition: background-color 260ms linear; }
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i[data-cell='half'] { background: var(--server-mark-half); }
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i[data-cell='lit'] { background: var(--server-mark-on); animation: server-mark-stall 260ms linear 700ms forwards; }
-  /* Not answering: one blink for each new try. */
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='not-answering'][data-blink] .server-mark__cells > i { animation: server-mark-blink 450ms steps(1, end) 1; }
-  /* Done: all four light once, then settle to rest. */
-  :root:not([data-reduced-motion='on']) .server-mark[data-state='idle'][data-done] .server-mark__cells > i { animation: server-mark-done 500ms ease-out 1; }
+  /* Reading: one lit cell walks round with a fading tail, a step every 700ms. It implies no progress, since the server
+     reports none. Each cell lights at once and only fades. */
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i { background: var(--server-mark-off); animation: server-mark-walk 2800ms linear infinite; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i:nth-child(2) { animation-delay: 700ms; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i:nth-child(4) { animation-delay: 1400ms; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='reading'] .server-mark__cells > i:nth-child(3) { animation-delay: 2100ms; }
+  /* Writing: each piece of text that arrives moves the head a step round. The head lights at once; the cells behind it
+     fade, so it reads as a comet. With no text for 650ms the whole trail fades, so a stall stops it. */
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i { background: var(--server-mark-off); transition: background-color 320ms cubic-bezier(.2, 0, .2, 1); }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i[data-cell='tail'] { background: var(--server-mark-tail); animation: server-mark-to-off 320ms ease-out 650ms forwards; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i[data-cell='half'] { background: var(--server-mark-half); animation: server-mark-to-off 320ms ease-out 650ms forwards; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='writing'] .server-mark__cells > i[data-cell='lit'] { background: var(--server-mark-on); transition: none; animation: server-mark-to-tail 320ms ease-out 650ms forwards; }
+  /* Not answering: each new try fills the next cell round, which then empties. */
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='not-answering'] .server-mark__cells > i[data-cell='try'] { animation: server-mark-try 450ms ease-out 1 forwards; }
+  /* Done: a quick sweep round lights all four, then they settle to rest. */
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='idle'][data-done] .server-mark__cells > i { animation: server-mark-done 600ms ease-out 1 backwards; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='idle'][data-done] .server-mark__cells > i:nth-child(2) { animation-delay: 45ms; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='idle'][data-done] .server-mark__cells > i:nth-child(4) { animation-delay: 90ms; }
+  :root:not([data-reduced-motion='on']) .server-mark[data-state='idle'][data-done] .server-mark__cells > i:nth-child(3) { animation-delay: 135ms; }
 }
-@keyframes server-mark-walk { 0% { background: var(--server-mark-on); } 25% { background: var(--server-mark-off); } }
-@keyframes server-mark-stall { to { background: var(--server-mark-half); } }
-@keyframes server-mark-blink { 0% { background: var(--tt-text-muted); } 100% { background: transparent; } }
-@keyframes server-mark-done { 0% { background: var(--server-mark-on); opacity: 1; } }
+@keyframes server-mark-walk {
+  0%, 25% { background: var(--server-mark-on); }
+  36%, 50% { background: var(--server-mark-half); }
+  61%, 75% { background: var(--server-mark-tail); }
+  86%, 100% { background: var(--server-mark-off); }
+}
+@keyframes server-mark-to-off { to { background: var(--server-mark-off); } }
+@keyframes server-mark-to-tail { to { background: var(--server-mark-tail); } }
+@keyframes server-mark-try { 0%, 40% { background: var(--tt-text-muted); } 100% { background: transparent; } }
+@keyframes server-mark-done { 0%, 30% { background: var(--server-mark-on); } }
 
-/* The speed card, under the chip's name in the model chip's card: whose turn, the graph, then the figures. */
-.server-speed { --server-speed-off: color-mix(in oklab, var(--tt-text-muted) 30%, transparent); width: 223px; max-width: 100%; margin-top: 6px; }
-.server-speed__head { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 8px; color: var(--tt-text-hint); }
-.server-speed__host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.server-speed__graph { display: flex; align-items: flex-end; gap: 1px; height: 22px; margin: 0 0 8px; overflow: hidden; }
-.server-speed__graph > i { flex: none; width: 3px; background: var(--tt-accent); }
-.server-speed__graph > i[data-wait] { height: 1px; background: var(--server-speed-off); }
-.server-speed__figures { display: grid; gap: 5px; margin: 0; }
+/* The speed card, under the chip's name in the model chip's card: whose turn, how fast, the graph, then the figures. */
+.server-speed { --server-speed-off: color-mix(in oklab, var(--tt-text-muted) 30%, transparent); width: 240px; max-width: 100%; margin-top: 6px; }
+.server-speed__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0; color: var(--tt-text-muted); }
+.server-speed__host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-hint); }
+.server-speed__rate { display: flex; align-items: baseline; gap: 6px; min-height: 28px; margin: 6px 0 8px; color: var(--tt-text-muted); }
+.server-speed__figure { color: var(--tt-text); font-size: var(--tt-type-figure); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.server-speed__rate[data-paused] .server-speed__figure { color: var(--tt-text-hint); }
+.server-speed__graph { display: flex; align-items: flex-end; justify-content: flex-end; gap: 1px; height: 28px; margin: 0 0 12px; overflow: hidden; }
+.server-speed__graph > i { flex: none; width: 2px; height: 1px; background: var(--server-speed-off); }
+.server-speed__graph > i[data-wait] { background: color-mix(in oklab, var(--tt-text-hint) 55%, transparent); }
+.server-speed__graph > i[data-bar] { background: color-mix(in oklab, var(--tt-accent) 62%, var(--server-speed-off)); }
+.server-speed__graph > i[data-bar='now'] { background: var(--tt-accent); }
+.server-speed__figures { display: grid; gap: 6px; margin: 0; padding-top: 10px; border-top: 1px solid var(--tt-border-faint); }
 .server-speed__figures > div { display: flex; justify-content: space-between; gap: 12px; }
 .server-speed__figures dd { margin: 0; color: var(--tt-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.server-speed__figures dd[data-paused] { color: var(--tt-text-hint); }
-.server-speed__context { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 1px; margin-top: 6px; }
+.server-speed__context { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 2px; margin-top: 6px; }
 .server-speed__context > i { height: 4px; background: var(--server-speed-off); }
 .server-speed__context > i[data-on] { background: var(--tt-text-muted); }

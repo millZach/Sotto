@@ -105,11 +105,11 @@ export function ownServerMarkOf(thread: AgentThread, connected: boolean): OwnSer
 const STREAM_GAP_MS = 1_500
 /** Words per second are the words of the last second and a half. */
 const RATE_WINDOW_MS = 1_500
-/** The speed graph's bars: one a quarter second, the last 56 of them. */
+/** The speed graph's bars: one a quarter second, the last 78 of them, which is as many as the card has room for. */
 const BAR_MS = 250
-const BARS_KEPT = 56
-/** The mark steps at most once a frame, however fast text comes. */
-const FRAME_MS = 16
+const BARS_KEPT = 78
+/** The mark steps at most this often, however fast text comes, so a burst never blurs all four cells lit. */
+const STEP_MS = 90
 /** The turns kept, newest last: enough for every pane a window shows. */
 const PACES_KEPT = 64
 
@@ -187,7 +187,7 @@ export function observeServerTurn(sample: ServerTurnSample, now: number): void {
       const bar = Math.floor((now - pace.origin) / BAR_MS)
       pace.bars.set(bar, (pace.bars.get(bar) ?? 0) + added)
       for (const kept of pace.bars.keys()) if (kept <= bar - BARS_KEPT) pace.bars.delete(kept)
-      if (now - pace.steppedAt >= FRAME_MS) { pace.steps++; pace.steppedAt = now }
+      if (now - pace.steppedAt >= STEP_MS) { pace.steps++; pace.steppedAt = now }
       changed = true
     }
   }
@@ -242,11 +242,19 @@ export function ServerMark({ state, attempt, turnId, finished = false }: {
   const [was, setWas] = useState(state)
   const [done, setDone] = useState(false)
   if (was !== state) { setWas(state); setDone(state === 'idle' && finished && (was === 'reading' || was === 'writing')) }
-  const lit = CLOCKWISE[steps % 4], half = steps > 0 ? CLOCKWISE[(steps + 3) % 4] : undefined
-  return <span className="server-mark" data-state={state} data-done={done || undefined} data-blink={attempt !== undefined || undefined} aria-hidden="true">
-    {/* A new try draws the cells again, so the blink plays once for it. */}
+  // Writing: a lit head, the cell behind it at half and the one behind that faint, like a comet's tail. Not answering:
+  // each try fills the next cell round, once.
+  const cellOf = (cell: number): string | undefined => {
+    if (state === 'not-answering') return attempt !== undefined && cell === CLOCKWISE[(attempt - 1) % 4] ? 'try' : undefined
+    if (state !== 'writing') return undefined
+    if (cell === CLOCKWISE[steps % 4]) return 'lit'
+    if (steps > 0 && cell === CLOCKWISE[(steps + 3) % 4]) return 'half'
+    return steps > 1 && cell === CLOCKWISE[(steps + 2) % 4] ? 'tail' : undefined
+  }
+  return <span className="server-mark" data-state={state} data-done={done || undefined} aria-hidden="true">
+    {/* A new try draws the cells again, so its cell fills once for it. */}
     <span className="server-mark__cells" key={state === 'not-answering' ? `try-${attempt ?? 'none'}` : 'cells'}>
-      {[0, 1, 2, 3].map(cell => <i key={cell} data-cell={state !== 'writing' ? undefined : cell === lit ? 'lit' : cell === half ? 'half' : undefined} />)}
+      {[0, 1, 2, 3].map(cell => <i key={cell} data-cell={cellOf(cell)} />)}
     </span>
   </span>
 }
@@ -265,9 +273,10 @@ function barsOf(pace: Pace, at: number): (number | null)[] {
   return bars
 }
 
-/** The graph's height in pixels, and the words per second its top stands for at the least. */
-const GRAPH_PX = 22
-const GRAPH_PEAK = 45
+/** The graph's height in pixels; its top stands for at least 40 words a second and moves in steps of 20, so it holds still. */
+const GRAPH_PX = 28
+const GRAPH_FLOOR = 40
+const GRAPH_STEP = 20
 
 /**
  * The speed card's figures, under the model chip's name while the pointer rests on the chip or the keyboard focus is on
@@ -297,14 +306,14 @@ export function ServerSpeedCard({ turn, heard, unanswered, usage, modelId, shown
     : unanswered ? t({ message: 'No answer', comment: 'In the speed card of a thread on the user’s own model server, for how long the first word took: the server never answered.' })
     : running && !heard && Number.isFinite(startedAt) ? waitingFor(formatDuration(Math.max(0, now - startedAt)))
     : none
-  let rate = none, paused = false
+  let rate = none, paused = false, average = false
   if (pace !== undefined && running && heard) {
     const recent = pace.recent.reduce((sum, text) => now - text.at < RATE_WINDOW_MS ? sum + text.words : sum, 0)
-    if (recent === 0) { paused = true; rate = t({ message: 'Paused', comment: 'In the speed card of a thread on the user’s own model server: no words have come for a moment.' }) }
+    if (recent === 0) { paused = true; rate = t({ message: 'Paused', comment: 'The large figure in the speed card of a thread on the user’s own model server: no words have come for a moment.' }) }
     else if (pace.streamMs > 0) rate = i18n.number(Math.round(recent / (RATE_WINDOW_MS / 1_000)))
   } else if (pace !== undefined && !running && pace.streamMs >= 1_000) {
-    const average = i18n.number(Math.round(pace.streamWords / (pace.streamMs / 1_000)))
-    rate = t({ message: `${average} average`, comment: 'In the speed card of a thread on the user’s own model server: the words per second its last turn averaged, such as 38.' })
+    average = true
+    rate = i18n.number(Math.round(pace.streamWords / (pace.streamMs / 1_000)))
   }
   const used = contextUsedOf(usage, modelId)
   const contextOf = (shown: string, size: number | undefined): string => {
@@ -314,7 +323,9 @@ export function ServerSpeedCard({ turn, heard, unanswered, usage, modelId, shown
   }
   const whole = used === undefined ? undefined : usage?.contextWindow
   const bars = pace === undefined ? [] : barsOf(pace, now)
-  const peak = Math.max(GRAPH_PEAK, ...bars.map(bar => bar ?? 0))
+  const peak = Math.max(GRAPH_FLOOR, Math.ceil(Math.max(0, ...bars.map(bar => bar ?? 0)) / GRAPH_STEP) * GRAPH_STEP)
+  // Fixed slots, newest on the right, so the graph scrolls rather than grows.
+  const slots: (number | null | undefined)[] = [...Array<undefined>(BARS_KEPT - bars.length).fill(undefined), ...bars]
   const filled = whole === undefined || used === undefined ? 0 : Math.min(16, Math.round(used / whole * 16))
   return <div className="server-speed">
     <p className="server-speed__head">
@@ -323,12 +334,17 @@ export function ServerSpeedCard({ turn, heard, unanswered, usage, modelId, shown
         : t({ message: 'Last turn', comment: 'Heads the speed card of a thread on the user’s own model server once its last turn has ended.' })}</span>
       {turn.ownServer?.host ? <span className="server-speed__host">{turn.ownServer.host}</span> : null}
     </p>
-    {bars.length ? <span className="server-speed__graph" aria-hidden="true">
-      {bars.map((bar, at) => bar === null ? <i key={at} data-wait /> : <i key={at} style={{ height: `${Math.max(1, Math.round(bar / peak * GRAPH_PX))}px` }} />)}
-    </span> : null}
+    <p className="server-speed__rate" data-paused={paused || undefined}>
+      <span className="server-speed__figure">{rate}</span>
+      {paused ? null : <span>{average ? t({ message: 'words a second, on average', comment: 'Beside the large figure in the speed card of a thread on the user’s own model server once its turn has ended, such as 38: how fast the last reply came, on average.' })
+        : t({ message: 'words a second', comment: 'Beside the large figure in the speed card of a thread on the user’s own model server, such as 38: how fast its reply comes.' })}</span>}
+    </p>
+    <span className="server-speed__graph" aria-hidden="true">
+      {slots.map((bar, at) => bar === undefined || bar === 0 ? <i key={at} /> : bar === null ? <i key={at} data-wait />
+        : <i key={at} data-bar={running && at === slots.length - 1 ? 'now' : ''} style={{ height: `${Math.max(2, Math.round(bar / peak * GRAPH_PX))}px` }} />)}
+    </span>
     <dl className="server-speed__figures">
       <div><dt>{t({ message: 'First word after', comment: 'In the speed card of a thread on the user’s own model server: how long the server took to start answering the last message, such as 41s.' })}</dt><dd>{firstWord}</dd></div>
-      <div><dt>{t({ message: 'Words per second', comment: 'In the speed card of a thread on the user’s own model server: how fast its reply came.' })}</dt><dd data-paused={paused || undefined}>{rate}</dd></div>
       {used === undefined ? null : <div><dt>{t({ message: 'Context used', comment: 'In the speed card of a thread on the user’s own model server: how much of the model’s context the thread fills.' })}</dt>
         <dd>{contextOf(formatTokenCount(used), whole)}</dd></div>}
     </dl>
