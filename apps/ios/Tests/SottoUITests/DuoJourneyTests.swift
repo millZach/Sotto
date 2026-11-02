@@ -1,9 +1,10 @@
 import XCTest
 import UIKit
 
-/// The unfolded iPhone Duo, upright and sideways (Zach's Duo polish, November 1, 2026): the page reaches the top of the
-/// screen with no band, the tabs stand low on the right in one pill of same-size tiles, the sidebar's button and New
-/// thread stand at the top of the rail, and a thumb's drag moves the sidebar. These journeys run only where the app's
+/// The unfolded iPhone Duo, upright and sideways (Zach's Duo polish, November 1, 2026): the tabs stand low on the right
+/// in one pill of same-size tiles, the sidebar's button and New thread stand at the top of the rail, and a thumb's drag
+/// moves the sidebar. Each journey marks its pictures for the capture script, which takes them from the host and reads
+/// the page's top edge there, since XCTest's own screenshots on the Duo show its dark cover screen. These journeys run only where the app's
 /// window is the unfolded Duo's, so CI's iPhone SE and Pro Max skip them; the Duo captures run them on the iPhone Duo
 /// simulator with its inner screen open (ADR-0151, November 1 amendment).
 @MainActor final class DuoJourneyTests: XCTestCase {
@@ -30,12 +31,12 @@ import UIKit
 
     private func byID(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
-    /// The app's own window: on the unfolded Duo the main screen is the folded cover screen, dark while it is open.
+    /// Marks a moment worth a picture. On the Duo simulator XCTest's screenshots show the folded cover screen, dark while
+    /// the inner one is open, so the capture script takes the inner screen's picture from the host around each mark, and
+    /// reads its top edge there.
     private func capture(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        print("DUO-SHOT \(name) \(Date().timeIntervalSince1970)")
+        Thread.sleep(forTimeInterval: 3)
     }
 
     /// Turns the Duo until the window stands the way asked, and skips where this isn't the unfolded Duo held that way.
@@ -79,44 +80,18 @@ import UIKit
         XCTAssertGreaterThan(plus.frame.minX, window.maxX - 100, "\(stage): New thread on the right edge")
     }
 
-    /// How light the app's window is along its top edge, from 0 to 1: two pixel rows a few pixels down from the top,
-    /// across the middle half, clear of the status bar's words at either end.
-    private func topLightness() -> CGFloat {
-        guard let image = app.screenshot().image.cgImage else { return 0 }
-        let width = image.width, height = image.height
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(data: nil, width: width, height: 2, bitsPerComponent: 8, bytesPerRow: width * 4,
-                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0 }
-        // The context's origin is its bottom left: shift the image down so its rows 4 and 5 from the top fill it.
-        context.draw(image, in: CGRect(x: 0, y: CGFloat(6 - height), width: CGFloat(width), height: CGFloat(height)))
-        guard let data = context.data else { return 0 }
-        let bytes = data.bindMemory(to: UInt8.self, capacity: width * 4 * 2)
-        var total: CGFloat = 0, count: CGFloat = 0
-        for row in 0..<2 {
-            for x in stride(from: width / 4, to: width * 3 / 4, by: 4) {
-                let i = (row * width + x) * 4
-                total += (0.2126 * CGFloat(bytes[i]) + 0.7152 * CGFloat(bytes[i + 1]) + 0.0722 * CGFloat(bytes[i + 2])) / 255
-                count += 1
-            }
-        }
-        return count > 0 ? total / count : 0
-    }
-
     func testUprightFillsTheScreenWithTheRailLowOnTheRight() throws {
         launch(["-phoneAppearance", "light"])
         try hold(upright: true)
         XCTAssertTrue(byID("thread-search").waitForExistence(timeout: 20), "Threads opens")
         let window = app.windows.firstMatch.frame
         capture("duo-upright-threads-light")
-        // In Light the page's ground is light from edge to edge: a dark band along the top is what Zach saw.
-        XCTAssertGreaterThan(topLightness(), 0.6, "The page reaches the top of the screen with no dark band")
         checkRail(in: window, "Threads")
         XCTAssertFalse(app.buttons["duo-sidebar"].isEnabled, "On the Threads list the list is the page, so the sidebar's button rests")
         app.buttons["tab-watcher"].tap()
         let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: app.buttons["tab-watcher"])
         XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: 10), .completed, "Watcher shows")
         capture("duo-upright-watcher-light")
-        XCTAssertGreaterThan(topLightness(), 0.6, "Watcher reaches the top of the screen with no bar over it")
         checkRail(in: window, "Watcher")
     }
 
@@ -157,7 +132,6 @@ import UIKit
         let list = byID("duo-sidebar-list")
         XCTAssertTrue(list.waitForExistence(timeout: 5), "Sideways, the sidebar stands beside a thread")
         capture("duo-sideways-thread-light")
-        XCTAssertGreaterThan(topLightness(), 0.6, "The page reaches the top of the screen with no dark band")
         let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tab-'")).allElementsBoundByIndex.filter { $0.isHittable }
         XCTAssertEqual(tabs.count, 4)
         if let first = tabs.first {
