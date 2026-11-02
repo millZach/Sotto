@@ -158,6 +158,8 @@ struct PhotoViewer: View {
     var box: PhotoBox? = nil
     @State private var marking: MarkupTarget?
     @State private var markRefusal: String?
+    /// The pictures the pages on screen are showing, the same images, so Mark up opens the one shown and fetches nothing.
+    @State private var shown: [PhotoPreviews.Key: CGImage] = [:]
     @State private var closeAfterMarking = false
     var body: some View {
         VStack(spacing: 0) {
@@ -171,12 +173,12 @@ struct PhotoViewer: View {
                 }
             }.padding(.horizontal, 20).foregroundStyle(Palette.ink)
             if let markRefusal {
-                Text(markRefusal).font(.footnote).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+                Text(markRefusal).font(.sotto(.small)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
                     .padding(.horizontal, 20).paragraphDirection()
             }
             TabView(selection: $opened.index) {
                 ForEach(Array(opened.items.enumerated()), id: \.element.id) { index, item in
-                    FullPhoto(key: item.key, name: item.name).tag(index)
+                    FullPhoto(key: item.key, name: item.name) { shown[item.key] = $0 }.tag(index)
                 }
             }.tabViewStyle(.page(indexDisplayMode: opened.items.count > 1 ? .always : .never))
             Text(opened.items[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
@@ -197,17 +199,16 @@ struct PhotoViewer: View {
         }
     }
 
-    /// Opens the picture shown in the editor, from the copy this viewer already holds, unless its reply can't take it.
+    /// Opens the picture shown in the editor, the image its page already holds, unless its reply can't take it. It asks
+    /// the computer for nothing (ADR-0170, decision 18).
     private func markUp(_ box: PhotoBox) {
         if let refusal = model.markedCopyRefusal(box) { markRefusal = refusal; return }
         guard let item = opened.items[safe: opened.index] else { return }
-        Task {
-            guard let image = await previews.full(item.key, model: model) else {
-                markRefusal = String(localized: "This picture is still loading. Try again in a moment.")
-                return
-            }
-            marking = MarkupTarget(image: image, name: item.name, box: box)
+        guard let image = shown[item.key] else {
+            markRefusal = String(localized: "This picture is still loading. Try again in a moment.")
+            return
         }
+        marking = MarkupTarget(image: image, name: item.name, box: box)
     }
 }
 
@@ -216,6 +217,8 @@ private struct FullPhoto: View {
     @EnvironmentObject var previews: PhotoPreviews
     let key: PhotoPreviews.Key
     let name: String
+    /// Tells the viewer which image this page shows, and nil once it goes.
+    var showing: (CGImage?) -> Void = { _ in }
     @State private var image: CGImage?
     @State private var missing = false
     var body: some View {
@@ -230,8 +233,8 @@ private struct FullPhoto: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { previews.viewerOpened(key) }
-        .onDisappear { previews.viewerClosed(key) }
-        .task(id: key) { image = await previews.full(key, model: model); missing = image == nil && !Task.isCancelled }
+        .onDisappear { previews.viewerClosed(key); showing(nil) }
+        .task(id: key) { image = await previews.full(key, model: model); missing = image == nil && !Task.isCancelled; showing(image) }
     }
 }
 

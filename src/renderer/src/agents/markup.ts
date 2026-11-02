@@ -5,6 +5,7 @@
  */
 
 import { THEME_TOKEN_PROBE_ATTRIBUTE } from '../state/appearance'
+import { contrastRatio, rgbToHex, THEME_BLACK_FOREGROUND, THEME_WHITE_FOREGROUND, type ThemeRgb } from '../../../shared/themes/color'
 
 export type MarkTool = 'arrow' | 'ellipse' | 'box' | 'pen' | 'note'
 export type MarkInk = 'red' | 'amber' | 'plain'
@@ -78,17 +79,12 @@ export function noteTextWidth(text: string, size: MarkupSize): number {
 export interface InkColours { readonly stroke: Readonly<Record<MarkInk, string>>; readonly noteText: Readonly<Record<MarkInk, string>> }
 
 const INK_ROLES: Readonly<Record<MarkInk, string>> = { red: '--tt-ink-red', amber: '--tt-ink-amber', plain: '--tt-text' }
-
-/** The relative luminance of a colour painted as red, green and blue bytes. */
-function luminance([r, g, b]: readonly [number, number, number]): number {
-  const channel = (value: number): number => { const share = value / 255; return share <= 0.03928 ? share / 12.92 : ((share + 0.055) / 1.055) ** 2.4 }
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-}
-const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+/** The contrast a note's words keep on its ink, as text does on its surface (AGENTS.md). */
+const NOTE_CONTRAST = 4.5
 
 let painting: CanvasRenderingContext2D | null | undefined
 /** A colour as the bytes a canvas paints it with, whatever space the theme gives it in (OKLCH, a mix), or null without a canvas. */
-function painted(colour: string): readonly [number, number, number] | null {
+function painted(colour: string): ThemeRgb | null {
   if (painting === undefined) {
     try { painting = document.createElement('canvas').getContext?.('2d', { willReadFrequently: true }) ?? null } catch { painting = null }
   }
@@ -97,12 +93,22 @@ function painted(colour: string): readonly [number, number, number] | null {
   painting.fillStyle = colour
   painting.fillRect(0, 0, 1, 1)
   const [r = 0, g = 0, b = 0] = painting.getImageData(0, 0, 1, 1).data
-  return [r, g, b]
+  return { r, g, b }
+}
+
+/**
+ * The colour a note's words take on its ink: whichever of the theme's canvas and text contrasts more with it, or black
+ * or white where neither reaches 4.5:1 (a red at full strength sits between them on some light themes).
+ */
+export function noteWords(ink: ThemeRgb, canvas: ThemeRgb, text: ThemeRgb): ThemeRgb {
+  const words = contrastRatio(ink, canvas) >= contrastRatio(ink, text) ? canvas : text
+  if (contrastRatio(ink, words) >= NOTE_CONTRAST) return words
+  return contrastRatio(ink, THEME_WHITE_FOREGROUND) >= contrastRatio(ink, THEME_BLACK_FOREGROUND) ? THEME_WHITE_FOREGROUND : THEME_BLACK_FOREGROUND
 }
 
 /**
  * Reads the inks from the theme where `host` sits: red and amber are the theme's error and warning colours at full
- * strength, and plain is its text. A note's words take whichever of the theme's canvas and text reads better on the ink.
+ * strength, and plain is its text. A note's words are `noteWords` on the ink.
  */
 export function inkColours(host: Element): InkColours {
   const probe = document.createElement('span')
@@ -118,8 +124,8 @@ export function inkColours(host: Element): InkColours {
   const on = (ink: string): string => {
     const shade = painted(ink)
     if (!shade || !light || !dark) return canvas
-    const lum = luminance(shade)
-    return contrast(lum, luminance(light)) >= contrast(lum, luminance(dark)) ? canvas : text
+    const words = noteWords(shade, light, dark)
+    return words === light ? canvas : words === dark ? text : rgbToHex(words)
   }
   return { stroke, noteText: { red: on(stroke.red), amber: on(stroke.amber), plain: on(stroke.plain) } }
 }

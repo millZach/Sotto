@@ -146,7 +146,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     if (!refusal) setEditing(true)
   }
   const keepFocusIn = (event: React.KeyboardEvent): void => {
-    const focusable = [...(root.current?.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]') ?? [])]
+    const focusable = [...(root.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex="0"]') ?? [])]
     const first = focusable[0]; const last = focusable.at(-1)
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }

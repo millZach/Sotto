@@ -11,7 +11,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import type { ScreenshotReadPort } from './threadDraftStore'
 import { prepareScreenshot, wasResized } from './screenshotResize'
 import { stageAttachedFile, stageImage, stagingReason, useThumbnail } from './stagedImages'
-import { useRegisterReplyAttach, type ReplyAttach } from './replyAttach'
+import { useRegisterReplyAttach, useReplyAttach, type ReplyAttach } from './replyAttach'
 import { attachmentKind, AttachmentKindIcon, splitAttachmentName } from './attachmentKinds'
 import { formatAttachmentSize } from './MessageContent'
 import * as words from './attachmentWords'
@@ -246,9 +246,11 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     return disabled ? t`This thread is archived, so its reply box takes no pictures. Nothing was added. Restore the thread to reply.`
       : t`The reply box is still adding what came before. Nothing was added. Try again in a moment.`
   }
-  // A picture marked up in this pane comes in the way a paste does (ADR-0170, part 5).
+  // A picture marked up in this pane comes in the way a paste does (ADR-0170, part 5), where the pane offers a slot for
+  // it: with inline-media on.
   const attach = useRef<ReplyAttach>(null!)
-  attach.current = {
+  const markUpSlot = useReplyAttach()
+  if (markUpSlot) attach.current = {
     refusal: () => {
       if (disabled) return busyRefusal()
       if (answering) return t`This thread waits for your answer, so a marked copy can't go into its reply yet. Answer it first.`

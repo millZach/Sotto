@@ -19,9 +19,15 @@ struct MarkupInks {
     init(_ theme: ThemeSwatch) {
         let stroke: [MarkInk: ThemeRGB] = [.red: theme.rgb(.danger), .amber: theme.rgb(.warning), .plain: theme.rgb(.ink)]
         self.stroke = stroke
-        // A note's words take whichever of the theme's canvas and text reads better on its ink.
+        // A note's words take whichever of the theme's canvas and text reads better on its ink, and black or white
+        // where neither reaches 4.5:1 on it, as on the desktop.
         let canvas = theme.rgb(.canvas), text = theme.rgb(.ink)
-        noteText = stroke.mapValues { ink in Self.contrast(ink, canvas) >= Self.contrast(ink, text) ? canvas : text }
+        noteText = stroke.mapValues { ink in
+            let words = Self.contrast(ink, canvas) >= Self.contrast(ink, text) ? canvas : text
+            if Self.contrast(ink, words) >= 4.5 { return words }
+            let white = ThemeRGB(1, 1, 1), black = ThemeRGB(0, 0, 0)
+            return Self.contrast(ink, white) >= Self.contrast(ink, black) ? white : black
+        }
     }
     private static func luminance(_ colour: ThemeRGB) -> Double {
         func channel(_ value: Double) -> Double { value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
@@ -72,7 +78,7 @@ enum MarkupDrawing {
                     context.stroke(piece, with: .color(ink), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
                 }
             case .note(let at, let text):
-                let words = context.resolve(Text(verbatim: text).font(.system(size: Markup.noteFontSize(size), weight: .semibold))
+                let words = context.resolve(Text(verbatim: text).font(.custom(Font.figtreeFace(.semibold), fixedSize: Markup.noteFontSize(size)))
                     .foregroundStyle(inks.noteText[mark.ink]!.color))
                 let measured = words.measure(in: CGSize(width: size.width, height: size.height))
                 let box = Markup.noteBox(at: at, textWidth: measured.width, size: size)
@@ -148,12 +154,12 @@ struct MarkupEditor: View {
                 Group {
                     if fingerDraws { Text("Pen and finger both draw") } else { Text("Pen draws · finger moves the picture") }
                 }
-                .font(.footnote).foregroundStyle(Palette.muted).padding(.bottom, 6)
+                .font(.sotto(.small)).foregroundStyle(Palette.muted).padding(.bottom, 6)
             }
             GeometryReader { room in stage(in: room.size) }
                 .clipped()
             if let notice {
-                Text(notice).font(.footnote).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+                Text(notice).font(.sotto(.small)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
                     .padding(.horizontal, 20).padding(.top, 8).paragraphDirection()
                     .accessibilityAddTraits(.updatesFrequently)
             }
@@ -162,7 +168,7 @@ struct MarkupEditor: View {
         .background(Palette.canvas)
         .overlay {
             if phase != .active {
-                Rectangle().fill(Palette.canvas).ignoresSafeArea().overlay(Text("Sotto").font(.title2).foregroundStyle(Palette.ink))
+                Rectangle().fill(Palette.canvas).ignoresSafeArea().overlay(Text("Sotto").font(.sotto(.title, .semibold)).foregroundStyle(Palette.ink))
             }
         }
         .alert("Note", isPresented: Binding(get: { notePlace != nil }, set: { if !$0 { notePlace = nil } })) {
@@ -371,6 +377,8 @@ private struct MarkupTouches: UIViewRepresentable {
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         let pinch = UIPinchGestureRecognizer(target: view, action: #selector(TouchView.pinch(_:)))
         pinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        // A finger that starts moving the picture can be joined by a second that zooms it, and the other way round.
+        pan.delegate = view; pinch.delegate = view
         view.addGestureRecognizer(pan); view.addGestureRecognizer(pinch)
         view.recognizers = [pan, pinch]
         return view
@@ -380,9 +388,12 @@ private struct MarkupTouches: UIViewRepresentable {
         view.recognizers.forEach { $0.isEnabled = fingerMoves }
     }
 
-    final class TouchView: UIView {
+    final class TouchView: UIView, UIGestureRecognizerDelegate {
         var owner: MarkupTouches?
         var recognizers: [UIGestureRecognizer] = []
+        func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            recognizers.contains(gesture) && recognizers.contains(other)
+        }
         private weak var drawing: UITouch?
 
         private func draws(_ touch: UITouch) -> Bool { touch.type == .pencil || !(owner?.fingerMoves ?? false) }

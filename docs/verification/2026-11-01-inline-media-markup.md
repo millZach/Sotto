@@ -35,6 +35,16 @@ The image viewer specs (`image-viewer.spec.ts`, `image-viewer-app.spec.ts`) and 
   - **The reply box takes the copy as it takes a paste:** it stages the copy, shows the chip and takes the focus. It refuses for an archived thread, an answer pending or a model that reads no images, each in its own words.
 - `apps/ios/Tests/SottoCoreTests/MarkupTests.swift`: the iPhone's marks keep the desktop's sizes. A slip is not a mark. A pen widens with pressure, and the arrow's head is at its end. Undo, Redo and removing work, and removing can be undone. The copy is named as on the desktop. These ran on forge in a Swift package of `Markup.swift` alone (5 tests).
 
+## After review
+
+Sol's Standards and Spec reviews of the rebased branch:
+
+- **Tab from a note:** when the note was the first mark, Tab from its box left the viewer for the pane beside it. The viewer now keeps Tab inside it from the note box too. A unit test with another pane present fails without the change and passes with it.
+- **A note's words:** they now keep 4.5:1 on their ink, falling back to black or white where neither the theme's canvas nor its text reaches it. `noteWords` is tested with a red that neither reaches.
+- **Inline media off:** a thread pane offers no reply slot, and its reply box sets nothing up for Mark up.
+- **The iPhone:** Mark up opens the image the viewer's page is showing, rather than asking the preview cache, which keeps only the newest picture and could fetch it again. A finger moving the picture can be joined by a second that zooms it. The editor's own words are set in Figtree. The photo checks Add to reply and the photo picker shared are now one function. These compile only in CI.
+- **Off scope, filed as #2021:** the four inline media e2e specs save captures with their own switch, not the shared evidence helper.
+
 ## Performance
 
 `tests/perf/markupEditor.perf.test.tsx` (new) and `tests/perf/inlineMediaTranscript.perf.test.tsx`, on forge, after the rebase. "Before" is main at 52a855e4f, with the new benchmark's viewer half run against it in a worktree of main. Each figure is the median of runs alternated between the two: 8 each for opening the viewer, 3 each for the transcript.

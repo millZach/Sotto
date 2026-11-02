@@ -333,7 +333,8 @@ function NoteInput({ at, size, onDone }: { readonly at: { readonly x: number; re
   return <input ref={input} className="markup-editor__note-input" maxLength={NOTE_MAX_LENGTH} aria-label={t`Note`} placeholder={t`Type a note`}
     style={{ left: `${at.x / size.width * 100}%`, top: `${at.y / size.height * 100}%` }}
     onKeyDown={event => {
-      event.stopPropagation()
+      // The editor's own keys stop here; Tab goes on to the viewer, which keeps the focus inside it.
+      if (event.key !== 'Tab') event.stopPropagation()
       if (event.key === 'Enter') { event.preventDefault(); finish(event.currentTarget.value) }
       if (event.key === 'Escape') { event.preventDefault(); finish('') }
     }}

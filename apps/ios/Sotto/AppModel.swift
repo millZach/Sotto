@@ -3151,9 +3151,7 @@ struct RailAsk: Equatable {
             let prepared = try await preparePhoto(data, name)
             // The box may have changed while the copy was prepared.
             if let refusal = markedCopyRefusal(box) { return refusal }
-            let others = photos(box).compactMap { $0.prepared?.byteCount }
-            guard Photos.fits(prepared.byteCount, with: others) else { return box.photosTooLargeWords }
-            guard others.reduce(prepared.byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else { return FileWords.tooLargeInTotal }
+            if let refusal = sizeRefusal(prepared.byteCount, in: box) { return refusal }
             var photo = DraftPhoto()
             photo.prepared = prepared
             draftPhotos[box.id, default: []].append(photo)
@@ -3165,6 +3163,14 @@ struct RailAsk: Equatable {
             return (error as? PhotoPipelineError)?.errorDescription ?? (error as? ClientError)?.errorDescription ?? PhotoPipelineError.unreadable.errorDescription!
         }
     }
+    /// Why a prepared photo of this many bytes can't join the box's other photos and files, or nil when it fits.
+    /// `besides` is the photo itself, when it is already in the box.
+    private func sizeRefusal(_ byteCount: Int, in box: PhotoBox, besides id: UUID? = nil) -> String? {
+        let others = photos(box).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
+        guard Photos.fits(byteCount, with: others) else { return box.photosTooLargeWords }
+        guard others.reduce(byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else { return FileWords.tooLargeInTotal }
+        return nil
+    }
     func removePhoto(_ id: UUID, from box: PhotoBox) {
         guard !preparingSends.contains(box.id) else { return }
         dropPhoto(id, in: box, reason: nil)
@@ -3175,13 +3181,7 @@ struct RailAsk: Equatable {
         do {
             let prepared = try await preparePhoto(try await loaded(source.load, for: id), source.name)
             guard photo(id, in: box) != nil else { return }
-            let others = photos(box).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
-            guard Photos.fits(prepared.byteCount, with: others) else {
-                throw ClientError.rejected(box.photosTooLargeWords)
-            }
-            guard others.reduce(prepared.byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else {
-                throw ClientError.rejected(FileWords.tooLargeInTotal)
-            }
+            if let refusal = sizeRefusal(prepared.byteCount, in: box, besides: id) { throw ClientError.rejected(refusal) }
             change(id, in: box) { $0.prepared = prepared }
             // Staged on its own, so a slow computer never holds up preparing photos for any other reply.
             _ = staging(id, in: box)

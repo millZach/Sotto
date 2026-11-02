@@ -17,7 +17,8 @@ vi.mock('../../../src/renderer/src/agents/markup', async original => {
 import { ThreadMediaTiles } from '../../../src/renderer/src/agents/ThreadMediaTiles'
 import { ReplyAttachContext, type ReplyAttach, type ReplyAttachSlot } from '../../../src/renderer/src/agents/replyAttach'
 import { ScreenshotInput } from '../../../src/renderer/src/agents/ScreenshotInput'
-import { madeMark, markedCopy, markedName, arrowGeometry } from '../../../src/renderer/src/agents/markup'
+import { madeMark, markedCopy, markedName, arrowGeometry, noteWords } from '../../../src/renderer/src/agents/markup'
+import { contrastRatio } from '../../../src/shared/themes/color'
 
 const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
 const WHOLE = 'data:image/png;base64,iVBORw0KGgo='
@@ -140,6 +141,27 @@ describe('marking a picture up (ADR-0170, part 5)', () => {
     expect(screen.getByRole('application')).toBeTruthy()
   })
 
+  it('keeps Tab inside the viewer from a note, the first mark included, when nothing comes after it', async () => {
+    await openViewer(reply())
+    // Another pane beside this one, which the focus must not reach while the viewer is open.
+    const beside = document.body.appendChild(document.createElement('button'))
+    beside.textContent = 'Another pane'
+    await userEvent.click(screen.getByRole('button', { name: 'Mark up' }))
+    await userEvent.keyboard('t')
+    const viewer = document.querySelector('.attachment-viewer')!
+    for (const shift of [false, true]) {
+      // With no mark listed yet, the note box is the last thing in the viewer that takes the focus.
+      expect(viewer.querySelectorAll('button[aria-label^="Remove "]')).toHaveLength(0)
+      drag(surface(), [400, 400], [400, 400])
+      expect(document.activeElement).toBe(await screen.findByRole('textbox', { name: 'Note' }))
+      for (let step = 0; step < 30; step++) {
+        await userEvent.tab({ shift })
+        expect(viewer.contains(document.activeElement)).toBe(true)
+      }
+    }
+    beside.remove()
+  })
+
   it('marks up from the keyboard: Enter starts at the cross, the arrow keys move it, Enter ends it, and Escape goes back to the viewer', async () => {
     await openViewer(reply())
     const markUp = screen.getByRole('button', { name: 'Mark up' })
@@ -253,6 +275,15 @@ describe('marks', () => {
     expect(madeMark({ id: 1, ink: 'red', tool: 'box', x0: 0, y0: 0, x1: 20, y1: 0 }, size)).toBe(true)
     expect(madeMark({ id: 1, ink: 'red', tool: 'pen', points: [[0, 0, 0.5], [1, 1, 0.5]], pressure: false }, size)).toBe(false)
     expect(madeMark({ id: 1, ink: 'red', tool: 'note', x0: 0, y0: 0, text: '  ' }, size)).toBe(false)
+  })
+  it('sets a note\'s words at 4.5:1 on its ink at least, in the theme\'s colours where they reach it', () => {
+    const canvas = { r: 250, g: 248, b: 245 }, text = { r: 40, g: 38, b: 36 }
+    // On a dark ink the theme's canvas reads well, and is the colour the words take.
+    expect(noteWords({ r: 30, g: 30, b: 60 }, canvas, text)).toBe(canvas)
+    // A red at full strength between a light canvas and a mid-grey text: neither reaches 4.5:1, so black or white does.
+    const red = { r: 222, g: 64, b: 64 }, grey = { r: 90, g: 90, b: 90 }
+    expect(Math.max(contrastRatio(red, canvas), contrastRatio(red, grey))).toBeLessThan(4.5)
+    expect(contrastRatio(red, noteWords(red, canvas, grey))).toBeGreaterThanOrEqual(4.5)
   })
   it('puts an arrow\'s head at its end, pointing along it', () => {
     const { head, shaft } = arrowGeometry({ id: 1, ink: 'red', tool: 'arrow', x0: 0, y0: 0, x1: 100, y1: 0 }, { width: 200, height: 100 })
