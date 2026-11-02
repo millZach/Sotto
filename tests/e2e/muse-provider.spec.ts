@@ -140,7 +140,7 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     // An unsent thread is listed once its composer holds text, under that text.
     await page.getByRole('textbox', { name: 'Prompt' }).fill('Muse draft')
     await projects.getByRole('button', { name: 'Muse draft', exact: true }).hover()
-    await projects.getByRole('button', { name: 'Rename Muse draft', exact: true }).click()
+    await projects.getByRole('button', { name: 'Muse draft', exact: true }).locator('.thread-nav__title').dblclick()
     await page.getByLabel('Rename Muse draft').fill('Muse UI check')
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { name: 'Muse UI check', exact: true })).toBeVisible()

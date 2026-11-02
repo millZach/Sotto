@@ -15,6 +15,7 @@ import { EMPTY_NEEDS_YOU, organizeWorkspace, threadDescriber, useWordsRevision }
 import { useContinueEnabled } from './continuations'
 import { setNewThreadIntent } from './threadIntent'
 import { ThreadSidebar } from './ThreadSidebar'
+import { useThreadSnoozes, useWakeWhenNeeded } from './threadSnooze'
 
 const NO_PANES: readonly string[] = []
 const noop = (): void => {}
@@ -52,7 +53,10 @@ export function PageSidebar({ now: fixedNow }: {
   const delegation = useOwlFeature('thread-delegation')
   const swarms = useOwlFeature('worker-swarms')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms), [state, sidebarRows, query, delegation, now, swarms, words]))
+  // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
+  const snoozes = useThreadSnoozes()
+  useWakeWhenNeeded(rows, snoozes)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
   const navigate = app?.actions.navigate
   const command = agents.command
   const openThread = useCallback((threadId: string): void => {

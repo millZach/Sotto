@@ -51,7 +51,6 @@ export function RailTile({ row, panes, open, busy, watched, pressOpens, command,
   const openBeside = (): void => panes.onOpenBeside(id)
   const menuGroups = (): ReturnType<typeof threadMenu> => threadMenu(row, panes, { offers, open, busy, watched, enterOpens: pressOpens }, {
     open: () => onOpen(id), openBeside, rename: () => setRenaming(true),
-    regenerate: () => void command({ type: 'regenerate-thread-title', threadId: id }),
     settle: () => void settle(row.thread, row.project),
     restore: () => void command({ type: 'restore-thread', threadId: id }),
     watch: watchActions === null ? undefined : () => void watchActions.setThread(id, !watched),

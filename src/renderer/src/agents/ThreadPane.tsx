@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, Pencil, Plug, Shrink, X } from 'lucide-react'
+import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
@@ -357,10 +357,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
   const naming: PaneMenuItem[] = [
     ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
-    // The thread's own provider writes the name from its first exchange (ADR-0026); a name typed by hand is left
-    // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
-    ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
-      ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
   ]
   // Open beside leads the layout rows; Tools, the drawer and the pane area's rows follow it in ThreadPaneMenu.
   const beside: PaneMenuItem | undefined = onOpenBeside ? { id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside } : undefined

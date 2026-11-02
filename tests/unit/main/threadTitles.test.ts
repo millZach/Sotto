@@ -351,6 +351,56 @@ describe('naming a thread from its first exchange', () => {
   })
 })
 
+describe('keeping a thread’s name current each hour (ADR-0026, November 1, 2026)', () => {
+  /** The sweep the coordinator runs on its own timer, run here by hand at a chosen time. */
+  const sweep = (control: AgentControl, at: number): void => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(at)
+    try { (control as unknown as { refreshTitles(): void }).refreshTitles() } finally { now.mockRestore() }
+  }
+  it('names a thread again from its first message and newest exchange once an hour has passed, never a name typed by hand', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(titled(f.control, threadId).title).toBe('Dark theme contrast'))
+    const thread = f.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    thread.messages = [...thread.messages, { id: 'second-prompt', role: 'user', text: 'Now add a light theme.', createdAt: at }, { id: 'second-reply', role: 'assistant', text: 'Added a light theme.', createdAt: at }]
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(4))
+    sweep(f.control, Date.now() + 10 * 60_000)
+    expect(f.titles).toHaveBeenCalledOnce()
+    f.titles.mockResolvedValueOnce('Light theme')
+    sweep(f.control, Date.now() + 61 * 60_000)
+    expect(f.titles).toHaveBeenCalledTimes(2)
+    expect(f.titles.mock.calls[1]![1]).toEqual({ opening: 'The palette is unreadable in dark mode.', prompt: 'Now add a light theme.', reply: 'Added a light theme.' })
+    await vi.waitFor(() => expect(titled(f.control, threadId).title).toBe('Light theme'))
+
+    await f.control.command({ type: 'rename-thread', threadId, title: 'Mine' })
+    thread.messages = [...thread.messages, { id: 'third-prompt', role: 'user', text: 'And a high-contrast one.', createdAt: at }, { id: 'third-reply', role: 'assistant', text: 'Done.', createdAt: at }]
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(6))
+    sweep(f.control, Date.now() + 3 * 60 * 60_000)
+    expect(f.titles).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves Watcher’s own thread its name', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    await f.host.setWatcherKind(threadId, 'watcher')
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(2))
+    const native = f.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    native.messages = [...native.messages, { id: 'second-prompt', role: 'user', text: 'How are the workers doing?', createdAt: at }, { id: 'second-reply', role: 'assistant', text: 'Both are working.', createdAt: at }]
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(4))
+    // Its first name is the first exchange's, as before; the hourly sweep adds nothing to it.
+    const asked = f.titles.mock.calls.length
+    sweep(f.control, Date.now() + 2 * 60 * 60_000)
+    expect(f.titles).toHaveBeenCalledTimes(asked)
+  })
+})
+
 describe('naming a thread from its first message while the first turn runs', () => {
   /** The thread's first message arrives while its turn is still running, as it does the moment it is sent. */
   function send(adapter: { state: { threads: AgentThread[] }; emit: () => void }, ...texts: string[]): void {

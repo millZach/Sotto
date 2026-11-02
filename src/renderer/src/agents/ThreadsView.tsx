@@ -35,6 +35,7 @@ import { SidebarChromeProvider } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
+import { useThreadSnoozes, useWakeWhenNeeded } from './threadSnooze'
 
 type Command = AgentConnection['command']
 
@@ -178,7 +179,10 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const delegation = useOwlFeature('thread-delegation')
   const swarms = useOwlFeature('worker-swarms')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms), [state, sidebarRows, query, delegation, now, swarms, words]))
+  // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
+  const snoozes = useThreadSnoozes()
+  useWakeWhenNeeded(rows, snoozes)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
