@@ -364,6 +364,7 @@ private final class FollowBox {
     var followRequests = 0
     /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
     var endInPage: CGFloat = 0
+    var diagContent: CGFloat = 0, diagOffset: CGFloat = 0 // [DEBUG-snap]
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -505,6 +506,7 @@ private struct Conversation: View {
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
             }
             .defaultScrollAnchor(.bottom)
+            .modifier(DiagGeometry(follow: follow)) // [DEBUG-snap]
             .scrollDismissesKeyboard(.interactively)
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
@@ -604,7 +606,17 @@ private struct Conversation: View {
                 // made as they scroll into view. Laid out whole, every row of a long thread was updated and placed again
                 // for each streamed word, and opening one took seconds (#1702).
                 let split = min(timeline.latestTurnsStart, rows.count)
-                if split > 0 {
+                if split > 0 && DiagFlags.frozenOlder { // [DEBUG-snap]
+                    Frozen(key: rows[..<split].map(\.id) + openRuns.sorted() + [working ?? "", last ?? ""]) {
+                        LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                            ForEach(rows[..<split]) { row in
+                                entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
+                                      scroll: scroll)
+                            }
+                        }
+                    }
+                    .equatable()
+                } else if split > 0 {
                     LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
                         ForEach(rows[..<split]) { row in
                             entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
@@ -751,6 +763,7 @@ private struct Conversation: View {
     /// the page; the page owes it to them for when they let go.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
+        if DiagFlags.noScrollTo && box.followRequests > 3 { return } // [DEBUG-snap]
         guard !box.userScrolling else { box.missedFollow = true; return }
         box.followRequests += 1
         let request = box.followRequests
@@ -775,13 +788,39 @@ private struct EndProbe: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
             let words = [follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
-                .joined(separator: " ")
+                .joined(separator: " ") + " | content \(Int(follow.diagContent)) offset \(Int(follow.diagOffset)) requests \(follow.followRequests)" // [DEBUG-snap]
             Text(verbatim: words).font(.system(size: 2)).opacity(0.02).allowsHitTesting(false)
                 .accessibilityIdentifier("thread-end-probe").accessibilityLabel(Text(verbatim: words))
         }
     }
 }
 #endif
+
+// [DEBUG-snap] Diagnostic switches for the streaming journeys; removed before review.
+enum DiagFlags {
+    static let frozenOlder = ProcessInfo.processInfo.arguments.contains("--diag-frozen-older")
+    static let noScrollTo = ProcessInfo.processInfo.arguments.contains("--diag-no-scroll-to")
+}
+// [DEBUG-snap]
+private struct Frozen<Content: View>: View, Equatable {
+    let key: [String]
+    @ViewBuilder let content: () -> Content
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+    var body: some View { content() }
+}
+// [DEBUG-snap] The scroll view's content height and offset, into the follow box, for the probe.
+private struct DiagGeometry: ViewModifier {
+    let follow: FollowBox
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: CGPoint.self) { g in CGPoint(x: g.contentSize.height, y: g.contentOffset.y) } action: { _, new in
+                follow.diagContent = new.x; follow.diagOffset = new.y
+            }
+        } else {
+            content
+        }
+    }
+}
 
 extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is

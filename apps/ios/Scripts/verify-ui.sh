@@ -58,7 +58,7 @@ while IFS="$(printf '\t')" read -r size device_type runtime; do
     status=0
     xcodebuild -project Sotto.xcodeproj -scheme Sotto -configuration Debug -sdk iphonesimulator \
         -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath .build-native \
-        -resultBundlePath "$result" -parallel-testing-enabled NO -skip-testing:SottoUITests/PerformanceJourneyTests -only-testing:SottoUITests/FocusJourneyTests/testAThreadWithPicturesStaysAtItsEnd -only-testing:SottoUITests/FocusJourneyTests/testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams -only-testing:SottoUITests/FocusJourneyTests/testDiagWithoutTheFix ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test || status=$?
+        -resultBundlePath "$result" -parallel-testing-enabled NO -skip-testing:SottoUITests/PerformanceJourneyTests -only-testing:SottoUITests/FocusJourneyTests/testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams -only-testing:SottoUITests/FocusJourneyTests/testDiagStreamNoScrollTo -only-testing:SottoUITests/FocusJourneyTests/testDiagStreamFrozenOlder -only-testing:SottoUITests/FocusJourneyTests/testDiagStreamNoPictures ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test || status=$?
     if [ -d "$result" ]; then
         xcrun xcresulttool export attachments --path "$result" --output-path "$run_dir/$size-attachments"
         xcrun xcresulttool get test-results summary --path "$result" > "$run_dir/$size-summary.json"

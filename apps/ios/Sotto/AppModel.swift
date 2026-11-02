@@ -1861,14 +1861,14 @@ struct RailAsk: Equatable {
             let base = Double(turns - turn) * 600
             var ask: [String: Any] = ["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
                                       "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."]
-            if pictures && [28, 33, 37].contains(turn) {
+            if pictures && !ProcessInfo.processInfo.arguments.contains("--diag-no-photos") && [28, 33, 37].contains(turn) { // [DEBUG-snap]
                 ask["attachments"] = [["id": "panel-photo-\(turn)", "name": "Panel \(turn + 1).jpg", "mimeType": "image/jpeg",
                                        "sizeBytes": 240_000, "preview": ["available": true]]]
             }
             messages.append(ask)
             var check: [String: Any] = ["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
                                         "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)]
-            if pictures && turn >= turns - 14 {
+            if pictures && !ProcessInfo.processInfo.arguments.contains("--diag-no-tiles") && turn >= turns - 14 { // [DEBUG-snap]
                 check["media"] = (1...2).map { shot -> [String: Any] in
                     ["id": "shot-\(shot)", "kind": "image", "mimeType": "image/png", "width": Self.fixtureScreenshotSize.width,
                      "height": Self.fixtureScreenshotSize.height, "name": "drive-\(turn + 1)-\(shot).png", "source": "tool-result",

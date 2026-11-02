@@ -528,6 +528,9 @@ import UIKit
     func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
     // [DEBUG-snap] The same build without the fix, expected to fail.
     func testDiagWithoutTheFix() { picturesStayAtTheEnd(streaming: false, ["--diag-no-fix"]) }
+    func testDiagStreamNoScrollTo() { picturesStayAtTheEnd(streaming: true, ["--diag-no-scroll-to"]) }
+    func testDiagStreamFrozenOlder() { picturesStayAtTheEnd(streaming: true, ["--diag-frozen-older"]) }
+    func testDiagStreamNoPictures() { picturesStayAtTheEnd(streaming: true, ["--diag-no-photos", "--diag-no-tiles"]) }
 
     private func picturesStayAtTheEnd(streaming: Bool, _ diag: [String] = []) {
         launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []) + diag)
@@ -556,10 +559,10 @@ import UIKit
         let probe = byID("thread-end-probe")
         guard probe.exists else { return (false, "no probe") }
         let words = probe.label
-        let numbers = words.split(separator: " ").compactMap { Double($0) }
+        let numbers = (words.split(separator: "|").first ?? "").split(separator: " ").compactMap { Double($0) } // [DEBUG-snap]
         guard numbers.count == 3 else { return (false, words) }
         let end = numbers[0], dock = numbers[1], bar = numbers[2]
-        return (end <= dock + 1 && end > bar, "end \(Int(end)), dock top \(Int(dock)), bar bottom \(Int(bar))")
+        return (end <= dock + 1 && end > bar, "end \(Int(end)), dock top \(Int(dock)), bar bottom \(Int(bar)) " + words) // [DEBUG-snap]
     }
 
     /// Drags the thread once from the middle of the conversation, slowly enough not to fling: toward its end, or back
