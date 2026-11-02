@@ -1567,6 +1567,8 @@ struct RailAsk: Equatable {
         var caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
         var answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
         if settingThreads { caps["configureThread"] = true; answeringCaps["configureThread"] = true }
+        // The small reply box's journey: this computer can stop a running turn, so the box offers Stop (ADR-0180).
+        if arguments.contains("--ui-can-stop") { caps["interrupt"] = true; answeringCaps["interrupt"] = true }
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
