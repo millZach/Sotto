@@ -103,6 +103,12 @@ export class WatcherEvidenceStore {
   private readonly written = new Set<string>()
   /** Each pull request's life by thread and pull request key (#1146): whether its merge or close is news, and its flips. */
   private readonly lives = new Map<string, Map<string, PullRequestLife>>()
+  /**
+   * The pull requests a connected owning roster has let go of, by thread (ADR-0073, November 2, 2026). A paired host's own
+   * store can keep a fact long after its thread left the branch, and reports it on every reconcile: taken in again, each
+   * one was a new fact, and each pass took it out again. Those reports are ignored until the thread links it again.
+   */
+  private readonly unlinked = new Map<string, Set<string>>()
   constructor(private readonly now: () => number = Date.now) {}
   put(slot: string, input: Omit<WatcherEvidence, 'id'>): boolean {
     const id = evidenceIdentity(slot, input)
@@ -263,6 +269,7 @@ export class WatcherEvidenceStore {
     for (const key of this.returning.keys()) if (!targets.has(key)) this.returning.delete(key)
     for (const key of this.passing.keys()) if (!targets.has(key)) this.passing.delete(key)
     for (const key of this.lives.keys()) if (!targets.has(key)) this.lives.delete(key)
+    for (const key of this.unlinked.keys()) if (!targets.has(key)) this.unlinked.delete(key)
     this.written.clear()
   }
   /**
@@ -273,12 +280,12 @@ export class WatcherEvidenceStore {
   removeMissingOf(moved: Iterable<string>, listed: (key: string) => boolean): void {
     for (const key of [...this.written, ...moved]) {
       if (listed(key)) continue
-      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.lives.delete(key)
+      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.lives.delete(key); this.unlinked.delete(key)
     }
     this.written.clear()
   }
   /** Every thread key the store holds anything for, for verifying mode. */
-  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.lives.keys()]) }
+  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.lives.keys(), ...this.unlinked.keys()]) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false
     const turn = thread.lastTurn
@@ -298,10 +305,14 @@ export class WatcherEvidenceStore {
     const links = new Set(prs.map(pr => pullRequestKey(pr.url)))
     const entries = this.entries.get(targetKey(target))
     // Only a connected owning roster calls this. A bounded fact projection alone never removes a link.
-    for (const slot of entries?.keys() ?? []) {
+    for (const [slot, item] of entries ?? []) {
       const prefix = slot.startsWith('host:github:') ? 'host:github:' : slot.startsWith('pr:') ? 'pr:' : undefined
-      if (prefix && ![...links].some(link => slot === prefix + link || slot.startsWith(prefix + link + ':'))) { entries!.delete(slot); changed = true }
+      if (!prefix || [...links].some(link => slot === prefix + link || slot.startsWith(prefix + link + ':'))) continue
+      entries!.delete(slot); changed = true
+      if (prefix === 'host:github:' && item.url) this.letGo(target, pullRequestKey(item.url) ?? item.url)
     }
+    const unlinked = this.unlinked.get(targetKey(target))
+    for (const pr of unlinked ?? []) if (links.has(pr)) unlinked!.delete(pr)
     const attending = this.attending.get(targetKey(target))
     for (const pr of attending?.keys() ?? []) if (!links.has(pr)) attending!.delete(pr)
     const lives = this.lives.get(targetKey(target))
@@ -361,7 +372,15 @@ export class WatcherEvidenceStore {
     if (changed && fact.source === 'github') this.recount(fact.target)
     return changed
   }
+  /** Notes that a connected owning roster let go of this pull request, so a paired host's reports of it are ignored. */
+  private letGo(target: WatcherThreadTarget, pr: string): void {
+    const key = targetKey(target), unlinked = this.unlinked.get(key) ?? new Set<string>()
+    unlinked.delete(pr); unlinked.add(pr)
+    while (unlinked.size > GIT_PULL_REQUEST_LINKS_MAX) unlinked.delete(unlinked.values().next().value!)
+    this.unlinked.set(key, unlinked); this.written.add(key)
+  }
   private pairedFact(fact: WatcherEvidence): boolean {
+    if (fact.source === 'github' && fact.url && this.unlinked.get(targetKey(fact.target))?.has(pullRequestKey(fact.url) ?? fact.url)) return false
     if (fact.source === 'github' && fact.url) return this.observePullRequest(fact.target, {
       url: fact.url, head: fact.headId ?? null, observedAt: fact.observedAt,
       availability: fact.availability === 'available' ? 'available' : 'unavailable',
