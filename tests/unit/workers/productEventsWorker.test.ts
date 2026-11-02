@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { forgetOldEvents, handleProductEvents, type ProductEventStatement, type ProductEventStore } from '../../../workers/product-events/src/worker'
+import { forgetOldEvents, handleProductEvents, retryForwards, type ProductEventStatement, type ProductEventStore } from '../../../workers/product-events/src/worker'
 
 const NOW = Date.parse('2026-11-02T20:00:00.000Z')
 const HASH = 'c'.repeat(64)
@@ -27,13 +27,14 @@ describe('the product event Worker', () => {
     const statement = (query: string, values: (string | number)[] = []): ProductEventStatement => ({
       bind: (...next) => statement(query, next),
       run: async () => database.prepare(query).run(...values),
+      all: async () => ({ results: database.prepare(query).all(...values) }),
     })
-    store = { prepare: query => statement(query), batch: async statements => { for (const each of statements) await each.run() } }
+    store = { prepare: query => statement(query), batch: async statements => Promise.all(statements.map(each => each.all())) }
     vi.unstubAllGlobals()
   })
   const post = (body: unknown, env: Record<string, unknown> = {}, headers: Record<string, string> = {}): Promise<Response> =>
     handleProductEvents(new Request('https://events.test/batch', { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) }), { EVENTS: store, ...env }, context, NOW)
-  const rows = (): { uuid: string; event: string; body: string; received_at: string }[] => database.prepare('SELECT * FROM product_events').all() as never
+  const rows = (): { uuid: string; event: string; body: string; received_at: string; forward_due: number }[] => database.prepare('SELECT * FROM product_events').all() as never
 
   it('keeps a good event as it rebuilt it, and only that', async () => {
     const sent = event()
@@ -41,7 +42,7 @@ describe('the product event Worker', () => {
     const [row] = rows()
     expect(row!.uuid).toBe(sent.uuid); expect(row!.event).toBe('app.started'); expect(row!.received_at).toBe(new Date(NOW).toISOString())
     expect(JSON.parse(row!.body)).toEqual(sent)
-    expect(Object.keys(row!).sort()).toEqual(['body', 'event', 'received_at', 'uuid'])
+    expect(Object.keys(row!).sort()).toEqual(['body', 'event', 'forward_due', 'received_at', 'uuid'])
   })
 
   it('stores nothing from the request but the event: no address, no header', async () => {
@@ -83,6 +84,8 @@ describe('the product event Worker', () => {
     ['an unhashed distinct ID', { distinct_id: 'someone@example.com' }],
     ['a uuid that is not one', { uuid: SECRET }],
     ['a time that is not one', { timestamp: SECRET }],
+    ['a date that does not exist', { timestamp: '2026-02-31T00:00:00.000Z' }],
+    ['an hour that does not exist', { timestamp: '2026-11-02T24:00:00.000Z' }],
     ['words after a time', { timestamp: '2026-11-02T20:00:00.000Z and more' }],
     ['a name on Object itself', { event: 'constructor' }],
   ])('drops %s', async (_name, over) => {
@@ -124,9 +127,19 @@ describe('the product event Worker', () => {
   })
 
   it('refuses what is not a batch, so the sender drops it', async () => {
-    for (const body of ['not json', {}, { batch: 'x' }, { batch: [] }, { batch: Array.from({ length: 101 }, () => event()) }]) expect((await post(body)).status, JSON.stringify(body).slice(0, 30)).toBe(400)
+    for (const body of ['not json', {}, { batch: 'x' }, { batch: [] }, { batch: Array.from({ length: 21 }, () => event()) }]) expect((await post(body)).status, JSON.stringify(body).slice(0, 30)).toBe(400)
     expect((await post('x'.repeat(1_000_001))).status).toBe(413)
+    expect((await post('é'.repeat(500_001))).status).toBe(413)
     expect((await post('{}', {}, { 'content-length': '2000000' })).status).toBe(413)
+  })
+
+  it('answers 429 over the limit, before reading or writing, and counts no address', async () => {
+    const limit = vi.fn(async () => ({ success: false }))
+    const response = await post({ batch: [event()] }, { REQUESTS: { limit } }, { 'cf-connecting-ip': '203.0.113.9' })
+    expect(response.status).toBe(429); expect(rows()).toEqual([])
+    expect(limit).toHaveBeenCalledWith({ key: 'all' })
+    limit.mockResolvedValue({ success: true })
+    expect((await post({ batch: [event()] }, { REQUESTS: { limit } })).status).toBe(204)
   })
 
   it('answers only POST /batch', async () => {
@@ -149,28 +162,83 @@ describe('the product event Worker', () => {
     expect(posted).not.toHaveBeenCalled(); expect(waited).toEqual([])
   })
 
-  it('with a key forwards only the rebuilt event, and a PostHog failure costs nothing', async () => {
-    const posted = vi.fn<typeof fetch>(async () => new Response(null))
+  const withKey = { POSTHOG_KEY: 'phc_test', POSTHOG_HOST: 'https://ph.test/' }
+  const stubPostHog = (ok = true): ReturnType<typeof vi.fn<typeof fetch>> => {
+    const posted = vi.fn<typeof fetch>(async () => new Response(null, { status: ok ? 200 : 503 }))
     vi.stubGlobal('fetch', posted)
+    return posted
+  }
+  const sentTo = (posted: ReturnType<typeof vi.fn<typeof fetch>>, call = 0): { api_key: string; batch: { uuid: string }[] } => JSON.parse(String(posted.mock.calls[call]?.[1]?.body)) as never
+
+  it('with a key forwards only the rebuilt event, and marks it done', async () => {
+    const posted = stubPostHog()
     const good = event()
-    await post({ batch: [good, event({}, { prompt: SECRET })] }, { POSTHOG_KEY: 'phc_test', POSTHOG_HOST: 'https://ph.test/' }, { 'cf-connecting-ip': '203.0.113.9' })
+    await post({ batch: [good, event({}, { prompt: SECRET })] }, withKey, { 'cf-connecting-ip': '203.0.113.9' })
     await Promise.all(waited)
     expect(posted.mock.calls[0]?.[0]).toBe('https://ph.test/batch/')
-    const sent = String(posted.mock.calls[0]?.[1]?.body)
-    expect(JSON.parse(sent)).toEqual({ api_key: 'phc_test', batch: [good] })
-    expect(sent).not.toContain('203.0.113.9'); expect(sent).not.toContain('please fix')
+    expect(sentTo(posted)).toEqual({ api_key: 'phc_test', batch: [good] })
+    const said = String(posted.mock.calls[0]?.[1]?.body)
+    expect(said).not.toContain('203.0.113.9'); expect(said).not.toContain('please fix')
+    expect(rows()[0]!.forward_due).toBe(0)
+  })
+
+  it('forwards a resent event once, including one repeated inside a batch', async () => {
+    const posted = stubPostHog()
+    const sent = event()
+    await post({ batch: [sent, sent] }, withKey); await Promise.all(waited)
+    expect(sentTo(posted).batch).toEqual([sent])
+    waited = []
+    expect((await post({ batch: [sent] }, withKey)).status).toBe(204); await Promise.all(waited)
+    expect(posted).toHaveBeenCalledOnce()
+    expect(rows()).toHaveLength(1)
+  })
+
+  it('answers 204 when PostHog fails, keeps the event due, and the sweep sends it once it can', async () => {
+    let posted = stubPostHog(false)
+    const sent = event()
+    expect((await post({ batch: [sent] }, withKey)).status).toBe(204); await Promise.all(waited)
+    expect(posted).toHaveBeenCalledOnce(); expect(rows()[0]!.forward_due).toBe(1)
 
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('down') }))
     waited = []
-    expect((await post({ batch: [event()] }, { POSTHOG_KEY: 'phc_test' })).status).toBe(204)
+    expect((await post({ batch: [event()] }, withKey)).status).toBe(204)
     await expect(Promise.all(waited)).resolves.toBeDefined()
+    expect(rows().every(row => row.forward_due === 1)).toBe(true)
+
+    posted = stubPostHog()
+    const env = { EVENTS: store, ...withKey }
+    await retryForwards(env, NOW + 60_000)
+    expect(posted).not.toHaveBeenCalled()
+    await retryForwards(env, NOW + 6 * 60_000)
+    expect(sentTo(posted).batch).toHaveLength(2)
+    expect(rows().every(row => row.forward_due === 0)).toBe(true)
+    await retryForwards(env, NOW + 7 * 60_000)
+    expect(posted).toHaveBeenCalledOnce()
   })
 
-  it('removes an event by the daily sweep before it is 90 days old, and not sooner than 89', async () => {
+  it('a failed retry leaves events due, and sends nothing without a key', async () => {
+    stubPostHog(false)
+    await post({ batch: [event()] }, withKey); await Promise.all(waited)
+    await expect(retryForwards({ EVENTS: store, ...withKey }, NOW + 6 * 60_000)).rejects.toThrow()
+    expect(rows()[0]!.forward_due).toBe(1)
+    const posted = stubPostHog()
+    await retryForwards({ EVENTS: store }, NOW + 6 * 60_000)
+    expect(posted).not.toHaveBeenCalled()
+  })
+
+  it('never forwards what arrived before there was a key, once a key is set', async () => {
+    const posted = stubPostHog()
+    await post({ batch: [event()] })
+    expect(rows()[0]!.forward_due).toBe(0)
+    await retryForwards({ EVENTS: store, ...withKey }, NOW + 86_400_000)
+    expect(posted).not.toHaveBeenCalled()
+  })
+
+  it('removes an event by the hourly sweep before it is 90 days old, and not sooner than 89', async () => {
     await post({ batch: [event()] })
     await forgetOldEvents(store, NOW + 88 * 86_400_000)
     expect(rows()).toHaveLength(1)
-    // The daily sweep that first finds it past 89 days runs before it is 90 days old.
+    // The hourly sweep that first finds it past 89 days runs long before it is 90 days old.
     await forgetOldEvents(store, NOW + 89 * 86_400_000 + 1)
     expect(rows()).toEqual([])
   })

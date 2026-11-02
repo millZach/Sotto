@@ -4,7 +4,7 @@ A Cloudflare Worker that takes `POST /batch` from Sotto's sender, checks each ev
 
 It is not packaged with the app and is deployed by hand. It bundles `src/main/productEvents/schema.ts` and the public model list, so it needs this repository's `npm ci` before it builds, and there is no second list to keep level. Its tests are `tests/unit/workers/`, which run the real `schema.sql` over `node:sqlite`.
 
-A daily sweep removes each event before it is 90 days old. Cloudflare's own D1 backups, which cannot be turned off, can restore a removed row for a further 7 days on the Free plan and 30 on a paid one.
+An hourly sweep removes each event before it is 90 days old, and tries again whatever PostHog did not take. Cloudflare's own D1 backups, which cannot be turned off, can restore a removed row for a further 7 days on the Free plan and 30 on a paid one.
 
 ## Try it on this computer
 
@@ -27,7 +27,7 @@ npx wrangler@4 d1 execute sotto-product-events --remote --file schema.sql
 npx wrangler@4 deploy
 ```
 
-**Do not set `POSTHOG_KEY` until the release with the notice is out.** Without it, events stop at the copy in D1. When that release ships:
+**Do not set `POSTHOG_KEY` until the release with the notice is out.** Without it, events stop at the copy in D1. Setting it later sends only what arrives after that: a row kept before there was a key is never forwarded. When that release ships:
 
 ```sh
 npx wrangler@4 secret put POSTHOG_KEY               # a project's capture key; it is not printed or kept here
@@ -36,3 +36,5 @@ npx wrangler@4 secret put POSTHOG_KEY               # a project's capture key; i
 `POSTHOG_HOST` defaults to PostHog's US region. For an EU project, set it to `https://eu.i.posthog.com` in `wrangler.jsonc` under `vars`. In PostHog's project settings, also turn on discarding client IP data.
 
 When the app's fields change, deploy this Worker before the release that sends them; until then it refuses them. A new public model is the exception: it only loses the model's name.
+
+Requests are limited to 120 a minute per Cloudflare location, counted together because the Worker reads no address. A hostile sender can use that up for real senders in its location, who get 429, wait and try again without losing anything for 30 minutes. If real use nears the limit, raise it.
