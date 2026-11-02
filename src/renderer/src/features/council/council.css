@@ -1,10 +1,31 @@
-/* The Council (ADR-0177): the Ask form, then each Council's record as quiet text on a card, the deliberation's
-   accessible form. Every colour is a theme role, and sizes and corners are steps of the scale. The chamber drawing
-   beside the record comes in its own change. */
-.council-view { display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; }
-.council-scroll { flex: 1; min-width: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.council-page { display: grid; gap: 18px; max-width: 980px; margin: 0 auto; padding: 4px 32px 96px; container-type: inline-size; }
-.council-title h1 { margin: 18px 0 0; color: var(--tt-text); font-size: var(--tt-type-title); font-weight: 500; }
+/* The Council (ADR-0177): the chamber (decision 6), and beside or under it the Ask form and each Council's record as
+   quiet text on a card, the deliberation's accessible form. Every colour is a theme role, and sizes and corners are
+   steps of the scale. */
+.council-view { display: flex; flex: 1; flex-direction: column; width: 100%; min-width: 0; min-height: 0; container: council-room / inline-size; }
+.council-head { display: flex; flex: none; align-items: center; gap: 12px; min-height: 40px; padding: 4px 24px 8px 32px; }
+.council-head h1 { flex: 1; min-width: 0; margin: 0; color: var(--tt-text); font-size: var(--tt-type-title); font-weight: 500; }
+/* The long table sits over the record, as wide as the room; the half circle and the round table beside it, until the
+   room is too narrow for both, as at the 820 by 560 minimum. */
+.council-body { display: grid; flex: 1; grid-template-rows: minmax(200px, 54%) minmax(0, 1fr); min-height: 0; }
+.council-view:is([data-layout='half-circle'], [data-layout='round-table']) .council-body { grid-template-columns: minmax(0, 1fr) minmax(340px, 400px); grid-template-rows: minmax(0, 1fr); }
+@container council-room (max-width: 900px) {
+  .council-view:is([data-layout='half-circle'], [data-layout='round-table']) .council-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(200px, 54%) minmax(0, 1fr); }
+}
+.council-scroll { min-width: 0; min-height: 0; overflow-y: auto; border-top: 1px solid var(--tt-hairline); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+@container council-room (min-width: 901px) {
+  .council-view:is([data-layout='half-circle'], [data-layout='round-table']) .council-scroll { border-top: 0; border-left: 1px solid var(--tt-hairline); }
+}
+.council-page { display: grid; gap: 18px; max-width: 980px; margin: 0 auto; padding: 16px 32px 96px; container-type: inline-size; }
+
+/* The chamber: a canvas of glyphs in the theme's inks, read from the probe, with a button over each figure. */
+.council-chamber { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.council-chamber__scene { position: absolute; top: 0; left: 0; pointer-events: none; }
+.council-chamber__figure { position: absolute; padding: 0; border: 0; border-radius: var(--tt-radius-card); background: transparent; cursor: pointer; }
+.council-chamber__figure:hover { background: color-mix(in srgb, var(--tt-text) 5%, transparent); }
+.council-chamber__figure:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+/* The chamber's inks, read and never seen: the text colour for its ink, the accent for its accent, and the glyph face. */
+.council-chamber__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
+  color: var(--tt-text); background-color: var(--tt-accent); font-family: var(--tt-font-mono); }
 
 .council-ask { display: grid; gap: 12px; padding: 16px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
 .council-field { display: grid; gap: 5px; min-width: 0; }

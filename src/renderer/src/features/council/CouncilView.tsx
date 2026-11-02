@@ -1,41 +1,76 @@
 import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
-import { PROVIDER_LABELS, type AgentThread } from '../../../../shared/agents'
-import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
-  type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
+import { PROVIDER_LABELS, type AgentModel, type AgentThread } from '../../../../shared/agents'
+import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, DEFAULT_COUNCIL_LAYOUT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
+  type CouncilLayout, type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { isThreadClosed } from '../../../../shared/threadActivity'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ModelPicker } from '../../agents/ModelPicker'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
 import { useOptionalApp } from '../../state/AppContext'
+import { ChoiceMenu } from '../usage/UsageMenu'
+import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
 import './council.css'
 
-/**
- * The Council page (ADR-0177): the Ask form, then each Council as a text record of its stages, its threads' states and
- * the actions their rows offer, the verdict with Sotto's counts, and Send to the thread. The record is the accessible
- * form of the deliberation; the chamber drawing beside it is the next pull request (`CouncilChamber`).
- */
-export function CouncilView({ bridge = window.sotto?.council }: { readonly bridge?: CouncilBridge | undefined }): ReactNode {
-  const { t } = useLingui()
-  const { councils, failed } = useCouncils(bridge)
-  return <div className="council-view"><div className="council-scroll"><div className="council-page">
-    <header className="council-title"><h1>{t({ message: 'Council', comment: 'The Council page: one question put to several models, which answer, review each other and get a verdict.' })}</h1></header>
-    {bridge ? <AskForm bridge={bridge} /> : null}
-    <CouncilChamber />
-    {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
-    <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
-  </div></div></div>
+/** The Council being worked now, the newest if several are: the chamber shows it, and the Ask view when there is none. */
+export function liveCouncil(councils: readonly CouncilRecord[] | null): CouncilRecord | null {
+  let live: CouncilRecord | null = null
+  for (const council of councils ?? []) {
+    if (council.status !== 'working' && council.status !== 'waiting') continue
+    if (live === null || council.createdAt > live.createdAt) live = council
+  }
+  return live
 }
 
 /**
- * The Roman chamber drawn in ASCII beside the record (ADR-0177 decision 6, `docs/prototypes/council-chamber-prototype.html`),
- * in the layout Settings → Council chooses. It comes in the next pull request; until then it draws nothing.
+ * The Council page (ADR-0177): the chamber (`CouncilChamber`, decision 6), then beside or under it the Ask form and each
+ * Council as a text record of its stages, its threads' states and the actions their rows offer, the verdict with
+ * Sotto's counts, and Send to the thread. The record is the accessible form of the deliberation. The header's Layout
+ * menu changes the same setting as Settings → Council.
  */
-function CouncilChamber(): ReactNode {
-  return null
+export function CouncilView({ bridge = window.sotto?.council }: { readonly bridge?: CouncilBridge | undefined }): ReactNode {
+  const { t } = useLingui()
+  const app = useOptionalApp()
+  const agents = useOptionalAgents()
+  const { councils, failed } = useCouncils(bridge)
+  const settings = app?.settings
+  const state = agents?.state
+  const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
+  // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
+  const [panel, setPanel] = useState<CouncilPanel | null>(null)
+  const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
+  const seats = useSeatsInForce(seatsPanel, catalog)
+  const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
+  const layouts: { value: CouncilLayout; label: string }[] = [
+    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
+    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
+    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
+  ]
+  return <div className="council-view" data-layout={layout}>
+    <header className="council-head">
+      <h1>{t({ message: 'Council', comment: 'The Council page: one question put to several models, which answer, review each other and get a verdict.' })}</h1>
+      {app ? <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={layout} options={layouts}
+        onChoose={value => void app.actions.updateSettings({ councilLayout: value })} /> : null}
+    </header>
+    <div className="council-body">
+      <CouncilChamber council={liveCouncil(councils)} askSeats={seats} layout={layout} />
+      <div className="council-scroll"><div className="council-page">
+        {bridge ? <AskForm bridge={bridge} panel={seatsPanel} onPanel={setPanel} /> : null}
+        {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
+        <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+      </div></div>
+    </div>
+  </div>
+}
+
+/** The seats as they would start now, kept while the panel and the models stay the same so the chamber is not redrawn for nothing. */
+function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentModel[]): ReturnType<typeof councilSeatsInForce> {
+  // The panel by its content: a new object for the same seats is the same seats.
+  const key = JSON.stringify(panel)
+  return useMemo(() => councilSeatsInForce(panel.panelists, panel.chair, catalog), [key, catalog])
 }
 
 /** A thread the Council can start from: an ordinary thread on this computer, open, not one another thread started. */
@@ -44,7 +79,7 @@ function askable(thread: AgentThread, localHostId: string | undefined): boolean 
     && thread.delegatedBy === undefined && !isThreadClosed(thread)
 }
 
-function AskForm({ bridge }: { readonly bridge: CouncilBridge }): ReactNode {
+function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel }: { readonly bridge: CouncilBridge; readonly panel: CouncilPanel; readonly onPanel: (panel: CouncilPanel | null) => void }): ReactNode {
   const { t, i18n } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
@@ -57,12 +92,10 @@ function AskForm({ bridge }: { readonly bridge: CouncilBridge }): ReactNode {
     .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '')), [state, local])
   const [origin, setOrigin] = useState<string>('')
   const [question, setQuestion] = useState('')
-  const [panel, setPanel] = useState<CouncilPanel | null>(null)
   const [estimate, setEstimate] = useState<CouncilEstimate | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const shownOrigin = origin || (threads.some(thread => thread.id === state?.activeThreadId) ? state!.activeThreadId! : threads[0]?.id ?? '')
-  const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   useEffect(() => {
     setEstimate(null)
     if (!shownOrigin) return
