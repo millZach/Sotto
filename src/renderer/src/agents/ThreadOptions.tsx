@@ -12,7 +12,7 @@ import { shownWords, wordsOf, type LaterWords } from './interfaceWords'
 import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
-import { knowsSpeed, ServerMark, ServerSpeedCard, useOwnServerMark } from './ServerMark'
+import { ServerMark, ServerSpeedCard, useOwnServerMark } from './ServerMark'
 import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { SplitChipEffort, type SpeedOption } from './SplitChipEffort'
@@ -472,6 +472,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const settings = usePendingSettings(thread.id)
   // A thread on one of the user's own model servers wears the server mark in its chip, with its speed card (ADR-0124).
   const serverMark = useOwnServerMark(thread, isThreadProviderConnected(state.host, thread))
+  const serverTurn = serverMark?.turn
   const speedCardId = useId()
   // Your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
   // and never for Watcher (ADR-0124, phase 1).
@@ -670,9 +671,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
         pending={settings.pending.model?.awaiting === 'unconfirmed'} describedBy={unconfirmedModelId} ownServers={ownServers}
-        mark={serverMark ? <ServerMark state={serverMark.state} attempt={serverMark.attempt} wordsPerSecond={serverMark.pace.wordsPerSecond} /> : undefined}
-        card={serverMark && knowsSpeed(serverMark.pace, thread.usage, thread.modelId)
-          ? { id: speedCardId, node: <ServerSpeedCard pace={serverMark.pace} usage={thread.usage} modelId={thread.modelId} /> } : undefined}
+        mark={serverMark ? <ServerMark state={serverMark.state} attempt={serverMark.attempt} turnId={serverTurn?.turnId} finished={serverTurn?.status === 'completed'} /> : undefined}
+        card={serverMark && serverTurn ? { id: speedCardId, render: shown => <ServerSpeedCard turn={serverTurn} heard={serverMark.heard} unanswered={serverMark.unanswered} usage={thread.usage} modelId={thread.modelId} shown={shown} /> } : undefined}
         unavailable={continueUnavailable} continueOn={continueOn} onChange={pressed => {
         if (continuing && continuations.some(model => model.id === pressed)) { continuing.onContinue(pressed); return }
         const picked = others.find(model => model.id === pressed)

@@ -21,7 +21,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
-import { heardFrom, ServerMark, serverTurnSample, useServerPace } from './ServerMark'
+import { heardFrom, LiveServerMark } from './ServerMark'
 import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import {
   browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
@@ -396,7 +396,7 @@ function useStillWaiting(startedAt: string | undefined, active: boolean): boolea
  */
 function OwnServerLine({ actions, server, mark, startedAt, steps }: {
   readonly actions: OwnServerTurnActions; readonly server: OwnServerTurn
-  /** The server mark, grey while the server is tried again and filling while it is waited for. */
+  /** The server mark: hollow while the server is tried again, one cell walking round while it is waited for. */
   readonly mark: ReactNode
   /** When the turn began: given, the line says it is still waiting and counts from then; absent, it says which try it is. */
   readonly startedAt?: string | undefined
@@ -476,14 +476,11 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // server again, and once the server has sent nothing for 30 seconds.
   const own = useOwnServerTurnActions()
   const server = own !== null && connected && turn?.status === 'running' ? turn.ownServer : undefined
-  const heard = server !== undefined && turnId !== null && heardFrom(thread, turnId)
+  const heard = server !== undefined && turn !== undefined && heardFrom(thread, turn)
   const waiting = useStillWaiting(turn?.startedAt, server !== undefined && server.attempt === undefined && turnId !== null && !heard)
-  // Its server mark stands where the pulse would (ADR-0124, November 1 amendment): grey while OpenCode tries the server
-  // again, filling while the server reads the prompt, and flickering as fast as words come once it writes.
-  const serverTurn = server !== undefined && turn !== undefined && turnId !== null ? turnId : undefined
-  const pace = useServerPace(serverTurn, serverTurn !== undefined && turn !== undefined ? serverTurnSample(thread, turn, heard) : undefined)
-  const mark = server === undefined ? null
-    : <ServerMark state={server.attempt !== undefined ? 'retrying' : heard ? 'writing' : 'reading'} attempt={server.attempt} wordsPerSecond={pace.wordsPerSecond} />
+  // Its server mark stands where the pulse would (ADR-0124, November 1 amendment): hollow while OpenCode tries the server
+  // again, one cell walking round while the server reads the prompt, and a step round for each piece of text it writes.
+  const mark = server === undefined || turn === undefined ? null : <LiveServerMark thread={thread} turn={turn} heard={heard} attempt={server.attempt} />
   const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
