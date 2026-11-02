@@ -20,6 +20,7 @@ import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { DesktopDelegationRelay, type RelayHostConnection } from '../../src/main/agents/delegationRelayDesktop'
+import type { TellWatcherAsk } from '../../src/shared/tellWatcher'
 
 const OWL = '0.1.38-owl.20261013.1'
 const STABLE = '0.1.38'
@@ -58,10 +59,10 @@ async function hostFixture(version = OWL) {
   const model = host.service.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
   /** A desktop the launch script recorded, paired and connected over the host's socket. */
   const recorded: string[] = []
-  const desktop = async (record = true, crossMachineEnabled = false, relaysDelegation = false) => {
+  const desktop = async (record = true, crossMachineEnabled = false, relaysDelegation = false, watcherEnabled = false) => {
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
     if (record) { recorded.push(pairing.clientId); await writeFile(join(root, DESKTOP_CLIENTS_FILE), JSON.stringify(recorded)) }
-    const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId, crossMachineEnabled, relaysDelegation })
+    const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId, crossMachineEnabled, relaysDelegation, watcherEnabled })
     clients.push(socket)
     const hello = await socket.connect()
     return { socket, pairing, hello }
@@ -99,6 +100,15 @@ async function hostFixture(version = OWL) {
     expect(response.status).toBe(200)
     return ((await response.json()) as { result: { structuredContent: Record<string, unknown> } }).result.structuredContent
   }
+  /** `tell_watcher` as the provider calls it: through the thread's own loopback server, with its own token. */
+  const tellWatcher = async (threadId: string, message: string) => {
+    const server = await provider.tools.find(tools => tools.name === 'sotto_watcher')?.mcpServer(await session(threadId))
+    if (!server) return undefined
+    const response = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', [server.headers[0]!.name]: server.headers[0]!.value },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tell_watcher', arguments: { message } } }) })
+    expect(response.status).toBe(200)
+    return ((await response.json()) as { result: { content: { text: string }[]; isError?: boolean } }).result
+  }
   const start = (threadId: string, permission: AgentRuntimeMode, extra: Record<string, unknown> = {}) =>
     call(threadId, 'delegate', { work: 'code-review', brief: 'Synthetic brief', provider: 'codex', model: model.id, effort: 'low', permission, wait_seconds: 0, ...extra })
   /** The provider ends a thread's running turn with a reply, as the thread's own words, and the host has seen it end. */
@@ -134,7 +144,7 @@ async function hostFixture(version = OWL) {
     url = 'http://127.0.0.1:' + host.descriptor!.port
     await command({ type: 'connect', provider: 'codex' })
   }
-  return { root, get host() { return host }, get url() { return url }, provider, get native() { return native }, command, desktop, answers, revoke, restart,
+  return { tellWatcher, root, get host() { return host }, get url() { return url }, provider, get native() { return native }, command, desktop, answers, revoke, restart,
     session, parentThread, call, start, reply, thread, model, project, descriptor, raw, rawCall }
 }
 
@@ -174,6 +184,26 @@ it('lets a thread on a host start a child on its own machine under the desktop d
     && JSON.stringify(request.params).includes('Synthetic child finding')), { timeout: 30_000 }).toBe(true)
   await expect.poll(() => f.thread(parent.threadId)?.wakeUpMessageIds?.length ?? 0).toBeGreaterThan(0)
   expect(await f.call(parent.threadId, 'read_delegation', { delegation: started.delegation.id })).toMatchObject({ delegation: { outcome: 'answered' } })
+}, 60_000)
+
+it('carries a host thread\'s message for Watcher to a recorded desktop, with the user\'s own words from the host\'s record (ADR-0073)', async () => {
+  const f = await hostFixture(), parent = await f.parentThread()
+  // Nothing is connected, so nothing got through, and the thread is told so.
+  const away = await f.tellWatcher(parent.threadId, 'Anyone there?')
+  expect(away?.isError).toBe(true)
+  expect(away?.content[0]?.text).toContain('not connected')
+  // A desktop the launch script did not record is never offered it.
+  expect((await f.desktop(false, false, false, true)).hello.features).not.toContain('watcher-tell')
+  const { socket, hello } = await f.desktop(true, false, false, true)
+  expect(hello.features).toContain('watcher-tell')
+  const asks: TellWatcherAsk[] = []
+  socket.subscribeWatcherTell((askId, ask) => { asks.push(ask); void socket.answerWatcherTell(askId, { status: 'told', requestOpened: ask.userMessage?.named === true }) })
+  await f.reply(parent.threadId, 'Synthetic reply')
+  await f.command({ type: 'manual-send', threadId: parent.threadId, draftId: randomUUID(), text: 'Tell watcher to look at this' })
+  const told = await f.tellWatcher(parent.threadId, 'Zach asks you to look.')
+  expect(told?.isError).not.toBe(true)
+  expect(told?.content[0]?.text).toContain('can act on it')
+  expect(asks).toEqual([{ threadId: parent.threadId, words: 'Zach asks you to look.', userMessage: { id: expect.any(String), words: 'Tell watcher to look at this', named: true, cut: false } }])
 }, 60_000)
 
 it('relays a host thread\'s start to This computer over the socket, and reads it again exactly after a reconnect (#1316)', async () => {
