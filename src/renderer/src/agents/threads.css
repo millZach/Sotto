@@ -230,6 +230,8 @@
    card is the pane's only text field; the border stays transparent so the card keeps its size. */
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid transparent; border-radius: var(--tt-radius-card); background: var(--tt-card); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
+/* The drop overlay leaves the grid so it covers the whole card, not just its content columns. */
+.thread-prompt .screenshot-input > .screenshot-input__drop { grid-column: auto; }
 .thread-prompt .screenshot-input, .thread-prompt .screenshot-input__tools { display: contents; }
 .thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; }
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }

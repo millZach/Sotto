@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, Pencil, Plug, Shrink, X } from 'lucide-react'
+import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
@@ -35,6 +35,7 @@ import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import { useDeleteThread } from './DeleteThread'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
+import { ReplyAttachContext, useReplyAttachSlot } from './replyAttach'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { RunCommands } from '../tools/runCommand'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
@@ -357,10 +358,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
   const naming: PaneMenuItem[] = [
     ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
-    // The thread's own provider writes the name from its first exchange (ADR-0026); a name typed by hand is left
-    // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
-    ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
-      ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
   ]
   // Open beside leads the layout rows; Tools, the drawer and the pane area's rows follow it in ThreadPaneMenu.
   const beside: PaneMenuItem | undefined = onOpenBeside ? { id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside } : undefined
@@ -407,6 +404,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   ]
   // Delete thread… (ADR-0140; Owl only): a settled thread's last item, after its own rule, since it cannot be taken back.
   const { items: removal, dialog: deleteDialog } = useDeleteThread(row, state, command, { ownPane })
+  // A picture marked up in this pane goes into this pane's reply box (ADR-0170, part 5). With inline-media off the pane
+  // offers no slot, so its reply box registers nothing.
+  const replySlot = useReplyAttachSlot()
+  const markUpOn = useOwlFeature('inline-media')
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   const title = thread.title, provider = row.provider
   const paneChrome = chrome ?? NO_CHROME
@@ -427,7 +428,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     event.preventDefault()
     focusAnswerComposer()
   }
-  return <>
+  return <ReplyAttachContext.Provider value={markUpOn ? replySlot : null}>
     {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
     {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
       {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
@@ -511,5 +512,5 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {/* Under a greeting, the room below the composer matches the room above, so the two sit in the middle. */}
     <div className="thread-pane__balance" data-room-backdrop="" aria-hidden="true" />
     {drawer}
-  </>
+  </ReplyAttachContext.Provider>
 }

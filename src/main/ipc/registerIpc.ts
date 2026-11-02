@@ -211,7 +211,7 @@ const looseSettingsPatchSchema = settingsSchema
   // so a payload naming it is refused rather than dropped (ADR-0053).
   // The speech model is chosen through SPEECH_MODEL_CHOOSE, which also loads it; a plain save would
   // change the setting without the model following, so a payload naming it is refused (ADR-0094).
-  .omit({ hotkey: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
+  .omit({ hotkey: true, hotkeyStandby: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011). The retired glass and frost settings are
@@ -267,6 +267,7 @@ const hotkeySchema = z
 const dictationShortcutsChangeSchema = z.object({
   press: z.array(z.string().min(1).max(64)).min(1).max(4),
   hold: z.array(z.string().min(1).max(64)).max(4),
+  standby: z.boolean().optional(),
 }).strict()
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })

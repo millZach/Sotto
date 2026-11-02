@@ -61,7 +61,7 @@ export class SettingsRepository {
 
   async get(): Promise<AppSettings> {
     await this.mutationTail
-    return this.readSettings()
+    return this.present(await this.readSettings())
   }
 
   async save(input: unknown): Promise<AppSettings> {
@@ -69,7 +69,7 @@ export class SettingsRepository {
     return this.enqueueMutation(async () => {
       const settings = await this.keepHeld(parsed)
       await this.writeSettings(settings)
-      return this.project(settings)
+      return this.present(settings)
     })
   }
 
@@ -92,7 +92,7 @@ export class SettingsRepository {
       if (!this.interfaceLanguageEnabled) delete patchSnapshot.interfaceLanguage
       const settings = this.keepSwarms(this.parse({ ...current, ...patchSnapshot }), current)
       await this.writeSettings(settings)
-      return this.project(settings)
+      return this.present(settings)
     })
   }
 
@@ -102,7 +102,7 @@ export class SettingsRepository {
       // The speech model stays chosen, as Settings promises: it is what is on this computer, not a preference.
       const settings = { ...(await this.keepHeld(parsed)), speechModel: (await this.readSettings()).speechModel }
       await this.writeSettings(settings)
-      return this.project(settings)
+      return this.present(settings)
     })
   }
 
@@ -111,7 +111,7 @@ export class SettingsRepository {
     if (this.workerRolesEnabled && this.workerSwarmsEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
     const saved = await this.readSettings()
     return this.keepSwarms({ ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
-      ...(this.dictationHoldShortcutsEnabled ? {} : { pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
+      ...(this.dictationHoldShortcutsEnabled ? {} : { hotkeyStandby: saved.hotkeyStandby, pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
       ...(this.interfaceLanguageEnabled ? {} : { interfaceLanguage: saved.interfaceLanguage }) }, saved)
   }
 
@@ -157,6 +157,12 @@ export class SettingsRepository {
   }
 
   private parse(input: unknown): AppSettings { return parseSettings(input, this.defaults, this.omarchyTheme !== undefined) }
+
+  /** What callers see. Without the Owl feature only `hotkey` is registered, so it is never on standby; the saved value stays for Owl. */
+  private present(settings: AppSettings): AppSettings {
+    const projected = this.project(settings)
+    return !this.dictationHoldShortcutsEnabled && projected.hotkeyStandby ? { ...projected, hotkeyStandby: false } : projected
+  }
 
   private project(settings: AppSettings): AppSettings {
     if (!this.omarchyTheme && !this.shellPillInUse) return settings

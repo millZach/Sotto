@@ -334,3 +334,79 @@ On the owner-scale benchmark, three runs each on Owl, a broadcast with one threa
 to 4,466 on stable. The page's work per broadcast fell from 0.212-0.216 ms to 0.126-0.127 on Owl and from 0.189-0.194 to
 0.128-0.136 on stable, and main's from 0.076-0.079 to 0.062-0.065 and 0.120-0.129 to 0.113-0.118
 (`docs/perf/2026-10-30-window-kept-parts.md`).
+
+## November 1, 2026: a phone's connect lists the threads once and each provider's modes once
+
+The owner's iPhone took 10 to 30 seconds to connect to the laptop on a slow network, and under a second to forge. The
+network, the TLS and the host were not the difference: the laptop answered hello in 79 ms. The bytes were. On the
+laptop, with 632 threads and a catalog of 942 models, a connect sent the phone 4.5 to 5.7 MB, and 8.3 to 9.2 MB when the
+phone checked its deliveries with a `shell` read; forge, with 67 threads and 48 models, sent 0.23 to 0.78 MB. Phones are
+not sent compressed messages (ADR-0025, October 18 amendment).
+
+Two parts of that were sent twice. The first shell push after hello listed every thread record again (1.7 MB), because
+the October 30 amendment measured a connection's first push from nothing, and so did the push after a `shell` read. And
+every model carried its provider's modes: Devin's 846 models each carried the same 962-byte list, 814 KB of a 1 MB
+catalog.
+
+**A hello and a `shell` read name the revision of the records they list, and the next push is measured from them**, to a
+client that accepts `reply-thread-records` beside `changed-thread-records`. The listener seeds the connection's
+`ThreadRecordsBroadcast` with the records the answer lists and makes them its base once the answer is written; a send
+that had not become the base by then is voided, as a reset voids it. The answer carries `threadRecordsRevision` on its
+shell. The iPhone holds those records with the answer's envelope, in socket order, as it holds a catalog an answer
+carries: an answer's caller reads it after later pushes have been handled, so holding them there would be too late for
+the push that follows. A command's answer names nothing and moves nothing.
+
+**A catalog lists each distinct list of provider modes once, and each model names its list by its place**, to a client
+that accepts `provider-mode-lists`. Places rather than a list per provider, so a provider that ever gives two of its models
+different modes still reads exactly, and a model without modes is sent as it is, so it is never mistaken for one that
+names a list. The iPhone puts each list back before anything reads the catalog.
+
+Both are opt-ins: the desktop's own host client, the Android client and every earlier iPhone build are sent exactly what
+they were. Compressing phones' messages, the larger cut, stays a later change with its own device verification, and so
+does sending a phone only the threads it shows first.
+
+Replaying the laptop's captured hello through the listener, a phone connect fell from 4,510 KB to 2,257 KB, and from
+7,994 KB to 4,277 KB with a `shell` read; hello from 2,768 KB to 1,978 KB and the first push from 1,742 KB to 279 KB. The
+replay's before matched the installed laptop's within 1% (`docs/perf/2026-11-01-phone-connect-size.md`).
+
+### Part 2: a phone is sent only threads that are not settled, and reads the Settled shelf when asked
+
+After the first part, hello still listed every thread record: 1.48 MB of the laptop's 1,978 KB, for 632 threads of which
+625 were settled. The iPhone shows a settled thread only on its Settled shelf, folded until opened. The owner first chose,
+from three mock-ups (tag `prototype/ios-settled-shelf`, variant C), to keep the threads settled in the last seven days on
+the phone and read older ones when asked. Measured, the week was 122 of the laptop's settled threads, 256 KB of a 785 KB
+hello at about 2.1 KB a record, and the owner settles well over 50 a week, so he dropped it the same day: **only threads
+that are not settled are sent on connect**. The shelf and Threads' search read settled threads from the computer.
+
+**To a phone that accepts `settled-threads-on-request`, every shell holds back its settled threads**, and says how many
+in `settledHeldBack` (`heldBackSettled.ts`). What stays is what the phone needs to read correctly: a thread that asks the
+user something, and every thread above it in its delegation, so Needs you reads as before; one the phone observes or has
+selected, so a thread opened from the shelf stays in its list while it is open; and **every thread its list has carried
+since hello**, so a thread settled while the phone is connected, from the phone or anywhere else, stays where Settle's
+Undo puts it straight back, until the phone connects again. **`settled-threads` reads the held-back threads a page at a
+time**, newest settled first, matching a search when it names one. The settled time is the latest any settlement names,
+as the iPhone's `isSettled` reads settlement.
+
+The iPhone's shelf keeps its count, which the computer's `settledHeldBack` makes whole. Opened, it reads the first 30
+from each computer, shows them with any settled thread its lists carry as one list, newest settled first, and **Show 30
+more** reads the next. Threads' search asks each computer for the settled threads that match, a moment after typing
+stops. The iPhone keeps what it read beside its lists, so a thread opened from them is open before its computer lists
+it, and a new connection reads them afresh but for the one open.
+
+On the laptop's replayed shell, the list keeps 7 of 632 records and holds back 625. Against the week kept, measured the
+same hour: hello fell from 785 KB to 529 KB, a connect from 1,062 KB to 806 KB, and with a `shell` read from 1,887 KB to
+1,376 KB.
+
+**What was left of the hello was mostly the model catalog**, and most of that was models the phone could not use. The
+desktop keeps every model a provider has listed, marked not ready once it stops listing it, so an old thread's model
+still resolves. Devin, no longer connected on the owner's laptop, had left 846 such models; with the rest, 858 of the 942
+models were not ready, and only 5 of them were named by a thread. The iPhone's menus offer only ready models. The owner
+had part 2 carry the fix: **to a phone that accepts `usable-models`, the catalog carries ready models and any model that
+is not ready only while something names it** (`usableModels.ts`): a thread, held back or not, so one opened from the
+Settled shelf still names its model; the new-thread default; and Watcher's model now and for its next turn. The cut
+catalog counts its own revisions, so a phone sent it and a desktop sent the whole one never move one counter back and
+forth.
+
+On the laptop's replayed shell the catalog fell from 234 KB to 27 KB, 89 models, and hello from 529 KB to 321 KB; a
+connect from 806 KB to 598 KB, and with a `shell` read from 1,376 KB to 1,168 KB. From before either part, a connect fell
+from 4,510 KB to 598 KB, about an eighth (`docs/perf/2026-11-01-phone-connect-size.md`).

@@ -118,9 +118,12 @@ struct SentPhotoView: View {
     @State private var image: CGImage?
     @State private var missing = false
     var body: some View {
+        // A photo already in memory takes its own shape on its first layout, so a row made again as it scrolls back into
+        // view keeps its height rather than growing from the placeholder under the reader.
+        let shown = image ?? previews.cached(key)
         Group {
-            if let image {
-                Image(decorative: image, scale: 1).resizable().scaledToFill()
+            if let shown {
+                Image(decorative: shown, scale: 1).resizable().scaledToFill()
             } else {
                 ZStack {
                     Rectangle().fill(Palette.raised)
@@ -129,7 +132,7 @@ struct SentPhotoView: View {
                 }
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: Self.size(shown).width, height: Self.size(shown).height)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear { previews.appeared(key) }
         .onDisappear { previews.disappeared(key) }
@@ -139,30 +142,46 @@ struct SentPhotoView: View {
         }
     }
     /// At most 220 by 240 points, at the photo's own shape once it is known.
-    private var size: CGSize {
+    private static func size(_ image: CGImage?) -> CGSize {
         guard let image, image.width > 0, image.height > 0 else { return CGSize(width: 160, height: 160) }
         let scale = min(220 / Double(image.width), 240 / Double(image.height))
         return CGSize(width: max(60, Double(image.width) * scale), height: max(60, Double(image.height) * scale))
     }
 }
 
-/// A message's photos full screen, one at a time; swipe for the others.
+/// A message's photos full screen, one at a time; swipe for the others. Given the reply box they would go to, and on a
+/// computer that shows its agents' pictures, Mark up opens the one shown in the mark-up editor (ADR-0170, part 5).
 struct PhotoViewer: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var previews: PhotoPreviews
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State var opened: OpenPhotos
+    /// The reply box a marked copy goes into: the thread's, or Watcher's.
+    var box: PhotoBox? = nil
+    @State private var marking: MarkupTarget?
+    @State private var markRefusal: String?
+    /// The pictures the pages on screen are showing, the same images, so Mark up opens the one shown and fetches nothing.
+    @State private var shown: [PhotoPreviews.Key: CGImage] = [:]
+    @State private var closeAfterMarking = false
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Button("Done") { dismiss() }.fontWeight(.semibold).frame(minHeight: 44)
                 Spacer()
                 if opened.items.count > 1 { Text("\(opened.index + 1) of \(opened.items.count)").foregroundStyle(Palette.muted) }
+                if let box, model.showsAgentPictures(box.hostID) {
+                    Button("Mark up") { markUp(box) }.fontWeight(.semibold).frame(minHeight: 44).padding(.leading, 12)
+                        .accessibilityIdentifier("photo-mark-up")
+                }
             }.padding(.horizontal, 20).foregroundStyle(Palette.ink)
+            if let markRefusal {
+                Text(markRefusal).font(.sotto(.small)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+                    .padding(.horizontal, 20).paragraphDirection()
+            }
             TabView(selection: $opened.index) {
                 ForEach(Array(opened.items.enumerated()), id: \.element.id) { index, item in
-                    FullPhoto(key: item.key, name: item.name).tag(index)
+                    FullPhoto(key: item.key, name: item.name) { shown[item.key] = $0 }.tag(index)
                 }
             }.tabViewStyle(.page(indexDisplayMode: opened.items.count > 1 ? .always : .never))
             Text(opened.items[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
@@ -177,6 +196,22 @@ struct PhotoViewer: View {
             }
         }
         .accessibilityAction(.escape) { dismiss() }
+        .onChange(of: opened.index) { _, _ in markRefusal = nil }
+        .fullScreenCover(item: $marking, onDismiss: { if closeAfterMarking { dismiss() } }) { target in
+            MarkupEditor(target: target) { closeAfterMarking = true }
+        }
+    }
+
+    /// Opens the picture shown in the editor, the image its page already holds, unless its reply can't take it. It asks
+    /// the computer for nothing (ADR-0170, decision 18).
+    private func markUp(_ box: PhotoBox) {
+        if let refusal = model.markedCopyRefusal(box) { markRefusal = refusal; return }
+        guard let item = opened.items[safe: opened.index] else { return }
+        guard let image = shown[item.key] else {
+            markRefusal = String(localized: "This picture is still loading. Try again in a moment.")
+            return
+        }
+        marking = MarkupTarget(image: image, name: item.name, box: box)
     }
 }
 
@@ -185,6 +220,8 @@ private struct FullPhoto: View {
     @EnvironmentObject var previews: PhotoPreviews
     let key: PhotoPreviews.Key
     let name: String
+    /// Tells the viewer which image this page shows, and nil once it goes.
+    var showing: (CGImage?) -> Void = { _ in }
     @State private var image: CGImage?
     @State private var missing = false
     var body: some View {
@@ -199,8 +236,8 @@ private struct FullPhoto: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { previews.viewerOpened(key) }
-        .onDisappear { previews.viewerClosed(key) }
-        .task(id: key) { image = await previews.full(key, model: model); missing = image == nil && !Task.isCancelled }
+        .onDisappear { previews.viewerClosed(key); showing(nil) }
+        .task(id: key) { image = await previews.full(key, model: model); missing = image == nil && !Task.isCancelled; showing(image) }
     }
 }
 

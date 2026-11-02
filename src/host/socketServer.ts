@@ -9,14 +9,17 @@ import { z } from 'zod'
 import { RequestAnswerCheckRefusal, type HostService, type ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
-import { ModelCatalogRevisions, ThreadRecordsBroadcast } from '../main/agents/agentStateBroadcast'
+import { ModelCatalogRevisions, ThreadRecordsBroadcast, type ThreadRecordsSeed } from '../main/agents/agentStateBroadcast'
+import { shareProviderModes } from './providerModeLists'
+import { usableModels, usableVariant } from './usableModels'
+import { heldBackSettled, settledPage } from './heldBackSettled'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
-import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
+import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
+import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -38,7 +41,7 @@ import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from 
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
-import type { WatcherPhoneCurrent, WatcherPhoneOpen } from '../shared/watcherPhone'
+import type { WatcherPhoneCurrent, WatcherPhoneOpen, WatcherPhoneState } from '../shared/watcherPhone'
 import type { WatcherSetPermissionRequest, WatcherWatchThreadRequest } from '../shared/watcherRoom'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
@@ -122,7 +125,23 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  */
 interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
-  threadRecords?: ThreadRecordsBroadcast | undefined }
+  threadRecords?: ThreadRecordsBroadcast | undefined
+  /**
+   * Whether its hello accepted `reply-thread-records` beside `changed-thread-records`: the records a hello or a `shell` read
+   * lists whole are, once that answer is written, what the next shell push is measured from, and the answer names their
+   * revision, so the push after it does not list every record again.
+   */
+  replyThreadRecords?: boolean
+  /** Whether its hello accepted `provider-mode-lists`: a catalog it is sent lists each provider's modes once, not on every model. */
+  providerModeLists?: boolean
+  /**
+   * Whether its hello accepted `settled-threads-on-request`: its list leaves out settled threads (`heldBackSettled`),
+   * which it reads with `settled-threads`. `listed` is every thread its list has carried since hello, which stays in it
+   * until it connects again, so a thread settled while it watches stays where Undo can reach it.
+   */
+  settledOnRequest?: boolean; listed?: Set<string>
+  /** Whether its hello accepted `usable-models`: its catalog leaves out models that are not ready and nothing names. */
+  usableModels?: boolean }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -558,7 +577,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     return made
   }
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
-  const shell = (peer: Peer, read: AgentState = service.shell()) => {
+  /** `whole` is set only by a `settled-threads` read, which pages through the threads a phone's list leaves out. */
+  const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
     const visible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original), false) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
@@ -586,7 +606,36 @@ export async function startSocketServer(options: SocketServerOptions) {
       : { ...projected, clientUpdates: state.clientUpdates.map(peer.clientUpdates ? clientUpdateWithoutNotListed : clientUpdateForOlderClient) }
     // An iPhone from before ADR-0111 settles a terminal answer it was waiting on only once a complete list leaves its
     // terminal out, so a client that still accepts `terminals` reads an empty one. Nothing offers the feature.
-    return peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
+    const listed = peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
+    const kept = peer.settledOnRequest && !whole ? withoutHeldBack(peer, listed) : listed
+    return peer.usableModels ? withUsableModels(kept, read, phoneState) : kept
+  }
+  /**
+   * `state` with its catalog cut to the models a phone can use (`usable-models`): the ready ones, and any that is not but
+   * is still named by a thread, held back or not, by the new-thread default, or by Watcher now or for its next turn.
+   */
+  const withUsableModels = <State extends AgentState>(state: State, read: AgentState, page: WatcherPhoneState | undefined): State => {
+    const models = usableModels(state.host.models, namedModels(read, page))
+    return models === state.host.models ? state : { ...state, host: { ...state.host, models } }
+  }
+  function* namedModels(read: AgentState, page: WatcherPhoneState | undefined): Generator<string | undefined> {
+    for (const thread of read.host.threads) yield thread.modelId
+    yield read.configuration.newThreadModelId
+    yield page?.current?.modelId
+    yield page?.nextTurnOptions?.modelId
+  }
+  /**
+   * The threads a phone that accepted `settled-threads-on-request` is not sent with its list, by ID. It asks the phone's
+   * own sets about each thread rather than copying them, since what it has listed only grows while it stays connected.
+   */
+  const heldBack = (peer: Peer, state: AgentState): Set<string> => heldBackSettled(state.host.threads, state.host.projects,
+    id => peer.observed.has(id) || id === peer.selectedThreadId || (peer.listed?.has(id) ?? false))
+  /** `state` with its settled threads left out of its list, and how many were left out. What it lists stays listed. */
+  const withoutHeldBack = <State extends AgentState>(peer: Peer, state: State): State & { settledHeldBack: number } => {
+    const held = heldBack(peer, state), listed = peer.listed ??= new Set()
+    const threads = held.size ? state.host.threads.filter(thread => !held.has(thread.id)) : state.host.threads
+    for (const thread of threads) listed.add(thread.id)
+    return { ...state, host: { ...state.host, threads }, settledHeldBack: held.size }
   }
   /**
    * The catalog revisions this listener names to peers that accept `model-catalog-revision`. A peer that does not know a
@@ -595,8 +644,10 @@ export async function startSocketServer(options: SocketServerOptions) {
    * changes. What each peer was sent is its own.
    */
   const catalogRevisions = new Map<string, ModelCatalogRevisions>()
-  const revisionsFor = (peer: Peer): ModelCatalogRevisions => {
-    const key = [...peer.unknownProviders].sort().join(',')
+  const revisionsFor = (peer: Peer, models: readonly AgentModel[]): ModelCatalogRevisions => {
+    // A catalog cut to usable models is a variant of its own, and so is each cut by the models it keeps, so no two
+    // catalogs move one counter back and forth.
+    const key = (peer.usableModels ? `usable:${usableVariant(models) ?? ''}:` : '') + [...peer.unknownProviders].sort().join(',')
     let revisions = catalogRevisions.get(key)
     if (!revisions) catalogRevisions.set(key, revisions = new ModelCatalogRevisions())
     return revisions
@@ -608,14 +659,26 @@ export async function startSocketServer(options: SocketServerOptions) {
    * only once its frame was written, never when a too_large error went in its place.
    */
   const wireShell = (peer: Peer, state: HostClientShell): WireShell => {
-    if (!peer.catalogRevisions) return { state, carries: null }
-    const modelsRevision = revisionsFor(peer).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
+    if (!peer.catalogRevisions) return { state: withModeLists(peer, state), carries: null }
+    const modelsRevision = revisionsFor(peer, state.host.models).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
     const host: HostWireShell['host'] = { ...state.host, modelsRevision }
-    if (peer.catalogSent !== modelsRevision) return { state: { ...state, host }, carries: modelsRevision }
+    if (peer.catalogSent !== modelsRevision) return { state: withModeLists(peer, { ...state, host }), carries: modelsRevision }
     delete host.models
     return { state: { ...state, host }, carries: null }
   }
+  /** A shell whose catalog goes to a client that accepted `provider-mode-lists`, with each provider's modes listed once. */
+  const withModeLists = (peer: Peer, state: HostWireShell): HostWireShell => {
+    if (!peer.providerModeLists || !state.host.models) return state
+    const { models, providerModeLists } = shareProviderModes(state.host.models)
+    return providerModeLists.length ? { ...state, host: { ...state.host, models, providerModeLists } } : state
+  }
   const recordCatalog = (peer: Peer, shell: WireShell): void => { if (shell.carries !== null) peer.catalogSent = shell.carries }
+  /** The records `shell` lists whole, to become the base of the next push once the answer carrying them is written. */
+  const seedRecords = (peer: Peer, shell: HostClientShell): ThreadRecordsSeed | undefined =>
+    peer.replyThreadRecords ? peer.threadRecords?.seed(shell.host.threads) : undefined
+  /** `wire` naming the revision its records are held under, when they were seeded. */
+  const withSeededRecords = (wire: WireShell, seed: ThreadRecordsSeed | undefined): WireShell =>
+    seed ? { ...wire, state: { ...wire.state, threadRecordsRevision: seed.revision } } : wire
   /**
    * A shell's state as it is written, and the digests that say whether it repeats the last one pushed. Watcher's page on a
    * phone's shell says when it was read (`observedAt`), a new time on every read, so with it no phone's shell ever
@@ -1294,6 +1357,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.catalogRevisions = request.accepts?.includes('model-catalog-revision') ?? false
         // Shell pushes carry only the thread records that changed since the last one, measured from a fresh start (#996).
         peer.threadRecords = (request.accepts?.includes('changed-thread-records') ?? false) && offers(peer, 'changed-thread-records') ? new ThreadRecordsBroadcast() : undefined
+        // The records this answer lists whole become the base the first push is measured from (ADR-0028, November 1 amendment).
+        peer.replyThreadRecords = peer.threadRecords !== undefined && (request.accepts?.includes('reply-thread-records') ?? false) && offers(peer, 'reply-thread-records')
+        peer.providerModeLists = (request.accepts?.includes('provider-mode-lists') ?? false) && offers(peer, 'provider-mode-lists')
+        peer.settledOnRequest = (request.accepts?.includes('settled-threads-on-request') ?? false) && offers(peer, 'settled-threads-on-request')
+        peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
@@ -1344,7 +1412,14 @@ export async function startSocketServer(options: SocketServerOptions) {
           ...about(), ...(phoneAccess ? { phoneAccess } : {}), ...events(peer, peer.afterSeq) }
       }
       // A client reading the shell whole holds its threads afresh, so the next push lists every record (#996).
-      case 'shell': peer.threadRecords?.reset(); return shell(peer)
+      // One that accepted `reply-thread-records` holds this answer's records instead, once it is written (`onMessage`).
+      case 'shell': if (!peer.replyThreadRecords) peer.threadRecords?.reset(); return shell(peer)
+      case 'settled-threads': {
+        if (!peer.settledOnRequest) throw new Refusal('invalid_request')
+        // The phone's own form of every thread, of which those its list leaves out are read a page at a time.
+        const whole = shell(peer, service.shell(), true), held = heldBack(peer, whole)
+        return settledPage(whole.host.threads.filter(thread => held.has(thread.id)), whole.host.projects, request) satisfies HostSettledThreadsPage
+      }
       case 'detail': return forPeer(peer, service.threadDetail(request.threadId))
       case 'activity-body': {
         // One record whole, for the row a desktop opened (ADR-0025, October 18 amendment); a hidden thread was refused above.
@@ -1704,13 +1779,17 @@ export async function startSocketServer(options: SocketServerOptions) {
       // The shell a hello, a shell read or a command answers with is encoded for this peer only here, just before it
       // is written, so what this connection was sent of the model catalog follows the order its frames go out in.
       let carried: WireShell | null = null
+      // The records a hello or a shell read lists whole, which the next push is measured from once the answer is written.
+      let seeded: ThreadRecordsSeed | undefined
       try {
         let result = await dispatch(peer, request)
         if (request.op === 'hello') {
           // Hello starts the client's picture afresh, so it carries the catalog whole whatever this connection was sent before.
           const hello = result as { shell: HostClientShell }
-          peer.catalogSent = null; carried = wireShell(peer, hello.shell); result = { ...hello, shell: carried.state }
-        } else if (request.op === 'shell' || request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = carried.state }
+          peer.catalogSent = null; carried = withSeededRecords(wireShell(peer, hello.shell), seeded = seedRecords(peer, hello.shell)); result = { ...hello, shell: carried.state }
+        } else if (request.op === 'shell') {
+          carried = withSeededRecords(wireShell(peer, result as HostClientShell), seeded = seedRecords(peer, result as HostClientShell)); result = carried.state
+        } else if (request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = carried.state }
         response = { v: 1, id: request.id, ok: true, result }
       }
       catch (error) {
@@ -1725,6 +1804,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
       else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
         if (carried) recordCatalog(peer, carried)
+        seeded?.commit()
         if (!response.ok) return
         if (request.op === 'detail') {
           // A thread read whole is held at that revision, and the deltas that follow it apply.

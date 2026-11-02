@@ -48,14 +48,14 @@ describe('the pane header’s More menu', () => {
   it('lists what the beta offers, in groups, with nothing about the hidden voice coordinator', () => {
     const view = mount()
     const menu = openPaneMenu(view.head())
-    expect(paneMenuItems(menu)).toEqual(['Open beside', 'Rename', 'Regenerate title', 'Compact context', 'Settle'])
+    expect(paneMenuItems(menu)).toEqual(['Open beside', 'Rename', 'Compact context', 'Settle'])
     // Four groups: the layout (ADR-0163), naming the thread, its context, and where it rests.
     expect(menu.querySelectorAll('hr')).toHaveLength(3)
   })
 
   it('leaves Open beside out where the caller has nowhere to put a second pane', () => {
     const view = mount({ beside: false })
-    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Rename', 'Regenerate title', 'Compact context', 'Settle'])
+    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Rename', 'Compact context', 'Settle'])
   })
 
   it('runs the item chosen and closes, and closes on Escape or a pointer outside without running anything', () => {
