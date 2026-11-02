@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { forgetOldEvents, handleProductEvents, retryForwards, type ProductEventStatement, type ProductEventStore } from '../../../workers/product-events/src/worker'
+import { forgetOldEvents, handleProductEvents, retryForwards, runHourlyWork, type ProductEventStatement, type ProductEventStore } from '../../../workers/product-events/src/worker'
 
 const NOW = Date.parse('2026-11-02T20:00:00.000Z')
 const HASH = 'c'.repeat(64)
@@ -29,7 +29,16 @@ describe('the product event Worker', () => {
       run: async () => database.prepare(query).run(...values),
       all: async () => ({ results: database.prepare(query).all(...values) }),
     })
-    store = { prepare: query => statement(query), batch: async statements => Promise.all(statements.map(each => each.all())) }
+    // As in D1, a batch is one transaction: a failing statement undoes the ones before it.
+    store = { prepare: query => statement(query), batch: async statements => {
+      database.exec('BEGIN')
+      try {
+        const results: { results?: readonly unknown[] }[] = []
+        for (const each of statements) results.push(await each.all())
+        database.exec('COMMIT')
+        return results
+      } catch (error) { database.exec('ROLLBACK'); throw error }
+    } }
     vi.unstubAllGlobals()
   })
   const post = (body: unknown, env: Record<string, unknown> = {}, headers: Record<string, string> = {}): Promise<Response> =>
@@ -168,7 +177,7 @@ describe('the product event Worker', () => {
     vi.stubGlobal('fetch', posted)
     return posted
   }
-  const sentTo = (posted: ReturnType<typeof vi.fn<typeof fetch>>, call = 0): { api_key: string; batch: { uuid: string }[] } => JSON.parse(String(posted.mock.calls[call]?.[1]?.body)) as never
+  const postedBody = (posted: ReturnType<typeof vi.fn<typeof fetch>>, call = 0): { api_key: string; batch: { uuid: string }[] } => JSON.parse(String(posted.mock.calls[call]?.[1]?.body)) as never
 
   it('with a key forwards only the rebuilt event, and marks it done', async () => {
     const posted = stubPostHog()
@@ -176,7 +185,7 @@ describe('the product event Worker', () => {
     await post({ batch: [good, event({}, { prompt: SECRET })] }, withKey, { 'cf-connecting-ip': '203.0.113.9' })
     await Promise.all(waited)
     expect(posted.mock.calls[0]?.[0]).toBe('https://ph.test/batch/')
-    expect(sentTo(posted)).toEqual({ api_key: 'phc_test', batch: [good] })
+    expect(postedBody(posted)).toEqual({ api_key: 'phc_test', batch: [good] })
     const said = String(posted.mock.calls[0]?.[1]?.body)
     expect(said).not.toContain('203.0.113.9'); expect(said).not.toContain('please fix')
     expect(rows()[0]!.forward_due).toBe(0)
@@ -186,7 +195,7 @@ describe('the product event Worker', () => {
     const posted = stubPostHog()
     const sent = event()
     await post({ batch: [sent, sent] }, withKey); await Promise.all(waited)
-    expect(sentTo(posted).batch).toEqual([sent])
+    expect(postedBody(posted).batch).toEqual([sent])
     waited = []
     expect((await post({ batch: [sent] }, withKey)).status).toBe(204); await Promise.all(waited)
     expect(posted).toHaveBeenCalledOnce()
@@ -210,7 +219,7 @@ describe('the product event Worker', () => {
     await retryForwards(env, NOW + 60_000)
     expect(posted).not.toHaveBeenCalled()
     await retryForwards(env, NOW + 6 * 60_000)
-    expect(sentTo(posted).batch).toHaveLength(2)
+    expect(postedBody(posted).batch).toHaveLength(2)
     expect(rows().every(row => row.forward_due === 0)).toBe(true)
     await retryForwards(env, NOW + 7 * 60_000)
     expect(posted).toHaveBeenCalledOnce()
@@ -224,6 +233,39 @@ describe('the product event Worker', () => {
     const posted = stubPostHog()
     await retryForwards({ EVENTS: store }, NOW + 6 * 60_000)
     expect(posted).not.toHaveBeenCalled()
+  })
+
+  const dueRows = (count: number, receivedAt: string): void => {
+    const insert = database.prepare('INSERT INTO product_events (uuid, received_at, event, body, forward_due) VALUES (?, ?, ?, ?, 1)')
+    for (let index = 0; index < count; index += 1) { const row = event(); insert.run(String(row.uuid), receivedAt, 'app.started', JSON.stringify(row)) }
+  }
+
+  it('sends a backlog larger than one try before the sweep removes it, oldest first', async () => {
+    const posted = stubPostHog()
+    dueRows(501, new Date(NOW - 90 * 86_400_000).toISOString())
+    const newest = event()
+    database.prepare('INSERT INTO product_events (uuid, received_at, event, body, forward_due) VALUES (?, ?, ?, ?, 1)').run(String(newest.uuid), new Date(NOW - 3_600_000).toISOString(), 'app.started', JSON.stringify(newest))
+    await runHourlyWork({ EVENTS: store, ...withKey }, NOW)
+    expect(posted.mock.calls.map((_, call) => postedBody(posted, call).batch.length)).toEqual([500, 2])
+    expect(postedBody(posted, 1).batch.at(-1)!.uuid).toBe(newest.uuid)
+    expect(rows().map(row => row.uuid)).toEqual([newest.uuid])
+    expect(rows()[0]!.forward_due).toBe(0)
+  })
+
+  it('removes old rows on time however PostHog fails, and gives each forward a timeout', async () => {
+    const posted = stubPostHog(false)
+    dueRows(3, new Date(NOW - 90 * 86_400_000).toISOString())
+    await runHourlyWork({ EVENTS: store, ...withKey }, NOW)
+    expect(posted).toHaveBeenCalledOnce()
+    expect(posted.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
+    expect(rows()).toEqual([])
+  })
+
+  it('answers 503 and keeps nothing when one event of a batch cannot be stored', async () => {
+    const posted = stubPostHog()
+    database.exec("CREATE TRIGGER refuse_one BEFORE INSERT ON product_events WHEN NEW.event = 'feature.used' BEGIN SELECT RAISE(ABORT, 'refused'); END")
+    const response = await post({ batch: [event(), event({ event: 'feature.used' }, { feature: 'council' })] }, withKey)
+    expect(response.status).toBe(503); expect(rows()).toEqual([]); expect(posted).not.toHaveBeenCalled()
   })
 
   it('never forwards what arrived before there was a key, once a key is set', async () => {

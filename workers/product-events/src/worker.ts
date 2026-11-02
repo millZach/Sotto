@@ -36,6 +36,9 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /** Younger rows may still be on their first try, which runs just after the answer. */
 const RETRY_FORWARD_AFTER_MS = 5 * 60 * 1000
 const RETRY_FORWARD_ROWS = 500
+/** Enough for any backlog PostHog would have left, while each try's timeout keeps the hour's sweep from waiting long. */
+const RETRY_FORWARD_ROUNDS = 10
+const FORWARD_TIMEOUT_MS = 10_000
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -89,22 +92,30 @@ async function keep(env: ProductEventsEnv, events: readonly CheckedEvent[], now:
   return events.filter(event => kept.delete(event.uuid))
 }
 
-/** Sends events to PostHog and marks them done. It throws when PostHog does not take them, and they stay due. */
+/**
+ * Sends events to PostHog and marks them done. It throws when PostHog does not take them, and they stay due. If the marking
+ * fails after PostHog took them, they go again with the same uuids, which PostHog uses to drop the copy.
+ */
 async function forward(env: ProductEventsEnv, events: readonly CheckedEvent[]): Promise<void> {
   if (events.length === 0) return
   const host = (env.POSTHOG_HOST || DEFAULT_POSTHOG_HOST).replace(/\/+$/, '')
-  const response = await fetch(`${host}/batch/`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ api_key: env.POSTHOG_KEY, batch: events }) })
+  const response = await fetch(`${host}/batch/`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ api_key: env.POSTHOG_KEY, batch: events }), signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS) })
   await response.body?.cancel()
   if (!response.ok) throw new Error('not taken')
   const done = env.EVENTS.prepare('UPDATE product_events SET forward_due = 0 WHERE uuid = ?')
   await env.EVENTS.batch(events.map(event => done.bind(event.uuid)))
 }
 
-/** Tries again what PostHog did not take. A row's sweep is the last it can wait, and without a key nothing goes. */
+/** Tries again what PostHog did not take, oldest first, until none is due or PostHog stops taking them. Without a key nothing goes. */
 export async function retryForwards(env: ProductEventsEnv, now: number = Date.now()): Promise<void> {
   if (!env.POSTHOG_KEY) return
-  const due = await env.EVENTS.prepare('SELECT body FROM product_events WHERE forward_due = 1 AND received_at < ? LIMIT ?').bind(new Date(now - RETRY_FORWARD_AFTER_MS).toISOString(), RETRY_FORWARD_ROWS).all()
-  await forward(env, ((due.results ?? []) as readonly { readonly body: string }[]).map(row => JSON.parse(row.body) as CheckedEvent))
+  const before = new Date(now - RETRY_FORWARD_AFTER_MS).toISOString()
+  const select = env.EVENTS.prepare('SELECT body FROM product_events WHERE forward_due = 1 AND received_at < ? ORDER BY received_at LIMIT ?').bind(before, RETRY_FORWARD_ROWS)
+  for (let round = 0; round < RETRY_FORWARD_ROUNDS; round += 1) {
+    const rows = ((await select.all()).results ?? []) as readonly { readonly body: string }[]
+    if (rows.length === 0) return
+    await forward(env, rows.map(row => JSON.parse(row.body) as CheckedEvent))
+  }
 }
 
 const answer = (status: number): Response => new Response(null, { status })
@@ -134,9 +145,15 @@ export async function forgetOldEvents(store: ProductEventStore, now: number = Da
   await store.prepare('DELETE FROM product_events WHERE received_at < ?').bind(new Date(now - REMOVE_AFTER_DAYS * DAY_MS).toISOString()).run()
 }
 
+/** The hour's work. A row a failing PostHog never took is still removed on time: retention does not wait on PostHog. */
+export async function runHourlyWork(env: ProductEventsEnv, now: number = Date.now()): Promise<void> {
+  await retryForwards(env, now).catch(() => undefined)
+  await forgetOldEvents(env.EVENTS, now)
+}
+
 export default {
   fetch: (request: Request, env: ProductEventsEnv, context: WaitUntil): Promise<Response> => handleProductEvents(request, env, context),
   scheduled: (_controller: unknown, env: ProductEventsEnv, context: WaitUntil): void => {
-    context.waitUntil(retryForwards(env).catch(() => undefined).then(() => forgetOldEvents(env.EVENTS)))
+    context.waitUntil(runHourlyWork(env))
   },
 }
