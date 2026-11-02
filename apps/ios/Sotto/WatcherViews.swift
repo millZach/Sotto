@@ -1631,7 +1631,7 @@ private struct WatcherDock: View {
             || !photos.isEmpty || !files.isEmpty
         // The card a thread's reply box is (Zach's pick A, November 1, 2026): photos and files above the words, and the
         // row under them with the +, Watcher's settings as one pill, the mic and Send.
-        return ComposerCard {
+        return ComposerCard(focus: { focused = true }) {
             DraftAttachments(box: box)
         } words: {
             words(box: box, working: working, preparing: preparing)

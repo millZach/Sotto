@@ -124,7 +124,8 @@ struct ThreadsView: View {
                     .accessibilityIdentifier("new-thread")
             }
         }
-        .padding(.top, Space.s1)
+        // On the unfolded Duo the heading lines up with the rail's first button beside it.
+        .padding(.top, unfolded ? Space.s3 : Space.s1)
     }
 
     private var searchPill: some View {
@@ -211,7 +212,10 @@ struct ThreadsView: View {
         (groups.searching ? Text("No matching threads.") : model.anyConnecting ? Text("Reading threads…") : Text("No threads here yet. Tap New thread to start one."))
             .font(.sotto(.body)).foregroundStyle(Palette.muted)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.vertical, Space.s7)
+            // On the unfolded Duo it stands in the middle of the wide page, as an empty page's words do on the desktop.
+            .multilineTextAlignment(unfolded ? .center : .leading)
+            .frame(maxWidth: unfolded ? .infinity : nil, alignment: unfolded ? .center : .leading)
+            .padding(.vertical, unfolded ? Space.s8 : Space.s7)
             .paragraphDirection()
     }
 
@@ -259,7 +263,21 @@ struct ThreadsView: View {
                 }
             }
         }
-        if inColumns {
+        if inColumns && duo == .upright {
+            // Upright, beside the rail, the width holds two columns (Zach's pick, November 1, 2026): what needs you over
+            // what finished, and what works beside them. A column with nothing in it gives its width to the other.
+            let quiet = !needs.isEmpty || !recent.isEmpty || !settled.isEmpty
+            HStack(alignment: .top, spacing: Space.s4) {
+                if quiet {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !needs.isEmpty { needsColumn }
+                        if !recent.isEmpty || !settled.isEmpty { recentColumn }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if !working.isEmpty { workingColumn.frame(maxWidth: .infinity, alignment: .leading) }
+            }
+        } else if inColumns {
             // Only the sections that hold threads become columns, as the phone shows only those, and share the width.
             HStack(alignment: .top, spacing: Space.s4) {
                 if !needs.isEmpty { needsColumn.frame(maxWidth: .infinity, alignment: .leading) }

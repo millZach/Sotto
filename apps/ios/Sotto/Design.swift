@@ -734,7 +734,8 @@ struct SheetPage<Content: View>: View {
                         Color.clear.frame(height: 0).id(sheetPageTop)
                         content
                     }
-                    .padding(.horizontal, Space.gutter)
+                    // The unfolded Duo's wide page keeps a wider margin, as its columns and reading width do.
+                    .padding(.horizontal, duo.sideways || duo == .upright ? Space.s6 : Space.gutter)
                     .padding(.bottom, Space.s8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(alignment: .top) {
@@ -962,6 +963,10 @@ enum ComposerMetrics {
     /// From the card's leading edge to the words, and above them.
     static let wordsInset: CGFloat = 16
     static let wordsTop: CGFloat = 12
+    /// Between the words and the row under them. The words take every press down to the row, and nothing in the row
+    /// takes one above it, so a press at the foot of the words types rather than opening the model pill (Zach, November
+    /// 1, 2026: it was 2 points, with the pill's press area reaching 5 more up into the words).
+    static let wordsGap: CGFloat = 12
     /// Around the photos and files above the words.
     static let attachmentsInset: CGFloat = 6
     /// The row's round buttons (+, the mic, Send and Stop) and the settings pill: how tall they are drawn.
@@ -982,7 +987,17 @@ extension View {
     func composerDisc<F: ShapeStyle>(_ fill: F) -> some View {
         frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
             .background(fill, in: Circle())
-            .pressArea(drawn: ComposerMetrics.button)
+            .rowPressArea()
+    }
+    /// A press area 44 points wide and tall for something drawn the reply box's row's height, reaching down from its top
+    /// edge rather than up, so it never takes a press meant for the words above the row. It takes no more room than it
+    /// is drawn.
+    func rowPressArea() -> some View {
+        let spare = 44 - ComposerMetrics.button
+        return frame(minWidth: 44, minHeight: 44, alignment: .top)
+            .contentShape(Rectangle())
+            .padding(.horizontal, -spare / 2)
+            .padding(.bottom, -spare)
     }
     /// The light round the reply box, whose corners are `radius`, at the top effort; see `EffortTraceLight`. Nothing is
     /// drawn while `lit` is false.

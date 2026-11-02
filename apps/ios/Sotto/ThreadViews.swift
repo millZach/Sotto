@@ -2296,7 +2296,7 @@ private struct ReplyDock: View, Equatable {
         // What the settings still wait on sits above the card.
         return VStack(alignment: .leading, spacing: Space.s2) {
             if let settings { ThreadSettingsLines(ref: ref, panel: settings) }
-            ComposerCard {
+            ComposerCard(focus: { focused = true }) {
                 DraftAttachments(box: .thread(ref))
             } words: {
                 words(placeholder)
