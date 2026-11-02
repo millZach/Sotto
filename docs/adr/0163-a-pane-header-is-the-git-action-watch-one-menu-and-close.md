@@ -6,6 +6,8 @@ Accepted October 30, 2026, by Zach's pick B of `docs/prototypes/ui-hillclimb-des
 
 It changes an existing surface and goes straight to stable; it is not an Owl feature (ADR-0072).
 
+Amended by [ADR-0182](0182-tools-and-the-terminal-drawer-return-to-a-panes-header.md): Tools and the Terminal drawer are buttons in the header again, after Watch, and leave the menu. That replaces decision 3 and those two rows of decision 2, and adds them to decision 1's order. Everything else here stands.
+
 Amends [ADR-0027](0027-git-the-way-t3-code-does-it.md) (where the Git action sits, and Initialize Git), [ADR-0049](0049-a-thread-pane-has-its-own-terminal-drawer.md) (the drawer's button) and [ADR-0133](0133-thread-shortcuts-are-editable-on-a-keyboard-page.md) (Zoom pane's button). The Tools toggle the Tools rail plan put in the focused pane's header (`docs/plans/2026-09-22-tools-rail.md`) becomes a row of the menu.
 
 ## Context

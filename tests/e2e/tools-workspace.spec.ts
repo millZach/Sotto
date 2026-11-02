@@ -125,10 +125,8 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
       await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
       await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
 
-      // Keyboard: Tools in the pane's ··· menu opens the panel with focus on its tabs; arrows move between surfaces.
-      await page.locator('[data-opens="tools"]').focus()
-      await page.keyboard.press('Enter')
-      await page.getByRole('menuitemcheckbox', { name: 'Tools', exact: true }).focus()
+      // Keyboard: the Tools symbol opens the panel with focus on its tabs; arrows move between surfaces.
+      await page.locator('.thread-pane[data-focused] .tools-toggle').focus()
       await page.keyboard.press('Enter')
       const panel = page.getByRole('complementary', { name: 'Tools' })
       await expect(panel.getByRole('tab')).toHaveText(['Browser', 'iPhone', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])

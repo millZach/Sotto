@@ -23,7 +23,7 @@
 .threads-view .thread-workspace > .thread-workspace__body[data-panes] { min-height: min(560px, calc(100% - 140px)); }
 .threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
 /* One 44px row: the provider mark, the name, its project, then pinned to the right in a fixed order the Git action, Watch,
-   the ··· menu and, in a split, close (ADR-0163). The row is the window's drag handle, so everything that can be clicked
+   Tools, the Terminal drawer, the ··· menu and, in a split, close (ADR-0163, ADR-0182). The row is the window's drag handle, so everything that can be clicked
    or typed in opts out of dragging; the title opts out too, since in a split it is the handle that moves the pane. */
 .thread-workspace__head { display: flex; align-items: center; gap: 4px; flex: none; height: 44px; padding: 0 6px 0 18px; -webkit-app-region: drag; }
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
@@ -31,8 +31,11 @@
 .thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
 .thread-workspace__branches { min-width: 0; }
 .thread-workspace__branches:empty { display: none; }
-.thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The name keeps the row; the project crumb is what gives way as the pane narrows. */
+/* The name gives way first, so what stands beside it stays whole while there is room for it (ADR-0182). It stops at a
+   floor, or at its own width if that is less, so a short name is never held open. */
+.thread-workspace__head h2 { flex: 0 1000 auto; min-width: calc-size(max-content, min(size, 14em, 30cqi)); margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* In a narrow pane the name keeps the row, and the project crumb is what gives way. */
+@container thread-pane (max-width: 720px) { .thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; } }
 .thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -44,17 +47,17 @@
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
-.thread-workspace__head h2:has(input) { flex: 1 1 220px; }
+.thread-workspace__head h2:has(input) { flex: 1 1 220px; min-width: 3em; }
 .thread-workspace__head h2 > input { width: 100%; }
 /* The actions stand on the pane's own surface, so branch controls a narrow pane has squeezed pass under them unseen. */
 .thread-workspace__actions { position: relative; display: flex; flex: none; align-items: center; gap: 2px; background: var(--tt-canvas); }
 .thread-workspace__error { margin: 12px 24px 0; }
 
-/* The header's icon buttons: the ··· menu, close, and anything a pane adds beside them. */
+/* The header's icon buttons: Tools, the Terminal drawer, the ··· menu, close, and anything a pane adds beside them. */
 .pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
-.pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
-.pane-action:active:not(:disabled):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
-.pane-action:disabled { opacity: .5; cursor: default; }
+.pane-action:hover:not(:disabled, [aria-disabled='true']), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pane-action:active:not(:disabled, [aria-disabled='true']):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
+.pane-action:is(:disabled, [aria-disabled='true']) { opacity: .5; cursor: default; }
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
 .pane-menu { position: relative; display: flex; }
@@ -73,8 +76,10 @@
 .pane-menu__end { display: inline-flex; flex: none; align-items: center; gap: 8px; margin-left: 18px; color: var(--tt-text-muted); }
 .pane-menu__end > svg { color: var(--tt-text-2); }
 .pane-menu__end kbd { font: inherit; font-size: var(--tt-type-caption); }
-/* Tools' dot, on the ··· button of the pane that lists Tools: agents working, or the attention colour while a delegated
-   thread waits for you. It sits above-left of the dots, where it sat on the Tools icon. */
+/* Tools in a pane's header. Pinned to another pane's thread, it is not this pane's panel. Its dot: agents working, or the
+   attention colour while a delegated thread waits for you. */
+.tools-toggle { position: relative; }
+.tools-toggle[data-pinned-elsewhere] > svg { color: var(--tt-accent-text); }
 .tools-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
 .tools-dot[data-needs] { background: var(--tt-attention); }
 
