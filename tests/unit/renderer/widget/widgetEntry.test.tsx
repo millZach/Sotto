@@ -101,8 +101,9 @@ describe('WidgetEntry', () => {
   it('subscribes once per StrictMode mount lifecycle, routes commands, and cleans up', () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const unsubscribe = vi.fn()
+    // Linux, where the pill keeps its cancel button because Escape is not claimed.
     const bridge: SottoWidgetBridge = {
-      platform: 'win32',
+      platform: 'linux',
       onWidgetState: vi.fn((next) => {
         listener = next
         return unsubscribe
@@ -117,7 +118,7 @@ describe('WidgetEntry', () => {
       reportDrag: vi.fn(commandSucceeded),
     }
     const view = render(
-      <StrictMode><WidgetEntry bridge={bridge} platform="win32" preview={null} /></StrictMode>,
+      <StrictMode><WidgetEntry bridge={bridge} platform="linux" preview={null} /></StrictMode>,
     )
     expect(bridge.onWidgetState).toHaveBeenCalledTimes(2)
     expect(unsubscribe).toHaveBeenCalledTimes(1)
@@ -511,8 +512,9 @@ describe('WidgetEntry', () => {
 
   it('contains rejected widget command promises without exposing an error', async () => {
     let listener: ((state: WidgetSnapshot) => void) | null = null
+    // Linux, where the pill keeps its cancel button.
     const bridge: SottoWidgetBridge = {
-      platform: 'win32',
+      platform: 'linux',
       onWidgetState: (next) => {
         listener = next
         return () => undefined
@@ -526,7 +528,7 @@ describe('WidgetEntry', () => {
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
-    const { container } = render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
+    const { container } = render(<WidgetEntry bridge={bridge} platform="linux" preview={null} />)
     act(() => listener?.(snapshot({
       status: 'listening', sessionId: 'rejected', startedAt: Date.now(), speaking: true,
       cancellable: true,

@@ -139,11 +139,19 @@ describe('HotkeyManager cancellable-session Escape', () => {
     const manager = new HotkeyManager(adapter, vi.fn(), vi.fn())
 
     for (const status of ['requesting-permission', 'listening', 'processing'] as const) {
-      syncEscapeForWidgetSnapshot(manager, { status, cancellable: true })
+      expect(syncEscapeForWidgetSnapshot(manager, { status, cancellable: true })).toBe(true)
       expect(active.has('Escape')).toBe(true)
-      syncEscapeForWidgetSnapshot(manager, { status, cancellable: false })
+      expect(syncEscapeForWidgetSnapshot(manager, { status, cancellable: false })).toBe(false)
       expect(active.has('Escape')).toBe(false)
     }
+  })
+
+  it('answers that Escape is not held when another app already has it, so the widget keeps its cancel button', () => {
+    const { active, adapter } = createAdapter((accelerator) => accelerator !== 'Escape')
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn())
+
+    expect(syncEscapeForWidgetSnapshot(manager, { status: 'listening', cancellable: true })).toBe(false)
+    expect(active.has('Escape')).toBe(false)
   })
 
   it('registers Escape only after listening begins and invokes cancellation', () => {

@@ -1,0 +1,128 @@
+<!doctype html>
+<!--
+  Throwaway mock-up for the dictation widget's second polish round.
+  Question: should the capsule lead with the owl on its tile or the owl alone,
+  and should cancel stay as an "esc" key, become an X, or leave the pill
+  (Esc still cancels from the keyboard)?
+  Every variant already has round one: one hairline edge, a softer shadow,
+  and the voice bars centred in their space.
+  Picked: 2C, November 2, 2026 (Drake): the owl alone in the theme's tile colour, and Stop alone on
+  the pill; Esc cancels from the keyboard. Linux claims no Escape, so it keeps an X.
+-->
+<html lang="en" data-mode="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto · Dictation widget polish, round 2</title>
+<style>
+:root {
+  --canvas: #121211; --desk: #2a2a28; --surface: #1a1a19; --raised: #262624;
+  --text: #ededea; --muted: #a3a39e; --accent: #a9b8ff; --tile-glyph: #1b2140; --error: #ff8a7a;
+  --top: color-mix(in oklab, var(--raised) 55%, var(--surface));
+  --bottom: color-mix(in oklab, var(--surface) 70%, var(--canvas));
+  --edge: rgb(255 255 255 / 11%); --sheen: rgb(255 255 255 / 7%);
+  --shadow: 0 8px 20px -6px rgb(0 0 0 / 60%), 0 1px 3px rgb(0 0 0 / 40%);
+}
+:root[data-mode='light'] {
+  --canvas: #fafaf8; --desk: #f1f1ee; --surface: #ffffff; --raised: #f1f1ee;
+  --text: #1a1a19; --muted: #5f5f5a; --accent: #4057d6; --tile-glyph: #ffffff; --error: #c0352a;
+  --top: var(--surface);
+  --bottom: color-mix(in oklab, var(--surface) 55%, var(--raised));
+  --edge: color-mix(in srgb, var(--text) 16%, transparent); --sheen: rgb(255 255 255 / 60%);
+  --shadow: 0 8px 20px -6px color-mix(in srgb, var(--text) 26%, transparent), 0 1px 3px color-mix(in srgb, var(--text) 14%, transparent);
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--canvas); color: var(--text); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--edge); }
+header strong { font-weight: 600; }
+header .spacer { flex: 1; }
+header button { font: inherit; color: var(--text); background: var(--raised); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+header button[aria-pressed='true'] { outline: 2px solid var(--accent); outline-offset: 1px; }
+main { padding: 20px; display: grid; grid-template-columns: auto 1fr 1fr; gap: 0 20px; align-items: center; }
+.colhead { color: var(--muted); font-size: 13px; padding-bottom: 8px; }
+.rowhead { color: var(--muted); font-size: 13px; max-width: 150px; }
+.rowhead b { display: block; color: var(--text); font-weight: 600; }
+.cell { background: var(--desk); border-radius: 10px; margin: 8px 0; padding: 18px 0; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.stage { zoom: 2; }
+
+/* the capsule, as widget.css paints it after round one */
+.capsule { position: relative; display: flex; width: 212px; height: 40px; align-items: center; gap: 7px; padding: 0 12px 0 10px; overflow: hidden;
+  border: 1px solid var(--edge); border-radius: 20px; background: linear-gradient(180deg, var(--top), var(--bottom));
+  box-shadow: var(--shadow), inset 0 1px 0 var(--sheen); font-family: Manrope, system-ui, sans-serif; }
+.capsule[data-live] { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.glyph { width: 22px; height: 22px; flex: none; display: block; }
+.glyph.bare { width: 20px; height: 18px; color: var(--accent); }
+.bars { display: inline-flex; flex: 1; min-width: 0; height: 18px; align-items: center; justify-content: center; gap: 3px; }
+.bars i { width: 3px; height: 5px; border-radius: 2px; background: var(--accent); animation: bar .9s ease-in-out infinite; }
+body:not([data-speaking]) .bars i { animation: none; }
+.bars i:nth-child(2){animation-delay:.12s}.bars i:nth-child(3){animation-delay:.24s}.bars i:nth-child(4){animation-delay:.36s}.bars i:nth-child(5){animation-delay:.48s}.bars i:nth-child(6){animation-delay:.6s}.bars i:nth-child(7){animation-delay:.72s}
+@keyframes bar { 0%,100% { height: 5px; } 50% { height: 17px; } }
+time { flex: none; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.copy { flex: 1; min-width: 0; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spin { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top-color: var(--accent); animation: orbit .9s linear infinite; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+.progress { position: absolute; left: 15px; right: 15px; bottom: 5px; height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--text) 12%, transparent); }
+.progress span { display: block; width: 45%; height: 100%; border-radius: 2px; background: var(--accent); }
+.action { flex: none; display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+.action.stop { color: var(--error); }
+.action svg { width: 10px; height: 10px; }
+.esc { flex: none; display: inline-flex; height: 20px; align-items: center; padding: 0 5px; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 9px; letter-spacing: .3px; line-height: 1; }
+@media (prefers-reduced-motion: reduce) { .bars i, .spin { animation: none !important; } }
+</style>
+</head>
+<body data-speaking>
+<header>
+  <strong>Dictation widget, round 2</strong>
+  <span class="spacer"></span>
+  <button type="button" id="speaking" aria-pressed="true">Voice heard</button>
+  <button type="button" id="mode">Light</button>
+</header>
+<main id="grid"></main>
+<script>
+const OWL = 'M18.24 33.84C16.32 30 15.84 22.8 19.2 18C19.8 16.8 21.12 15.6 21.72 18C21.96 21.6 24.6 25.44 30 25.44C38.4 22.32 57.6 20.4 69.84 27.36C73.2 27.12 76.32 24.6 76.56 20.64C76.8 19.56 77.76 19.56 78.24 21.36C80.4 24 81.36 31.44 78.72 37.2C80.64 39.6 82.08 45.6 82.08 55.2C82.32 66.24 80.28 71.76 74.4 75.6C69 79.8 57.6 80.04 48 80.04C38.28 80.04 26.88 79.8 21.48 75.6C15.6 71.76 13.56 66.24 13.8 55.2C13.68 44.4 14.88 38.4 18.24 33.84Z'
+  + 'M20.76 52.2C20.64 43.8 22.56 39.48 28.8 39.48C36.24 39.24 42.48 40.08 42.36 50.4C42.36 58.8 39.6 62.64 31.8 62.64C24 62.76 20.64 59.4 20.76 52.2Z'
+  + 'M53.88 53.4C53.88 48.6 55.2 46.56 58.8 45.6L70.56 43.2C73.68 42.6 75.12 45.6 75.12 51.6C75.24 60 73.2 62.76 64.2 62.76C57.6 62.76 53.88 60 53.88 53.4Z'
+  + 'M45.6 59.88C47.04 59.52 48.96 59.52 50.4 59.88C51.6 60.12 51.72 61.08 51.12 61.8L48.6 65.64C48.24 66.24 47.76 66.24 47.4 65.64L44.88 61.8C44.28 61.08 44.4 60.12 45.6 59.88Z'
+const eyes = fill => `<circle cx="36" cy="48.96" r="3.12" fill="${fill}"/><circle cx="60.36" cy="51.84" r="3.12" fill="${fill}"/>`
+const icons = {
+  tile: `<svg class="glyph" viewBox="0 0 96 96"><rect width="96" height="96" rx="22" fill="var(--accent)"/><path d="${OWL}" fill="var(--tile-glyph)" fill-rule="evenodd"/>${eyes('var(--tile-glyph)')}</svg>`,
+  bare: `<svg class="glyph bare" viewBox="8 12 80 72"><path d="${OWL}" fill="currentColor" fill-rule="evenodd"/>${eyes('currentColor')}</svg>`,
+}
+const stop = `<button class="action stop" aria-label="Stop dictation"><svg viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg></button>`
+const cancels = {
+  esc: `<button class="esc" aria-label="Cancel dictation">esc</button>`,
+  x: `<button class="action" aria-label="Cancel dictation"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg></button>`,
+  none: '',
+}
+const rows = [
+  ['esc', 'A. Stop + esc key', 'Today. The key says what to press as well as being a button.'],
+  ['x', 'B. Stop + X', 'Cancel as a round button like Stop. Esc still works.'],
+  ['none', 'C. Stop only', 'One button. Esc cancels from the keyboard, nothing on the pill.'],
+]
+const cols = [['tile', '1. Owl on its tile (today)'], ['bare', '2. Owl alone, in the accent']]
+const bars = '<span class="bars">' + '<i></i>'.repeat(7) + '</span>'
+const pill = (icon, cancel, state) => state === 'listening'
+  ? `<div class="capsule" data-live>${icons[icon]}${bars}<time>00:08</time>${stop}${cancels[cancel]}</div>`
+  : `<div class="capsule" data-live>${icons[icon]}<span class="spin"></span><span class="copy">Transcribing</span><span class="progress"><span></span></span>${cancels[cancel]}</div>`
+let html = '<div></div>' + cols.map(([, label]) => `<div class="colhead">${label}</div>`).join('')
+for (const [cancel, title, note] of rows) {
+  html += `<div class="rowhead"><b>${title}</b>${note}</div>`
+  for (const [icon] of cols) html += `<div class="cell"><div class="stage">${pill(icon, cancel, 'listening')}</div><div class="stage">${pill(icon, cancel, 'processing')}</div></div>`
+}
+document.getElementById('grid').innerHTML = html
+const modeButton = document.getElementById('mode')
+modeButton.addEventListener('click', () => {
+  const light = document.documentElement.dataset.mode !== 'light'
+  document.documentElement.dataset.mode = light ? 'light' : 'dark'
+  modeButton.textContent = light ? 'Dark' : 'Light'
+})
+const speaking = document.getElementById('speaking')
+speaking.addEventListener('click', () => {
+  const on = !document.body.hasAttribute('data-speaking')
+  document.body.toggleAttribute('data-speaking', on)
+  speaking.setAttribute('aria-pressed', String(on))
+})
+</script>
+</body>
+</html>

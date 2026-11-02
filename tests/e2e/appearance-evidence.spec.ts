@@ -158,7 +158,7 @@ test.describe('appearance rendered evidence', () => {
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
         await widget.screenshot({ path: resolve(evidenceRoot, `widget-listening-system-${scheme}-room-light.png`), animations: 'disabled' })
         expect(await widget.evaluate(() => document.documentElement.dataset.themeId)).toBeUndefined()
-        await widget.getByRole('button', { name: 'Cancel dictation' }).click()
+        await widget.evaluate(() => window.sottoWidget!.requestCancel())
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
       }
     })
