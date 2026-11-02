@@ -13,8 +13,8 @@ import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, orderBetween, thread
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
-import { writtenMedia, type WrittenMedia, type WrittenMediaStore } from './writtenMedia'
-import { WRITTEN_STEP_PREFIX } from '../../shared/agentActivity'
+import { shownMedia, type ShownMediaStore, type ShownRefusal } from './shownMedia'
+import { SHOWN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { sameSnapshot } from './sameSnapshot'
@@ -199,6 +199,11 @@ const ACTIVITY_READ_ERROR = 'Thread activity could not be read. Saved activity r
  * What became of a visual an agent asked to draw (ADR-0056): kept and shown, with where it went, or why nothing was drawn.
  * `anchor` is who wrote the message it sits under: the agent's own words, the user's message, or nothing yet.
  */
+/** What showing pictures in a thread came to (ADR-0170, request-only): how many were shown, and each file refused with why. */
+export type ShownMediaResult =
+  | { readonly shown: true; readonly count: number; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
+  | { readonly shown: false; readonly reason: 'unknown-thread' }
+  | { readonly shown: false; readonly reason: 'nothing-shown'; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
 export type VisualAddition =
   | { readonly added: true; readonly visual: AgentVisual; readonly anchor: 'assistant' | 'user' | 'none' }
   | { readonly added: false; readonly reason: 'unknown-thread' | 'history-unavailable' | 'turn-limit' | 'thread-limit' }
@@ -1466,43 +1471,44 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   allowBringBack(): void { this.bringBackAllowed = true }
   /**
-   * Keeps the pictures and videos each turn writes in its folder (ADR-0170, part 4): given once, at start, only with the
-   * Owl feature `inline-media` on. Absent, a turn's end looks at nothing.
+   * Keeps the pictures and videos an agent shows when the user asks (ADR-0170, request-only amendment): given once, at
+   * start, only with the Owl feature `inline-media` on. Absent, no thread is offered `sotto_media`.
    */
-  private writtenMediaStore: WrittenMediaStore | undefined
-  /**
-   * Each turn under way that may have written pictures, by thread: when it was sent, the folder it went to, its message,
-   * and the newest record's sequence then, when its records were in memory to say. Its end looks for what changed since,
-   * once, off the update path.
-   */
-  private readonly turnStarts = new Map<string, { at: number; folder: string; messageId: string; sequence: number | undefined }>()
-  keepWrittenMedia(store: WrittenMediaStore): void { this.writtenMediaStore = store }
-  /** A turn that may have written pictures ended: what it wrote is found off the update path and becomes a step of its own. */
-  private turnEnded(threadId: string): void {
-    const start = this.turnStarts.get(threadId)
-    const store = this.writtenMediaStore
-    if (!start || !store) return
-    this.turnStarts.delete(threadId)
-    void writtenMedia(start.folder, start.at, store).then(found => { if (found) this.addWrittenStep(threadId, start, found) }).catch(() => undefined)
+  private shownMediaStore: ShownMediaStore | undefined
+  keepShownMedia(store: ShownMediaStore): void { this.shownMediaStore = store }
+  /** Whether an agent in this thread is offered `sotto_media`: a thread this host holds, on a provider that takes Sotto's tools. */
+  admitsShownMedia(threadId: string): boolean {
+    if (!this.shownMediaStore) return false
+    const thread = this.threadById(threadId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /**
-   * The step that shows what a turn wrote: placed with the turn's first record when it has one, else after the message
-   * that began it, and made once per turn, so a turn read again keeps it.
+   * Shows the pictures and videos an agent named in its thread (ADR-0170, request-only): each file is kept by handle, and
+   * the call becomes a step of its own, titled in the agent's words, placed with the turn under way: after its newest
+   * record, or after the user's newest message. Nothing is shown when no file is a picture or video Sotto shows.
    */
-  private addWrittenStep(threadId: string, start: { messageId: string; sequence: number | undefined }, found: WrittenMedia): void {
-    const thread = this.threadById(threadId)
-    if (!thread || !this.visible(thread)) return
-    this.holdActivities(thread)
-    // Without the sequence, the turn's records are the ones named after its message or placed after it.
-    const first = thread.activities?.find(record => start.sequence !== undefined ? record.sequence > start.sequence
-      : record.turnId === start.messageId || record.afterMessageId === start.messageId)
-    const turnId = first?.turnId ?? start.messageId
-    const record: AgentActivity = { id: `${WRITTEN_STEP_PREFIX}${createHash('sha256').update(`${threadId}\n${turnId}`).digest('hex').slice(0, 32)}`, turnId,
-      afterMessageId: first ? first.afterMessageId ?? start.messageId : start.messageId, sequence: 0, kind: 'file-change', status: 'completed',
-      title: 'Pictures and videos it wrote', completedAt: new Date().toISOString(), changes: found.changes, media: found.media }
-    this.touched(thread).activities = immutableActivities(mergeAgentActivities(thread.activities, [record]))
+  async showMedia(threadId: string, input: { readonly paths: readonly string[]; readonly title: string }): Promise<ShownMediaResult> {
+    const store = this.shownMediaStore
+    if (!store || !this.admitsShownMedia(threadId)) return { shown: false, reason: 'unknown-thread' }
+    const thread = this.threadById(threadId)!
+    let folder: string | undefined
+    try { folder = this.threadFolder(thread) } catch { folder = undefined }
+    const found = await shownMedia(folder, input.paths, store)
+    if (!found.media.length) return { shown: false, reason: 'nothing-shown', refused: found.refused }
+    const current = this.threadById(threadId)
+    if (!current || !this.visible(current)) return { shown: false, reason: 'unknown-thread' }
+    this.holdActivities(current)
+    // With the turn under way, beside its newest record; otherwise after the user's newest message. The merge numbers it last.
+    const userMessageId = current.messages.findLast(message => message.role === 'user')?.id
+    const last = current.status === 'running' ? current.activities?.at(-1) : undefined
+    const turnId = last?.turnId ?? userMessageId ?? 'shown'
+    const afterMessageId = last ? last.afterMessageId : userMessageId
+    const record: AgentActivity = { id: `${SHOWN_STEP_PREFIX}${randomUUID()}`, turnId, ...afterMessageId ? { afterMessageId } : {},
+      sequence: 0, kind: 'tool', status: 'completed', title: input.title, completedAt: new Date().toISOString(), media: found.media }
+    this.touched(current).activities = immutableActivities(mergeAgentActivities(current.activities, [record]))
     this.dirty = true
     this.publish()
+    return { shown: true, count: found.media.length, refused: found.refused }
   }
   /**
    * How a check installs packages first, present only while Work across machines is on (#1312, ADR-0072): main turns it on
@@ -4645,7 +4651,6 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const old = previousThreads.get(thread.id)
       if (old) this.refreshIfHeadMoved(thread, old)
-      if (old?.status === 'running' && thread.status !== 'running') this.turnEnded(thread.id)
     }
     this.heldForInput.clear()
     this.dirty = true
@@ -4705,7 +4710,6 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (visible) recordsAfter += stamped.activities?.length ?? 0
       }
       if (visible && old) this.refreshIfHeadMoved(stamped, old)
-      if (old?.status === 'running' && stamped.status !== 'running') this.turnEnded(id)
       if (stamped.kind === 'watcher' && this.watcherMoved(stamped, old)) watcher = true
     }
     this.heldForInput.clear()
@@ -5678,10 +5682,6 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ? await this.checkoutMutations.acquire(dispatchFolder, 'send', this.checkoutThreadHolder(thread.id, 'send')) : undefined
     try {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
-      // A turn's start, for the pictures it writes: the first send of a turn holds it until the turn ends.
-      if (command.type === 'send' && this.writtenMediaStore && dispatchFolder && !this.turnStarts.has(thread.id)) {
-        this.turnStarts.set(thread.id, { at: Date.now(), folder: dispatchFolder, messageId: command.messageId, sequence: this.storedActivity.has(thread.id) ? undefined : thread.activities?.at(-1)?.sequence ?? -1 })
-      }
       if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks, command.hiddenWakeUp === true)
       const dispatched = command.type === 'send' ? withoutWakeUp(preparedSkills ? { ...command, skills: preparedSkills } : command)
         : command.type === 'configure-thread' ? this.hostRead(command) : command

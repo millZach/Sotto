@@ -1,12 +1,13 @@
 /**
- * Pictures and a video an agent writes, in the built app (ADR-0170, part 4): a Codex thread over the fake app server works
- * in a Git project that ignores `test-results/`, writes a screenshot and a recording there, and ends its turn. The turn
- * then shows both as tiles: the screenshot read from the store, the recording played from its file through
+ * A picture and a video an agent shows when asked, in the built app (ADR-0170, request-only): a Codex thread over the fake
+ * app server works in a Git project that ignores `test-results/`, writes a screenshot and a recording there, and ends its
+ * turn, which shows nothing of them. Then the agent names both to `sotto_media`'s show_in_thread, and the turn shows them
+ * as tiles under its title: the screenshot read from the store, the recording played from its file through
  * `sotto-media:`, which shows its first frame, never plays on its own, plays when pressed and pauses when it leaves the
  * screen. Dark and light, and the 820x560 minimum. The captures go to `artifacts/inline-media/` when
  * SOTTO_E2E_ARTIFACTS=1.
  *
- *   npm run build && npx playwright test tests/e2e/inline-media-written.spec.ts
+ *   npm run build && npx playwright test tests/e2e/inline-media-shown.spec.ts
  */
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -27,7 +28,7 @@ async function capture(page: Page, name: string): Promise<void> {
   }
 }
 
-test('a screenshot and a recording a turn wrote show as tiles, and the recording plays only when pressed', async () => {
+test('a screenshot and a recording a turn wrote show nothing until the agent shows them, and the recording plays only when pressed', async () => {
   test.setTimeout(240_000)
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-inline-written-' })).directory
   const root = join(profile, 'native-fixture')
@@ -44,7 +45,7 @@ test('a screenshot and a recording a turn wrote show as tiles, and the recording
   try {
     launched = await launchSotto('success', profile)
     const { page } = launched
-    await page.evaluate(async project => {
+    const sottoThreadId = await page.evaluate(async project => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
       await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
@@ -56,6 +57,7 @@ test('a screenshot and a recording a turn wrote show as tiles, and the recording
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
       const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Record the sign-up flow and take a screenshot of the last step.' })
       if (sent.error) throw new Error(sent.error)
+      return thread.activeThreadId
     }, project)
     const nativeThread = async () => {
       const state = JSON.parse(await readFile(join(root, 'codex', 'state.json'), 'utf8')) as { threads: Record<string, { id: string; turns: { id: string }[] }> }
@@ -78,7 +80,13 @@ test('a screenshot and a recording a turn wrote show as tiles, and the recording
     await openThreads(page)
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Record the sign-up flow', exact: true }).click()
     const pane = page.locator('section.thread-pane:not([data-hidden])')
-    const picture = pane.getByRole('button', { name: 'Open picture 1 of 1, from Pictures and videos it wrote' })
+    await expect(pane.getByText('Recorded the flow and took a screenshot.')).toBeVisible({ timeout: 30_000 })
+    // Request-only: what the turn wrote shows nothing of its own.
+    await expect(pane.locator('.thread-media')).toHaveCount(0)
+    const shown = await page.evaluate(async request => window.sottoE2E!.mediaTool!(request),
+      { threadId: sottoThreadId, arguments: { paths: ['test-results/signup/last-step.png', 'test-results/signup/flow.webm'], title: 'The sign-up flow' } })
+    expect(shown.isError).toBeFalsy()
+    const picture = pane.getByRole('button', { name: 'Open picture 1 of 1, from The sign-up flow' })
     await expect(picture).toBeVisible({ timeout: 30_000 })
     await expect(picture.locator('img')).toHaveJSProperty('complete', true, { timeout: 30_000 })
     await expect(pane.getByText('PNG · 1920×1203')).toBeVisible()
@@ -91,12 +99,12 @@ test('a screenshot and a recording a turn wrote show as tiles, and the recording
     expect(await player.evaluate((video: HTMLVideoElement) => [video.paused, video.videoWidth, video.src.startsWith('sotto-media://video/')])).toEqual([true, 320, true])
     await page.waitForTimeout(500)
     expect(await player.evaluate((video: HTMLVideoElement) => [video.paused, video.currentTime])).toEqual([true, 0])
-    await capture(page, 'written-1280-dark')
+    await capture(page, 'shown-1280-dark')
 
     // Pressed, it plays from its file.
     await pane.getByRole('button', { name: 'Play video 1' }).click()
     await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime), { timeout: 15_000 }).toBeGreaterThan(0.3)
-    await capture(page, 'written-playing-1280-dark')
+    await capture(page, 'shown-playing-1280-dark')
 
     // Scrolled off the screen, it pauses at once.
     await pane.locator('.thread-workspace__transcript').evaluate(element => { element.scrollTop = 0 })
@@ -104,10 +112,10 @@ test('a screenshot and a recording a turn wrote show as tiles, and the recording
 
     await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'light' }) })
     await pane.locator('.thread-workspace__transcript').evaluate(element => { element.scrollTop = element.scrollHeight })
-    await capture(page, 'written-1280-light')
+    await capture(page, 'shown-1280-light')
     await resizeWindow(launched, 820, 560)
     await pane.locator('.thread-media--video').scrollIntoViewIfNeeded()
-    await capture(page, 'written-820-light')
+    await capture(page, 'shown-820-light')
     expect(await pane.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   } finally {
     if (launched) await closeSotto(launched)

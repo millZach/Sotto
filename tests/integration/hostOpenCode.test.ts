@@ -202,7 +202,7 @@ it('keeps waiting on a host’s sign-in through a lost answer, and says it canno
 // A host gives its threads none of this computer's tool servers: the browser, visuals and pull request tools are this
 // computer's own (docs/agent-control.md). The one a host has is its own delegation (#1310): on Owl, with Work across
 // machines on, its threads get `sotto_delegate` and nothing else, OpenCode's as Codex's; on stable they get none.
-it.each([['Owl', OWL, ['sotto_delegate']], ['stable', STABLE, []]] as [string, string, string[]][])('gives an OpenCode thread on a host only the host’s own delegation, as its other threads: %s', { timeout: 90_000 }, async (_track, sottoVersion, servers) => {
+it.each([['Owl', OWL, ['sotto_delegate', 'sotto_media']], ['stable', STABLE, []]] as [string, string, string[]][])('gives an OpenCode thread on a host only the host’s own tools, delegation and on Owl the media tool, as its other threads: %s', { timeout: 90_000 }, async (_track, sottoVersion, servers) => {
   const f = await opencodeFixture()
   cleanup.push(f.cleanup)
   const host = await startHeadlessHost({ dataDirectory: await scratch('sotto-host-opencode-tools-'), providers: { opencode: f.host }, reasoner: e2eAgentReasoner, sottoVersion })

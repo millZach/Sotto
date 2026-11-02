@@ -1,5 +1,5 @@
 import { mediaThumbnailMaker } from './agents/mediaThumbnail'
-import { ThreadMediaStore } from './agents/threadMedia'
+import { requestedCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
@@ -13,6 +13,7 @@ import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
+import { MediaToolServer, SHOW_IN_THREAD_TOOL } from './agents/mediaTools'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
@@ -235,7 +236,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
@@ -1012,6 +1013,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   // Pictures in threads (ADR-0170): one store, which the runtime's providers and the native e2e fixtures' capture into.
   const threadMedia = owlFeatures['inline-media'] ? new ThreadMediaStore(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, request-only).
+  const fixtureCaptures = threadMedia ? requestedCaptures(threadMedia) : {}
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
@@ -1069,14 +1072,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(),
       ...(!heldProviders.has('cursor') ? { cursor: new CursorAcpHost(userDataPath, {
         program: { executable: cursorFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeCursorAgent.mjs'), cursorFixtureRoot] },
-        ...threadMedia ? { captureMedia: threadMedia.capture, captureMediaFile: threadMedia.captureFile } : {},
+        ...fixtureCaptures,
       }) } : {}),
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
       claude: new ClaudeStreamJsonHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture } : {} }),
+        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...fixtureCaptures }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture, captureMediaFile: threadMedia.captureFile } : {} }),
+        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...fixtureCaptures }),
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
@@ -1206,6 +1209,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const visualTools = new VisualToolServer({ enabled: () => workingCopySettings.visualsInThreads,
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools
+  // Let an agent show pictures and videos in its thread when the user asks (ADR-0170, request-only): an Owl feature, so
+  // stable offers no server.
+  const mediaTools = owlFeatures['inline-media'] ? new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) }) : undefined
+  if (mediaTools) quitHandles.mediaTools = mediaTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
   // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads
   // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
@@ -1220,7 +1227,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : [])])
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
@@ -2507,6 +2514,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         const request = e2eVisualToolSchema.parse(payload)
         // The window names a thread by its host-qualified ID; the tool hears the Sotto thread, as a provider's call does.
         return visualTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, VISUALIZE_TOOL, request.arguments)
+      })
+      ipcMain.handle(E2E_MEDIA_TOOL_CHANNEL, (event, payload: unknown) => {
+        if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
+        const request = e2eVisualToolSchema.parse(payload)
+        if (!mediaTools) throw new Error('E2E_MEDIA_TOOL_OFF')
+        return mediaTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, SHOW_IN_THREAD_TOOL, request.arguments)
       })
       ipcMain.handle(E2E_DELEGATION_TOOL_CHANNEL, (event, payload: unknown) => {
         if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')

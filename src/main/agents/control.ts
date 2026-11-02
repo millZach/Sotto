@@ -8,7 +8,7 @@ import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextW
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { AGENT_VIDEO_PART_BYTES, type AgentActivity, type AgentActivityMedia, type AgentVideoMimeType } from '../../shared/agentActivity'
-import { readVideo } from './writtenMedia'
+import { readVideo } from './shownMedia'
 import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'

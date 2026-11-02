@@ -29,6 +29,8 @@ export const e2eHostSetupToolSchema = z.object({ name: z.string().min(1).max(80)
 /** Calls the visualize tool as a thread's agent would (ADR-0056); main checks and keeps it as it would for a provider. */
 export const E2E_VISUAL_TOOL_CHANNEL = 'sotto:e2e:visual-tool'
 export const e2eVisualToolSchema = z.object({ threadId: z.string().min(1).max(512), arguments: z.unknown() }).strict()
+/** Calls `sotto_media`'s show_in_thread as a thread's agent would (ADR-0170, request-only); main admits it as it would a provider's call. */
+export const E2E_MEDIA_TOOL_CHANNEL = 'sotto:e2e:media-tool'
 /** Calls one of `sotto_delegate`'s tools as a thread's agent would (ADR-0081); main admits and limits it as it would a provider's call. */
 export const E2E_DELEGATION_TOOL_CHANNEL = 'sotto:e2e:delegation-tool'
 export const e2eDelegationToolSchema = z.object({ threadId: z.string().min(1).max(512), name: z.enum(['delegate', 'read_delegation', 'cancel_delegation']), arguments: z.unknown() }).strict()
@@ -92,6 +94,7 @@ export interface SottoE2EBridge {
   browserAgent?(request: z.infer<typeof e2eBrowserAgentSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   hostSetupTool?(request: z.infer<typeof e2eHostSetupToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   visualTool?(request: z.infer<typeof e2eVisualToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
+  mediaTool?(request: z.infer<typeof e2eVisualToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   delegationTool?(request: z.infer<typeof e2eDelegationToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   agentEvent?(event: z.infer<typeof e2eAgentEventSchema>): Promise<void>
   readonly scenario: E2EScenario

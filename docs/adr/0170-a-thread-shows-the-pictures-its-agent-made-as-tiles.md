@@ -4,6 +4,8 @@
 
 Accepted October 31, 2026, by Zach's picks on `docs/prototypes/inline-media-prototype.html`: B (tiles), scene 2 (the owl at the easel), an Owl feature first, and all four sources. **Number provisional until merge** (docs/agents/domain.md). The plan is `docs/plans/inline-media.md`.
 
+**Amended November 1, 2026: request-only** (below). An agent's pictures and videos now show only when the user asked for them: decisions 3, 10, 11 and 12 no longer capture on their own, and `sotto_media`'s show_in_thread is how an agent shows one.
+
 Amends [ADR-0031](0031-images-are-staged-once-and-carried-by-handle.md): a second store, kept the same way, holds the pictures an agent made. Leaves [ADR-0056](0056-an-agent-can-draw-a-visual-in-its-thread.md)'s visuals as they are.
 
 ## Context
@@ -54,6 +56,16 @@ Zach's picks on November 1: written files in git-ignored folders count too, and 
 
 **15. The iPhone fetches a video only when it is tapped.** `thread-media-video` is a new host feature and `thread-media-part` its request, on the same one-at-a-time guard as `thread-media`. A tapped video up to 50 MiB comes in its 8 MiB parts, each written to a file as it arrives and the whole checked against its digest, then plays in its tile; it pauses when it scrolls away. A larger one says to play it on the desktop. An iPhone from before this part shows no video tile, since it draws only pictures.
 
+## Request-only, November 1, 2026
+
+Zach, on November 1: "the models should really only embed images when requested, prototypes that have a link don't need images or videos added to thread. It's overkill right now... only embed images or videos if requested, that should also be how this happens moving forward. User requests it then it happens, not the models doing it for everything." Parts 1, 3 and 4 had put every tool result's picture, every viewed image and every written file in the thread.
+
+**R1. Sotto captures nothing on its own but an image the user asked to be generated.** The projections are given `requestedCaptures`: a tool result's picture (Sotto's browser, the cloud iPhone, Claude Code reading a picture, any MCP tool, Codex's Computer Use, Grok Build, Devin, DeepSeek Harness and Cursor), a picture Codex's `view_image` looked at, and a file a turn wrote are not hashed, read or kept, and show no tile. Codex's `view_image` is still a **View image** step naming its file. The turn-end listing of written files (decision 12) is gone: nothing runs when a turn ends. An image Codex or Cursor generates still shows, with the owl at the easel while it is made (decisions 7 to 9), since the user asked for it. The adapters keep their capture code behind that one gate. Tiles already saved on records stay as they are.
+
+**R2. An agent shows a picture or video through `sotto_media`.** `sotto_media` is a Sotto tool server, as `sotto_visual` is (ADR-0056), offered with `inline-media` on to every thread that takes Sotto's tools, on the desktop and on a headless host, since the host keeps its own threads' pictures. Its one tool, `show_in_thread`, takes 1 to 8 file paths, relative to the thread's folder or absolute, and a title of up to 120 characters. Each picture is kept in the thread media store as any picture is, by its own bytes; each video (decision 13's types and limit) is kept by handle with its file remembered, never copied. The call becomes a step of its own, titled in the agent's words, placed with the turn under way, or after the user's newest message; a file that is gone, is no picture or video, or is too large is named back to the agent with why, and a call that shows nothing adds no step. The tool's description and the server's instructions say to call it only when the user asked in this conversation to see a picture or video, never on its own, and never for a prototype or page the agent can link to. Showing in the thread changes nothing outside it and asks the user nothing. Devin is allowed it unasked, as it is Sotto's other tools.
+
+**R3. Everything shown keeps the rules above.** Handles never bytes, tiles that read only near the screen, videos that never play on their own and play from their file, the iPhone's fetch on a tap: decisions 1, 2, 4, 5, 13, 14 and 15 hold for what an agent shows. The user's own attachments are unchanged.
+
 ## Consequences
 
 - A thread's pictures cost disk, at most 1 GiB, while history is kept. Deleting a thread does not let its pictures go at once; they go as newer ones take their place, or all at once when history is turned off.
@@ -64,3 +76,4 @@ Zach's picks on November 1: written files in git-ignored folders count too, and 
 - A Codex item that names its image only by `fileId`, Codex's own attachment store, with neither bytes nor `savedPath`, shows the step without a picture: Sotto has no documented way to read that store.
 - Every later part of the plan (generated images, other providers, written files and video, mark up, callouts) adds sources and actions to these handles and tiles, not a new path for bytes. Part 4's videos are the one exception to the store: they are read from where they were written, by handle, and never copied.
 - A video a turn wrote is gone from its tile once the agent writes over it, moves it or deletes it, and a turn that wrote more than eight pictures and videos shows its newest eight.
+- Since the request-only amendment, a thread shows an agent's picture only when the agent calls show_in_thread or generates an image. An agent that ignores its instructions can still show a picture unasked, but only by naming it on purpose, one call at a time; nothing is shown as a side effect of a tool.
