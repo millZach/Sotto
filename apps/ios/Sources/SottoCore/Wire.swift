@@ -406,6 +406,8 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public struct Media: Decodable, Identifiable, Equatable, Sendable {
         public let id: String; public let kind: String; public let mimeType: String
         public let width: Int?; public let height: Int?; public let name: String; public let source: String
+        /// Its size in bytes; a video's decides whether this iPhone fetches it to play (`AgentVideos.playsHere`).
+        public let sizeBytes: Int?
     }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {

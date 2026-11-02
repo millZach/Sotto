@@ -3138,6 +3138,10 @@ msgstr "Could not open the folder dialog. Nothing was changed. Try again."
 msgid "Could not open the project. Nothing was changed. Try again."
 msgstr "Could not open the project. Nothing was changed. Try again."
 
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Could not play. The file may have changed or been removed on its computer. Ask the agent to write it again."
+msgstr "Could not play. The file may have changed or been removed on its computer. Ask the agent to write it again."
+
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not press {key}"
@@ -5736,7 +5740,7 @@ msgid "Open picture"
 msgstr "Open picture"
 
 #. {number} of {count} pictures in a turn; {title} names the step that made it.
-#. placeholder {0}: shown.record.title
+#. placeholder {0}: stepTitle(t, shown.record)
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture {number} of {count}, from {0}"
 msgstr "Open picture {number} of {count}, from {0}"
@@ -6078,6 +6082,16 @@ msgstr "Plans the work and runs it as a team of agents at {level} effort. Uses m
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Plans the work and runs it as a team of agents. Uses many more tokens."
 msgstr "Plans the work and runs it as a team of agents. Uses many more tokens."
+
+#. {number} is the place of an agent's GIF among the pictures of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Play GIF {number}"
+msgstr "Play GIF {number}"
+
+#. {number} is the place of an agent's video among the pictures and videos of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Play video {number}"
+msgstr "Play video {number}"
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Point me at a problem."
@@ -7951,6 +7965,11 @@ msgstr "Stop agent"
 msgid "Stop babysitting #{number}"
 msgstr "Stop babysitting #{number}"
 
+#. {number} is the place of an agent's GIF among the pictures of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Stop GIF {number}"
+msgstr "Stop GIF {number}"
+
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
@@ -9308,6 +9327,17 @@ msgstr "Using the cloud iPhone"
 #: src/renderer/src/agents/NextList.tsx
 msgid "Verify"
 msgstr "Verify"
+
+#. {number} is the place of an agent's video among the pictures and videos of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Video {number}"
+msgstr "Video {number}"
+
+#. {number} of {count} pictures and videos in a turn; {title} names the step that wrote it.
+#. placeholder {0}: stepTitle(t, shown.record)
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Video {number} of {count}, from {0}"
+msgstr "Video {number} of {count}, from {0}"
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "View PR"

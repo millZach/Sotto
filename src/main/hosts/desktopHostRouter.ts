@@ -18,7 +18,8 @@ import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRo
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
-import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaWindowRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import type { ThreadVideoPart } from '../agents/threadMediaScheme'
+import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaWindowRequest, type AgentThreadMediaPartRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
@@ -54,6 +55,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** One picture an activity record names, read whole from the host that keeps it (ADR-0170). */
   media?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
+  /** One part of a video an activity record names, from the host that runs the thread (ADR-0170, part 4). */
+  mediaPart?(request: AgentThreadMediaPartRequest): Promise<ThreadVideoPart | null>
   /** Stages on this host, the one that runs the thread (ADR-0031). */
   stage?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   content?(digest: string): Promise<AgentAttachmentContent | null>
@@ -1266,6 +1269,14 @@ export class DesktopHostRouter {
     this.mediaTiles.set(key, tile)
     if (this.mediaTiles.size > 120) this.mediaTiles.delete(this.mediaTiles.keys().next().value!)
     return { dataUrl: tile }
+  }
+  /**
+   * One part of a video a thread's record names (ADR-0170, part 4), for the window's player: read from the file on this
+   * computer, or asked of the host that runs the thread a part at a time. Null when the file is no longer that video.
+   */
+  async threadMediaPart(request: AgentThreadMediaPartRequest): Promise<ThreadVideoPart | null> {
+    const { connection, id } = this.target(request.threadId)
+    return await connection.mediaPart?.({ ...request, threadId: id! }) ?? null
   }
   /** An image goes to the host that runs the thread it is for, or the selected host for the coordinator's composer. */
   async stageAttachment(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle> {
