@@ -2,7 +2,7 @@ import type { CouncilCounts, CouncilKind } from './council'
 import type { CouncilAnswer, CouncilReview } from './councilBlocks'
 
 /**
- * Who reads whose answer in a Council's review, and in what order (ADR-0176 decision 4). Answers keep their letters for
+ * Who reads whose answer in a Council's review, and in what order (ADR-0177 decision 4). Answers keep their letters for
  * every reader; only the order each reader sees them in varies. With two or three answers each reader reviews all the
  * others; with four or five, two each, so reviews grow with the panel rather than its square. Reader i takes the answers
  * after its own, in letter order around the table, so each answer is read the same number of times and comes first for

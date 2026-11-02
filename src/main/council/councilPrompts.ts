@@ -4,7 +4,7 @@ import type { CouncilKind } from '../../shared/council'
 import { COUNCIL_BLOCK_NAMES, type CouncilCrux, type CouncilCruxResult, type CouncilFraming } from '../../shared/councilBlocks'
 
 /**
- * The Council's prompts (ADR-0176, the workflow plan's "Prompts, first drafts"), the origin conversation quoted as
+ * The Council's prompts (ADR-0177, the workflow plan's "Prompts, first drafts"), the origin conversation quoted as
  * history, and the words each thread reads. Agent-facing, so in English and never logged. A thread's first prompt
  * carries the conversation and the question; every later one carries only what is new, since the thread keeps both.
  */

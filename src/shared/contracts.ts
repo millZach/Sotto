@@ -408,7 +408,7 @@ export interface SottoBridge {
   readonly threadMoves?: import('./threadMoves').ThreadMovesBridge
   /** Next prompts after a finished turn (ADR-0132), present only while the `next-prompt` Owl feature is on and this computer runs threads. */
   readonly nextPrompt?: import('./nextPrompt').NextPromptBridge
-  /** The Council (ADR-0176), present only while the `council` Owl feature is on and this computer runs threads. */
+  /** The Council (ADR-0177), present only while the `council` Owl feature is on and this computer runs threads. */
   readonly council?: import('./council').CouncilBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge

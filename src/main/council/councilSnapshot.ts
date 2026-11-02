@@ -6,7 +6,7 @@ import type { RunGitCommand } from '../agents/gitStatus'
 import { HISTORY_FILE, HISTORY_FOLDER } from './councilPrompts'
 
 /**
- * A Council's snapshot (ADR-0176 decision 2): the origin thread's folder as it was at Ask the Council, its commit and
+ * A Council's snapshot (ADR-0177 decision 2): the origin thread's folder as it was at Ask the Council, its commit and
  * its uncommitted changes, as a commit on no branch made from a copy of the index (`BranchBundles.snapshotOf`, which a
  * check's test run uses too), checked out as a detached worktree in Sotto's data folder. Every thread in the Council
  * works there, so they cite the same code and nothing they run can change the user's checkout. It is removed when the

@@ -48,7 +48,7 @@ import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBrid
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
-/** `watcher` is Watcher's room, reachable only while the Watcher gate is on; `council` the Council page, only while its Owl feature is (ADR-0176). */
+/** `watcher` is Watcher's room, reachable only while the Watcher gate is on; `council` the Council page, only while its Owl feature is (ADR-0177). */
 export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'council' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
 
 /** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */

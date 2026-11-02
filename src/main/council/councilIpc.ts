@@ -19,7 +19,7 @@ export interface CouncilCalls {
 }
 
 /**
- * The main window's bridge to the Council (ADR-0176). The Owl list's startup answer decides whether the handlers exist:
+ * The main window's bridge to the Council (ADR-0177). The Owl list's startup answer decides whether the handlers exist:
  * stable registers nothing, and no renderer can turn it on. The window names threads by their host-qualified IDs; a
  * Council starts only from a thread on this computer. Each answer is checked against its schema on the way out.
  */

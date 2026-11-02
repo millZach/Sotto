@@ -605,7 +605,7 @@ export class AgentControl {
   private watcherHooks: WatcherControlHooks | undefined
   /** Delegation between threads (ADR-0081), given only while the Owl feature is on. */
   private delegationHooks: DelegationControlHooks | undefined
-  /** The Council (ADR-0176), given only while its Owl feature is on: the threads it follows, and its prompts' identities. */
+  /** The Council (ADR-0177), given only while its Owl feature is on: the threads it follows, and its prompts' identities. */
   private councilHooks: CouncilControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
@@ -803,14 +803,14 @@ export class AgentControl {
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard }); this.delegationOrigins.add(parsed)
     return this.admitCommandShell(parsed)
   }
-  /** The Council's own hooks (ADR-0176): every snapshot, the threads it follows, and its prompts' identities. Returns the unhook. */
+  /** The Council's own hooks (ADR-0177): every snapshot, the threads it follows, and its prompts' identities. Returns the unhook. */
   useCouncil(hooks: CouncilControlHooks): () => void {
     this.councilHooks = hooks
     this.refreshCouncilObservation()
     return () => { if (this.councilHooks === hooks) { this.councilHooks = undefined; this.refreshCouncilObservation() } }
   }
   /**
-   * A command the Council sends on the user's behalf (ADR-0176): making a seat's thread, a stage's prompt, Stop, or
+   * A command the Council sends on the user's behalf (ADR-0177): making a seat's thread, a stage's prompt, Stop, or
    * settling it with its Council. It carries a main-owned guard, asked again as it dispatches, and is never taken for the
    * user's own command, so it answers nothing and changes no permission.
    */

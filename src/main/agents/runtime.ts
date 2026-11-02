@@ -111,7 +111,7 @@ export interface AgentRuntimeOptions {
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
   delegationEnabled?: boolean
-  /** The Owl list's answer for the Council (ADR-0176), read once by the process owner. Absent fails closed; only the desktop has one. */
+  /** The Owl list's answer for the Council (ADR-0177), read once by the process owner. Absent fails closed; only the desktop has one. */
   councilEnabled?: boolean
   /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
   workerRolesEnabled?: boolean
@@ -695,7 +695,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // is compacted too, while Watcher rests.
   const idleCompaction = new IdleCompaction({ control: agentControl, enabled: () => options.settings().compactIdleThreads,
     ...watcher ? { watcherAtRest: (threadId: string) => watcher.restsForIdleCompaction(threadId) } : {} })
-  // The Council (ADR-0176): this computer's own, only on the desktop. Its snapshots are taken by the check's own snapshot
+  // The Council (ADR-0177): this computer's own, only on the desktop. Its snapshots are taken by the check's own snapshot
   // code, with the runtime's bundles where they exist, so one data folder keeps one staging folder for them.
   const council = options.councilEnabled === true && options.runsAs !== 'headless-host' ? new CouncilService({ directory, control: agentControl, host: agentHost,
     historyEnabled: options.historyEnabled, stageDeadline: () => options.settings().councilStageDeadline,

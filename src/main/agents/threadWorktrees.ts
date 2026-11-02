@@ -849,7 +849,7 @@ export class ThreadWorktrees {
     ])
     // The machine's check worktrees are the checks' own (#1312): the next check moves them, so no thread is offered one.
     const checks = await realpath(join(this.directory, CHECK_WORKTREE_FOLDER)).then(folder => pathKey(folder) + sep, () => undefined)
-    // A Council's snapshot is its own threads' (ADR-0176), removed when it is settled, so no other thread is offered one.
+    // A Council's snapshot is its own threads' (ADR-0177), removed when it is settled, so no other thread is offered one.
     const councils = await realpath(join(this.directory, COUNCIL_WORKTREE_FOLDER)).then(folder => pathKey(folder) + sep, () => undefined)
     return { isGit: true, currentBranch: branch.trim() || null, branches: branches.split(/\r?\n/u).filter(Boolean),
       worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable && !(checks && pathKey(entry.path).startsWith(checks))

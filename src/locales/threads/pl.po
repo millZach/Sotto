@@ -3353,7 +3353,7 @@ msgstr ""
 msgid "Couldn’t get this thinking from {host}. Nothing is lost: it is still there."
 msgstr ""
 
-#. The Council page: one question put to several models (ADR-0176).
+#. The Council page: one question put to several models (ADR-0177).
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Council"
 msgstr ""

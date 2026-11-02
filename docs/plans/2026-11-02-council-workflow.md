@@ -1,6 +1,6 @@
 # The Council's workflow, tuned for a better verdict
 
-November 2, 2026, for [ADR-0176](../adr/0176-the-council-puts-one-question-to-threads-on-several-providers.md). The evidence is in `docs/research/2026-11-01-council-deliberation-methods.md`, plus four papers read for this round (listed at the end). This plan is design, not code. Where a paper is cited, only its abstract was read.
+November 2, 2026, for [ADR-0177](../adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md). The evidence is in `docs/research/2026-11-01-council-deliberation-methods.md`, plus four papers read for this round (listed at the end). This plan is design, not code. Where a paper is cited, only its abstract was read.
 
 Drake's ask: before building, make the workflow produce a better final product, where "better" depends on what was asked. Revised the same day after two adversarial reviews, by GPT-6 Astra and Muse Wonder Full at extra high effort. "What the reviews changed" at the end lists each finding and what became of it.
 
@@ -204,7 +204,7 @@ Two adversarial reviews (GPT-6 Astra on Codex, Muse Wonder Full; both at extra h
 | Hiding names does not hide authorship or position | Astra | the plan claims only that names are hidden |
 | The evaluation cannot show which change helped | Astra | matched cost; the chair's model as a baseline; separate scores; a first look, not proof |
 | Prometheus, Chain-of-Verification and Khan were cited beyond what they show | Astra | the claims made from them narrowed |
-| The privacy note should name the chair and that answers carry project evidence between providers | Astra | ADR-0176's consequences and the README change say so |
+| The privacy note should name the chair and that answers carry project evidence between providers | Astra | ADR-0177's consequences and the README change say so |
 | Separate the one who frames from the chair | Muse | not taken: criteria are marked by source and open to challenge, which addresses the same risk without another thread |
 | Gate answers on the user confirming the framing | Muse | not taken (Drake): answers start at once; changing the framing restarts them |
 

@@ -1,4 +1,4 @@
-/* The Council (ADR-0176): the Ask form, then each Council's record as quiet text on a card, the deliberation's
+/* The Council (ADR-0177): the Ask form, then each Council's record as quiet text on a card, the deliberation's
    accessible form. Every colour is a theme role, and sizes and corners are steps of the scale. The chamber drawing
    beside the record comes in its own change. */
 .council-view { display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; }

@@ -211,14 +211,14 @@ export interface AppSettings {
    */
   watcherCompactAtTokens: number
   /**
-   * The Council's panel (ADR-0176), under Settings, Council, part of the Owl feature `council`: one entry per seat, two to
+   * The Council's panel (ADR-0177), under Settings, Council, part of the Owl feature `council`: one entry per seat, two to
    * five, each the model and effort the user chose or null for a seat Sotto fills from the providers connected now, so
    * nothing here changes when a provider comes or goes. The Ask screen starts from it. Kept whole where the feature is off.
    */
   councilPanelists: (CouncilSeatChoice | null)[]
-  /** The Council's chair: the model and effort the user chose, or null for the one Sotto fills (ADR-0176). */
+  /** The Council's chair: the model and effort the user chose, or null for the one Sotto fills (ADR-0177). */
   councilChair: CouncilSeatChoice | null
-  /** How the Council's chamber is laid out (ADR-0176 decision 6), the same setting its Layout menu changes. */
+  /** How the Council's chamber is laid out (ADR-0177 decision 6), the same setting its Layout menu changes. */
   councilLayout: CouncilLayout
   /** How long, in minutes, a Council stage waits for a thread before its row offers Retry, Use another model and Go on without it. */
   councilStageDeadline: number

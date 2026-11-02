@@ -33,7 +33,7 @@ import { shownCount } from '../state/interfaceNumbers'
 type FootPage = Extract<AppNavigation, 'usage' | 'council' | 'memory' | 'settings' | 'help'>
 const PAGES: ReadonlyArray<{ readonly id: FootPage; readonly label: MessageDescriptor; readonly Icon: LucideIcon }> = [
   { id: 'usage', label: msg({ message: 'Usage', comment: 'The Usage page.' }), Icon: BarChart3 },
-  { id: 'council', label: msg({ message: 'Council', comment: 'The Council page: one question put to several models (ADR-0176).' }), Icon: Landmark },
+  { id: 'council', label: msg({ message: 'Council', comment: 'The Council page: one question put to several models (ADR-0177).' }), Icon: Landmark },
   { id: 'memory', label: msg({ message: 'Memory', comment: 'The Memory page.' }), Icon: Brain },
   { id: 'settings', label: msg({ message: 'Settings', comment: 'The Settings page.' }), Icon: Settings },
   { id: 'help', label: msg({ message: 'Help', comment: 'The Help page.' }), Icon: CircleHelp },
@@ -104,7 +104,7 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
   const app = useOptionalApp()
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
-  // The Council (ADR-0176): only while its Owl feature is on and main gave the window its bridge, which needs this computer's threads.
+  // The Council (ADR-0177): only while its Owl feature is on and main gave the window its bridge, which needs this computer's threads.
   const council = useOwlFeature('council') && window.sotto?.council !== undefined
   const { t } = useLingui()
   const keys = usePageShortcutLabels()

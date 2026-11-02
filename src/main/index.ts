@@ -760,7 +760,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 const cleanupModelEnabled = owlFeatures['cleanup-model']
 const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const delegationEnabled = owlFeatures['thread-delegation']
-  // The Council (ADR-0176): stable builds no service, registers no bridge and shows no page. It runs on this computer's threads.
+  // The Council (ADR-0177): stable builds no service, registers no bridge and shows no page. It runs on this computer's threads.
   const councilEnabled = owlFeatures.council
   const workerRolesEnabled = owlFeatures['worker-roles']
   // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
@@ -2210,7 +2210,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
         () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
-      // The Council (ADR-0176): only where its Owl feature is on and this computer runs threads, so stable registers nothing.
+      // The Council (ADR-0177): only where its Owl feature is on and this computer runs threads, so stable registers nothing.
       const cleanupCouncil = registerCouncilIpc(ipcMain, councilService, () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) })
       // Move threads (#1178): only where Watcher and Work across machines are both on and main built the service, so stable
       // registers nothing.

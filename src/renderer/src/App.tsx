@@ -157,7 +157,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const watcherEnabled = useWatcherEnabled()
   const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
-  // The Council page (ADR-0176): only while its Owl feature is on and main gave the window its bridge.
+  // The Council page (ADR-0177): only while its Owl feature is on and main gave the window its bridge.
   const councilEnabled = useOwlFeature('council') && window.sotto?.council !== undefined
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])

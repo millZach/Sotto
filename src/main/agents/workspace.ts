@@ -3949,7 +3949,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /**
    * One thread's whole record of its work, its tool calls among it, whatever the thread holds now: what the Council names
-   * of the origin thread's tool calls (ADR-0176). Read without holding the records; empty for a hidden thread.
+   * of the origin thread's tool calls (ADR-0177). Read without holding the records; empty for a hidden thread.
    */
   threadActivities(threadId: string): readonly AgentActivity[] {
     if (!this.threadVisible(threadId)) return []

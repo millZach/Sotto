@@ -14,7 +14,7 @@ import { useCouncils } from './useCouncils'
 import './council.css'
 
 /**
- * The Council page (ADR-0176): the Ask form, then each Council as a text record of its stages, its threads' states and
+ * The Council page (ADR-0177): the Ask form, then each Council as a text record of its stages, its threads' states and
  * the actions their rows offer, the verdict with Sotto's counts, and Send to the thread. The record is the accessible
  * form of the deliberation; the chamber drawing beside it is the next pull request (`CouncilChamber`).
  */
@@ -31,7 +31,7 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
 }
 
 /**
- * The Roman chamber drawn in ASCII beside the record (ADR-0176 decision 6, `docs/prototypes/council-chamber-prototype.html`),
+ * The Roman chamber drawn in ASCII beside the record (ADR-0177 decision 6, `docs/prototypes/council-chamber-prototype.html`),
  * in the layout Settings → Council chooses. It comes in the next pull request; until then it draws nothing.
  */
 function CouncilChamber(): ReactNode {

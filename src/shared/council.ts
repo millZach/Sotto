@@ -7,7 +7,7 @@ import { withoutUltracode } from './ultracode'
 import { defaultModel, fitEffort, type WorkerRoleDefault } from './workerRoles'
 
 /**
- * The Council (ADR-0176, an Owl feature): one question from a thread put to two to five **panelists** and a **chair**,
+ * The Council (ADR-0177, an Owl feature): one question from a thread put to two to five **panelists** and a **chair**,
  * each an ordinary Sotto thread on its own provider, working in a snapshot of the thread's folder. These are the shapes
  * both processes share: the four settings, the seats Sotto fills when the user chose none, and the window's bridge.
  */

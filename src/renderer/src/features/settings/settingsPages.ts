@@ -22,7 +22,7 @@ export const SETTINGS_PAGES = [
   settingsPage('settings-keyboard', msg({ message: 'Keyboard', comment: 'A Settings page, named in its rail and its heading: the keyboard shortcuts for working in threads. Other messages name it as "Settings > Keyboard".' }), 1),
   settingsPage('settings-git', msg({ message: 'Git & worktrees', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".' }), 1),
   settingsPage('settings-watcher', 'Watcher', 1),
-  // The Council (ADR-0176), an Owl feature: directly below Watcher, shown only while the Owl list turns `council` on.
+  // The Council (ADR-0177), an Owl feature: directly below Watcher, shown only while the Owl list turns `council` on.
   settingsPage('settings-council', msg({ message: 'Council', comment: 'A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".' }), 1),
   settingsPage('settings-providers', msg({ message: 'Providers', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".' }), 2),
   settingsPage('settings-hosts', msg({ message: 'Hosts & phones', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Hosts & phones".' }), 2),

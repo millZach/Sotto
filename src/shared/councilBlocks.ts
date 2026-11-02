@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { COUNCIL_KINDS, type CouncilKind } from './council'
 
 /**
- * The Council's result blocks (ADR-0176 decision 4): each answer, review, crux result and fairness answer ends with one
+ * The Council's result blocks (ADR-0177 decision 4): each answer, review, crux result and fairness answer ends with one
  * fenced block of fixed fields, using only the IDs its prompt lists. Sotto reads each block once, where it arrives, and
  * asks once for a repair when it is missing or unreadable. The framing, a crux check's plan and the chair's answer to an
  * objection have blocks of their own, read the same way.

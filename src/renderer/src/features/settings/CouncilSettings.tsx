@@ -11,7 +11,7 @@ import { CouncilSeats } from '../council/CouncilSeats'
 import { SettingsGroup } from './SettingsGroup'
 
 /**
- * Settings → Council (ADR-0176 decision 7), directly below Watcher and there only while the Owl feature `council` is on:
+ * Settings → Council (ADR-0177 decision 7), directly below Watcher and there only while the Owl feature `council` is on:
  * who sits on a Council, how its chamber is laid out, and how long a stage waits for a thread. The Ask screen starts
  * from these and can change any seat for one Council.
  */

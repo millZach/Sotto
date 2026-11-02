@@ -419,7 +419,7 @@ export function createSottoBridge(
   mainCheckoutEnabled = false,
   /** The see-through window as main made it (ADR-0150): only while the `glass-theme` Owl feature is on. */
   glassWindow: GlassWindowState | null = null,
-  /** The Council (ADR-0176): only while the `council` Owl feature is on and this computer runs threads. */
+  /** The Council (ADR-0177): only while the `council` Owl feature is on and this computer runs threads. */
   councilEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
@@ -551,7 +551,7 @@ export function createSottoBridge(
       // Nothing waits on a cancel; a lost one leaves the side request to its own timeout.
       cancelWatcherFirst: () => { void renderer.invoke(NEXT_PROMPT_WATCHER_FIRST_CANCEL).catch(() => undefined) },
     }) } : {}),
-    // The Council (ADR-0176): only while the Owl list turns it on, so stable's window has no such bridge.
+    // The Council (ADR-0177): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(councilEnabled ? { council: Object.freeze<CouncilBridge>({
       read: () => invokeParsed(renderer, COUNCIL_READ, councilViewsSchema),
       estimate: request => invokeParsed(renderer, COUNCIL_ESTIMATE, councilEstimateSchema, councilEstimateRequestSchema.parse(request)),

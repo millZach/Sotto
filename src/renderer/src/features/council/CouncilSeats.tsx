@@ -19,7 +19,7 @@ export function useSeatName(): (seat: number | 'chair') => string {
   return seat => seat === 'chair' ? t`The chair` : t`Panelist ${seat + 1}`
 }
 
-/** What the page says about the seats (ADR-0176 decision 7), in a sentence each. */
+/** What the page says about the seats (ADR-0177 decision 7), in a sentence each. */
 export function useSeatNotes(): (notes: readonly CouncilSeatNote[], seats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }) => string[] {
   const { t, i18n } = useLingui()
   const named = useSeatName()

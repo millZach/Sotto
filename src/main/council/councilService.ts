@@ -27,7 +27,7 @@ import { activePanelists, addRound, advanceRound, answeredLetters, currentRound,
   replaceSeat, retryTurn, rowActions, turnState, type StageClock } from './councilStages'
 
 /**
- * The Council coordinator in main (ADR-0176). It starts each seat's thread on its own provider, in the Council's
+ * The Council coordinator in main (ADR-0177). It starts each seat's thread on its own provider, in the Council's
  * snapshot, as an ordinary Sotto thread linked to the origin thread the way a delegated thread is linked to the thread
  * that started it (ADR-0081), so the sidebar lists it under that thread, which says when one waits on the user, and it
  * settles with it. It sends each stage's prompt once the thread is free, follows the turn the prompt began, reads the

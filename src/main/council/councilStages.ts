@@ -4,7 +4,7 @@ import { reviewAssignments } from '../../shared/councilFlow'
 import type { CouncilRecord, CouncilRound, CouncilSeat, CouncilTurn } from './councilRecord'
 
 /**
- * The Council's stages (ADR-0176 decision 4, `docs/plans/2026-11-02-council-workflow.md`), as plain changes to its
+ * The Council's stages (ADR-0177 decision 4, `docs/plans/2026-11-02-council-workflow.md`), as plain changes to its
  * record: framing by the chair, answers alone, reviews under letters, at most one crux check, the verdict and the
  * fairness check. Each change queues the prompts the next stage needs; the service sends a queued prompt once its thread
  * is free and reads what comes back. Nothing here leaves a thread out on its own: a thread that fails, stops, is unknown

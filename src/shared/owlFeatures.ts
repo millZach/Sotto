@@ -62,7 +62,7 @@ export const OWL_FEATURES = [
   { id: 'cloud-dictation', name: 'Transcribe with OpenRouter', owlSince: '2026-10-29', owner: 'docs/adr/0160-dictation-can-be-transcribed-by-an-openrouter-speech-model.md', sentToStable: false },
   { id: 'quiet-browser', name: 'The quiet browser pane', owlSince: '2026-10-27', owner: 'docs/adr/0154-the-browser-is-a-quiet-pane-in-tools.md', sentToStable: false },
   { id: 'quiet-composer', name: 'The quiet composer', owlSince: '2026-10-29', owner: 'docs/adr/0161-the-quiet-composer-is-one-pill.md', sentToStable: true },
-  { id: 'council', name: 'Council', owlSince: '2026-11-02', owner: 'docs/adr/0176-the-council-puts-one-question-to-threads-on-several-providers.md', sentToStable: false },
+  { id: 'council', name: 'Council', owlSince: '2026-11-02', owner: 'docs/adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

@@ -1,5 +1,5 @@
 // @vitest-environment node
-// ADR-0176 over fake providers: a Council puts one question from a thread to panelists and a chair on their own
+// ADR-0177 over fake providers: a Council puts one question from a thread to panelists and a chair on their own
 // providers' threads, in a snapshot of the thread's folder, and goes through framing, answers, reviews, the verdict and
 // the fairness check to a draft for the thread. Only Synthetic words are used.
 import { existsSync } from 'node:fs'

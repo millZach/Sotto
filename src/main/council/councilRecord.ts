@@ -5,7 +5,7 @@ import { cruxSchema, framingSchema, type CouncilAmend, type CouncilAnswer, type 
   type CouncilReview } from '../../shared/councilBlocks'
 
 /**
- * A Council's own record in main (ADR-0176): its seats and their threads, by Sotto thread ID (ADR-0002), each prompt it
+ * A Council's own record in main (ADR-0177): its seats and their threads, by Sotto thread ID (ADR-0002), each prompt it
  * sent and where that prompt stands, and what Sotto read from the replies. It lives in `councils.json` in Sotto's data
  * folder. The words in it, the question, the framing, what the result blocks said and the verdict, are saved only while
  * Keep local history is on; the replies themselves stay in each thread's own history and are read from there.

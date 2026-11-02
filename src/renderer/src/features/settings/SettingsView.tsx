@@ -141,7 +141,7 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-git': GitBranch,
   // Watcher, an Owl feature: shown only while the Owl list turns it on. Worker roles (#1041) inside it follow their own.
   'settings-watcher': WatcherNavIcon,
-  // The Council (ADR-0176), an Owl feature: shown only while the Owl list turns `council` on.
+  // The Council (ADR-0177), an Owl feature: shown only while the Owl list turns `council` on.
   'settings-council': Landmark,
   'settings-providers': Command,
   'settings-hosts': Server,
