@@ -412,6 +412,16 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
         public let width: Int?; public let height: Int?; public let name: String; public let source: String
         /// Its size in bytes; a video's decides whether this iPhone fetches it to play (`AgentVideos.playsHere`).
         public let sizeBytes: Int?
+        /// The numbered boxes with notes the agent placed on this picture when it showed it (ADR-0170, part 6).
+        /// Computers before part 6 never send them.
+        public var callouts: [Callout]? = nil
+        /// One callout: its number among the step's, its box as shares of the picture's width and height from its top
+        /// left, and its note.
+        public struct Callout: Decodable, Identifiable, Equatable, Sendable {
+            public let n: Int; public let x: Double; public let y: Double; public let w: Double; public let h: Double; public let note: String
+            public var id: Int { n }
+            public init(n: Int, x: Double, y: Double, w: Double, h: Double, note: String) { self.n = n; self.x = x; self.y = y; self.w = w; self.h = h; self.note = note }
+        }
     }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {

@@ -100,7 +100,14 @@ struct SentPhotoButtons: View {
 
 /// The photos of one message in a thread, or the pictures of one run of steps: what a press opens full screen.
 struct OpenPhotos: Identifiable {
-    struct Item: Identifiable { let key: PhotoPreviews.Key; let name: String; var id: String { (key.activityID ?? "") + "/" + key.attachmentID } }
+    struct Item: Identifiable {
+        let key: PhotoPreviews.Key; let name: String
+        /// An agent's picture's callouts (ADR-0170, part 6), its size in pixels, and who placed them.
+        var callouts: [Activity.Media.Callout] = []
+        var size: MarkupSize? = nil
+        var by: String? = nil
+        var id: String { (key.activityID ?? "") + "/" + key.attachmentID }
+    }
     let ref: ThreadRef; let id: String; let items: [Item]; var index: Int
     init(ref: ThreadRef, messageID: String, photos: [Attachment], index: Int) {
         self.ref = ref; self.id = messageID; self.index = index
@@ -181,11 +188,20 @@ struct PhotoViewer: View {
             }
             TabView(selection: $opened.index) {
                 ForEach(Array(opened.items.enumerated()), id: \.element.id) { index, item in
-                    FullPhoto(key: item.key, name: item.name) { shown[item.key] = $0 }.tag(index)
+                    FullPhoto(key: item.key, name: item.name, callouts: item.callouts) { shown[item.key] = $0 }.tag(index)
                 }
             }.tabViewStyle(.page(indexDisplayMode: opened.items.count > 1 ? .always : .never))
             Text(opened.items[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
                 .lineLimit(1).truncationMode(.middle).padding(.horizontal, 20).padding(.vertical, 12)
+            // The agent's callouts on the picture shown (ADR-0170, part 6), listed by their numbers under it.
+            if let item = opened.items[safe: opened.index], !item.callouts.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Callouts from \(item.by ?? "")").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                        .accessibilityAddTraits(.isHeader)
+                    CalloutNotes.Bounded(callouts: item.callouts, height: 160)
+                }
+                .padding(.horizontal, 20).padding(.bottom, 12)
+            }
         }
         .background(Palette.canvas)
         // A full-screen cover sits above the root's own cover, so it covers itself while Sotto isn't in front,
@@ -211,7 +227,7 @@ struct PhotoViewer: View {
             markRefusal = String(localized: "This picture is still loading. Try again in a moment.")
             return
         }
-        marking = MarkupTarget(image: image, name: item.name, box: box)
+        marking = MarkupTarget(image: image, name: item.name, box: box, callouts: item.callouts, calloutsBy: item.by)
     }
 }
 
@@ -220,14 +236,18 @@ private struct FullPhoto: View {
     @EnvironmentObject var previews: PhotoPreviews
     let key: PhotoPreviews.Key
     let name: String
+    /// The agent's callouts on it (part 6), drawn over the picture where it sits.
+    var callouts: [Activity.Media.Callout] = []
     /// Tells the viewer which image this page shows, and nil once it goes.
     var showing: (CGImage?) -> Void = { _ in }
+    @Environment(\.sottoTheme) private var theme
     @State private var image: CGImage?
     @State private var missing = false
     var body: some View {
         ZStack {
             if let image {
                 Image(image, scale: 1, label: Text("Photo: \(name)")).resizable().scaledToFit()
+                    .overlay { if !callouts.isEmpty { CalloutLayer(callouts: callouts, image: image, fills: false, theme: theme) } }
             } else if missing {
                 Text("This photo couldn’t be loaded from \(model.name(key.ref.hostID)). Nothing was lost. Try again when it’s connected.", comment: "%@ is the computer’s name.")
                     .multilineTextAlignment(.center).foregroundStyle(Palette.muted).padding(32)
@@ -458,10 +478,13 @@ struct CameraPicker: UIViewControllerRepresentable {
 struct AgentPictures: View {
     let ref: ThreadRef
     let steps: [Activity]
+    /// Who wrote the steps, the thread's provider: the viewer names a picture's callouts as theirs.
+    var by: String? = nil
     let open: (OpenPhotos) -> Void
     private var items: [OpenPhotos.Item] {
         steps.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { picture in
-            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: AgentPictures.title(of: step))
+            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: AgentPictures.title(of: step),
+                            callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
         } }
     }
     /// The GIFs among the pictures, by their key's ID: each plays in its tile when asked.
@@ -561,9 +584,10 @@ private struct AgentPictureCell: View {
     @State private var playing = false
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Button(action: open) { AgentPictureTile(key: item.key, playing: gif && playing) }
+            Button(action: open) { AgentPictureTile(key: item.key, playing: gif && playing, callouts: item.callouts, size: item.size) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Open picture \(number) of \(count), from \(item.name)", comment: "%1$lld of %2$lld pictures an agent's steps made; %3$@ names the step."))
+                .accessibilityValue(item.callouts.isEmpty ? Text(verbatim: "") : Text("Callouts: \(item.callouts.count)", comment: "How many numbered boxes with notes an agent placed on a picture."))
             if gif {
                 Button { playing.toggle() } label: {
                     Image(systemName: playing ? "pause.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Palette.muted)
@@ -668,6 +692,10 @@ private struct AgentPictureTile: View {
     let key: PhotoPreviews.Key
     /// A GIF asked to play: its whole bytes are fetched and its frames drawn in the tile, from the first.
     var playing = false
+    /// The agent's callouts (ADR-0170, part 6), drawn over the picture where it sits in the tile, and the picture's size.
+    var callouts: [Activity.Media.Callout] = []
+    var size: MarkupSize? = nil
+    @Environment(\.sottoTheme) private var theme
     @State private var image: CGImage?
     @State private var missing = false
     @State private var frames: GIFFrames?
@@ -678,11 +706,25 @@ private struct AgentPictureTile: View {
             .overlay {
                 if playing, let frames {
                     TimelineView(.animation) { context in
-                        Image(decorative: frames.frame(at: context.date.timeIntervalSince(began)), scale: 1).resizable().scaledToFill()
+                        let frame = Image(decorative: frames.frame(at: context.date.timeIntervalSince(began)), scale: 1).resizable()
+                        // Fitted like its still picture when it has callouts, so the boxes stay on it as it plays.
+                        if callouts.isEmpty { frame.scaledToFill() } else { frame.scaledToFit() }
                     }
-                } else if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+                } else if let image {
+                    // A picture with callouts shows whole, at its own shape, so every box lands on it (ADR-0170, part 6).
+                    if callouts.isEmpty { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+                    else { Image(decorative: image, scale: 1).resizable().scaledToFit() }
+                }
                 else if missing { Image(systemName: "photo").font(.title2).foregroundStyle(Palette.muted) }
                 else { ProgressView() }
+            }
+            .overlay { if image != nil || (playing && frames != nil), !callouts.isEmpty, let size { CalloutLayer(callouts: callouts, size: size, fills: false, unit: true, theme: theme) } }
+            .overlay(alignment: .topLeading) {
+                if !callouts.isEmpty {
+                    Text(verbatim: "\(callouts.count)").font(.sotto(.small, .bold)).foregroundStyle(ThemeRole(.onAccent))
+                        .padding(.horizontal, 7).padding(.vertical, 1).background(Palette.accent, in: Capsule()).padding(6)
+                        .accessibilityHidden(true)
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .onAppear { previews.appeared(key) }
@@ -704,5 +746,33 @@ private struct AgentPictureTile: View {
                 guard !Task.isCancelled, playing else { return }
                 began = Date(); frames = decoded
             }
+    }
+}
+
+/// An agent's callouts (ADR-0170, part 6) over a picture laid out in the frame the layer fills: whole inside it, as
+/// the viewer and a tile with callouts show it, or cut to it. With `unit`, as on a tile, the lines and pins keep a fixed
+/// size on screen; without it they are a share of the picture.
+private struct CalloutLayer: View {
+    let callouts: [Activity.Media.Callout]
+    let size: MarkupSize
+    let fills: Bool
+    var unit = false
+    let theme: ThemeSwatch
+    init(callouts: [Activity.Media.Callout], size: MarkupSize, fills: Bool, unit: Bool = false, theme: ThemeSwatch) {
+        self.callouts = callouts; self.size = size; self.fills = fills; self.unit = unit; self.theme = theme
+    }
+    init(callouts: [Activity.Media.Callout], image: CGImage, fills: Bool, theme: ThemeSwatch) {
+        self.init(callouts: callouts, size: MarkupSize(width: Double(image.width), height: Double(image.height)), fills: fills, theme: theme)
+    }
+    var body: some View {
+        Canvas { context, frame in
+            let placed = Callouts.placement(of: size, inWidth: frame.width, height: frame.height, fills: fills)
+            context.translateBy(x: placed.x, y: placed.y)
+            context.scaleBy(x: placed.scale, y: placed.scale)
+            CalloutDrawing.draw(callouts, size: size, accent: theme.rgb(.accent).color, onAccent: theme.rgb(.onAccent).color,
+                                unit: unit ? 1 / placed.scale : nil, in: &context)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

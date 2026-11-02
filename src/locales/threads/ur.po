@@ -2161,6 +2161,20 @@ msgstr ""
 msgid "Browsing {host}"
 msgstr ""
 
+#: src/renderer/src/agents/callouts.tsx
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Callouts"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Callouts and your marks"
+msgstr ""
+
+#. {by} is who placed the numbered boxes on a picture: a provider, such as Codex, or Watcher.
+#: src/renderer/src/agents/callouts.tsx
+msgid "Callouts from {by}"
+msgstr ""
+
 #. Stops a sign-in that is waiting for the user.
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/DeleteThread.tsx
@@ -4830,6 +4844,10 @@ msgstr ""
 msgid "Keep open"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Keep the callouts in the copy"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Keep this branch"
 msgstr ""
@@ -5887,6 +5905,12 @@ msgstr ""
 #. placeholder {0}: stepTitle(t, shown.record)
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture {number} of {count}, from {0}"
+msgstr ""
+
+#. {number} of {count} pictures in a turn; {title} names the step that made it; then how many callouts the agent placed on it.
+#. placeholder {0}: callouts.length
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Open picture {number} of {count}, from {title}, with {0, plural, one {# callout} other {# callouts}}"
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -7352,6 +7376,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Shift+Enter for a new line"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Show"
 msgstr ""
 
 #. Shows the rows of work above the newest ones.
