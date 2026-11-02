@@ -30,6 +30,14 @@ private struct CardAnswer {
     var asked: AskedRequest { AskedRequest(thread: asking.ref, requestID: requestID) }
 }
 
+/// The thread list as the Threads page last drew it, held while the page is out of sight (`ThreadsView.held`).
+private struct HeldList {
+    let id = UUID()
+    let groups: FocusThreads
+    let unsearched: FocusThreads
+    let watch: ListWatch
+}
+
 /// The search field's frame, kept outside SwiftUI's state so scrolling doesn't redraw the page.
 private final class FrameBox {
     var frame: CGRect = .zero
@@ -49,6 +57,12 @@ struct ThreadsView: View {
     @State private var settledExpanded = false
     @State private var sent: [String: CardAnswer] = [:]
     @State private var searchBox = FrameBox()
+    /// The list as the page last drew it, held while the page is out of sight: under a thread opened over it, or on
+    /// another tab. The page stays alive there and the list is its costliest part: made again with every update to any
+    /// thread, for nobody to see, it was half the work of each word a reply streamed into the thread over it. The page
+    /// lets go as it starts to come back, at the start of a swipe back or a press on Back and before that first frame,
+    /// so it never shows an old row.
+    @State private var held: HeldList?
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -61,8 +75,9 @@ struct ThreadsView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
-        let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
-        let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
+        let groups = held?.groups ?? model.focusThreads(show: model.show, query: query, opened: model.selected)
+        let unsearched = held?.unsearched ?? (query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected))
+        let _ = BenchPage.drawn(held: held != nil)
         SheetPage(warm: unsearched.requestCount > 0) {
             VStack(alignment: .leading, spacing: 0) {
                 heading
@@ -101,9 +116,19 @@ struct ThreadsView: View {
             NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
-        .onAppear { openForShare(model.shareOpened) }
+        .onAppear { held = nil; openForShare(model.shareOpened) }
+        .onDisappear { hold() }
+        .benchPageWindow()
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
+    }
+
+    /// Holds the list as it stands, as the page goes out of sight.
+    private func hold() {
+        BenchPage.holding()
+        let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
+        let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
+        held = HeldList(groups: groups, unsearched: unsearched, watch: model.listWatch(groups))
     }
 
     private func openForShare(_ destination: ShareDestination?) {
@@ -187,7 +212,9 @@ struct ThreadsView: View {
     /// The thread list, then the settled shelf, folded unless a search reaches into it.
     @ViewBuilder private func list(_ groups: FocusThreads) -> some View {
         if groups.isEmpty { empty(groups) }
-        ThreadListSections(groups: groups, open: open).equatable()
+        ThreadListSections(groups: groups, watch: held?.watch ?? model.listWatch(groups), held: held?.id, open: open,
+                           setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+            .equatable()
         if !groups.settled.isEmpty {
             if groups.searching {
                 ThreadListHeading(title: String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: groups.settled.count, id: "settled")

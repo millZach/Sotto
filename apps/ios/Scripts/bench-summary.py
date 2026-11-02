@@ -28,7 +28,10 @@ PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadL
 # What opening the long thread made and read once.
 ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
            "markdown.blocks", "markdown.bytes"]
-PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream"]
+PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "back"]
+# The Threads page's hold while a thread covers it (`ThreadsView.held`), counted over each whole journey: the page coming
+# into sight, holds taken, holds taken while the page could still show, and frames that could have shown an old row.
+PAGE = ["page.shown", "page.holds", "page.held_in_window", "page.stale_frames"]
 # Work counts the climb has brought down, held there (#1702). Counts do not vary with the runner as times do, so each
 # budget sits a little above what the change that set it measured. A budget only tightens; a raise needs its reason in
 # the pull request.
@@ -39,6 +42,8 @@ BUDGETS = {
     "open.app.time.textview.measure.n": 60,
     # Each paragraph is measured once for its words, text size and width (0.36 a streamed word).
     "stream.per_chunk.time.textview.measure.n": 1.0,
+    # The Threads page lets go of its held list before the first frame that shows it again, in every journey.
+    "journey.page.stale_frames": 0,
 }
 
 
@@ -116,6 +121,13 @@ def app_metrics(folder):
         put(f"{name}.app.textview_measure", [ns_ms(c, "time.textview.measure.ns") for c in counts[name]], "ms")
     put("stream.textview_measure_per_chunk", [ns_ms(c, "time.textview.measure.ns") / chunks if "time.textview.measure.ns" in c else 0 for c in counts["stream"]], "ms")
     put("stream.timeline_rows_per_chunk", [ns_ms(c, "time.timeline.rows.ns") / chunks if "time.timeline.rows.ns" in c else 0 for c in counts["stream"]], "ms")
+
+    # The page's hold, in the journeys that went back to it; the worst journey, since one old row is one too many.
+    went_back = [i for i, p in enumerate(phases["back"]) if p and not p.get("noBack")]
+    for key in PAGE:
+        values = [sum(counts[name][i].get(key, 0) for name in PHASES) for i in went_back]
+        if any(sum(counts[name][i].get("page.shown", 0) for name in PHASES) for i in went_back):
+            rows[f"journey.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
     return rows
 
 
