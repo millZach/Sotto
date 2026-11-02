@@ -2102,7 +2102,7 @@ import UIKit
     /// Speed and Permissions as submenus; a permission change is marked until the agent confirms it. The row around it is
     /// Claude's: the + and the pill on the left, the mic and Send on the right. While a turn runs the pill is held, as on
     /// the desktop.
-    /// The small reply box (ADR-0178): in a thread with content or running, one row of the +, the prompt, the mic and Send
+    /// The small reply box (ADR-0179): in a thread with content or running, one row of the +, the prompt, the mic and Send
     /// or Stop; a press brings it back full with the settings, a tap on the conversation puts an empty one away again, and
     /// a draft keeps it full. The dock never changes height, which is what would move the conversation. The accessibility
     /// text sizes (the large iPhone's run) stay full, since one row can't hold the prompt.
@@ -2193,7 +2193,7 @@ import UIKit
         capture("reply-box-full-top-effort-dark")
     }
 
-    /// Watcher's box goes small by a thread's box's rule, and comes back full for its pill (ADR-0178).
+    /// Watcher's box goes small by a thread's box's rule, and comes back full for its pill (ADR-0179).
     func testWatchersBoxGoesSmallAndComesBackToWrite() throws {
         try XCTSkipIf(UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory, "The accessibility sizes stay full")
         launch(Self.watcher + ["--ui-watcher-box"])

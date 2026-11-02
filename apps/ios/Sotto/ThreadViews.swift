@@ -2277,7 +2277,7 @@ private struct ReplyDock: View, Equatable {
     /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
-    /// Whether the thread has content or is running, so the box goes small while nothing is being written (ADR-0178).
+    /// Whether the thread has content or is running, so the box goes small while nothing is being written (ADR-0179).
     let goesSmall: Bool
     let openRequest: (AgentRequest) -> Void
     /// Drawn again for what it watches itself, not for each new revision of the conversation above it; a request it
