@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep 
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
 import { CHECK_MOVED_TO, CHECK_WORKTREE_FOLDER } from './checkWorktree'
+import { COUNCIL_WORKTREE_FOLDER } from '../council/councilFolders'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
 import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
@@ -848,8 +849,11 @@ export class ThreadWorktrees {
     ])
     // The machine's check worktrees are the checks' own (#1312): the next check moves them, so no thread is offered one.
     const checks = await realpath(join(this.directory, CHECK_WORKTREE_FOLDER)).then(folder => pathKey(folder) + sep, () => undefined)
+    // A Council's snapshot is its own threads' (ADR-0176), removed when it is settled, so no other thread is offered one.
+    const councils = await realpath(join(this.directory, COUNCIL_WORKTREE_FOLDER)).then(folder => pathKey(folder) + sep, () => undefined)
     return { isGit: true, currentBranch: branch.trim() || null, branches: branches.split(/\r?\n/u).filter(Boolean),
-      worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable && !(checks && pathKey(entry.path).startsWith(checks)))
+      worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable && !(checks && pathKey(entry.path).startsWith(checks))
+        && !(councils && pathKey(entry.path).startsWith(councils)))
         .map(entry => ({ path: entry.path, branch: entry.branch?.replace(/^refs\/heads\//u, '') ?? null })) }
   }
 

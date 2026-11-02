@@ -3947,6 +3947,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return result
   }
+  /**
+   * One thread's whole record of its work, its tool calls among it, whatever the thread holds now: what the Council names
+   * of the origin thread's tool calls (ADR-0176). Read without holding the records; empty for a hidden thread.
+   */
+  threadActivities(threadId: string): readonly AgentActivity[] {
+    if (!this.threadVisible(threadId)) return []
+    if (this.storeUnavailable) return this.threadById(threadId)?.activities ?? []
+    try { return this.threadStore.readActivities(threadId, { keep: false }) } catch { return this.threadById(threadId)?.activities ?? [] }
+  }
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {
     if (!this.threadVisible(threadId)) return []
