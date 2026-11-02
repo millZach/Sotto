@@ -7,6 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
+import { PaneMenu } from '../../../src/renderer/src/agents/PaneMenu'
 import { ThreadPane } from '../../../src/renderer/src/agents/ThreadPane'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
@@ -27,7 +28,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => {
 const THREAD = 'grok-previews'
 
 /** One idle thread of the fixture, on its own, with a provider that can compact and a place to open beside. */
-function mount({ beside = true, state = threadsStateFixture(), patch }: { readonly beside?: boolean; readonly state?: AgentState; readonly patch?: Partial<AgentState['host']['threads'][number]> } = {}) {
+function mount({ beside = true, state = threadsStateFixture(), patch, workspace = false, terminal = false }: { readonly beside?: boolean; readonly state?: AgentState; readonly patch?: Partial<AgentState['host']['threads'][number]>; readonly workspace?: boolean; readonly terminal?: boolean } = {}) {
   if (patch) Object.assign(state.host.threads.find(thread => thread.id === THREAD)!, patch)
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, compact: true }
@@ -36,7 +37,7 @@ function mount({ beside = true, state = threadsStateFixture(), patch }: { readon
   const command = live.command
   const row = describeThreads(state, E2E_THREADS_NOW).find(item => item.thread.id === THREAD)!
   const onOpenBeside = vi.fn()
-  render(<ThreadPane row={row} state={state} command={command} store={new ThreadDraftStore(command)} focused promptId="prompt" error={null} onOpenBeside={beside ? onOpenBeside : undefined} />)
+  render(<ThreadPane row={row} state={state} command={command} store={new ThreadDraftStore(command)} focused promptId="prompt" error={null} onOpenBeside={beside ? onOpenBeside : undefined} tools={workspace} terminal={terminal} />)
   const head = (): HTMLElement => document.querySelector('.thread-workspace__head')!
   return { command, onOpenBeside, head, requests: (): AgentCommand[] => command.mock.calls.map(([request]) => request) }
 }
@@ -89,6 +90,56 @@ describe('the pane header’s More menu', () => {
     const view = mount()
     fireEvent.click(within(openPaneMenu(view.head())).getByRole('menuitem', { name: 'Open beside' }))
     expect(view.onOpenBeside).toHaveBeenCalledOnce()
+  })
+})
+
+describe('a row that shows or hides something', () => {
+  it('is a checkbox item, ticked while it holds, as a sidebar row’s Watch is', () => {
+    const run = vi.fn()
+    render(<PaneMenu groups={[[{ id: 'watch', label: 'Watch', shown: true, run }]]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const row = screen.getByRole('menuitemcheckbox', { name: 'Watch' })
+    expect(row).toHaveAttribute('aria-checked', 'true')
+    expect(row.querySelector('.pane-menu__end svg')).not.toBeNull()
+  })
+})
+
+describe('the pane header’s Tools and Terminal symbols (ADR-0182)', () => {
+  const names = (head: HTMLElement): (string | null)[] => [...head.querySelectorAll('.thread-workspace__actions > *')].map(control => control.getAttribute('aria-label') ?? control.textContent)
+
+  it('stand after Watch and before the menu, which lists neither', () => {
+    const view = mount({ workspace: true, terminal: true })
+    const actions = names(view.head())
+    expect(actions.slice(-3)).toEqual(['Tools', 'Terminal drawer', ''])
+    const tools = within(view.head()).getByRole('button', { name: 'Tools' })
+    expect(tools).toHaveAttribute('aria-pressed', 'false')
+    const drawer = within(view.head()).getByRole('button', { name: 'Terminal drawer' })
+    expect(drawer).toHaveAttribute('aria-pressed', 'false')
+    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Open beside', 'Rename', 'Compact context', 'Settle'])
+  })
+
+  it('are not there beside Watcher, which has neither Tools nor a drawer', () => {
+    const view = mount()
+    expect(within(view.head()).queryByRole('button', { name: 'Tools' })).toBeNull()
+    expect(within(view.head()).queryByRole('button', { name: 'Terminal drawer' })).toBeNull()
+  })
+
+  it('say where the terminal is on a thread on a paired host, opening nothing', () => {
+    const view = mount({ workspace: true, patch: { remoteHost: true, hostLabel: 'forge' } })
+    const drawer = within(view.head()).getByRole('button', { name: 'Terminal drawer' })
+    expect(drawer).toHaveAttribute('aria-disabled', 'true')
+    expect(drawer).toHaveAccessibleDescription('This thread’s terminal is on forge. Open it there.')
+    expect(drawer).toHaveAttribute('title', 'This thread’s terminal is on forge. Open it there.')
+    expect(view.head()).not.toHaveAttribute('data-terminal-drawer')
+    fireEvent.click(drawer)
+    expect(document.querySelector('.pane-terminal')).toBeNull()
+    expect(drawer).not.toHaveAttribute('aria-pressed')
+  })
+
+  it('shows the full name on hover', () => {
+    const title = 'A long thread name that the header has to cut off as the pane narrows'
+    const view = mount({ patch: { title } })
+    expect(within(view.head()).getByRole('heading', { name: title })).toHaveAttribute('title', title)
   })
 })
 
