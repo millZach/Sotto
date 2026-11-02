@@ -76,6 +76,38 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
       request: { origin: { kind: 'phone', hostId: target.hostId, clientId }, target, draftId, text, ...(delivery ? { delivery } : {}) } }) }
 }
 
+it('keeps the catalog of each phone on usable models on its own revision when Watcher names a model only one is sent', async () => {
+  const f = await fixture()
+  // A model the provider no longer offers, which only Watcher's next turn names: a phone with Watcher's page keeps it in
+  // its catalog and one without does not, so the two are sent different catalogs (ADR-0028, November 1 part 2).
+  const codex = f.workspace.adapters.codex
+  codex.state.models.push({ ...codex.state.models[0]!, id: 'synthetic-retired', name: 'Synthetic retired', ready: false })
+  codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const retired = f.control.shell().host.models.find(model => model.name === 'Synthetic retired')!
+  expect(retired.ready).toBe(false)
+  // Watcher is working, so a model chosen for its next turn waits on its page.
+  vi.spyOn(f.watcher as unknown as { restsForNextTurn(): boolean }, 'restsForNextTurn').mockReturnValue(false)
+  ;(f.watcher as unknown as { nextTurn: unknown }).nextTurn = { threadId: f.target.threadId, options: { modelId: retired.id, reasoningEffort: null } }
+  expect(f.phone.state(false).nextTurnOptions?.modelId).toBe(retired.id)
+  type Host = { models?: { id: string }[]; modelsRevision?: number }
+  const watching = await f.pair(['watcher-phone', 'usable-models', 'model-catalog-revision'])
+  const plain = await f.pair(['usable-models', 'model-catalog-revision'])
+  const helloHost = (peer: typeof plain) => (peer.hello as { result: { shell: { host: Host } } }).result.shell.host
+  expect(helloHost(watching).models!.map(model => model.id)).toContain(retired.id)
+  expect(helloHost(plain).models!.map(model => model.id)).not.toContain(retired.id)
+  type Push = { event?: string; state?: { host: Host; configuration: { projectsDirectory?: string } } }
+  const pushes = (peer: typeof plain) => (peer.messages as Push[]).filter(message => message.event === 'shell')
+  // Each change reaches both phones; neither is sent its catalog again, since neither catalog changed.
+  for (const directory of ['synthetic-one', 'synthetic-two', 'synthetic-three']) {
+    await f.control.commandShell({ type: 'configure', patch: { projectsDirectory: directory } })
+    for (const peer of [watching, plain]) await expect.poll(() => pushes(peer).some(push => push.state?.configuration.projectsDirectory === directory)).toBe(true)
+  }
+  for (const peer of [watching, plain]) {
+    expect(pushes(peer).filter(push => push.state?.host.models !== undefined)).toEqual([])
+    expect(new Set(pushes(peer).map(push => push.state?.host.modelsRevision))).toEqual(new Set([helloHost(peer).modelsRevision]))
+  }
+})
+
 it('offers phone Watcher only on its desktop listener and leaves old phones ordinary workers without misleading master rows or events', async () => {
   const f = await fixture(), old = await f.pair([]), current = await f.pair()
   expect(old.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone', 'watcher-phone-stop-all']) } })

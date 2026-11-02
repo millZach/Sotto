@@ -11,7 +11,7 @@ import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agent
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions, ThreadRecordsBroadcast, type ThreadRecordsSeed } from '../main/agents/agentStateBroadcast'
 import { shareProviderModes } from './providerModeLists'
-import { usableModels } from './usableModels'
+import { usableModels, usableVariant } from './usableModels'
 import { heldBackSettled, settledPage } from './heldBackSettled'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
@@ -19,7 +19,7 @@ import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
 import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
+import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -644,9 +644,10 @@ export async function startSocketServer(options: SocketServerOptions) {
    * changes. What each peer was sent is its own.
    */
   const catalogRevisions = new Map<string, ModelCatalogRevisions>()
-  const revisionsFor = (peer: Peer): ModelCatalogRevisions => {
-    // A catalog cut to usable models is a variant of its own, so the two never move one counter back and forth.
-    const key = (peer.usableModels ? 'usable:' : '') + [...peer.unknownProviders].sort().join(',')
+  const revisionsFor = (peer: Peer, models: readonly AgentModel[]): ModelCatalogRevisions => {
+    // A catalog cut to usable models is a variant of its own, and so is each cut by the models it keeps, so no two
+    // catalogs move one counter back and forth.
+    const key = (peer.usableModels ? `usable:${usableVariant(models) ?? ''}:` : '') + [...peer.unknownProviders].sort().join(',')
     let revisions = catalogRevisions.get(key)
     if (!revisions) catalogRevisions.set(key, revisions = new ModelCatalogRevisions())
     return revisions
@@ -659,7 +660,7 @@ export async function startSocketServer(options: SocketServerOptions) {
    */
   const wireShell = (peer: Peer, state: HostClientShell): WireShell => {
     if (!peer.catalogRevisions) return { state: withModeLists(peer, state), carries: null }
-    const modelsRevision = revisionsFor(peer).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
+    const modelsRevision = revisionsFor(peer, state.host.models).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
     const host: HostWireShell['host'] = { ...state.host, modelsRevision }
     if (peer.catalogSent !== modelsRevision) return { state: withModeLists(peer, { ...state, host }), carries: modelsRevision }
     delete host.models
