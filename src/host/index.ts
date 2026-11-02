@@ -3,7 +3,8 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
-import { createProductEvents } from '../main/productEvents/productEvents'
+import { createProductEvents, productEventsFromDesktops } from '../main/productEvents/productEvents'
+import type { ProductEventPermission } from '../shared/hostProtocol'
 import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
@@ -163,6 +164,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let peersConnected = (): boolean => false
     /** Whether a desktop on either listener wants next prompts (ADR-0173); none before the listeners start. */
     let nextPromptsWanted = (): boolean => false
+    /** What every connected desktop has answered for product events (ADR-0179), on either listener; none before they start. */
+    let productEventAnswers = (): ProductEventPermission[] => []
+    const onProductEventAnswer = (): void => productEvents.setPermission(productEventsFromDesktops(productEventAnswers()))
     const pairing = new PairedClients(directory)
     const desktops = new DesktopClients(directory, options.log)
     // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.
@@ -303,13 +307,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
-        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
+        listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
           watcherDesktops: desktops, delegation, ...hostUpdate, ...moves,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
-          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
+          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => { tailnet.revoked(clientId); onProductEventAnswer() },
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')
@@ -323,6 +327,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         peersConnected = () => peers() > 0 || tailnet.peers() > 0
         const loopback = listener
         nextPromptsWanted = () => loopback.nextPromptsWanted() || tailnet.nextPromptsWanted()
+        productEventAnswers = () => [...loopback.productEventAnswers(), ...tailnet.productEventAnswers()]
+        // A desktop on the tailnet listener may have answered before this one was up.
+        onProductEventAnswer()
         describing = true
         await writeDescriptor()
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
