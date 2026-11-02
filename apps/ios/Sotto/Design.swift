@@ -793,8 +793,9 @@ private let sheetPageTop = "sheet-page-top"
 /// The page's ground fading in under the status bar: solid over the clock and clear 10 points below the status bar.
 /// A strip at the top of the safe area carries it as a background that reaches up through the status bar, so its
 /// height follows the status bar's without reading it. It used to take its height from the inset a `GeometryReader`
-/// read while ignoring the safe area itself, and scrolled text ran under the clock on every tab page (#1851).
-private struct StatusBarFade: View {
+/// read while ignoring the safe area itself, and scrolled text ran under the clock on every tab page (#1851). Watcher's
+/// page uses it too, where it meets the status bar.
+struct StatusBarFade: View {
     var body: some View {
         Color.clear
             .frame(maxWidth: .infinity)
