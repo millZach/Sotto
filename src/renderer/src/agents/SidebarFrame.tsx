@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
+import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, Landmark, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
@@ -30,9 +30,10 @@ import { shownCount } from '../state/interfaceNumbers'
  * The page links in the foot, in the order the app footer listed them. Threads and Dictate are the room switch's own
  * tabs, and transcripts live in the Dictate room's Journal; Memory joins only while memory is switched on.
  */
-type FootPage = Extract<AppNavigation, 'usage' | 'memory' | 'settings' | 'help'>
+type FootPage = Extract<AppNavigation, 'usage' | 'council' | 'memory' | 'settings' | 'help'>
 const PAGES: ReadonlyArray<{ readonly id: FootPage; readonly label: MessageDescriptor; readonly Icon: LucideIcon }> = [
   { id: 'usage', label: msg({ message: 'Usage', comment: 'The Usage page.' }), Icon: BarChart3 },
+  { id: 'council', label: msg({ message: 'Council', comment: 'The Council page: one question put to several models (ADR-0176).' }), Icon: Landmark },
   { id: 'memory', label: msg({ message: 'Memory', comment: 'The Memory page.' }), Icon: Brain },
   { id: 'settings', label: msg({ message: 'Settings', comment: 'The Settings page.' }), Icon: Settings },
   { id: 'help', label: msg({ message: 'Help', comment: 'The Help page.' }), Icon: CircleHelp },
@@ -103,9 +104,11 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
   const app = useOptionalApp()
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
+  // The Council (ADR-0176): only while its Owl feature is on and main gave the window its bridge, which needs this computer's threads.
+  const council = useOwlFeature('council') && window.sotto?.council !== undefined
   const { t } = useLingui()
   const keys = usePageShortcutLabels()
-  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage)).map(page => ({ ...page, label: t(page.label) }))
+  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage) && (page.id !== 'council' || council)).map(page => ({ ...page, label: t(page.label) }))
   return <nav className={className} aria-label={t`Pages`}>
     {pages.map(({ id, label, Icon }) => {
       const page = pageShortcutFor(id)
