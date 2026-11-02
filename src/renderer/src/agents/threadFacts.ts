@@ -388,6 +388,16 @@ export function threadDescriber(): ThreadDescriber {
   }
 }
 
+/**
+ * One thread's row from the same inputs `describeThreads` reads, for a pane that answers another thread's request: a
+ * delegated thread's card in the pane of the thread that delegated it, which must name the same provider as its own pane.
+ */
+export function describeThread(state: AgentState, thread: AgentThread, now: number): ThreadRow {
+  const { host } = state
+  return describe(thread, { project: host.projects.find(project => project.id === thread.projectId), models: hostForThread(host, thread).models,
+    hostName: host.name, connected: isThreadProviderConnected(host, thread) }, now, false)
+}
+
 /** A row matches when the query appears anywhere in it: title, project, provider, sentence or your last message. */
 function matchesThreadQuery(row: ThreadRow, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase()
