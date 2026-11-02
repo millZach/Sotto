@@ -543,11 +543,16 @@ export interface SottoBridge {
   quitApp(): Promise<void>
 }
 
+/** Main passes this to the widget's renderer while the `living-widget-owl` Owl feature is on (ADR-0178). */
+export const LIVING_OWL_RENDERER_ARGUMENT = '--sotto-living-owl'
+
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
   readonly platform: SottoPlatform
   /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */
   readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge
+  /** The living owl (ADR-0178), present only while its Owl feature is on. */
+  readonly livingOwl?: true
 
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
   onWidgetVisibilityChange(listener: (visibility: WidgetVisibilityPayload) => void): Unsubscribe

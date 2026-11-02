@@ -48,9 +48,10 @@ describe('WidgetApp', () => {
     expect(onToggle).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    // Escape cancels on Windows and macOS, so the pill carries Stop alone.
+    expect(screen.queryByRole('button', { name: 'Cancel dictation' })).not.toBeInTheDocument()
     expect(onStop).toHaveBeenCalledTimes(2)
-    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onCancel).not.toHaveBeenCalled()
     expect(onToggle).not.toHaveBeenCalled()
   })
 

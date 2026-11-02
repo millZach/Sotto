@@ -49,6 +49,7 @@ import { ListeningBars } from '../components/ListeningBars'
 import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
+import { WidgetOwl } from './WidgetOwl'
 
 const IDLE_HOVER_SETTLE_MS = 220
 /** How long after an error appears a click on its × is still taken as aimed at the esc before it. */
@@ -212,6 +213,8 @@ export interface WidgetAppProps {
   readonly onDrag?: (payload: WidgetDragPayload) => void
   readonly dragCancellationVersion?: number
   readonly visibilityGeneration?: number
+  /** The living owl (ADR-0178), on while its Owl feature is. */
+  readonly livingOwl?: boolean
 }
 
 export function formatElapsedTime(startedAt: number, now: number): string {
@@ -366,12 +369,14 @@ export function WidgetApp({
   onDrag,
   dragCancellationVersion,
   visibilityGeneration = 0,
+  livingOwl = false,
 }: WidgetAppProps): ReactNode {
   const { t, i18n } = useLingui()
   const isIdle = snapshot.status === 'idle'
   const kept = snapshot.status === 'error' && snapshot.kept === true
-  // The × takes the place esc held while the work ran. A click in its first
-  // half second was aimed at esc, so it does not discard what was just kept.
+  // On Linux the error's × takes the place the cancel × held while the work
+  // ran. A click in its first half second was aimed at that cancel, so it
+  // does not discard what was just kept.
   const errorKey = snapshot.status === 'error' ? `${snapshot.sessionId ?? ''}:${snapshot.code}:${String(snapshot.retried)}` : ''
   const errorShownAt = useRef(0)
   // A layout effect runs before the browser can deliver a click on the new ×.
@@ -434,6 +439,11 @@ export function WidgetApp({
     : expanded || surface.dragging
       ? 'idle-hovered'
       : 'idle-resting'
+  // The capsule springs open from the shape the sliver last had: the resting bar, or the pill a hover opened.
+  const [openedFromHover, setOpenedFromHover] = useState(false)
+  useEffect(() => {
+    if (isIdle) setOpenedFromHover(presentation === 'idle-hovered')
+  }, [isIdle, presentation])
 
   useEffect(() => {
     onPresentationChange?.(presentation)
@@ -511,21 +521,12 @@ export function WidgetApp({
       <Square aria-hidden="true" size={10} fill="currentColor" />
     </WidgetAction>
   )
-  const escAction = snapshot.cancellable && (
-    <button
-      type="button"
-      className="widget-esc"
-      aria-label={t`Cancel dictation`}
-      tabIndex={-1}
-      onMouseDown={preventFocus}
-      onPointerDown={stopPointerPropagation}
-      onClick={(event) => {
-        event.stopPropagation()
-        onCancel?.()
-      }}
-    >
-      esc
-    </button>
+  // Escape cancels from anywhere while a dictation can be cancelled, so the
+  // pill carries Stop alone. Linux claims no Escape, so there it keeps a button.
+  const cancelAction = snapshot.cancellable && platform === 'linux' && (
+    <WidgetAction label={t`Cancel dictation`} onClick={onCancel}>
+      <X aria-hidden="true" size={11} strokeWidth={2.6} />
+    </WidgetAction>
   )
   // An error stays until it is dismissed. Escape is not claimed for it, since
   // holding the key system-wide while an error waits would take it from every app.
@@ -555,17 +556,20 @@ export function WidgetApp({
       data-tone={copy.tone}
       data-orientation={orientation}
       data-dragging={surface.dragging || undefined}
+      data-speaking={(isListening && snapshot.speaking) || undefined}
     >
       <div
         className="widget-capsule"
+        data-from={openedFromHover ? 'hover' : undefined}
         tabIndex={-1}
         onMouseDown={preventFocus}
         {...surface.surfaceProps}
       >
-        {/* Every active state leads with the app mark, so the capsule is
-            recognisably Sotto before any status content is read. */}
+        {/* Every active state leads with the owl, so the capsule is
+            recognisably Sotto before any status content is read. The capsule
+            is already a shape, so the owl goes without its tile. */}
         <span className="widget-glyph" data-testid="widget-glyph" aria-hidden="true">
-          <SottoMark className="widget-glyph__mark" />
+          {livingOwl ? <WidgetOwl className="widget-glyph__mark widget-owl" /> : <SottoMark className="widget-glyph__mark" bare />}
         </span>
         {isListening && <ListeningBars speaking={snapshot.speaking} />}
         {elapsed}
@@ -582,7 +586,7 @@ export function WidgetApp({
         )}
         {progressBar}
         {stopAction}
-        {escAction}
+        {cancelAction}
         {dismissAction}
       </div>
     </aside>
@@ -728,6 +732,7 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
           now={now}
           dragCancellationVersion={dragCancellationVersion}
           visibilityGeneration={visibilityGeneration}
+          livingOwl={bridge?.livingOwl === true}
           {...actions}
         />
       )}

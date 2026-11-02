@@ -45,13 +45,14 @@ async function settle(page: Page): Promise<void> {
 }
 
 /** The mark's tile, sampled above the owl's ears (its head sits lower, at mid-height) where only the tile shows. */
-async function sampleTile(mark: Locator, name: string, expected: string): Promise<void> {
+/** `at` is where the tile's colour shows: the tile's top edge, or the widget's tile-less owl's body under its beak. */
+async function sampleTile(mark: Locator, name: string, expected: string, at = { x: 0.5, y: 0.09 }): Promise<void> {
   const png = await mark.screenshot({ animations: 'disabled', path: resolve(evidenceRoot, `${name}.png`) })
   const image = sharp(png)
   const { width, height } = await image.metadata()
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true })
-  const x = Math.round(width! * 0.5)
-  const y = Math.round(height! * 0.09)
+  const x = Math.round(width! * at.x)
+  const y = Math.round(height! * at.y)
   const offset = (y * info.width + x) * info.channels
   const measured = `#${[0, 1, 2].map(index => data[offset + index]!.toString(16).padStart(2, '0')).join('')}`
   const want = parseThemeRgb(expected, BLACK)
@@ -117,7 +118,8 @@ async function expectWidget(widget: Page, settings: Settings, scheme: ThemeAppea
   await expect(mark).toHaveAttribute('data-tile', brand.tile)
   await settle(widget)
   await widget.screenshot({ path: resolve(evidenceRoot, `${name}-widget-listening.png`), animations: 'disabled' })
-  await sampleTile(mark, `${name}-widget-mark`, brand.tile)
+  // The widget's owl has no tile: it wears the tile's colour, or the glyph's where the tile would not read on the capsule.
+  await sampleTile(mark, `${name}-widget-mark`, (await mark.getAttribute('data-fill')) ?? brand.tile, { x: 0.5, y: 0.82 })
   await sampleHue(widget.getByTestId('listening-bars'), `${name}-widget-voice-bars`, roles.accent)
 }
 
@@ -129,7 +131,7 @@ async function startDictation(widget: Page): Promise<void> {
 }
 
 async function cancelDictation(widget: Page): Promise<void> {
-  await widget.getByRole('button', { name: 'Cancel dictation' }).click()
+  await widget.evaluate(() => window.sottoWidget!.requestCancel())
   await expect(widget.getByTestId('widget-sliver')).toBeVisible({ timeout: 15_000 })
 }
 
