@@ -64,6 +64,8 @@ export const OWL_FEATURES = [
   { id: 'answer-images', name: 'Images on question answers', owlSince: '2026-11-02', owner: 'docs/adr/0176-images-dropped-on-a-question-card-go-with-the-answer.md', sentToStable: false },
   { id: 'quiet-composer', name: 'The quiet composer', owlSince: '2026-10-29', owner: 'docs/adr/0161-the-quiet-composer-is-one-pill.md', sentToStable: true },
   { id: 'council', name: 'Council', owlSince: '2026-11-02', owner: 'docs/adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md', sentToStable: false },
+  { id: 'local-apps', name: 'Let apps on this computer connect', owlSince: '2026-11-02', owner: 'docs/adr/0180-apps-on-this-computer-connect-without-a-pairing-code.md', sentToStable: false },
+  { id: 'popup', name: 'The popup', owlSince: '2026-11-02', owner: 'docs/adr/0181-a-shortcut-shows-a-popup-that-prompts-a-thread-or-watcher.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

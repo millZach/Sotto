@@ -190,6 +190,8 @@ const settingKeys = [
   'localHostEnabled',
   'phoneAccess',
   'phoneAccessName',
+  'localApps',
+  'popupShortcut',
   'showBrowserPreviews',
   'browserWithoutAsking',
   'visualsInThreads',
