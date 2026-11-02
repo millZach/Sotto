@@ -1,0 +1,295 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. The iPhone reply box's model selector: the pill's menu with the current model at the top, then
+  favorites, then each provider closed until pressed, one open at a time, older models under Legacy inside a provider.
+  Three variants of the same rules, switchable with ?variant=A|B|C and the yellow bar:
+    A  Fold-out menu: the menu over the pill, providers fold open in place.
+    B  iOS submenus: the native menu, each provider opens its own submenu over the first.
+    C  Sheet: the pill opens a half-height sheet with the same list.
+  Scope (thread or Watcher) and device (iPhone or unfolded Duo) are switchable at the top.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto iPhone model selector, prototype</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0b0c0f; color: #e8eaee; font-family: Figtree, -apple-system, system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; text-align: left; }
+:root { --canvas: #040507; --raised: #111419; --menu: rgba(38,41,48,.94); --line: rgba(255,255,255,.08); --ink: #eef0f3; --muted: #9aa0aa; --fillSoft: rgba(255,255,255,.08); --accent: #47b8a9; --accentText: #63d0c1; --onAccent: #04110f; }
+
+/* page chrome, not part of the design */
+.controls { padding: 12px 12px 4px; max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.controls h1 { font-size: 17px; margin: 0; font-weight: 600; }
+.controls p { margin: 0; font-size: 13px; color: #a0a5ae; line-height: 1.4; }
+.group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.group > span { font-size: 12px; color: #8a8f98; width: 56px; }
+.chip { font-size: 13px; padding: 7px 11px; border-radius: 999px; background: #1b1d22; color: #c9ccd2; }
+.chip[aria-pressed="true"] { background: #e8eaee; color: #0b0c0f; font-weight: 600; }
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 4px; background: #ffd84a; color: #111; border-radius: 999px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.5); z-index: 100; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.switcher button { width: 40px; height: 40px; border-radius: 50%; font-size: 20px; color: #111; text-align: center; }
+.switcher .label { padding: 0 6px; }
+#stage { display: flex; justify-content: center; padding: 10px 0 8px; overflow-x: auto; }
+.state { max-width: 760px; margin: 0 auto; padding: 4px 14px; font: 12px ui-monospace, Menlo, monospace; color: #8a8f98; }
+.notes { max-width: 760px; margin: 0 auto; padding: 4px 14px 90px; font-size: 14px; line-height: 1.5; color: #c9ccd2; }
+.notes h2 { font-size: 15px; margin: 16px 0 6px; color: #fff; }
+.notes ul { padding-left: 18px; margin: 4px 0; }
+
+/* device */
+.device { position: relative; overflow: hidden; border-radius: 46px; background: var(--canvas); color: var(--ink); box-shadow: 0 0 0 10px #000, 0 0 0 11px #2a2c31, 0 30px 80px rgba(0,0,0,.6); flex: none; }
+.device.phone { width: 390px; height: 844px; }
+.device.duo { width: 760px; height: 700px; border-radius: 30px; }
+@media (max-width: 430px) {
+  body { display: flex; flex-direction: column; }
+  #stage { order: -1; padding: 0; }
+  .device.phone { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; box-shadow: none; }
+  .switcher { bottom: auto; top: max(4px, env(safe-area-inset-top)); transform: translateX(-50%) scale(.85); }
+  .device.phone .statusbar { visibility: hidden; }
+}
+.statusbar { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 14px 34px 0; font-weight: 600; font-size: 16px; }
+.duo .statusbar { height: 34px; padding: 6px 26px 0; font-size: 14px; }
+.topbar { position: absolute; top: 50px; left: 0; right: 0; height: 48px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; }
+.duo .topbar { top: 34px; }
+.convo { position: absolute; top: 104px; left: 16px; right: 16px; font-size: 15.5px; line-height: 1.5; color: var(--ink); }
+.duo .convo { left: 50%; transform: translateX(-50%); width: 640px; }
+.convo .u { margin: 8px 0 14px auto; width: fit-content; max-width: 80%; background: #1c2027; border-radius: 18px; padding: 10px 14px; }
+.convo p { margin: 0 0 10px; color: #d7dade; }
+.homebar { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; border-radius: 3px; background: var(--ink); transform: translateX(-50%); opacity: .9; z-index: 60; }
+
+/* composer */
+.dock { position: absolute; left: 12px; right: 12px; bottom: 26px; z-index: 10; }
+.duo .dock { left: 50%; transform: translateX(-50%); width: 680px; }
+.card { border-radius: 26px; background: #15181d; box-shadow: 0 4px 18px rgba(0,0,0,.4); }
+.words { padding: 14px 16px 4px; font-size: 15.5px; color: #6f7580; }
+.row { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px; }
+.round { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--fillSoft); flex: none; font-size: 18px; }
+.round.send { background: var(--fillSoft); color: var(--muted); }
+.spacer { flex: 1; }
+.pill { height: 34px; border-radius: 17px; background: var(--fillSoft); display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.pill .dim { color: var(--muted); font-weight: 500; }
+.pill.open { background: rgba(255,255,255,.16); }
+.chev { color: var(--muted); font-size: 9px; }
+.mark { width: 16px; height: 16px; border-radius: 5px; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; color: #000; flex: none; }
+
+/* shared list pieces */
+.scrim { position: absolute; inset: 0; z-index: 20; }
+.scrim.dim { background: rgba(0,0,0,.35); }
+.item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 10px 16px; font-size: 16px; }
+.item + .item, .item + .fold, .fold + .item, .fold + .fold { border-top: 1px solid var(--line); }
+.item .name { flex: 1; min-width: 0; }
+.item .sub { display: block; font-size: 12.5px; color: var(--muted); }
+.item .tick { width: 18px; color: var(--ink); font-weight: 700; flex: none; text-align: center; }
+.item .val { color: var(--muted); font-size: 15px; }
+.item .disc { color: var(--muted); font-size: 13px; width: 14px; text-align: center; transition: transform .18s; flex: none; }
+.item[aria-expanded="true"] .disc { transform: rotate(90deg); }
+.item[aria-expanded="true"] { font-weight: 600; }
+.item.current { font-weight: 600; }
+.header { padding: 8px 16px 4px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.sep { height: 8px; background: rgba(0,0,0,.28); }
+.inside { background: rgba(0,0,0,.18); }
+.inside .item { padding-left: 30px; font-size: 15.5px; }
+.inside .inside .item { padding-left: 44px; font-size: 15px; }
+.count { color: var(--muted); font-size: 13px; font-weight: 400; }
+.foot { padding: 10px 16px; font-size: 12.5px; color: var(--muted); line-height: 1.4; border-top: 1px solid var(--line); }
+
+/* A: fold-out menu */
+.menu { position: absolute; z-index: 30; left: 12px; width: 300px; bottom: 82px; max-height: calc(100% - 200px); overflow-y: auto; border-radius: 14px; background: var(--menu); -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px); box-shadow: 0 18px 50px rgba(0,0,0,.55); overscroll-behavior: contain; }
+.duo .menu { left: calc(50% - 340px); }
+
+/* B: native submenus */
+.menu.under { filter: brightness(.6) blur(1px); pointer-events: none; }
+.submenu { position: absolute; z-index: 31; left: 28px; width: 290px; border-radius: 14px; background: var(--menu); -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px); box-shadow: 0 18px 50px rgba(0,0,0,.6); overflow-y: auto; max-height: 60%; }
+.duo .submenu { left: calc(50% - 324px); }
+.submenu .back { font-weight: 600; }
+.submenu .back .disc { transform: rotate(180deg); }
+
+/* C: sheet */
+.sheet { position: absolute; z-index: 30; left: 0; right: 0; bottom: 0; height: 64%; border-radius: 22px 22px 0 0; background: #1a1d23; box-shadow: 0 -10px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+.duo .sheet { left: 50%; transform: translateX(-50%); width: 560px; }
+.grab { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.25); margin: 7px auto 4px; flex: none; }
+.sheet .title { display: flex; align-items: center; padding: 2px 16px 8px; font-weight: 700; font-size: 17px; flex: none; }
+.sheet .title .done { margin-left: auto; color: var(--accentText); font-weight: 600; font-size: 16px; }
+.sheet .scroll { overflow-y: auto; flex: 1; padding: 0 12px 30px; }
+.sheet .block { background: rgba(255,255,255,.05); border-radius: 12px; overflow: hidden; margin-bottom: 14px; }
+.sheet .header { padding: 4px 6px 6px; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <h1>Model selector in the iPhone reply box</h1>
+  <p>Press the pill. Current model at the top, then favorites, then each provider closed. Press a provider to open it; opening another closes it. Older models sit under Legacy inside a provider. On a phone, these switches are below the mock.</p>
+  <div class="group"><span>Box</span>
+    <button class="chip" data-scope="thread">Thread</button>
+    <button class="chip" data-scope="watcher">Watcher</button>
+  </div>
+  <div class="group"><span>Device</span>
+    <button class="chip" data-device="phone">iPhone</button>
+    <button class="chip" data-device="duo">Duo, unfolded</button>
+  </div>
+</div>
+<div id="stage"></div>
+<div class="state" id="state"></div>
+<div class="notes">
+  <h2>What each variant is</h2>
+  <ul>
+    <li><b>A, Fold-out menu.</b> Looks like the iOS menu the pill opens today. A provider folds open in place under its row; the rest stay where they are. Sotto draws it itself, because the iOS menu can't fold rows open.</li>
+    <li><b>B, iOS submenus.</b> The real iOS menu. A provider opens its own submenu over the first, with its name at the top to go back. One open at a time comes for free. Legacy is a third level.</li>
+    <li><b>C, Sheet.</b> The pill opens a half-height sheet with the same list in rounded groups. More room and bigger rows, but the composer is covered.</li>
+  </ul>
+  <h2>The same in all three</h2>
+  <ul>
+    <li>Opens scrolled to the top, every provider closed, the current model's included.</li>
+    <li>Favorites leave out the current model, which already heads the list.</li>
+    <li>A thread can only change to its own provider's models, so its list has one provider and favorites from that provider only. Watcher's lists every provider it runs on.</li>
+    <li>Effort, Speed and Permissions stay in the same menu, after the providers.</li>
+  </ul>
+</div>
+<div class="switcher"><button id="prev" aria-label="Previous variant">‹</button><span class="label" id="vlabel"></span><button id="next" aria-label="Next variant">›</button></div>
+
+<script>
+const VARIANTS = { A: 'Fold-out menu', B: 'iOS submenus', C: 'Sheet' };
+const PROVIDERS = {
+  claude: { name: 'Claude Code', color: '#d97757', letter: 'C',
+    latest: ['Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5', 'Fable 5.1'], legacy: ['Opus 5', 'Sonnet 5', 'Sonnet 4.6', 'Haiku 4.5'] },
+  codex: { name: 'Codex', color: '#e8eaee', letter: 'X',
+    latest: ['GPT-6.1-Sol', 'GPT-6.1 Terra', 'GPT-6.1 Luna', 'GPT-6.1-Codex'], legacy: ['GPT-6-Sol', 'GPT-6', 'GPT-5.5-Codex'] },
+  grok: { name: 'Grok Build', color: '#b5b9c2', letter: 'G', latest: ['Grok 5', 'Grok 5 Fast'], legacy: ['Grok 4.2'] },
+  muse: { name: 'Muse', color: '#c79bf2', letter: 'M', latest: ['Muse 2', 'Muse 2 Mini'], legacy: [] },
+  cursor: { name: 'Cursor', color: '#7fb0ff', letter: 'U', latest: ['Composer 2', 'Auto'], legacy: ['Composer 1.5'] },
+};
+const FAVORITES = [['codex', 'GPT-6.1-Sol'], ['claude', 'Sonnet 5.5'], ['grok', 'Grok 5'], ['claude', 'Fable 5.1']];
+
+const q = new URLSearchParams(location.search);
+const S = { variant: VARIANTS[q.get('variant')] ? q.get('variant') : 'A', scope: q.get('scope') || 'thread', device: q.get('device') || 'phone',
+  open: false, expanded: null, legacy: false, current: ['claude', 'Opus 5.5'], effort: 'High' };
+
+function providersFor() { return S.scope === 'thread' ? [S.current[0]] : ['claude', 'codex', 'grok', 'muse', 'cursor']; }
+function favoritesFor() {
+  const ps = providersFor();
+  return FAVORITES.filter(([p, m]) => ps.includes(p) && !(p === S.current[0] && m === S.current[1]));
+}
+const mark = p => `<span class="mark" style="background:${PROVIDERS[p].color}">${PROVIDERS[p].letter}</span>`;
+const isCur = (p, m) => S.current[0] === p && S.current[1] === m;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function modelItem(p, m, withMark) {
+  return `<button class="item${isCur(p, m) ? ' current' : ''}" data-pick="${p}|${esc(m)}"><span class="tick">${isCur(p, m) ? '✓' : ''}</span>${withMark ? mark(p) : ''}<span class="name">${esc(m)}</span></button>`;
+}
+function currentItem() {
+  const [p, m] = S.current;
+  return `<button class="item current" data-close><span class="tick">✓</span>${mark(p)}<span class="name">${esc(m)}<span class="sub">${PROVIDERS[p].name}, now</span></span></button>`;
+}
+function favoritesBlock(wrapHeader) {
+  const favs = favoritesFor();
+  if (!favs.length) return '';
+  return `${wrapHeader('Favorites')}${favs.map(([p, m]) => modelItem(p, m, true)).join('')}`;
+}
+function settingsRows() {
+  return `<button class="item"><span class="tick"></span><span class="name">Effort</span><span class="val">${S.effort}</span><span class="disc">›</span></button>
+    <button class="item"><span class="tick"></span><span class="name">Speed</span><span class="val">Standard</span><span class="disc">›</span></button>
+    <button class="item"><span class="tick"></span><span class="name">Permissions</span><span class="val">Ask first</span><span class="disc">›</span></button>`;
+}
+function providerRow(p, expanded) {
+  const n = PROVIDERS[p].latest.length + PROVIDERS[p].legacy.length;
+  return `<button class="item" data-provider="${p}" aria-expanded="${expanded}"><span class="tick"></span>${mark(p)}<span class="name">${PROVIDERS[p].name} <span class="count">${n}</span></span><span class="disc">›</span></button>`;
+}
+function providerInside(p) {
+  const P = PROVIDERS[p];
+  let h = P.latest.map(m => modelItem(p, m)).join('');
+  if (P.legacy.length) {
+    h += `<button class="item" data-legacy aria-expanded="${S.legacy}"><span class="tick"></span><span class="name">Legacy <span class="count">${P.legacy.length}</span></span><span class="disc">›</span></button>`;
+    if (S.legacy) h += `<div class="inside">${P.legacy.map(m => modelItem(p, m)).join('')}</div>`;
+  }
+  return h;
+}
+function watcherFoot() { return S.scope === 'watcher' ? `<div class="foot">Another provider’s model starts a new Watcher. This conversation stays in Watcher history.</div>` : ''; }
+
+/* ---------- variants ---------- */
+function variantA() {
+  const hdr = t => `<div class="sep"></div><div class="header">${t}</div>`;
+  let h = currentItem() + favoritesBlock(hdr) + `<div class="sep"></div>`;
+  for (const p of providersFor()) {
+    const ex = S.expanded === p;
+    h += providerRow(p, ex);
+    if (ex) h += `<div class="inside">${providerInside(p)}</div>`;
+  }
+  h += watcherFoot() + `<div class="sep"></div>` + settingsRows();
+  return `<div class="scrim" data-close></div><div class="menu" id="list">${h}</div>`;
+}
+function variantB() {
+  const hdr = t => `<div class="sep"></div><div class="header">${t}</div>`;
+  let h = currentItem() + favoritesBlock(hdr) + `<div class="sep"></div>`;
+  for (const p of providersFor()) h += providerRow(p, false);
+  h += watcherFoot() + `<div class="sep"></div>` + settingsRows();
+  let out = `<div class="scrim" data-close></div><div class="menu${S.expanded ? ' under' : ''}" id="list">${h}</div>`;
+  if (S.expanded) {
+    const p = S.expanded, P = PROVIDERS[p];
+    let sub = `<button class="item back" data-provider="${p}"><span class="disc">›</span>${mark(p)}<span class="name">${P.name}</span></button>`;
+    if (S.legacy) {
+      sub = `<button class="item back" data-legacy><span class="disc">›</span><span class="name">Legacy</span></button>` + P.legacy.map(m => modelItem(p, m)).join('');
+    } else {
+      sub += P.latest.map(m => modelItem(p, m)).join('');
+      if (P.legacy.length) sub += `<button class="item" data-legacy><span class="tick"></span><span class="name">Legacy <span class="count">${P.legacy.length}</span></span><span class="disc">›</span></button>`;
+    }
+    out += `<div class="scrim" data-provider="${p}" style="z-index:30"></div><div class="submenu" style="bottom:${S.legacy ? 150 : 120}px">${sub}</div>`;
+  }
+  return out;
+}
+function variantC() {
+  const hdr = t => `<div class="header">${t}</div>`;
+  let h = `<div class="block">${currentItem()}</div>`;
+  const favs = favoritesFor();
+  if (favs.length) h += `${hdr('Favorites')}<div class="block">${favs.map(([p, m]) => modelItem(p, m, true)).join('')}</div>`;
+  h += `${hdr('Providers')}<div class="block">`;
+  for (const p of providersFor()) {
+    const ex = S.expanded === p;
+    h += providerRow(p, ex);
+    if (ex) h += `<div class="inside">${providerInside(p)}</div>`;
+  }
+  h += watcherFoot() + `</div><div class="block">${settingsRows()}</div>`;
+  return `<div class="scrim dim" data-close></div><div class="sheet"><div class="grab"></div><div class="title">${S.scope === 'thread' ? 'Thread settings' : 'Watcher’s settings'}<button class="done" data-close>Done</button></div><div class="scroll" id="list">${h}</div></div>`;
+}
+
+function render() {
+  const [p, m] = S.current;
+  const title = S.scope === 'thread' ? 'Fix the pairing retry' : 'Watcher';
+  const convo = S.scope === 'thread'
+    ? `<div class="u">Can you check why the retry loops after a failed pair?</div><p>The retry timer never resets after the second failure, so it fires every 200 ms. I’ve moved the reset into the failure handler and added a test.</p>`
+    : `<p>Watching 4 threads on Zach’s PC. #2004 is green and waiting on review; the iOS composer thread is building.</p><div class="u">Which threads need me?</div>`;
+  const pill = `<button class="pill${S.open ? ' open' : ''}" id="pill" aria-label="${S.scope === 'thread' ? 'Thread settings' : 'Watcher’s settings'}">${mark(p)}<span>${esc(m)}</span><span class="dim">${S.effort}</span><span class="chev">▼</span></button>`;
+  const overlay = S.open ? { A: variantA, B: variantB, C: variantC }[S.variant]() : '';
+  document.getElementById('stage').innerHTML = `<div class="device ${S.device}">
+    <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="topbar">${title}</div>
+    <div class="convo">${convo}</div>
+    <div class="dock"><div class="card"><div class="words">Reply…</div><div class="row"><span class="round">+</span>${pill}<span class="spacer"></span><span class="round">🎙</span><span class="round send">↑</span></div></div></div>
+    ${overlay}<div class="homebar"></div></div>`;
+  document.getElementById('vlabel').textContent = `${S.variant} — ${VARIANTS[S.variant]}`;
+  document.querySelectorAll('[data-scope]').forEach(b => b.setAttribute('aria-pressed', b.dataset.scope === S.scope));
+  document.querySelectorAll('[data-device]').forEach(b => b.setAttribute('aria-pressed', b.dataset.device === S.device));
+  document.getElementById('state').textContent = `state: variant=${S.variant} scope=${S.scope} device=${S.device} open=${S.open} expanded=${S.expanded ?? 'none'} legacy=${S.legacy} current=${S.current.join(' / ')}`;
+}
+function sync() { const u = new URL(location); u.searchParams.set('variant', S.variant); u.searchParams.set('scope', S.scope); u.searchParams.set('device', S.device); history.replaceState(null, '', u); render(); }
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, .scrim');
+  if (!t) return;
+  if (t.dataset.scope) { S.scope = t.dataset.scope; S.open = false; return sync(); }
+  if (t.dataset.device) { S.device = t.dataset.device; S.open = false; return sync(); }
+  if (t.id === 'prev' || t.id === 'next') { const k = Object.keys(VARIANTS); S.variant = k[(k.indexOf(S.variant) + (t.id === 'next' ? 1 : k.length - 1)) % k.length]; S.open = false; return sync(); }
+  if (t.id === 'pill') { S.open = !S.open; S.expanded = null; S.legacy = false; render(); const l = document.getElementById('list'); if (l) l.scrollTop = 0; return; }
+  if (t.dataset.provider) { const p = t.dataset.provider; S.expanded = S.expanded === p ? null : p; S.legacy = false; return keep(); }
+  if ('legacy' in t.dataset) { S.legacy = !S.legacy; return keep(); }
+  if (t.dataset.pick) { const [p, m] = t.dataset.pick.split('|'); S.current = [p, m]; S.open = false; return render(); }
+  if ('close' in t.dataset) { S.open = false; return render(); }
+});
+function keep() { const l = document.getElementById('list'); const y = l ? l.scrollTop : 0; render(); const n = document.getElementById('list'); if (n) n.scrollTop = y; }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.open) { S.open = false; render(); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') document.getElementById(e.key === 'ArrowLeft' ? 'prev' : 'next').click();
+});
+render();
+</script>
+</body>
+</html>
