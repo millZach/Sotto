@@ -429,7 +429,16 @@ struct TabsBar: View {
     /// A press on the tab already chosen.
     var reselect: (MainTabs.Tab) -> Void = { _ in }
     /// A tab's icon: one of the system's symbols, or an image of Sotto's own, the owl.
-    enum Icon { case symbol(String), asset(String) }
+    enum Icon {
+        case symbol(String), asset(String)
+        var image: Image {
+            switch self {
+            case .symbol(let name): return Image(systemName: name)
+            case .asset(let name): return Image(name)
+            }
+        }
+        var isSymbol: Bool { if case .symbol = self { return true } else { return false } }
+    }
     private var rail: Bool { style == .rail }
     var body: some View {
         let layout = rail ? AnyLayout(VStackLayout(spacing: DuoRailMetrics.tileGap)) : AnyLayout(HStackLayout(spacing: 0))
@@ -461,27 +470,16 @@ struct TabsBar: View {
         .accessibilityIdentifier("tabs")
     }
     @ViewBuilder private func glyph(_ icon: Icon, chosen: Bool) -> some View {
-        switch icon {
-        case .symbol(let name):
-            if rail {
-                // Drawn as type rather than stretched to a box, so every symbol keeps the system's own margins and weight.
-                Image(systemName: name).font(.system(size: DuoRailMetrics.symbol, weight: .medium))
-                    .symbolVariant(chosen ? .fill : .none)
-                    .frame(width: DuoRailMetrics.icon, height: DuoRailMetrics.icon)
-            } else {
-                Image(systemName: name).renderingMode(.template).resizable().scaledToFit().frame(width: 24, height: 24)
-            }
-        case .asset(let name):
+        if rail && icon.isSymbol {
+            // Drawn as type rather than stretched to a box, so every symbol keeps the system's own margins and weight.
+            icon.image.font(.system(size: DuoRailMetrics.symbol, weight: .medium))
+                .symbolVariant(chosen ? .fill : .none)
+                .frame(width: DuoRailMetrics.icon, height: DuoRailMetrics.icon)
+        } else {
             let size: CGFloat = rail ? DuoRailMetrics.owl : 24
-            Image(name).renderingMode(.template).resizable().scaledToFit()
+            icon.image.renderingMode(.template).resizable().scaledToFit()
                 .frame(width: size, height: size)
                 .frame(width: rail ? DuoRailMetrics.icon : 24, height: rail ? DuoRailMetrics.icon : 24)
-        }
-    }
-    private func largeIcon(_ icon: Icon) -> Image {
-        switch icon {
-        case .symbol(let name): return Image(systemName: name)
-        case .asset(let name): return Image(name)
         }
     }
     private func item(_ id: MainTabs.Tab, _ icon: Icon, _ title: Text, badge: Int, spoken: String) -> some View {
@@ -511,7 +509,7 @@ struct TabsBar: View {
         .accessibilityLabel(title)
         .accessibilityValue(Text(verbatim: spoken))
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
-        .accessibilityShowsLargeContentViewer { Label { title } icon: { largeIcon(icon).renderingMode(.template) } }
+        .accessibilityShowsLargeContentViewer { Label { title } icon: { icon.image.renderingMode(.template) } }
         .accessibilityIdentifier("tab-\(id)")
     }
 }
@@ -967,7 +965,7 @@ private struct SidebarDrawer: View, Equatable {
 /// a flick sends it; sideways, a drag right brings the sidebar beside the page and a drag left puts it away. The drag is
 /// UIKit's, on the window, so it starts anywhere and never takes a press: it begins only for a drag that is mostly
 /// sideways and towards where the sidebar would go, leaves a row or a block of code that scrolls sideways to scroll
-/// while it isn't at its start, and stays out of sheets. Once it begins, the page under it stops scrolling.
+/// while it can still scroll that way, and stays out of sheets. Once it begins, the page under it stops scrolling.
 private struct SidebarSwipe: UIViewRepresentable {
     let enabled: Bool
     let follows: Bool
@@ -1036,15 +1034,17 @@ private struct SidebarSwipe: UIViewRepresentable {
             guard abs(velocity.x) > abs(velocity.y) * 1.2, shown ? velocity.x < 0 : velocity.x > 0 else { return false }
             guard let touched = window.hitTest(pan.location(in: window), with: nil) else { return true }
             if (touched as? UITextInput) != nil, touched.isFirstResponder { return false }
-            return shown || !scrollsAway(touched)
+            return !scrolls(touched, right: velocity.x > 0)
         }
-        /// A row or block under the thumb that scrolls sideways and isn't at its start keeps the drag to scroll back.
-        private func scrollsAway(_ view: UIView) -> Bool {
+        /// Whether a row or block under the thumb that scrolls sideways can still scroll the way the thumb goes, so it
+        /// keeps the drag: a drag right on one away from its start, a drag left on one short of its end.
+        private func scrolls(_ view: UIView, right: Bool) -> Bool {
             var next: UIView? = view
             while let current = next {
-                if let scroll = current as? UIScrollView, scroll.contentSize.width > scroll.bounds.width + 1,
-                   scroll.contentOffset.x > -scroll.adjustedContentInset.left + 1 {
-                    return true
+                if let scroll = current as? UIScrollView, scroll.contentSize.width > scroll.bounds.width + 1 {
+                    let start = -scroll.adjustedContentInset.left
+                    let end = scroll.contentSize.width - scroll.bounds.width + scroll.adjustedContentInset.right
+                    if right ? scroll.contentOffset.x > start + 1 : scroll.contentOffset.x < end - 1 { return true }
                 }
                 next = current.superview
             }
