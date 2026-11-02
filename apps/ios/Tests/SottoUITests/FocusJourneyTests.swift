@@ -883,6 +883,52 @@ import UIKit
         XCTAssertTrue(app.buttons["request-option-j"].exists)
     }
 
+    // MARK: With and without the Threads list's hold (measuring branch only; never merged)
+
+    /// Presses `control`, looks for `target` as fast as the screen can be read, and logs how long each took.
+    private func timed(_ name: String, _ control: XCUIElement, until target: XCUIElement) {
+        let start = Date()
+        control.tap()
+        let tap = Date().timeIntervalSince(start)
+        var seen = false
+        var looks = 0
+        while Date().timeIntervalSince(start) < 120 {
+            looks += 1
+            if target.exists { seen = true; break }
+        }
+        let line = String(format: "HOLDAB %@ seen=%d looks=%d tap=%.2f total=%.2f", name, seen ? 1 : 0, looks, tap, Date().timeIntervalSince(start))
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        XCTAssertTrue(seen, name)
+    }
+
+    /// The Threads page leaves the screen and comes back: the hold is taken and let go at each round trip.
+    func testHoldABSwitchToWatcher() {
+        launch(Self.watcher)
+        let watcher = app.tab("Watcher")
+        let threads = app.tab("Threads")
+        XCTAssertTrue(watcher.waitForExistence(timeout: 20))
+        for _ in 0..<15 {
+            timed("to-watcher", watcher, until: byID("watcher-state"))
+            timed("to-threads", threads, until: app.textFields["thread-search"])
+        }
+    }
+
+    /// A row opens its thread over the Threads page, with its waiting question, as `testAnsweringAQuestion...` expects.
+    func testHoldABOpenThreadWithQuestion() {
+        launch(Self.fixture + ["--ui-question-while-reading"])
+        let send = app.buttons["request-send-answer"]
+        for _ in 0..<10 {
+            let thread = row("iphone")
+            reveal(thread)
+            timed("open-with-question", thread, until: send)
+            app.buttons["Not now"].tap()
+            XCTAssertTrue(waitUntilGone(send))
+            back()
+            XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20))
+        }
+    }
+
     // MARK: Watcher (ADR-0073, amended October 11, 2026)
 
     private static let watcher = fixture + ["--ui-watcher"]
