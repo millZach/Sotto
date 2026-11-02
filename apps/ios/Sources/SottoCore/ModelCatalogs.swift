@@ -18,12 +18,17 @@ public struct ModelCatalogCache: Sendable {
     /// Keeps `carried` as the catalog later shells may name.
     public mutating func hold(_ carried: CarriedCatalog) { held = carried }
     /// Keeps the catalog `shell` carries whole under a revision, when it carries one.
-    public mutating func hold(_ shell: Shell) { if let carried = shell.host.carriedCatalog { held = carried } }
+    public mutating func hold(_ shell: Shell) { if let carried = shell.host.withProviderModes()?.carriedCatalog { held = carried } }
     /// `shell` with its whole catalog. One that carries its catalog, or names no revision (a host without the
     /// feature), is returned as it came; one that names the held revision gets the held catalog back. One that
     /// names any other revision is nil: this connection was never sent that catalog, and showing the shell
     /// without it would read as a computer with no models.
+    /// A catalog that names its models' provider modes by place (`provider-mode-lists`) has them put back; one naming a
+    /// place its lists do not have is nil, as a revision this connection does not hold is.
     public func whole(_ shell: Shell) -> Shell? {
+        guard let host = shell.host.withProviderModes() else { return nil }
+        var shell = shell
+        shell.host = host
         guard let revision = shell.host.modelsRevision, shell.host.models == nil else { return shell }
         guard let held, held.revision == revision else { return nil }
         var restored = shell
@@ -66,7 +71,33 @@ public enum CatalogEntry {
     private static let uriComponent = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
 }
 
+extension ThreadModel {
+    /// `models` with each one's provider modes put back from the list it names by place in `lists`; nil when one names a
+    /// place `lists` does not have.
+    static func withProviderModes(_ models: [ThreadModel], lists: [[ProviderMode]]) -> [ThreadModel]? {
+        var whole = models
+        for index in whole.indices {
+            guard let place = whole[index].providerModeList else { continue }
+            guard lists.indices.contains(place) else { return nil }
+            whole[index].providerModes = lists[place]; whole[index].providerModeList = nil
+        }
+        return whole
+    }
+}
+
 extension HostSnapshot {
+    /// This snapshot with each model's provider modes put back from the list it names (`provider-mode-lists`, ADR-0028's
+    /// November 1 amendment), and no lists left; as it is when no model names one. Nil when a model names a list that is
+    /// not there, lists sent or not: that catalog cannot be shown whole.
+    public func withProviderModes() -> HostSnapshot? {
+        var restored = self
+        restored.providerModeLists = nil
+        if let models {
+            guard let whole = ThreadModel.withProviderModes(models, lists: providerModeLists ?? []) else { return nil }
+            restored.models = whole
+        }
+        return restored
+    }
     /// The catalog this snapshot carries whole under a revision, when it does.
     var carriedCatalog: CarriedCatalog? {
         guard let modelsRevision, let models else { return nil }
@@ -79,7 +110,7 @@ extension HostSnapshot {
 /// `result.shell.host` for hello. The catalog is decoded only when the host named a revision with it.
 struct ReplyCatalog: Decodable {
     let carried: CarriedCatalog?
-    private enum Keys: String, CodingKey { case host, shell, models, modelsRevision }
+    private enum Keys: String, CodingKey { case host, shell, models, modelsRevision, providerModeLists }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         if c.contains(.shell) { carried = try c.decode(ReplyCatalog.self, forKey: .shell).carried; return }
@@ -87,6 +118,10 @@ struct ReplyCatalog: Decodable {
         let host = try c.nestedContainer(keyedBy: Keys.self, forKey: .host)
         guard let revision = try host.decodeIfPresent(Int.self, forKey: .modelsRevision),
               let models = try host.decodeIfPresent([ThreadModel].self, forKey: .models) else { carried = nil; return }
-        carried = CarriedCatalog(revision: revision, models: models)
+        // A catalog that names its models' provider modes by place is held with them put back, and one naming a list it
+        // did not send is not held at all.
+        let lists = try host.decodeIfPresent([[ThreadModel.ProviderMode]].self, forKey: .providerModeLists) ?? []
+        guard let whole = ThreadModel.withProviderModes(models, lists: lists) else { carried = nil; return }
+        carried = CarriedCatalog(revision: revision, models: whole)
     }
 }

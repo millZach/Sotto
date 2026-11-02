@@ -334,3 +334,37 @@ On the owner-scale benchmark, three runs each on Owl, a broadcast with one threa
 to 4,466 on stable. The page's work per broadcast fell from 0.212-0.216 ms to 0.126-0.127 on Owl and from 0.189-0.194 to
 0.128-0.136 on stable, and main's from 0.076-0.079 to 0.062-0.065 and 0.120-0.129 to 0.113-0.118
 (`docs/perf/2026-10-30-window-kept-parts.md`).
+
+## November 1, 2026: a phone's connect lists the threads once and each provider's modes once
+
+The owner's iPhone took 10 to 30 seconds to connect to the laptop on a slow network, and under a second to forge. The
+network, the TLS and the host were not the difference: the laptop answered hello in 79 ms. The bytes were. On the
+laptop, with 632 threads and a catalog of 942 models, a connect sent the phone 4.5 to 5.7 MB, and 8.3 to 9.2 MB when the
+phone checked its deliveries with a `shell` read; forge, with 67 threads and 48 models, sent 0.23 to 0.78 MB. Phones are
+not sent compressed messages (ADR-0025, October 18 amendment).
+
+Two parts of that were sent twice. The first shell push after hello listed every thread record again (1.7 MB), because
+the October 30 amendment measured a connection's first push from nothing, and so did the push after a `shell` read. And
+every model carried its provider's modes: Devin's 846 models each carried the same 962-byte list, 814 KB of a 1 MB
+catalog.
+
+**A hello and a `shell` read name the revision of the records they list, and the next push is measured from them**, to a
+client that accepts `reply-thread-records` beside `changed-thread-records`. The listener seeds the connection's
+`ThreadRecordsBroadcast` with the records the answer lists and makes them its base once the answer is written; a send
+that had not become the base by then is voided, as a reset voids it. The answer carries `threadRecordsRevision` on its
+shell. The iPhone holds those records with the answer's envelope, in socket order, as it holds a catalog an answer
+carries: an answer's caller reads it after later pushes have been handled, so holding them there would be too late for
+the push that follows. A command's answer names nothing and moves nothing.
+
+**A catalog lists each distinct list of provider modes once, and each model names its list by its place**, to a client
+that accepts `provider-mode-lists`. Places rather than a list per provider, so a provider that ever gives two of its models
+different modes still reads exactly, and a model without modes is sent as it is, so it is never mistaken for one that
+names a list. The iPhone puts each list back before anything reads the catalog.
+
+Both are opt-ins: the desktop's own host client, the Android client and every earlier iPhone build are sent exactly what
+they were. Compressing phones' messages, the larger cut, stays a later change with its own device verification, and so
+does sending a phone only the threads it shows first.
+
+Replaying the laptop's captured hello through the listener, a phone connect fell from 4,510 KB to 2,257 KB, and from
+7,994 KB to 4,277 KB with a `shell` read; hello from 2,768 KB to 1,978 KB and the first push from 1,742 KB to 279 KB. The
+replay's before matched the installed laptop's within 1% (`docs/perf/2026-11-01-phone-connect-size.md`).

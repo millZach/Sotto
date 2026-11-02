@@ -25,14 +25,25 @@ public struct ChangedThreadRecords: Decodable, Equatable, Sendable {
 /// phone only the records that changed since its last push, beside a state whose own list is empty, so the connection
 /// puts the whole list back before anything reads the shell, as the desktop's client of a paired host does
 /// (`src/shared/threadReassembly.ts`). It is kept in socket order, and a reconnect starts with an empty one, just as the
-/// host starts the new connection with nothing pushed. Hello, a shell read and a command's answer carry every record
-/// and change nothing held.
+/// host starts the new connection with nothing pushed. A command's answer carries every record and changes nothing held;
+/// so do a hello and a shell read, unless the host named the revision of the records they list (`reply-thread-records`),
+/// which the connection then holds (`hold(_:)`).
 public struct ThreadRecordsCache: Sendable {
     private struct Held: Sendable {
         let revision: Int; let records: [String: ThreadSummary]; let order: [String]; let list: [ThreadSummary]
+        /// `list` held under `revision`: its records by ID, and its order.
+        init(revision: Int, list: [ThreadSummary]) {
+            self.revision = revision; self.list = list; order = list.map(\.id)
+            records = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        }
     }
     private var held: Held?
     public init() {}
+    /// Holds the records a hello or a shell read listed whole, under the revision the host named: the next push is
+    /// measured from them. Read with the reply's envelope, in socket order, before any push that follows it.
+    public mutating func hold(_ records: HeldThreadRecords) {
+        held = Held(revision: records.revision, list: records.threads)
+    }
     /// `shell` with its whole thread list, which this then holds. A shell that carries no changed records, from a host
     /// without the feature, is returned as it came. One measured from records this connection does not hold, or that
     /// names a thread it cannot place, is nil and changes nothing held: shown, it would read as a computer whose threads
@@ -48,8 +59,7 @@ public struct ThreadRecordsCache: Sendable {
     }
     private static func resolve(_ held: Held?, _ wire: ChangedThreadRecords) -> Held? {
         guard let base = wire.base else {
-            return Held(revision: wire.revision, records: Dictionary(wire.changed.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last }),
-                        order: wire.changed.map(\.id), list: wire.changed)
+            return Held(revision: wire.revision, list: wire.changed)
         }
         guard let held, base == held.revision else { return nil }
         let updates = Dictionary(wire.changed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -69,6 +79,27 @@ public struct ThreadRecordsCache: Sendable {
         }
         // Every changed record has its place, and every held thread is either still listed or said to have gone.
         guard updates.keys.allSatisfy({ listed.contains($0) }), held.order.allSatisfy({ gone.contains($0) != listed.contains($0) }) else { return nil }
-        return Held(revision: wire.revision, records: Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last }), order: ids, list: list)
+        return Held(revision: wire.revision, list: list)
+    }
+}
+
+/// The thread records a hello or a shell read lists whole, and the revision the host holds them under for this connection
+/// (`reply-thread-records`).
+public struct HeldThreadRecords: Equatable, Sendable {
+    public let revision: Int; public let threads: [ThreadSummary]
+    public init(revision: Int, threads: [ThreadSummary]) { self.revision = revision; self.threads = threads }
+}
+
+/// The records a reply holds for the connection, read with its envelope: `result.shell` for hello, `result` for a shell
+/// read. Nil unless the host named their revision.
+struct ReplyThreadRecords: Decodable {
+    let held: HeldThreadRecords?
+    private enum Keys: String, CodingKey { case shell, host, threads, threadRecordsRevision }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        if c.contains(.shell) { held = try c.decode(ReplyThreadRecords.self, forKey: .shell).held; return }
+        guard let revision = try c.decodeIfPresent(Int.self, forKey: .threadRecordsRevision) else { held = nil; return }
+        let host = try c.nestedContainer(keyedBy: Keys.self, forKey: .host)
+        held = HeldThreadRecords(revision: revision, threads: try host.decode([ThreadSummary].self, forKey: .threads))
     }
 }

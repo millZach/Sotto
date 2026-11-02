@@ -10,8 +10,9 @@ public struct Received<Value: Sendable>: Sendable {
 /// Decode pushes directly into the fields the phone displays. In particular, shell event pages
 /// and unused activity bodies never become recursive JSONValue trees on the UI actor.
 public enum IncomingFrame: Sendable {
-    /// `catalog` is the model catalog the reply's shell carries whole under a revision, read here in socket order.
-    case reply(id: String, data: Data, catalog: CarriedCatalog?)
+    /// `catalog` is the model catalog the reply's shell carries whole under a revision, and `records` the thread records a
+    /// hello or a shell read lists whole under the revision the host named; both are read here, in socket order.
+    case reply(id: String, data: Data, catalog: CarriedCatalog?, records: HeldThreadRecords?)
     case refusal(id: String, failure: WireFailure)
     case shell(Shell)
     case detail(threadID: String, value: ThreadDetail?)
@@ -21,7 +22,7 @@ public enum IncomingFrame: Sendable {
 
 /// Route replies without materializing their result. Their caller supplies its expected type.
 private enum FrameEnvelope: Decodable {
-    case reply(String, CarriedCatalog?)
+    case reply(String, CarriedCatalog?, HeldThreadRecords?)
     case frame(IncomingFrame)
     private enum Keys: String, CodingKey { case v, id, ok, result, error, event, state, threads, threadId, detail, delta }
     init(from decoder: Decoder) throws {
@@ -43,7 +44,8 @@ private enum FrameEnvelope: Decodable {
             if try c.decode(Bool.self, forKey: .ok) {
                 guard c.contains(.result) else { throw ClientError.invalidProtocol }
                 // Any result that is not a shell or a hello, null included, carries no catalog.
-                self = .reply(id, (try? c.decode(ReplyCatalog.self, forKey: .result))?.carried)
+                self = .reply(id, (try? c.decode(ReplyCatalog.self, forKey: .result))?.carried,
+                              (try? c.decode(ReplyThreadRecords.self, forKey: .result))?.held)
             } else { self = .frame(.refusal(id: id, failure: try c.decode(WireFailure.self, forKey: .error))) }
         }
     }
@@ -66,16 +68,20 @@ public extension Wire {
     /// `provider-opencode` asks for OpenCode's provider row, models and threads, which this phone names and opens (ADR-0087),
     /// and `provider-cursor` the same for Cursor (ADR-0128). `changed-thread-records` asks for shell pushes that carry
     /// only the thread records that changed since the last one (ADR-0028's October 30 amendment), which the connection
-    /// puts back into the whole list (`ThreadRecordsCache`).
+    /// puts back into the whole list (`ThreadRecordsCache`). `reply-thread-records` has a hello or a shell read name the
+    /// revision of the records it lists whole, which the connection then holds, so the push after it carries only what
+    /// changed rather than every record again; `provider-mode-lists` has a catalog list each provider's modes once rather
+    /// than on every model (ADR-0028's November 1 amendment). The connection puts both back before anything reads them.
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
-        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records")])]
+        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records"),
+                    .string("reply-thread-records"), .string("provider-mode-lists")])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.
     // Awaiting each frame before receiving the next keeps pushes and replies in socket order.
     static func readFrame(_ data: Data) async throws -> IncomingFrame {
         guard data.count <= maximumFrameBytes else { throw ClientError.invalidProtocol }
         switch try JSONDecoder().decode(FrameEnvelope.self, from: data) {
-        case .reply(let id, let catalog): return .reply(id: id, data: data, catalog: catalog)
+        case .reply(let id, let catalog, let records): return .reply(id: id, data: data, catalog: catalog, records: records)
         case .frame(let frame): return frame
         }
     }
