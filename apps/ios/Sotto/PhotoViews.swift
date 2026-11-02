@@ -146,20 +146,34 @@ struct SentPhotoView: View {
     }
 }
 
-/// A message's photos full screen, one at a time; swipe for the others.
+/// A message's photos full screen, one at a time; swipe for the others. Given the reply box they would go to, and on a
+/// computer that shows its agents' pictures, Mark up opens the one shown in the mark-up editor (ADR-0170, part 5).
 struct PhotoViewer: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var previews: PhotoPreviews
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State var opened: OpenPhotos
+    /// The reply box a marked copy goes into: the thread's, or Watcher's.
+    var box: PhotoBox? = nil
+    @State private var marking: MarkupTarget?
+    @State private var markRefusal: String?
+    @State private var closeAfterMarking = false
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Button("Done") { dismiss() }.fontWeight(.semibold).frame(minHeight: 44)
                 Spacer()
                 if opened.items.count > 1 { Text("\(opened.index + 1) of \(opened.items.count)").foregroundStyle(Palette.muted) }
+                if let box, model.showsAgentPictures(box.hostID) {
+                    Button("Mark up") { markUp(box) }.fontWeight(.semibold).frame(minHeight: 44).padding(.leading, 12)
+                        .accessibilityIdentifier("photo-mark-up")
+                }
             }.padding(.horizontal, 20).foregroundStyle(Palette.ink)
+            if let markRefusal {
+                Text(markRefusal).font(.footnote).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+                    .padding(.horizontal, 20).paragraphDirection()
+            }
             TabView(selection: $opened.index) {
                 ForEach(Array(opened.items.enumerated()), id: \.element.id) { index, item in
                     FullPhoto(key: item.key, name: item.name).tag(index)
@@ -177,6 +191,23 @@ struct PhotoViewer: View {
             }
         }
         .accessibilityAction(.escape) { dismiss() }
+        .onChange(of: opened.index) { _, _ in markRefusal = nil }
+        .fullScreenCover(item: $marking, onDismiss: { if closeAfterMarking { dismiss() } }) { target in
+            MarkupEditor(target: target) { closeAfterMarking = true }
+        }
+    }
+
+    /// Opens the picture shown in the editor, from the copy this viewer already holds, unless its reply can't take it.
+    private func markUp(_ box: PhotoBox) {
+        if let refusal = model.markedCopyRefusal(box) { markRefusal = refusal; return }
+        guard let item = opened.items[safe: opened.index] else { return }
+        Task {
+            guard let image = await previews.full(item.key, model: model) else {
+                markRefusal = String(localized: "This picture is still loading. Try again in a moment.")
+                return
+            }
+            marking = MarkupTarget(image: image, name: item.name, box: box)
+        }
     }
 }
 

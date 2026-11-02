@@ -746,7 +746,7 @@ private struct WatcherConversationPane: View {
             // the layout while it is away. It stays until no card waits (#1288).
             .onChange(of: pinned, initial: true) { _, waits in if waits { slideBar(false) } }
         }
-        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .watcher(hostID: hostID)) }
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;

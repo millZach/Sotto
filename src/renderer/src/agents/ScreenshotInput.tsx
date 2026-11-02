@@ -11,6 +11,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import type { ScreenshotReadPort } from './threadDraftStore'
 import { prepareScreenshot, wasResized } from './screenshotResize'
 import { stageAttachedFile, stageImage, stagingReason, useThumbnail } from './stagedImages'
+import { useRegisterReplyAttach, type ReplyAttach } from './replyAttach'
 import { attachmentKind, AttachmentKindIcon, splitAttachmentName } from './attachmentKinds'
 import { formatAttachmentSize } from './MessageContent'
 import * as words from './attachmentWords'
@@ -144,7 +145,7 @@ function addAnyFailed(item: Incoming, remaining: number, first: boolean, cause: 
  * With `attach-any-file` on (ADR-0131), any file joins it too: images as before, every other file staged with its
  * bytes as they are and shown as a pill under the images.
  */
-export function ScreenshotInput({ target, attachments, onChange, disabled, supported, imagesSupported, children, reads }: {
+export function ScreenshotInput({ target, attachments, onChange, disabled, supported, imagesSupported, answering = false, children, reads }: {
   /** The thread the draft belongs to, or null for the coordinator's composer. */
   readonly target: string | null
   readonly attachments: readonly AgentAttachmentHandle[]
@@ -154,6 +155,8 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   readonly supported: boolean
   /** Whether the thread's model reads images; `supported` when absent. Read only once any file can be attached. */
   readonly imagesSupported?: boolean
+  /** Whether the draft answers a question or a permission request, which takes no attachments; says why a marked copy can't come in. */
+  readonly answering?: boolean
   readonly children: ReactNode
   /** Reads that may outlive this input, as when the user moves to another thread while screenshots are read. */
   readonly reads?: ScreenshotReadPort
@@ -177,12 +180,13 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   const [error, setError] = useState<string | null>(null)
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
   /**
    * Stages one file after another and adds those that were staged. One at a time, so at most one decoded image is held
    * in memory however many are added at once. A failure stops the rest, and those read before it are still added.
    */
   const stageAll = async <T,>(items: readonly T[], stage: (item: T) => Promise<AgentAttachmentHandle>, failed: (item: T, remaining: number, first: boolean, cause: unknown) => string,
-    tooLarge: (staged: readonly AgentAttachmentHandle[]) => string): Promise<void> => {
+    tooLarge: (staged: readonly AgentAttachmentHandle[]) => string): Promise<string | null> => {
     reading.current = true; setReadingHere(true)
     const handedOn = reads?.begin()
     const images: AgentAttachmentHandle[] = []
@@ -192,33 +196,36 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
       catch (cause) { failure = failed(item, items.length - index, index === 0, cause); break }
     }
     try {
-      if (!mounted.current) { latestReads.current?.addLate?.(images, failure); return }
+      if (!mounted.current) { latestReads.current?.addLate?.(images, failure); return failure }
       if (failure) setError(failure)
-      if (images.length === 0) return
+      if (images.length === 0) return failure
       // The schema stays the authority: it checks what was actually staged, not what the files claimed.
       const result = agentAttachmentHandlesSchema.safeParse([...current.current, ...images])
-      if (!result.success) { setError(tooLarge([...current.current, ...images])); return }
+      if (!result.success) { const refusal = tooLarge([...current.current, ...images]); setError(refusal); return refusal }
       latestChange.current(result.data)
+      return failure
     } finally {
       handedOn?.()
       if (mounted.current) { reading.current = false; setReadingHere(false) }
     }
   }
-  const addScreenshots = async (files: File[]): Promise<void> => {
-    if (disabled || reading.current || pending) return
-    if (!supported) { setError(t`This model does not support screenshots. Choose a model with image support.`); return }
+  /** Says why nothing was added, and resolves to it; null once the files are in the draft. */
+  const refuse = (refusal: string): string => { setError(refusal); return refusal }
+  const addScreenshots = async (files: readonly File[]): Promise<string | null> => {
+    if (disabled || reading.current || pending) return busyRefusal()
+    if (!supported) return refuse(t`This model does not support screenshots. Choose a model with image support.`)
     setError(null)
     const most = AGENT_MAX_ATTACHMENTS
-    if (files.length + current.current.length > most) { setError(plural(most, { one: 'Attach up to # screenshot at a time.', other: 'Attach up to # screenshots at a time.' })); return }
+    if (files.length + current.current.length > most) return refuse(plural(most, { one: 'Attach up to # screenshot at a time.', other: 'Attach up to # screenshots at a time.' }))
     // Every refusal that the file sizes alone can decide comes before any file is read and staged.
-    try { files.forEach(checkImage) } catch (cause) { setError(cause instanceof Error ? cause.message : t`Could not read these screenshots.`); return }
+    try { files.forEach(checkImage) } catch (cause) { return refuse(cause instanceof Error ? cause.message : t`Could not read these screenshots.`) }
     const total = attachmentHandlesBytes(current.current) + files.reduce((sum, file) => sum + file.size, 0)
-    if (total > AGENT_MAX_ATTACHMENT_BYTES) { setError(SCREENSHOTS_TOO_LARGE_IN_TOTAL); return }
-    await stageAll(files, file => stageFile(target, file), addFailed, () => SCREENSHOTS_TOO_LARGE_IN_TOTAL)
+    if (total > AGENT_MAX_ATTACHMENT_BYTES) return refuse(SCREENSHOTS_TOO_LARGE_IN_TOTAL)
+    return stageAll(files, file => stageFile(target, file), addFailed, () => SCREENSHOTS_TOO_LARGE_IN_TOTAL)
   }
-  const addAnyFiles = async (files: File[]): Promise<void> => {
-    if (disabled || reading.current || pending) return
-    if (!supported) { setError(words.noAttachmentsOnAnswer()); return }
+  const addAnyFiles = async (files: readonly File[]): Promise<string | null> => {
+    if (disabled || reading.current || pending) return busyRefusal()
+    if (!supported) return refuse(words.noAttachmentsOnAnswer())
     setError(null)
     const incoming = files.map((file): Incoming => {
       const mimeType = attachmentMimeType(file.type)
@@ -227,13 +234,31 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     })
     // Every refusal that the files' types and sizes alone can decide comes before any file is read and staged.
     const refusal = refusalBeforeReading(incoming, current.current, imagesSupported ?? supported)
-    if (refusal) { setError(refusal); return }
+    if (refusal) return refuse(refusal)
     const unread = { failed: words.fileStagingFailed(), unread: words.fileReadFailed() }
-    await stageAll(incoming, item => item.image ? stageFile(target, item.file)
+    return stageAll(incoming, item => item.image ? stageFile(target, item.file)
       : stageAttachedFile(target, { name: item.name, mimeType: item.mimeType, blob: item.file }, unread), addAnyFailed,
     staged => attachmentImagesBytes(staged) > AGENT_MAX_ATTACHMENT_BYTES ? words.imagesTooLargeInTotal() : words.attachmentsTooLargeInTotal())
   }
   const add = anyFile ? addAnyFiles : addScreenshots
+  /** What a box that is archived, or still reading what was last added, says to a picture marked up meanwhile. */
+  function busyRefusal(): string {
+    return disabled ? t`This thread is archived, so its reply box takes no pictures. Nothing was added. Restore the thread to reply.`
+      : t`The reply box is still adding what came before. Nothing was added. Try again in a moment.`
+  }
+  // A picture marked up in this pane comes in the way a paste does (ADR-0170, part 5).
+  const attach = useRef<ReplyAttach>(null!)
+  attach.current = {
+    refusal: () => {
+      if (disabled) return busyRefusal()
+      if (answering) return t`This thread waits for your answer, so a marked copy can't go into its reply yet. Answer it first.`
+      if (!(anyFile ? imagesSupported ?? supported : supported)) return t`This thread's model does not read images, so a marked copy can't go into its reply. Choose a model with image support.`
+      return null
+    },
+    add: files => add(files),
+    focus: () => root.current?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus(),
+  }
+  useRegisterReplyAttach(attach)
   const remove = (id: string): void => onChange(current.current.filter(item => item.id !== id))
   const images = anyFile ? attachments.filter(attachment => isImageAttachment(attachment.mimeType)) : attachments
   const files = anyFile ? attachments.filter(attachment => !isImageAttachment(attachment.mimeType)) : []
@@ -243,7 +268,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     <Chip key={attachment.id} target={target} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)} {...deck}
       {...anyFile ? { removeLabel: words.removeAttachment(attachment.name) } : {}} />
   const endDrag = (): void => { dragDepth.current = 0; setDragging(false) }
-  return <div className="screenshot-input" data-dragging={anyFile && dragging ? true : undefined} onPaste={event => {
+  return <div ref={root} className="screenshot-input" data-dragging={anyFile && dragging ? true : undefined} onPaste={event => {
     const files = [...event.clipboardData.items].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => file !== null)
     if (files.length) { event.preventDefault(); void add(files) }
   }} onDragEnter={anyFile ? event => {

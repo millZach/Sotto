@@ -1,0 +1,71 @@
+/* Mark up (ADR-0170, part 5): the editor takes the viewer's place over the pane, its tools in the bar, the picture in the
+   room it leaves, the marks listed beside it. */
+.markup-editor { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.markup-editor__bar {
+  display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 44px;
+  padding: 4px calc(8px + var(--threads-pane-inset, 0px)) 4px 18px; border-bottom: 1px solid var(--tt-hairline);
+  -webkit-app-region: drag;
+}
+.markup-editor__bar button { -webkit-app-region: no-drag; }
+.markup-editor__title { min-width: 0; max-width: 28ch; margin: 0 10px 0 0; overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.markup-editor__tools { display: flex; gap: 2px; }
+.markup-editor__tool, .markup-editor__action {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-sm);
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small);
+  transition: color 160ms ease, background-color 160ms ease;
+}
+.markup-editor__tool:hover, .markup-editor__action:hover { background: var(--tt-hover); color: var(--tt-text); }
+.markup-editor__tool[aria-pressed='true'] { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.markup-editor__tool[aria-disabled='true'], .markup-editor__action[aria-disabled='true'] { color: var(--tt-text-faint); }
+.markup-editor__tool--icon { width: 32px; padding: 0; justify-content: center; }
+.markup-editor__action--primary { background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; }
+.markup-editor__action--primary:hover { background: var(--tt-accent-hover); color: var(--tt-on-accent); }
+.markup-editor__action--primary[aria-disabled='true'] { background: var(--tt-surface-sunken); color: var(--tt-text-faint); }
+.markup-editor__divider { width: 1px; height: 20px; margin: 0 6px; background: var(--tt-border-faint); }
+.markup-editor__space { flex: 1; }
+.markup-editor__inks { display: flex; gap: 4px; }
+.markup-editor__ink { width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--tt-radius-full); background: transparent; }
+.markup-editor__ink::before { content: ''; display: block; width: 18px; height: 18px; margin: auto; border-radius: var(--tt-radius-full); background: var(--ink); box-shadow: 0 0 0 1px var(--tt-border); }
+.markup-editor__ink[aria-checked='true']::before { box-shadow: 0 0 0 2px var(--tt-surface), 0 0 0 4px var(--tt-text); }
+.markup-editor__ink--red { --ink: var(--tt-ink-red); }
+.markup-editor__ink--amber { --ink: var(--tt-ink-amber); }
+.markup-editor__ink--plain { --ink: var(--tt-text); }
+
+.markup-editor__body { display: flex; flex: 1; min-height: 0; }
+.markup-editor__room { display: grid; flex: 1; min-width: 0; min-height: 0; place-items: center; padding: 12px; overflow: hidden; background: var(--tt-surface-sunken); }
+.markup-editor__surface { position: relative; max-width: 100%; max-height: 100%; cursor: crosshair; touch-action: none; user-select: none; }
+.markup-editor__surface:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 3px; }
+.markup-editor__surface img, .markup-editor__surface svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.markup-editor__cross line { stroke: var(--tt-accent); }
+.markup-editor__note-input {
+  position: absolute; z-index: 1; min-width: 12ch; max-width: 60%; padding: 2px 8px; transform: translateY(-50%);
+  border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-sm); background: var(--tt-surface-elevated); color: var(--tt-text); font-family: inherit;
+}
+
+.markup-editor__side { display: flex; flex: none; flex-direction: column; gap: 8px; width: 232px; padding: 14px 16px; overflow-y: auto; border-left: 1px solid var(--tt-hairline); }
+.markup-editor__heading { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.markup-editor__empty, .markup-editor__copy-note { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.markup-editor__copy-note { margin-top: auto; }
+.markup-editor__marks { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.markup-editor__marks li { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--tt-text); font-size: var(--tt-type-small); }
+.markup-editor__swatch { flex: none; width: 10px; height: 10px; border-radius: var(--tt-radius-full); background: var(--ink); }
+.markup-editor__mark-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.markup-editor__remove { display: inline-grid; flex: none; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); }
+.markup-editor__remove:hover { background: var(--tt-hover); color: var(--tt-text); }
+.markup-editor__status { min-height: 0; margin: 0; padding: 0 18px; color: var(--tt-text); font-size: var(--tt-type-small); }
+.markup-editor__status:not(:empty) { padding-top: 8px; }
+.markup-editor__hint { margin: 0; padding: 8px 18px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
+
+.attachment-viewer__refusal { margin: 0; padding: 8px 18px 0; color: var(--tt-text); font-size: var(--tt-type-small); }
+
+/* A narrow pane keeps the picture as large as it can: the tools show their icons alone, and the marks run under it. */
+@container thread-pane (max-width: 760px) {
+  .markup-editor__tool > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .markup-editor__tool { width: 32px; padding: 0; justify-content: center; }
+  .markup-editor__title { max-width: 16ch; }
+  .markup-editor__body { flex-direction: column; }
+  .markup-editor__side { width: auto; max-height: 112px; padding: 10px 18px; border-top: 1px solid var(--tt-hairline); border-left: 0; }
+  .markup-editor__copy-note { display: none; }
+}
+:root[data-reduced-motion='on'] .markup-editor__tool, :root[data-reduced-motion='on'] .markup-editor__action { transition: none; }
+@media (prefers-reduced-motion: reduce) { .markup-editor__tool, .markup-editor__action { transition: none; } }

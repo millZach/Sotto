@@ -773,7 +773,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     {ghost !== null && next !== null ? <span className="tt-visually-hidden" id={ghostId}>{t({ message: `Suggested next prompt: ${ghostText}. Press Tab to take it, or Up for more.`, comment: '{ghostText} is the suggested prompt.' })}</span> : null}
     {/* Screenshots still being staged when the user moves to another thread join this thread's draft as it is then. */}
     <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={anyFile ? attachable : supported}
-      imagesSupported={row.model?.supportsImages === true}
+      imagesSupported={row.model?.supportsImages === true} answering={answering}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
       <PromptEditor fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
         label={fieldLabel} editable={editable} ghost={ghost}

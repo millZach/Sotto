@@ -521,7 +521,7 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
         }
-        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .thread(ref)) }
         .confirmationDialog("Stop waiting for confirmation?", isPresented: Binding(get: { dismissMarker != nil }, set: { if !$0 { dismissMarker = nil } }), titleVisibility: .visible) {
             Button("I checked the thread") { if let item = dismissMarker { model.acknowledgeUnknown(item.id) }; dismissMarker = nil }
             Button("Cancel", role: .cancel) { dismissMarker = nil }

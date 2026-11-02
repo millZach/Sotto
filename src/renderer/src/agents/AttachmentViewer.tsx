@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, Copy, Scan, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Check, Copy, PenLine, Scan, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentAttachmentReference } from '../../../shared/agents'
@@ -12,6 +12,9 @@ import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useCopyImage } from './richActions'
 import { shownCount } from '../state/interfaceNumbers'
+import { useOwlFeature } from '../state/owlFeature'
+import { useReplyAttach } from './replyAttach'
+import { MarkupEditor } from './MarkupEditor'
 import './diagrams/diagrams.css'
 
 export interface ViewerImage extends Partial<Pick<AgentAttachmentReference, 'preview'>> {
@@ -52,7 +55,9 @@ function StripThumb({ image, origin, index, count, current, onSelect }: {
 /**
  * A message's images, large, over the thread pane they were sent in (the window when there is no pane): zoom, pan,
  * Copy image and Close, from the keyboard or the pointer. With more than one image a strip under it steps between
- * them, as do ← and →. Escape closes it, and focus returns to the image that opened it.
+ * them, as do ← and →. Escape closes it, and focus returns to the image that opened it. In a thread pane, with
+ * inline media on, Mark up opens the picture in the mark-up editor, whose marked copy goes into the pane's reply box
+ * (ADR-0170, part 5).
  */
 export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   readonly images: readonly ViewerImage[]
@@ -83,6 +88,13 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? ((window.sotto as { platform?: SottoPlatform } | undefined)?.platform ?? 'win32')
   const copyChord = chordClaimed('mod+c', app?.settings?.hotkey, platform) ? 'mod+c' : null
+  // Mark up, where a reply box can take the marked copy: only inside a thread pane.
+  const reply = useReplyAttach()
+  const marks = useOwlFeature('inline-media') && reply !== null
+  const [editing, setEditing] = useState(false)
+  const [markRefusal, setMarkRefusal] = useState<string | null>(null)
+  const markButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => { setMarkRefusal(null) }, [image.id])
 
   // Everything else in the pane is out of reach while the viewer covers it, so Tab stays inside, including what
   // the pane adds while it is open.
@@ -127,8 +139,24 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     else say(awaiting ? msg`The image is still loading. Try again in a moment.` : msg`This image is no longer available to copy.`)
   }
 
+  const markUp = (): void => {
+    if (!source || !size) { say(awaiting ? msg`The image is still loading. Try again in a moment.` : msg`This image is no longer available to mark up.`); return }
+    const refusal = reply?.current?.refusal() ?? (reply?.current ? null : t`This pane has no reply box to take a marked copy.`)
+    setMarkRefusal(refusal)
+    if (!refusal) setEditing(true)
+  }
+  const keepFocusIn = (event: React.KeyboardEvent): void => {
+    const focusable = [...(root.current?.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]') ?? [])]
+    const first = focusable[0]; const last = focusable.at(-1)
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+  }
+
   const onKeyDown = (event: React.KeyboardEvent): void => {
+    // The editor answers its own keys; only Tab is kept inside the viewer.
+    if (editing) { if (event.key === 'Tab') keepFocusIn(event); return }
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return }
+    if (marks && (event.key === 'm' || event.key === 'M') && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); markUp(); return }
     if (copyChord && chordMatches(event, copyChord, platform) && !window.getSelection()?.toString()) {
       // A held chord copies once.
       if (event.repeat) { event.preventDefault(); return }
@@ -140,19 +168,22 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     if (several && step !== 0 && !event.altKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault(); select(index + step, inStrip); return
     }
-    if (event.key === 'Tab') {
-      const focusable = [...(root.current?.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]') ?? [])]
-      const first = focusable[0]; const last = focusable.at(-1)
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
-      return
-    }
+    if (event.key === 'Tab') { keepFocusIn(event); return }
     if (!inStrip) zoom.onKeyDown(event)
   }
 
   const number = index + 1, total = images.length
   const position = several ? ` · ${t({ message: `${{ number: shownCount(number) }} of ${{ total: shownCount(total) }}`, comment: 'Which image of the message this is.' })}` : ''
   const chord = platform === 'darwin' ? 'Command+C' : 'Ctrl+C'
+  if (editing && source && size && reply?.current) {
+    const target = reply.current
+    return createPortal(<div ref={root} className="attachment-viewer" data-scope={inPane ? 'pane' : 'window'} role="dialog" aria-labelledby={titleId} onKeyDown={onKeyDown}>
+      <span id={titleId} hidden>{t({ message: `Mark up ${image.name}`, comment: '{name} is the file name of a picture.' })}</span>
+      <MarkupEditor name={image.name} source={source} size={size} reply={target}
+        onCancel={() => { setEditing(false); requestAnimationFrame(() => markButton.current?.focus()) }}
+        onAdded={() => { onClose(); setTimeout(() => target.focus(), 0) }} />
+    </div>, container)
+  }
   return createPortal(<div ref={root} className="attachment-viewer" data-scope={inPane ? 'pane' : 'window'} role="dialog" aria-labelledby={titleId} onKeyDown={onKeyDown}>
     <header className="attachment-viewer__bar">
       <h2 id={titleId} className="attachment-viewer__title">{image.name}<span className="attachment-viewer__details">{image.details}{position}</span></h2>
@@ -163,6 +194,9 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
         <button type="button" className="rich-code__copy tt-focusable" aria-label={t`Zoom in`} title={t`Zoom in (+)`} aria-disabled={zoom.atLargest} onClick={zoom.zoomIn}><ZoomIn size={16} aria-hidden="true" /></button>
         <button type="button" className="rich-code__copy tt-focusable" aria-label={t`Fit to view`} title={t`Fit (0)`} aria-pressed={zoom.view.fitted} onClick={zoom.reset}><Scan size={16} aria-hidden="true" /></button>
         <span className="rich-diagram-viewer__divider" aria-hidden="true" />
+        {marks ? <button ref={markButton} type="button" className="rich-code__copy attachment-viewer__copy tt-focusable" title={t`Mark up (M)`} aria-disabled={!source || !size} onClick={markUp}>
+          <PenLine size={16} aria-hidden="true" /><span>{t`Mark up`}</span>
+        </button> : null}
         <button type="button" className="rich-code__copy attachment-viewer__copy tt-focusable" data-copied={copied || undefined} title={copyChord ? t`Copy image (${chord})` : t`Copy image`}
           aria-disabled={!source} onClick={copy}>
           {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}<span>{t`Copy image`}</span>
@@ -179,6 +213,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     {several ? <div ref={strip} className="attachment-viewer__strip" role="group" aria-label={t`Images in this message`}>
       {images.map((item, itemIndex) => <StripThumb key={item.id} image={item} origin={origin} index={itemIndex} count={images.length} current={itemIndex === index} onSelect={select} />)}
     </div> : null}
+    {markRefusal ? <p className="attachment-viewer__refusal tt-paragraph" role="alert">{markRefusal}</p> : null}
     <p id={hintId} className="rich-diagram-viewer__hint tt-paragraph">{several
       ? t`Drag to move · Scroll or +/− to zoom · 0 to fit · ← → for the next image`
       : t`Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit`}</p>

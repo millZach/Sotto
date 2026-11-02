@@ -3125,6 +3125,16 @@ struct RailAsk: Equatable {
             for item in added { await self?.prepare(item.photo.id, in: box, from: item.source) }
         }
     }
+    /// Why a marked copy can't go into this reply box now, or nil (ADR-0170, part 5): the box's own rules for a photo.
+    func markedCopyRefusal(_ box: PhotoBox) -> String? {
+        if let reason = photoSupport(box).reason(computer: name(box.hostID), watcher: box.isWatcher) { return reason }
+        if preparingSends.contains(box.id) {
+            return box.isWatcher ? String(localized: "Your message is being sent.", comment: "A message to Watcher is on its way, so its photos can't change")
+                : String(localized: "Your reply is being sent.")
+        }
+        if PhotoLimits.count - photos(box).count - files(box).count > 0 { return nil }
+        return files(box).isEmpty ? box.photoLimitWords : FileWords.full
+    }
     func removePhoto(_ id: UUID, from box: PhotoBox) {
         guard !preparingSends.contains(box.id) else { return }
         dropPhoto(id, in: box, reason: nil)
