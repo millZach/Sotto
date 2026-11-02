@@ -1272,6 +1272,16 @@ struct RailAsk: Equatable {
     @Published private(set) var computers: [SavedComputer] = [] { didSet { listed = Listed() } }
     @Published private(set) var live: [String: Live] = [:] { didSet { listed = Listed() } }
     @Published private(set) var selected: ThreadRef?
+    /// The Settled shelf's threads read from each computer so far (`settled-threads-on-request`), and whether a read is
+    /// under way or the last one failed.
+    @Published private(set) var olderSettled: [String: OlderSettled] = [:]
+    @Published private(set) var olderSettledReading = false
+    @Published private(set) var olderSettledFailed = false
+    /// What Threads' search last asked the computers for among their held-back settled threads, and what each found.
+    @Published private(set) var settledSearch = SettledSearch()
+    /// A thread opened here that its computer's list does not carry yet, such as a settled one from a notification.
+    /// It stays open until the list carries it, which it does once the computer hears it is open.
+    private var openedUnlisted: ThreadRef?
     /// What the thread lists work out from `computers` and `live`, kept until either changes. The Threads list, the tab
     /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
     private var listed = Listed()
@@ -2318,6 +2328,96 @@ struct RailAsk: Equatable {
     }
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }
+
+    // MARK: The Settled shelf's threads read from the computers
+
+    func offersOlderSettled(_ hostID: String) -> Bool { live[hostID]?.features.contains(Wire.settledThreadsFeature) == true }
+    /// How many settled threads the computers the strip admits left out of their lists.
+    func settledHeldBack(show: ComputerFilter) -> Int {
+        computers.filter { show.admits($0.hostID) }.reduce(0) { $0 + (live[$1.hostID]?.shell?.settledHeldBack ?? 0) }
+    }
+    /// The computers whose settled threads can be read now: admitted, reachable, offering the read, holding some back.
+    func settledSources(show: ComputerFilter) -> [String] {
+        computers.map(\.hostID).filter { show.admits($0) && online($0) && offersOlderSettled($0) && (live[$0]?.shell?.settledHeldBack ?? 0) > 0 }
+    }
+    /// The settled threads read so far, as the shelf's rows.
+    func olderSettledRows(show: ComputerFilter) -> [HostedThread] {
+        ThreadGroups.older(lists, read: olderSettled.mapValues(\.threads), show: show)
+    }
+    /// Whether a computer the strip admits has settled threads it has not sent yet.
+    func moreOlderSettled(show: ComputerFilter) -> Bool {
+        settledSources(show: show).contains { (olderSettled[$0] ?? OlderSettled()).more }
+    }
+    /// Reads the next page of settled threads from each computer that has more, or with `first`, the first page from each
+    /// not read yet, as the shelf opens or a computer connects while it is open. Nothing shown changes on failure.
+    func readOlderSettled(show: ComputerFilter, first: Bool = false) async {
+        guard !olderSettledReading else { return }
+        olderSettledReading = true; olderSettledFailed = false
+        defer { olderSettledReading = false }
+        for hostID in settledSources(show: show) {
+            let held = olderSettled[hostID] ?? OlderSettled()
+            guard held.more, !(first && held.read), let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
+            do {
+                let page = try await connection.call(Wire.settledThreads(after: held.next), as: SettledThreadsPage.self)
+                guard generations[hostID] == epoch else { continue }
+                var next = olderSettled[hostID] ?? OlderSettled()
+                next.add(page)
+                olderSettled[hostID] = next
+            } catch { olderSettledFailed = true }
+        }
+    }
+    /// Asks each computer for its older settled threads that match `query`, as Threads' search is typed. An empty search
+    /// clears what was found; a later search replaces an earlier one still being read.
+    func searchSettled(_ query: String, show: ComputerFilter) async {
+        let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !words.isEmpty else { settledSearch = SettledSearch(); return }
+        settledSearch = SettledSearch(query: words, reading: true)
+        var found: [String: [ThreadSummary]] = [:], next: [String: String] = [:]
+        var failed = false
+        for hostID in settledSources(show: show) {
+            guard let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
+            do {
+                let page = try await connection.call(Wire.settledThreads(query: words), as: SettledThreadsPage.self)
+                // A page read over a connection that has since been replaced is left out, as the shelf leaves one out.
+                if generations[hostID] == epoch {
+                    found[hostID] = page.threads
+                    if let after = page.next { next[hostID] = after }
+                }
+            } catch { failed = true }
+            guard settledSearch.query == words else { return }
+        }
+        settledSearch = SettledSearch(query: words, found: found, failed: failed, next: next)
+    }
+    /// Reads the next matches from each computer that has more for the search on screen.
+    func searchMoreSettled() async {
+        let current = settledSearch
+        guard !current.query.isEmpty, !current.reading, !current.next.isEmpty else { return }
+        settledSearch = SettledSearch(query: current.query, found: current.found, reading: true, next: current.next)
+        var found = current.found, next: [String: String] = [:]
+        var failed = false
+        for (hostID, after) in current.next {
+            guard let connection = connections[hostID] else { continue }
+            let epoch = generations[hostID]
+            do {
+                let page = try await connection.call(Wire.settledThreads(after: after, query: current.query), as: SettledThreadsPage.self)
+                // A page read over a replaced connection is left out, and the search can read on from where it was.
+                if generations[hostID] == epoch {
+                    let held = Set((found[hostID] ?? []).map(\.id))
+                    found[hostID, default: []] += page.threads.filter { !held.contains($0.id) }
+                    if let more = page.next { next[hostID] = more }
+                } else { next[hostID] = after }
+            } catch { failed = true; next[hostID] = after }
+            guard settledSearch.query == current.query else { return }
+        }
+        settledSearch = SettledSearch(query: current.query, found: found, failed: failed, next: next)
+    }
+    /// The older settled threads the computers found for `query`, as Settled's rows while Threads is searched.
+    func settledSearchRows(query: String, show: ComputerFilter) -> [HostedThread] {
+        guard settledSearch.query == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return [] }
+        return ThreadGroups.older(lists, read: settledSearch.found, show: show)
+    }
     func mayAnswer(_ hostID: String) -> Bool { live[hostID]?.mayAnswer ?? false }
     /// The thread the user is reading now: the open thread while the app is on screen, or Watcher's own while its tab is.
     var threadOnScreen: ThreadRef? {
@@ -2335,7 +2435,11 @@ struct RailAsk: Equatable {
                                    threads: state?.shell?.host.threads ?? [], projects: state?.shell?.host.projects ?? [])
         }
     }
-    func thread(_ ref: ThreadRef) -> ThreadSummary? { live[ref.hostID]?.shell?.host.threads.first { $0.id == ref.threadID } }
+    /// A thread from its computer's list, or an older settled one the shelf or search read, which the list leaves out.
+    func thread(_ ref: ThreadRef) -> ThreadSummary? { live[ref.hostID]?.shell?.host.threads.first { $0.id == ref.threadID } ?? readSettled(ref) }
+    private func readSettled(_ ref: ThreadRef) -> ThreadSummary? {
+        olderSettled[ref.hostID]?.threads.first { $0.id == ref.threadID } ?? settledSearch.found[ref.hostID]?.first { $0.id == ref.threadID }
+    }
     func detail(for ref: ThreadRef) -> ThreadDetail? { selected == ref && openDetail?.threadId == ref.threadID ? openDetail : nil }
     /// The open thread as its page shows it: the latest copy, or while that is being read again, the copy read before,
     /// so a reconnect or a return to the thread never empties the page.
@@ -2656,6 +2760,9 @@ struct RailAsk: Equatable {
             guard let endpoint = saved.endpoint else { throw ClientError.invalidHost }
             let greeting = try await connection(hostID).connect(endpoint: endpoint, pairing: saved.pairing)
             guard generations[hostID] == current else { return }
+            // The thread open here, as this iPhone last held it. One settled while the last connection lasted stayed
+            // in that list but is left out of the new one, and it stays open as one read from the shelf does.
+            let openHere = selected?.hostID == hostID ? selected.flatMap(thread) : nil
             try applyShell(greeting.value.shell, from: hostID, sequence: greeting.sequence, reconcileAnswers: false)
             update(hostID) {
                 $0.status = .online
@@ -2663,10 +2770,15 @@ struct RailAsk: Equatable {
                 if $0.shell?.clientCapabilities == nil { $0.mayAnswer = greeting.value.capabilities.mayAnswer }
                 $0.features = greeting.value.features ?? []
             }
+            // The shelf reads settled threads afresh on a new connection, keeping a settled one open here so it stays open.
+            let listed = Set(greeting.value.shell.host.threads.map(\.id))
+            olderSettled[hostID] = OlderSettled(keeping: openHere.flatMap { (kept: ThreadSummary) -> ThreadSummary? in
+                let project = greeting.value.shell.host.projects.first { $0.id == kept.projectId }
+                return !listed.contains(kept.id) && offersOlderSettled(hostID) && ThreadGroups.isSettled(kept, project: project) ? kept : nil })
             // Hello's shell was read before its features said whether this computer runs Watcher.
             if let page = greeting.value.shell.watcher { applyWatcher(page, from: hostID, proof: proof); helloCarriedWatcher = true }
             wasOnline.insert(hostID)
-            if let selected, selected.hostID == hostID, thread(selected) == nil { self.selected = nil }
+            if let selected, selected.hostID == hostID, thread(selected) == nil, selected != openedUnlisted { self.selected = nil }
         } catch {
             guard generations[hostID] == current else { return }
             connections[hostID]?.disconnect()
@@ -2915,6 +3027,7 @@ struct RailAsk: Equatable {
         holdDetail()
         if let ref, detailStore.held?.ref != ref { detailStore.held = nil }
         selected = ref; detailProblem = nil; detailVersion += 1
+        openedUnlisted = ref.flatMap { thread($0) == nil && offersOlderSettled($0.hostID) ? $0 : nil }
         let selection = UUID()
         threadSelectionGeneration = selection
         guard threadSelectionGeneration == selection, !Task.isCancelled else { return }
@@ -4052,7 +4165,10 @@ struct RailAsk: Equatable {
         }
         // Watcher's page comes with each shell from a computer that runs Watcher.
         if let page = next.watcher { applyWatcher(page, from: hostID) }
-        if let selected, selected.hostID == hostID, !next.host.threads.contains(where: { $0.id == selected.threadID }) {
+        // An older settled thread opened from the shelf or a search is not in the list until the computer hears it is open.
+        if let opened = openedUnlisted, opened.hostID == hostID, next.host.threads.contains(where: { $0.id == opened.threadID }) { openedUnlisted = nil }
+        if let selected, selected.hostID == hostID, !next.host.threads.contains(where: { $0.id == selected.threadID }), readSettled(selected) == nil,
+           selected != openedUnlisted {
             cancelDetailReload(); self.selected = nil; openDetail = nil; detailStore.held = nil; detailProblem = nil
         }
     }
