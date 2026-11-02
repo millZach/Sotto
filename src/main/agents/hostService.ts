@@ -340,6 +340,13 @@ export function desktopWindowClient(user: string = localUser()): ClientIdentity 
   return { clientId: DESKTOP_WINDOW_CLIENT_ID, user, transport: 'ipc' }
 }
 
+/** The popup's window (ADR-0181): this computer's user over IPC like the main window, with threads it observes of its own. */
+export const DESKTOP_POPUP_CLIENT_ID = 'desktop-popup'
+
+export function desktopPopupClient(user: string = localUser()): ClientIdentity {
+  return { clientId: DESKTOP_POPUP_CLIENT_ID, user, transport: 'ipc' }
+}
+
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */
 export interface LocalHostControl {
   get(): AgentState

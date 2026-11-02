@@ -9,7 +9,7 @@ import { hostRequestSchema, hostVersionMismatch, type HostOperation } from '../.
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
-import { desktopWindowClient } from '../../../src/main/agents/hostService'
+import { desktopPopupClient, desktopWindowClient } from '../../../src/main/agents/hostService'
 import { BABYSITTING_RETIRED } from '../../../src/main/agents/babysitting'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
@@ -666,6 +666,28 @@ describe('desktop host routing', () => {
       expect([router.windowShows(here), router.windowShows(there), router.windowShows(other)]).toEqual([false, false, true])
       router.remove(REMOTE)
       expect(router.windowShows(other)).toBe(false)
+    } finally { router.dispose() }
+  })
+  it('keeps the popup\'s observed threads apart from the window\'s: each host hears both, and only the window\'s count as shown (ADR-0181)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) router.add(f.connection)
+    try {
+      const here = hostEntityKey(LOCAL, 'thread'), there = hostEntityKey(REMOTE, 'thread'), mine = hostEntityKey(REMOTE, 'popup')
+      await router.command({ type: 'observe-threads', threadIds: [here, there] }, desktopWindowClient())
+      remote.observe.mockClear(); local.command.mockClear()
+      await router.command({ type: 'observe-threads', threadIds: [mine] }, desktopPopupClient())
+      // A remote host is sent every client's threads at once; this computer's host is told nothing for a client with none there.
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread', 'popup'])
+      expect(local.command).not.toHaveBeenCalled()
+      // The popup's thread is not one the window shows, and the window's panes are as they were.
+      expect([router.windowShows(here), router.windowShows(there), router.windowShows(mine)]).toEqual([true, true, false])
+      // The window changing its panes keeps the popup's thread observed on its host.
+      await router.command({ type: 'observe-threads', threadIds: [here] }, desktopWindowClient())
+      expect(remote.observe).toHaveBeenLastCalledWith(['popup'])
+      // Hidden, the popup observes nothing, and the host is left with the window's threads alone.
+      await router.command({ type: 'observe-threads', threadIds: [] }, desktopPopupClient())
+      expect(remote.observe).toHaveBeenLastCalledWith([])
+      expect(router.windowShows(here)).toBe(true)
     } finally { router.dispose() }
   })
   it('says a window is behind another app only to a host that lists failure-seen, whose observe takes the field (ADR-0092)', async () => {

@@ -23,7 +23,7 @@ import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, default
 import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
-import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
+import { DESKTOP_WINDOW_CLIENT_ID, desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
 import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget, type HostClientShell } from '../../shared/hostProtocol'
@@ -363,8 +363,11 @@ export class DesktopHostRouter {
    * remote host as on this one: each remote host is told with the threads it observes for the window (ADR-0092).
    */
   private windowFocused = true
-  /** The threads the window last observed on each host, by the host's own IDs, to send again when the focus moves. */
-  private readonly observedOn = new Map<string, string[]>()
+  /**
+   * The threads each of this computer's clients last observed on each host, by the host's own IDs and by client: the
+   * window's, and the popup's (ADR-0181). A remote host is sent them all at once, again when the focus moves.
+   */
+  private readonly observedOn = new Map<string, Map<string, string[]>>()
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
   private notice: RouterNotice | undefined
@@ -769,7 +772,7 @@ export class DesktopHostRouter {
     this.windowFocused = focused
     for (const { connection } of this.hosts.values()) {
       if (connection.kind !== 'remote' || connection.available?.() === false || connection.service.supportsFailureSeen !== true || !connection.observe) continue
-      const ids = this.observedOn.get(connection.hostId) ?? []
+      const ids = this.observedIds(connection.hostId)
       void (focused ? connection.observe(ids) : connection.observe(ids, false)).catch(() => undefined)
     }
   }
@@ -782,7 +785,12 @@ export class DesktopHostRouter {
     if (!this.windowFocused) return false
     const key = parseHostEntityKey(threadId)
     const hostId = key?.hostId ?? this.selectedHostId
-    return hostId !== undefined && (this.observedOn.get(hostId)?.includes(key?.id ?? threadId) ?? false)
+    return hostId !== undefined && (this.observedOn.get(hostId)?.get(DESKTOP_WINDOW_CLIENT_ID)?.includes(key?.id ?? threadId) ?? false)
+  }
+  /** Every client's observed threads on one host, each once. */
+  private observedIds(hostId: string): string[] {
+    const clients = this.observedOn.get(hostId)
+    return clients === undefined ? [] : [...new Set([...clients.values()].flat())]
   }
   select(hostId: string): void {
     if (!this.hosts.has(hostId)) throw new Error(t`Connect this host before selecting it.`)
@@ -1426,9 +1434,17 @@ export class DesktopHostRouter {
           return
         }
         if (connection.available?.() === false) return
-        this.observedOn.set(connection.hostId, visibleIds)
+        const clients = this.observedOn.get(connection.hostId) ?? new Map<string, string[]>()
+        const before = clients.get(client.clientId) ?? []
+        // Another client with no thread on this host before or now has nothing to tell it; the window always tells, as it did.
+        if (client.clientId !== DESKTOP_WINDOW_CLIENT_ID && before.length === 0 && visibleIds.length === 0) return
+        if (visibleIds.length) clients.set(client.clientId, visibleIds)
+        else clients.delete(client.clientId)
+        this.observedOn.set(connection.hostId, clients)
         try {
-          if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(visibleIds, false) : connection.observe(visibleIds))
+          // A remote host hears every client's threads as one list; this computer's own host keeps each client's apart.
+          const ids = connection.observe ? this.observedIds(connection.hostId) : visibleIds
+          if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(ids, false) : connection.observe(ids))
           else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
         } catch (error) {
           // A connection that drops while the open panes are read is no one's action to report: the host reads the
