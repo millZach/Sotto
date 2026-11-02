@@ -362,6 +362,8 @@ private final class FollowBox {
     var missedFollow = false
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
+    /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
+    var endInPage: CGFloat = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -484,6 +486,7 @@ private struct Conversation: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "thread-end"
+    private static let pageSpace = "thread-page"
     #if DEBUG
     /// The simulator journeys that pass `--ui-end-probe` read where the conversation's end sits from `EndProbe`.
     private static let probesEnd = ProcessInfo.processInfo.arguments.contains("--ui-end-probe")
@@ -551,11 +554,12 @@ private struct Conversation: View {
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                 .equatable()
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
-            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
+            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
         .padding(.horizontal, Space.s4)
         .padding(.bottom, Space.s4)
+        .coordinateSpace(.named(Self.pageSpace))
         .background(alignment: .top) {
             // Reaches up under the bar, so at rest the wash meets the top edge; it scrolls away with the title.
             Wash(warm: state.waitsOnYou, tone: washTone(state), height: 720).offset(y: -200)
@@ -680,11 +684,29 @@ private struct Conversation: View {
     }
 
     /// The end of the conversation.
-    private var sentinelReader: some View {
+    private func sentinelReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { follow.sentinel = proxy.frame(in: .global).maxY; follow.settle() }
-                .onChange(of: proxy.frame(in: .global).maxY) { _, value in follow.sentinel = value; follow.settle() }
+                .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
+                .onChange(of: proxy.frame(in: .global).maxY) { _, value in
+                    endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
+        }
+    }
+
+    /// An end pushed away from a reader at it by what the page holds is followed: something above it grew, a photo taking
+    /// its own shape or a picture's tile being made, and the reader never left. Taken for the reader leaving, it once
+    /// stranded them short of the end, where the page stopped following (November 1, 2026). An end that moved only on
+    /// the screen moved because the page scrolled, by the user's hand or the status bar, and decides where they stand.
+    private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
+        let wasAtBottom = follow.atBottom
+        let grew = abs(inPage - follow.endInPage) > 0.5
+        follow.sentinel = end
+        follow.endInPage = inPage
+        if wasAtBottom, grew, end > follow.dockTop + FollowBox.slack {
+            toBottom(scroll)
+        } else {
+            follow.settle()
         }
     }
 
