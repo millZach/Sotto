@@ -19,13 +19,13 @@ npx wrangler@4 d1 execute sotto-product-events --local --command "SELECT event, 
 
 ## Deploy
 
-With `CLOUDFLARE_API_TOKEN` set in the environment, never in a file in this repository:
+It is live at `events.saysotto.com`, on the D1 database named in `wrangler.jsonc`. `saysotto.com`'s DNS is on Cloudflare with the proxy off, so GitHub Pages and Porkbun's mail forwarding work as they did. With `CLOUDFLARE_API_TOKEN` set in the environment, never in a file in this repository:
 
 ```sh
-npx wrangler@4 d1 create sotto-product-events       # put the database_id it prints in wrangler.jsonc
-npx wrangler@4 d1 execute sotto-product-events --remote --file schema.sql
 npx wrangler@4 deploy
 ```
+
+A new database would need `npx wrangler@4 d1 create sotto-product-events`, its ID in `wrangler.jsonc`, and `npx wrangler@4 d1 execute sotto-product-events --remote --file schema.sql`.
 
 **Do not set `POSTHOG_KEY` until the release with the notice is out.** Without it, events stop at the copy in D1. Setting it later sends only what arrives after that: a row kept before there was a key is never forwarded. When that release ships:
 
@@ -37,4 +37,4 @@ npx wrangler@4 secret put POSTHOG_KEY               # a project's capture key; i
 
 When the app's fields change, deploy this Worker before the release that sends them; until then it refuses them. A new public model is the exception: it only loses the model's name.
 
-Requests are limited to 120 a minute per Cloudflare location, counted together because the Worker reads no address. A hostile sender can use that up for real senders in its location, who get 429, wait and try again without losing anything for 30 minutes. If real use nears the limit, raise it.
+Requests are limited to about 120 a minute per Cloudflare location, counted together because the Worker reads no address. Cloudflare's limiter is approximate and its counts catch up in the background, so a short burst can pass before it starts answering 429. A hostile sender can use that up for real senders in its location, who get 429, wait and try again without losing anything for 30 minutes. If real use nears the limit, raise it.
