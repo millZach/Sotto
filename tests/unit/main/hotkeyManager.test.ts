@@ -46,6 +46,21 @@ describe('HotkeyManager primary shortcut', () => {
     expect(active.size).toBe(0)
   })
 
+  it('lets the primary go on standby and takes it back, whatever a suspension or replace does meanwhile', () => {
+    const { active, adapter } = createAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'darwin')
+    manager.replace('Control+Shift+Space')
+    manager.standby(true)
+    expect(active.has('Control+Shift+Space')).toBe(false)
+    manager.suspend(true)
+    manager.suspend(false)
+    expect(manager.replace('Control+Alt+Space')).toEqual({ ok: true })
+    expect(active.size).toBe(0)
+    expect(manager.current()).toBe('Control+Alt+Space')
+    manager.standby(false)
+    expect([...active.keys()]).toEqual(['Control+Alt+Space'])
+  })
+
   it('keeps Linux settings without claiming a global shortcut or Escape', () => {
     const { adapter } = createAdapter()
     const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'linux')

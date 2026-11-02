@@ -9,7 +9,10 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let name: String; public let provider: String; public let providerId: String?
     public let ready: Bool; public let recommended: Bool?
     public let reasoningEfforts: [String]?; public let defaultReasoningEffort: String?
-    public let runtimeModes: [String]?; public let providerModes: [ProviderMode]?
+    /// `providerModes` is a `var` only so the connection can put back the list a catalog named by its place
+    /// (`providerModeList`, `provider-mode-lists`); once a shell leaves `HostConnection` that place is nil.
+    public let runtimeModes: [String]?; public var providerModes: [ProviderMode]?
+    public var providerModeList: Int? = nil
     /// Whether the model reads images. Only a model that says so is sent photos.
     public let supportsImages: Bool?
     /// Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model

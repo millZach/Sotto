@@ -151,7 +151,7 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     case 'PROMPT_LIMIT': return t`That thread already had ${{ limit: shownCount(limit) }} briefs from this thread in this turn. Your next message to this thread renews the limit. ${nothing}`
     case 'PAUSED': return t`You were working in that thread, so it takes no brief until your turn there ends. ${nothing}`
     case 'TARGET_CHANGED': return t`You had sent your own message in that thread since this thread last read it. ${nothing}`
-    case 'PENDING_USER_REQUEST': return t`That thread was waiting for your answer on its own card. ${nothing}`
+    case 'PENDING_USER_REQUEST': return t`That thread was waiting for your answer. ${nothing}`
     case 'UNKNOWN_THREAD': return t`That thread is gone or archived, or this thread did not delegate to it. ${nothing}`
     case 'QUEUE_HELD': return t`That thread's own queue was paused, or a message to it had an unknown result, so it takes no brief until you resume, clear or check it there. ${nothing}`
     case 'MACHINE_UNAVAILABLE': return t`The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. ${nothing}`
@@ -319,17 +319,17 @@ export function pendingRequestOf(view: DelegationView, thread: Pick<AgentThread,
 }
 
 const MOST_COMMAND = 80
-/** What a delegated thread waits on the user for, from its own pending request. The user answers in that thread. */
+/** What a delegated thread waits on the user for, from its own pending request. Its card stands below, in this pane. */
 function askingLine(request: AgentRequest): string {
-  if (request.kind === 'question') return t`Waiting for your answer to its question. Open it to answer.`
+  if (request.kind === 'question') return t`Waiting for your answer to its question. Answer it below.`
   const command = request.context?.command?.trim()
   const toolName = request.context?.toolName
   if (command) {
     const shown = leftToRight(command.length > MOST_COMMAND ? `${command.slice(0, MOST_COMMAND - 1)}…` : command)
-    return t({ message: `Waiting for your permission: ${shown}. Open it to answer.`, comment: '{shown} is the command the delegated thread asks to run.' })
+    return t({ message: `Waiting for your permission: ${shown}. Answer it below.`, comment: '{shown} is the command the delegated thread asks to run.' })
   }
-  return toolName ? t({ message: `Waiting for your permission to use ${toolName}. Open it to answer.`, comment: '{toolName} is the name of a tool the delegated thread asks to use.' })
-    : t`Waiting for your permission. Open it to answer.`
+  return toolName ? t({ message: `Waiting for your permission to use ${toolName}. Answer it below.`, comment: '{toolName} is the name of a tool the delegated thread asks to use.' })
+    : t`Waiting for your permission. Answer it below.`
 }
 
 /**

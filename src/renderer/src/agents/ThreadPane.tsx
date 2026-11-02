@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, GitFork, Pencil, Plug, Shrink, X } from 'lucide-react'
+import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
@@ -33,8 +33,9 @@ import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import { useDeleteThread } from './DeleteThread'
-import type { ThreadRow } from './threadFacts'
+import { describeThread, type ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
+import { ReplyAttachContext, useReplyAttachSlot } from './replyAttach'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { RunCommands } from '../tools/runCommand'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
@@ -47,6 +48,9 @@ import { WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { DelegatedBy, DelegationComposerNote } from './DelegatedWork'
+import { useDelegationsEnabled } from './delegations'
+import { openDelegatedThread } from '../tools/delegatedRoster'
+import { delegatedThreadsBelow } from '../../../shared/delegation'
 import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
 import { useOwlFeature } from '../state/owlFeature'
@@ -163,25 +167,45 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim:
 /**
  * The thread's pending requests, each answered by its own ID through the one store every surface sends by
  * (ADR-0135). A plain question points at the composer; everything the provider structured is answered in place.
+ * The requests of the delegated threads below it that wait follow, each under a line naming its thread (ADR-0081,
+ * November 2, 2026 amendment). Each is that thread's own card: it answers that thread's request, shares its answer with
+ * that thread's pane, and a question with no choices is written in that thread.
  */
-function ThreadRequests({ row, state, command, onAnswer, kind }: {
-  readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
+function ThreadRequests({ row, below, state, command, onAnswer, kind }: {
+  readonly row: ThreadRow; readonly below: readonly ThreadRow[]; readonly state: AgentState; readonly command: Command; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
 }): ReactNode {
+  const { t } = useLingui()
   // What this window answered is kept for Watcher's lines alone, so only where Watcher is on (ADR-0072).
   const watcherOn = useWatcherEnabled()
   const thread = row.thread
-  const requests = thread.requests.filter(request => request.kind === kind)
-  const shown = !isThreadClosed(thread) && requests.length > 0
+  const asks = [...(isThreadClosed(thread) ? [] : [row]), ...below]
+    .flatMap(owner => owner.thread.requests.filter(request => request.kind === kind).map(request => ({ owner, request })))
+  const shown = asks.length > 0
   useMark('questions', kind === 'question' && shown)
   if (!shown) return null
-  const blocked = threadRequestBlocked(row, state)
-  return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
-    return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
-      messageLinks={kind === 'question' ? messageLinks(thread.messages) : []}
-      draftOwner={threadRequestOwner(row, state)}
-      onWriteAnswer={onAnswer}
-      onSubmit={threadRequestSubmit(command, thread, request, watcherOn)}
-      onCheck={() => threadRequestCheck(command, thread.id)} />
+  return <div className={kind === 'question' ? 'thread-questions' : undefined}>{asks.map(({ owner, request }) => {
+    const asking = owner.thread
+    const own = owner === row
+    const open = (): void => openDelegatedThread(command, asking.id, asking.delegatedBy ?? thread.id)
+    const card = <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={asking.id} ownerTitle={asking.title} request={request}
+      blocked={threadRequestBlocked(owner, state)}
+      messageLinks={kind === 'question' ? messageLinks(asking.messages) : []}
+      draftOwner={threadRequestOwner(owner, state)}
+      onWriteAnswer={own ? onAnswer : open}
+      onSubmit={threadRequestSubmit(command, asking, request, watcherOn)}
+      onCheck={() => threadRequestCheck(command, asking.id)} />
+    if (own) return card
+    // Named for its thread, as Watcher names the cards in its conversation, since several threads' cards may stand here.
+    const title = asking.title, threadTitle = title
+    return <section key={`${asking.id}\0${request.id}`} className="delegated-ask" data-kind={request.kind}
+      aria-label={request.kind === 'permission' ? t`Permission request from ${title}` : t`Question from ${title}`}>
+      <p className="delegated-ask__from">
+        <GitFork size={13} aria-hidden="true" />
+        <button type="button" className="delegation-link tt-focusable" aria-label={t`Open ${threadTitle}`} title={threadTitle} onClick={open}>{threadTitle}</button>
+        <span className="delegated-ask__provider"><ProviderMark provider={owner.providerId} name={owner.provider} size={12} />{owner.provider}</span>
+      </p>
+      {card}
+    </section>
   })}</div>
 }
 
@@ -279,8 +303,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     if (prompt !== null && active !== prompt && active !== null && element.contains(active)) prompt.focus({ preventScroll: true })
     setComposeHeld(false)
   }, [promptId])
+  // The open delegated threads below this one that wait on the user: their cards stand here too (ADR-0081, November 2,
+  // 2026 amendment). One pass over the threads, and the walk down the links only when one waits.
+  const delegation = useDelegationsEnabled()
+  const waiting = delegation && !ownPane ? state.host.threads.filter(item => item.delegatedBy !== undefined && item.requests.length > 0 && !isThreadClosed(item)) : []
+  const belowIds = waiting.length > 0 ? new Set(delegatedThreadsBelow(state.host.threads, thread.id)) : undefined
+  const below = belowIds === undefined ? [] : waiting.filter(item => belowIds.has(item.id)).map(item => describeThread(state, item, now ?? Date.now()))
   const slim = composerSlim({ enabled: slimOn, readingBack, held: composeHeld, draft: paneHasDraft,
-    questionWaits: !isThreadClosed(thread) && thread.requests.some(request => request.kind === 'question') })
+    questionWaits: [...(isThreadClosed(thread) ? [] : [thread]), ...below.map(item => item.thread)].some(item => item.requests.some(request => request.kind === 'question')) })
   // The pane wears the slim composer as a mark, for the Jump button above it.
   useMark('slim', slim)
   // The pane measures the composer's new shape before the card starts moving to it.
@@ -321,10 +351,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // A send that failed or went unconfirmed is already told by its pending message in this thread; other errors still show.
   const deliveryExplains = error !== null && submissions.some(item => item.threadId === thread.id && item.error === error
     && ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
-  // A refused answer is told in its request card, where it can be answered again; the banner would say it twice.
+  // A refused answer is told in its request card, where it can be answered again; the banner would say it twice. That holds
+  // for the cards of the delegated threads below this one too.
   const answerExplains = useSyncExternalStore(requestAnswerStore.subscribe,
-    () => error !== null && thread.requests.some(request => requestAnswerStore.get(requestAnswerOwnerKey(thread.id, request,
-      threadRequestOwner(row, state)), request.id).error === error))
+    () => error !== null && [row, ...below].some(owner => owner.thread.requests.some(request => requestAnswerStore.get(requestAnswerOwnerKey(owner.thread.id, request,
+      threadRequestOwner(owner, state)), request.id).error === error)))
   // A settings change the provider refused or never answered is told under the option chips; the banner would say it twice.
   const settings = usePendingSettings(thread.id)
   const settingsExplains = error !== null && (Object.values(settings.refusals).some(refusal => refusal?.error === error)
@@ -357,10 +388,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
   const naming: PaneMenuItem[] = [
     ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
-    // The thread's own provider writes the name from its first exchange (ADR-0026); a name typed by hand is left
-    // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
-    ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
-      ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
   ]
   // Open beside leads the layout rows; Tools, the drawer and the pane area's rows follow it in ThreadPaneMenu.
   const beside: PaneMenuItem | undefined = onOpenBeside ? { id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside } : undefined
@@ -407,6 +434,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   ]
   // Delete thread… (ADR-0140; Owl only): a settled thread's last item, after its own rule, since it cannot be taken back.
   const { items: removal, dialog: deleteDialog } = useDeleteThread(row, state, command, { ownPane })
+  // A picture marked up in this pane goes into this pane's reply box (ADR-0170, part 5). With inline-media off the pane
+  // offers no slot, so its reply box registers nothing.
+  const replySlot = useReplyAttachSlot()
+  const markUpOn = useOwlFeature('inline-media')
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   const title = thread.title, provider = row.provider
   const paneChrome = chrome ?? NO_CHROME
@@ -427,7 +458,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     event.preventDefault()
     focusAnswerComposer()
   }
-  return <>
+  return <ReplyAttachContext.Provider value={markUpOn ? replySlot : null}>
     {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
     {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
       {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
@@ -471,7 +502,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
       onReadingBack={slimOn ? readBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
-      <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
+      <ThreadRequests kind="permission" row={row} below={below} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
       {!isThreadClosed(thread) && !thread.remoteHost && !ownPane ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
@@ -495,7 +526,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {ownPane ? null : <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />}
       {/* A prototype waiting for review, with its pages to open (ADR-0108); a waiting question's card carries them instead. */}
       {ownPane ? null : <PrototypeReady thread={thread} />}
-      <ThreadRequests kind="question" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
+      <ThreadRequests kind="question" row={row} below={below} state={state} command={command} onAnswer={focusAnswerComposer} />
       <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => { liftComposer(); setFollowSignal(signal => signal + 1) }}
         watcher={ownPane} toolbarSlot={branchSlot}>
         {quiet => <div className="thread-pane__meta">
@@ -511,5 +542,5 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {/* Under a greeting, the room below the composer matches the room above, so the two sit in the middle. */}
     <div className="thread-pane__balance" data-room-backdrop="" aria-hidden="true" />
     {drawer}
-  </>
+  </ReplyAttachContext.Provider>
 }

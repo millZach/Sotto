@@ -56,24 +56,27 @@
 .thread-nav__attention-dismiss[aria-disabled='true'] { cursor: default; opacity: .6; }
 /* Needs you (ADR-0135): under the search, one entry per thread that needs the user. A filled card like every
    container (ADR-0110); need is said by each entry's ring and status words, never by an outline or a capsule. */
-.needs-you { flex: none; margin: 0 8px 8px; padding: 8px 10px 4px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
-.needs-you__head { display: flex; align-items: center; gap: 6px; }
+.needs-you { flex: none; margin: 0 8px 8px; padding: 8px 8px 2px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
+.needs-you__head { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; }
 .needs-you__heading { margin: 0; font-size: var(--tt-type-small); font-weight: 600; }
 .needs-you__count { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
 .needs-you__oldest { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
 .needs-you__entries { margin: 2px 0 0; padding: 0; list-style: none; }
-.needs-you__entry { padding: 7px 0 5px; border-top: 2px solid var(--tt-card-inset); }
+.needs-you__entry { padding: 8px 0; border-top: 1px solid var(--tt-hairline); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .needs-you__entry { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
-.needs-you__top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.needs-you__top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.needs-you__top > .thread-nav__ring { flex: none; }
 .needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: var(--tt-type-small); font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
-.needs-you__status { color: var(--threads-warning-text); font-weight: 600; }
+.needs-you__status { color: var(--threads-warning-text); font-weight: 500; }
 .needs-you__tag { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-weight: 600; }
 /* What the thread needs, then its one press: on one line while they fit, the press under the words when they do not. */
-.needs-you__need { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 3px 0 2px 17px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.needs-you__need { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 4px 0 0 16px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .needs-you__need > .needs-you__status { margin-right: auto; }
 .needs-you__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-.needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 4px; border-top: 2px solid var(--tt-card-inset); }
+/* The entry's press is the compact size so it sits beside the words rather than under them. */
+.needs-you__actions .tt-button { min-height: 26px; padding: 0 6px; font-size: var(--tt-type-caption); }
+.needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 4px; border-top: 1px solid var(--tt-hairline); }
 .needs-you__overflow { margin-right: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* A waiting thread's card, popped open over the sidebar beside its entry or its rail tile (ADR-0135, October 29
    amendment). It holds the thread's own request card, or why its last turn failed. */
@@ -98,6 +101,7 @@
 /* Rename from a rail tile: the row's field, in the menu's frame beside the tile, as wide as a sidebar row's title. */
 .pane-menu__list.thread-nav__rail-rename { width: 260px; max-width: calc(100vw - 16px); }
 .thread-nav__rail-rename .thread-nav__rename { width: 100%; box-sizing: border-box; }
+.pane-menu__list.thread-snooze { display: flex; align-items: center; gap: 8px; width: 320px; max-width: calc(100vw - 16px); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }

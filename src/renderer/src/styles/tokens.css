@@ -228,6 +228,10 @@
   --tt-error-contrast: var(--theme-canvas);
   --tt-error-surface: var(--theme-error-surface);
   --tt-error-border: color-mix(in oklab, var(--theme-error) 38%, var(--theme-error-surface));
+  /* Mark up's red and amber inks (ADR-0170, part 5): the theme's error and warning colours at full strength, which stand
+     out on any picture, where the text roles above are tuned to read on the theme's own surfaces. */
+  --tt-ink-red: var(--theme-error);
+  --tt-ink-amber: var(--theme-warning);
   /* Status text on a tinted surface, the selection or the bubble, steps toward the body ink so it keeps 4.5:1. */
   --tt-warning-on-tint: color-mix(in oklab, var(--tt-warning-text) 90%, var(--tt-text));
   --tt-error-on-tint: color-mix(in oklab, var(--tt-error-text) 80%, var(--tt-text));

@@ -199,7 +199,7 @@ const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('un
 /** Watcher's first-start suggestion (ADR-0173): the model it is asked on, and what main answers. */
 const watcherFirstModelSchema = z.string().min(1).max(512)
 const watcherFirstAnswerSchema = nextPromptSchema.nullable()
-const dictationShortcutsChangeSchema = z.object({ press: z.array(z.string().min(1).max(64)).min(1).max(4), hold: z.array(z.string().min(1).max(64)).max(4) }).strict()
+const dictationShortcutsChangeSchema = z.object({ press: z.array(z.string().min(1).max(64)).min(1).max(4), hold: z.array(z.string().min(1).max(64)).max(4), standby: z.boolean().optional() }).strict()
 const dictationShortcutsResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
   z.object({ ok: z.literal(false), reason: z.enum(['conflict', 'invalid', 'unavailable']), chord: z.string().max(64).optional(), message: z.string().max(8000).optional() }).strict(),

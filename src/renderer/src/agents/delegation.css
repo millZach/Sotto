@@ -153,3 +153,15 @@
 .thread-swarm__state:is([data-outcome='failed'], [data-outcome='refused']) { color: var(--tt-error-text); }
 .thread-swarm__stop { flex: none; }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-swarm__chevron { transition: rotate 120ms ease; } }
+
+/* A delegated thread's waiting card in the pane of the thread that delegated it: one card, its thread named on top. */
+.delegated-ask { margin-top: 16px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.delegated-ask__from { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; min-width: 0; margin: 0; padding: 12px 16px 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.5; }
+.delegated-ask__from > svg { flex: none; }
+.delegated-ask__provider { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.delegated-ask__provider .provider-mark { color: var(--tt-text-muted); }
+.delegated-ask > .agent-request, .delegated-ask > .agent-request[data-placement='composer'] { margin-top: 0; padding-top: 8px; background: none; }
+/* Above the composer it joins the thread's own questions in their card. */
+.thread-questions > .delegated-ask { margin-top: 0; border-radius: 0; }
+.thread-questions > .delegated-ask > .delegated-ask__from { padding-inline: 18px; }
+.thread-questions > * + .delegated-ask, .thread-questions > .delegated-ask + .agent-request { border-top: 2px solid var(--tt-card-inset); }

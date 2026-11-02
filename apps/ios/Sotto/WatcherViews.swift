@@ -637,7 +637,7 @@ private struct WatcherConversationPane: View {
         }
         // Where the page meets the status bar, its own ground fades in once it moves, as on a tab's page: no band.
         .overlay(alignment: .top) { WatcherStatusBarFade(fade: topFade) }
-        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .watcher(hostID: hostID)) }
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;

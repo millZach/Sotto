@@ -29,7 +29,7 @@ async function selectThread(page: Page, title: string): Promise<void> {
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
 
-/** Rename, Regenerate title and Settle live behind the pane header's More menu now, so it has to be opened first. */
+/** Rename and Settle live behind the pane header's More menu now, so it has to be opened first. */
 async function headerAction(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: 'More actions', exact: true }).first().click()
   await page.getByRole('menuitem', { name, exact: true }).click()
