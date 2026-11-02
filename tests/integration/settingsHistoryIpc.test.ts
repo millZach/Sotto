@@ -256,6 +256,7 @@ describe('IPC validation and lifecycle', () => {
     // Settings control would snap back on save.
     const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
     delete fullPatch['hotkey']
+    delete fullPatch['hotkeyStandby']
     // Dictation shortcuts change only through their own transactional channel.
     delete fullPatch['pressShortcuts']
     delete fullPatch['holdShortcuts']

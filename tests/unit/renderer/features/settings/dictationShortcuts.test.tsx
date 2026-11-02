@@ -25,6 +25,7 @@ interface Options {
   readonly hotkey?: string
   readonly press?: readonly string[]
   readonly hold?: readonly string[]
+  readonly standby?: boolean
   readonly bridge?: Partial<SottoBridge>
   readonly hotkeyResult?: Awaited<ReturnType<SottoBridge['replaceHotkey']>>
   readonly shortcutsResult?: { ok: true } | { ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string }
@@ -41,6 +42,7 @@ function setup(options: Options = {}) {
     hotkey: options.hotkey ?? (platform === 'darwin' ? 'Control+Shift+Space' : 'CommandOrControl+Shift+Space'),
     pressShortcuts: [...options.press ?? []],
     holdShortcuts: [...options.hold ?? []],
+    hotkeyStandby: options.standby ?? false,
   }
   render(<div className="settings-rows"><DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} /></div>)
   return { bridge, onReplaceHotkey, onReplaceDictationShortcuts, user: userEvent.setup() }
@@ -202,14 +204,24 @@ describe('DictationShortcuts', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('The shortcut could not be changed. Ctrl + Win still works.')
   })
 
-  it('hides remove on the last shortcut and on a main shortcut nothing could replace', () => {
-    setup({ owl: true, press: ['CommandOrControl+Alt'] })
-    const pressRow = row('Press to start and stop')
-    expect(within(pressRow).queryByRole('button', { name: 'Remove shortcut, Ctrl Shift Space' })).not.toBeInTheDocument()
-    expect(within(pressRow).getByRole('button', { name: 'Remove shortcut, Ctrl Alt' })).toBeVisible()
-    cleanup()
+  it('hides remove on the last shortcut', () => {
     setup({ owl: true })
     expect(screen.queryByRole('button', { name: /^Remove shortcut/u })).not.toBeInTheDocument()
+  })
+
+  it('puts the main shortcut on standby when only shortcuts the key listener runs could replace it', async () => {
+    const { onReplaceDictationShortcuts, user } = setup({ owl: true, press: ['CommandOrControl+Alt'] })
+    await user.click(screen.getByRole('button', { name: 'Turn shortcut off, Ctrl Shift Space' }))
+    expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['CommandOrControl+Shift+Space', 'CommandOrControl+Alt'], hold: [], standby: true })
+  })
+
+  it('hides a main shortcut on standby and turns it back on', async () => {
+    const { onReplaceDictationShortcuts, user } = setup({ owl: true, press: ['CommandOrControl+Alt'], standby: true })
+    const pressRow = row('Press to start and stop')
+    expect(within(pressRow).queryByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).not.toBeInTheDocument()
+    expect(pressRow).toHaveAccessibleDescription('Press Ctrl + Alt to start, and again to finish.')
+    await user.click(screen.getByRole('button', { name: 'Turn Ctrl + Shift + Space back on' }))
+    expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['CommandOrControl+Shift+Space', 'CommandOrControl+Alt'], hold: [], standby: false })
   })
 
   it('promotes the first registerable extra when the main shortcut is removed', async () => {
