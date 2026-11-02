@@ -362,6 +362,8 @@ private final class FollowBox {
     var missedFollow = false
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
+    /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
+    var endInPage: CGFloat = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -381,7 +383,7 @@ private struct ModelMovedLine: View {
     }
 }
 
-private struct ConversationRow: Identifiable {
+private struct ConversationRow: Identifiable, Equatable {
     let item: TimelineItem
     /// The provider's name heads an answer that doesn't follow another answer.
     let showsWho: Bool
@@ -452,6 +454,36 @@ private final class TimelineCache {
     }
 }
 
+/// Everything besides their rows that the turns before the latest are drawn from.
+private struct OlderTurnsInputs: Equatable {
+    let ref: ThreadRef
+    let provider: String
+    let working: String?
+    let last: String?
+    let movedAfter: String?
+    let movedWords: String?
+    let openRuns: Set<String>
+    let showsPictures: Bool
+    let opensFiles: Bool
+    let spacing: CGFloat
+}
+
+/// The turns before the latest, made as they scroll into view. They are drawn again only when they or what they are
+/// drawn from change, not for each word streamed into the latest turn: given its rows again, the lazy stack guessed
+/// the heights of the rows it hadn't made afresh each time, the page's height swung by tens of thousands of points
+/// under a reply, and a reader at the end was thrown far above it and back.
+private struct OlderTurns<Row: View>: View, Equatable {
+    let rows: ArraySlice<ConversationRow>
+    let inputs: OlderTurnsInputs
+    @ViewBuilder let row: (ConversationRow) -> Row
+    static func == (a: Self, b: Self) -> Bool { a.inputs == b.inputs && a.rows == b.rows }
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: inputs.spacing) {
+            ForEach(rows) { row($0) }
+        }
+    }
+}
+
 /// What, when it changes at the end of the conversation, the page follows if the user is reading at the bottom.
 private struct Tail: Equatable {
     let revision: Int?
@@ -484,6 +516,11 @@ private struct Conversation: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "thread-end"
+    private static let pageSpace = "thread-page"
+    #if DEBUG
+    /// The simulator journeys that pass `--ui-end-probe` read where the conversation's end sits from `EndProbe`.
+    private static let probesEnd = ProcessInfo.processInfo.arguments.contains("--ui-end-probe")
+    #endif
 
     var body: some View {
         let _ = BenchProbe.body("Conversation")
@@ -509,6 +546,9 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
             .background(barReader)
+            #if DEBUG
+            .overlay(alignment: .topLeading) { if Self.probesEnd { EndProbe(follow: follow) } }
+            #endif
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
@@ -544,11 +584,12 @@ private struct Conversation: View {
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                 .equatable()
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
-            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
+            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
         .padding(.horizontal, Space.s4)
         .padding(.bottom, Space.s4)
+        .coordinateSpace(.named(Self.pageSpace))
         .background(alignment: .top) {
             // Reaches up under the bar, so at rest the wash meets the top edge; it scrolls away with the title.
             Wash(warm: state.waitsOnYou, tone: washTone(state), height: 720).offset(y: -200)
@@ -594,12 +635,16 @@ private struct Conversation: View {
                 // for each streamed word, and opening one took seconds (#1702).
                 let split = min(timeline.latestTurnsStart, rows.count)
                 if split > 0 {
-                    LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                        ForEach(rows[..<split]) { row in
-                            entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
-                                  scroll: scroll)
-                        }
+                    let inputs = OlderTurnsInputs(ref: ref, provider: provider, working: working, last: last,
+                                                  movedAfter: movedAfter, movedWords: moved?.words(provider: provider),
+                                                  openRuns: openRuns, showsPictures: model.showsAgentPictures(ref.hostID),
+                                                  opensFiles: model.opensSentFiles(ref.hostID),
+                                                  spacing: Space.dense(Space.s5, density))
+                    OlderTurns(rows: rows[..<split], inputs: inputs) { row in
+                        entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
+                              scroll: scroll)
                     }
+                    .equatable()
                 }
                 ForEach(rows[split...]) { row in
                     entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
@@ -673,11 +718,31 @@ private struct Conversation: View {
     }
 
     /// The end of the conversation.
-    private var sentinelReader: some View {
+    private func sentinelReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { follow.sentinel = proxy.frame(in: .global).maxY; follow.settle() }
-                .onChange(of: proxy.frame(in: .global).maxY) { _, value in follow.sentinel = value; follow.settle() }
+                .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
+                .onChange(of: proxy.frame(in: .global).maxY) { _, value in
+                    endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
+        }
+    }
+
+    /// An end pushed away from a reader at it by what the page holds is followed: something above it grew, a photo taking
+    /// its own shape or a picture's tile being made, and the reader never left. Taken for the reader leaving, it once
+    /// stranded them short of the end, where the page stopped following (November 1, 2026). An end that moved only on
+    /// the screen moved because the page scrolled, by the user's hand or the status bar, and decides where they stand.
+    /// Any growth that slips the end under the reply box is followed, even less than the slack: a photo a little taller
+    /// than its placeholder would otherwise leave the end's last lines covered with nothing to bring them back.
+    private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
+        let wasAtBottom = follow.atBottom
+        let grew = abs(inPage - follow.endInPage) > 0.5
+        follow.sentinel = end
+        follow.endInPage = inPage
+        if wasAtBottom, grew, end > follow.dockTop + 1 {
+            toBottom(scroll)
+        } else {
+            follow.settle()
         }
     }
 
@@ -735,6 +800,24 @@ private struct Conversation: View {
         }
     }
 }
+
+#if DEBUG
+/// The conversation's end, the reply box's top and the bar's bottom, in points from the top of the screen, as one label
+/// the simulator journeys read: in a long page an element's accessibility frame can lag its layout by thousands of
+/// points. It reads the page's place ten times a second and holds no state of the page's, so the page draws as it would
+/// without it. Drawn all but invisibly, so it stays in the accessibility tree.
+private struct EndProbe: View {
+    let follow: FollowBox
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            let words = [follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
+                .joined(separator: " ")
+            Text(verbatim: words).font(.system(size: 2)).opacity(0.02).allowsHitTesting(false)
+                .accessibilityIdentifier("thread-end-probe").accessibilityLabel(Text(verbatim: words))
+        }
+    }
+}
+#endif
 
 extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
