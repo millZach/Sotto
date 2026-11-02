@@ -18,6 +18,8 @@ export class HotkeyManager {
   private listening = false
   private disposed = false
   private suspended = false
+  // The user put the primary on standby and the key listener runs their other shortcuts: kept, not registered.
+  private standing = false
   // A restore after a suspension failed: the accelerator is kept for retries but not claimed by current().
   private dead = false
   private retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -31,6 +33,13 @@ export class HotkeyManager {
   ) {}
 
   replace(candidate: string): HotkeyChangeResult {
+    const result = this.replaceNow(candidate)
+    // A replace on standby still proves the chord is free, then lets it go.
+    if (this.standing && this.platform !== 'linux' && this.accelerator !== null) this.safeUnregister(this.accelerator)
+    return result
+  }
+
+  private replaceNow(candidate: string): HotkeyChangeResult {
     if (this.disposed) {
       return { ok: false, reason: 'unavailable' }
     }
@@ -45,7 +54,7 @@ export class HotkeyManager {
       return { ok: true }
     }
     // A replace registers for real, so it ends any suspension and any restore retry.
-    const wasLive = !this.suspended && !this.dead
+    const wasLive = !this.suspended && !this.dead && !this.standing
     this.suspended = false
     this.dead = false
     clearTimeout(this.retryTimer)
@@ -109,7 +118,23 @@ export class HotkeyManager {
     this.restore(active, 0)
   }
 
+  /** Releases the primary while the key listener runs the user's other shortcuts, and takes it back when it stops. */
+  standby(on: boolean): void {
+    if (this.disposed || this.platform === 'linux' || on === this.standing) return
+    this.standing = on
+    clearTimeout(this.retryTimer)
+    const active = this.accelerator
+    if (active === null || this.suspended) return
+    if (on) {
+      this.dead = false
+      this.safeUnregister(active)
+      return
+    }
+    this.restore(active, 0)
+  }
+
   private restore(accelerator: string, attempt: number): void {
+    if (this.standing) return
     let restored: boolean
     try {
       restored = this.shortcuts.register(accelerator, this.onToggle)

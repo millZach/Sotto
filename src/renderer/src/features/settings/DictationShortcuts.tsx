@@ -17,6 +17,7 @@ import {
   chordWords,
   MAX_SHORTCUTS_PER_ROLE,
   sameChord,
+  standbyAllowed,
   validateChord,
   type DictationShortcutSet,
   type ShortcutRole,
@@ -31,7 +32,7 @@ import { useChordRecorder } from './useChordRecorder'
 import './dictationShortcuts.css'
 
 export interface DictationShortcutsProps {
-  readonly settings: Pick<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
+  readonly settings: Pick<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts'> & Partial<Pick<AppSettings, 'hotkeyStandby'>>
   readonly platform: SottoPlatform
   readonly onReplaceHotkey: (accelerator: string) => Promise<HotkeyChangeResult>
   readonly onReplaceDictationShortcuts?: ((change: DictationShortcutsChange) => Promise<DictationShortcutsResult>) | undefined
@@ -102,6 +103,10 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     }
   }, [owl])
   const denied = listenerInUse && permission === 'denied'
+  // The main shortcut may step aside for shortcuts only the key listener runs; it comes back whenever that listener stops.
+  const canStandby = listener && !linux && !denied && standbyAllowed(set.press)
+  const standby = canStandby && settings.hotkeyStandby === true
+  const mainKeys = inline(set.press[0] ?? '')
 
   // Focus returns to the shortcut once its row has re-rendered without the recording box.
   useEffect(() => {
@@ -114,10 +119,10 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
 
   const show = (role: ShortcutRole, text: LaterWords, alert: boolean): void => setMessage({ role, text, alert })
 
-  const save = async (next: DictationShortcutSet, role: ShortcutRole, chord: string, previous: string): Promise<boolean> => {
+  const save = async (next: DictationShortcutSet, role: ShortcutRole, chord: string, previous: string, standbyChange?: boolean): Promise<boolean> => {
     const mine = ++saveRef.current
     const result: HotkeyChangeResult | DictationShortcutsResult = await Promise.resolve(owl
-      ? onReplaceDictationShortcuts?.({ press: next.press, hold: next.hold }) ?? UNAVAILABLE
+      ? onReplaceDictationShortcuts?.({ press: next.press, hold: next.hold, ...(standbyChange === undefined ? {} : { standby: standbyChange }) }) ?? UNAVAILABLE
       : onReplaceHotkey(next.press[0] ?? settings.hotkey)
     ).catch(() => UNAVAILABLE)
     // A newer save answers for the row; this slower, older answer must not overwrite it.
@@ -171,12 +176,18 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
 
   const promotable = (index: number): boolean => index > 0 && !chordNeedsListener(set.press[index] ?? '', 'press')
   const removable = (role: ShortcutRole, index: number): boolean =>
-    owl && !locked && all.length > 1 && (role === 'hold' || index > 0 || set.press.some((_, other) => promotable(other)))
+    owl && !locked && all.length > 1 && (role === 'hold' || index > 0 || set.press.some((_, other) => promotable(other)) || canStandby)
 
   const remove = async (role: ShortcutRole, index: number): Promise<void> => {
     const chord = set[role][index] ?? ''
     let press = [...set.press]
     const hold = [...set.hold]
+    if (role === 'press' && index === 0 && !set.press.some((_, other) => promotable(other))) {
+      setMessage(null)
+      await save(set, role, chord, chord, true)
+      setFocusKeys([`${role}-1`, `${role}-add`])
+      return
+    }
     if (role === 'hold') hold.splice(index, 1)
     else if (index === 0) {
       // The main shortcut must stay one Electron can register, so the first such extra takes its place.
@@ -209,8 +220,9 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
 
   const row = (role: ShortcutRole): ReactNode => {
     const chords = set[role]
+    const shown = role === 'press' && standby ? chords.slice(1) : chords
     const copy = rowCopy[role]
-    const description = i18n._(chords.length === 0 ? copy.none : chords.length === 1 ? copy.one(inline(chords[0] ?? '')) : copy.several)
+    const description = i18n._(shown.length === 0 ? copy.none : shown.length === 1 ? copy.one(inline(shown[0] ?? '')) : copy.several)
     const recordingHere = target?.role === role
     const line = recordingHere
       ? { text: recorder.held.length === 0 ? msg`Hold the keys you want, then let go. Esc cancels.` : msg`Let go to save. Esc cancels.`, alert: false }
@@ -223,6 +235,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
         </div>
         <div className="dictation-shortcuts__controls">
           {chords.map((chord, index) => {
+            if (role === 'press' && index === 0 && standby) return null
             if (target?.role === role && target.index === index) return <React.Fragment key={`${chord}-${index}`}>{recordingBox(role)}</React.Fragment>
             const words = chordWords(chord, platform)
             const dimmed = denied && chordNeedsListener(chord, role)
@@ -239,7 +252,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
                   <ShortcutKey accelerator={chord} platform={platform} />
                 </button>
                 {removable(role, index)
-                  ? <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Remove shortcut, ${words}`} onClick={() => void remove(role, index)}><X size={13} aria-hidden="true" /></button>
+                  ? <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={role === 'press' && index === 0 && !set.press.some((_, other) => promotable(other)) ? t`Turn shortcut off, ${words}` : t`Remove shortcut, ${words}`} onClick={() => void remove(role, index)}><X size={13} aria-hidden="true" /></button>
                   : null}
               </span>
             )
@@ -263,6 +276,12 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
             <p className="tt-paragraph"><Trans>Holding a shortcut, and Fn, need Input Monitoring. Sotto watches only modifier keys and your shortcuts’ keys, and keeps nothing it sees.</Trans></p>
             <p className="tt-paragraph"><Trans>After an update, macOS may need you to turn Sotto off and on again in that list.</Trans></p>
             <Button variant="secondary" onClick={() => void window.sotto?.requestKeyListenerPermission?.().then(setPermission).catch(() => undefined)}><Trans>Open System Settings</Trans></Button>
+          </div>
+        ) : null}
+        {standby ? (
+          <div className="dictation-shortcuts__permission">
+            <p className="tt-paragraph"><Trans>{mainKeys} is off. It comes back on its own if your other shortcuts stop working.</Trans></p>
+            <Button variant="secondary" onClick={() => void save(set, 'press', set.press[0] ?? '', set.press[0] ?? '', false)}><Trans>Turn {mainKeys} back on</Trans></Button>
           </div>
         ) : null}
         {darwin && all.some((chord) => chordTokens(chord).includes('Fn'))

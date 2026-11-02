@@ -288,6 +288,10 @@ msgstr "{list} and {last}"
 msgid "{low} to {high}"
 msgstr "{low} to {high}"
 
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "{mainKeys} is off. It comes back on its own if your other shortcuts stop working."
+msgstr "{mainKeys} is off. It comes back on its own if your other shortcuts stop working."
+
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "{MAX_CUSTOM_THEMES, plural, other {Sotto keeps up to # saved themes. Remove one to add another.}}"
 msgstr "{MAX_CUSTOM_THEMES, plural, other {Sotto keeps up to # saved themes. Remove one to add another.}}"
@@ -6194,6 +6198,10 @@ msgstr "Try updating {name} on {host} again"
 msgid "Trying…"
 msgstr "Trying…"
 
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "Turn {mainKeys} back on"
+msgstr "Turn {mainKeys} back on"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model."
 msgstr "Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model."
@@ -6206,6 +6214,10 @@ msgstr "Turn on Let phones connect first."
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Turn on Serve in Tailscale"
 msgstr "Turn on Serve in Tailscale"
+
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "Turn shortcut off, {words}"
+msgstr "Turn shortcut off, {words}"
 
 #. A provider on a host that the user disconnected.
 #: src/renderer/src/features/settings/HostProviders.tsx

@@ -360,7 +360,8 @@ export type HotkeyChangeResult =
   | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; message?: string | undefined }>
 
 /** Every dictation shortcut at once; `press[0]` is `settings.hotkey`. */
-export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[] }>
+/** `standby`: put the main shortcut on standby, or bring it back; left out, it stays as it is. */
+export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[]; standby?: boolean | undefined }>
 
 /** A refused change names the chord that failed when one did; the previous shortcuts stay in force. */
 export type DictationShortcutsResult =

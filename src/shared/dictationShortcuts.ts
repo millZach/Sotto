@@ -75,6 +75,20 @@ export function chordNeedsListener(chord: string, role: ShortcutRole): boolean {
   return role === 'hold' || chordTokens(chord).some((token) => token.toLowerCase() === 'fn') || !chordHasKey(chord)
 }
 
+/**
+ * The main shortcut may wait on standby only while another start-and-stop shortcut needs the key listener and none
+ * Electron can register could take the main slot instead (ADR-0097, decision 3).
+ */
+export function standbyAllowed(press: readonly string[]): boolean {
+  const extras = press.slice(1)
+  return extras.length > 0 && extras.every((chord) => chordNeedsListener(chord, 'press'))
+}
+
+/** The start-and-stop shortcut the widget names: the main one, or while it waits on standby the first that replaced it. */
+export function startShortcut(settings: { readonly hotkey: string; readonly hotkeyStandby?: boolean | undefined; readonly pressShortcuts: readonly string[] }): string {
+  return settings.hotkeyStandby === true ? settings.pressShortcuts[0] ?? settings.hotkey : settings.hotkey
+}
+
 function modifierOrder(platform: SottoPlatform): readonly string[] {
   return platform === 'darwin' ? darwinModifierOrder : platform === 'linux' ? linuxModifierOrder : win32ModifierOrder
 }

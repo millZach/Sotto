@@ -86,6 +86,16 @@ describe('SettingsRepository', () => {
     expect((await reopened.get()).pressShortcuts).toEqual(['Alt+Shift+D'])
     expect((await reopened.reset()).pressShortcuts).toEqual(DEFAULT_SETTINGS.pressShortcuts)
   })
+  it('shows stable the main shortcut off standby and keeps the saved standby whole through a save, a patch and a reset', async () => {
+    const { filePath, repository: owl } = await createRepository()
+    await owl.update({ pressShortcuts: ['Fn+Space'], hotkeyStandby: true })
+    const stable = new SettingsRepository(filePath, { dictationHoldShortcutsEnabled: false })
+    expect((await stable.get()).hotkeyStandby).toBe(false)
+    await stable.update({ theme: 'dark' })
+    await stable.save({ ...DEFAULT_SETTINGS })
+    await stable.reset()
+    expect((await new SettingsRepository(filePath, { dictationHoldShortcutsEnabled: true }).get()).hotkeyStandby).toBe(true)
+  })
   it('keeps a saved interface language whole through a build without it: a save, a patch and a reset leave it (ADR-0123)', async () => {
     const { filePath, repository: owl } = await createRepository()
     await owl.update({ interfaceLanguage: 'ja' })
