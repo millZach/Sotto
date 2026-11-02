@@ -192,6 +192,7 @@ function ThreadRequests({ row, below, state, command, onAnswer, kind }: {
       messageLinks={kind === 'question' ? messageLinks(asking.messages) : []}
       draftOwner={threadRequestOwner(owner, state)}
       onWriteAnswer={own ? onAnswer : open}
+      {...kind === 'question' ? { imagesSupported: owner.model?.supportsImages === true } : {}}
       onSubmit={threadRequestSubmit(command, asking, request, watcherOn)}
       onCheck={() => threadRequestCheck(command, asking.id)} />
     if (own) return card

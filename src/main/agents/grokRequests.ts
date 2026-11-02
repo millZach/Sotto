@@ -54,7 +54,7 @@ export function grokPending(wireId: string | number, method: string, value: unkn
     if (!parsed.success) return
     const question = parsed.data
     return { wireId, threadId, toolCallId: question.toolCallId, question, request: { id, kind: 'question', text: question.questions.map(q => q.question).join('\n'), options: question.questions.length === 1 ? question.questions[0]!.options.map(option => ({ id: option.label, label: option.label })) : [],
-      questions: question.questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, options: q.options.map(option => ({ id: option.label, ...option })), multiSelect: q.multiSelect ?? false, allowFreeText: true })), context: { toolCallId: question.toolCallId } } }
+      questions: question.questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, options: q.options.map(option => ({ id: option.label, ...option })), multiSelect: q.multiSelect ?? false, allowFreeText: true, prose: true as const })), context: { toolCallId: question.toolCallId } } }
   }
   return undefined
 }
