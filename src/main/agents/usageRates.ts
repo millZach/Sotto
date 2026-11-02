@@ -46,6 +46,17 @@ function rateFor(provider: string, model: string): Rate | undefined {
   return rates[`${provider}:${model}`] ?? rates[`${provider}:${canonicalModelId(provider, model)}`]
 }
 
+/**
+ * A model's canonical ID when it has a published price, and otherwise undefined: Sotto's reviewed list of providers' public
+ * models, so a model from a user's own server or configuration is never named outside this computer (ADR-0179).
+ */
+export function publicModelId(provider: string, model: string): string | undefined {
+  const id = canonicalModelId(provider, model)
+  return rates[`${provider}:${id}`] ? id : undefined
+}
+const PUBLIC_MODEL_IDS: ReadonlySet<string> = new Set(Object.keys(rates).map(key => key.slice(key.indexOf(':') + 1)))
+export const isPublicModelId = (id: string): boolean => PUBLIC_MODEL_IDS.has(id)
+
 export interface UsageEstimate {
   readonly usd: number
   /** Some reported work was priced at a lower rate than it may have cost. */

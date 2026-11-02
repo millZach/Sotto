@@ -3,6 +3,7 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
+import { createProductEvents } from '../main/productEvents/productEvents'
 import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
@@ -148,6 +149,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   })
   // The host's identity, read once from its own file; the self-update reads it here rather than copying the runtime's state.
   const hostId = await loadHostIdentity(directory)
+  // Product events (ADR-0179): a host holds them in memory until a connected desktop says the switch is on, and makes no ID before that.
+  const productEvents = createProductEvents({ dataDirectory: directory, holdWhileWaiting: true, version: options.sottoVersion ?? packageVersion, channel: getReleaseTrack(options.sottoVersion ?? packageVersion), surface: 'host', ...options.log ? { log: options.log } : {} })
+  productEvents.record('app.started', { pairedHosts: 0 })
   await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
   await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await removeRetiredVoiceCache(directory)
@@ -332,6 +336,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       service: runtime.hostService, credentials, pairing, descriptor: listener?.descriptor,
       close: (): Promise<void> => {
         closing ??= (async () => {
+          productEvents.stop()
           signIns.close()
           // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
           // The descriptor is no longer written from here on, so the one removed below stays removed.

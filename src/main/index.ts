@@ -11,6 +11,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
+import { createProductEvents, productEventsPermission } from './productEvents/productEvents'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
@@ -893,6 +894,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const releaseTrack = getReleaseTrack(appRunningVersion)
+  // Product events (ADR-0179): nothing is sent, and no ID is made, unless a build or the environment names an endpoint and the notice was answered.
+  const productEvents = createProductEvents({ dataDirectory: userDataPath, holdWhileWaiting: false, version: appRunningVersion, channel: releaseTrack, surface: 'desktop', log: event => console.warn(event) })
+  productEvents.setPermission(productEventsPermission(workingCopySettings))
+  app.on('will-quit', () => productEvents.stop())
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
   const buildName = releaseTrackName(releaseTrack)
   // Windows updates itself on both tracks and a Mac on Owl only, the one signed with Sotto's Developer ID (ADR-0093).
@@ -1191,6 +1196,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   quitHandles.desktopHosts = desktopHosts
   await desktopHosts.start()
+  productEvents.record('app.started', { pairedHosts: desktopHosts.get().hosts.length })
   // Saved host identities filter recovery before disk drafts load. Unread originals stay untouched.
   await retainedDrafts.load()
   // Have my agent set this up (ADR-0035): a host setup thread on this computer, with the host setup tools while it
@@ -1931,6 +1937,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const previous = workingCopySettings
       workingCopySettings = settings
       syncHotkeyStandby()
+      productEvents.setPermission(productEventsPermission(settings))
       // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
       menuBarOwl?.applySettings(settings)
