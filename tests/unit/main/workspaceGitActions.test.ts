@@ -187,7 +187,7 @@ describe("durable project/thread organization", () => {
     expect(merged).toHaveBeenCalledWith(url)
     // A late read that says open never moves it back.
     f.host.notePullRequestState({ url, head: 'head', observedAt: new Date().toISOString(), availability: 'available', state: 'open' })
-    await new Promise(resolve => setTimeout(resolve, 20))
+    await (f.host as unknown as { onLane(threadId: string, work: () => Promise<void>): Promise<void> }).onLane('local', async () => undefined)
     expect(thread().worktree?.git?.pullRequest?.state).toBe('merged')
   })
 

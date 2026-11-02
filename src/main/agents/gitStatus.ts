@@ -261,6 +261,8 @@ export class GitStatusReader implements GitStatusSource {
   private readonly now: () => number
   private readonly fetches = new Map<string, FetchRecord>()
   private readonly pullRequests = new Map<string, PullRequestRecord>()
+  /** Which branches' kept answers have named a pull request, by its key, so an ending touches those alone (#2019). */
+  private readonly pullRequestBranches = new Map<string, Set<string>>()
   private readonly defaults = new Map<string, { at: number; value: string | null }>()
   /** Reads under way, each with the `invalidate` count it began under and the repository it found, once it has. */
   private readonly reads = new Map<string, ReadRecord>()
@@ -710,13 +712,13 @@ export class GitStatusReader implements GitStatusSource {
   /**
    * A pull request another read saw merge or close (#2019): a branch's kept answer that names it says so from now on, as if
    * GitHub had just said it to this reader. A local read asks GitHub nothing, so it would otherwise bring back the open it
-   * kept. Merged is final. Called once per ending, so walking the kept answers is not an update's cost.
+   * kept. Merged is final. It reads only the branches that named this pull request, however many this reader has kept.
    */
   notePullRequestEnded(url: string, state: 'merged' | 'closed'): void {
     const key = pullRequestKey(url)
-    if (!key) return
-    for (const [branch, record] of this.pullRequests) {
-      if (!record.value || record.value.state === state || record.value.state === 'merged' || pullRequestKey(record.value.url) !== key) continue
+    for (const branch of key ? this.pullRequestBranches.get(key) ?? [] : []) {
+      const record = this.pullRequests.get(branch)
+      if (!record?.value || record.value.state === state || record.value.state === 'merged' || pullRequestKey(record.value.url) !== key) continue
       this.pullRequests.set(branch, { ...record, value: { ...record.value, state }, nextAt: this.now() + PULL_REQUEST_SETTLED_FRESH_MS })
     }
   }
@@ -736,7 +738,14 @@ export class GitStatusReader implements GitStatusSource {
     const keep = (next: PullRequestRecord): GitPullRequestSummary | null => {
       const latest = this.pullRequests.get(key)
       if (latest && latest.epoch > next.epoch) return latest.value
+      // An answer asked before another read saw the merge lands after it (`notePullRequestEnded`): GitHub never unmerges (#2019).
+      if (latest?.value?.state === 'merged' && next.value?.url === latest.value.url && next.value.state !== 'merged') return latest.value
       this.pullRequests.set(key, next)
+      const named = next.value && pullRequestKey(next.value.url)
+      if (named) {
+        const branches = this.pullRequestBranches.get(named)
+        if (branches) branches.add(key); else this.pullRequestBranches.set(named, new Set([key]))
+      }
       return next.value
     }
     const target = await this.headTarget(cwd, lookup.branch, lookup.upstream)

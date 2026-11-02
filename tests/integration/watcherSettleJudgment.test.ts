@@ -214,6 +214,20 @@ describe('a settle asks GitHub before an open pull request holds it (#2019)', ()
     expect(ask).toHaveBeenCalledTimes(1)
   })
 
+  it('tells Watcher of a merge it read even when another pull request refuses the settle, since the moved record leaves Watcher’s reads', async () => {
+    const otherUrl = 'https://github.com/example/synthetic/pull/2006'
+    const ask = vi.fn(async (asked: string) => answer(asked === otherUrl ? 'open' : 'merged'))
+    const f = await fixture(true, false, ask), target = await f.watched(), requestId = await f.request()
+    f.links.linkPullRequestRecord(target.threadId, { ...pullRequest, url: otherUrl, number: 2006 }, 'agent')
+    await f.branchRead(target.threadId, pullRequest)
+    await f.endTurn(target.threadId)
+    const observed = vi.spyOn(f.service, 'pullRequestObserved')
+    expect(await f.settle(requestId, target)).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+    expect(observed).toHaveBeenCalledTimes(1)
+    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ url, state: 'merged', availability: 'available' }))
+    await vi.waitFor(() => expect(f.workspace.host.openPullRequestUrls(target.threadId)).toEqual([otherUrl]))
+  })
+
   it('asks about a babysat pull request and a delegated thread’s too, and refuses on the one still open', async () => {
     const childUrl = 'https://github.com/example/synthetic/pull/2005'
     const ask = vi.fn(async (asked: string) => answer(asked === childUrl ? 'open' : 'merged'))

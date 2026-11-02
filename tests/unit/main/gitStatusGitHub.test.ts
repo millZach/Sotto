@@ -152,6 +152,24 @@ describe('a merge another read saw (#2019)', () => {
     expect(h.graphql()).toBe(asked)
   })
 
+  it('keeps the merge when an answer asked before it lands after it', async () => {
+    const late = deferred()
+    let held = false
+    const h = harness({ ...worktrees(1) }, args => {
+      const open = headsAnswer(args, [{ head: 'feature/thread-1', number: 1 }])
+      return held ? late.promise.then(() => open) : open
+    })
+    await h.round(folder)
+    held = true
+    h.advance(60_000)
+    const asking = h.reader.readRemote(folder)
+    await vi.waitFor(() => expect(h.graphql()).toBe(2))
+    h.reader.notePullRequestEnded(url(1), 'merged')
+    late.resolve()
+    await asking
+    expect((await h.reader.read(folder, { remote: false, fresh: true })).pullRequest?.state).toBe('merged')
+  })
+
   it('never moves a merged answer to closed', async () => {
     const h = harness({ ...worktrees(1) }, args => headsAnswer(args, [{ head: 'feature/thread-1', number: 1 }]))
     await h.round(folder)

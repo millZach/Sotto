@@ -1198,7 +1198,7 @@ export class WatcherService implements WatcherControlHooks {
     // An open pull request Sotto knows of, its own or a delegated thread's, holds the settle (October 29, 2026). Sotto
     // knows only the linked ones, the branch's and the babysat ones, so Watcher still looks for others the thread opened.
     // A record may be out of date, so GitHub was asked before this check (`askBeforeSettle`, #2019), and what it said ended holds nothing.
-    const held = [thread, ...delegated].flatMap(item => this.openPullRequests(item)).filter(url => !this.settleReadEnded(url))
+    const held = this.settleOpenPullRequests(thread, delegated).filter(url => !this.settleReadEnded(url))
     const open = held.find(url => this.settleReads.get(pullRequestKey(url) ?? url) !== 'unread')
     if (open) refuse('THREAD_BUSY', `This thread has an open pull request, ${open}. Wait for it to merge or close before settling. Nothing was settled.`)
     if (held[0]) refuse('THREAD_BUSY', `Sotto could not read this thread’s pull request from GitHub, ${held[0]}, and last saw it open. Nothing was settled. Try again in a minute.`, true)
@@ -1207,6 +1207,10 @@ export class WatcherService implements WatcherControlHooks {
   private settlesWith(thread: AgentThread): AgentThread[] {
     const threads = this.owningSnapshot(thread.hostId ?? this.hostId())?.threads ?? []
     return threads.some(item => item.delegatedBy) ? delegatedThreadsBelow(threads, thread.id).flatMap(id => threads.find(item => item.id === id) ?? []) : []
+  }
+  /** The open pull requests Sotto's records hold for a settle: the thread's own, and the threads' that settle with it. */
+  private settleOpenPullRequests(thread: AgentThread, delegated: readonly AgentThread[]): string[] {
+    return [thread, ...delegated].flatMap(item => this.openPullRequests(item))
   }
   private settleReadEnded(url: string): boolean {
     const read = this.settleReads.get(pullRequestKey(url) ?? url)
@@ -1222,21 +1226,23 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * Asks GitHub once about each pull request that would hold this settle, before the settle is checked (#2019). Sotto's
    * records hear of a merge only from a read that happens to be made, and nothing reads a thread nobody has open and
-   * Watcher does not watch. So it asks here, only when a record would refuse, and never on an update. An ended answer also
-   * brings this computer's records up to date; Watcher's news is not told of it.
+   * Watcher does not watch. So it asks here, only when a record would refuse, and never on an update. An ended answer goes
+   * where any read's does: to Watcher's evidence, since the moved record leaves Watcher's own reads, and to this computer's records.
    */
   private async askBeforeSettle(target: WatcherThreadTarget): Promise<void> {
     const ask = this.options.pullRequestState
     const thread = ask && this.owningThread(target.hostId, target.threadId)
     if (!thread) return
-    const urls = new Map([thread, ...this.settlesWith(thread)].flatMap(item => this.openPullRequests(item)).map(url => [pullRequestKey(url) ?? url, url]))
+    const urls = new Map(this.settleOpenPullRequests(thread, this.settlesWith(thread)).map(url => [pullRequestKey(url) ?? url, url]))
     await Promise.all([...urls].map(async ([prKey, url]) => {
       if (this.settleReads.get(prKey) === 'merged') return
       try {
         const read = await ask(url)
         if (read.state === 'open') { this.settleReads.delete(prKey); return }
         this.settleReads.set(prKey, read.state)
-        this.options.host.notePullRequestState({ url, head: read.headRefOid, state: read.state, availability: 'available', observedAt: now() })
+        const observation: PullRequestObservation = { url, head: read.headRefOid, state: read.state, availability: 'available', observedAt: now() }
+        this.pullRequestObserved(observation)
+        this.options.host.notePullRequestState(observation)
       } catch { this.settleReads.set(prKey, 'unread') }
     }))
   }
