@@ -362,6 +362,9 @@ private final class FollowBox {
     var missedFollow = false
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
+    /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
+    var endInPage: CGFloat = 0
+    var diagContent: CGFloat = 0, diagOffset: CGFloat = 0 // [DEBUG-snap]
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -484,6 +487,11 @@ private struct Conversation: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "thread-end"
+    private static let pageSpace = "thread-page"
+    #if DEBUG
+    /// The simulator journeys that pass `--ui-end-probe` read where the conversation's end sits from `EndProbe`.
+    private static let probesEnd = ProcessInfo.processInfo.arguments.contains("--ui-end-probe")
+    #endif
 
     var body: some View {
         let _ = BenchProbe.body("Conversation")
@@ -498,6 +506,7 @@ private struct Conversation: View {
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
             }
             .defaultScrollAnchor(.bottom)
+            .modifier(DiagGeometry(follow: follow)) // [DEBUG-snap]
             .scrollDismissesKeyboard(.interactively)
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
@@ -509,6 +518,9 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
             .background(barReader)
+            #if DEBUG
+            .overlay(alignment: .topLeading) { if Self.probesEnd { EndProbe(follow: follow) } }
+            #endif
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
@@ -544,11 +556,12 @@ private struct Conversation: View {
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                 .equatable()
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
-            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
+            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
         .padding(.horizontal, Space.s4)
         .padding(.bottom, Space.s4)
+        .coordinateSpace(.named(Self.pageSpace))
         .background(alignment: .top) {
             // Reaches up under the bar, so at rest the wash meets the top edge; it scrolls away with the title.
             Wash(warm: state.waitsOnYou, tone: washTone(state), height: 720).offset(y: -200)
@@ -593,7 +606,17 @@ private struct Conversation: View {
                 // made as they scroll into view. Laid out whole, every row of a long thread was updated and placed again
                 // for each streamed word, and opening one took seconds (#1702).
                 let split = min(timeline.latestTurnsStart, rows.count)
-                if split > 0 {
+                if split > 0 && DiagFlags.frozenOlder { // [DEBUG-snap]
+                    Frozen(key: rows[..<split].map(\.id) + openRuns.sorted() + [working ?? "", last ?? ""]) {
+                        LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                            ForEach(rows[..<split]) { row in
+                                entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
+                                      scroll: scroll)
+                            }
+                        }
+                    }
+                    .equatable()
+                } else if split > 0 {
                     LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
                         ForEach(rows[..<split]) { row in
                             entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
@@ -673,11 +696,29 @@ private struct Conversation: View {
     }
 
     /// The end of the conversation.
-    private var sentinelReader: some View {
+    private func sentinelReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { follow.sentinel = proxy.frame(in: .global).maxY; follow.settle() }
-                .onChange(of: proxy.frame(in: .global).maxY) { _, value in follow.sentinel = value; follow.settle() }
+                .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
+                .onChange(of: proxy.frame(in: .global).maxY) { _, value in
+                    endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
+        }
+    }
+
+    /// An end pushed away from a reader at it by what the page holds is followed: something above it grew, a photo taking
+    /// its own shape or a picture's tile being made, and the reader never left. Taken for the reader leaving, it once
+    /// stranded them short of the end, where the page stopped following (November 1, 2026). An end that moved only on
+    /// the screen moved because the page scrolled, by the user's hand or the status bar, and decides where they stand.
+    private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
+        let wasAtBottom = follow.atBottom
+        let grew = abs(inPage - follow.endInPage) > 0.5
+        follow.sentinel = end
+        follow.endInPage = inPage
+        if wasAtBottom, grew, !ProcessInfo.processInfo.arguments.contains("--diag-no-fix"), end > follow.dockTop + FollowBox.slack { // [DEBUG-snap]
+            toBottom(scroll)
+        } else {
+            follow.settle()
         }
     }
 
@@ -722,6 +763,7 @@ private struct Conversation: View {
     /// the page; the page owes it to them for when they let go.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
+        if DiagFlags.noScrollTo && box.followRequests > 3 { return } // [DEBUG-snap]
         guard !box.userScrolling else { box.missedFollow = true; return }
         box.followRequests += 1
         let request = box.followRequests
@@ -732,6 +774,50 @@ private struct Conversation: View {
             scroll.scrollTo(Self.end, anchor: .bottom)
             try? await Task.sleep(nanoseconds: 120_000_000)
             if box.followRequests == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
+        }
+    }
+}
+
+#if DEBUG
+/// The conversation's end, the reply box's top and the bar's bottom, in points from the top of the screen, as one label
+/// the simulator journeys read: in a long page an element's accessibility frame can lag its layout by thousands of
+/// points. It reads the page's place ten times a second and holds no state of the page's, so the page draws as it would
+/// without it. Drawn all but invisibly, so it stays in the accessibility tree.
+private struct EndProbe: View {
+    let follow: FollowBox
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            let words = [follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
+                .joined(separator: " ") + " | content \(Int(follow.diagContent)) offset \(Int(follow.diagOffset)) requests \(follow.followRequests)" // [DEBUG-snap]
+            Text(verbatim: words).font(.system(size: 2)).opacity(0.02).allowsHitTesting(false)
+                .accessibilityIdentifier("thread-end-probe").accessibilityLabel(Text(verbatim: words))
+        }
+    }
+}
+#endif
+
+// [DEBUG-snap] Diagnostic switches for the streaming journeys; removed before review.
+enum DiagFlags {
+    static let frozenOlder = ProcessInfo.processInfo.arguments.contains("--diag-frozen-older")
+    static let noScrollTo = ProcessInfo.processInfo.arguments.contains("--diag-no-scroll-to")
+}
+// [DEBUG-snap]
+private struct Frozen<Content: View>: View, Equatable {
+    let key: [String]
+    @ViewBuilder let content: () -> Content
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+    var body: some View { content() }
+}
+// [DEBUG-snap] The scroll view's content height and offset, into the follow box, for the probe.
+private struct DiagGeometry: ViewModifier {
+    let follow: FollowBox
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: CGPoint.self) { g in CGPoint(x: g.contentSize.height, y: g.contentOffset.y) } action: { _, new in
+                follow.diagContent = new.x; follow.diagOffset = new.y
+            }
+        } else {
+            content
         }
     }
 }

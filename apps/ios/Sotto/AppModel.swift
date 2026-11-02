@@ -1514,6 +1514,8 @@ struct RailAsk: Equatable {
     private var fixtureSlowDetail = false
     /// The reconnecting journey: a moment after a thread opens, its computer loses its connection and is tried again.
     private var fixtureReconnecting = false
+    /// The pictures journeys: the laptop hands back the long thread's pictures and photos.
+    private var fixturePictures = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
     /// The laptop's Watcher page in the Watcher journeys, as the laptop would send it.
@@ -1645,8 +1647,11 @@ struct RailAsk: Equatable {
             "messages": conversation, "activities": steps])
         // A long conversation of tall replies, for the journey that opens a thread and expects its end on screen at once,
         // with the turns before the latest ten not yet made.
+        // With --ui-pictures, its later turns carry pictures as turns that took screenshots do, and three of its questions
+        // a photo the user sent; each is read a moment after its tile asks, as from a computer.
+        fixturePictures = arguments.contains("--ui-pictures")
         if arguments.contains("--ui-long-thread") {
-            let (longMessages, longSteps) = Self.fixtureLongThread(at)
+            let (longMessages, longSteps) = Self.fixtureLongThread(at, pictures: fixturePictures)
             fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
                 "messages": longMessages, "activities": longSteps])
         }
@@ -1680,6 +1685,7 @@ struct RailAsk: Equatable {
             if agents && host == laptop { features += [AgentsRoster.feature, "subagents", "failure-seen"] }
             // The paste and share journeys: the laptop keeps files, for a thread and for Watcher.
             if arguments.contains("--ui-files") && host == laptop { features += [FileLimits.stagingFeature, WatcherWire.filesFeature] }
+            if fixturePictures && host == laptop { features += [Photos.threadMediaFeature] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         // The share journey: a link and a PDF wait in the inbox, as the share extension leaves them.
@@ -1740,17 +1746,20 @@ struct RailAsk: Equatable {
         }
         storageReady = true
         if arguments.contains("--bench-threads") { startBench(laptop: laptop, arguments: arguments) }
-        if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
+        if arguments.contains("--ui-streaming") {
+            // In the pictures journeys the long thread's last reply grows instead of the working thread's update.
+            if fixturePictures { streamFixture(host: laptop, threadID: "drives", messageID: "reply-39") } else { streamFixture(host: laptop) }
+        }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = String(localized: "Recovered the saved computer list.") + " " + Self.pairingWarning(1) }
     }
     /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
     /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
-    private func streamFixture(host: String) {
+    private func streamFixture(host: String, threadID: String = "iphone", messageID: String = "update") {
         guard let object = fixtureShells[host],
               let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: object)) else { return }
-        let ref = ThreadRef(hostID: host, threadID: "iphone")
+        let ref = ThreadRef(hostID: host, threadID: threadID)
         let words = "The drawer’s chord is next, then the tests run again and the branch is ready for review.".split(separator: " ")
         Task { [weak self] in
             var sequence = 0
@@ -1761,7 +1770,7 @@ struct RailAsk: Equatable {
                 push(.shell(shell), from: host, sequence: sequence)
                 guard selected == ref, let detail = openDetail else { continue }
                 let delta: [String: Any] = ["threadId": ref.threadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
-                                            "messageDeltas": [["id": "update", "appendText": " " + String(words[sequence % words.count])]],
+                                            "messageDeltas": [["id": messageID, "appendText": " " + String(words[sequence % words.count])]],
                                             "activityDeltas": [[String: Any]]()]
                 guard let change = try? JSONDecoder().decode(ThreadDetailDelta.self, from: JSONSerialization.data(withJSONObject: delta)),
                       let next = detail.applying(change) else { continue }
@@ -1842,16 +1851,31 @@ struct RailAsk: Equatable {
         }
     }
     /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
-    private static func fixtureLongThread(_ at: (Double) -> String) -> ([[String: Any]], [[String: Any]]) {
+    /// With `pictures`, the last fourteen turns' commands each hand back two screenshots, so pictures sit both in the latest
+    /// turns and in the turns before them, and three questions carry a photo the user sent.
+    private static func fixtureLongThread(_ at: (Double) -> String, pictures: Bool = false) -> ([[String: Any]], [[String: Any]]) {
         var messages: [[String: Any]] = []
         var steps: [[String: Any]] = []
         let turns = 40
         for turn in 0..<turns {
             let base = Double(turns - turn) * 600
-            messages.append(["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
-                             "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."])
-            steps.append(["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
-                          "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)])
+            var ask: [String: Any] = ["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
+                                      "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."]
+            if pictures && !ProcessInfo.processInfo.arguments.contains("--diag-no-photos") && [28, 33, 37].contains(turn) { // [DEBUG-snap]
+                ask["attachments"] = [["id": "panel-photo-\(turn)", "name": "Panel \(turn + 1).jpg", "mimeType": "image/jpeg",
+                                       "sizeBytes": 240_000, "preview": ["available": true]]]
+            }
+            messages.append(ask)
+            var check: [String: Any] = ["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
+                                        "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)]
+            if pictures && !ProcessInfo.processInfo.arguments.contains("--diag-no-tiles") && turn >= turns - 14 { // [DEBUG-snap]
+                check["media"] = (1...2).map { shot -> [String: Any] in
+                    ["id": "shot-\(shot)", "kind": "image", "mimeType": "image/png", "width": Self.fixtureScreenshotSize.width,
+                     "height": Self.fixtureScreenshotSize.height, "name": "drive-\(turn + 1)-\(shot).png", "source": "tool-result",
+                     "sizeBytes": 60_000]
+                }
+            }
+            steps.append(check)
             let lead = turn == turns - 1 ? "Final comparison: the second drive wins." : "Option \(turn + 1) against the last one."
             let bullets: [String] = (0..<(3 + turn % 4)).map { point in
                 "- **Point \(point + 1):** the drive's rated current, its cooling and the cable run all change, so the breaker and the conduit fill need checking again before anything is ordered."
@@ -1863,6 +1887,29 @@ struct RailAsk: Equatable {
         steps.append(["id": "long-final", "sequence": turns + 1, "kind": "command", "status": "completed", "title": "Ran",
                       "command": "python summarize_drives.py", "exitCode": 0, "durationMs": 2_000, "startedAt": at(30)])
         return (messages, steps)
+    }
+    private static let fixtureScreenshotSize = (width: 1280, height: 800)
+    /// A screenshot, wider than a tile, and a photo, taller than wide, each made once.
+    private static let fixtureScreenshot = fixtureImage(width: fixtureScreenshotSize.width, height: fixtureScreenshotSize.height)
+    private static let fixturePhoto = fixtureImage(width: 900, height: 1200)
+    private static func fixtureImage(width: Int, height: Int) -> Data {
+        let size = CGSize(width: width, height: height)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.white.setFill()
+            context.fill(CGRect(x: size.width / 4, y: size.height / 4, width: size.width / 2, height: size.height / 2))
+        }
+    }
+    /// A picture or photo of the pictures journeys, handed over most of a second after it is asked for, as a computer
+    /// across the network does, and not at all once nothing shows it.
+    private func fixturePicture(photo: Bool, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+        guard fixturePictures else { return nil }
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        guard wanted() else { return nil }
+        return photo ? Self.fixturePhoto : Self.fixtureScreenshot
     }
     /// The working thread's worktree record, as a host sends it: its own branch, uncommitted changes and a draft pull request.
     private static var fixtureWorktree: [String: Any] {
@@ -3427,6 +3474,9 @@ struct RailAsk: Equatable {
     /// by its step (`activityID`) and its handle (`attachmentID`). Nil when the computer has none to give, or does not keep
     /// its agents' pictures. It takes the key's parts, not the view's key type, since the model compiles without the views.
     func photoBytes(_ ref: ThreadRef, messageID: String, attachmentID: String, activityID: String?, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return await fixturePicture(photo: activityID == nil, wanted: wanted) }
+        #endif
         guard let activityID else { return await sentPhoto(ref, messageID: messageID, attachmentID: attachmentID, wanted: wanted) }
         guard live[ref.hostID]?.features.contains(Photos.threadMediaFeature) == true else { return nil }
         let operation = Photos.threadMedia(threadID: ref.threadID, activityID: activityID, mediaID: attachmentID)

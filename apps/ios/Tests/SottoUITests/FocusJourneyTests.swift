@@ -517,6 +517,99 @@ import UIKit
         capture("thread-long-open")
     }
 
+    /// A thread whose turns carry pictures keeps a reader at its end once they are there: while its pictures and photos
+    /// load, after reading back up past turns whose tiles let go of their pictures and dragging down again, and while a
+    /// reply streams. On the phone such a thread kept snapping back up to one spot and would not let the reader reach its
+    /// end (Zach, November 1, 2026). Its messages arrive a moment after it opens, as from a computer.
+    ///
+    /// Where the end sits is read from the page's own layout (`--ui-end-probe`): in this long page an element's
+    /// accessibility frame lagged its layout by up to thousands of points.
+    func testAThreadWithPicturesStaysAtItsEnd() { picturesStayAtTheEnd(streaming: false) }
+    func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
+    // [DEBUG-snap] The same build without the fix, expected to fail.
+    func testDiagWithoutTheFix() { picturesStayAtTheEnd(streaming: false, ["--diag-no-fix"]) }
+    func testDiagStreamNoScrollTo() { picturesStayAtTheEnd(streaming: true, ["--diag-no-scroll-to"]) }
+    func testDiagStreamFrozenOlder() { picturesStayAtTheEnd(streaming: true, ["--diag-frozen-older"]) }
+    func testDiagStreamNoPictures() { picturesStayAtTheEnd(streaming: true, ["--diag-no-photos", "--diag-no-tiles"]) }
+
+    private func picturesStayAtTheEnd(streaming: Bool, _ diag: [String] = []) {
+        launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []) + diag)
+        let thread = row("drives")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(byID("steps-run-long-final").waitForExistence(timeout: 10), "The long thread's messages arrive")
+        holdsTheEnd("pictures-open", "Opened at its end, the thread stays there while the pictures and photos near it load")
+
+        // Back up past the latest turns' pictures, so the tiles at the end let go of theirs, then down again by dragging,
+        // as a reader does, until the end is in view, and once more against it so the page rests there.
+        for _ in 0..<12 { dragThread(towardEnd: false, above: reply) }
+        capture("thread-pictures-read-back")
+        var drags = 0
+        while !endProbe().atEnd && drags < 40 { dragThread(towardEnd: true, above: reply); drags += 1 }
+        XCTAssertTrue(endProbe().atEnd, "Dragging down reaches the thread's end (" + endProbe().words + ")")
+        dragThread(towardEnd: true, above: reply)
+        holdsTheEnd("pictures-returned", "Back at its end, the thread stays there while its pictures load again")
+    }
+
+    /// Where the conversation's end, the reply box's top and the bar's bottom sit, as the page lays them out, and whether
+    /// the end is whole on screen above the reply box.
+    private func endProbe() -> (atEnd: Bool, words: String) {
+        let probe = byID("thread-end-probe")
+        guard probe.exists else { return (false, "no probe") }
+        let words = probe.label
+        let numbers = (words.split(separator: "|").first ?? "").split(separator: " ").compactMap { Double($0) } // [DEBUG-snap]
+        guard numbers.count == 3 else { return (false, words) }
+        let end = numbers[0], dock = numbers[1], bar = numbers[2]
+        return (end <= dock + 1 && end > bar, "end \(Int(end)), dock top \(Int(dock)), bar bottom \(Int(bar)) " + words) // [DEBUG-snap]
+    }
+
+    /// Drags the thread once from the middle of the conversation, slowly enough not to fling: toward its end, or back
+    /// toward its start.
+    private func dragThread(towardEnd: Bool, above dock: XCUIElement) {
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        let top = threadTop + 16, bottom = dock.frame.minY - 32
+        let distance = min(220, (bottom - top) * 0.45)
+        let x = window.frame.width - 32, middle = (top + bottom) / 2 - window.frame.minY
+        let direction: CGFloat = towardEnd ? -1 : 1
+        origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
+            .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2)),
+                   withVelocity: .slow, thenHoldForDuration: 0.15)
+    }
+
+    /// Waits for the conversation's end to come into view above the reply box, then reads it for six seconds more: every
+    /// reading must find it there. A page pulled back up leaves the end under the box or off the screen.
+    private func holdsTheEnd(_ name: String, _ message: String) {
+        var readings: [String] = []
+        let started = Date()
+        func shown() -> Bool {
+            let probe = endProbe()
+            readings.append(String(format: "%.1f s: ", Date().timeIntervalSince(started)) + probe.words)
+            return probe.atEnd
+        }
+        var inARow = 0
+        while inARow < 2 && Date().timeIntervalSince(started) < 30 {
+            inARow = shown() ? inARow + 1 : 0
+            if inARow < 2 { Thread.sleep(forTimeInterval: 0.2) }
+        }
+        guard inARow >= 2 else {
+            explain("thread-\(name)-end-never-shown", readings.joined(separator: "\n"))
+            XCTFail(message + ": the end never came into view\n" + readings.suffix(8).joined(separator: "\n"))
+            return
+        }
+        var away = 0
+        let held = Date()
+        while Date().timeIntervalSince(held) < 6 {
+            if !shown() { away += 1 }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        capture("thread-\(name)")
+        if away > 0 { explain("thread-\(name)-left-the-end", readings.joined(separator: "\n")) }
+        XCTAssertEqual(away, 0, message + "\n" + readings.joined(separator: "\n"))
+    }
+
     /// A paste into the reply box attaches a copied file as a pill, as if chosen in Files, and copied words still paste as words.
     func testPastingACopiedFileAttachesItAndWordsStayWords() {
         launch(Self.fixture + ["--ui-files"])

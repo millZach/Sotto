@@ -118,9 +118,12 @@ struct SentPhotoView: View {
     @State private var image: CGImage?
     @State private var missing = false
     var body: some View {
+        // A photo already in memory takes its own shape on its first layout, so a row made again as it scrolls back into
+        // view keeps its height rather than growing from the placeholder under the reader.
+        let shown = image ?? (ProcessInfo.processInfo.arguments.contains("--diag-no-fix") ? nil : previews.cached(key)) // [DEBUG-snap]
         Group {
-            if let image {
-                Image(decorative: image, scale: 1).resizable().scaledToFill()
+            if let shown {
+                Image(decorative: shown, scale: 1).resizable().scaledToFill()
             } else {
                 ZStack {
                     Rectangle().fill(Palette.raised)
@@ -129,7 +132,7 @@ struct SentPhotoView: View {
                 }
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: Self.size(shown).width, height: Self.size(shown).height)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear { previews.appeared(key) }
         .onDisappear { previews.disappeared(key) }
@@ -139,7 +142,7 @@ struct SentPhotoView: View {
         }
     }
     /// At most 220 by 240 points, at the photo's own shape once it is known.
-    private var size: CGSize {
+    private static func size(_ image: CGImage?) -> CGSize {
         guard let image, image.width > 0, image.height > 0 else { return CGSize(width: 160, height: 160) }
         let scale = min(220 / Double(image.width), 240 / Double(image.height))
         return CGSize(width: max(60, Double(image.width) * scale), height: max(60, Double(image.height) * scale))
