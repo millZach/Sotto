@@ -5,7 +5,8 @@
  *   - opening a picture: the commits and the elements the viewer draws, with Mark up among its controls;
  *   - opening the editor: it reads nothing more, since it draws the picture the viewer already holds;
  *   - drawing a pen line of 200 moves over a picture that already holds 20 marks: each move redraws only the line being
- *     drawn, never the marks already made, and the line is drawn as a finished mark once, when the pen lifts.
+ *     drawn, never the marks already made, and the line is drawn as a finished mark once, when the pen lifts;
+ *   - the same with three callouts an agent placed on the picture (part 6), drawn and listed in the viewer and the editor.
  *
  * The milliseconds print every run, for the before and after numbers docs/plans/inline-media.md asks of every pull
  * request; they are asserted only under SOTTO_PERF_ASSERT=1. Making the marked copy needs a canvas, which jsdom lacks;
@@ -32,6 +33,13 @@ const WHOLE = 'data:image/png;base64,iVBORw0KGgo='
 const record: AgentActivity = { id: 'claude-tool-shot', turnId: 'turn', sequence: 0, kind: 'tool', status: 'completed', title: 'sotto_browser / screenshot',
   media: [{ id: 'm0', digest: '0'.repeat(64), kind: 'image', mimeType: 'image/png', sizeBytes: 40, width: 1920, height: 1200, name: 'checkout.png', source: 'tool' }] }
 const groups = [{ key: 'g', turnId: 'turn', anchorMessageId: null, records: [record] }] as unknown as ActivityGroup[]
+/** The same picture with three callouts an agent placed on it (part 6): drawn over it and listed beside it. */
+const CALLOUTS = [
+  { n: 1, x: 0.6, y: 0.48, w: 0.335, h: 0.115, note: 'The Pay button sits on top of the total.' },
+  { n: 2, x: 0.055, y: 0.365, w: 0.453, h: 0.083, note: 'The card number field has no label.' },
+  { n: 3, x: 0.49, y: 0.815, w: 0.51, h: 0.088, note: 'At 390 wide the Pay button runs off the screen.' },
+]
+const marked = [{ key: 'g', turnId: 'turn', anchorMessageId: null, records: [{ ...record, id: 'claude-tool-marked', media: [{ ...record.media![0]!, callouts: CALLOUTS }] }] }] as unknown as ActivityGroup[]
 
 /** A thread pane's reply box, which takes the marked copy; before part 5 there was none, and the tiles render bare. */
 const added: File[][] = []
@@ -66,10 +74,22 @@ describe('marking a picture up', () => {
   afterAll(() => { globalThis.IntersectionObserver = real; delete (window as unknown as { sotto?: unknown }).sotto })
 
   it('costs nothing until it is opened, and a line redraws only itself', async () => {
+    const viewer = await opening(groups)
+    const viewerCallouts = await opening(marked)
+    const editor = typeof markup === 'object' && 'MARKUP_TOOLS' in markup ? await drawing(threadMedia, groups) : null
+    const editorCallouts = typeof markup === 'object' && 'MARKUP_TOOLS' in markup ? await drawing(threadMedia, marked) : null
+    console.info(`markup: ${JSON.stringify({ viewer, editor, viewerCallouts, editorCallouts })}`)
+    if (process.env.SOTTO_PERF_ASSERT === '1') { expect(viewer.openMs).toBeLessThan(200); expect(viewerCallouts.openMs).toBeLessThan(200) }
+  }, 120_000)
+})
+
+/** Opens the picture of `shown` in the viewer `RUNS` times, and counts what each opening costs. */
+async function opening(shown: ActivityGroup[]): Promise<Record<string, number>> {
+  {
     const open: number[] = [], openCommits: number[] = [], openElements: number[] = []
     for (let run = 0; run < RUNS; run++) {
       let commits = 0
-      render(<Profiler id="tiles" onRender={() => { commits += 1 }}><InPane><ThreadMediaTiles groups={groups} threadId="thread" /></InPane></Profiler>)
+      render(<Profiler id="tiles" onRender={() => { commits += 1 }}><InPane><ThreadMediaTiles groups={shown} threadId="thread" /></InPane></Profiler>)
       await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(1))
       commits = 0
       const started = performance.now()
@@ -79,17 +99,13 @@ describe('marking a picture up', () => {
       openElements.push(document.querySelector('.attachment-viewer')!.querySelectorAll('*').length)
       cleanup()
     }
-    const viewer = { openMs: round(median(open), 2), openCommits: median(openCommits), viewerElements: median(openElements) }
-
-    const editor = typeof markup === 'object' && 'MARKUP_TOOLS' in markup ? await drawing(threadMedia) : null
-    console.info(`markup: ${JSON.stringify({ viewer, editor })}`)
-    if (process.env.SOTTO_PERF_ASSERT === '1') expect(viewer.openMs).toBeLessThan(200)
-  }, 120_000)
-})
+    return { openMs: round(median(open), 2), openCommits: median(openCommits), viewerElements: median(openElements) }
+  }
+}
 
 /** Opens the editor on the picture, makes 20 marks, then draws a pen line of 200 moves and counts what each move redraws. */
-async function drawing(threadMedia: ReturnType<typeof vi.fn>): Promise<Record<string, number>> {
-  render(<InPane><ThreadMediaTiles groups={groups} threadId="thread" /></InPane>)
+async function drawing(threadMedia: ReturnType<typeof vi.fn>, shown: ActivityGroup[]): Promise<Record<string, number>> {
+  render(<InPane><ThreadMediaTiles groups={shown} threadId="thread" /></InPane>)
   await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(1))
   fireEvent.click(screen.getByRole('button', { name: /^Open picture 1 of 1/u }))
   await waitFor(() => expect(document.querySelector('.attachment-viewer img[src]')).toBeTruthy())

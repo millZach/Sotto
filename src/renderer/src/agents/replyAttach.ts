@@ -28,12 +28,12 @@ export function useReplyAttachSlot(): ReplyAttachSlot {
 export function useReplyAttach(): ReplyAttachSlot | null { return useContext(ReplyAttachContext) }
 
 /** Fills the pane's slot with this reply box while it is drawn. `attach` is read when used, so it may change each render. */
-export function useRegisterReplyAttach(attach: { readonly current: ReplyAttach }): void {
+export function useRegisterReplyAttach(attach: { readonly current: ReplyAttach }, registers = true): void {
   const slot = useContext(ReplyAttachContext)
   useEffect(() => {
-    if (!slot) return
+    if (!slot || !registers) return
     const entry: ReplyAttach = { refusal: () => attach.current.refusal(), add: files => attach.current.add(files), focus: () => attach.current.focus() }
     slot.current = entry
     return () => { if (slot.current === entry) slot.current = null }
-  }, [slot, attach])
+  }, [slot, attach, registers])
 }

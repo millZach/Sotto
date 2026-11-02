@@ -29,7 +29,7 @@ export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
     return { id: frame.request_id, tool: data.tool_name, input, questions,
       request: { id: frame.request_id, kind: 'question', text: questions.map((q, i) => `${questions.length > 1 ? `${i + 1}. ` : ''}${q.question}${questions.length > 1 && q.options?.length ? `\n${q.options.map(o => o.label).join(' / ')}` : ''}`).join('\n'),
         options: questions.length === 1 ? (questions[0]!.options ?? []).map(option => ({ id: option.label, label: option.label })) : [],
-        questions: questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, multiSelect: q.multiSelect ?? false, allowFreeText: true, options: (q.options ?? []).map(option => ({ id: option.label, ...option })) })), skippable: true,
+        questions: questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, multiSelect: q.multiSelect ?? false, allowFreeText: true, prose: true as const, options: (q.options ?? []).map(option => ({ id: option.label, ...option })) })), skippable: true,
         context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}) } } }
   }
   const description = typeof data.description === 'string' ? data.description : typeof input.description === 'string' ? input.description : ''

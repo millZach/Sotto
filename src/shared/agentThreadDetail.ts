@@ -27,7 +27,7 @@ export function agentActivitySignature(record: AgentActivity): string {
     (record.steps ?? []).map(step => `${step.text.length}:${step.status}`).join('~'),
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),
     // A picture the step captured (ADR-0170) is named by its digest; a record that gained one is sent again.
-    ...record.media ? [record.media.map(item => item.digest).join('~')] : [],
+    ...record.media ? [record.media.map(item => item.callouts ? `${item.digest}:${item.callouts.length}` : item.digest).join('~')] : [],
     ...record.generates ? [record.generates] : [],
     // A cut body's kept part can stay the same length as its whole grows, so its whole size is part of what changed.
     ...record.cut ? [`${record.cut.output ?? ''}:${record.cut.text ?? ''}:${(record.cut.diffs ?? []).map(item => `${item.index}=${item.bytes}`).join(',')}`] : [],

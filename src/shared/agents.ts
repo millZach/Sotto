@@ -392,7 +392,10 @@ export const agentRequestSchema = z.object({
    * The host adds it; no provider does. */
   linkMissing: z.literal(true).optional(),
   options: z.array(z.object({ id, label: text })).default([]),
-  questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional() })).max(100).optional(),
+  questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional(),
+    /** Its written answer reaches the agent as the user's own words, not as a value a form checks, so images may go in it
+     *  (ADR-0176). The adapter of an agent's own question tool sets it; a typed form field never has it. */
+    prose: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional(),
     /** A plan the agent asks the user to accept, in its parts (Cursor's `cursor/create_plan`, ADR-0128); `steps` is Markdown. */
@@ -1555,7 +1558,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(),
     /** The user skipped a `skippable` question: its provider is told so and the turn goes on without an answer. */
-    skipped: z.literal(true).optional() }).strict(),
+    skipped: z.literal(true).optional(),
+    /** Images dropped on a question card (ADR-0176): saved in the thread's folder and named in the answer's words. */
+    attachments: agentAttachmentHandlesSchema.optional() }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
 /** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */
@@ -1715,4 +1720,12 @@ export function isThreadProviderConnected(host: AgentHostSnapshot, thread: Agent
   if (thread.clientConnected !== undefined) return thread.clientConnected
   if (!host.providers || !thread.providerId) return host.connected
   return host.providers.some(provider => provider.id === thread.providerId && provider.connection === 'connected')
+}
+
+/**
+ * The question an answer's images are named in (ADR-0176): the last whose written answer reaches the agent as the user's
+ * own words. A typed form field is never one, so a number or a date never carries them.
+ */
+export function answerImageCarrier(request: Pick<AgentRequest, 'questions'> | undefined): NonNullable<AgentRequest['questions']>[number] | undefined {
+  return request?.questions?.findLast(question => question.prose === true && question.allowFreeText && !question.unavailableReason)
 }

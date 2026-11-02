@@ -108,7 +108,7 @@ export function pendingRequest(id: string | number, method: string, value: unkno
     return [] // Unknown native payloads cannot become guessed grants.
   })
   return { id, method, sessionId, params, request: { id: requestKey(id), kind: mapping.kind, text, options,
-    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length })) } : formQuestions ? { questions: formQuestions } : {}),
+    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length, prose: true as const })) } : formQuestions ? { questions: formQuestions } : {}),
     ...(permission ? { permissionChoices } : { skippable: true as const }), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
       details: JSON.stringify({ ...(params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { networkApprovalContext: params.networkApprovalContext } : {}), ...(fileSummary ? { files: fileSummary } : {}) }).slice(0, 100000) } } }
 }

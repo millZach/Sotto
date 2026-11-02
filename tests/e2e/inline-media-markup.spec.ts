@@ -4,27 +4,13 @@
  * when the user asks to see it. The viewer's Mark up opens the editor. An arrow, a box and a note drawn with the pointer
  * go onto a copy at the picture's full size, Add to reply puts that copy in the reply box as an attachment, and the
  * picture in the thread stays as it was. The time from Add to reply to the copy in the box prints every run. Dark and
- * light, and the 820x560 minimum. The captures go to `artifacts/inline-media/` when SOTTO_E2E_ARTIFACTS=1.
+ * light, and the 820x560 minimum. The captures are run evidence (docs/ci.md), published to `artifacts/inline-media/` with SOTTO_E2E_EVIDENCE=publish.
  *
  *   npm run build && npx playwright test tests/e2e/inline-media-markup.spec.ts
  */
-import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
-import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
-
-const PICTURE = resolve('artifacts/image-viewer/viewer-1280-dark.png')
-
-async function capture(page: Page, name: string): Promise<void> {
-  await page.screenshot({ path: test.info().outputPath(`${name}.png`) })
-  if (process.env.SOTTO_E2E_ARTIFACTS === '1' || process.env.SOTTO_NESTED_LIVE_SIGNATURE) {
-    await mkdir(resolve('artifacts/inline-media'), { recursive: true })
-    await page.screenshot({ path: resolve('artifacts/inline-media', `${name}.png`) })
-  }
-}
+import { resizeWindow } from './support/sottoLaunch'
+import { captureInlineMedia as capture, withShownPictureThread } from './support/shownPictureThread'
 
 /** Drags across the picture from one share of its width and height to another. */
 async function drag(page: Page, surface: Locator, from: readonly [number, number], to: readonly [number, number]): Promise<void> {
@@ -37,54 +23,7 @@ async function drag(page: Page, surface: Locator, from: readonly [number, number
 
 test('a picture marked up goes into the reply as a copy, and the picture in the thread stays as it was', async () => {
   test.setTimeout(240_000)
-  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-inline-markup-' })).directory
-  const root = join(profile, 'native-fixture')
-  const project = join(root, 'project')
-  for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
-  execFileSync('git', ['init', '-q'], { cwd: project })
-  await writeFile(join(project, '.gitignore'), 'test-results/\n')
-  await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({}))
-  const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE, owl: process.env.SOTTO_OWL_FEATURES }
-  process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
-  process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
-  process.env.SOTTO_OWL_FEATURES = 'inline-media=1'
-  let launched: LaunchedSotto | undefined
-  try {
-    launched = await launchSotto('success', profile)
-    const { page } = launched
-    const sottoThreadId = await page.evaluate(async project => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
-      await agents.command({ type: 'connect', provider: 'codex' })
-      const created = await agents.command({ type: 'create-project', provider: 'codex', title: 'Lumen shop', path: project, useExisting: true })
-      const projectId = created.host.projects.find(item => item.title === 'Lumen shop')!.id
-      const modelId = (await agents.get()).host.models.find(model => model.providerId === 'codex' && model.ready)!.id
-      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Check the checkout page', titleSource: 'user', modelId, workingCopy: 'shared' })
-      if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
-      const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Take a screenshot of the checkout page.' })
-      if (sent.error) throw new Error(sent.error)
-      return thread.activeThreadId
-    }, project)
-    const nativeThread = async () => {
-      const state = JSON.parse(await readFile(join(root, 'codex', 'state.json'), 'utf8')) as { threads: Record<string, { id: string; turns: { id: string }[] }> }
-      const thread = Object.values(state.threads)[0]
-      return thread?.turns.at(-1) ? thread.id : undefined
-    }
-    await expect.poll(nativeThread, { timeout: 60_000 }).toBeTruthy()
-    const threadId = (await nativeThread())!
-    await mkdir(join(project, 'test-results'), { recursive: true })
-    await copyFile(PICTURE, join(project, 'test-results', 'checkout.png'))
-    const id = randomUUID()
-    await writeFile(join(root, 'codex', 'control.json'), JSON.stringify({ id, threadId, type: 'complete', text: 'Here is the checkout page.' }))
-    await expect.poll(async () => (await readFile(join(root, 'codex', 'actions.jsonl'), 'utf8').catch(() => '')).includes(id), { timeout: 30_000 }).toBe(true)
-
-    await page.reload()
-    await resizeWindow(launched, 1280, 800)
-    await openThreads(page)
-    await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Check the checkout page', exact: true }).click()
-    const pane = page.locator('section.thread-pane:not([data-hidden])')
-    await expect(pane.getByText('Here is the checkout page.')).toBeVisible({ timeout: 30_000 })
+  await withShownPictureThread('sotto-e2e-inline-markup-', async ({ launched, page, pane, threadId: sottoThreadId }) => {
     // Request-only: the screenshot the turn wrote shows nothing until the agent shows it.
     await expect(pane.locator('.thread-media')).toHaveCount(0)
     const shown = await page.evaluate(async request => window.sottoE2E!.mediaTool!(request),
@@ -156,11 +95,5 @@ test('a picture marked up goes into the reply as a copy, and the picture in the 
     await expect(pane.locator('.screenshot-input [contenteditable="true"], .screenshot-input textarea').first()).toBeFocused()
     await expect(tile).toBeVisible()
     await capture(page, 'markup-added-1280-light')
-  } finally {
-    if (launched) await closeSotto(launched)
-    for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable], ['SOTTO_OWL_FEATURES', previous.owl]] as const) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value
-    }
-    await removeOwnedE2EProfile(profile)
-  }
+  })
 })

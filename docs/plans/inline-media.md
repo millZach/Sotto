@@ -19,6 +19,12 @@ Zach changed the plan's priority on November 1: "only embed images or videos if 
 
 ADR-0170's request-only amendment records the decisions. Parts 5 and 6 follow on top of it.
 
+## Callouts and the capture switch, November 2, 2026
+
+Zach's picks on `docs/prototypes/inline-media-callouts-prototype.html`: a tile draws its picture's callouts, boxes and numbered pins and their count (option 2), and the mark-up editor keeps **Show** and **Keep the callouts in the copy**, both on by default (ADR-0170, decisions 19 to 21).
+
+He also asked for a Settings switch: on, Sotto shows on its own every picture and video an agent makes or looks at, as parts 1 to 4 did before request-only (generated images, screenshots, tool-result pictures, pictures Codex views, and picture and video files a turn writes); off, only what the user asks for, through `show_in_thread`. It starts on, and is its own pull request after part 6 (part 7).
+
 ## The rule that comes first
 
 Zach: Sotto is "performing better than ever" and must not slow down. So:
@@ -38,6 +44,7 @@ Each one ships desktop and iPhone together, behind `inline-media`.
 3. **Tool-result pictures on the other providers.** (Since request-only, not shown on their own.) Grok Build, Devin and DeepSeek Harness (ACP image content) first (#1979). Then Codex `view_image`, Codex Computer Use and Cursor's tool results, because `view_image` names a file on disk and reads it the way part 2 reads a saved image. `tests/perf/toolPictureCapture.perf.test.ts` times an update of each, with and without a picture, and counts that a repeated update hashes nothing.
 4. **Image and video files an agent writes.** (Superseded by request-only: written files are no longer looked for, and an agent shows one through `show_in_thread`.) Found through the turn's changed files; videos and GIFs play inline, never autoplaying. Zach's picks on November 1: git-ignored folders count too (never `node_modules`), and a video plays from the file it was written to, up to 200 MiB on the desktop and 50 MiB on the iPhone, rather than being copied (ADR-0170 decisions 12 to 15). `tests/perf/writtenMediaTurnEnd.perf.test.ts` timed the listing at a turn's end until request-only removed it.
 5. **Mark up.** Arrow, circle, box, pen and note over any picture, desktop and iPhone, with the Duo's pen drawing and a finger moving the picture. Add to reply stages the marked copy as an attachment; the original stays. Under request-only, the copy appears only as the user's own image in a reply they send. Built as the prototype's Mark up view (ADR-0170 decisions 16 to 18): the viewer's **Mark up**, in a thread pane only, with the inks taken from the theme's error and warning colours at full strength. `tests/perf/markupEditor.perf.test.tsx` counts what opening a picture, opening the editor and drawing a pen line of 200 moves over 20 marks cost, and `tests/e2e/inline-media-markup.spec.ts` times Add to reply in the built app.
-6. **Callouts.** A Sotto thread tool lets an agent place numbered boxes with notes on a picture it showed. They are drawn on its tile and listed beside it in the viewer and the editor.
+6. **Callouts.** `show_in_thread` lets an agent place numbered boxes with notes on the pictures it shows, kept on their handles as shares of each picture. They are drawn on the tile with their count, drawn over the picture in the viewer and listed beside it, and listed in the editor with Show and Keep the callouts in the copy (ADR-0170 decisions 19 to 21). `inlineMediaTranscript.perf.test.tsx` adds the 200-turn thread with three callouts on each picture, and `markupEditor.perf.test.tsx` opens the viewer and draws over a picture with them; `tests/e2e/inline-media-callouts.spec.ts` shows one in the built app.
+7. **Show everything an agent makes.** The Settings switch above, on by default: on, the captures of parts 1 to 4 come back; off, request-only.
 
 Android is not in this plan; its follow-up is #1955.

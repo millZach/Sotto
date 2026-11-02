@@ -4,6 +4,7 @@ import { Check, Copy, PenLine, Scan, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentAttachmentReference } from '../../../shared/agents'
+import type { AgentMediaCallout } from '../../../shared/agentActivity'
 import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { useThreadMediaSource, watchNear, type ThreadMediaOrigin } from './threadMediaSources'
 import { usePanZoom } from './diagrams/usePanZoom'
@@ -15,6 +16,7 @@ import { shownCount } from '../state/interfaceNumbers'
 import { useOwlFeature } from '../state/owlFeature'
 import { useReplyAttach } from './replyAttach'
 import { MarkupEditor } from './MarkupEditor'
+import { CalloutLayer, CalloutNotes, useCalloutsHeading } from './callouts'
 import './diagrams/diagrams.css'
 
 export interface ViewerImage extends Partial<Pick<AgentAttachmentReference, 'preview'>> {
@@ -25,7 +27,14 @@ export interface ViewerImage extends Partial<Pick<AgentAttachmentReference, 'pre
   readonly details: string
   /** A picture an agent made, read by its handle rather than from a message (ADR-0170). */
   readonly media?: ThreadMediaOrigin | undefined
+  /** The callouts the agent placed on it (ADR-0170, part 6), drawn over it and listed beside it. */
+  readonly callouts?: readonly AgentMediaCallout[] | undefined
+  /** Who placed them: the thread's provider, or Watcher. */
+  readonly calloutsBy?: string | undefined
+  /** The picture's size as its handle says, so its callouts are laid over it before it loads. */
+  readonly pixels?: { readonly width: number; readonly height: number } | undefined
 }
+
 
 /** The image to draw: a sent attachment's, read by its message, or an agent's picture, read by its handle. */
 function useViewerSource(image: ViewerImage, origin: AttachmentOrigin | undefined, size: 'tile' | 'full', wanted = true): { readonly source: string | null; readonly awaiting: boolean } {
@@ -90,6 +99,10 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   const copyChord = chordClaimed('mod+c', app?.settings?.hotkey, platform) ? 'mod+c' : null
   // Mark up, where a reply box can take the marked copy: only inside a thread pane.
   const reply = useReplyAttach()
+  const calloutsHeading = useCalloutsHeading()
+  const callouts = image.callouts?.length ? image.callouts : null
+  /** The size the callouts are laid out at: the picture's own once it loads, its handle's until then. */
+  const calloutsOn = size ?? image.pixels
   const marks = useOwlFeature('inline-media') && reply !== null
   const [editing, setEditing] = useState(false)
   const [markRefusal, setMarkRefusal] = useState<string | null>(null)
@@ -179,7 +192,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     const target = reply.current
     return createPortal(<div ref={root} className="attachment-viewer" data-scope={inPane ? 'pane' : 'window'} role="dialog" aria-labelledby={titleId} onKeyDown={onKeyDown}>
       <span id={titleId} hidden>{t({ message: `Mark up ${image.name}`, comment: '{name} is the file name of a picture.' })}</span>
-      <MarkupEditor name={image.name} source={source} size={size} reply={target}
+      <MarkupEditor name={image.name} source={source} size={size} reply={target} callouts={callouts ?? undefined} calloutsHeading={callouts ? calloutsHeading(image.calloutsBy) : undefined}
         onCancel={() => { setEditing(false); requestAnimationFrame(() => markButton.current?.focus()) }}
         onAdded={() => { onClose(); setTimeout(() => target.focus(), 0) }} />
     </div>, container)
@@ -204,11 +217,23 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
         <button type="button" className="rich-code__copy tt-focusable" aria-label={t`Close image`} title={t`Close (Esc)`} onClick={onClose}><X size={17} aria-hidden="true" /></button>
       </div>
     </header>
-    <div ref={zoom.viewport} className="rich-diagram-viewer__viewport" tabIndex={0} role="group" aria-label={t`Image view`} aria-describedby={hintId} {...zoom.viewportProps}>
-      {source
-        ? <img key={image.id} className="rich-diagram-viewer__image" src={source} alt={image.name} draggable={false} decoding="async" {...zoom.pictureStyle}
-          onLoad={event => setMeasured({ id: image.id, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
-        : <p className="attachment-viewer__missing tt-paragraph">{awaiting ? t`Loading the image…` : t`This image is no longer available to show.`}</p>}
+    <div className="attachment-viewer__body">
+      <div ref={zoom.viewport} className="rich-diagram-viewer__viewport" tabIndex={0} role="group" aria-label={t`Image view`} aria-describedby={hintId} {...zoom.viewportProps}>
+        {source
+          ? <img key={image.id} className="rich-diagram-viewer__image" src={source} alt={image.name} draggable={false} decoding="async" {...zoom.pictureStyle}
+            onLoad={event => setMeasured({ id: image.id, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
+          : <p className="attachment-viewer__missing tt-paragraph">{awaiting ? t`Loading the image…` : t`This image is no longer available to show.`}</p>}
+        {/* The agent's callouts move and zoom with the picture (ADR-0170, part 6); their notes are listed beside it. */}
+        {/* Mounted with the picture, it grows into place with it as the picture settles at its size. */}
+        {source && callouts && calloutsOn ? <svg key={`${image.id}/callouts`} className="rich-diagram-viewer__image attachment-viewer__callout-layer"
+          viewBox={`0 0 ${calloutsOn.width} ${calloutsOn.height}`} preserveAspectRatio="none" aria-hidden="true" {...zoom.pictureStyle}>
+          <CalloutLayer callouts={callouts} size={calloutsOn} /></svg> : null}
+      </div>
+      {/* Focusable, so long notes can be reached and scrolled from the keyboard; it sits in Tab's path after the picture. */}
+      {callouts ? <aside className="attachment-viewer__callouts tt-focusable" tabIndex={0} aria-label={calloutsHeading(image.calloutsBy)}>
+        <h3 className="attachment-viewer__callouts-heading">{calloutsHeading(image.calloutsBy)}</h3>
+        <CalloutNotes callouts={callouts} />
+      </aside> : null}
     </div>
     {several ? <div ref={strip} className="attachment-viewer__strip" role="group" aria-label={t`Images in this message`}>
       {images.map((item, itemIndex) => <StripThumb key={item.id} image={item} origin={origin} index={itemIndex} count={images.length} current={itemIndex === index} onSelect={select} />)}
