@@ -847,6 +847,10 @@ extension AppModel {
         if let pick = watcherSettingPicks[hostID] { values[pick.kind] = pick.value }
         return values
     }
+    /// Whether the effort Watcher's chip shows is the top its model offers Watcher, where its box's trace lights.
+    func watcherAtTopEffort(_ hostID: String) -> Bool {
+        watcherSettingValues(hostID).map { WatcherSettings.atTopEffort($0, catalog: watcherCatalog(hostID)) } ?? false
+    }
     /// Whether Watcher's computer keeps a change to its model, effort or speed for its next turn while it works, rather
     /// than refusing it until Watcher rests (November 1, 2026).
     func keepsWatcherSettingsForNextTurn(_ hostID: String) -> Bool {

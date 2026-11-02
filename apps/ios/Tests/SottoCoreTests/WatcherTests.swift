@@ -60,6 +60,9 @@ final class WatcherTests: XCTestCase {
         // Ultracode is never Watcher's.
         let claude = try decode([ThreadModel].self, #"[{"id":"opus","name":"Opus 5.5","provider":"Claude Code","providerId":"claude","ready":true,"reasoningEfforts":["high","max","ultracode"]}]"#)
         XCTAssertEqual(WatcherSettings.efforts(claude.first), ["high", "max"])
+        // Watcher's box lights at Max, its top on Claude, since Ultracode is never Watcher's.
+        XCTAssertTrue(WatcherSettings.atTopEffort(ThreadSettingValues(model: "opus", effort: "max", permissions: "", speed: "standard"), catalog: claude))
+        XCTAssertFalse(WatcherSettings.atTopEffort(ThreadSettingValues(model: "opus", effort: "high", permissions: "", speed: "standard"), catalog: claude))
         // Another provider's model starts a new Watcher there, through the same open.
         XCTAssertTrue(WatcherSettings.replaces("opus", current: current, catalog: catalog))
         XCTAssertFalse(WatcherSettings.replaces("astra", current: current, catalog: catalog))

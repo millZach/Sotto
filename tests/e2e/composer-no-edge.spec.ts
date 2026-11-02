@@ -128,7 +128,8 @@ test.describe('The composer has no edge', () => {
       await checkStates(page, pane, 'thread', scroller(page, pane), textbox)
 
       // A running turn, the highest effort and both together, which each drew an edge of their own.
-      const chip = page.locator(pane).getByRole('combobox', { name: 'Thread reasoning', exact: true })
+      // The composer's effort word carries the mark its trace reads (effortTrace.css).
+      const mark = page.locator(`${pane} .thread-prompt [data-effort-trace]`)
       const card = page.locator(`${pane} > .thread-workspace__compose > .thread-prompt`)
       for (const appearance of ['dark', 'light'] as const) {
         await theme(page, appearance, 't3-code')
@@ -136,7 +137,7 @@ test.describe('The composer has no edge', () => {
         await page.mouse.move(0, 0)
         // The effort is set while the thread is idle: the chip waits while a turn runs.
         await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'max' }) })
-        await expect(chip).toHaveAttribute('data-effort-top', 'true')
+        await expect(mark).toHaveAttribute('data-effort-trace', 'true')
         // The arrival's tide plays once through the card; the capture waits for it to settle.
         await expect(page.locator(`${pane} [data-effort-arriving='true']`)).toHaveCount(0, { timeout: 6_000 })
         await page.waitForTimeout(400)
@@ -153,7 +154,7 @@ test.describe('The composer has no edge', () => {
         await page.evaluate(async () => { await window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: 'Finished.', status: 'idle' }) })
         await expect(card).not.toHaveAttribute('data-running', /.*/)
         await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' }) })
-        await expect(chip).toHaveAttribute('data-effort-top', 'false')
+        await expect(mark).toHaveAttribute('data-effort-trace', 'false')
         await expect.poll(() => trace(page, pane), { message: `thread ${appearance} trace below the top` }).toEqual({ shown: false, turning: [] })
       }
     } finally { await closeSotto(launched) }

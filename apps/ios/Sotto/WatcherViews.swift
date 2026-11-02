@@ -1639,6 +1639,8 @@ private struct WatcherDock: View {
         } trailing: {
             trailing(key: key, stops: stops, ready: written || preparing, preparing: preparing)
         }
+        // The trace round the card at the top level Watcher's model offers: Max on Claude, where Ultracode is never Watcher's.
+        .effortTrace(model.offersWatcherManage(hostID) && model.watcherAtTopEffort(hostID), radius: ComposerMetrics.radius)
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: stops)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)

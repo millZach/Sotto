@@ -22,9 +22,10 @@ const EXCEPTIONS: readonly { readonly sheet: string; readonly declaration: strin
   { sheet: 'features/usage/usage.css', declaration: 'font-size: clamp(23px, 1.2cqi + 15px, 31px)', reason: 'Usage\'s index figures grow with the room between two sizes (ADR-0110, decision 4).' },
   { sheet: 'features/usage/usage.css', declaration: 'font-size: clamp(17px, .6cqi + 12px, 20px)', reason: 'An index figure written in words grows with the room the same way, from a smaller start.' },
   { sheet: 'features/usage/usage.css', declaration: 'border-radius: var(--usage-radius) var(--usage-radius) 0 0', reason: 'The chart works a bar\'s top corners out from the bar\'s width (UsageCharts.tsx), so a thin bar is never rounder than it is wide.' },
+  { sheet: 'agents/effortTrace.css', declaration: 'border-radius: var(--effort-trace-corner)', reason: 'The effort trace rounds with the composer it lights, at the card step or, round Zach\'s composer, the overlay step (ADR-0019).' },
+  { sheet: 'agents/effortTrace.css', declaration: 'border-radius: calc(var(--effort-trace-corner) + 33px)', reason: 'The effort trace\'s halo rounds concentrically with the composer\'s corner, out past it by the halo\'s reach (ADR-0019).' },
+  { sheet: 'agents/effortTrace.css', declaration: 'border-radius: calc(var(--effort-trace-corner) + 11px)', reason: 'The halo\'s glow, concentric with the halo inside it.' },
   { sheet: 'agents/skillPill.css', declaration: 'border-radius: .42em', reason: 'A skill sits in the composer\'s line of text and rounds with the text around it.' },
-  { sheet: 'agents/effortTrace.css', declaration: 'border-radius: 47px', reason: 'The effort trace\'s halo rounds concentrically with the composer\'s corner, out past it by the halo\'s reach (ADR-0019).' },
-  { sheet: 'agents/effortTrace.css', declaration: 'border-radius: 25px', reason: 'The halo\'s glow, concentric with the halo inside it.' },
   // The floating widget keeps its look: its shape is Zach's to decide (ADR-0110), and these have no step at their size.
   { sheet: 'widget/widget.css', declaration: 'border-radius: 3px', reason: 'The resting sliver is 6px thick and its ends are round; the mark step would square them.' },
   { sheet: 'widget/widget.css', declaration: 'border-radius: 12px', reason: 'The upright sliver\'s open prompt; the inset step would round it 2px less.' },

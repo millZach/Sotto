@@ -2290,6 +2290,9 @@ private struct ReplyDock: View, Equatable {
             } trailing: {
                 trailingButtons()
             }
+            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
+            // (ADR-0019).
+            .effortTrace(settings?.atTopEffort == true, radius: ComposerMetrics.radius)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
