@@ -31,7 +31,7 @@ describe('WidgetApp', () => {
       <WidgetApp
         snapshot={snapshot({
           status: 'listening', sessionId: 'click', startedAt: 0, speaking: true,
-          cancellable: true,
+          cancellable: true, escapeClaimed: true,
         })}
         platform="win32" now={1_000}
         onToggle={onToggle}
@@ -48,7 +48,7 @@ describe('WidgetApp', () => {
     expect(onToggle).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
-    // Escape cancels on Windows and macOS, so the pill carries Stop alone.
+    // Main holds Escape, so Escape cancels and the pill carries Stop alone.
     expect(screen.queryByRole('button', { name: 'Cancel dictation' })).not.toBeInTheDocument()
     expect(onStop).toHaveBeenCalledTimes(2)
     expect(onCancel).not.toHaveBeenCalled()

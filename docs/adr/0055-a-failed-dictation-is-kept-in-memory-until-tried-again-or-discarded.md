@@ -2,7 +2,7 @@
 
 Accepted October 5, 2026.
 
-Amended November 2, 2026: the widget's esc key is gone. On Windows and macOS the system-wide Escape is the only way to cancel; on Linux, where Sotto claims no Escape, the widget keeps a × that cancels (ADR-0178's polish round, `docs/prototypes/widget-polish-prototype.html`).
+Amended November 2, 2026: the widget's esc key is gone. On Windows and macOS the system-wide Escape is the only way to cancel; where Sotto holds no Escape (always on Linux, and on Windows or macOS when another app already holds the key), the widget keeps a × that cancels (ADR-0178's polish round, `docs/prototypes/widget-polish-prototype.html`).
 
 ## Context
 

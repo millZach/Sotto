@@ -364,19 +364,25 @@ describe('WidgetApp', () => {
     expect(screen.getByRole('button', { name: 'Cancel dictation' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Stop dictation' })).not.toBeInTheDocument()
 
-    // Windows and macOS cancel with Escape, so the pill shows no cancel button.
+    // While main holds Escape, Escape cancels and the pill shows no cancel button.
+    // When it could not take the key (another app holds it), the × stays, so a
+    // stuck model load can always be cancelled from the pill.
     for (const platform of ['win32', 'darwin'] as const) {
-      rerender(
-        <WidgetApp
-          snapshot={snapshot({
-            status: 'processing', sessionId: 'processing', startedAt: 0,
-            stage: 'loading-model', progress: 0.2, cancellable: true,
-          })}
-          platform={platform} now={0}
-          onCancel={onCancel}
-        />,
-      )
-      expect(screen.queryByRole('button', { name: 'Cancel dictation' })).not.toBeInTheDocument()
+      for (const escapeClaimed of [true, undefined] as const) {
+        rerender(
+          <WidgetApp
+            snapshot={snapshot({
+              status: 'processing', sessionId: 'processing', startedAt: 0,
+              stage: 'loading-model', progress: 0.2, cancellable: true, escapeClaimed,
+            })}
+            platform={platform} now={0}
+            onCancel={onCancel}
+          />,
+        )
+        const cancel = screen.queryByRole('button', { name: 'Cancel dictation' })
+        if (escapeClaimed) expect(cancel).not.toBeInTheDocument()
+        else expect(cancel).toBeVisible()
+      }
     }
   })
 

@@ -2062,7 +2062,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     syncEscape: (state) => {
       widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
-      syncEscapeForWidgetSnapshot(hotkeys, state)
+      return syncEscapeForWidgetSnapshot(hotkeys, state)
     },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     presentation: () => widgetPresentation,

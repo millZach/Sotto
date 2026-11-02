@@ -9,7 +9,8 @@ export interface NativeDictationLifecycleDependencies {
   }
   readonly getTrayState: () => TrayState
   readonly updateTray: (state: TrayState) => void
-  readonly syncEscape: (state: NativeWidgetState) => void
+  /** Claims or releases Escape for the state, and answers whether Escape is held to cancel it. */
+  readonly syncEscape: (state: NativeWidgetState) => boolean
   readonly showWidgetWhenIdle: () => boolean
   /**
    * The widget's presentation from main's current settings. When given it
@@ -42,8 +43,9 @@ export class NativeDictationLifecycle {
     const presented = this.present(state)
     this.lastSnapshot = presented
     this.dependencies.publishShellState?.(presented)
-    this.updateNativeState(presented)
-    return this.deliver(presented)
+    const escapeClaimed = this.updateNativeState(presented)
+    // Only main knows whether it holds Escape, so whatever the renderer sent is replaced.
+    return this.deliver({ ...presented, escapeClaimed: escapeClaimed ? true : undefined })
   }
 
   /**
@@ -92,13 +94,13 @@ export class NativeDictationLifecycle {
 
   private updateNativeState(
     state: NativeWidgetState,
-  ): void {
+  ): boolean {
     const currentTrayState = this.dependencies.getTrayState()
     this.dependencies.updateTray({
       ...currentTrayState,
       dictating: state.status === 'listening',
     })
-    this.dependencies.syncEscape(state)
+    return this.dependencies.syncEscape(state)
   }
 
   private async deliver(state: WidgetSnapshot): Promise<boolean> {

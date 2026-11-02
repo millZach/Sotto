@@ -521,9 +521,10 @@ export function WidgetApp({
       <Square aria-hidden="true" size={10} fill="currentColor" />
     </WidgetAction>
   )
-  // Escape cancels from anywhere while a dictation can be cancelled, so the
-  // pill carries Stop alone. Linux claims no Escape, so there it keeps a button.
-  const cancelAction = snapshot.cancellable && platform === 'linux' && (
+  // While main holds Escape across every app, Escape cancels and the pill
+  // carries Stop alone. Where it does not (always on Linux, and on Windows or
+  // macOS when another app holds the key) the pill keeps a cancel ×.
+  const cancelAction = snapshot.cancellable && snapshot.escapeClaimed !== true && (
     <WidgetAction label={t`Cancel dictation`} onClick={onCancel}>
       <X aria-hidden="true" size={11} strokeWidth={2.6} />
     </WidgetAction>

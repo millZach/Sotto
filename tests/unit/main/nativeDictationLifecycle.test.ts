@@ -60,6 +60,29 @@ describe('NativeDictationLifecycle widget presence', () => {
     expect(syncEscape).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', kept: true }))
   })
 
+  it('tells the widget whether main holds Escape, and never passes on a renderer\'s claim', async () => {
+    let claimed = true
+    const sendToWidget = vi.fn(async () => true)
+    const lifecycle = new NativeDictationLifecycle({
+      delivery: { sendToWidget },
+      getTrayState: () => ({ dictating: false, autoPaste: true }),
+      updateTray: vi.fn(),
+      syncEscape: vi.fn(() => claimed),
+      showWidgetWhenIdle: () => true,
+      log: vi.fn(),
+    })
+    const listening = snapshot({ status: 'listening', sessionId: 's', startedAt: 0, speaking: false, cancellable: true } as Partial<WidgetSnapshot>)
+
+    await lifecycle.publish(listening)
+    expect(sendToWidget).toHaveBeenLastCalledWith(WIDGET_STATE, expect.objectContaining({ escapeClaimed: true }), true)
+
+    // Another app holds Escape: the widget hears it is not claimed and keeps its cancel ×,
+    // even when the renderer's publication says otherwise.
+    claimed = false
+    await lifecycle.publish({ ...listening, escapeClaimed: true })
+    expect(sendToWidget).toHaveBeenLastCalledWith(WIDGET_STATE, expect.objectContaining({ escapeClaimed: undefined }), true)
+  })
+
   it('keeps the widget revealed for idle snapshots so the resting sliver stays visible', async () => {
     const { lifecycle, sendToWidget } = createHarness()
 

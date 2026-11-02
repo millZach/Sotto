@@ -26,6 +26,7 @@ const widgetMetadataSchema = {
   reducedMotion: z.enum(['system', 'on']),
   shortcut: z.string().min(1).max(128),
   cancellable: z.boolean(),
+  escapeClaimed: z.literal(true).optional(),
 } as const
 
 export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUnion('status', [
