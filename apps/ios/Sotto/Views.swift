@@ -907,9 +907,10 @@ struct FeedbackBanner: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, Space.s3)
                         .paragraphDirection()
-                    if model.shelfUndo != nil {
+                    if let undo = model.shelfUndoOffered {
                         Button("Undo") { Task { await model.undoShelf() } }
                             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                            .disabled(model.actionHeld(undo.ref) != nil)
                             .padding(.top, Space.s2)
                             .accessibilityIdentifier("feedback-undo")
                     }

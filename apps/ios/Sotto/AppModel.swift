@@ -2568,10 +2568,14 @@ struct RailAsk: Equatable {
         return ThreadGroups.isSettled(thread, project: project) ? nil : .settle
     }
     enum ShelfAction { case settle, restore }
+    /// The Undo the banner offers: the thread must still stand where the press put it. One moved on another device, or
+    /// held back from a new connection and not read here, has nothing to take back.
+    var shelfUndoOffered: ShelfUndo? { shelfUndo.flatMap { shelfAction($0.ref) == $0.action ? $0 : nil } }
     /// Undo beside a confirmed Settle or Restore: the other one, as a press of its own. Settling is reversible, so it acts
-    /// at once and offers this rather than asking first.
+    /// at once and offers this rather than asking first. A press its computer can't take yet says why instead.
     func undoShelf() async {
-        guard let undo = shelfUndo else { return }
+        guard let undo = shelfUndoOffered else { shelfUndo = nil; return }
+        if let held = actionHeld(undo.ref) { feedback = held; return }
         feedback = nil
         await shelve(undo.ref, undo.action)
     }
