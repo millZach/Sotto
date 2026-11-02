@@ -85,8 +85,8 @@ export function standbyAllowed(press: readonly string[]): boolean {
 }
 
 /** The start-and-stop shortcut the widget names: the main one, or while it waits on standby the first that replaced it. */
-export function startShortcut(settings: { readonly hotkey: string; readonly hotkeyStandby: boolean; readonly pressShortcuts: readonly string[] }): string {
-  return settings.hotkeyStandby ? settings.pressShortcuts[0] ?? settings.hotkey : settings.hotkey
+export function startShortcut(settings: { readonly hotkey: string; readonly hotkeyStandby?: boolean | undefined; readonly pressShortcuts: readonly string[] }): string {
+  return settings.hotkeyStandby === true ? settings.pressShortcuts[0] ?? settings.hotkey : settings.hotkey
 }
 
 function modifierOrder(platform: SottoPlatform): readonly string[] {

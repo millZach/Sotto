@@ -211,7 +211,7 @@ describe('DictationShortcuts', () => {
 
   it('puts the main shortcut on standby when only shortcuts the key listener runs could replace it', async () => {
     const { onReplaceDictationShortcuts, user } = setup({ owl: true, press: ['CommandOrControl+Alt'] })
-    await user.click(screen.getByRole('button', { name: 'Remove shortcut, Ctrl Shift Space' }))
+    await user.click(screen.getByRole('button', { name: 'Turn shortcut off, Ctrl Shift Space' }))
     expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['CommandOrControl+Shift+Space', 'CommandOrControl+Alt'], hold: [], standby: true })
   })
 

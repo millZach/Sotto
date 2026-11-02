@@ -6215,6 +6215,10 @@ msgstr ""
 msgid "Turn on Serve in Tailscale"
 msgstr ""
 
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "Turn shortcut off, {words}"
+msgstr ""
+
 #. A provider on a host that the user disconnected.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Turned off"

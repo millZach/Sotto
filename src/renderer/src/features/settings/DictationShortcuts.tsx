@@ -252,7 +252,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
                   <ShortcutKey accelerator={chord} platform={platform} />
                 </button>
                 {removable(role, index)
-                  ? <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Remove shortcut, ${words}`} onClick={() => void remove(role, index)}><X size={13} aria-hidden="true" /></button>
+                  ? <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={role === 'press' && index === 0 && !set.press.some((_, other) => promotable(other)) ? t`Turn shortcut off, ${words}` : t`Remove shortcut, ${words}`} onClick={() => void remove(role, index)}><X size={13} aria-hidden="true" /></button>
                   : null}
               </span>
             )

@@ -353,15 +353,24 @@ func installTap() -> Bool {
   return true
 }
 
-if CGPreflightListenEventAccess() && installTap() {
-  emit("permission granted")
-} else {
-  emit("permission denied")
-  Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { timer in
-    if CGPreflightListenEventAccess() && installTap() {
-      timer.invalidate()
-      emit("permission granted")
-    }
+func listenGranted() -> Bool {
+  guard CGPreflightListenEventAccess() else { return false }
+  if let tap = tap {
+    CGEvent.tapEnable(tap: tap, enable: true)
+    return true
+  }
+  return installTap()
+}
+
+// Input Monitoring can be turned off and on while the helper runs, so the grant is checked every 2 s and each change
+// reported: main takes the main shortcut back while it is off.
+var granted = listenGranted()
+emit(granted ? "permission granted" : "permission denied")
+Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+  let now = granted ? CGPreflightListenEventAccess() : listenGranted()
+  if now != granted {
+    granted = now
+    emit(now ? "permission granted" : "permission denied")
   }
 }
 

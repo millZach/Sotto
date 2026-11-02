@@ -6,6 +6,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { speechModelSummary } from './components/SpeechModelStatus'
 import { PARAKEET_V3, sottoSpeechModel, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
+import { startShortcut } from '../../shared/dictationShortcuts'
 import { AppShell, layoutFor } from './components/AppShell'
 import { usePageShortcuts } from './components/pageShortcuts'
 import { Card } from './components/Card'
@@ -505,7 +506,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
+        view = <HelpView shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
         break
       default:
         view = threadsPage ? threadWorkspace : <DictateRoom

@@ -6215,6 +6215,10 @@ msgstr "Turn on Let phones connect first."
 msgid "Turn on Serve in Tailscale"
 msgstr "Turn on Serve in Tailscale"
 
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "Turn shortcut off, {words}"
+msgstr "Turn shortcut off, {words}"
+
 #. A provider on a host that the user disconnected.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Turned off"

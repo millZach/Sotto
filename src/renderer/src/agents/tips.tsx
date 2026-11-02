@@ -9,6 +9,7 @@ import { capabilitiesForThread, type AgentState } from '../../../shared/agents'
 import type { OwlFeatureId } from '../../../shared/owlFeatures'
 import type { SottoPlatform } from '../../../shared/platform'
 import type { AppSettings } from '../../../shared/settings'
+import { startShortcut } from '../../../shared/dictationShortcuts'
 import type { ThreadShortcutId } from '../../../shared/threadShortcuts'
 import { ShortcutKey } from '../components/ShortcutKey'
 import { useOptionalApp } from '../state/AppContext'
@@ -41,7 +42,7 @@ export interface TipFacts {
   readonly audience: TipAudience
   readonly providerId: string | undefined
   readonly platform: SottoPlatform
-  readonly settings: (ThreadShortcutSettings & Pick<AppSettings, 'dictationEnabled' | 'nextPromptSuggestions' | 'historyEnabled'>) | null
+  readonly settings: (ThreadShortcutSettings & Pick<AppSettings, 'dictationEnabled' | 'nextPromptSuggestions' | 'historyEnabled'> & Partial<Pick<AppSettings, 'hotkeyStandby'>>) | null
   readonly owl: (id: OwlFeatureId) => boolean
   /** The thread's provider lists skills (its capabilities say so). */
   readonly skills: boolean
@@ -88,7 +89,7 @@ export const TIP_CATALOG: readonly CatalogTip[] = [
     // Linux dictation listens through the desktop's own binding, not this accelerator.
     shows: facts => facts.platform !== 'linux' && facts.settings?.dictationEnabled !== false,
     Text: ({ facts }) => {
-      const keys = <ShortcutKey accelerator={facts.settings?.hotkey ?? ''} platform={facts.platform} />
+      const keys = <ShortcutKey accelerator={facts.settings ? startShortcut(facts.settings) : ''} platform={facts.platform} />
       return <Trans comment="A tip under a working thread. {keys} is the dictation shortcut.">Press {keys} to dictate your next prompt instead of typing it.</Trans>
     } },
   { kind: 'feature', id: 'watcher.waiting', feature: 'watcher', audience: ['watcher'],
