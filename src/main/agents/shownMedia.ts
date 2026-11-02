@@ -56,7 +56,7 @@ export async function videoHandle(path: string, index: number, file: MediaFile):
 export type ShownMediaStore = Pick<ThreadMediaStore, 'captureFile' | 'keepVideo'>
 
 /** Why one named file is not shown, in words the agent is told. */
-export type ShownRefusal = 'missing' | 'not-media' | 'too-large'
+export type ShownRefusal = 'missing' | 'not-media' | 'too-large' | 'not-local'
 /** What one call shows: each file kept by handle, and each one refused with why. */
 export interface ShownMedia {
   readonly media: AgentActivityMedia[]
@@ -72,6 +72,8 @@ export interface ShownMedia {
 export async function shownMedia(folder: string | undefined, paths: readonly string[], store: ShownMediaStore): Promise<ShownMedia> {
   const media: AgentActivityMedia[] = [], refused: ShownMedia['refused'] = [], seen = new Set<string>()
   for (const path of paths.slice(0, MAX_ACTIVITY_MEDIA)) {
+    // A network path would reach another computer, its credentials too, before the file is even looked at: never read.
+    if (onNetwork(path)) { refused.push({ path, reason: 'not-local' }); continue }
     const absolute = isAbsolute(path) ? path : folder ? resolve(folder, path) : undefined
     if (!absolute || seen.has(absolute)) { if (!absolute) refused.push({ path, reason: 'missing' }); continue }
     seen.add(absolute)
@@ -94,6 +96,9 @@ export async function shownMedia(folder: string | undefined, paths: readonly str
   }
   return { media, refused }
 }
+
+/** Whether a path names a file on another computer: a Windows UNC path (`\\server\share`, `//server/share`) or a device path. */
+export function onNetwork(path: string): boolean { return /^[\\/]{2}/u.test(path) }
 
 /** A file's first 64 bytes, or undefined when it cannot be read. */
 async function readHead(path: string): Promise<Uint8Array | undefined> {

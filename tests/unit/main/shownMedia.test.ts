@@ -111,6 +111,9 @@ describe('the files an agent shows', () => {
     const big = join(root, 'long.mp4'); await writeFile(big, mp4()); await import('node:fs/promises').then(fs => fs.truncate(big, AGENT_VIDEO_MAX_BYTES + 1))
     expect((await shownMedia(root, ['long.mp4'], media)).refused).toEqual([{ path: 'long.mp4', reason: 'too-large' }])
     expect((await shownMedia(undefined, ['shot.png'], media)).refused).toEqual([{ path: 'shot.png', reason: 'missing' }])
+    // A network path is never looked at: reading it would reach another computer.
+    expect((await shownMedia(root, ['\\\\server\\share\\shot.png', '//server/share/shot.png'], media)).refused)
+      .toEqual([{ path: '\\\\server\\share\\shot.png', reason: 'not-local' }, { path: '//server/share/shot.png', reason: 'not-local' }])
   })
 })
 
@@ -159,6 +162,14 @@ describe('a turn that wrote pictures and a video, through the workspace, the med
       // Once the agent writes over it, the file is no longer the video the step names.
       await writeFile(join(project, 'test-results', 'signup.mp4'), mp4(4096)); await utimes(join(project, 'test-results', 'signup.mp4'), new Date(), new Date(Date.now() + 5_000))
       expect(await control.control.threadMediaPart({ threadId: thread.id, activityId: shown.id, mediaId: handle.id, part: 0 })).toBeNull()
+      // A new turn's call before that turn has a record of its own goes with the new turn, not the last one's records.
+      expect((await control.control.command({ type: 'manual-send', threadId: thread.id, draftId: randomUUID(), text: 'Show me the screenshot again' })).error).toBeNull()
+      const newest = () => control.control.threadDetail(thread.id)?.messages.findLast(message => message.role === 'user' && message.text === 'Show me the screenshot again')?.id
+      await expect.poll(newest, { timeout: 15_000 }).toBeDefined()
+      expect((await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: ['test-results/signup.png'], title: 'Again' })).isError).toBeFalsy()
+      const again = () => control.control.threadDetail(thread.id)?.activities?.find(record => record.title === 'Again')
+      await expect.poll(again, { timeout: 15_000 }).toBeDefined()
+      expect(again()).toMatchObject({ turnId: newest(), afterMessageId: newest() })
       // A call that names nothing Sotto shows shows nothing and says why; a bad call says what to send.
       expect(await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: ['.gitignore'], title: 'Ignore list' })).toEqual({ isError: true, content: [{ type: 'text', text: 'Nothing was shown. .gitignore (it is not a picture or video Sotto shows).' }] })
       expect((await tools.call(thread.id, SHOW_IN_THREAD_TOOL, { paths: [] , title: 'x' })).isError).toBe(true)

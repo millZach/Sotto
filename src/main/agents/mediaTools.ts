@@ -37,10 +37,12 @@ export interface MediaToolHandlers {
 }
 
 const NOTHING = 'Nothing was shown.'
+const INSTEAD = 'Tell the user where the files are instead.'
 const WHY: Readonly<Record<ShownRefusal, string>> = {
   missing: 'there is no such file',
   'not-media': 'it is not a picture or video Sotto shows',
   'too-large': 'it is too large to show',
+  'not-local': 'it is not on this computer',
 }
 /** "a.png (there is no such file); b.txt (it is not a picture or video Sotto shows)". */
 const refusedText = (refused: readonly { readonly path: string; readonly reason: ShownRefusal }[]): string =>
@@ -58,14 +60,13 @@ export class MediaToolServer implements ScopedThreadTools {
   private readonly server: ThreadToolServer
   constructor(private readonly handlers: MediaToolHandlers) {
     this.server = new ThreadToolServer({ name: MEDIA_MCP_SERVER, serverName: 'sotto-media', instructions: INSTRUCTIONS,
-      unavailable: `The media tool is unavailable. ${NOTHING}`, failed: `The pictures could not be shown. ${NOTHING}` },
+      unavailable: `The media tool is unavailable. ${NOTHING} ${INSTEAD}`, failed: `The pictures could not be shown. ${NOTHING} ${INSTEAD}` },
     this.definitions, (threadId, _name, args) => this.invoke(threadId, args))
   }
   async mcpServer(threadId: string): Promise<ThreadMcpServer | undefined> {
     return this.admits(threadId) ? this.server.mcpServer(threadId) : undefined
   }
   call(threadId: string, name: string, args: unknown): Promise<ThreadToolResult> { return this.server.call(threadId, name, args) }
-  revoke(threadId: string): void { this.server.revoke(threadId) }
   close(): Promise<void> { return this.server.close() }
   private admits(threadId: string): boolean {
     try { return this.handlers.admits(threadId) } catch { return false }

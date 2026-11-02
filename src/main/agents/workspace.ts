@@ -1498,11 +1498,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const current = this.threadById(threadId)
     if (!current || !this.visible(current)) return { shown: false, reason: 'unknown-thread' }
     this.holdActivities(current)
-    // With the turn under way, beside its newest record; otherwise after the user's newest message. The merge numbers it last.
-    const userMessageId = current.messages.findLast(message => message.role === 'user')?.id
-    const last = current.status === 'running' ? current.activities?.at(-1) : undefined
-    const turnId = last?.turnId ?? userMessageId ?? 'shown'
-    const afterMessageId = last ? last.afterMessageId : userMessageId
+    // With the user's newest message's turn: beside its newest record when it has one, else after that message. The
+    // newest message is read from the thread's history, since a thread no window observes holds few messages in memory.
+    let stored: { readonly userMessageId: string | null } = { userMessageId: null }
+    try { stored = this.threadStore.newestMessages(threadId) } catch { /* the window's messages answer instead */ }
+    const userMessageId = stored.userMessageId ?? current.messages.findLast(message => message.role === 'user')?.id
+    const sent = (id: string | undefined): string | undefined => {
+      if (!id) return undefined
+      try { return this.threadStore.message(threadId, id)?.createdAt ?? current.messages.find(message => message.id === id)?.createdAt } catch { return current.messages.find(message => message.id === id)?.createdAt }
+    }
+    const last = current.activities?.at(-1), userAt = sent(userMessageId), lastAt = sent(last?.afterMessageId)
+    // A record of an earlier turn, before this turn's first one exists, is not this turn's.
+    const inTurn = last !== undefined && (last.turnId === userMessageId || last.afterMessageId === userMessageId || (lastAt !== undefined && userAt !== undefined && lastAt >= userAt))
+    const turnId = inTurn ? last.turnId : userMessageId ?? 'shown'
+    const afterMessageId = inTurn ? last.afterMessageId : userMessageId
     const record: AgentActivity = { id: `${SHOWN_STEP_PREFIX}${randomUUID()}`, turnId, ...afterMessageId ? { afterMessageId } : {},
       sequence: 0, kind: 'tool', status: 'completed', title: input.title, completedAt: new Date().toISOString(), media: found.media }
     this.touched(current).activities = immutableActivities(mergeAgentActivities(current.activities, [record]))
