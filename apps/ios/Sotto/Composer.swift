@@ -90,6 +90,255 @@ struct ComposerPill: View {
     }
 }
 
+// MARK: - The settings sheet
+
+/// One provider's models in the settings sheet: its id, its name and the models the sheet may choose.
+struct ModelGroup: Identifiable {
+    let id: String
+    let name: String
+    let models: [ThreadModel]
+}
+
+/// What a folded row says it is: opened to what it holds, or closed over it, as a disclosure is.
+enum FoldWords {
+    static var open: String {
+        String(localized: "agent-row.open", defaultValue: "Open", comment: "A folded row is opened to what it holds, as an expanded disclosure is: an agent's row in the Agents sheet, or a provider's row in the model sheet. Not a pull request's state.")
+    }
+    static var closed: String {
+        String(localized: "agent-row.closed", defaultValue: "Closed", comment: "A folded row is closed over what it holds, as a collapsed disclosure is: an agent's row in the Agents sheet, or a provider's row in the model sheet. Not a pull request's state.")
+    }
+}
+
+/// What the settings pill opens, a thread's and Watcher's alike (ADR-0166, amended November 1, 2026: Zach's pick C from
+/// `docs/prototypes/ios-model-selector-prototype.html`, tag `prototype/ios-model-selector`). A sheet that opens at the top on the model in use, then the
+/// models starred on this iPhone, then each provider closed until pressed, one open at a time, its older models under
+/// Legacy; then the box's other settings. Choosing anything closes it; folding a provider and starring a model don't.
+struct ComposerSettingsSheet<Notes: View, Foot: View, Settings: View>: View {
+    let title: String
+    let current: ThreadModel?
+    let groups: [ModelGroup]
+    /// Whether a model may be chosen now. Folding and starring work either way.
+    let modelsEnabled: Bool
+    let choose: (ThreadModel) -> Void
+    /// Above the models: why they are held, where they are.
+    @ViewBuilder let notes: Notes
+    /// Under the providers: what choosing one of them does, where that needs saying.
+    @ViewBuilder let foot: Foot
+    /// The box's other settings, each a row that opens its choices.
+    @ViewBuilder let settings: Settings
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(PhonePreferenceKey.modelFavorites) private var saved = ""
+    @State private var folds = ModelFolds()
+
+    var body: some View {
+        let starred = ModelFavorites.read(saved)
+        let favorites = ModelFavorites.offered(starred, in: groups.flatMap(\.models), current: current?.id)
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                    Text(verbatim: title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    Button("Done") { dismiss() }
+                        .font(.sotto(.body, .semibold))
+                        .foregroundStyle(Palette.accentText)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("settings-sheet-done")
+                }
+                notes
+                    .font(.sotto(.small))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let current {
+                    block { modelRow(current, starred: starred, id: "model-current", line: AgentNames.name(current.providerId)) }
+                }
+                if !favorites.isEmpty {
+                    Text("Favorites", comment: "The heading over the models starred on this iPhone, in the reply box's settings sheet.")
+                        .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                        .padding(.leading, Space.s1)
+                        .padding(.bottom, -Space.s2)
+                        .accessibilityAddTraits(.isHeader)
+                    block {
+                        ForEach(Array(favorites.enumerated()), id: \.element.sheetKey) { index, item in
+                            if index > 0 { rule }
+                            modelRow(item, starred: starred, id: "model-favorite-\(item.sheetKey)", line: AgentNames.name(item.providerId))
+                        }
+                    }
+                }
+                block {
+                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                        if index > 0 { rule }
+                        providerRow(group)
+                        if folds.provider == group.id { providerModels(group, starred: starred) }
+                    }
+                }
+                foot
+                    .font(.sotto(.small))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Space.s1)
+                block { settings }
+            }
+            .padding(.horizontal, Space.gutter)
+            .padding(.top, Space.s6)
+            .padding(.bottom, Space.s6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
+        .presentationCornerRadius(Radius.xl)
+        // Each time it opens, every provider is closed, whatever was open when it was last put away.
+        .onAppear { folds = ModelFolds() }
+    }
+
+    private func block<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) { content() }
+            .background(Palette.fillSofter, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var rule: some View {
+        Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s3).accessibilityHidden(true)
+    }
+
+    private var fold: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.2) }
+
+    /// A model to choose, the one in use ticked, with its star after it. `inset` steps it in under its provider or Legacy.
+    private func modelRow(_ item: ThreadModel, starred: [ModelFavorite], id: String, line: String? = nil, inset: CGFloat = 0) -> some View {
+        let chosen = item.id == current?.id
+        let star = starred.contains(ModelFavorite(item))
+        return HStack(spacing: 0) {
+            Button { if !chosen { choose(item) }; dismiss() } label: {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.accentText)
+                        .opacity(chosen ? 1 : 0).frame(width: 16).accessibilityHidden(true)
+                    if inset == 0 { ProviderLogo(providerID: item.providerId).foregroundStyle(Palette.ink) }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(verbatim: item.name).font(.sotto(.body, chosen ? .semibold : .regular)).foregroundStyle(Palette.ink)
+                        if let line { Text(verbatim: line).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
+                    }
+                    Spacer(minLength: Space.s2)
+                }
+                .padding(.leading, Space.s3 + inset)
+                .padding(.vertical, Space.s2)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .disabled(!modelsEnabled)
+            .opacity(modelsEnabled ? 1 : 0.5)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(chosen ? [.isSelected] : [])
+            .accessibilityIdentifier(id)
+            Button { saved = ModelFavorites.toggled(saved, item) } label: {
+                Image(systemName: star ? "star.fill" : "star")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(star ? Palette.accentText : Palette.muted)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .padding(.trailing, Space.s1)
+            .accessibilityLabel(star ? String(localized: "Remove from favorites") : String(localized: "Add to favorites"))
+            .accessibilityIdentifier("\(id)-star")
+        }
+    }
+
+    /// A provider, closed until pressed: its logo, its name and how many models it holds, and a chevron that turns as it
+    /// opens. Opening it closes any other.
+    private func providerRow(_ group: ModelGroup) -> some View {
+        let open = folds.provider == group.id
+        return Button { withAnimation(fold) { folds.toggle(group.id) } } label: {
+            HStack(spacing: Space.s2) {
+                Color.clear.frame(width: 16, height: 1)
+                ProviderLogo(providerID: group.id)
+                Text(verbatim: group.name).font(.sotto(.body, open ? .semibold : .regular))
+                Text(verbatim: "\(group.models.count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                Spacer(minLength: Space.s2)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+            }
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, Space.s3)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: group.name))
+        .accessibilityValue(open ? FoldWords.open : FoldWords.closed)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("model-provider-\(group.id)")
+    }
+
+    /// An open provider's newest models, then its older ones under Legacy, closed until pressed (ADR-0171).
+    @ViewBuilder private func providerModels(_ group: ModelGroup, starred: [ModelFavorite]) -> some View {
+        let lineup = ModelLineup.split(group.models)
+        ForEach(lineup.latest) { item in
+            rule
+            modelRow(item, starred: starred, id: "model-\(item.sheetKey)", inset: Space.s4)
+        }
+        if !lineup.legacy.isEmpty {
+            rule
+            Button { withAnimation(fold) { folds.toggleLegacy() } } label: {
+                HStack(spacing: Space.s2) {
+                    Color.clear.frame(width: 16, height: 1)
+                    Text("Legacy").font(.sotto(.body, folds.legacy ? .semibold : .regular))
+                    Text(verbatim: "\(lineup.legacy.count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    Spacer(minLength: Space.s2)
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                        .rotationEffect(.degrees(folds.legacy ? 90 : 0))
+                }
+                .foregroundStyle(Palette.ink)
+                .padding(.leading, Space.s3 + Space.s4)
+                .padding(.trailing, Space.s3)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("Legacy"))
+            .accessibilityValue(folds.legacy ? FoldWords.open : FoldWords.closed)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("model-legacy-\(group.id)")
+            if folds.legacy {
+                ForEach(lineup.legacy) { item in
+                    rule
+                    modelRow(item, starred: starred, id: "model-\(item.sheetKey)", inset: Space.s4 * 2)
+                }
+            }
+        }
+    }
+}
+
+extension ThreadModel {
+    /// The model wherever the settings sheet lists it: its provider and the provider's own id, as a favorite keeps it.
+    var sheetKey: String { "\(providerId ?? provider)/\(id)" }
+}
+
+/// A row in the settings sheet that opens a menu of choices: the setting's name, what it is set to, and a chevron.
+struct SettingRow: View {
+    let name: Text
+    let value: String
+    @Environment(\.isEnabled) private var enabled
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            name.foregroundStyle(Palette.ink)
+            Spacer(minLength: Space.s2)
+            Text(verbatim: value).foregroundStyle(Palette.muted).lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.muted)
+                .accessibilityHidden(true)
+        }
+        .font(.sotto(.body))
+        .padding(.horizontal, Space.s3 + 16 + Space.s2)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .contentShape(Rectangle())
+        .opacity(enabled ? 1 : 0.5)
+    }
+}
+
 // MARK: - Dictation
 
 /// The mic in a reply box's row (ADR-0174): a press starts dictation into this box on this iPhone, and while it listens
@@ -150,8 +399,8 @@ struct ListeningLine: View {
     }
 }
 
-/// The Speed submenu in a settings pill's menu, a thread's and Watcher's: Standard first, since the offered speeds are
-/// those past it, then each offered speed with what it costs.
+/// The Speed row in a settings sheet, a thread's and Watcher's: its menu offers Standard first, since the offered speeds
+/// are those past it, then each offered speed with what it costs.
 struct SpeedMenu: View {
     let speeds: [ModelSpeed]
     let speed: String
@@ -167,8 +416,8 @@ struct SpeedMenu: View {
                               chosen: item.id == speed) { choose(item.id) }
             }
         } label: {
-            Text("Speed", comment: "The thread setting for how fast its agent answers.")
-            Text(verbatim: ThreadSettings.speedName(speed, offered: speeds))
+            SettingRow(name: Text("Speed", comment: "The thread setting for how fast its agent answers."),
+                       value: ThreadSettings.speedName(speed, offered: speeds))
         }
     }
 }

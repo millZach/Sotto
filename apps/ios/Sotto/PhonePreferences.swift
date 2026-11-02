@@ -30,6 +30,9 @@ enum PhonePreferenceKey {
     static let duoTabsSide = "phoneDuoTabsSide"
     /// Whether the sidebar beside a thread on the iPhone Duo, unfolded and held sideways, is collapsed.
     static let duoSidebarHidden = "phoneDuoSidebarHidden"
+    /// The models starred in the reply box's settings sheet, as `ModelFavorites` writes them (ADR-0147, amended
+    /// November 1, 2026). This iPhone's own; the desktop keeps its own stars.
+    static let modelFavorites = "phoneModelFavorites"
 }
 
 /// So an iPhone that saved a palette the desktop has since retired paints its replacement (ADR-0024).
