@@ -1496,6 +1496,7 @@ export class SocketHostService implements HostService {
    */
   get supportsHostDelegation(): boolean { return this.features.includes('host-delegation') }
   get supportsWorkerSwarms(): boolean { return this.features.includes('worker-swarms') }
+  get supportsEveryAgentPicture(): boolean { return this.features.includes('every-agent-picture') }
   async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     this.offers('host-delegation')
     return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))

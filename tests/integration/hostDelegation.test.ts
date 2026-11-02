@@ -420,10 +420,23 @@ it('gives each child four briefs per turn of its parent on the parent\'s own mac
   expect(await f.call(parent.threadId, 'delegate', { work: 'code-review', thread: child, brief: 'Synthetic brief 5', wait_seconds: 0 })).toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
 })
 
+it('keeps what a recorded desktop says of the picture switch across a restart (ADR-0170, part 7)', async () => {
+  const f = await hostFixture()
+  const { socket, hello } = await f.desktop()
+  expect(hello.features).toContain('every-agent-picture')
+  expect(socket.supportsEveryAgentPicture).toBe(true)
+  await socket.desktopDefaults({ newThreadRuntimeMode: 'auto', showEveryAgentPicture: false })
+  const kept = () => readFile(join(f.root, 'desktop-defaults.json'), 'utf8').then(text => (JSON.parse(text) as { desktops: { showEveryAgentPicture?: boolean }[] }).desktops[0]?.showEveryAgentPicture)
+  expect(await kept()).toBe(false)
+  await f.restart()
+  expect(await kept()).toBe(false)
+})
+
 it('starts nothing on a stable host: no tool, no feature, and desktop defaults are refused', async () => {
   const f = await hostFixture(STABLE)
   const { socket, hello, pairing } = await f.desktop()
   expect(hello.features).not.toContain('host-delegation')
+  expect(hello.features).not.toContain('every-agent-picture')
   expect(socket.supportsHostDelegation).toBe(false)
   await expect(socket.desktopDefaults({ newThreadRuntimeMode: 'auto' })).rejects.toMatchObject({ code: 'version_mismatch' })
   // The request itself, sent anyway, is refused, and nothing is kept.

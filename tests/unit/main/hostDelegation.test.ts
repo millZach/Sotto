@@ -42,6 +42,22 @@ describe('the desktop defaults a host keeps', () => {
     expect(again.ceiling(() => true)).toEqual({ mode: 'approval-required' })
   })
 
+  it('shows every agent picture until a desktop that counts says otherwise, across a restart and while a desktop sends no word of it (ADR-0170, part 7)', async () => {
+    const root = await folder(), store = new DesktopDefaultsStore(root)
+    await store.load()
+    expect(store.showEveryAgentPicture(() => true)).toBe(true)
+    await store.record('desktop-a', { newThreadRuntimeMode: 'auto', showEveryAgentPicture: false })
+    expect(store.showEveryAgentPicture(() => true)).toBe(false)
+    // A desktop that stops counting stops deciding; it is a setting, so an answers grant is not what counts here.
+    expect(store.showEveryAgentPicture(() => false)).toBe(true)
+    await store.record('desktop-a', { newThreadRuntimeMode: 'approval-required' })
+    expect(store.showEveryAgentPicture(() => true)).toBe(false)
+    const again = new DesktopDefaultsStore(root); await again.load()
+    expect(again.showEveryAgentPicture(() => true)).toBe(false)
+    await again.record('desktop-a', { newThreadRuntimeMode: 'auto', showEveryAgentPicture: true })
+    expect(again.showEveryAgentPicture(() => true)).toBe(true)
+  })
+
   it('holds every start to Ask for approval until a desktop tells it, and then only as far as that desktop may answer', async () => {
     const root = await folder(), store = new DesktopDefaultsStore(root)
     await store.load()
@@ -201,6 +217,28 @@ describe('the desktop\'s push of its defaults', () => {
     await push.settled()
     expect(sent[0]).toEqual([{ newThreadRuntimeMode: 'auto', workerCeiling: 2 }])
     expect(sent[1]).toEqual([{ newThreadRuntimeMode: 'auto' }])
+    push.close()
+  })
+
+  it('tells only a host that takes it of the picture switch, again when it changes, and no host while inline-media is off (ADR-0170, part 7)', async () => {
+    const sent: DesktopDefaultsInput[][] = [[], []]
+    const connections: DesktopDefaultsTarget[] = sent.map((items, index) => ({ hostId: index ? 'older' : 'forge', kind: 'remote',
+      service: { supportsHostDelegation: true, supportsEveryAgentPicture: index === 0, desktopDefaults: async defaults => {
+        items.push(defaults); return { receivedAt: new Date().toISOString() }
+      } } }))
+    const push = new DesktopDefaultsPush({ connections: () => connections })
+    push.update('auto', undefined, undefined, undefined)
+    await push.settled()
+    push.update('auto', undefined, undefined, true)
+    await push.settled()
+    // The same again sends nothing.
+    push.update('auto', undefined, undefined, true)
+    await push.settled()
+    push.update('auto', undefined, undefined, false)
+    await push.settled()
+    expect(sent[0]).toEqual([{ newThreadRuntimeMode: 'auto' }, { newThreadRuntimeMode: 'auto', showEveryAgentPicture: true }, { newThreadRuntimeMode: 'auto', showEveryAgentPicture: false }])
+    // A host from before the switch refuses a field it does not know, and with it the new-thread default.
+    expect(sent[1]!.every(defaults => !('showEveryAgentPicture' in defaults))).toBe(true)
     push.close()
   })
 

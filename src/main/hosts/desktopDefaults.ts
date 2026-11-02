@@ -15,6 +15,7 @@ export interface DesktopDefaultsTarget {
   readonly service: {
     readonly supportsHostDelegation?: boolean | undefined
     readonly supportsWorkerSwarms?: boolean | undefined
+    readonly supportsEveryAgentPicture?: boolean | undefined
     desktopDefaults?(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt>
   }
 }
@@ -45,6 +46,7 @@ export class DesktopDefaultsPush {
   private mode: AgentRuntimeMode | null = null
   private roles: WorkerRoleChoices | undefined
   private ceilings: DesktopWorkerCeilings | undefined
+  private everyPicture: boolean | undefined
   private known = false
   private readonly sending = new Map<string, Promise<void>>()
   /** Hosts whose last send failed: the retry waiting for each and how many failures in a row it follows. */
@@ -52,12 +54,15 @@ export class DesktopDefaultsPush {
   private closed = false
   constructor(private readonly options: DesktopDefaultsPushOptions) {}
 
-  /** Main says what the defaults are now. Absent roles mean worker roles are off. Sends only when they changed. */
-  update(mode: AgentRuntimeMode | null | undefined, roles: WorkerRoleChoices | undefined, ceilings?: DesktopWorkerCeilings): void {
+  /**
+   * Main says what the defaults are now. Absent roles mean worker roles are off; an absent `everyPicture` means
+   * `inline-media` is off here, so no host is told of **Show every picture and video an agent makes**. Sends only when they changed.
+   */
+  update(mode: AgentRuntimeMode | null | undefined, roles: WorkerRoleChoices | undefined, ceilings?: DesktopWorkerCeilings, everyPicture?: boolean): void {
     const next = mode ?? null
     if (this.known && next === this.mode && roles === this.roles && ceilings?.workerCeiling === this.ceilings?.workerCeiling
-      && ceilings?.workerMachineCeilings === this.ceilings?.workerMachineCeilings) return
-    this.mode = next; this.roles = roles; this.ceilings = ceilings; this.known = true
+      && ceilings?.workerMachineCeilings === this.ceilings?.workerMachineCeilings && everyPicture === this.everyPicture) return
+    this.mode = next; this.roles = roles; this.ceilings = ceilings; this.everyPicture = everyPicture; this.known = true
     for (const connection of this.options.connections()) this.send(connection)
   }
   /** A host connected, new or again: it is told the defaults, once they are known. */
@@ -74,7 +79,8 @@ export class DesktopDefaultsPush {
     const next = previous.then(async () => {
       if (this.closed) return
       const defaults: DesktopDefaultsInput = { newThreadRuntimeMode: this.mode, ...(this.roles ? { workerRoles: this.roles } : {}),
-        ...this.ceilings && service.supportsWorkerSwarms === true ? { workerCeiling: workerMachineCeiling(this.ceilings, connection.hostId) } : {} }
+        ...this.ceilings && service.supportsWorkerSwarms === true ? { workerCeiling: workerMachineCeiling(this.ceilings, connection.hostId) } : {},
+        ...this.everyPicture !== undefined && service.supportsEveryAgentPicture === true ? { showEveryAgentPicture: this.everyPicture } : {} }
       try {
         await service.desktopDefaults!(defaults)
         this.options.log?.('desktop-defaults-sent')
@@ -125,14 +131,14 @@ export interface DesktopDefaultsSource {
  * connection the router takes.
  */
 export function followDesktopDefaults(push: DesktopDefaultsPush, source: DesktopDefaultsSource, roles: () => WorkerRoleChoices | undefined,
-  ceilings: () => DesktopWorkerCeilings | undefined = () => undefined): { rolesChanged(): void; dispose(): void } {
+  ceilings: () => DesktopWorkerCeilings | undefined = () => undefined, everyPicture: () => boolean | undefined = () => undefined): { rolesChanged(): void; dispose(): void } {
   let mode: AgentRuntimeMode | undefined
   let seen = false
   const offConnected = source.subscribeConnected(connection => push.connected(connection))
-  const offState = source.subscribe(state => { mode = state.configuration.newThreadRuntimeMode; seen = true; push.update(mode, roles(), ceilings()) })
+  const offState = source.subscribe(state => { mode = state.configuration.newThreadRuntimeMode; seen = true; push.update(mode, roles(), ceilings(), everyPicture()) })
   return {
     // Before the first state, the roles go with it.
-    rolesChanged: () => { if (seen) push.update(mode, roles(), ceilings()) },
+    rolesChanged: () => { if (seen) push.update(mode, roles(), ceilings(), everyPicture()) },
     dispose: () => { offConnected(); offState() },
   }
 }

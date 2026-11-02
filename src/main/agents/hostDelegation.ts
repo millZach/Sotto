@@ -18,6 +18,7 @@ const keptSchema = z.object({
   newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
   workerRoles: z.unknown().optional(),
   workerCeiling: workerCeilingSchema.optional().catch(undefined),
+  showEveryAgentPicture: z.boolean().optional().catch(undefined),
   /** When they came, by this host's clock: returned in the receipt and never used to order them, as a clock can move back. */
   receivedAt: z.iso.datetime(),
   /** The order they came in: one more than the newest kept when they were received. The last sent is the highest. */
@@ -64,7 +65,8 @@ export class DesktopDefaultsStore {
       // Newest first by the order they came in, never by the clock, so the last sent stays the last after a restart.
       this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, sequence: saved.sequence, newThreadRuntimeMode: saved.newThreadRuntimeMode,
         ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}),
-        ...(saved.workerCeiling !== undefined ? { workerCeiling: saved.workerCeiling } : {}) }))
+        ...(saved.workerCeiling !== undefined ? { workerCeiling: saved.workerCeiling } : {}),
+        ...(saved.showEveryAgentPicture !== undefined ? { showEveryAgentPicture: saved.showEveryAgentPicture } : {}) }))
         .sort((a, b) => b.sequence - a.sequence).slice(0, KEPT_DESKTOP_DEFAULTS)
     })
   }
@@ -77,13 +79,15 @@ export class DesktopDefaultsStore {
     return this.serialized(async () => {
       // The newest kept is first and is never dropped, so the next number is always above every number on record.
       const receivedAt = this.now().toISOString(), sequence = (this.kept[0]?.sequence ?? 0) + 1
-      const priorCeiling = this.kept.find(item => item.clientId === clientId)?.workerCeiling
+      const prior = this.kept.find(item => item.clientId === clientId)
+      const priorCeiling = prior?.workerCeiling, priorPictures = prior?.showEveryAgentPicture
       const next = [{ clientId, receivedAt, sequence,
-        // A stable desktop sends no swarm fields; it must not erase the saved choice for the next Owl connection.
-        ...priorCeiling === undefined ? {} : { workerCeiling: priorCeiling }, ...defaults },
+        // A stable desktop sends no swarm or picture fields; it must not erase the saved choice for the next Owl connection.
+        ...priorCeiling === undefined ? {} : { workerCeiling: priorCeiling }, ...priorPictures === undefined ? {} : { showEveryAgentPicture: priorPictures }, ...defaults },
       ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
       await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
         ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), ...(item.workerCeiling === undefined ? {} : { workerCeiling: item.workerCeiling }),
+        ...(item.showEveryAgentPicture === undefined ? {} : { showEveryAgentPicture: item.showEveryAgentPicture }),
         receivedAt: item.receivedAt, sequence: item.sequence })) })
       this.kept = next
       return { receivedAt }
@@ -114,6 +118,8 @@ export class DesktopDefaultsStore {
   roles(counts: DesktopCounts): WorkerRoleChoices { return this.current(counts)?.workerRoles ?? {} }
   /** Capacity eligibility needs a paired, recorded desktop; this limit grants no permission. */
   workerCeiling(counts: DesktopCounts): number { return this.current(counts)?.workerCeiling ?? DEFAULT_WORKER_CEILING }
+  /** **Show every picture and video an agent makes** as the defaults that apply now say (ADR-0170, part 7); on, its default, when none says. */
+  showEveryAgentPicture(counts: DesktopCounts): boolean { return this.current(counts)?.showEveryAgentPicture ?? true }
 }
 
 

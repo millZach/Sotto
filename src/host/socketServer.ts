@@ -318,6 +318,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-phone-photos' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined)
     // Files for Watcher ride on its photos, where the host keeps files at all (ADR-0131, October 28 amendment).
     && (feature !== 'watcher-phone-files' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined && service.supportsFileStaging === true)
+    && (feature !== 'every-agent-picture' || service.supportsEveryAgentPicture === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
@@ -426,7 +427,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
-    .filter(feature => feature !== 'host-delegation' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
+    .filter(feature => feature !== 'host-delegation' && feature !== 'every-agent-picture' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
@@ -1589,6 +1590,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         // as sent is this host's `remote-answer` policy for that desktop, read at every delegated start.
         if (!offers(peer, 'host-delegation') || !service.desktopDefaults) throw new Refusal('invalid_request')
         if (request.defaults.workerCeiling !== undefined && !offers(peer, 'worker-swarms')) throw new Refusal('invalid_request')
+        if (request.defaults.showEveryAgentPicture !== undefined && !offers(peer, 'every-agent-picture')) throw new Refusal('invalid_request')
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'delegation-relay-answer': {
