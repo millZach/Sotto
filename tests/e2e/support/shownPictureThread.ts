@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
+import { evidenceDirectory } from '../../fixtures/evidence'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './e2eProfile'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './sottoLaunch'
 
@@ -84,11 +85,11 @@ export async function withShownPictureThread(prefix: string, journey: (thread: S
   }
 }
 
-/** Saves a capture of the page with the run's output, and to `artifacts/inline-media/` when SOTTO_E2E_ARTIFACTS=1. */
+/** Where the inline-media journeys' captures go: `artifacts/e2e-runs/inline-media/`, or `artifacts/inline-media/` when published (docs/ci.md). */
+const CAPTURES = evidenceDirectory('artifacts/inline-media')
+
+/** Saves a capture of the page as `name`.png with the run's evidence. */
 export async function captureInlineMedia(page: Page, name: string): Promise<void> {
-  await page.screenshot({ path: test.info().outputPath(`${name}.png`) })
-  if (process.env.SOTTO_E2E_ARTIFACTS === '1' || process.env.SOTTO_NESTED_LIVE_SIGNATURE) {
-    await mkdir(resolve('artifacts/inline-media'), { recursive: true })
-    await page.screenshot({ path: resolve('artifacts/inline-media', `${name}.png`) })
-  }
+  await mkdir(CAPTURES, { recursive: true })
+  await page.screenshot({ path: join(CAPTURES, `${name}.png`) })
 }

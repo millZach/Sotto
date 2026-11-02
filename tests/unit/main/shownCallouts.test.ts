@@ -35,20 +35,21 @@ describe('callouts an agent places on the pictures it shows (ADR-0170, part 6)',
     for (const media of placed.media) expect(agentActivityMediaSchema.parse(media)).toEqual(media)
   })
 
-  it('cuts a box partly off the picture to it, and counts a box drawn from its far corner the same', () => {
-    const placed = placeCallouts(folder, [box('checkout.png', 1200, 760, 200, 100), box('checkout.png', 640, 400, -320, -200)], shown)
+  it('cuts a box partly off the picture to it, a part of a pixel too, and counts a box drawn from its far corner the same', () => {
+    const placed = placeCallouts(folder, [box('checkout.png', 1200, 760, 200, 100), box('checkout.png', 640, 400, -320, -200), box('checkout.png', 1279.5, 0, 20, 20)], shown)
     expect(placed.media[0]!.callouts).toEqual([
       { n: 1, x: 0.9375, y: 0.95, w: 0.0625, h: 0.05, note: 'At 1200,760' },
       { n: 2, x: 0.25, y: 0.25, w: 0.25, h: 0.25, note: 'At 640,400' },
+      { n: 3, x: 0.9996, y: 0, w: 0.0004, h: 0.025, note: 'At 1279.5,0' },
     ])
   })
 
   it('refuses one whose picture was not shown, is a video or has no size, or whose box is outside it, and says which', () => {
     const placed = placeCallouts(folder, [box('missing.png', 0, 0, 10, 10, 'gone'), box('flow.mp4', 0, 0, 10, 10, 'video'), box('unsized.png', 0, 0, 10, 10, 'unsized'),
-      box('checkout.png', 1300, 0, 50, 50, 'right of it'), box('checkout.png', 0, 799.5, 50, 50, 'under half a pixel')], shown)
+      box('checkout.png', 1300, 0, 50, 50, 'right of it'), box('checkout.png', 0, 800, 50, 50, 'just under it')], shown)
     expect(placed.placed).toBe(0)
     expect(placed.refused).toEqual([{ note: 'gone', reason: 'not-shown' }, { note: 'video', reason: 'video' }, { note: 'unsized', reason: 'unsized' },
-      { note: 'right of it', reason: 'outside' }, { note: 'under half a pixel', reason: 'outside' }])
+      { note: 'right of it', reason: 'outside' }, { note: 'just under it', reason: 'outside' }])
     expect(placed.media.every(media => media.callouts === undefined)).toBe(true)
     // A relative path with no folder names nothing.
     expect(placeCallouts(undefined, [box('checkout.png', 0, 0, 10, 10, 'no folder')], shown).refused).toEqual([{ note: 'no folder', reason: 'not-shown' }])

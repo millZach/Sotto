@@ -83,6 +83,11 @@ describe('callouts an agent placed on a picture it showed (ADR-0170, part 6)', (
     const list = screen.getByRole('complementary', { name: 'Callouts from Codex' })
     expect(within(list).getByRole('heading', { name: 'Callouts from Codex' })).toBeTruthy()
     expect(notes(list)).toEqual(['The Pay button sits on top of the total.', 'The card number field has no label.'])
+    // Long notes scroll, so the list is in Tab's path after the picture.
+    expect(list.tabIndex).toBe(0)
+    screen.getByRole('group', { name: 'Image view' }).focus()
+    await userEvent.tab()
+    expect(document.activeElement).toBe(list)
     const layer = document.querySelector<SVGElement>('.attachment-viewer__callout-layer')!
     expect(pins(layer)).toEqual(['1', '2'])
     // It takes the picture's own size and place, so zooming and moving the picture carry it along.

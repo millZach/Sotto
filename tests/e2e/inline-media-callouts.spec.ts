@@ -3,8 +3,7 @@
  * agent shows it through `sotto_media`'s show_in_thread with two callouts on it, as when the user asked to see what is
  * wrong with the page. The tile draws their boxes, pins and count; the viewer draws them over the picture and lists their
  * notes beside it; the mark-up editor lists them with Show and Keep the callouts in the copy, and Add to reply puts a copy
- * with them drawn on it into the reply box. Dark and light, and the 820x560 minimum. The captures go to
- * `artifacts/inline-media/` when SOTTO_E2E_ARTIFACTS=1.
+ * with them drawn on it into the reply box. Dark and light, and the 820x560 minimum. The captures are run evidence (docs/ci.md), published to `artifacts/inline-media/` with SOTTO_E2E_EVIDENCE=publish.
  *
  *   npm run build && npx playwright test tests/e2e/inline-media-callouts.spec.ts
  */

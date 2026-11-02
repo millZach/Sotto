@@ -692,7 +692,7 @@ private struct AgentPictureTile: View {
     let key: PhotoPreviews.Key
     /// A GIF asked to play: its whole bytes are fetched and its frames drawn in the tile, from the first.
     var playing = false
-    /// The agent's callouts (ADR-0170, part 6), drawn over the picture where it fills the tile, and the picture's size.
+    /// The agent's callouts (ADR-0170, part 6), drawn over the picture where it sits in the tile, and the picture's size.
     var callouts: [Activity.Media.Callout] = []
     var size: MarkupSize? = nil
     @Environment(\.sottoTheme) private var theme
@@ -706,13 +706,19 @@ private struct AgentPictureTile: View {
             .overlay {
                 if playing, let frames {
                     TimelineView(.animation) { context in
-                        Image(decorative: frames.frame(at: context.date.timeIntervalSince(began)), scale: 1).resizable().scaledToFill()
+                        let frame = Image(decorative: frames.frame(at: context.date.timeIntervalSince(began)), scale: 1).resizable()
+                        // Fitted like its still picture when it has callouts, so the boxes stay on it as it plays.
+                        if callouts.isEmpty { frame.scaledToFill() } else { frame.scaledToFit() }
                     }
-                } else if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+                } else if let image {
+                    // A picture with callouts shows whole, at its own shape, so every box lands on it (ADR-0170, part 6).
+                    if callouts.isEmpty { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+                    else { Image(decorative: image, scale: 1).resizable().scaledToFit() }
+                }
                 else if missing { Image(systemName: "photo").font(.title2).foregroundStyle(Palette.muted) }
                 else { ProgressView() }
             }
-            .overlay { if image != nil, !callouts.isEmpty, let size { CalloutLayer(callouts: callouts, size: size, fills: true, theme: theme) } }
+            .overlay { if image != nil || (playing && frames != nil), !callouts.isEmpty, let size { CalloutLayer(callouts: callouts, size: size, fills: false, unit: true, theme: theme) } }
             .overlay(alignment: .topLeading) {
                 if !callouts.isEmpty {
                     Text(verbatim: "\(callouts.count)").font(.sotto(.small, .bold)).foregroundStyle(ThemeRole(.onAccent))
@@ -743,15 +749,17 @@ private struct AgentPictureTile: View {
     }
 }
 
-/// An agent's callouts (ADR-0170, part 6) over a picture laid out in the frame the layer fills: cut to it, as a tile
-/// fills, or whole inside it, as the viewer fits. On a tile the lines and pins keep a fixed size on screen.
+/// An agent's callouts (ADR-0170, part 6) over a picture laid out in the frame the layer fills: whole inside it, as
+/// the viewer and a tile with callouts show it, or cut to it. With `unit`, as on a tile, the lines and pins keep a fixed
+/// size on screen; without it they are a share of the picture.
 private struct CalloutLayer: View {
     let callouts: [Activity.Media.Callout]
     let size: MarkupSize
     let fills: Bool
+    var unit = false
     let theme: ThemeSwatch
-    init(callouts: [Activity.Media.Callout], size: MarkupSize, fills: Bool, theme: ThemeSwatch) {
-        self.callouts = callouts; self.size = size; self.fills = fills; self.theme = theme
+    init(callouts: [Activity.Media.Callout], size: MarkupSize, fills: Bool, unit: Bool = false, theme: ThemeSwatch) {
+        self.callouts = callouts; self.size = size; self.fills = fills; self.unit = unit; self.theme = theme
     }
     init(callouts: [Activity.Media.Callout], image: CGImage, fills: Bool, theme: ThemeSwatch) {
         self.init(callouts: callouts, size: MarkupSize(width: Double(image.width), height: Double(image.height)), fills: fills, theme: theme)
@@ -762,7 +770,7 @@ private struct CalloutLayer: View {
             context.translateBy(x: placed.x, y: placed.y)
             context.scaleBy(x: placed.scale, y: placed.scale)
             CalloutDrawing.draw(callouts, size: size, accent: theme.rgb(.accent).color, onAccent: theme.rgb(.onAccent).color,
-                                unit: fills ? 1 / placed.scale : nil, in: &context)
+                                unit: unit ? 1 / placed.scale : nil, in: &context)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

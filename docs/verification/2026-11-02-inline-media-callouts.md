@@ -33,6 +33,18 @@ The part 5 captures (`markup-*.png`) were taken again in the same run.
   - **The drawing:** a callout's shape is a share of the picture on a copy, and a fixed size given a tile's scale. On a canvas it draws a dashed box, a pin and its number, and leaves the canvas as it found it.
 - `apps/ios/Tests/SottoCoreTests/CalloutTests.swift`: the iPhone reads a picture's callouts from its handle, and none from an older computer. Its shapes match the desktop's. A picture fills a tile, cut to it, and fits the viewer whole. The geometry ran on forge, compiled with `Markup.swift` and a stand-in for the wire type, and gave the numbers the tests expect. The decoding test, the SwiftUI drawing in the tile, the viewer and the editor, and the iPhone strings in all 30 languages compile only in CI's Native iOS job. `check-strings` passes on forge.
 
+## After review
+
+Sol's Standards and Spec reviews of the branch led to these fixes:
+
+- **Keyboard:** the viewer's list of notes takes the focus after the picture, so long notes can be reached and scrolled from the keyboard. `mediaCallouts.test.tsx` checks Tab lands on it.
+- **iPhone tiles:** a picture with callouts shows whole in its tile, at its own shape, as on the desktop, so no box near its edge is cut off. A GIF with callouts plays fitted the same way, so its boxes stay on it, and its pins keep a fixed size on screen.
+- **Partly off the picture:** a box that overlaps the picture by part of a pixel is cut to it rather than refused. Only a box with no overlap is refused.
+- **Evidence:** the inline-media journeys' captures go through `tests/fixtures/evidence.ts`, to `artifacts/e2e-runs/inline-media/` and to `artifacts/inline-media/` with `SOTTO_E2E_EVIDENCE=publish`. #2021 still covers the other three inline-media specs.
+- **Paired files:** `shownMedia` hands back each picture with the file it was read from, and the callouts are placed by that.
+
+After the fixes, both specs passed again in a new build: Add to reply took 155 ms (callouts) and 152 ms (mark up). The captures from that run matched the committed ones apart from the time in the sidebar, so the committed ones stay.
+
 ## Performance
 
 `tests/perf/inlineMediaTranscript.perf.test.tsx`, the median of three runs each on forge. Main is `d2d5b05f5`; the callouts are the same 200-turn thread with three on each picture.

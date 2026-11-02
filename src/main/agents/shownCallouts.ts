@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from 'node:path'
 import { MAX_MEDIA_CALLOUTS, type AgentActivityMedia, type AgentMediaCallout } from '../../shared/agentActivity'
+import type { ShownFile } from './shownMedia'
 
 /**
  * Callouts an agent places on the pictures it shows (ADR-0170, part 6): numbered boxes with notes, given through
@@ -16,9 +17,6 @@ export interface CalloutRequest {
 
 /** Why a callout was not placed, in words the agent is told. */
 export type CalloutRefusal = 'not-shown' | 'video' | 'unsized' | 'outside'
-
-/** A picture the call showed, with the file it was read from. */
-export interface ShownFile { readonly file: string; readonly media: AgentActivityMedia }
 
 export interface PlacedCallouts {
   /** The call's handles, each picture with the callouts placed on it. */
@@ -54,8 +52,8 @@ export function placeCallouts(folder: string | undefined, requests: readonly Cal
     if (!width || !height) { refused.push({ note: request.note, reason: 'unsized' }); continue }
     const left = Math.max(0, Math.min(request.x, request.x + request.width)), right = Math.min(width, Math.max(request.x, request.x + request.width))
     const top = Math.max(0, Math.min(request.y, request.y + request.height)), bottom = Math.min(height, Math.max(request.y, request.y + request.height))
-    // A box that keeps less than a pixel each way once cut to the picture marks nothing on it.
-    if (right - left < 1 || bottom - top < 1) { refused.push({ note: request.note, reason: 'outside' }); continue }
+    // A box with nothing left once cut to the picture marks nothing on it; any overlap, a part of a pixel too, is kept.
+    if (right <= left || bottom <= top) { refused.push({ note: request.note, reason: 'outside' }); continue }
     const callout = { x: share(left / width), y: share(top / height), w: Math.max(0.0001, share((right - left) / width)), h: Math.max(0.0001, share((bottom - top) / height)), note: request.note }
     byPicture.set(index, [...byPicture.get(index) ?? [], callout])
   }

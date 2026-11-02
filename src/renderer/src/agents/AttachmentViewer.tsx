@@ -229,7 +229,8 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
           viewBox={`0 0 ${calloutsOn.width} ${calloutsOn.height}`} preserveAspectRatio="none" aria-hidden="true" {...zoom.pictureStyle}>
           <CalloutLayer callouts={callouts} size={calloutsOn} /></svg> : null}
       </div>
-      {callouts ? <aside className="attachment-viewer__callouts" aria-label={calloutsHeading(image.calloutsBy)}>
+      {/* Focusable, so long notes can be reached and scrolled from the keyboard; it sits in Tab's path after the picture. */}
+      {callouts ? <aside className="attachment-viewer__callouts tt-focusable" tabIndex={0} aria-label={calloutsHeading(image.calloutsBy)}>
         <h3 className="attachment-viewer__callouts-heading">{calloutsHeading(image.calloutsBy)}</h3>
         <CalloutNotes callouts={callouts} />
       </aside> : null}

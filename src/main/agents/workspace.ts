@@ -1500,7 +1500,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const found = await shownMedia(folder, input.paths, store)
     if (!found.media.length) return { shown: false, reason: 'nothing-shown', refused: found.refused }
     // The agent's callouts go on the pictures it named, by the files they were read from (ADR-0170, part 6).
-    const placed = placeCallouts(folder, input.callouts ?? [], found.media.map((media, index) => ({ media, file: found.files[index]! })))
+    const placed = placeCallouts(folder, input.callouts ?? [], found.shown)
     // What the provider said before the call is committed first, so the newest message read below is the turn's own.
     await this.settled(threadId, true)
     const current = this.threadById(threadId)

@@ -52,6 +52,9 @@ export async function videoHandle(path: string, index: number, file: MediaFile):
   } catch { return undefined } finally { await handle.close().catch(() => undefined) }
 }
 
+/** A picture or video a call showed, with the file it was read from. */
+export interface ShownFile { readonly file: string; readonly media: AgentActivityMedia }
+
 /** What keeps a shown picture and remembers where a shown video is: the thread media store. */
 export type ShownMediaStore = Pick<ThreadMediaStore, 'captureFile' | 'keepVideo'>
 
@@ -60,8 +63,8 @@ export type ShownRefusal = 'missing' | 'not-media' | 'too-large' | 'not-local'
 /** What one call shows: each file kept by handle, and each one refused with why. */
 export interface ShownMedia {
   readonly media: AgentActivityMedia[]
-  /** The file each handle in `media` was read from, in the same order, for the callouts placed on it (part 6). */
-  readonly files: string[]
+  /** Each handle in `media` with the file it was read from, for the callouts placed on it (part 6). */
+  readonly shown: ShownFile[]
   readonly refused: { readonly path: string; readonly reason: ShownRefusal }[]
 }
 
@@ -72,7 +75,7 @@ export interface ShownMedia {
  * large is refused and named. The same file named twice is shown once.
  */
 export async function shownMedia(folder: string | undefined, paths: readonly string[], store: ShownMediaStore): Promise<ShownMedia> {
-  const media: AgentActivityMedia[] = [], files: string[] = [], refused: ShownMedia['refused'] = [], seen = new Set<string>()
+  const media: AgentActivityMedia[] = [], shown: ShownFile[] = [], refused: ShownMedia['refused'] = [], seen = new Set<string>()
   for (const path of paths.slice(0, MAX_ACTIVITY_MEDIA)) {
     // A network path would reach another computer, its credentials too, before the file is even looked at: never read.
     if (onNetwork(path)) { refused.push({ path, reason: 'not-local' }); continue }
@@ -94,10 +97,10 @@ export async function shownMedia(folder: string | undefined, paths: readonly str
     }
     if (!handle) { refused.push({ path, reason: 'not-media' }); continue }
     // The store names a picture by its place among the ones it was given; here it is its place among the call's.
-    media.push({ ...handle, id: `m${media.length}`, name: basename(absolute).slice(0, 200) || handle.name })
-    files.push(absolute)
+    const kept = { ...handle, id: `m${media.length}`, name: basename(absolute).slice(0, 200) || handle.name }
+    media.push(kept); shown.push({ file: absolute, media: kept })
   }
-  return { media, files, refused }
+  return { media, shown, refused }
 }
 
 /** Whether a path names a file on another computer: a Windows UNC path (`\\server\share`, `//server/share`) or a device path. */

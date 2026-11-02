@@ -4,7 +4,7 @@
  * when the user asks to see it. The viewer's Mark up opens the editor. An arrow, a box and a note drawn with the pointer
  * go onto a copy at the picture's full size, Add to reply puts that copy in the reply box as an attachment, and the
  * picture in the thread stays as it was. The time from Add to reply to the copy in the box prints every run. Dark and
- * light, and the 820x560 minimum. The captures go to `artifacts/inline-media/` when SOTTO_E2E_ARTIFACTS=1.
+ * light, and the 820x560 minimum. The captures are run evidence (docs/ci.md), published to `artifacts/inline-media/` with SOTTO_E2E_EVIDENCE=publish.
  *
  *   npm run build && npx playwright test tests/e2e/inline-media-markup.spec.ts
  */
