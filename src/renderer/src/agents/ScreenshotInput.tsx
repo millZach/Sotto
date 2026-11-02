@@ -145,7 +145,7 @@ function addAnyFailed(item: Incoming, remaining: number, first: boolean, cause: 
  * With `attach-any-file` on (ADR-0131), any file joins it too: images as before, every other file staged with its
  * bytes as they are and shown as a pill under the images.
  */
-export function ScreenshotInput({ target, attachments, onChange, disabled, supported, imagesSupported, answering = false, children, reads }: {
+export function ScreenshotInput({ target, attachments, onChange, disabled, supported, imagesSupported, answering = false, replyBox = true, children, reads }: {
   /** The thread the draft belongs to, or null for the coordinator's composer. */
   readonly target: string | null
   readonly attachments: readonly AgentAttachmentHandle[]
@@ -157,13 +157,17 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   readonly imagesSupported?: boolean
   /** Whether the draft answers a question or a permission request, which takes no attachments; says why a marked copy can't come in. */
   readonly answering?: boolean
+  /** Whether this is the pane's reply box, which a picture marked up in the pane goes to. A question card's images are
+   *  not (ADR-0176): it takes no marked copy and shows where to drop whichever Owl answers are on. */
+  readonly replyBox?: boolean
   readonly children: ReactNode
   /** Reads that may outlive this input, as when the user moves to another thread while screenshots are read. */
   readonly reads?: ScreenshotReadPort
 }): ReactNode {
   // Subscribes, so the words drawn here follow a change of interface language.
   useInterfaceLanguageState()
-  const anyFile = useOwlFeature('attach-any-file')
+  // A question card's answer carries images only (ADR-0176).
+  const anyFile = useOwlFeature('attach-any-file') && replyBox
   const picker = useRef<HTMLInputElement>(null)
   const current = useRef(attachments)
   current.current = attachments
@@ -262,7 +266,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     add: files => add(files),
     focus: () => root.current?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus(),
   }
-  useRegisterReplyAttach(attach)
+  useRegisterReplyAttach(attach, replyBox)
   const remove = (id: string): void => onChange(current.current.filter(item => item.id !== id))
   const images = anyFile ? attachments.filter(attachment => isImageAttachment(attachment.mimeType)) : attachments
   const files = anyFile ? attachments.filter(attachment => !isImageAttachment(attachment.mimeType)) : []
@@ -272,17 +276,18 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     <Chip key={attachment.id} target={target} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)} {...deck}
       {...anyFile ? { removeLabel: words.removeAttachment(attachment.name) } : {}} />
   const endDrag = (): void => { dragDepth.current = 0; setDragging(false) }
-  return <div ref={root} className="screenshot-input" data-dragging={anyFile && dragging ? true : undefined} onPaste={event => {
+  return <div ref={root} className="screenshot-input" data-dragging={(anyFile || !replyBox) && dragging ? true : undefined} onPaste={event => {
     const files = [...event.clipboardData.items].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => file !== null)
     if (files.length) { event.preventDefault(); void add(files) }
-  }} onDragEnter={anyFile ? event => {
-    if (!event.dataTransfer.types.includes('Files')) return
+  }} onDragEnter={anyFile || !replyBox ? event => {
+    // A box that can't take files now doesn't invite a drop.
+    if (disabled || !event.dataTransfer.types.includes('Files')) return
     event.preventDefault(); dragDepth.current += 1; setDragging(true)
-  } : undefined} onDragLeave={anyFile ? () => {
+  } : undefined} onDragLeave={anyFile || !replyBox ? () => {
     dragDepth.current = Math.max(0, dragDepth.current - 1)
     if (dragDepth.current === 0) setDragging(false)
   } : undefined} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => {
-    if (anyFile) endDrag()
+    if (anyFile || !replyBox) endDrag()
     if (event.dataTransfer.files.length) { event.preventDefault(); void add([...event.dataTransfer.files]) }
   }}>
     {children}
@@ -301,6 +306,6 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
       {busy && <small role="status">{anyFile ? words.addingFiles() : <Trans>Adding screenshots...</Trans>}</small>}
       {(error ?? reads?.problem) && <small className="agent-error" role="alert">{error ?? reads?.problem}</small>}
     </div>
-    {anyFile && dragging && <div className="screenshot-input__drop" role="status"><span><Download size={16} aria-hidden="true" />{words.dropToAttach()}</span></div>}
+    {(anyFile || !replyBox) && dragging && <div className="screenshot-input__drop" role="status"><span><Download size={16} aria-hidden="true" />{words.dropToAttach()}</span></div>}
   </div>
 }
