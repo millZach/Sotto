@@ -429,6 +429,24 @@ const PROTOTYPE_SEND_BACK_CLIENT: ClientIdentity = { clientId: 'sotto-prototype-
 function carriesDefaultTitle(thread: AgentThread): boolean {
   return thread.titleSource === undefined || thread.titleSource === 'default'
 }
+/** How often a thread's name may be written again, and how often the threads are looked at for it. */
+const TITLE_REFRESH_MS = 60 * 60_000
+const TITLE_REFRESH_SWEEP_MS = 5 * 60_000
+/** At most this many names are asked for in one sweep, so a sweep after a busy hour stays a trickle of side calls. */
+const TITLE_REFRESHES_PER_SWEEP = 5
+
+/** A thread's first message and its newest exchange, what an hourly name is written from; null until a reply follows. */
+function currentExchange(messages: readonly AgentMessage[]): ThreadTitleExchange | null {
+  const said = (message: AgentMessage): boolean => message.text.trim().length > 0
+  const first = messages.find(message => message.role === 'user' && said(message))
+  const reply = messages.findLastIndex(message => message.role === 'assistant' && !isVisualMessage(message) && said(message))
+  if (!first || reply === -1) return null
+  const prompt = messages.slice(0, reply).findLastIndex(message => message.role === 'user' && said(message))
+  if (prompt === -1) return null
+  const newest = { prompt: messages[prompt]!.text, reply: messages[reply]!.text }
+  return messages[prompt] === first ? newest : { ...newest, opening: first.text }
+}
+
 function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested', messages: readonly AgentMessage[]): ThreadTitleExchange | null {
   if (trigger === 'automatic' && thread.status === 'running') return null
   // A first-message title says Sotto saw this thread begin, so a steer or a queued follow-up sent during the
@@ -1241,6 +1259,9 @@ export class AgentControl {
   private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
+  /** When each thread's name was last written or first seen this run, and its message count then (ADR-0026, hourly names). */
+  private readonly titleNamedAt = new Map<string, { readonly at: number; readonly count: number }>()
+  private titleRefreshTimer: ReturnType<typeof setInterval> | null = null
   /** Clearing commands and the automatic rule, one at a time (ADR-0140). */
   private clearing: Promise<unknown> = Promise.resolve()
   private readonly deletedListeners = new Set<(threadIds: readonly string[]) => void>()
@@ -1500,6 +1521,8 @@ export class AgentControl {
     // each running its own (ADR-0042). It never holds Sotto open.
     this.clientCheckTimer = setInterval(() => { void this.backgroundClientCheck() }, CLIENT_CHECK_INTERVAL_MS)
     this.clientCheckTimer.unref?.()
+    this.titleRefreshTimer = setInterval(() => this.refreshTitles(), TITLE_REFRESH_SWEEP_MS)
+    this.titleRefreshTimer.unref?.()
     this.updateCredentials()
     if (isSubscriptionReasoning(this.state.configuration.reasoning)) {
       // Native login/model discovery must not hold up dictation or the desktop window.
@@ -1834,7 +1857,7 @@ export class AgentControl {
     this.state.obsoleteDrafts = kept(this.state.obsoleteDrafts)
     if (this.state.followupReceipts) this.state.followupReceipts = kept(this.state.followupReceipts)
     this.deliveredPromptDigests = this.deliveredPromptDigests.filter(item => !gone.has(item.threadId))
-    for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titled.delete(threadId) }
+    for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titled.delete(threadId); this.titleNamedAt.delete(threadId) }
     if (this.state.draftThreadId && gone.has(this.state.draftThreadId)) this.clearDraft()
     if (this.state.activeThreadId && gone.has(this.state.activeThreadId)) this.state.activeThreadId = null
     this.viewedThreadIds = this.viewedThreadIds.filter(id => !gone.has(id))
@@ -4038,6 +4061,33 @@ export class AgentControl {
       const exchange = firstExchange(thread, 'automatic', watcherWakeUpsAsShown(this.threadHistory(thread)))
       if (!exchange) continue
       this.titled.add(thread.id)
+      this.titleNamedAt.set(thread.id, { at: Date.now(), count: messageCount })
+      this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
+    }
+  }
+  /**
+   * Keeps the name Sotto gave a thread current (ADR-0026, November 1, 2026): at most once an hour, a thread that has said
+   * something since its name was last written is named again from its first message and its newest exchange. A name the
+   * user typed is never replaced. A thread is first only noted, so starting Sotto asks nothing of any provider, and a
+   * sweep asks a few at most. Runs on its own timer, off the update path.
+   */
+  private refreshTitles(): void {
+    if (this.disposed || !this.dependencies.writeThreadTitle || !this.dependencies.host.renameThread) return
+    if (this.dependencies.historyEnabled?.() === false) return
+    const now = Date.now()
+    let asked = 0
+    for (const thread of this.state.host.threads) {
+      // Watcher's threads keep their own names, as they never take a first one.
+      if (thread.titleSource === 'user' || isWatcherKind(thread) || isThreadArchived(thread) || thread.status === 'running') continue
+      const count = threadSummaryOf(thread).messageCount
+      const named = this.titleNamedAt.get(thread.id)
+      if (!named) { this.titleNamedAt.set(thread.id, { at: now, count }); continue }
+      if (count <= named.count || now - named.at < TITLE_REFRESH_MS || asked >= TITLE_REFRESHES_PER_SWEEP) continue
+      this.titleNamedAt.set(thread.id, { at: now, count })
+      const exchange = currentExchange(watcherWakeUpsAsShown(this.threadHistory(thread)))
+      if (!exchange) continue
+      asked++
+      this.titled.add(thread.id)
       this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
     }
   }
@@ -4103,6 +4153,7 @@ export class AgentControl {
     const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', watcherWakeUpsAsShown(this.threadHistory(thread))) : null
     if (thread && exchange) {
       this.titled.add(thread.id)
+      this.titleNamedAt.set(thread.id, { at: Date.now(), count: threadSummaryOf(thread).messageCount })
       await this.trackTitleWrite(this.writeThreadTitle(threadId, exchange))
     }
     this.publish()
@@ -6737,6 +6788,8 @@ export class AgentControl {
     if (this.maintenanceTimer) clearInterval(this.maintenanceTimer)
     if (this.clientCheckTimer) clearInterval(this.clientCheckTimer)
     this.clientCheckTimer = null
+    if (this.titleRefreshTimer) clearInterval(this.titleRefreshTimer)
+    this.titleRefreshTimer = null
     this.unsubscribe?.()
     this.unsubscribeSottoRequests?.()
     // Updates still waiting in the line never start; whoever waits for one is told rather than left waiting.

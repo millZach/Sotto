@@ -124,7 +124,7 @@ test('the thread list is one Tab stop with a row menu, and F6 goes round the sid
     for (let steps = 0; steps < 20 && !await row.evaluate(node => node === document.activeElement); steps += 1) await page.keyboard.press('ArrowDown')
     await expect(row).toBeFocused()
     // The row's own hover icons are out of the Tab order.
-    await expect(sidebar.getByRole('button', { name: 'Rename Streaming WAV stall', exact: true })).toHaveAttribute('tabindex', '-1')
+    await expect(sidebar.getByRole('button', { name: 'Settle Streaming WAV stall', exact: true })).toHaveAttribute('tabindex', '-1')
     await capture(page, 'focused-row-1600x1000', async () => { await expect(row).toBeFocused() })
 
     // Shift+F10 opens the row's menu in words with its keys; Escape puts it away and the focus back on the row.

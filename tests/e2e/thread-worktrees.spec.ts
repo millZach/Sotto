@@ -64,7 +64,7 @@ async function createInstant(page: Page, project: string, title: string): Promis
   await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
   const projects = page.getByRole('region', { name: 'Projects' })
   await projects.getByRole('button', { name: 'New thread', exact: true }).hover()
-  await projects.getByRole('button', { name: 'Rename New thread', exact: true }).click()
+  await projects.getByRole('button', { name: 'New thread', exact: true }).locator('.thread-nav__title').dblclick()
   await page.getByLabel('Rename New thread').fill(title)
   await page.keyboard.press('Enter')
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()

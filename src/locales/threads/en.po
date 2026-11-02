@@ -1148,6 +1148,10 @@ msgstr "{settledThreads, plural, one {Settled {threads} thread} other {Settled {
 msgid "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 msgstr "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{snoozedThreads, plural, one {Snoozed {threads} thread} other {Snoozed {threads} threads}}"
+msgstr "{snoozedThreads, plural, one {Snoozed {threads} thread} other {Snoozed {threads} threads}}"
+
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{sourceCount, plural, one {Search # model source} other {Search # model sources}}"
 msgstr "{sourceCount, plural, one {Search # model source} other {Search # model sources}}"
@@ -4122,6 +4126,11 @@ msgstr "Folder removed. Sending to this thread puts it back on {branch}."
 msgid "Folder removed. Sending to this thread puts it back on its branch."
 msgstr "Folder removed. Sending to this thread puts it back on its branch."
 
+#. Snooze a thread for an hour.
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "For 1 hour"
+msgstr "For 1 hour"
+
 #. A tip under a working Claude thread.
 #: src/renderer/src/agents/tips.tsx
 msgid "For a wide search, ask Claude to use subagents. Each runs in its own context, so this thread’s stays small."
@@ -5260,6 +5269,11 @@ msgctxt "walkthrough"
 msgid "Next"
 msgstr "Next"
 
+#. Snooze a thread until 9 am next Monday.
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "Next Monday"
+msgstr "Next Monday"
+
 #: src/renderer/src/agents/NextList.tsx
 msgid "Next prompts"
 msgstr "Next prompts"
@@ -6052,6 +6066,11 @@ msgstr "Permissions the new thread starts on"
 msgid "Personal"
 msgstr "Personal"
 
+#. Snooze a thread until a date and time the user picks.
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "Pick a date and time…"
+msgstr "Pick a date and time…"
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Picking one starts a new thread there with a handover of this one. This thread stays as it is."
 msgstr "Picking one starts a new thread there with a handover of this one. This thread stays as it is."
@@ -6497,16 +6516,6 @@ msgstr "Refused"
 msgid "Refused when last read"
 msgstr "Refused when last read"
 
-#: src/renderer/src/agents/threadMenu.tsx
-#: src/renderer/src/agents/ThreadPane.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "Regenerate title"
-msgstr "Regenerate title"
-
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "Regenerate title for {title}"
-msgstr "Regenerate title for {title}"
-
 #. Rejects a plan the coding agent proposed.
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Reject"
@@ -6634,10 +6643,6 @@ msgstr "Rename"
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Rename {title}"
 msgstr "Rename {title}"
-
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "Rename thread"
-msgstr "Rename thread"
 
 #. A file renamed locally
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
@@ -7403,6 +7408,29 @@ msgstr "Skills are {provider}’s own. Remove them to continue on {continueTarge
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "Skills aren’t loaded yet."
 msgstr "Skills aren’t loaded yet."
+
+#. Snooze the thread until the picked date and time.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "Snooze"
+msgstr "Snooze"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Snooze {title}"
+msgstr "Snooze {title}"
+
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "Snooze {title} until"
+msgstr "Snooze {title} until"
+
+#. Open the menu that snoozes the thread until a later time.
+#: src/renderer/src/agents/threadMenu.tsx
+msgid "Snooze…"
+msgstr "Snooze…"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Snoozed"
+msgstr "Snoozed"
 
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "Some details were not kept."
@@ -8545,6 +8573,11 @@ msgstr "This diagram uses a structure that cannot be checked safely. The diagram
 msgid "This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved."
 msgstr "This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved."
 
+#. Snooze a thread until 6 pm today.
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "This evening"
+msgstr "This evening"
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "This file changed on its way to the host. Nothing was attached. Attach it again."
 msgstr "This file changed on its way to the host. Nothing was attached. Attach it again."
@@ -8846,6 +8879,11 @@ msgstr "Tip"
 msgid "To do"
 msgstr "To do"
 
+#. Snooze a thread until 9 am tomorrow.
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "Tomorrow"
+msgstr "Tomorrow"
+
 #. When a stopped thread restarts, as in "Restarts tomorrow at 3:00 pm".
 #: src/renderer/src/agents/restartWords.ts
 msgid "tomorrow at {clock}"
@@ -9050,6 +9088,11 @@ msgstr "Unknown when last read"
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Unsettled"
 msgstr "Unsettled"
+
+#. {wakes} is when a snoozed thread wakes, such as "Mon 9:00 am".
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Until {wakes}"
+msgstr "Until {wakes}"
 
 #. A file Git does not track
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
@@ -9434,6 +9477,20 @@ msgstr "Waiting to update to {published}. Your threads keep working."
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Waiting to update to the published version. Your threads keep working."
 msgstr "Waiting to update to the published version. Your threads keep working."
+
+#: src/renderer/src/agents/threadSnooze.tsx
+msgid "Wake {title} at"
+msgstr "Wake {title} at"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Wake {title} now"
+msgstr "Wake {title} now"
+
+#. Bring a snoozed thread back to open work now.
+#: src/renderer/src/agents/threadMenu.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Wake now"
+msgstr "Wake now"
 
 #. The tag on a message Sotto sent to wake a thread.
 #: src/renderer/src/agents/ThreadTranscript.tsx

@@ -445,8 +445,14 @@ export interface ProjectFolder {
   readonly activityAt: number
 }
 
+/** Asleep at `now` (ADR-0175): snoozed until later, and not waiting on the user, since a thread that needs you wakes. */
+export const isSnoozed = (row: ThreadRow, snoozes: ReadonlyMap<string, number> | undefined, now: number): boolean =>
+  row.state !== 'needs' && (snoozes?.get(row.thread.id) ?? 0) > now
+
 export interface WorkspaceOrganization {
   readonly open: readonly ProjectFolder[]
+  /** Open threads the user snoozed until a later time (ADR-0175; Owl only), under their projects. */
+  readonly snoozed?: readonly ProjectFolder[]
   readonly settled: readonly ProjectFolder[]
   /** The Needs you queue over every row, search or none (ADR-0135). */
   readonly needsYou: NeedsYouQueue
@@ -638,7 +644,7 @@ export function holdSettledRows(open: readonly ProjectFolder[], settled: readonl
  * that delegated to it, whose row says when it waits on you. The Needs you queue is described from the same rows
  * before the search narrows them, so searching never changes it (ADR-0135).
  */
-export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false, snoozes?: ReadonlyMap<string, number>): WorkspaceOrganization {
   const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
   const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId), swarms) : undefined
   const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
@@ -654,6 +660,7 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
   }
   const ids = new Set([...projects.keys(), ...threadsByProject.keys()])
   const open: ProjectFolder[] = []
+  const snoozed: ProjectFolder[] = []
   const settled: ProjectFolder[] = []
   for (const id of ids) {
     const project = projects.get(id)
@@ -664,12 +671,15 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
       if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
       continue
     }
-    const openRows = shown.filter(row => row.settledBy === null)
+    const unsettled = shown.filter(row => row.settledBy === null)
+    const asleep = snoozes?.size ? unsettled.filter(row => isSnoozed(row, snoozes, now)) : []
+    const openRows = asleep.length ? unsettled.filter(row => !asleep.includes(row)) : unsettled
     const settledRows = shown.filter(row => row.settledBy !== null)
     const emptyOpen = needle === '' && (all.length === 0 || id === activeProjectId) && openRows.length === 0
-    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false))
+    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length && !asleep.length)) open.push(folder(id, project, openRows, false))
+    if (asleep.length) snoozed.push(folder(id, project, asleep, false))
     if (settledRows.length) settled.push(folder(id, project, settledRows, false))
   }
   const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
-  return { open: ordered(open), settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
+  return { open: ordered(open), ...snoozes?.size ? { snoozed: ordered(snoozed) } : {}, settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
 }

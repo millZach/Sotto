@@ -19,14 +19,15 @@ test('rename keeps its keyboard place in both themes and all window sizes', asyn
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
         await resizeWindow(launched, width!, height!)
         const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
-        await sidebar.getByRole('button', { name: 'Docs', exact: true }).click()
-        const rename = sidebar.getByRole('button', { name: 'Rename Docs', exact: true })
-        await rename.click()
+        const row = sidebar.getByRole('button', { name: 'Docs', exact: true })
+        await row.click()
+        // A double-click on the name renames; F2 does the same from the keyboard. Either way the focus comes back to the row.
+        await row.locator('.thread-nav__title').dblclick()
         await sidebar.getByRole('textbox', { name: 'Rename Docs', exact: true }).press('Escape')
-        await expect(rename).toBeFocused()
-        await page.keyboard.press('Enter')
+        await expect(row).toBeFocused()
+        await page.keyboard.press('F2')
         await sidebar.getByRole('textbox', { name: 'Rename Docs', exact: true }).press('Enter')
-        await expect(rename).toBeFocused()
+        await expect(row).toBeFocused()
         const header = page.locator('.thread-workspace__head')
         const more = header.getByRole('button', { name: 'More actions', exact: true })
         for (const key of ['Escape', 'Enter']) {
