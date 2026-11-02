@@ -1144,6 +1144,11 @@ msgstr "{setLevel} is set. Choose a level this model offers."
 msgid "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 msgstr "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 
+#. {shown} and {whole} are token counts such as 183k and 256k: how much of the model’s context the thread uses, of all it takes.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "{shown} of {whole}"
+msgstr "{shown} of {whole}"
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 msgstr "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
@@ -2743,6 +2748,11 @@ msgstr "Connecting…"
 msgid "Context compacted"
 msgstr "Context compacted"
 
+#. In the speed card of a thread on the user’s own model server: how much of the model’s context the thread fills.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Context used"
+msgstr "Context used"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Context, in tokens"
 msgstr "Context, in tokens"
@@ -4080,6 +4090,11 @@ msgstr "finished the cloud iPhone session"
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Finishes on {hostName} itself, so not from this computer."
 msgstr "Finishes on {hostName} itself, so not from this computer."
+
+#. In the speed card of a thread on the user’s own model server: how long the server took to start answering the last message, such as 41s.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "First word after"
+msgstr "First word after"
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
@@ -9599,6 +9614,11 @@ msgstr "Where the server listens, on this computer, your network or your tailnet
 #: src/renderer/src/agents/tips.tsx
 msgid "Which threads are waiting on me?"
 msgstr "Which threads are waiting on me?"
+
+#. In the speed card of a thread on the user’s own model server: how fast its reply came.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Words per second"
+msgstr "Words per second"
 
 #. A turn that finished, when its time was not recorded.
 #: src/renderer/src/agents/threadActivityView.ts

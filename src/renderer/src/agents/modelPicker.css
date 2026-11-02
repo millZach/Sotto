@@ -113,3 +113,19 @@
 .model-picker__models [role='option'] > .model-picker__star:hover { background: var(--tt-hover); color: var(--tt-text); }
 .model-picker__models [role='option'] > .model-picker__star:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .model-picker__star[data-starred] { color: var(--tt-activity); }
+
+/* A card that describes the chip (a thread on one of the user's own servers: its speed, ADR-0124), above the chip while
+   the pointer or the keyboard focus is on it and never over its open menu. Escape puts it away until the chip is left. */
+.model-picker:has(> .model-picker__card) { position: relative; }
+.model-picker__card {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 6; min-width: 200px; max-width: min(300px, calc(100vw - 32px));
+  padding: 8px 12px; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-card); background: var(--tt-surface-elevated);
+  box-shadow: 0 12px 32px var(--tt-shadow-color); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4;
+  visibility: hidden; opacity: 0; pointer-events: none;
+}
+.model-picker__card-name { margin: 0; color: var(--tt-text-2); overflow-wrap: anywhere; }
+.model-picker:not([data-card-away]):has(> .model-picker__trigger:is(:hover, :focus-visible):not([aria-expanded='true'])) > .model-picker__card { visibility: visible; opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .model-picker__card { transition: opacity 120ms ease, visibility 0s linear 120ms; }
+  :root:not([data-reduced-motion='on']) .model-picker:not([data-card-away]):has(> .model-picker__trigger:is(:hover, :focus-visible):not([aria-expanded='true'])) > .model-picker__card { transition-delay: 0s; }
+}

@@ -21,6 +21,7 @@ import { browseFolder, fileLimitReached, insertFile, retainFileReferences, sameF
 import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './FilePicker'
 import { insertSkill, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
+import { isOwnServerModel } from './ServerMark'
 import { requestMode } from './requests/requestAnswers'
 import { answeredChoices, OWN_WORDS } from './requests/answeredChoices'
 import { useWatcherEnabled } from '../state/watcherFeature'
@@ -182,6 +183,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
   const quietComposer = useOwlFeature('quiet-composer')
+  // A thread on one of the user's own model servers draws a thin accent line along the composer's top edge (ADR-0124).
+  const ownServer = useOwlFeature('own-model-servers') && isOwnServerModel(row.thread.modelId)
   const { draft, save, saveError, answerState, hasContent, effortScore, broadWork } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
   // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
@@ -521,6 +524,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
       <EffortTrace />
+      {ownServer ? <span className="thread-prompt__own-server" aria-hidden="true" /> : null}
       {ornament}
       {next !== null && nextList !== null ? <NextList prompt={next} listId={nextListId} activeIndex={nextList.index} sends={!hasContent}
         onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}

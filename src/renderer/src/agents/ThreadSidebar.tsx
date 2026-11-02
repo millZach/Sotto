@@ -9,6 +9,7 @@ import { useOptionalApp } from '../state/AppContext'
 import { claimedThreadChord, fixedKeyFree, threadChordLabel, threadChordPressed, type ThreadChordLabel } from './threadShortcuts'
 import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX, workingThreadsLead } from '../../../shared/workingThreads'
 import { ProviderMark } from './ProviderMark'
+import { ServerMark, useOwnServerMark } from './ServerMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import { useSidebarSize } from './sidebarSize'
@@ -184,6 +185,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // What follows a row's status while its provider is out of reach: Reconnecting while its host restarts for an update.
   const disconnected = row.connected ? '' : row.reconnecting ? ` · ${t`Reconnecting`}` : ` · ${t`Disconnected`}`
   const watched = useWatchedThread(row.thread.id)
+  // A thread on one of the user's own model servers wears the server mark beside its provider's (ADR-0124).
+  const serverMark = useOwnServerMark(row.thread, row.connected)
   // A row that says it needs you for a thread it delegated names that thread (ADR-0081, October 17, 2026).
   const waitingIn = row.waitingIn
   const copyDetails = [...new Set([waitingIn ? t({ message: `Waiting in ${waitingIn}`, comment: '{waitingIn} is the title of a thread this one delegated to.' }) : undefined, row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
@@ -223,6 +226,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         {/* The mark stands for the provider's name; the status below says the name for a screen reader, and hovering says it here. */}
         <span className="thread-nav__provider" title={[row.provider, row.model?.name].filter(Boolean).join(' · ')}>
           <span className="thread-nav__mark" data-provider={row.providerId}><ProviderMark provider={row.providerId} name={row.provider} /></span>
+          {serverMark ? <ServerMark state={serverMark.state} attempt={serverMark.attempt} wordsPerSecond={serverMark.pace.wordsPerSecond} size="row" /> : null}
           {watched ? <WatchedBadge size={14} /> : null}
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>

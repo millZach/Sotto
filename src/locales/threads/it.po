@@ -1144,6 +1144,11 @@ msgstr ""
 msgid "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 msgstr ""
 
+#. {shown} and {whole} are token counts such as 183k and 256k: how much of the model’s context the thread uses, of all it takes.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "{shown} of {whole}"
+msgstr ""
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
 msgstr ""
@@ -2743,6 +2748,11 @@ msgstr ""
 msgid "Context compacted"
 msgstr ""
 
+#. In the speed card of a thread on the user’s own model server: how much of the model’s context the thread fills.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Context used"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Context, in tokens"
 msgstr ""
@@ -4079,6 +4089,11 @@ msgstr ""
 #. {hostName} is the name of a saved host, or "the host".
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Finishes on {hostName} itself, so not from this computer."
+msgstr ""
+
+#. In the speed card of a thread on the user’s own model server: how long the server took to start answering the last message, such as 41s.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "First word after"
 msgstr ""
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
@@ -9598,6 +9613,11 @@ msgstr ""
 #. Put in Watcher's prompt by a tip's Try it.
 #: src/renderer/src/agents/tips.tsx
 msgid "Which threads are waiting on me?"
+msgstr ""
+
+#. In the speed card of a thread on the user’s own model server: how fast its reply came.
+#: src/renderer/src/agents/ServerMark.tsx
+msgid "Words per second"
 msgstr ""
 
 #. A turn that finished, when its time was not recorded.
