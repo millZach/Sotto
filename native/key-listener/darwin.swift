@@ -1,5 +1,7 @@
-// Sotto's macOS key listener: a listen-only event tap that reports modifier
-// transitions and shortcut keys to main as lines on stdout (ADR-0097).
+// Sotto's macOS key listener: an event tap that reports modifier transitions and
+// shortcut keys to main as lines on stdout and, with Accessibility, keeps a dictation
+// shortcut's own key from reaching the app in front (ADR-0097).
+import ApplicationServices
 import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
@@ -40,10 +42,13 @@ let acceptSynthetic = arguments.contains("--accept-synthetic")
 
 // All state below is touched only on the main thread.
 var watched = Set<String>()
+var swallowChords = Set<String>()         // shortcuts with a key, as chordKey(tokens)
 var recording = false
 var modifiersDown = Set<Int64>()          // physical modifier keycodes
 var keysDown = [Int64: String?]()         // physical key -> reported token, nil when its down was suppressed
 var reportedCount = [String: Int]()       // token -> physical keys whose down was reported
+var swallowed = Set<Int64>()              // physical keys whose down was dropped, so their repeats and up are dropped too
+var tapActive = false                     // the tap can drop events: made active, with Accessibility
 // The poll's queries, injectable for --selftest. hidKeyDown(0x3F) asks for Fn.
 var hidKeyDown: (Int64) -> Bool = { code in
   code == 0x3F
@@ -53,9 +58,13 @@ var hidKeyDown: (Int64) -> Bool = { code in
 var sessionFlags: () -> UInt64 = { CGEventSource.flagsState(.combinedSessionState).rawValue }
 var secureInput: () -> Bool = { IsSecureEventInputEnabled() }
 var readUpOnce = Set<Int64>()             // tracked keys the previous poll read as up
+// Lines go out on their own queue, so a pipe main is slow to read never holds a key at the tap.
+let output = DispatchQueue(label: "sotto.key-listener.output")
 var emit: (String) -> Void = { line in
-  print(line)
-  fflush(stdout)
+  output.async {
+    print(line)
+    fflush(stdout)
+  }
 }
 
 func report(_ token: String, down: Bool) {
@@ -69,7 +78,11 @@ func resetState() {
   keysDown.removeAll()
   reportedCount.removeAll()
   readUpOnce.removeAll()
+  // swallowed stays: a repeat after a reset keeps its first down's answer, and the key's next press decides again.
 }
+
+// Chords compare as sets of tokens: "Fn+Space" and "Space+Fn" are one chord.
+func chordKey<S: Sequence>(_ tokens: S) -> String where S.Element == String { Set(tokens).sorted().joined(separator: "+") }
 
 // A modifier also counts as held while the session flags carry its class (a Sticky Keys latch).
 func isHeld(_ code: Int64) -> Bool {
@@ -105,19 +118,22 @@ func reconcile() {
   for (code, token) in keysDown where !isHeld(code) {
     if !readUpOnce.contains(code) { upNow.insert(code); continue }
     keysDown.removeValue(forKey: code)
+    swallowed.remove(code)
     if let token = token { report(token, down: false) }
   }
   readUpOnce = upNow
 }
 
-func handle(type: CGEventType, event: CGEvent) {
+// True when an active tap drops the event: a key that completes a shortcut, with its repeats and its up,
+// so Fn+Space types no space.
+func handle(type: CGEventType, event: CGEvent) -> Bool {
   if !acceptSynthetic && (event.getIntegerValueField(.eventSourceStateID) != hidSystemState
-    || event.getIntegerValueField(.eventSourceUnixProcessID) != 0) { return }
+    || event.getIntegerValueField(.eventSourceUnixProcessID) != 0) { return false }
   let code = event.getIntegerValueField(.keyboardEventKeycode)
   switch type {
   case .flagsChanged:
     // Fn's direction comes only from this event's own flags (keyDown/keyUp of arrows carry maskSecondaryFn too).
-    guard let modifier = modifierKeys[code] else { return }
+    guard let modifier = modifierKeys[code] else { return false }
     let flags = event.flags.rawValue
     if let group = modifierClasses[modifier.token], flags & group.device == 0 {
       if flags & group.mask != 0 {
@@ -128,30 +144,41 @@ func handle(type: CGEventType, event: CGEvent) {
           report(modifier.token, down: false)
         }
       }
-      return
+      return false
     }
     let down = flags & modifier.mask != 0
-    if down == modifiersDown.contains(code) { return }
+    if down == modifiersDown.contains(code) { return false }
     if down { modifiersDown.insert(code) } else { modifiersDown.remove(code) }
     report(modifier.token, down: down)
+    return false
   case .keyDown:
-    if keysDown[code] != nil { return }
+    // A repeat is never a new press: it keeps its first down's answer, even across a reset.
+    if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return swallowed.contains(code) }
     let known = keyTokens[code]
-    var token: String? = nil
-    if recording {
-      token = known ?? "Other"
-    } else if let key = known, key.hasPrefix("F"), key.count > 1, watched.contains(key) {
-      token = key
-    } else if !modifiersDown.isEmpty {
-      token = known.flatMap { watched.contains($0) ? $0 : nil } ?? "Other"
+    if keysDown[code] == nil {
+      var token: String? = nil
+      if recording {
+        token = known ?? "Other"
+      } else if let key = known, key.hasPrefix("F"), key.count > 1, watched.contains(key) {
+        token = key
+      } else if !modifiersDown.isEmpty {
+        token = known.flatMap { watched.contains($0) ? $0 : nil } ?? "Other"
+      }
+      keysDown[code] = .some(token)
+      if let token = token { report(token, down: true) }
     }
-    keysDown[code] = .some(token)
-    if let token = token { report(token, down: true) }
+    // A press is decided again even while its key reads as down, since that key's up may have been lost.
+    let drop = tapActive && !recording && !swallowChords.isEmpty && known.map { key in
+      swallowChords.contains(chordKey(modifiersDown.compactMap { modifierKeys[$0]?.token } + [key]))
+    } == true
+    if drop { swallowed.insert(code) } else { swallowed.remove(code) }
+    return drop
   case .keyUp:
-    guard let entry = keysDown.removeValue(forKey: code) else { return }
-    if let token = entry { report(token, down: false) }
+    let drop = swallowed.remove(code) != nil
+    if let entry = keysDown.removeValue(forKey: code), let token = entry { report(token, down: false) }
+    return drop
   default:
-    return
+    return false
   }
 }
 
@@ -159,6 +186,7 @@ func command(_ raw: String) {
   let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").map(String.init)
   switch parts.first {
   case "keys": watched = Set(parts.dropFirst())
+  case "swallow": swallowChords = Set(parts.dropFirst().map { chordKey($0.split(separator: "+").map(String.init)) })
   case "record":
     if parts.count == 2 {
       recording = parts[1] == "on"
@@ -178,10 +206,11 @@ func selftest() -> Int32 {
   hidKeyDown = { !lost.contains($0) }
   sessionFlags = { sticky }
   secureInput = { secure }
-  func event(_ type: CGEventType, _ code: Int64, _ flags: UInt64 = 0, synthetic: Bool = false, pid: Int64 = 0) -> (CGEventType, CGEvent) {
+  func event(_ type: CGEventType, _ code: Int64, _ flags: UInt64 = 0, synthetic: Bool = false, pid: Int64 = 0, repeating: Bool = false) -> (CGEventType, CGEvent) {
     let made = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: type == .keyDown)!
     if type == .flagsChanged { made.type = .flagsChanged }
     made.flags = CGEventFlags(rawValue: flags)
+    made.setIntegerValueField(.keyboardEventAutorepeat, value: repeating ? 1 : 0)
     made.setIntegerValueField(.eventSourceStateID, value: synthetic ? 0 : hidSystemState)
     made.setIntegerValueField(.eventSourceUnixProcessID, value: pid)
     return (type, made)
@@ -256,6 +285,33 @@ func selftest() -> Int32 {
     ("lost right Shift keeps the refcount", [], false, [
       event(.flagsChanged, 0x38, shift | 0x2), event(.flagsChanged, 0x3C, shift | 0x6), poll, poll, event(.flagsChanged, 0x38, 0),
     ], ["down Shift", "up Shift"]),
+    ("a shortcut's key is dropped with its repeats and its up", ["Fn", "Space"], false, [
+      event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn), event(.keyDown, 0x31, fn, repeating: true), event(.keyUp, 0x31, fn),
+      event(.flagsChanged, 0x3F, 0),
+    ], ["down Fn", "down Space", "drop", "drop", "up Space", "drop", "up Fn"]),
+    ("the key under other modifiers passes", ["Fn", "Space"], false, [
+      event(.flagsChanged, 0x3F, fn), event(.flagsChanged, 0x38, fn | shift | 0x2), event(.keyDown, 0x31, fn | shift),
+      event(.keyUp, 0x31, fn | shift), event(.flagsChanged, 0x38, fn), event(.flagsChanged, 0x3F, 0),
+    ], ["down Fn", "down Shift", "down Space", "up Space", "up Shift", "up Fn"]),
+    ("a key pressed before its modifier passes", ["Fn", "Space"], false, [
+      event(.keyDown, 0x31), event(.flagsChanged, 0x3F, fn), event(.keyUp, 0x31, fn), event(.flagsChanged, 0x3F, 0),
+    ], ["down Fn", "up Fn"]),
+    ("a shortcut's key up is dropped after its modifier goes first", ["Fn", "Space"], false, [
+      event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn), event(.flagsChanged, 0x3F, 0), event(.keyUp, 0x31),
+    ], ["down Fn", "down Space", "drop", "up Fn", "up Space", "drop"]),
+    ("nothing is dropped while recording", [], true, [
+      event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn), event(.keyUp, 0x31, fn), event(.flagsChanged, 0x3F, 0),
+    ], ["down Fn", "down Space", "up Space", "up Fn"]),
+    ("a press after a lost up is decided again", ["Fn", "Space"], false, [
+      event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn), event(.flagsChanged, 0x3F, 0), event(.keyDown, 0x31), event(.keyUp, 0x31),
+    ], ["down Fn", "down Space", "drop", "up Fn", "up Space"]),
+    ("a listen-only tap drops nothing", ["Fn", "Space"], false, [
+      event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn), event(.keyUp, 0x31, fn), event(.flagsChanged, 0x3F, 0),
+    ], ["down Fn", "down Space", "up Space", "up Fn"]),
+    ("a lost shortcut key up stops dropping it", ["Fn", "Space"], false, [
+      event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn), poll, poll, event(.flagsChanged, 0x3F, 0),
+      event(.keyDown, 0x31), event(.keyUp, 0x31),
+    ], ["down Fn", "down Space", "drop", "up Space", "up Fn"]),
   ]
   let lostKeys: [String: Set<Int64>] = [
     "lost Control up fixed by the poll": [0x3B],
@@ -265,35 +321,78 @@ func selftest() -> Int32 {
     "lost hold-key up corrected by the poll": [0x31],
     "lost Fn up corrected by the poll": [0x3F],
     "lost right Shift keeps the refcount": [0x3C],
+    "a lost shortcut key up stops dropping it": [0x31],
+  ]
+  let swallowFor: [String: String] = [
+    "a shortcut's key is dropped with its repeats and its up": "Fn+Space",
+    "the key under other modifiers passes": "Fn+Space",
+    "a key pressed before its modifier passes": "Fn+Space",
+    "a shortcut's key up is dropped after its modifier goes first": "Space+Fn",
+    "nothing is dropped while recording": "Fn+Space",
+    "a lost shortcut key up stops dropping it": "Fn+Space",
+    "a press after a lost up is decided again": "Fn+Space",
+    "a listen-only tap drops nothing": "Fn+Space",
   ]
   for test in cases {
     resetState()
+    swallowed = []
     lines = []
     watched = Set(test.keys)
+    command("swallow \(swallowFor[test.name] ?? "")")
+    tapActive = test.name != "a listen-only tap drops nothing"
     recording = test.record
     lost = lostKeys[test.name] ?? []
     sticky = test.name == "a sticky-latched modifier is not released" ? control : 0
     secure = test.name == "nothing is released while secure input is on"
     for step in test.events {
-      if let (type, made) = step { handle(type: type, event: made) } else { reconcile() }
+      if let (type, made) = step {
+        if handle(type: type, event: made) { lines.append("drop") }
+      } else {
+        reconcile()
+      }
     }
     if lines != test.expect {
       FileHandle.standardError.write("selftest failed: \(test.name): got \(lines), expected \(test.expect)\n".data(using: .utf8)!)
       return 1
     }
   }
+  // A tap timeout forgets the keys, but a repeat keeps its first down's answer: a dropped key's repeats stay dropped,
+  // and a key that reached the app is never dropped by a repeat under a modifier pressed after the reset.
+  func afterReset(_ before: [(CGEventType, CGEvent)], _ after: [(CGEventType, CGEvent)]) -> [String] {
+    resetState()
+    swallowed = []
+    lines = []
+    watched = ["Fn", "Space"]
+    command("swallow Fn+Space")
+    tapActive = true
+    recording = false
+    lost = []
+    for step in before { if handle(type: step.0, event: step.1) { lines.append("drop") } }
+    resetState()
+    for step in after { if handle(type: step.0, event: step.1) { lines.append("drop") } }
+    return lines
+  }
+  let keptDrop = afterReset([event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn)],
+                            [event(.keyDown, 0x31, repeating: true), event(.keyUp, 0x31)])
+  let keptPass = afterReset([event(.keyDown, 0x31)],
+                            [event(.flagsChanged, 0x3F, fn), event(.keyDown, 0x31, fn, repeating: true), event(.keyUp, 0x31, fn)])
+  if keptDrop != ["down Fn", "down Space", "drop", "drop", "drop"] || keptPass != ["down Fn"] {
+    FileHandle.standardError.write("selftest failed: repeats after a reset: got \(keptDrop) and \(keptPass)\n".data(using: .utf8)!)
+    return 1
+  }
   // A modifier already down when recording starts is named at once: its own event
   // predates the tap (Fn held while clicking Record, or pressed before the helper was ready).
   resetState()
   lines = []
   watched = []
+  swallowChords = []
   recording = false
   lost = Set(modifierKeys.keys).subtracting([0x3F])  // hidKeyDown reads only Fn as held
   sticky = 0
   secure = false
   command("record on")
   for step in [event(.keyDown, 0x31), event(.keyUp, 0x31), event(.flagsChanged, 0x3F, 0)] {
-    handle(type: step.0, event: step.1)
+    _ = handle(type: step.0, event: step.1)
   }
   if lines != ["down Fn", "down Space", "up Space", "up Fn"] {
     FileHandle.standardError.write("selftest failed: record-on seeds a held Fn: got \(lines)\n".data(using: .utf8)!)
@@ -331,24 +430,41 @@ if arguments.contains("--selftest") { exit(selftest()) }
 setvbuf(stdout, nil, _IOLBF, 0)
 
 var tap: CFMachPort?
+var tapSource: CFRunLoopSource?
 
 let tapCallback: CGEventTapCallBack = { _, type, event, _ in
   if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
     if let tap = tap { CGEvent.tapEnable(tap: tap, enable: true) }
     resetState()
     emit("reset")
-  } else {
-    handle(type: type, event: event)
+  } else if handle(type: type, event: event) {
+    return nil
   }
   return Unmanaged.passUnretained(event)
 }
 
+// An active tap, which can drop a shortcut's key, needs Accessibility, which Sotto already asks for to paste.
+// Without it the tap only listens and the key still reaches the app in front. A tap already made is kept
+// when macOS refuses the new one; an active one refused is asked for again on the next 2 s check.
 func installTap() -> Bool {
+  let trusted = AXIsProcessTrusted()
   let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
-  guard let created = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
-                                        eventsOfInterest: CGEventMask(mask), callback: tapCallback, userInfo: nil) else { return false }
+  let create = { (options: CGEventTapOptions) in
+    CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: options,
+                      eventsOfInterest: CGEventMask(mask), callback: tapCallback, userInfo: nil)
+  }
+  let made = create(trusted ? .defaultTap : .listenOnly)
+  guard let created = made ?? (tap == nil && trusted ? create(.listenOnly) : nil) else { return tap != nil }
+  if let old = tap {
+    CGEvent.tapEnable(tap: old, enable: false)
+    CFMachPortInvalidate(old)
+  }
+  if let old = tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), old, .commonModes) }
+  let source = CFMachPortCreateRunLoopSource(nil, created, 0)
   tap = created
-  CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, created, 0), .commonModes)
+  tapSource = source
+  tapActive = trusted && made != nil
+  CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
   CGEvent.tapEnable(tap: created, enable: true)
   return true
 }
@@ -363,11 +479,12 @@ func listenGranted() -> Bool {
 }
 
 // Input Monitoring can be turned off and on while the helper runs, so the grant is checked every 2 s and each change
-// reported: main takes the main shortcut back while it is off.
+// reported: main takes the main shortcut back while it is off. A change to Accessibility makes the tap again.
 var granted = listenGranted()
 emit(granted ? "permission granted" : "permission denied")
 Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
   let now = granted ? CGPreflightListenEventAccess() : listenGranted()
+  if now && tapActive != AXIsProcessTrusted() { _ = installTap() }
   if now != granted {
     granted = now
     emit(now ? "permission granted" : "permission denied")
