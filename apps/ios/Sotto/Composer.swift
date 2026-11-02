@@ -349,6 +349,9 @@ struct SettingRow: View {
         }
         .font(.sotto(.body))
         .padding(.horizontal, Space.s3 + 16 + Space.s2)
+        // Stacked, a row outgrows its 48 points, so it keeps its own space above and below, or one row's value runs
+        // into the next row's name.
+        .padding(.vertical, typeSize.isAccessibilitySize ? Space.s2 : 0)
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
         .contentShape(Rectangle())
         .opacity(enabled ? 1 : 0.5)
