@@ -395,4 +395,18 @@ it, and a new connection reads them afresh but for the one open.
 
 On the laptop's replayed shell, the list keeps 7 of 632 records and holds back 625. Against the week kept, measured the
 same hour: hello fell from 785 KB to 529 KB, a connect from 1,062 KB to 806 KB, and with a `shell` read from 1,887 KB to
-1,376 KB. From before either part, a connect fell from 4,510 KB to 806 KB (`docs/perf/2026-11-01-phone-connect-size.md`).
+1,376 KB.
+
+**What was left of the hello was mostly the model catalog**, and most of that was models the phone could not use. The
+desktop keeps every model a provider has listed, marked not ready once it stops listing it, so an old thread's model
+still resolves. Devin, no longer connected on the owner's laptop, had left 846 such models; with the rest, 858 of the 942
+models were not ready, and only 5 of them were named by a thread. The iPhone's menus offer only ready models. The owner
+had part 2 carry the fix: **to a phone that accepts `usable-models`, the catalog carries ready models and any model that
+is not ready only while something names it** (`usableModels.ts`): a thread, held back or not, so one opened from the
+Settled shelf still names its model; the new-thread default; and Watcher's model now and for its next turn. The cut
+catalog counts its own revisions, so a phone sent it and a desktop sent the whole one never move one counter back and
+forth.
+
+On the laptop's replayed shell the catalog fell from 234 KB to 27 KB, 89 models, and hello from 529 KB to 321 KB; a
+connect from 806 KB to 598 KB, and with a `shell` read from 1,376 KB to 1,168 KB. From before either part, a connect fell
+from 4,510 KB to 598 KB, about an eighth (`docs/perf/2026-11-01-phone-connect-size.md`).

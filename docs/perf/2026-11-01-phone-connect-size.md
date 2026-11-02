@@ -77,6 +77,25 @@ From before either part, a laptop connect fell from 4,510 KB to 806 KB, under a 
 almost all the model catalog and Watcher's page; the 7 open threads are 16 KB. The Settled shelf reads 30 settled
 threads from each computer when it opens, about 64 KB from the laptop, and 30 more on each press.
 
+## Part 2: only the models a phone can use
+
+What was left of the laptop's hello was mostly the model catalog: 234 KB of 529 KB, 942 models, 858 of them not ready.
+Devin, no longer connected, had left 846 of them; the desktop keeps a model a provider has listed so an old thread's model
+still resolves. Only 5 of the 858 were named by a thread. `usable-models` sends a phone ready models and the not-ready
+ones something names (ADR-0028, November 1 amendment, part 2). The same replay:
+
+| | Laptop, settled held back | With usable models | Forge, settled held back | With usable models |
+|---|---|---|---|---|
+| Model catalog | 234 KB, 942 models | 27 KB, 89 models | about 16 KB, 48 models | 11 KB, 34 models |
+| Hello | 529 KB | 321 KB | 115 KB | 110 KB |
+| Connect | 806 KB | 598 KB | 198 KB | 194 KB |
+| Connect with a `shell` read | 1,376 KB | 1,168 KB | 380 KB | 375 KB |
+| Connect, if it were compressed | 122 KB | 113 KB | 50 KB | 50 KB |
+
+The catalog goes whole only with a hello and when it changes, so this is once a connect. From before either part, a
+laptop connect fell from 4,510 KB to 598 KB, about an eighth. What is left of the hello is mostly Watcher's page, 207 KB:
+its record of what it did (125 KB) and the threads it watches (68 KB).
+
 ## What is left
 
 - Every shell push to a phone carries the whole state but the threads, about 280 KB on the laptop, most of it Watcher's

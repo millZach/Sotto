@@ -11,6 +11,7 @@ import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agent
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions, ThreadRecordsBroadcast, type ThreadRecordsSeed } from '../main/agents/agentStateBroadcast'
 import { shareProviderModes } from './providerModeLists'
+import { usableModels } from './usableModels'
 import { heldBackSettled, settledPage } from './heldBackSettled'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
@@ -40,7 +41,7 @@ import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from 
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
-import type { WatcherPhoneCurrent, WatcherPhoneOpen } from '../shared/watcherPhone'
+import type { WatcherPhoneCurrent, WatcherPhoneOpen, WatcherPhoneState } from '../shared/watcherPhone'
 import type { WatcherSetPermissionRequest, WatcherWatchThreadRequest } from '../shared/watcherRoom'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
@@ -138,7 +139,9 @@ interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegatio
    * which it reads with `settled-threads`. `listed` is every thread its list has carried since hello, which stays in it
    * until it connects again, so a thread settled while it watches stays where Undo can reach it.
    */
-  settledOnRequest?: boolean; listed?: Set<string> }
+  settledOnRequest?: boolean; listed?: Set<string>
+  /** Whether its hello accepted `usable-models`: its catalog leaves out models that are not ready and nothing names. */
+  usableModels?: boolean }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -603,7 +606,22 @@ export async function startSocketServer(options: SocketServerOptions) {
     // An iPhone from before ADR-0111 settles a terminal answer it was waiting on only once a complete list leaves its
     // terminal out, so a client that still accepts `terminals` reads an empty one. Nothing offers the feature.
     const listed = peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
-    return peer.settledOnRequest && !whole ? withoutHeldBack(peer, listed) : listed
+    const kept = peer.settledOnRequest && !whole ? withoutHeldBack(peer, listed) : listed
+    return peer.usableModels ? withUsableModels(kept, read, phoneState) : kept
+  }
+  /**
+   * `state` with its catalog cut to the models a phone can use (`usable-models`): the ready ones, and any that is not but
+   * is still named by a thread, held back or not, by the new-thread default, or by Watcher now or for its next turn.
+   */
+  const withUsableModels = <State extends AgentState>(state: State, read: AgentState, page: WatcherPhoneState | undefined): State => {
+    const models = usableModels(state.host.models, namedModels(read, page))
+    return models === state.host.models ? state : { ...state, host: { ...state.host, models } }
+  }
+  function* namedModels(read: AgentState, page: WatcherPhoneState | undefined): Generator<string | undefined> {
+    for (const thread of read.host.threads) yield thread.modelId
+    yield read.configuration.newThreadModelId
+    yield page?.current?.modelId
+    yield page?.nextTurnOptions?.modelId
   }
   /** The threads a phone that accepted `settled-threads-on-request` is not sent with its list, by ID. */
   const heldBack = (peer: Peer, state: AgentState): Set<string> => heldBackSettled(state.host.threads, state.host.projects,
@@ -623,7 +641,8 @@ export async function startSocketServer(options: SocketServerOptions) {
    */
   const catalogRevisions = new Map<string, ModelCatalogRevisions>()
   const revisionsFor = (peer: Peer): ModelCatalogRevisions => {
-    const key = [...peer.unknownProviders].sort().join(',')
+    // A catalog cut to usable models is a variant of its own, so the two never move one counter back and forth.
+    const key = (peer.usableModels ? 'usable:' : '') + [...peer.unknownProviders].sort().join(',')
     let revisions = catalogRevisions.get(key)
     if (!revisions) catalogRevisions.set(key, revisions = new ModelCatalogRevisions())
     return revisions
@@ -1337,6 +1356,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.replyThreadRecords = peer.threadRecords !== undefined && (request.accepts?.includes('reply-thread-records') ?? false) && offers(peer, 'reply-thread-records')
         peer.providerModeLists = (request.accepts?.includes('provider-mode-lists') ?? false) && offers(peer, 'provider-mode-lists')
         peer.settledOnRequest = (request.accepts?.includes('settled-threads-on-request') ?? false) && offers(peer, 'settled-threads-on-request')
+        peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
