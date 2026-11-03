@@ -55,11 +55,14 @@ describe('a shell over SSH (ADR-0183)', () => {
   })
 
   it('runs PowerShell for a folder written the Windows way, its name encoded, with no sh to find', () => {
-    const command = remoteShellCommand([`C:\\Users\\zach\\it's here`, 'D:\\work'])
+    // A curly apostrophe is a quote to PowerShell too, so a name like this one must never meet its source as text.
+    const crafted = 'C:\\\u2019) { Write-Output INJECTED }; #'
+    const command = remoteShellCommand([crafted, 'D:\\work'])
     expect(command.startsWith('powershell -NoLogo -NoExit -EncodedCommand ')).toBe(true)
     const script = Buffer.from(command.split(' ').at(-1)!, 'base64').toString('utf16le')
-    // The last Set-Location wins, so the first folder asked for runs last.
-    expect(script.indexOf('D:\\work')).toBeLessThan(script.indexOf('C:\\Users'))
-    expect(script).toContain(`'C:\\Users\\zach\\it''s here'`)
+    expect(script).not.toContain('INJECTED')
+    expect(script).not.toContain('\u2019')
+    const words = [...script.matchAll(/'([A-Za-z0-9+/=]+)'/gu)].map(match => Buffer.from(match[1]!, 'base64').toString('utf8'))
+    expect(words.slice(0, 2)).toEqual([crafted, 'D:\\work'])
   })
 })

@@ -38,7 +38,7 @@ SOTTO_E2E_EVIDENCE=publish xvfb-run -a npx playwright test tests/e2e/paired-host
 
 ## Not proved here
 
-- Windows' OpenSSH under ConPTY, which is the laptop's route to forge. CI's Windows journey runs the stand-in under ConPTY, not `ssh.exe`.
+- Windows' OpenSSH under ConPTY, which is the laptop's route to forge. This journey isn't in the desktop smoke selection, so no CI job runs it, on Windows or anywhere else, and its Windows branches have not been run.
 - A real Tailscale SSH session, including its approval banner in the terminal.
-- A host folder written the Windows way against a real PowerShell, beyond what the journey's stand-in runs on Windows.
+- A host folder written the Windows way against a real PowerShell. Unit tests check the encoded script's shape, not a run of it.
 - A sleeping laptop. The keepalive's numbers follow from OpenSSH's own rule, not a run.

@@ -6,10 +6,10 @@
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { connect, createServer } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { banner, freePort } from '../fixtures/loopbackSshd'
 import { FilesService } from '../../src/main/files/service'
 import { hostedTerminals } from '../../src/main/hosts/hostedTerminals'
 import { TerminalService } from '../../src/main/tools/terminal'
@@ -24,20 +24,6 @@ const FORGE = '22222222-2222-4222-8222-222222222222'
 const THREAD = hostEntityKey(FORGE, 'thread')
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 let root: string, sshd: ChildProcess | undefined, sshdLog = ''
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
-  const port = (server.address() as { port: number }).port
-  await new Promise<void>(done => server.close(() => done()))
-  return port
-}
-const banner = (port: number): Promise<boolean> => new Promise(done => {
-  const socket = connect({ host: '127.0.0.1', port })
-  socket.setTimeout(1000, () => { socket.destroy(); done(false) })
-  socket.once('data', chunk => { socket.destroy(); done(chunk.toString('utf8').startsWith('SSH-')) })
-  socket.once('error', () => done(false))
-})
 
 describe.skipIf(!enabled)('a shell over SSH against a real OpenSSH server (requires SOTTO_REAL_SSHD=1)', () => {
   beforeAll(async () => {

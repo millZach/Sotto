@@ -25,7 +25,9 @@ const base64 = (text: string): string => Buffer.from(text, 'utf8').toString('bas
  */
 export function remoteShellCommand(folders: readonly string[]): string {
   if (folders.some(windowsFolder)) {
-    const script = [...folders.map(folder => `if (Test-Path -LiteralPath '${folder.replaceAll("'", "''")}') { Set-Location -LiteralPath '${folder.replaceAll("'", "''")}' }`)].reverse().join('; ')
+    // PowerShell takes several characters as a quote, so a folder never meets its source as text: only as base64, decoded there.
+    const words = folders.map(folder => `'${base64(folder)}'`).join(',')
+    const script = `foreach ($word in ${words}) { $folder = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($word)); if (Test-Path -LiteralPath $folder) { Set-Location -LiteralPath $folder; break } }; $env:COLORTERM = 'truecolor'; $env:TERM_PROGRAM = 'Sotto'`
     return `powershell -NoLogo -NoExit -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`
   }
   const moves = folders.map(folder => `cd -- "$(printf %s ${base64(folder)} | base64 -d)" 2>/dev/null`).join(' || ')

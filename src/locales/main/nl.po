@@ -2740,6 +2740,10 @@ msgstr ""
 msgid "This terminal is still running; select it instead."
 msgstr ""
 
+#: src/main/tools/terminal.ts
+msgid "This terminal was closed while it was starting."
+msgstr ""
+
 #: src/main/hosts/hostedTerminals.ts
 msgid "This thread moved to another project. Open its terminal again."
 msgstr ""

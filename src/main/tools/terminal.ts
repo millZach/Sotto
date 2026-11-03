@@ -144,6 +144,8 @@ export class TerminalService extends ToolOperations {
       record.session.title = launch.title
       const spawn = this.dependencies.spawn ?? (await import('node-pty')).spawn
       if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
+      // A host sent away while this shell was starting took its reservation (ADR-0183): start nothing nobody could end.
+      if (this.sessions.get(record.session.id) !== record) return fail('session-unavailable', t`This terminal was closed while it was starting.`)
       const cwd = launch.cwd
       const pty = spawn(launch.file, [...launch.args], { cwd, cols, rows, env, name: 'xterm-256color' })
       record.cwd = cwd
@@ -178,16 +180,20 @@ export class TerminalService extends ToolOperations {
       }
       await this.save()
       if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
+      if (this.sessions.get(record.session.id) !== record) return fail('session-unavailable', t`This terminal was closed while it was starting.`)
       record.pendingRun?.arm()
       this.publish(record)
       return record
     } catch (error) {
+      // A host sent away meanwhile took this reservation and the shell it replaces with it, so neither comes back.
+      const reserved = this.sessions.get(record.session.id) === record
       this.stop(record)
       this.sessions.delete(record.session.id)
-      if (replacing) this.sessions.set(replacing.session.id, replacing)
+      if (replacing && reserved) this.sessions.set(replacing.session.id, replacing)
       this.publishCapacity()
       if (error instanceof CheckoutSendRefusal) return fail('busy', error.terminalMessage())
-      if (error instanceof ToolFailure) throw error
+      // A hosted thread's refusals say what to do about its host. A local shell keeps its one sentence.
+      if (error instanceof ToolFailure && isHostedThread(owner.threadId)) throw error
       return fail('unavailable', t`The terminal could not start or save its session. Check that the shell is available and app storage is writable.`)
     } finally { for (const release of releases.reverse()) release() }
   }
