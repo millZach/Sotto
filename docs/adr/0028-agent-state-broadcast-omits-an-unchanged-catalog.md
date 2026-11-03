@@ -410,3 +410,29 @@ forth.
 On the laptop's replayed shell the catalog fell from 234 KB to 27 KB, 89 models, and hello from 529 KB to 321 KB; a
 connect from 806 KB to 598 KB, and with a `shell` read from 1,376 KB to 1,168 KB. From before either part, a connect fell
 from 4,510 KB to 598 KB, about an eighth (`docs/perf/2026-11-01-phone-connect-size.md`).
+
+## November 2, 2026 amendment: a command's answer to an iPhone carries only the changed thread records
+
+After #2031 an answer from the iPhone made one whole-shell trip, the command's own reply. The November 1 amendment left that
+reply listing every record the phone's list holds, though the same connection already held them all. #1897 had made the
+same cut for the window's command replies.
+
+**To a client that accepts `command-changed-thread-records` beside `changed-thread-records`, a command's answer has an empty
+`host.threads` and carries `threadRecords`**, in the shape a push's `threads` has. It is measured from the last shell push
+or seeded answer written to that connection, just before the answer is written, so `base` names what the client holds at
+that place in the socket. It moves nothing, as #1897's reply does: the next push is measured from the same records and
+carries the same changes.
+
+Unlike the window, which sends a reply and a broadcast on separate channels and so must wait when one overtakes the other
+(#1939), a socket has one order. The iPhone keeps a copy of the records it held as each reply arrives, beside the model
+catalog it keeps there for the same reason, and puts the list back from that copy when the reply's caller reads it. An answer
+it cannot put back should not happen; the connection then starts again, as for a push, and the command is never sent again.
+
+It is a new feature because protocol v1 is frozen. An earlier iPhone build, the Android client and the desktop's own host
+client are sent every record, as before.
+
+Measured on the listener with the phone's connect cuts, a reply fell from 27 KB to 4 KB on synthetic records. On real
+shells the rest of the reply is the larger part: on forge it fell from 119 KB to 84 KB, and on the laptop, worked out from
+the November 1 replay, from about 295 KB to about 279 KB (`docs/perf/2026-11-02-iphone-command-reply-threads.md`). That note
+also records what compressing phones' messages would save, which stays a later change as the November 1 amendment says.
+

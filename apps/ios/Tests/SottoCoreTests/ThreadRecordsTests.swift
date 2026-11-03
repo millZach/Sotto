@@ -137,8 +137,8 @@ final class ThreadRecordsTests: XCTestCase {
         guard case .reply(_, _, _, let records) = frame else { XCTFail("Expected reply"); return nil }
         return records
     }
-    private func listed(_ threads: [String], revision: Int?) -> String {
-        let named = revision.map { #""threadRecordsRevision":\#($0),"# } ?? ""
+    private func listed(_ threads: [String], revision: Int?, carrying records: String? = nil) -> String {
+        let named = (revision.map { #""threadRecordsRevision":\#($0),"# } ?? "") + (records.map { #""threadRecords":\#($0),"# } ?? "")
         return #"{"hostId":"h",\#(named)"host":{"hostId":"h","name":"Forge","threads":[\#(threads.joined(separator: ","))],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}}"#
     }
     func testHelloHoldsTheRecordsItListsSoTheFirstPushCarriesOnlyWhatChanged() async throws {
@@ -164,6 +164,61 @@ final class ThreadRecordsTests: XCTestCase {
         // A push still measured from the records the read replaced is not shown.
         let stale = try await shell(push(records: records(revision: 6, base: 1, changed: [])))
         XCTAssertNil(cache.whole(stale))
+    }
+    /// What a command's answer is once the reply is read, as `HostConnection` reads it.
+    private func answer(threads: [String] = [], records: String? = nil) async throws -> Shell {
+        try await Wire.readReply(Data(#"{"v":1,"id":"answer","ok":true,"result":\#(listed(threads, revision: nil, carrying: records))}"#.utf8), as: Shell.self)
+    }
+    /// A cache holding `threads` under revision 7, as a hello or a shell read that named it leaves one.
+    private func holding(_ threads: [String]) async throws -> ThreadRecordsCache {
+        let listed = try await shell(push(threads: threads))
+        var cache = ThreadRecordsCache()
+        cache.hold(HeldThreadRecords(revision: 7, threads: listed.host.threads))
+        return cache
+    }
+    func testACommandsAnswerIsPutBackWithoutMovingWhatIsHeld() async throws {
+        var cache = try await holding([record("a"), record("b")])
+        // Only `b` changed: `a` is the record held, and nothing past the connection sees the wire's form.
+        let changed = try await answer(records: records(revision: 8, base: 7, changed: [record("b", status: "running")]))
+        XCTAssertEqual(changed.host.threads, [])
+        let whole = try XCTUnwrap(cache.reply(changed))
+        XCTAssertEqual(whole.host.threads.map(\.id), ["a", "b"])
+        XCTAssertEqual(whole.host.threads.map(\.status), ["idle", "running"])
+        XCTAssertNil(whole.threadRecords)
+        // The host moved nothing either, so the next push is measured from the records held and carries that change again.
+        let pushed = try await shell(push(records: records(revision: 9, base: 7, changed: [record("b", status: "running")])))
+        XCTAssertEqual(try XCTUnwrap(cache.whole(pushed)).host.threads.map(\.status), ["idle", "running"])
+    }
+    func testACommandsAnswerWithNothingChangedListsTheThreadsHeld() async throws {
+        let cache = try await holding([record("a"), record("b")])
+        let nothing = try await answer(records: records(revision: 8, base: 7, changed: []))
+        XCTAssertEqual(try XCTUnwrap(cache.reply(nothing)).host.threads.map(\.id), ["a", "b"])
+    }
+    func testACommandsAnswerThatRemovesAndReordersIsPutBack() async throws {
+        var cache = try await holding([record("a"), record("b"), record("c")])
+        let moved = try await answer(records: records(revision: 8, base: 7, changed: [record("d")], removed: ["b"], order: ["d", "c", "a"]))
+        XCTAssertEqual(try XCTUnwrap(cache.reply(moved)).host.threads.map(\.id), ["d", "c", "a"])
+        let pushed = try await shell(push(records: records(revision: 9, base: 7, changed: [])))
+        XCTAssertEqual(try XCTUnwrap(cache.whole(pushed)).host.threads.map(\.id), ["a", "b", "c"], "The answer moved nothing held")
+    }
+    func testACommandsAnswerMeasuredFromRecordsNotHeldIsNotShown() async throws {
+        let cache = try await holding([record("a")])
+        let stale = try await answer(records: records(revision: 8, base: 3, changed: []))
+        XCTAssertNil(cache.reply(stale))
+        let nothingHeld = ThreadRecordsCache()
+        XCTAssertNil(nothingHeld.reply(stale))
+        // With a null base the answer lists every record itself, and that is what it shows.
+        let listed = try await answer(records: records(revision: 8, base: nil, changed: [record("a"), record("b")]))
+        XCTAssertEqual(try XCTUnwrap(nothingHeld.reply(listed)).host.threads.map(\.id), ["a", "b"])
+    }
+    func testACommandsAnswerWithEveryRecordIsReadAsItCame() async throws {
+        let cache = ThreadRecordsCache()
+        let whole = try await answer(threads: [record("a"), record("b")])
+        XCTAssertNil(whole.threadRecords, "A host without the feature lists every record in the answer")
+        XCTAssertEqual(try XCTUnwrap(cache.reply(whole)).host.threads.map(\.id), ["a", "b"])
+    }
+    func testAnAnswerWhoseRecordsNameNoBaseIsUnreadable() async {
+        do { _ = try await answer(records: #"{"revision":2,"changed":[]}"#); XCTFail("An answer without a base was read") } catch {}
     }
     func testAReplyThatNamesNoRevisionHoldsNothing() async throws {
         let hello = #"{"hostId":"h","clientId":"phone","capabilities":{"mayAnswer":false},"shell":\#(listed([record("a")], revision: nil))}"#
