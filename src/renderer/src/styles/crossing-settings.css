@@ -98,28 +98,28 @@
 .settings-view .settings-layout { grid-template-columns: var(--app-sidebar-width, 280px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
 .settings-view .settings-sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: visible; container: thread-sidebar / inline-size; }
 .settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; margin-inline: var(--thread-nav-inset); padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; color: var(--tt-text); font-size: var(--tt-type-figure); font-weight: 600; line-height: 1.2; letter-spacing: -0.7px; font-variation-settings: 'opsz' 96; }
+.settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; color: var(--tt-sidebar-text); font-size: var(--tt-type-figure); font-weight: 600; line-height: 1.2; letter-spacing: -0.7px; font-variation-settings: 'opsz' 96; }
 .settings-view .settings-feedback { padding-right: 116px; }
 /* Linux draws no window controls, so its notice keeps only the gutter the left side has, at every width. */
 [data-platform='linux'] .settings-view .settings-feedback { padding-right: 6vw; }
 .settings-view .settings-subnav { position: static; display: flex; flex-direction: column; align-self: auto; gap: 4px; padding: 0; border: 0; overflow: visible; }
-.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: var(--tt-radius-row); color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: var(--tt-type-body); line-height: 1.35; transition: background 160ms ease, color 160ms ease; }
+.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: var(--tt-radius-row); color: var(--tt-sidebar-text-muted); background: transparent; text-align: left; font: inherit; font-size: var(--tt-type-body); line-height: 1.35; transition: background 160ms ease, color 160ms ease; }
 .settings-subnav button > span { flex: 1; }
 .settings-subnav button > svg { flex: none; }
-.settings-subnav button:hover { background: var(--theme-sidebar-row-hover); color: var(--tt-text); }
-.settings-subnav button[aria-selected='true'] { color: var(--tt-text); background: var(--theme-sidebar-row-active); }
-.settings-subnav button[aria-selected='true'] > svg:first-child { color: var(--theme-accent); }
+.settings-subnav button:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-sidebar-text); }
+.settings-subnav button[aria-selected='true'] { color: var(--tt-sidebar-text); background: var(--tt-sidebar-row-active); }
+.settings-subnav button[aria-selected='true'] > svg:first-child { color: var(--tt-accent); }
 .settings-subnav button[data-run-start] { margin-top: 32px; }
 .settings-subnav button[data-run-start]::before { content: ''; position: absolute; top: -18px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
 .settings-subnav[hidden] { display: none; }
 /* Find a setting: the Threads sidebar's search field, with the matches in place of the pages while it holds text. */
 .settings-view .settings-find { height: 36px; margin: 0 0 14px; }
 .settings-find__results ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: var(--tt-radius-control); color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: var(--tt-type-body); line-height: 1.35; transition: background-color 120ms ease, color 120ms ease; }
+.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: var(--tt-radius-control); color: var(--tt-sidebar-text); background: transparent; text-align: left; font: inherit; font-size: var(--tt-type-body); line-height: 1.35; transition: background-color 120ms ease, color 120ms ease; }
 .settings-find__results button:hover { background: var(--tt-sidebar-row-hover); }
 .settings-find__results button:active { background: var(--tt-hover-strong); }
-.settings-find__results small { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-.settings-find__empty { margin: 4px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.45; }
+.settings-find__results small { color: var(--tt-sidebar-text-muted); font-size: var(--tt-type-caption); }
+.settings-find__empty { margin: 4px 12px; color: var(--tt-sidebar-text-muted); font-size: var(--tt-type-small); line-height: 1.45; }
 /* A row of its own inside a group's card: the card's dividers already separate it. */
 .settings-view .settings-rows > .settings-danger-row { border-top: 0; }
 .settings-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
@@ -219,7 +219,7 @@
   .settings-view .settings-scroll { padding-top: 22px; }
   .settings-view .settings-section__heading { padding-bottom: 13px; margin-bottom: 5px; }
   .settings-view .settings-section__heading h2 { margin-bottom: 7px; font-size: var(--tt-type-title); }
-  .settings-view .settings-rows > *, .settings-view .settings-rows > * + *, .settings-view .settings-rows .tt-toggle { min-height: 56px; padding-block: 12px; }
+  .settings-view .settings-rows > *, .settings-view .settings-rows > * + *, .settings-view .settings-rows .tt-toggle, .settings-view .dictation-shortcuts > .dictation-shortcuts__row { min-height: 56px; padding-block: 12px; }
 }
 @media (max-width: 620px) {
   .settings-view .settings-scroll { padding-inline: 20px; }
@@ -234,8 +234,8 @@
 [data-reduced-motion='on'] .settings-form > [role='tabpanel']:not([hidden]) { animation: none; }
 [data-reduced-motion='on'] .settings-subnav button { transition: none; }
 
-.settings-view .tt-toggle[aria-checked='true'] .tt-toggle__track { border-color: var(--theme-accent); background: var(--theme-accent); }
-.settings-view .tt-toggle[aria-checked='true'] .tt-toggle__thumb { background: var(--theme-accent-foreground); }
+.settings-view .tt-toggle[aria-checked='true'] .tt-toggle__track { border-color: var(--tt-accent); background: var(--tt-accent); }
+.settings-view .tt-toggle[aria-checked='true'] .tt-toggle__thumb { background: var(--tt-on-accent); }
 .settings-view .agent-wake-advanced { margin-top: 24px; border-top: 1px solid var(--tt-hairline); }
 .settings-view .agent-wake-advanced > summary { padding: 18px 0; color: var(--tt-text-muted); font-size: var(--tt-type-body); }
 .settings-view .agent-wake-advanced > summary:hover, .settings-view .agent-wake-advanced[open] > summary { color: var(--tt-text); }
