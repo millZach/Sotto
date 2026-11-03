@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { AgentThread } from '../../../../shared/agents'
 import { isThreadClosed } from '../../../../shared/threadActivity'
+import { COUNCIL_QUESTION_MAX } from '../../../../shared/council'
 
 /** What Ask the Council on a reply hands the Council page: the thread it comes from and the question to start with. */
 export interface CouncilDraft { readonly originThread: string; readonly question: string }
@@ -13,8 +14,8 @@ export function offerCouncilDraft(draft: CouncilDraft): void { offered = draft }
 export function readCouncilDraft(): CouncilDraft | null { return offered }
 export function clearCouncilDraft(): void { offered = null }
 
-/** The reply's text as the question: quoted, line by line. */
-export function quotedReply(text: string): string { return text.trim().split('\n').map(line => line ? `> ${line}` : '>').join('\n') }
+/** The reply's text as the question: quoted, line by line, and cut to the longest question main takes. */
+export function quotedReply(text: string): string { return text.trim().split('\n').map(line => line ? `> ${line}` : '>').join('\n').slice(0, COUNCIL_QUESTION_MAX) }
 
 /** Opens the Council page with a reply of this thread as its question, or nothing: the Council is off or can't start here. */
 export const CouncilAskContext = createContext<((text: string) => void) | null>(null)
