@@ -1106,6 +1106,82 @@ it('refuses settle_thread while its last turn still reads running, or while a th
   expect(await settle()).toMatchObject({ status: 'ok' })
 })
 
+it.each([false, true])('leaves Watcher read markers untouched when a descendant refuses settlement (already read: %s)', async alreadyRead => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const child = randomUUID(), target = { hostId: first.target.hostId, threadId: child }
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: child, projectId: f.project.id, modelId: f.model.id,
+    title: 'Synthetic busy child', workingCopy: 'shared' })).error).toBeNull()
+  await f.workspace.host.setDelegatedBy(child, first.target.threadId)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: child, draftId: randomUUID(), text: 'Synthetic unseen work' })).error).toBeNull()
+  if (alreadyRead) {
+    expect(await f.call('read_thread', { target })).toMatchObject({ status: 'ok' })
+    await f.control.updateWatcher(record => { record.reads.find(item => item.target.threadId === child)!.readAt = '2026-01-01T00:00:00.000Z' })
+  }
+  const reads = structuredClone(f.control.watcherRecord().reads)
+  expect(reads.some(item => item.target.threadId === child)).toBe(alreadyRead)
+  expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target }))
+    .toMatchObject({ status: 'refused', code: 'BACKGROUND_WORK_RUNNING' })
+  expect(f.control.watcherRecord().reads).toEqual(reads)
+})
+
+it.each(['completed', 'busy', 'cached', 'disconnected', 'new-turn', 'writer-turn'] as const)('refreshes only blocking descendants before settlement: %s', async outcome => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const child = randomUUID(), idle = randomUUID()
+  for (const [id, title] of [[child, 'Synthetic blocking child'], [idle, 'Synthetic idle child']] as const) {
+    expect((await f.control.commandShell({ type: 'create-thread', threadId: id, projectId: f.project.id, modelId: f.model.id, title, workingCopy: 'shared' })).error).toBeNull()
+    await f.workspace.host.setDelegatedBy(id, first.target.threadId)
+  }
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: child, draftId: randomUUID(), text: 'Synthetic delegated brief' })).error).toBeNull()
+  // Only the provider has the completion: the coordinator's child still says running at the settle preflight.
+  const native = f.native(child)
+  native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: outcome === 'busy' ? 'running' : 'completed' }
+  if (outcome === 'disconnected') native.clientConnected = false
+  expect(f.control.watcherSnapshot().threads.find(thread => thread.id === child)!.status).toBe('running')
+  const read = f.workspace.host.watcherRead.bind(f.workspace.host), entered = deferred<void>(), release = deferred<void>()
+  const refresh = vi.spyOn(f.workspace.host, 'watcherRead').mockImplementation(async (id, after, limit) => {
+    entered.resolve()
+    if (outcome === 'new-turn') await release.promise
+    const result = await read(id, after, limit)
+    return outcome === 'cached' && result ? { ...result, availability: 'unavailable' } : result
+  })
+  if (outcome === 'writer-turn') {
+    const commandFromWatcher = f.control.commandFromWatcher.bind(f.control)
+    vi.spyOn(f.control, 'commandFromWatcher').mockImplementation(async (command, origin) => {
+      if (command.type === 'settle-thread') {
+        native.messages.push({ id: randomUUID(), role: 'user', text: 'Synthetic instruction before the write', createdAt: new Date().toISOString() })
+        f.workspace.adapters.codex.emit()
+        await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+      }
+      return commandFromWatcher(command, origin)
+    })
+  }
+  const reads = structuredClone(f.control.watcherRecord().reads)
+  const pending = f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })
+  if (outcome === 'new-turn') {
+    await entered.promise
+    native.messages.push({ id: randomUUID(), role: 'user', text: 'Synthetic newer instruction', createdAt: new Date().toISOString() })
+    // Even a newer turn that has already finished cannot be put aside by the older settle.
+    native.lastTurn = { id: native.messages.at(-1)!.id, status: 'completed' }
+    release.resolve()
+  }
+  const result = await pending
+  expect(f.control.watcherRecord().reads).toEqual(reads)
+  expect(refresh.mock.calls.map(([id]) => id)).toEqual([child])
+  expect(result).toMatchObject(outcome === 'completed' ? { status: 'ok' } : { status: 'refused', code: outcome === 'busy' ? 'BACKGROUND_WORK_RUNNING'
+    : outcome === 'new-turn' || outcome === 'writer-turn' ? 'TARGET_CHANGED' : 'HISTORY_UNAVAILABLE' })
+  if (result.status === 'refused') {
+    expect(result.message).toContain(child)
+    expect(result.message).toContain('Synthetic blocking child')
+    if (outcome === 'busy') expect(result.message).toContain('lastTurn.status=running')
+    if (outcome === 'cached' || outcome === 'disconnected') expect(result.message).toContain('unavailable')
+  }
+  expect(Boolean(f.control.watcherSnapshot().threads.find(thread => thread.id === first.target.threadId)!.workspaceSettledAt)).toBe(outcome === 'completed')
+})
+
 it('refunds a coordinator preparation refusal returned as a failed result', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
@@ -2013,7 +2089,7 @@ it('keeps the newest messages in an oversized initial read and the oldest prefix
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   const historyEpoch = randomUUID(), createdAt = new Date().toISOString()
-  vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue({ historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
+  vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue({ availability: 'available', historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
     messages: Array.from({ length: 50 }, (_, position) => ({ position,
       message: { id: randomUUID(), role: 'assistant', text: 'x'.repeat(2_000), createdAt } })) })
   const initial = await f.call('read_thread', { target: first.target })
@@ -2037,7 +2113,7 @@ it('marks a read of a working watched thread that gives nothing its last read di
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   const historyEpoch = randomUUID(), createdAt = new Date().toISOString()
-  const history = (texts: string[]) => ({ historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
+  const history = (texts: string[]) => ({ availability: 'available' as const, historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
     messages: texts.map((text, position) => ({ position, message: { id: `${historyEpoch}-${position}`, role: 'assistant' as const, text, createdAt } })) })
   const read = vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue(history(['Synthetic progress']))
   // The thread's turn runs, or it rests with background work, as the snapshot says.
@@ -2081,7 +2157,7 @@ it('sums up in each read only the pull requests merged since the last, and lists
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   const historyEpoch = randomUUID(), createdAt = new Date().toISOString()
-  vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue({ historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
+  vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue({ availability: 'available', historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
     messages: [{ position: 0, message: { id: `${historyEpoch}-0`, role: 'assistant' as const, text: 'Synthetic progress', createdAt } }] })
   const url = (n: number) => `https://github.com/synthetic/project/pull/${n}`
   // Each link still says open, as it was made; GitHub's reads say otherwise.

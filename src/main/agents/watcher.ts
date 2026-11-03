@@ -44,6 +44,7 @@ import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint, 
 import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead } from './watcherSlimReads'
 import { watcherMergeQueue, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
+import { GitHubRateLimited, retryWords } from './github'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
 import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, STEER_TURN_CHANGED, steerFallbackNote, UNCONFIRMED_SEND_HOLD, UNCONFIRMED_SEND_WAITS, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
@@ -1329,15 +1330,35 @@ export class WatcherService implements WatcherControlHooks {
     }
     // The threads it delegated to settle with it (ADR-0081), so their work holds it too.
     const delegated = this.settlesWith(thread)
-    if (delegated.some(below => isThreadTurnRunning(below) || below.requests.length > 0 || watcherBackgroundWorkCount(below) > 0))
-      refuse('BACKGROUND_WORK_RUNNING', 'A thread this one delegated to is still working or waits on the user. Wait for it before settling.')
+    for (const below of delegated) {
+      const field = this.settleBlockingField(below)
+      if (field) refuse('BACKGROUND_WORK_RUNNING', `Delegated thread “${below.title}” (${below.id}) blocks settlement: ${field}. Wait for it before settling. Nothing was settled.`)
+    }
     // An open pull request Sotto knows of, its own or a delegated thread's, holds the settle (October 29, 2026). Sotto
     // knows only the linked ones, the branch's and the babysat ones, so Watcher still looks for others the thread opened.
     // A record may be out of date, so GitHub was asked before this check (`askBeforeSettle`, #2019), and what it said ended holds nothing.
-    const held = this.settleOpenPullRequests(thread, delegated).filter(url => !this.settleReadEnded(url))
-    const open = held.find(url => this.settleReads.get(pullRequestKey(url) ?? url) !== 'unread')
-    if (open) refuse('THREAD_BUSY', `This thread has an open pull request, ${open}. Wait for it to merge or close before settling. Nothing was settled.`)
-    if (held[0]) refuse('THREAD_BUSY', `Sotto could not read this thread’s pull request from GitHub, ${held[0]}, and last saw it open. Nothing was settled. Try again in a minute.`, true)
+    for (const owner of [thread, ...delegated]) for (const url of this.openPullRequests(owner)) {
+      const identity = `${owner === thread ? 'Thread' : 'Delegated thread'} “${owner.title}” (${owner.id})`
+      if (!this.options.pullRequestState) refuse('THREAD_BUSY', `${identity} has an open pull request, ${url}. Wait for it to merge or close before settling. Nothing was settled.`)
+      if (this.settleReadEnded(url)) continue
+      const read = this.settleReads.get(pullRequestKey(url) ?? url)
+      if (read?.state === 'unread') refuse('THREAD_BUSY', `${identity} has an unread pull request, ${url}: Sotto could not read it from GitHub and last saw it open. Nothing was settled. ${read.retryAt ? `GitHub is limiting requests. Try again ${retryWords(read.retryAt, Date.now())}.` : 'Reconnect GitHub and try again.'}`, true)
+      if (read?.state === 'open' && Date.now() - read.observedAt < 60_000) refuse('THREAD_BUSY', `${identity} has a confirmed-open pull request, ${url}: GitHub just confirmed it is open. Wait for it to merge or close before settling. Nothing was settled.`)
+      refuse('THREAD_BUSY', `${identity} has a stale-open pull request, ${url}: Sotto’s record says open, without a fresh GitHub read. Read it again before settling. Nothing was settled.`, true)
+    }
+  }
+  /** The first live field holding a delegated writer, shared by preflight and the writer's check. */
+  private settleBlockingField(thread: AgentThread): string | undefined {
+    if (thread.lastTurn?.status === 'running') return `lastTurn.status=running (${thread.lastTurn.id})`
+    if (thread.status === 'running') return 'status=running'
+    const request = thread.requests[0]
+    if (request) return `requests[${request.id}].kind=${request.kind}`
+    const task = thread.backgroundWork?.[0]
+    if (task) return `backgroundWork[${task.id}].type=${task.type}`
+    if (thread.subagentSummary?.working) return `subagentSummary.working=${thread.subagentSummary.working}`
+    if (thread.subagentSummary?.unknown) return `subagentSummary.unknown=${thread.subagentSummary.unknown}`
+    const monitor = thread.monitoring?.[0]
+    if (monitor) return `monitoring[${monitor.id}]`
   }
   /** The threads a thread delegated to, which settle with it (ADR-0081). */
   private settlesWith(thread: AgentThread): AgentThread[] {
@@ -1350,37 +1371,62 @@ export class WatcherService implements WatcherControlHooks {
   }
   private settleReadEnded(url: string): boolean {
     const read = this.settleReads.get(pullRequestKey(url) ?? url)
-    return read === 'merged' || read === 'closed'
+    return read?.state === 'merged' || read?.state === 'closed'
   }
   /**
    * What GitHub said when a settle last asked about a pull request Sotto's records hold open, by its key (#2019): it merged
-   * or closed, or it could not be read. Open is no entry. Kept for the check as the settle goes as well as the one it is
-   * admitted by, and for a thread on a paired host, whose records this computer cannot move. In memory only. Merged is final;
-   * the rest stand only until the next settle asks again.
+   * or closed, open with its read time, or unread with GitHub's retry time. Kept for the check as the settle goes as well as the one it is
+   * admitted by, and for a thread on a paired host, whose records this computer cannot move. In memory only, capped at 1,000
+   * entries. Merged answers are reused until evicted; the rest stand only until the next settle asks again.
    */
-  private readonly settleReads = new Map<string, 'merged' | 'closed' | 'unread'>()
+  private readonly settleReads = new Map<string, { state: 'open' | 'merged' | 'closed' | 'unread'; observedAt: number; retryAt?: number }>()
   /**
-   * Asks GitHub once about each pull request that would hold this settle, before the settle is checked (#2019). Sotto's
+   * Refreshes only delegated threads that would hold this settle, then asks GitHub once about each blocking pull request (#2019).
+   * The returned guard keeps newer instructions and unavailable reads from passing admission or the final writer check. Sotto's
    * records hear of a merge only from a read that happens to be made, and nothing reads a thread nobody has open and
    * Watcher does not watch. So it asks here, only when a record would refuse, and never on an update. An ended answer goes
    * where any read's does: to Watcher's evidence, since the moved record leaves Watcher's own reads, and to this computer's records.
    */
-  private async askBeforeSettle(target: WatcherThreadTarget): Promise<void> {
+  private async askBeforeSettle(target: WatcherThreadTarget): Promise<(() => void) | undefined> {
     const ask = this.options.pullRequestState
-    const thread = ask && this.owningThread(target.hostId, target.threadId)
+    const thread = this.owningThread(target.hostId, target.threadId)
     if (!thread) return
-    const urls = new Map(this.settleOpenPullRequests(thread, this.settlesWith(thread)).map(url => [pullRequestKey(url) ?? url, url]))
-    await Promise.all([...urls].map(async ([prKey, url]) => {
-      if (this.settleReads.get(prKey) === 'merged') return
+    const master = this.view().current
+    if (target.hostId !== this.hostId() && !master) refuse('NOT_CURRENT_WATCHER', 'Open Watcher before settling a thread.')
+    const descendants = this.settlesWith(thread)
+    const heads = [thread, ...descendants].map(item => ({ id: item.id, title: item.title, head: nativeHead(item) }))
+    const blocking = descendants.filter(item => this.settleBlockingField(item))
+    const unavailable = await Promise.all(blocking.map(async child => {
+      const input = { target: { hostId: target.hostId, threadId: child.id }, limit: 1, includeActivities: false, requireFresh: true as const }
+      try {
+        const read = target.hostId === this.hostId() ? await this.readThread(input)
+          : watcherToolSchemas.read_thread.output.parse(await this.remote!.read(target.hostId, { master: master!, ...this.adoptOn(target.hostId), call: { name: 'read_thread', input } }))
+        return read.status !== 'ok' ? child : undefined
+      } catch { return child }
+    }))
+    if (blocking.length && target.hostId !== this.hostId()) await this.reconcileRemote(target.hostId)
+    const current = this.owningThread(target.hostId, target.threadId)
+    const urls = new Map(current ? this.settleOpenPullRequests(current, this.settlesWith(current)).map(url => [pullRequestKey(url) ?? url, url]) : [])
+    if (ask) await Promise.all([...urls].map(async ([prKey, url]) => {
+      if (this.settleReads.get(prKey)?.state === 'merged') return
       try {
         const read = await ask(url)
-        if (read.state === 'open') { this.settleReads.delete(prKey); return }
-        this.settleReads.set(prKey, read.state)
+        this.settleReads.set(prKey, { state: read.state, observedAt: Date.now() })
+        if (read.state === 'open') return
         const observation: PullRequestObservation = { url, head: read.headRefOid, state: read.state, availability: 'available', observedAt: now() }
         this.pullRequestObserved(observation)
         this.options.host.notePullRequestState(observation)
-      } catch { this.settleReads.set(prKey, 'unread') }
+      } catch (error) { this.settleReads.set(prKey, { state: 'unread', observedAt: Date.now(), ...error instanceof GitHubRateLimited ? { retryAt: error.retryAt } : {} }) }
     }))
+    while (this.settleReads.size > 1_000) this.settleReads.delete(this.settleReads.keys().next().value!)
+    return () => {
+      for (const before of heads) {
+        const live = this.owningThread(target.hostId, before.id)
+        if (!live || nativeHead(live) !== before.head) refuse('TARGET_CHANGED', `Thread “${before.title}” (${before.id}) received another instruction during settlement. Read it before settling. Nothing was settled.`)
+      }
+      const missing = unavailable.find(child => child !== undefined) ?? blocking.find(child => !this.connected(this.owningThread(target.hostId, child.id)!))
+      if (missing) refuse('HISTORY_UNAVAILABLE', `Delegated thread “${missing.title}” (${missing.id}) is unavailable: ${this.settleBlockingField(missing)} could not be refreshed from its provider. Cached history does not prove it finished. Reconnect and read it before settling. Nothing was settled.`, true)
+    }
   }
   /**
    * The open pull requests Sotto knows a thread has: the ones linked to it, its branch's, and while babysitting runs, the
@@ -4223,7 +4269,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string): Promise<unknown> {
     // Outside the transaction, so a slow answer from GitHub holds up no other Watcher call.
-    if (name === 'settle_thread') await this.askBeforeSettle((input as WatcherToolInput<'settle_thread'>).target)
+    const settleGuard = name === 'settle_thread' ? await this.askBeforeSettle((input as WatcherToolInput<'settle_thread'>).target) : undefined
     const admitted = await this.transaction(async () => {
       // Prompts counted below include a turn's archived operations, which the archive's index names once it is read (#1759).
       await this.options.control.archivedWatcherWork()?.ready()
@@ -4417,6 +4463,7 @@ export class WatcherService implements WatcherControlHooks {
           || !sent.expectedTurnId && !unfenced)) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
       }
       if (thread && name === 'settle_thread') {
+        settleGuard?.()
         this.checkSettlement(thread)
         if (!remote && this.options.control.hasPendingThreadWork(thread.id)) refuse('DELIVERY_UNCERTAIN', 'Reconcile this thread’s pending delivery before settling.')
       }
@@ -4500,7 +4547,7 @@ export class WatcherService implements WatcherControlHooks {
         if (state === 'queued') return this.waitingWorkerResult(operation, create)
       }
     }
-    const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input, { ticket })
+    const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input, { ticket, settleGuard })
     this.active.set(admitted.operation.id, running)
     try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); this.releaseWorkerStarts(); if (admitted.operation.target.hostId !== this.hostId() && this.view().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
   }
@@ -4509,10 +4556,13 @@ export class WatcherService implements WatcherControlHooks {
    * came, with the branch its call landed for it while it waited.
    */
   private async executeOperation(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>,
-    { ticket, resumed }: { readonly ticket?: string | undefined; readonly resumed?: { readonly landed: LandedMove | undefined } } = {}): Promise<unknown> {
+    { ticket, resumed, settleGuard }: { readonly ticket?: string | undefined; readonly resumed?: { readonly landed: LandedMove | undefined }; readonly settleGuard?: (() => void) | undefined } = {}): Promise<unknown> {
     let dispatchRefusal: Refusal | undefined
     const origin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
-      try { this.guardOperation(operation.id) } catch (error) { if (error instanceof Refusal) dispatchRefusal = error; throw error }
+      try { settleGuard?.(); this.guardOperation(operation.id) } catch (error) {
+        if (error instanceof Refusal) { dispatchRefusal = error; this.dispatchRefusals.set(operation.id, error) }
+        throw error
+      }
     } }
     try {
       if (name === 'stop_thread') {
@@ -4868,7 +4918,10 @@ ${operation.draftId}`)
   /** `firstRun`: the answer to the call that ran the operation, not to a retry reading its receipt again. */
   private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, firstRun = false, archived?: WatcherArchived): unknown {
     const base = { receipt: this.receipt(operation), limits: this.limits(operation, archived) }
-    // A refusal met at the writer keeps only its code. The writer's busy refusals are a turn that began meanwhile (#1203)
+    // Keep the precise settle blocker when the final writer check refuses; only its code is persisted in the receipt.
+    const settleRefusal = firstRun && name === 'settle_thread' ? this.dispatchRefusals.get(operation.id) : undefined
+    if (settleRefusal) return { ...settleRefusal.result, receipt: base.receipt }
+    // Other refusals met at the writer keep only their code. The writer's busy refusals are a turn that began meanwhile (#1203)
     // and the user's own turn, which Watcher may only steer.
     if (operation.refusalCode) {
       const watched = this.view().watches?.find(watch => key(watch.target) === key(operation.target))
@@ -5955,6 +6008,7 @@ ${operation.draftId}`)
     if (thread.kind === 'watcher' || thread.kind === 'watcher-history') refuse('RESERVED_THREAD', 'Watcher tools read workers. Open Watcher history in its own pane.')
     const read = await this.options.host.watcherRead(thread.id, input.position?.afterPosition, input.limit)
     if (!read) refuse('HISTORY_UNAVAILABLE', 'This thread’s history is unavailable. Reconnect its provider and read again.', true)
+    if (input.requireFresh && read.availability !== 'available') refuse('HISTORY_UNAVAILABLE', 'This thread’s provider is unavailable. Cached history does not prove it finished. Reconnect and read again.', true)
     if (input.position && input.position.historyEpoch !== read.historyEpoch) return { ...watcherRefusal('HISTORY_RESET', 'This thread’s history changed. Start a fresh read.'), historyCursor: { historyEpoch: read.historyEpoch, afterPosition: -1 } }
     const messages = read.messages.map(({ message, position }) => ({ id: message.id, position, role: message.role, text: message.text, createdAt: message.createdAt }))
     let result = { status: 'ok' as const, target: input.target, messages, waitsOn: this.thread(input.target).requests.map(item => ({ id: item.id, kind: item.kind,
@@ -5973,7 +6027,8 @@ ${operation.draftId}`)
       if (message) { message.text = Buffer.from(message.text).subarray(0, 32 * 1024).toString('utf8'); result.truncated = true }
     }
     if (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BOUND) refuse('HISTORY_UNAVAILABLE', 'This thread’s read exceeds the bounded response size. Read fewer messages.')
-    if (result.lastPosition !== null) await this.options.control.updateWatcher(record => {
+    // Settlement's refresh-only probe does not deliver these messages to Watcher.
+    if (!input.requireFresh && result.lastPosition !== null) await this.options.control.updateWatcher(record => {
       record.reads = record.reads.filter(item => key(item.target) !== key(input.target)); record.reads.push({ target: input.target,
         position: { historyEpoch: read.historyEpoch, afterPosition: result.lastPosition! }, readAt: now() })
     })

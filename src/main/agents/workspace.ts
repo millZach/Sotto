@@ -565,6 +565,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.creationOf(threadId)?.phase }
   async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    const before = this.thread(threadId)
+    // refreshThread answers from the cache while creation is pending or its provider is disconnected.
+    const live = before.nativeSessionStarted !== false && (this.creationOf(threadId)?.phase ?? 'started') === 'started'
+      && isThreadProviderConnected(this.state.snapshot, before) && before.clientConnected !== false
     await this.refreshThread(threadId)
     const thread = this.thread(threadId)
     this.applyEvents()
@@ -572,7 +576,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.settled(threadId)
     if (this.storeUnavailable || thread.historyStatus === 'error' || thread.historyStatus === 'loading') return undefined
     const epoch = this.threadStore.readMessageEpoch(threadId)
-    return { historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit),
+    return { availability: live && isThreadProviderConnected(this.state.snapshot, thread) && thread.clientConnected !== false ? 'available' as const : 'unavailable' as const,
+      historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit),
       activities: this.threadStore.readActivities(threadId, { keep: false }).slice(-100).map(({ id, kind, status, title, startedAt, completedAt }) => ({
         id, kind, status, title: title.slice(0, 2_000), ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}) })) }
   }
