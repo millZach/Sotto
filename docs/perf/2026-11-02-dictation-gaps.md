@@ -95,6 +95,8 @@ Every table entry is **p50 / p95 in milliseconds**.
 
 Stage distributions include every invocation: command delivery includes start and stop, and widget show includes updates while already visible. Handoff rows use the start command for startup and the final command for stop. Audio block arrival and animation frames are scheduling/hardware intervals, not evidence of app-owned idle work.
 
+Review tightened the collector before A: every headline measure must exist in every accepted recording, and a paste mark now requires a successful helper acknowledgement. All 30 baseline recordings have every headline measure; the target readback above separately verifies their paste success. Cleanup-enabled summaries sum all request attempts, including a fallback, rather than attributing a failed primary request to app overhead. Handoff intervals that include concurrent work or the configured success display are elapsed intervals, not unexplained idle time.
+
 The baseline has two deliberate waits beyond the saved 150 ms paste delay: a 150 ms post-paste settle and the saved 1,400 ms success display. These are recorded above rather than hidden as processing. Cleanup rows are absent because cleanup was off. The cold path spends most time opening an AudioContext, loading its worklet and then opening the microphone, in that order.
 
 ### Idle resources
@@ -102,6 +104,8 @@ The baseline has two deliberate waits beyond the saved 150 ms paste delay: a 150
 A 30.075-second idle interval after the warm batch used 12.369% of one CPU core. Aggregate RSS across the eight installed app processes ended at 1055.484 MiB (started at 1093.844 MiB). The process set includes the speech helper, key listener and Electron helpers, and excludes external provider tools. RSS counts shared pages in each process; it is a consistent comparison measure, not unique physical memory. The observed 38.360 MiB decline also means a single endpoint is too noisy to prove a 15 MB regression budget: repeat idle observations are required for that decision.
 
 [Numeric resource evidence](2026-11-02-dictation-gaps/baseline-idle.json). Reproduce with `node scripts/measure-dictation-idle.mjs --out <file>` while the Dictate room is open, the model is ready and no capture is active. The script takes CPU-time/RSS endpoints 30 seconds apart; it refuses an interval whose app process set changes.
+
+A second baseline interval, still running the unchanged installed build, measured 15.220% of one core over 30.091 seconds and RSS 934.891 → 851.969 MiB ([evidence](2026-11-02-dictation-gaps/baseline-idle-2.json)). This variation precedes A; the CPU and memory budgets need matched repeat observations rather than a comparison with one noisy endpoint.
 
 ## Changes, in measurement order
 

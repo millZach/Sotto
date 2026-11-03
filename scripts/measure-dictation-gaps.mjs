@@ -72,7 +72,6 @@ const metricPairs = {
   stopToLastSegmentMs: ['stop-pressed', 'last-segment-transcribed'],
   stopToPasteKeystrokeMs: ['stop-pressed', 'paste-keystroke-sent'],
   stopToDeliveryReturnedMs: ['stop-pressed', 'delivery-returned'],
-  cleanupRequestMs: ['cleanup-request-started', 'cleanup-request-returned'],
   deliveryMs: ['delivery-started', 'delivery-returned'],
   historyMs: ['history-started', 'history-returned'],
 }
@@ -114,7 +113,7 @@ const handoffPairs = {
   recorderStopToTranscriptionMs: ['recorder-stop-resolved', 'transcription-request-started'],
   transcriptionToLastSegmentMs: ['transcription-request-returned', 'last-segment-transcribed'],
   lastSegmentToCleanupMs: ['last-segment-transcribed', 'cleanup-started'],
-  cleanupToRequestMs: ['cleanup-started', 'cleanup-request-started'],
+  cleanupToRequestMs: ['cleanup-started', 'cleanup-request-started', 0],
   cleanupRequestToReturnMs: ['cleanup-request-returned', 'cleanup-returned'],
   cleanupToDeliveryMs: ['cleanup-returned', 'delivery-started'],
   lastSegmentToDeliveryMs: ['last-segment-transcribed', 'delivery-started'],
@@ -140,6 +139,29 @@ function summarize(runs) {
   const metrics = {}, stages = {}, handoffs = {}, events = {}
   const add = (samples, name, value) => { (samples[name] ??= []).push(Math.round(value * 1000) / 1000) }
   for (const run of runs) {
+    for (const [name, [from, to]] of Object.entries(metricPairs)) {
+      const start = run.events[from]?.at(-1)
+      const end = run.events[to]?.at(-1)
+      if (start === undefined || end === undefined || end < start) {
+        throw new Error(`Incomplete recording: ${name}`)
+      }
+    }
+    if (!run.events['widget-ready']) throw new Error('Incomplete recording: widget-ready')
+    const requests = run.events['cleanup-request-started'] ?? []
+    const returns = run.events['cleanup-request-returned'] ?? []
+    if (requests.length !== returns.length || requests.some((start, index) => returns[index] < start)) {
+      throw new Error('Incomplete cleanup request timing')
+    }
+    if (requests.length > 0) {
+      const requestMs = requests.reduce((sum, start, index) => sum + returns[index] - start, 0)
+      add(metrics, 'cleanupRequestMs', requestMs)
+      add(metrics, 'stopToPasteBeyondCleanupRequestsMs', run.events['paste-keystroke-sent'].at(-1)
+        - run.events['stop-pressed'].at(-1) - requestMs)
+      if (run.events['cleanup-started'] && run.events['cleanup-returned']) {
+        add(metrics, 'cleanupBeyondRequestsMs', run.events['cleanup-returned'].at(-1)
+          - run.events['cleanup-started'].at(-1) - requestMs)
+      }
+    }
     for (const [event, times] of Object.entries(run.events)) for (const time of times) add(events, event, time)
     for (const [samples, pairs] of [[metrics, metricPairs], [handoffs, handoffPairs]]) {
       for (const [name, [from, to, index = -1]] of Object.entries(pairs)) {
@@ -289,9 +311,9 @@ if (values.summarize) {
     if (values.cold) await coldLaunch()
     else if (index > 0) await sleep(5_000)
     const run = await measure()
+    const summary = summarize([...runs, run])
     appendFileSync(outputPath, `${JSON.stringify(run)}\n`, { mode: 0o600 })
     runs.push(run)
-    const summary = summarize(runs)
     writeFileSync(`${outputPath}.summary.json`, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 })
     const metrics = Object.fromEntries(['hotkeyToListeningShownMs', 'hotkeyToFirstAudioChunkMs', 'stopToPasteKeystrokeMs'].map(key => {
       const reading = summary.metrics[key]

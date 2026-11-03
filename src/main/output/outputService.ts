@@ -223,7 +223,7 @@ export class OutputService {
       try {
         markDictationTiming('paste-keystroke-started')
         pasted = await this.dependencies.process.run(invocation)
-        markDictationTiming('paste-keystroke-sent')
+        if (pasted) markDictationTiming('paste-keystroke-sent')
       } finally {
         // A failed or lost acknowledgement can still follow dispatched input.
         markDictationTiming('paste-settle-started')
