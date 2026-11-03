@@ -1307,7 +1307,7 @@ The switch at the bottom left says who you are talking to: **Thread**, or **Watc
 
 Type `/` at the start of the prompt for the commands: `/new`, `/stop`, `/open`, and `/watcher` or `/thread`. Up and Down move through them, Return runs one and Tab fills it in. `/open`, the arrow at the bottom right, and Command+O (Ctrl+O on Windows and Linux) show the thread, or Watcher's room, in Sotto's window and hide the card.
 
-A question or permission the thread or Watcher waits on shows on the card with the same choices as in Sotto, and is answered only when you press one. Questions Watcher passes on from the threads it watches are answered in its room.
+A question or permission the thread or Watcher waits on shows on the card with the same choices as in Sotto, and is answered only when you press one. Web links open in your browser; a prototype link opens its thread or Watcher's room in Sotto, where you can open the prototype. Questions Watcher passes on from the threads it watches are answered in its room.
 
 Drag the card by any part that is not words or a control to move it; it keeps that place, and grows from its bottom edge, until Sotto quits. Its width is fixed. It wears Sotto's theme, light or dark, and holds still when motion is reduced.
 
