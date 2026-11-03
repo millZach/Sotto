@@ -336,6 +336,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // Files lists the working folder on every surface, since the footer's path and its actions read it,
   // and refreshes when its own surface comes back.
   const onFiles = chrome.surface === 'files'
+  // The surface shown, not its reads: Files lists the folder on every surface, so a read says nothing of who looked.
+  const shownTool = open && (onFiles || chrome.surface === 'changes') ? chrome.surface : undefined
+  useEffect(() => { if (shownTool === 'files' || shownTool === 'changes') window.sotto?.productEvents?.toolOpened(shownTool) }, [shownTool])
   useEffect(() => {
     if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(filesFor, threadId)
   }, [open, threadId, onFiles, filesFor, store])

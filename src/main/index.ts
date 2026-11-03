@@ -12,6 +12,7 @@ import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { createProductEvents, productEventsPermission } from './productEvents/productEvents'
+import { registerProductEventsIpc } from './productEvents/ipc'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
@@ -1053,7 +1054,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, request-only).
   const fixtureCaptures = threadMedia ? requestedCaptures(threadMedia) : {}
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
@@ -1210,7 +1211,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
@@ -1340,7 +1341,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-  const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
+  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,
@@ -2275,7 +2276,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
       }, owlFeatures['reveal-linked-files'])
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
-      const cleanupUsage = registerUsageIpc(ipcMain, { read: query => hostRouter.usageRead(query),
+      const cleanupProductEvents = registerProductEventsIpc(ipcMain, productEvents, () => windows.getTrustedRenderers())
+      const cleanupUsage = registerUsageIpc(ipcMain, { read: query => { productEvents.featureUsed('usage'); return hostRouter.usageRead(query) },
         refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
       // The delegating thread's cards read delegation's own record (#1029); stable built no service, so nothing is registered.
       // A thread on another machine is read on that machine where Work across machines is on (#1310); stable reads none.
@@ -2331,7 +2333,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: copyOutput, reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
-      browserService = new BrowserService({ files,
+      browserService = new BrowserService({ featureUsed: feature => productEvents.featureUsed(feature), files,
         getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
@@ -2340,7 +2342,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         pointAtSomething: owlFeatures['quiet-browser'],
       })
       cloudIphoneService = new CloudIphoneService({
-        files, credentials,
+        featureUsed: feature => productEvents.featureUsed(feature), files, credentials,
         settings: () => ({ monthlyMinutes: workingCopySettings.cloudIphoneMonthlyMinutes, idleMinutes: workingCopySettings.cloudIphoneIdleMinutes }),
         ledger: cloudIphoneLedger,
         threadTitle: threadId => agentControl.get().host.threads.find(thread => thread.id === threadId)?.title ?? threadId,
@@ -2359,7 +2361,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         worktreeCleanup.start()
       }
       const cleanupTools = registerToolsIpc(ipcMain, {
-        terminal: terminalService,
+        featureUsed: feature => productEvents.featureUsed(feature), terminal: terminalService,
         onTerminalFocus: focused => {
           const main = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())?.webContents
           if (main) { if (focused) terminalFocus.add(main); else terminalFocus.delete(main) }
@@ -2570,6 +2572,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupFiles()
         cleanupSubagents()
         cleanupUsage()
+        cleanupProductEvents()
         cleanupDelegations()
         cleanupCheckQueues()
         cleanupContinue()

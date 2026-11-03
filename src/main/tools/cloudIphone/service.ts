@@ -56,6 +56,8 @@ interface SessionRecord {
 }
 export interface CloudIphoneDependencies {
   files: FilesService
+  /** That a cloud iPhone passed every check and is being started (ADR-0179). */
+  featureUsed?(feature: 'test-iphone'): void
   credentials: AgentCredentials
   /** The live **Settings > Cloud iPhone** cap and idle minutes. */
   settings(): { monthlyMinutes: number; idleMinutes: number }
@@ -329,6 +331,7 @@ export class CloudIphoneService extends ToolOperations {
     try { key = this.dependencies.credentials.get(CREDENTIAL_SLOT) }
     catch (error) { this.refuseStarted(record, messageOf(error)); return }
     if (!key) { this.refuseStarted(record, 'Add a run.cloud key in Settings › Cloud iPhone before starting a cloud iPhone.'); return }
+    this.dependencies.featureUsed?.('test-iphone')
     const provider = this.dependencies.provider(key)
     record.provider = provider
     // The user can End a session, or its thread can go, while the build uploads or the simulator starts; whatever

@@ -46,6 +46,8 @@ export interface WatcherControlHooks {
   guardOperation(operationId: string): void
   preserveUserQueue(threadId: string): boolean
   watchedThreadIds?(): string[]
+  /** Whether Watcher started this thread, read only just after an update, when a product event goes (ADR-0179). */
+  startedByWatcher?(hostId: string, threadId: string): boolean
   /** Whether each queued event may still go, answered in one pass that reads the snapshot and the record once. */
   wakeDueAll?(events: readonly WatcherEvent[]): boolean[]
   wakeReady?(): boolean

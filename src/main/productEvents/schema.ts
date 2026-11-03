@@ -15,13 +15,14 @@ const count = z.number().int().min(0).max(1_000_000_000_000)
 const milliseconds = z.number().int().min(0).max(31 * 24 * 60 * 60 * 1000)
 /** A model's ID as `publicModelId` returns it: on the reviewed list of public models or not at all. */
 const publicModel = z.string().refine(isPublicModelId)
-const effort = z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'])
+export const PRODUCT_EVENT_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'] as const
+const effort = z.enum(PRODUCT_EVENT_EFFORTS)
 const permissionMode = agentRuntimeModeSchema
 const startedBy = z.enum(['user', 'watcher', 'delegation', 'council', 'swarm', 'other'])
 /** What a thread and each of its turns say about how it runs. */
-const threadRun = { provider: providerIdSchema, model: publicModel.optional(), effort: effort.optional(), permissionMode, startedBy }
+const threadRun = { provider: providerIdSchema, model: publicModel.optional(), effort: effort.optional(), permissionMode: permissionMode.optional(), startedBy }
 
-/** The features `feature.used` counts. A press on anything else sends nothing. */
+/** The features `feature.used` counts, at most once a day each while Sotto runs. A press on anything else sends nothing. */
 export const PRODUCT_EVENT_FEATURES = ['council', 'watcher', 'swarm', 'delegation', 'browser', 'test-iphone', 'terminal', 'files', 'changes', 'usage', 'add-host', 'add-phone', '3d-model'] as const
 
 export const PRODUCT_EVENT_SCHEMAS = {

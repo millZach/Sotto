@@ -22,9 +22,9 @@ Sotto cannot tell which providers, models and features get used, or how often a 
    |---|---|---|
    | `install.owner_observed` | Once per start, per signed-in account | `ownerSource`, `ownerId` |
    | `app.started` | Once per start | `pairedHosts` |
-   | `thread.started` | A new thread starts | `provider`, `model`, `effort`, `permissionMode`, `inWorktree`, `startedBy` |
-   | `turn.completed` | A turn ends | `provider`, `model`, `effort`, `speed`, `permissionMode`, `startedBy`, `result`, `durationMs`, token counts, child-agent token counts |
-   | `feature.used` | A feature starts, from a fixed list | `feature` |
+   | `thread.started` | A thread Sotto made begins its first turn. A draft nobody sent and a session found in a provider's history are not counted | `provider`, `model`, `effort`, `permissionMode`, `inWorktree`, `startedBy` |
+   | `turn.completed` | A turn Sotto saw start ends. History read back, a turn already running when Sotto started and a turn whose outcome was lost are not counted, so it errs toward counting too few | `provider`, `model`, `effort`, `speed`, `permissionMode`, `startedBy`, `result`, `durationMs`, token counts, child-agent token counts |
+   | `feature.used` | A feature starts, from a fixed list, at most once a day per feature while Sotto runs, and once more after a start, since keeping the day on disk is not worth a write. It says whether this install used it, not how often; `thread.started` counts Watcher's, delegated, Council and swarm threads | `feature` |
 
    Every event also carries `uuid`, `timestamp`, `distinct_id`, `appVersion`, `channel`, `surface`, `platform`, `arch`, `$process_person_profile: false` and `$geoip_disable: true`.
 

@@ -60,6 +60,8 @@ export interface PhoneAccessPolicy {
 type Listener = Awaited<ReturnType<typeof startSocketServer>>
 
 export interface PhoneAccessOptions {
+  /** That the user asked for a code to add a phone (ADR-0179). */
+  readonly featureUsed?: (feature: 'add-phone') => void
   /** The desktop's user data folder: `paired-clients.json` and `phone-access.json` live here. */
   readonly directory: string
   /** The local host's service, or nothing when the local host is off. */
@@ -273,6 +275,7 @@ export class PhoneAccess {
         if (this.phase !== 'on' || !this.phonesWanted() || this.listenerStopped || !this.pairingReady) throw new Error('Turn on Let phones connect first, then show a pairing code.')
         this.cancelCode()
         const code = this.pairing.issuePairingCode()
+        this.options.featureUsed?.('add-phone')
         this.code = code
         this.codeTimer = setTimeout(() => { if (this.code === code) { this.code = null; this.publish() } }, Math.max(0, Date.parse(code.expiresAt) - Date.now()))
         this.codeTimer.unref?.()
