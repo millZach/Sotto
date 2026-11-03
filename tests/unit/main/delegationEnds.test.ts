@@ -32,27 +32,29 @@ const brief = (patch: Record<string, unknown>) => ({ id: randomUUID(), delegatin
   deliveryState: 'accepted', outcome: 'working', told: 'working', charged: true, createdAt: at, updatedAt: at, ...patch })
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 
-async function service(delegations: Record<string, unknown>[], threads: AgentThread[]) {
+async function service(delegations: Record<string, unknown>[], threads: AgentThread[], saved = false, delivery?: () => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-delegation-ends-')); roots.push(root)
   const links = delegations.map(record => ({ threadId: record['delegatedThreadId'], delegatingThreadId: record['delegatingThreadId'], createdAt: at, seenHead: null }))
-  await writeFile(join(root, 'delegations.json'), JSON.stringify({ version: 1, delegations: [], links, roots: [] }))
+  await writeFile(join(root, 'delegations.json'), JSON.stringify({ version: 1, delegations: saved ? delegations : [], links, roots: [] }))
   const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, threads }
   let hooks: DelegationControlHooks | undefined
   const told: DelegationNews[] = []
   const state = { pendingWork: false }
+  const command = vi.fn(async () => ({ host: snapshot }) as never)
   const control: DelegationCoordinator = {
     hostId: () => 'host', watcherSnapshot: () => snapshot, configuration: () => ({}),
     useDelegation: given => { hooks = given; return () => { hooks = undefined } },
-    commandFromDelegation: async () => ({ host: snapshot }) as never,
+    commandFromDelegation: command,
     hasPendingThreadWork: () => state.pendingWork, hasUserDraft: () => false, refreshDelegationObservation: () => undefined,
-    deliverWakeUp: async (_threadId, news) => { told.push(news) },
+    deliverWakeUp: async (_threadId, news) => { told.push(news); await delivery?.() },
   }
-  const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined },
+  const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined,
+    threadMessage: (id, messageId) => snapshot.threads.find(item => item.id === id)?.messages.find(message => message.id === messageId) },
     historyEnabled: () => true })
   await delegation.recover()
-  ;(delegation as unknown as { records: unknown[] }).records = structuredClone(delegations)
+  if (!saved) (delegation as unknown as { records: unknown[] }).records = structuredClone(delegations)
   const internals = delegation as unknown as { queuedBriefs: Map<string, string> }
-  return { delegation, hooks: hooks!, snapshot, told, state, internals }
+  return { delegation, hooks: hooks!, snapshot, told, state, internals, command }
 }
 
 it('ends a brief whose delivery was never confirmed as unknown once nothing can prove it and tells the delegating thread', async () => {
@@ -72,11 +74,149 @@ it('ends a brief whose delivery was never confirmed as unknown once nothing can 
   expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown' } })
   // The window's card says why: the provider never confirmed the brief, not a restart.
   expect(f.delegation.views('parent').made).toMatchObject([{ id: lost.id, outcome: 'unknown', unknownWhy: 'unconfirmed' }])
-  // Unknown never moves again, even if its message turns up later.
-  f.snapshot.threads[1] = thread('child', { messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }], lastUserMessageId: lost.messageId })
+  // Unconfirmed outside a restart stays final, even if its exact answering turn turns up later.
+  f.snapshot.threads[1] = thread('child', { messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }],
+    lastUserMessageId: lost.messageId, lastTurn: { id: lost.messageId, status: 'completed' } })
   f.hooks.observe(f.snapshot)
   await settle()
   expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown' } })
+})
+
+const recoveredTurns = [
+  { status: 'completed', outcome: 'answered' },
+  { status: 'failed', outcome: 'failed' },
+  { status: 'interrupted', outcome: 'stopped' },
+] as const
+
+it.each(recoveredTurns)('recovers a $status turn at startup by its brief anchor, with its own reply only', async ({ status, outcome }) => {
+  const derived = status === 'interrupted' ? 'paused' : outcome
+  const lost = brief({ turnMessageId: 'stale-anchor', nativeTurnId: 'stale-turn', replyMessageId: 'stale-reply' })
+  const f = await service([lost], [thread('parent'), thread('child', {
+    messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at },
+      { id: 'answer', role: 'assistant', text: 'Synthetic answer', turnMessageId: lost.messageId, createdAt: at },
+      { id: 'later', role: 'user', text: 'Unrelated request', createdAt: at },
+      { id: 'other-answer', role: 'assistant', text: 'Unrelated answer', turnMessageId: 'later', createdAt: at }],
+    activities: [{ id: 'activity', sequence: 0, kind: 'turn', turnId: 'native-turn', afterMessageId: lost.messageId, status, title: 'Turn', startedAt: at }],
+    lastUserMessageId: 'later', lastTurn: { id: 'later', status: 'completed' },
+  })], true)
+  await settle()
+  const read = await f.delegation.read('parent', { delegation: lost.id })
+  expect(read).toMatchObject({ delegation: { outcome: derived, turnMessageId: lost.messageId,
+    ...(outcome === 'answered' ? { reply: { text: 'Synthetic answer', messageId: 'answer' } } : {}) } })
+  expect(f.told).toEqual([{ source: 'delegation', items: [{ delegationId: lost.id, threadId: 'child', outcome: derived, turnMessageId: lost.messageId }] }])
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
+it.each(recoveredTurns)('recovers a $status turn after provider reconnect, including an uncertain send', async ({ status, outcome }) => {
+  const lost = brief({ deliveryState: 'dispatching' })
+  const child = thread('child', { clientConnected: false,
+    messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }],
+    lastUserMessageId: lost.messageId, lastTurn: { id: 'native-turn', messageId: lost.messageId, status } })
+  const f = await service([lost], [thread('parent'), child], true)
+  await vi.waitFor(() => {
+    expect(f.told.map(news => news.items[0]?.outcome)).toEqual(['unknown'])
+    expect((f.delegation as unknown as { telling: Set<string> }).telling.size).toBe(0)
+  })
+  expect(f.delegation.views('parent').made).toMatchObject([{ outcome: 'unknown', unknownWhy: 'restarted' }])
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
+  child.clientConnected = true
+  f.hooks.observe(f.snapshot)
+  await settle()
+  await vi.waitFor(() => expect(f.told.map(news => news.items[0]?.outcome)).toEqual(['unknown', outcome]))
+  expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome, turnMessageId: lost.messageId } })
+  f.hooks.observe(f.snapshot); await settle()
+  expect(f.told).toHaveLength(2)
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
+it('tells a recovered outcome after its earlier unknown news finishes delivery', async () => {
+  let finish!: () => void
+  const pending = new Promise<void>(resolve => { finish = resolve })
+  const lost = brief({})
+  const child = thread('child', { clientConnected: false,
+    messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }],
+    lastTurn: { id: lost.messageId, status: 'completed' } })
+  const f = await service([lost], [thread('parent'), child], true, () => pending)
+  await vi.waitFor(() => expect(f.told.map(news => news.items[0]?.outcome)).toEqual(['unknown']))
+  child.clientConnected = true
+  f.hooks.observe(f.snapshot)
+  expect(f.delegation.views('parent').made).toMatchObject([{ outcome: 'answered' }])
+  finish()
+  await vi.waitFor(() => expect(f.told.map(news => news.items[0]?.outcome)).toEqual(['unknown', 'answered']))
+  f.hooks.observe(f.snapshot); await settle()
+  expect(f.told).toHaveLength(2)
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
+it.each(['absent', 'brief-only', 'unrelated'] as const)('keeps restart uncertainty with %s history, through observations and reads', async history => {
+  const lost = brief({})
+  const f = await service([lost], [thread('parent'), thread('child')], true)
+  await settle()
+  const child = f.snapshot.threads[1]!
+  if (history !== 'absent') child.messages.push({ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at })
+  if (history === 'unrelated') {
+    child.messages.push({ id: 'later', role: 'user', text: 'Unrelated request', createdAt: at },
+      { id: 'other-answer', role: 'assistant', text: 'Unrelated answer', createdAt: at })
+    child.lastUserMessageId = 'later'; child.lastTurn = { id: 'later', status: 'completed' }
+  }
+  f.hooks.observe(f.snapshot); await settle()
+  expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown' } })
+  expect(await f.delegation.read('parent', {})).toMatchObject({ delegations: [{ outcome: 'unknown' }] })
+  expect(f.told).toHaveLength(1)
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
+it('waits for history, then retries restart proof on reconnect after an attempt found none', async () => {
+  const lost = brief({})
+  const child = thread('child', { historyStatus: 'loading', messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }] })
+  const f = await service([lost], [thread('parent'), child], true)
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
+  child.historyStatus = 'ready'; f.hooks.observe(f.snapshot)
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  child.lastTurn = { id: lost.messageId, status: 'completed' }
+  // New history alone does not keep a restart unknown on the per-snapshot observation path.
+  f.hooks.observe(f.snapshot)
+  expect(f.delegation.views('parent').made[0]?.outcome).toBe('unknown')
+  f.snapshot.connected = false; f.hooks.observe(f.snapshot)
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
+  f.snapshot.connected = true; f.hooks.observe(f.snapshot)
+  expect(f.delegation.views('parent').made[0]?.outcome).toBe('answered')
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
+it.each(['single', 'listing'] as const)('recovers a saved restart unknown when its %s read finds the exact turn', async read => {
+  const lost = brief({ outcome: 'unknown', unknownBecause: 'restarted', told: 'unknown' })
+  const f = await service([lost], [thread('parent'), thread('child')], true)
+  const child = f.snapshot.threads[1]!
+  child.messages.push({ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at },
+    { id: 'answer', role: 'assistant', text: 'Synthetic answer', createdAt: at })
+  child.lastTurn = { id: lost.messageId, status: 'completed' }
+  const result = await f.delegation.read('parent', read === 'single' ? { delegation: lost.id } : {})
+  expect(result).toMatchObject(read === 'single' ? { delegation: { outcome: 'answered', reply: { text: 'Synthetic answer' } } }
+    : { delegations: [{ outcome: 'answered' }] })
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
+it('never recovers or resends a queued brief dropped at restart, even if history names its message', async () => {
+  const lost = brief({ deliveryState: 'queued', outcome: undefined, told: undefined })
+  const f = await service([lost], [thread('parent'), thread('child', {
+    messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }], lastTurn: { id: lost.messageId, status: 'completed' },
+  })], true)
+  f.hooks.observe(f.snapshot); await settle()
+  expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown', note: expect.stringContaining('Nothing was sent') } })
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
 })
 
 it('reconciles an unconfirmed brief as delivered when its own message shows in the thread', async () => {
@@ -104,6 +244,19 @@ it('ends the briefs of a delegated thread that is gone, stops looking at them an
   const read = await f.delegation.read('parent', { delegation: working.id }) as { delegation: { outcome: string; note: string } }
   expect(read.delegation).toMatchObject({ outcome: 'unknown', note: expect.stringMatching(/gone from Sotto/u) })
   expect(f.delegation.views('parent').made).toMatchObject([{ id: working.id, unknownWhy: 'gone' }, { id: waiting.id, outcome: 'failed', notSent: 'provider' }])
+})
+
+it('stops looking for restart evidence after the delegated thread is deleted', async () => {
+  const lost = brief({})
+  const f = await service([lost], [thread('parent'), thread('child', { clientConnected: false })], true)
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
+  f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== 'child')
+  f.hooks.observe(f.snapshot)
+  await settle()
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.delegation.views('parent').made).toMatchObject([{ id: lost.id, outcome: 'unknown', unknownWhy: 'gone' }])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
 })
 
 /** Real admission and delivery, without a provider process or a worktree on disk. */
@@ -489,6 +642,74 @@ it('recovers a synthesis that was only waiting for the machine ceiling', async (
   restored.delegation.close(); restored.admission.close()
 })
 
+it('recovers proven angle outcomes through synthesis before allowing the lead to settle', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  await f.file()
+  f.delegation.close(); f.admission.close()
+  // The provider finished the angles while Sotto was down, before delegation could record their outcomes.
+  for (const [index, member] of receipt.receipts.entries()) {
+    const child = f.snapshot.threads.find(item => item.id === member.thread)!
+    child.status = 'idle'
+    child.lastTurn = { id: child.lastUserMessageId!, status: index === 0 ? 'completed' : 'failed' }
+    child.messages.push({ id: randomUUID(), role: 'assistant', text: `Angle ${index}`, createdAt: at })
+  }
+  const restored = await swarmService(4, f)
+  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)).toMatchObject({ done: 1, failed: 1,
+    receipts: [{ state: 'answered' }, { state: 'failed' }] })
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  await vi.waitFor(() => expect(restored.told).toHaveLength(1))
+  expect(restored.told[0]?.items.map(item => item.outcome)).toEqual(['answered', 'failed'])
+  expect(restored.created).toEqual([])
+  expect(restored.sent).toEqual([])
+  await restored.finish(receipt.lead.thread)
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  expect(restored.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: true })
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('keeps a swarm unfinished while an angle has no exact turn, then recovers it on a swarm read', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  await f.file()
+  f.delegation.close(); f.admission.close()
+  const children = receipt.receipts.map(member => f.snapshot.threads.find(item => item.id === member.thread)!)
+  for (const child of children) { child.status = 'idle'; delete child.lastTurn }
+  const restored = await swarmService(4, f)
+  restored.observe(); await settle()
+  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.receipts.map(item => item.state)).toEqual(['unknown', 'unknown'])
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  expect(restored.told).toEqual([])
+  for (const child of children) child.lastTurn = { id: child.lastUserMessageId!, status: 'completed' }
+  expect(await restored.delegation.read('parent', { delegation: receipt.swarmId })).toMatchObject({ done: 2,
+    receipts: [{ state: 'answered' }, { state: 'answered' }] })
+  await vi.waitFor(() => expect(restored.told).toHaveLength(1))
+  await restored.finish(receipt.lead.thread)
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('persists an angle recovered on a swarm read even when the lead delegation is missing', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  const saved = await f.file()
+  f.delegation.close(); f.admission.close()
+  saved.delegations = saved.delegations.filter(record => record['id'] !== receipt.lead.delegation)
+  await writeFile(join(f.root, 'delegations.json'), JSON.stringify(saved))
+  const children = receipt.receipts.map(member => f.snapshot.threads.find(item => item.id === member.thread)!)
+  for (const child of children) { child.status = 'idle'; delete child.lastTurn }
+  const restored = await swarmService(4, f)
+  children[0]!.lastTurn = { id: children[0]!.lastUserMessageId!, status: 'completed' }
+  expect(await restored.delegation.read('parent', { delegation: receipt.swarmId })).toMatchObject({ done: 1,
+    receipts: [{ state: 'answered' }, { state: 'unknown' }] })
+  // Read the disk directly: another save or a synthesis wake-up must not be needed to make recovery durable.
+  const persisted = JSON.parse(await readFile(join(f.root, 'delegations.json'), 'utf8')) as typeof saved
+  expect(persisted.swarms[0]?.members.map(member => member.state)).toEqual(['answered', 'unknown'])
+  expect(persisted.delegations.find(record => record['id'] === receipt.receipts[0]!.delegation)).toMatchObject({ outcome: 'answered' })
+  expect(restored.told).toEqual([])
+  restored.delegation.close(); restored.admission.close()
+})
+
 it('reconciles a saved synthesis queue and an uncertain send before retrying a wake-up that never landed', async () => {
   let entered = false
   const f = await swarmService(4, undefined, { beforeWakeUp: () => { entered = true; return new Promise(() => undefined) } })
@@ -582,12 +803,12 @@ it('lets the original plan retry fill only angles with no saved start after a re
   f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== originalSecondId)
   await writeFile(join(f.root, 'delegations.json'), JSON.stringify(saved))
   const restored = await swarmService(4, f)
-  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.receipts.map(item => item.state)).toEqual(['unknown', 'planned'])
+  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.receipts.map(item => item.state)).toEqual(['working', 'planned'])
   expect(await restored.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['Changed', 'Plan'] }))
     .toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
   expect(restored.created).toHaveLength(0)
   const retried = await restored.delegation.delegate('parent', input) as SwarmReceipt
-  expect(retried.receipts[0]).toMatchObject({ thread: originalFirstId, state: 'unknown' })
+  expect(retried.receipts[0]).toMatchObject({ thread: originalFirstId, state: 'working' })
   expect(retried.receipts[1]?.thread).toBeDefined()
   expect(restored.created).toHaveLength(1)
   restored.delegation.close(); restored.admission.close()

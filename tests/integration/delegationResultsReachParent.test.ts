@@ -205,8 +205,47 @@ it('delivers a brief to a delegated thread whose last turn was stopped, or cut s
   // Sotto restarts while that brief's turn runs, and the provider reports it cut short.
   await f.restart()
   await f.endTurn(child, 'Synthetic cut-short reply', 'interrupted')
-  expect(f.ok(await f.read(parent, second.delegation.id)).delegation.outcome).toBe('unknown')
+  await f.control.command({ type: 'observe-threads', threadIds: [child] })
+  expect(f.ok(await f.read(parent, second.delegation.id)).delegation.outcome).toBe('stopped')
   const third = f.ok(await f.delegate(parent, { thread: child, brief: 'Synthetic brief after a restart', wait_seconds: 0 }))
   expect(third.delegation.outcome).not.toBe('paused')
   await vi.waitFor(() => expect(f.native(child).messages.some(message => message.text === 'Synthetic brief after a restart')).toBe(true))
+})
+
+it.each([
+  { status: 'completed', outcome: 'answered' },
+  { status: 'failed', outcome: 'failed' },
+  { status: 'interrupted', outcome: 'stopped' },
+] as const)('recovers a $status answering turn at startup and privately tells its parent once', async ({ status, outcome }) => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const result = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  const child = result.delegation.thread
+  const before = f.adapterOf(child).commands.filter(command => command.type === 'send').length
+  // The provider's evidence arrives while delegation is stopped, so its durable outcome still says working.
+  f.service.close()
+  await f.endTurn(child, 'Synthetic recovered reply', status)
+  await f.restart()
+  const recovered = f.ok(await f.read(parent, result.delegation.id)).delegation
+  expect(recovered).toMatchObject({ outcome, ...(outcome === 'answered' ? { reply: { text: 'Synthetic recovered reply' } } : {}) })
+  await f.endTurn(parent, 'Synthetic parent reply')
+  await vi.waitFor(() => expect(newsOf(f, parent, result.delegation.id)).toHaveLength(1))
+  const news = newsOf(f, parent, result.delegation.id)[0]!
+  expect(news.text).toContain(outcome)
+  if (outcome === 'answered') expect(news.text).toContain('Synthetic recovered reply')
+  expect(f.control.threadDetail(parent)!.messages.some(message => message.id === news.id)).toBe(false)
+  await settled(f)
+  expect(f.adapterOf(child).commands.filter(command => command.type === 'send')).toHaveLength(before)
+})
+
+it('keeps a recovered reply private when Keep local history was off across the restart', async () => {
+  const f = await fixture({ history: false }), parent = await f.userThread('claude')
+  const result = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  f.service.close()
+  await f.endTurn(result.delegation.thread, 'Synthetic old reply')
+  await f.restart()
+  expect(f.ok(await f.read(parent, result.delegation.id)).delegation).toMatchObject({ outcome: 'answered',
+    replyUnavailable: expect.stringContaining('Keep local history is off') })
+  await f.endTurn(parent, 'Synthetic parent reply')
+  await vi.waitFor(() => expect(newsOf(f, parent, result.delegation.id)).toHaveLength(1))
+  expect(newsOf(f, parent, result.delegation.id)[0]!.text).not.toContain('Synthetic old reply')
 })
