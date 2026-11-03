@@ -8,6 +8,7 @@ import { keyListenerWin32Invocation } from '../../src/main/hotkeys/keyListenerWi
 
 const CS_PATH = join(__dirname, '../../native/key-listener/win32.cs')
 const LIVE = process.env.SOTTO_KEY_LISTENER_LIVE === '1'
+const HELPER_START_MS = 60_000
 
 interface Helper {
   lines: string[]
@@ -77,20 +78,23 @@ function startHelper(acceptSynthetic: boolean): Helper {
 }
 
 describe.runIf(process.platform === 'win32')('Windows key listener helper', () => {
+  // Starting PowerShell and compiling the helper with Add-Type took past 10 s on loaded Windows runners seven times
+  // in a day (November 2, 2026), with nothing on stdout or stderr. The app sets no deadline on that start, so the
+  // test's is generous: one never reached costs nothing.
   it('compiles, installs the hook, prints only protocol lines and exits when stdin closes', async () => {
     const helper = startHelper(false)
 
-    await helper.waitFor('permission granted', 10_000)
+    await helper.waitFor('permission granted', HELPER_START_MS)
     helper.send('keys F13')
     helper.send('request')
 
     expect(await helper.closeAndExit(5_000)).toBe(0)
     expect(helper.lines).toEqual(['permission granted'])
-  }, 20_000)
+  }, HELPER_START_MS + 30_000)
 
   it.runIf(LIVE)('reports a watched F13 sent with SendInput when synthetic input is accepted', async () => {
     const helper = startHelper(true)
-    await helper.waitFor('permission granted', 10_000)
+    await helper.waitFor('permission granted', HELPER_START_MS)
     helper.send('keys F13')
     // Give the writer thread time to apply `keys` before the injected key arrives.
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -110,5 +114,5 @@ describe.runIf(process.platform === 'win32')('Windows key listener helper', () =
     await helper.waitFor('up F13', 5_000)
     expect(await helper.closeAndExit(5_000)).toBe(0)
     expect(helper.lines).toEqual(['permission granted', 'down F13', 'up F13'])
-  }, 30_000)
+  }, HELPER_START_MS + 30_000)
 })
