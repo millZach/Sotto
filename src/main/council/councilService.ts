@@ -429,6 +429,12 @@ export class CouncilService {
       await this.persist()
       this.changed([record])
       this.options.control.refreshCouncilObservation()
+      // A reply may have arrived while this send held the thread; releasing it must let the next queued prompt go.
+      if (!this.closed) {
+        const snapshot = this.options.control.watcherSnapshot()
+        let list: Map<string, AgentThread> | undefined
+        this.dispatchFree(snapshot, id => (list ??= new Map(snapshot.threads.map(item => [item.id, item]))).get(id))
+      }
     }
   }
 
