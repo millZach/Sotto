@@ -1,9 +1,8 @@
 name: iPhone benchmarks
 
 # The iPhone benchmarks (docs/perf/2026-10-31-iphone-benchmarks.md), apart from CI because they take most of an hour on
-# a macOS runner and the native client's own job is already close to its limit (#963). They run when asked for: on a
-# pull request carrying the `ios-perf` label, at every push while it carries it, or by hand from the Actions tab. Each
-# run measures the pull request's base and its head on the same runner, so the two columns differ only by the change.
+# a macOS runner. They run when asked for: on a pull request carrying the `ios-perf` label, at every push while it
+# carries it, or by hand from the Actions tab. Each run measures the pull request's base and its head on the same runner, so the two columns differ only by the change.
 on:
   pull_request:
     types: [labeled, synchronize, reopened]

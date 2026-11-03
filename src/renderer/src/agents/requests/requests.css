@@ -132,3 +132,8 @@
 }
 
 :root[data-reduced-motion='on'] :is(.agent-request[data-placement='composer'], .prototype-ready) { animation: none; }
+/* Images dropped on a form (ADR-0176): the drop edge outlines the questions, which take the drop. */
+.agent-request .screenshot-input { position: relative; display: grid; gap: 14px; }
+.agent-request[data-placement='composer'] .screenshot-input { gap: 12px; }
+.agent-request .screenshot-input__tools { margin-top: 0; }
+.agent-request .screenshot-previews { margin-top: 0; }

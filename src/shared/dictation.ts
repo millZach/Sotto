@@ -131,6 +131,13 @@ interface WidgetSnapshotMetadata {
   readonly reducedMotion: ReducedMotion
   readonly shortcut: string
   readonly cancellable: boolean
+  /**
+   * Set by main, never the renderer, while it holds Escape across every app to cancel
+   * (ADR-0178's polish round). The widget offers a cancel × whenever the dictation
+   * can be cancelled and Escape is not held: always on Linux, and on Windows or macOS
+   * when another app already holds the key.
+   */
+  readonly escapeClaimed?: true | undefined
 }
 
 /**

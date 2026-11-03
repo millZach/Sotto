@@ -4,12 +4,62 @@ import SottoCore
 
 // MARK: Mark up (ADR-0170, part 5)
 
-/// A picture to mark up: the one the viewer holds, its name, and the reply box the marked copy goes into.
+/// A picture to mark up: the one the viewer holds, its name, and the reply box the marked copy goes into, with the
+/// callouts the agent placed on it (part 6) and who placed them.
 struct MarkupTarget: Identifiable {
     let id = UUID()
     let image: CGImage
     let name: String
     let box: PhotoBox
+    var callouts: [Activity.Media.Callout] = []
+    var calloutsBy: String? = nil
+}
+
+/// Draws an agent's callouts (ADR-0170, part 6) in a context whose units are the picture's pixels: a dashed box in the
+/// accent and a pin carrying its number. `unit`, the picture's pixels to a point, keeps them a fixed size on a tile.
+enum CalloutDrawing {
+    static func draw(_ callouts: [Activity.Media.Callout], size: MarkupSize, accent: Color, onAccent: Color, unit: Double? = nil, in context: inout GraphicsContext) {
+        for callout in callouts {
+            let shape = Callouts.shape(callout, size: size, unit: unit)
+            let box = Path(roundedRect: CGRect(x: shape.x, y: shape.y, width: shape.width, height: shape.height), cornerRadius: shape.corner)
+            context.stroke(box, with: .color(accent), style: StrokeStyle(lineWidth: shape.line, dash: shape.dash.map { CGFloat($0) }))
+            context.fill(Path(ellipseIn: CGRect(x: shape.x - shape.radius, y: shape.y - shape.radius, width: shape.radius * 2, height: shape.radius * 2)), with: .color(accent))
+            let number = context.resolve(Text(verbatim: "\(callout.n)").font(.custom(Font.figtreeFace(.bold), fixedSize: shape.font)).foregroundStyle(onAccent))
+            context.draw(number, at: CGPoint(x: shape.x, y: shape.y), anchor: .center)
+        }
+    }
+}
+
+/// A picture's callouts listed by number, as the viewer and the editor show them under it.
+struct CalloutNotes: View {
+    let callouts: [Activity.Media.Callout]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(callouts) { callout in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(verbatim: "\(callout.n)").font(.sotto(.small, .bold)).foregroundStyle(ThemeRole(.onAccent))
+                        .frame(minWidth: 22, minHeight: 22).background(Palette.accent, in: Circle())
+                        .accessibilityHidden(true)
+                    Text(verbatim: callout.note).font(.sotto(.small)).foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true).paragraphDirection()
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    /// The notes at their own height up to `height`, and scrolling past it, so a few notes take no more room than they need.
+    struct Bounded: View {
+        let callouts: [Activity.Media.Callout]
+        let height: CGFloat
+        var body: some View {
+            ViewThatFits(in: .vertical) {
+                CalloutNotes(callouts: callouts)
+                ScrollView { CalloutNotes(callouts: callouts) }
+            }
+            .frame(maxHeight: height)
+        }
+    }
 }
 
 /// The inks as this theme draws them: red and amber are its danger and warning colours, plain its text.
@@ -93,10 +143,13 @@ enum MarkupDrawing {
     }
 
     /// The picture with its marks drawn on it, at the size the viewer holds it, as a PNG. Nil when it could not be made.
-    @MainActor static func copy(_ image: CGImage, marks: [MarkupShape], inks: MarkupInks) -> Data? {
+    @MainActor static func copy(_ image: CGImage, marks: [MarkupShape], inks: MarkupInks,
+                                callouts: [Activity.Media.Callout] = [], accent: Color = .clear, onAccent: Color = .clear) -> Data? {
         let size = MarkupSize(width: Double(image.width), height: Double(image.height))
         let renderer = ImageRenderer(content: Canvas { context, _ in
             context.draw(Image(decorative: image, scale: 1), in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            // The agent's callouts a copy keeps go under the user's own marks, as the editor showed them.
+            CalloutDrawing.draw(callouts, size: size, accent: accent, onAccent: onAccent, in: &context)
             MarkupDrawing.draw(marks, size: size, inks: inks, in: &context)
         }.frame(width: size.width, height: size.height))
         renderer.scale = 1
@@ -129,6 +182,11 @@ struct MarkupEditor: View {
     @State private var notePlace: MarkPoint?
     @State private var noteText = ""
     @State private var adding = false
+    /// The agent's callouts (part 6): shown while marking, and kept in the copy, unless the user says otherwise.
+    @State private var showCallouts = true
+    @State private var keepCallouts = true
+    /// The callouts the copy carries: shown and kept, as the user sees them.
+    private var keptCallouts: [Activity.Media.Callout] { showCallouts && keepCallouts ? target.callouts : [] }
 
     /// Only Draw with Apple Pencil, where this iOS says it.
     private static var prefersPencil: Bool {
@@ -158,6 +216,7 @@ struct MarkupEditor: View {
             }
             GeometryReader { room in stage(in: room.size) }
                 .clipped()
+            if !target.callouts.isEmpty { calloutsPanel }
             if let notice {
                 Text(notice).font(.sotto(.small)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
                     .padding(.horizontal, 20).padding(.top, 8).paragraphDirection()
@@ -190,11 +249,13 @@ struct MarkupEditor: View {
     private func stage(in room: CGSize) -> some View {
         let fit = fitted(in: room)
         let marks = history.marks, drawing = live, inks = self.inks, size = self.size
+        let callouts = showCallouts ? target.callouts : [], accent = theme.rgb(.accent).color, onAccent = theme.rgb(.onAccent).color
         return ZStack {
             ZStack {
                 Image(decorative: target.image, scale: 1).resizable().scaledToFit()
                 Canvas { context, canvas in
                     context.scaleBy(x: canvas.width / size.width, y: canvas.height / size.height)
+                    CalloutDrawing.draw(callouts, size: size, accent: accent, onAccent: onAccent, in: &context)
                     MarkupDrawing.draw(marks + (drawing.map { [$0] } ?? []), size: size, inks: inks, in: &context)
                 }
                 .allowsHitTesting(false)
@@ -271,9 +332,10 @@ struct MarkupEditor: View {
     // MARK: Add to reply
 
     private func add() {
-        guard !history.marks.isEmpty else { notice = String(localized: "Draw on the picture first. Nothing was added."); return }
+        guard !history.marks.isEmpty || !keptCallouts.isEmpty else { notice = String(localized: "Draw on the picture first. Nothing was added."); return }
         if let refusal = model.markedCopyRefusal(target.box) { notice = refusal; return }
-        guard let data = MarkupDrawing.copy(target.image, marks: history.marks, inks: inks) else {
+        guard let data = MarkupDrawing.copy(target.image, marks: history.marks, inks: inks, callouts: keptCallouts,
+                                            accent: theme.rgb(.accent).color, onAccent: theme.rgb(.onAccent).color) else {
             notice = String(localized: "Couldn’t make the marked copy. Nothing was added, and your marks are still here. Try again.")
             return
         }
@@ -286,6 +348,22 @@ struct MarkupEditor: View {
             onAdded()
             dismiss()
         }
+    }
+
+    // MARK: The agent's callouts
+
+    /// The callouts listed under the picture, with Show callouts and Keep the callouts in the copy (ADR-0170, part 6).
+    private var calloutsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Callouts from \(target.calloutsBy ?? "")").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                .accessibilityAddTraits(.isHeader)
+            CalloutNotes.Bounded(callouts: target.callouts, height: 96)
+            Toggle("Show callouts", isOn: $showCallouts).font(.sotto(.small))
+            Toggle("Keep the callouts in the copy", isOn: Binding(get: { keepCallouts && showCallouts }, set: { keepCallouts = $0 }))
+                .font(.sotto(.small)).disabled(!showCallouts)
+        }
+        .tint(Palette.accent)
+        .padding(.horizontal, 20).padding(.top, 8)
     }
 
     // MARK: The tools

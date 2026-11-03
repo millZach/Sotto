@@ -11,6 +11,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
+import { createProductEvents, productEventsPermission } from './productEvents/productEvents'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
@@ -19,6 +20,9 @@ import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
+import { registerCouncilIpc } from './council/councilIpc'
+import { CouncilService } from './council/councilService'
+import { BranchBundles } from './agents/branchBundles'
 import { registerCheckQueueIpc } from './agents/checkQueueIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { moveTargetsOf } from './agents/threadMoves'
@@ -29,6 +33,7 @@ import { nextPromptWatcherRequest, parseNextPrompt } from './llm/nextPrompt'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
+import { COUNCIL_RENDERER_ARGUMENT } from '../shared/council'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
 import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
 import { startDeadProxy, VISUAL_SCHEME_PRIVILEGES } from './agents/visualSeal'
@@ -218,7 +223,7 @@ import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleas
 import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
-import type { DictationCommand, TranscriptionRequest, TranscriptionResult } from '../shared/contracts'
+import { LIVING_OWL_RENDERER_ARGUMENT, type DictationCommand, type TranscriptionRequest, type TranscriptionResult } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { dockPainter, readDockCoverage } from './dock/dockIcon'
@@ -752,12 +757,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Glass (ADR-0150) is an Owl feature: read once here, it decides whether the window may be see-through, whether the
   // window is told of Glass at all, and whether a half saved on Glass dresses the Dock and the widget in Glass or Sotto.
   const glassThemeEnabled = owlFeatures['glass-theme']
+  // The widget's living owl (ADR-0178): stable gives the widget no argument, so it shows the still owl.
+  const livingOwlEnabled = owlFeatures['living-widget-owl']
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
 const cleanupModelEnabled = owlFeatures['cleanup-model']
 const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const delegationEnabled = owlFeatures['thread-delegation']
+  // The Council (ADR-0177): stable builds no service, registers no bridge and shows no page. It runs on this computer's threads.
+  const councilEnabled = owlFeatures.council
   const workerRolesEnabled = owlFeatures['worker-roles']
   // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
   const interfaceLanguageEnabled = owlFeatures['interface-language'] && INTERFACE_LANGUAGE_SHOWN
@@ -887,6 +896,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const releaseTrack = getReleaseTrack(appRunningVersion)
+  // Product events (ADR-0179): nothing is sent, and no ID is made, unless a build or the environment names an endpoint and the notice was answered.
+  const productEvents = createProductEvents({ dataDirectory: userDataPath, holdWhileWaiting: false, version: appRunningVersion, channel: releaseTrack, surface: 'desktop', log: event => console.warn(event) })
+  productEvents.setPermission(productEventsPermission(workingCopySettings))
+  app.on('will-quit', () => productEvents.stop())
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
   const buildName = releaseTrackName(releaseTrack)
   // Windows updates itself on both tracks and a Mac on Owl only, the one signed with Sotto's Developer ID (ADR-0093).
@@ -911,8 +924,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     } } : {}),
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
-      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
-        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
+      const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
+      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
+        ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
+        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
@@ -1022,6 +1037,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
+    answerImages: owlFeatures['answer-images'],
     inlineMedia: owlFeatures['inline-media'],
     ...threadMedia ? { threadMedia } : {},
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
@@ -1184,6 +1200,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   quitHandles.desktopHosts = desktopHosts
   await desktopHosts.start()
+  productEvents.record('app.started', { pairedHosts: desktopHosts.get().hosts.length })
   // Saved host identities filter recovery before disk drafts load. Unread originals stay untouched.
   await retainedDrafts.load()
   // Have my agent set this up (ADR-0035): a host setup thread on this computer, with the host setup tools while it
@@ -1224,6 +1241,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (pullRequestTools) quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
+  // The Council (ADR-0177): this computer's own, built here rather than in the runtime a headless host shares, so the host
+  // bundles none of it. Its snapshots are taken by the check's own snapshot code, with the runtime's bundles where they
+  // exist, so one data folder keeps one staging folder for them. Stable and a desktop without its local host build none.
+  const councilService = councilEnabled && startupSettings.localHostEnabled ? new CouncilService({ directory: userDataPath, control: agentControl, host: agentHost,
+    historyEnabled: () => agentHistoryEnabled, stageDeadline: () => workingCopySettings.councilStageDeadline,
+    bundles: ('branchBundles' in localRuntime ? localRuntime.branchBundles : undefined)
+      ?? new BranchBundles({ stagingDirectory: join(userDataPath, 'council-staging'), recordsPath: join(userDataPath, 'council-staging', 'records.json') }) }) : undefined
+  if (councilService) { await councilService.recover(); quitHandles.council = councilService }
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
@@ -1916,6 +1941,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const previous = workingCopySettings
       workingCopySettings = settings
       syncHotkeyStandby()
+      productEvents.setPermission(productEventsPermission(settings))
       // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
       menuBarOwl?.applySettings(settings)
@@ -2043,7 +2069,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     syncEscape: (state) => {
       widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
-      syncEscapeForWidgetSnapshot(hotkeys, state)
+      return syncEscapeForWidgetSnapshot(hotkeys, state)
     },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     presentation: () => widgetPresentation,
@@ -2205,6 +2231,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
         () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      // The Council (ADR-0177): only where its Owl feature is on and this computer runs threads, so stable registers nothing.
+      const cleanupCouncil = registerCouncilIpc(ipcMain, councilService, () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) })
       // Move threads (#1178): only where Watcher and Work across machines are both on and main built the service, so stable
       // registers nothing.
       const cleanupThreadMoves = registerThreadMoveIpc(ipcMain, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, () => windows.getTrustedRenderers(),
@@ -2477,6 +2505,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupDelegations()
         cleanupCheckQueues()
         cleanupContinue()
+        cleanupCouncil()
         cleanupThreadMoves()
         cleanupNextPrompts()
         unsubscribeHostNextPrompts?.()

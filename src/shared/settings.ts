@@ -7,6 +7,8 @@ import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './in
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { DEFAULT_WATCHER_SCENE, WATCHER_SCENES, type WatcherScene } from './watcherScene'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { COUNCIL_STAGE_DEADLINE, councilChairSchema, councilLayoutSchema, councilPanelistsSchema, councilStageDeadlineSchema, DEFAULT_COUNCIL_LAYOUT, DEFAULT_COUNCIL_PANELISTS,
+  parseCouncilPanelists, type CouncilLayout, type CouncilSeatChoice } from './council'
 import { DEFAULT_WORKER_CEILING, DEFAULT_WORKER_MACHINE, workerCeilingSchema, workerMachineCeilingsSchema, workerMachineSettingSchema,
   type WorkerMachineCeilings, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
@@ -209,6 +211,18 @@ export interface AppSettings {
    */
   watcherCompactAtTokens: number
   /**
+   * The Council's panel (ADR-0177), under Settings, Council, part of the Owl feature `council`: one entry per seat, two to
+   * five, each the model and effort the user chose or null for a seat Sotto fills from the providers connected now, so
+   * nothing here changes when a provider comes or goes. The Ask screen starts from it. Kept whole where the feature is off.
+   */
+  councilPanelists: (CouncilSeatChoice | null)[]
+  /** The Council's chair: the model and effort the user chose, or null for the one Sotto fills (ADR-0177). */
+  councilChair: CouncilSeatChoice | null
+  /** How the Council's chamber is laid out (ADR-0177 decision 6), the same setting its Layout menu changes. */
+  councilLayout: CouncilLayout
+  /** How long, in minutes, a Council stage waits for a thread before its row offers Retry, Use another model and Go on without it. */
+  councilStageDeadline: number
+  /**
    * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
    * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
    */
@@ -378,6 +392,13 @@ export interface AppSettings {
   nextPromptSuggestions: boolean
   /** One tip under a working thread's working line and Watcher's (ADR-0159; Owl only). */
   threadTips: boolean
+  /**
+   * Send product events (ADR-0179): on by default, and nothing goes until the notice has been answered. Off sends nothing
+   * more, drops what is waiting and deletes the install ID.
+   */
+  productEventsEnabled: boolean
+  /** A button on the product events notice has been pressed. Reset settings clears it, so the notice asks again. */
+  productEventsNoticeAnswered: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
@@ -464,6 +485,10 @@ const fieldSchemas = {
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
+  councilPanelists: councilPanelistsSchema,
+  councilChair: councilChairSchema,
+  councilLayout: councilLayoutSchema,
+  councilStageDeadline: councilStageDeadlineSchema,
   compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   clickEffect: z.boolean(),
@@ -533,6 +558,8 @@ const fieldSchemas = {
   autoSettleMergedThreads: z.boolean(),
   clearSettledThreadsAfterDays: clearSettledThreadsAfterDaysSchema,
   proactivePanels: z.boolean(),
+  productEventsEnabled: z.boolean(),
+  productEventsNoticeAnswered: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   autoUpdateCheck: z.boolean(),
@@ -581,6 +608,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
+  councilPanelists: [...DEFAULT_COUNCIL_PANELISTS],
+  councilChair: null,
+  councilLayout: DEFAULT_COUNCIL_LAYOUT,
+  councilStageDeadline: COUNCIL_STAGE_DEADLINE.default,
   compactIdleThreads: true,
   reducedMotion: 'system',
   clickEffect: true,
@@ -656,6 +687,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   clearSettledThreadsAfterDays: 30,
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
+  productEventsEnabled: true,
+  productEventsNoticeAnswered: false,
   pullRequestText: true,
   // On by default: when a thread's provider writes nothing, the Git action commits
   // under the stand-in subject "Update project files" rather than waiting.
@@ -766,6 +799,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
     watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
+    // Seat by seat, so one damaged seat costs only that seat.
+    councilPanelists: persisted.councilPanelists === undefined ? [...defaults.councilPanelists] : parseCouncilPanelists(persisted.councilPanelists),
+    councilChair: parseField(persisted, 'councilChair', defaults),
+    councilLayout: parseField(persisted, 'councilLayout', defaults),
+    councilStageDeadline: parseField(persisted, 'councilStageDeadline', defaults),
     compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     clickEffect: parseField(persisted, 'clickEffect', defaults),
@@ -834,6 +872,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     autoSettleMergedThreads: parseField(persisted, 'autoSettleMergedThreads', defaults),
     clearSettledThreadsAfterDays: parseField(persisted, 'clearSettledThreadsAfterDays', defaults),
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
+    productEventsEnabled: parseField(persisted, 'productEventsEnabled', defaults),
+    productEventsNoticeAnswered: parseField(persisted, 'productEventsNoticeAnswered', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),

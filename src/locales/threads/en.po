@@ -2161,6 +2161,20 @@ msgstr "Browsed {host}"
 msgid "Browsing {host}"
 msgstr "Browsing {host}"
 
+#: src/renderer/src/agents/callouts.tsx
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Callouts"
+msgstr "Callouts"
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Callouts and your marks"
+msgstr "Callouts and your marks"
+
+#. {by} is who placed the numbered boxes on a picture: a provider, such as Codex, or Watcher.
+#: src/renderer/src/agents/callouts.tsx
+msgid "Callouts from {by}"
+msgstr "Callouts from {by}"
+
 #. Stops a sign-in that is waiting for the user.
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/DeleteThread.tsx
@@ -3367,6 +3381,13 @@ msgstr "Couldn’t get this text from {host}. Nothing is lost: it is still there
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "Couldn’t get this thinking from {host}. Nothing is lost: it is still there."
 msgstr "Couldn’t get this thinking from {host}. Nothing is lost: it is still there."
+
+#. The Council page: one question put to several models (ADR-0177).
+#. The tag on a prompt a Council of models sent to one of its threads (ADR-0177).
+#: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "Council"
+msgstr "Council"
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Create and checkout a ref before pushing or opening a pull request."
@@ -4823,6 +4844,10 @@ msgstr "Keep local history was off, so it held only what Sotto had kept since it
 msgid "Keep open"
 msgstr "Keep open"
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Keep the callouts in the copy"
+msgstr "Keep the callouts in the copy"
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Keep this branch"
 msgstr "Keep this branch"
@@ -5881,6 +5906,12 @@ msgstr "Open picture"
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture {number} of {count}, from {0}"
 msgstr "Open picture {number} of {count}, from {0}"
+
+#. {number} of {count} pictures in a turn; {title} names the step that made it; then how many callouts the agent placed on it.
+#. placeholder {0}: callouts.length
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Open picture {number} of {count}, from {title}, with {0, plural, one {# callout} other {# callouts}}"
+msgstr "Open picture {number} of {count}, from {title}, with {0, plural, one {# callout} other {# callouts}}"
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Open project"
@@ -7346,6 +7377,10 @@ msgstr "Shell sandbox"
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Shift+Enter for a new line"
 msgstr "Shift+Enter for a new line"
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Show"
+msgstr "Show"
 
 #. Shows the rows of work above the newest ones.
 #: src/renderer/src/agents/ThreadActivity.tsx

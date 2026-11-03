@@ -14,6 +14,7 @@ import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { shownMedia, type ShownMediaStore, type ShownRefusal } from './shownMedia'
+import { placeCallouts, type CalloutRefusal, type CalloutRequest } from './shownCallouts'
 import { SHOWN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -201,7 +202,9 @@ const ACTIVITY_READ_ERROR = 'Thread activity could not be read. Saved activity r
  */
 /** What showing pictures in a thread came to (ADR-0170, request-only): how many were shown, and each file refused with why. */
 export type ShownMediaResult =
-  | { readonly shown: true; readonly count: number; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
+  | { readonly shown: true; readonly count: number; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[]
+    /** The callouts placed on the pictures (ADR-0170, part 6), and each one refused with why. */
+    readonly callouts: number; readonly calloutsRefused: readonly { readonly note: string; readonly reason: CalloutRefusal }[] }
   | { readonly shown: false; readonly reason: 'unknown-thread' }
   | { readonly shown: false; readonly reason: 'nothing-shown'; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
 export type VisualAddition =
@@ -1485,9 +1488,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * Shows the pictures and videos an agent named in its thread (ADR-0170, request-only): each file is kept by handle, and
    * the call becomes a step of its own, titled in the agent's words, placed with the turn under way: after its newest
-   * record, or after the user's newest message. Nothing is shown when no file is a picture or video Sotto shows.
+   * record, or after the user's newest message. Nothing is shown when no file is a picture or video Sotto shows. The
+   * callouts the agent gave go on the pictures they name (ADR-0170, part 6).
    */
-  async showMedia(threadId: string, input: { readonly paths: readonly string[]; readonly title: string }): Promise<ShownMediaResult> {
+  async showMedia(threadId: string, input: { readonly paths: readonly string[]; readonly title: string; readonly callouts?: readonly CalloutRequest[] | undefined }): Promise<ShownMediaResult> {
     const store = this.shownMediaStore
     if (!store || !this.admitsShownMedia(threadId)) return { shown: false, reason: 'unknown-thread' }
     const thread = this.threadById(threadId)!
@@ -1495,6 +1499,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { folder = this.threadFolder(thread) } catch { folder = undefined }
     const found = await shownMedia(folder, input.paths, store)
     if (!found.media.length) return { shown: false, reason: 'nothing-shown', refused: found.refused }
+    // The agent's callouts go on the pictures it named, by the files they were read from (ADR-0170, part 6).
+    const placed = placeCallouts(folder, input.callouts ?? [], found.shown)
     // What the provider said before the call is committed first, so the newest message read below is the turn's own.
     await this.settled(threadId, true)
     const current = this.threadById(threadId)
@@ -1517,11 +1523,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const turnId = inTurn ? last.turnId : userMessageId ?? 'shown'
     const afterMessageId = inTurn ? last.afterMessageId : userMessageId
     const record: AgentActivity = { id: `${SHOWN_STEP_PREFIX}${randomUUID()}`, turnId, ...afterMessageId ? { afterMessageId } : {},
-      sequence: 0, kind: 'tool', status: 'completed', title: input.title, completedAt: new Date().toISOString(), media: found.media }
+      sequence: 0, kind: 'tool', status: 'completed', title: input.title, completedAt: new Date().toISOString(), media: placed.media }
     this.touched(current).activities = immutableActivities(mergeAgentActivities(current.activities, [record]))
     this.dirty = true
     this.publish()
-    return { shown: true, count: found.media.length, refused: found.refused }
+    return { shown: true, count: found.media.length, refused: found.refused, callouts: placed.placed, calloutsRefused: placed.refused }
   }
   /**
    * How a check installs packages first, present only while Work across machines is on (#1312, ADR-0072): main turns it on
@@ -1745,19 +1751,37 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Brings a link a thread has up to date with the state GitHub just gave Sotto through a read of its own, as the branch's
    * Git read or babysitting makes (#1147). Otherwise a link keeps the state it had when the user last opened it, and lists
    * a pull request merged long ago as open. Merged is final, so no read moves a merged link. Callers hold the thread's lane.
+   * The branch's own pull request on the record follows an ending too (#2019): a thread with no link to it holds it there
+   * alone, and with no one looking at the thread no Git read comes to say it merged.
    */
   private followPullRequestState(threadId: string, url: string, state: GitPullRequestLink['state']): boolean {
-    const link = this.threadById(threadId)?.pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(url))
-    if (!link || link.state === state || link.state === 'merged') return false
-    return this.linkPullRequestRecord(threadId, { ...link, state }, link.source) !== null
+    const thread = this.threadById(threadId), key = pullRequestKey(url)
+    let moved = false
+    if (thread && this.branchPullRequestEnds(thread, key, state)) {
+      const worktree = thread.worktree!, git = worktree.git!
+      this.touched(thread).worktree = { ...worktree, git: { ...git, pullRequest: { ...git.pullRequest!, state } } }
+      this.dirty = true
+      this.publishSoon()
+      if (state === 'merged') this.pullRequestMerged(url)
+      moved = true
+    }
+    const link = thread?.pullRequests?.find(item => pullRequestKey(item.url) === key)
+    if (!link || link.state === state || link.state === 'merged') return moved
+    return this.linkPullRequestRecord(threadId, { ...link, state }, link.source) !== null || moved
+  }
+  /** Whether a read saying `state` of the pull request `key` ends the thread's branch's own. Only an ending moves it: an open read leaves it to the Git read. */
+  private branchPullRequestEnds(thread: AgentThread, key: string | null, state: GitPullRequestLink['state']): boolean {
+    const branch = thread.worktree?.git?.pullRequest
+    return state !== 'open' && branch !== null && branch !== undefined && branch.state !== state && branch.state !== 'merged' && pullRequestKey(branch.url) === key
   }
   /** A pull request read Sotto made outside a thread's own Pull request surface, such as babysitting's (#1147). */
   notePullRequestState(read: PullRequestObservation): void {
     if (read.availability !== 'available' || read.state === undefined || this.stopping) return
     const key = pullRequestKey(read.url), state = read.state
+    if (state !== 'open') this.gitStatus?.notePullRequestEnded?.(read.url, state)
     for (const thread of this.state.snapshot.threads) {
       const link = thread.pullRequests?.find(item => pullRequestKey(item.url) === key)
-      if (!link || link.state === state || link.state === 'merged') continue
+      if ((!link || link.state === state || link.state === 'merged') && !this.branchPullRequestEnds(thread, key, state)) continue
       void this.onLane(thread.id, async () => { if (this.followPullRequestState(thread.id, read.url, state)) await this.saveLinks() }).catch(() => undefined)
     }
   }
@@ -2588,6 +2612,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // A store that refuses them leaves the record to mark its own.
       if (ids?.length) this.post({ kind: 'wake-ups', threadId: thread.id, messageIds: ids, asks: this.wakeUpAskRecords.get(thread.id), hidden: this.hiddenWakeUpRecords.get(thread.id) ?? [] })
     }
+  }
+  /**
+   * A message Sotto sends a thread that is not the user's, such as a Council's prompt (ADR-0177), recorded as Sotto's
+   * before the provider hears it, the way a wake-up is: every client shows it as Sotto's from its first echo, after a
+   * restart and after its history is read again, never as the user's.
+   */
+  async recordSottoMessage(threadId: string, messageId: string): Promise<void> {
+    await this.initialize()
+    await this.recordWakeUp(threadId, messageId)
+    this.publish()
   }
   /**
    * Records a wake-up's message ID on its thread's record, and in the thread store, before the provider hears the
@@ -3946,6 +3980,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (accepted.get(identity.threadId)?.delete(identity.messageId)) result.push({ threadId: identity.threadId, messageId: identity.messageId })
     }
     return result
+  }
+  /**
+   * One thread's whole record of its work, its tool calls among it, whatever the thread holds now: what the Council names
+   * of the origin thread's tool calls (ADR-0177). Read without holding the records; empty for a hidden thread.
+   */
+  threadActivities(threadId: string): readonly AgentActivity[] {
+    if (!this.threadVisible(threadId)) return []
+    if (this.storeUnavailable) return this.threadById(threadId)?.activities ?? []
+    try { return this.threadStore.readActivities(threadId, { keep: false }) } catch { return this.threadById(threadId)?.activities ?? [] }
   }
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {

@@ -714,6 +714,11 @@ export class WatcherService implements WatcherControlHooks {
      */
     settleWithoutAsking?: () => boolean
     settledLookAfterMs?: number
+    /**
+     * Asks GitHub about one pull request by its URL, once per settle_thread that a pull request Sotto's records hold open
+     * would refuse (#2019). Absent where GitHub is not asked, and then those records alone hold the settle. It rejects when it cannot ask.
+     */
+    pullRequestState?: (url: string) => Promise<{ readonly state: 'open' | 'closed' | 'merged'; readonly headRefOid: string | null }>
     /** Restart stopped threads retired babysitting (ADR-0144): a babysat pull request no longer holds a settle. Read once at start. */
     babysittingRetired?: boolean
     /** Compact Watcher at (`watcherCompactAtTokens`), read at every look; absent, Watcher compacts at 400K (#1189). */
@@ -1187,14 +1192,59 @@ export class WatcherService implements WatcherControlHooks {
       refuse('BACKGROUND_WORK_RUNNING', `This thread still has background work: ${counted}. Stop it explicitly before settling.`)
     }
     // The threads it delegated to settle with it (ADR-0081), so their work holds it too.
-    const threads = this.owningSnapshot(thread.hostId ?? this.hostId())?.threads ?? []
-    const delegated = threads.some(item => item.delegatedBy) ? delegatedThreadsBelow(threads, thread.id).flatMap(id => threads.find(item => item.id === id) ?? []) : []
+    const delegated = this.settlesWith(thread)
     if (delegated.some(below => isThreadTurnRunning(below) || below.requests.length > 0 || watcherBackgroundWorkCount(below) > 0))
       refuse('BACKGROUND_WORK_RUNNING', 'A thread this one delegated to is still working or waits on the user. Wait for it before settling.')
     // An open pull request Sotto knows of, its own or a delegated thread's, holds the settle (October 29, 2026). Sotto
     // knows only the linked ones, the branch's and the babysat ones, so Watcher still looks for others the thread opened.
-    const open = [thread, ...delegated].flatMap(item => this.openPullRequests(item))[0]
+    // A record may be out of date, so GitHub was asked before this check (`askBeforeSettle`, #2019), and what it said ended holds nothing.
+    const held = this.settleOpenPullRequests(thread, delegated).filter(url => !this.settleReadEnded(url))
+    const open = held.find(url => this.settleReads.get(pullRequestKey(url) ?? url) !== 'unread')
     if (open) refuse('THREAD_BUSY', `This thread has an open pull request, ${open}. Wait for it to merge or close before settling. Nothing was settled.`)
+    if (held[0]) refuse('THREAD_BUSY', `Sotto could not read this thread’s pull request from GitHub, ${held[0]}, and last saw it open. Nothing was settled. Try again in a minute.`, true)
+  }
+  /** The threads a thread delegated to, which settle with it (ADR-0081). */
+  private settlesWith(thread: AgentThread): AgentThread[] {
+    const threads = this.owningSnapshot(thread.hostId ?? this.hostId())?.threads ?? []
+    return threads.some(item => item.delegatedBy) ? delegatedThreadsBelow(threads, thread.id).flatMap(id => threads.find(item => item.id === id) ?? []) : []
+  }
+  /** The open pull requests Sotto's records hold for a settle: the thread's own, and the threads' that settle with it. */
+  private settleOpenPullRequests(thread: AgentThread, delegated: readonly AgentThread[]): string[] {
+    return [thread, ...delegated].flatMap(item => this.openPullRequests(item))
+  }
+  private settleReadEnded(url: string): boolean {
+    const read = this.settleReads.get(pullRequestKey(url) ?? url)
+    return read === 'merged' || read === 'closed'
+  }
+  /**
+   * What GitHub said when a settle last asked about a pull request Sotto's records hold open, by its key (#2019): it merged
+   * or closed, or it could not be read. Open is no entry. Kept for the check as the settle goes as well as the one it is
+   * admitted by, and for a thread on a paired host, whose records this computer cannot move. In memory only. Merged is final;
+   * the rest stand only until the next settle asks again.
+   */
+  private readonly settleReads = new Map<string, 'merged' | 'closed' | 'unread'>()
+  /**
+   * Asks GitHub once about each pull request that would hold this settle, before the settle is checked (#2019). Sotto's
+   * records hear of a merge only from a read that happens to be made, and nothing reads a thread nobody has open and
+   * Watcher does not watch. So it asks here, only when a record would refuse, and never on an update. An ended answer goes
+   * where any read's does: to Watcher's evidence, since the moved record leaves Watcher's own reads, and to this computer's records.
+   */
+  private async askBeforeSettle(target: WatcherThreadTarget): Promise<void> {
+    const ask = this.options.pullRequestState
+    const thread = ask && this.owningThread(target.hostId, target.threadId)
+    if (!thread) return
+    const urls = new Map(this.settleOpenPullRequests(thread, this.settlesWith(thread)).map(url => [pullRequestKey(url) ?? url, url]))
+    await Promise.all([...urls].map(async ([prKey, url]) => {
+      if (this.settleReads.get(prKey) === 'merged') return
+      try {
+        const read = await ask(url)
+        if (read.state === 'open') { this.settleReads.delete(prKey); return }
+        this.settleReads.set(prKey, read.state)
+        const observation: PullRequestObservation = { url, head: read.headRefOid, state: read.state, availability: 'available', observedAt: now() }
+        this.pullRequestObserved(observation)
+        this.options.host.notePullRequestState(observation)
+      } catch { this.settleReads.set(prKey, 'unread') }
+    }))
   }
   /**
    * The open pull requests Sotto knows a thread has: the ones linked to it, its branch's, and while babysitting runs, the
@@ -4027,6 +4077,8 @@ export class WatcherService implements WatcherControlHooks {
     }
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string): Promise<unknown> {
+    // Outside the transaction, so a slow answer from GitHub holds up no other Watcher call.
+    if (name === 'settle_thread') await this.askBeforeSettle((input as WatcherToolInput<'settle_thread'>).target)
     const admitted = await this.transaction(async () => {
       // Prompts counted below include a turn's archived operations, which the archive's index names once it is read (#1759).
       await this.options.control.archivedWatcherWork()?.ready()

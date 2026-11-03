@@ -39,6 +39,8 @@ import { THREAD_MOVE_ANSWER, THREAD_MOVE_PREPARE, THREAD_MOVE_START, THREAD_MOVE
   threadMovePrepareRequestSchema, threadMovePrepareSchema, threadMovesViewSchema, threadMoveStartRequestSchema, threadMoveStartSchema,
   type ThreadMovesBridge } from '../shared/threadMoves'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
+import { COUNCIL_CHANGED, COUNCIL_COMMAND, COUNCIL_ESTIMATE, COUNCIL_READ, COUNCIL_RENDERER_ARGUMENT, councilChangedSchema, councilCommandResultSchema, councilCommandSchema, councilEstimateRequestSchema,
+  councilEstimateSchema, councilViewsSchema, type CouncilBridge } from '../shared/council'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
   mainCheckoutStateSchema, type MainCheckoutBridge } from '../shared/mainCheckout'
 import { GLASS_WINDOW_CHANGED, GLASS_WINDOW_SET, glassWindowRequestSchema, glassWindowResultSchema, parseGlassWindowArguments, type GlassWindowBridge, type GlassWindowState } from '../shared/glassWindow'
@@ -148,6 +150,7 @@ import {
   updateStatusSchema,
   widgetSnapshotSchema,
   widgetVisibilitySchema,
+  LIVING_OWL_RENDERER_ARGUMENT,
   type SottoBridge,
   type SottoWidgetBridge,
   type WidgetDragPayload,
@@ -417,6 +420,8 @@ export function createSottoBridge(
   mainCheckoutEnabled = false,
   /** The see-through window as main made it (ADR-0150): only while the `glass-theme` Owl feature is on. */
   glassWindow: GlassWindowState | null = null,
+  /** The Council (ADR-0177): only while the `council` Owl feature is on and this computer runs threads. */
+  councilEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -546,6 +551,13 @@ export function createSottoBridge(
       watcherFirst: modelId => invokeParsed(renderer, NEXT_PROMPT_WATCHER_FIRST, watcherFirstAnswerSchema, watcherFirstModelSchema.parse(modelId)),
       // Nothing waits on a cancel; a lost one leaves the side request to its own timeout.
       cancelWatcherFirst: () => { void renderer.invoke(NEXT_PROMPT_WATCHER_FIRST_CANCEL).catch(() => undefined) },
+    }) } : {}),
+    // The Council (ADR-0177): only while the Owl list turns it on, so stable's window has no such bridge.
+    ...(councilEnabled ? { council: Object.freeze<CouncilBridge>({
+      read: () => invokeParsed(renderer, COUNCIL_READ, councilViewsSchema),
+      estimate: request => invokeParsed(renderer, COUNCIL_ESTIMATE, councilEstimateSchema, councilEstimateRequestSchema.parse(request)),
+      command: command => invokeParsed(renderer, COUNCIL_COMMAND, councilCommandResultSchema, councilCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, COUNCIL_CHANGED, councilChangedSchema, listener),
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
@@ -723,6 +735,8 @@ export function createSottoWidgetBridge(
   platform: SottoPlatform,
   /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
+  /** The living owl (ADR-0178): only while its Owl feature is on. */
+  livingOwl = false,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
@@ -739,6 +753,7 @@ export function createSottoWidgetBridge(
   return Object.freeze({
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
+    ...(livingOwl ? { livingOwl: true as const } : {}),
 
     onWidgetState,
     onWidgetVisibilityChange,
@@ -804,13 +819,13 @@ export function exposeRendererBridge(
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
-      parseGlassWindowArguments(arguments_)))
+      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {
     context.exposeInMainWorld(
       'sottoWidget',
-      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_)),
+      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(LIVING_OWL_RENDERER_ARGUMENT)),
     )
     return true
   }

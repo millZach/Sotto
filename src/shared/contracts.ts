@@ -26,6 +26,7 @@ const widgetMetadataSchema = {
   reducedMotion: z.enum(['system', 'on']),
   shortcut: z.string().min(1).max(128),
   cancellable: z.boolean(),
+  escapeClaimed: z.literal(true).optional(),
 } as const
 
 export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUnion('status', [
@@ -408,6 +409,8 @@ export interface SottoBridge {
   readonly threadMoves?: import('./threadMoves').ThreadMovesBridge
   /** Next prompts after a finished turn (ADR-0132), present only while the `next-prompt` Owl feature is on and this computer runs threads. */
   readonly nextPrompt?: import('./nextPrompt').NextPromptBridge
+  /** The Council (ADR-0177), present only while the `council` Owl feature is on and this computer runs threads. */
+  readonly council?: import('./council').CouncilBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
   /** Signing Cursor in and out on this computer (ADR-0128), present only while Cursor's Owl feature is on. */
@@ -543,11 +546,16 @@ export interface SottoBridge {
   quitApp(): Promise<void>
 }
 
+/** Main passes this to the widget's renderer while the `living-widget-owl` Owl feature is on (ADR-0178). */
+export const LIVING_OWL_RENDERER_ARGUMENT = '--sotto-living-owl'
+
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
   readonly platform: SottoPlatform
   /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */
   readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge
+  /** The living owl (ADR-0178), present only while its Owl feature is on. */
+  readonly livingOwl?: true
 
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
   onWidgetVisibilityChange(listener: (visibility: WidgetVisibilityPayload) => void): Unsubscribe

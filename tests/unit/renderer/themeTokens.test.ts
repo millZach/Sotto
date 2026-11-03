@@ -351,6 +351,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/components/listeningBars.css',
       'src/renderer/src/features/dictate/dictate.css',
       'src/renderer/src/features/usage/usage.css',
+    'src/renderer/src/features/council/council.css',
       'src/renderer/src/features/performance/mainActivity.css',
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',

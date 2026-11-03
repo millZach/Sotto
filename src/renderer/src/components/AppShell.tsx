@@ -188,7 +188,7 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
   if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
-  if (navigation === 'home' || navigation === 'usage' || navigation === 'help') return 'sidebar'
+  if (navigation === 'home' || navigation === 'usage' || navigation === 'council' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
 
