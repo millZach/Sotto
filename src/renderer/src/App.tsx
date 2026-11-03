@@ -483,7 +483,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         view = usageEnabled ? <UsageView /> : threadWorkspace
         break
       case 'council':
-        view = councilEnabled ? <CouncilView /> : threadWorkspace
+        view = councilEnabled ? <CouncilView updateControl={updateControl} /> : threadWorkspace
         break
       case 'settings':
         view = <SettingsView

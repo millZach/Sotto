@@ -189,14 +189,14 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
 }
 
 /**
- * Which layout a page takes. Threads, Watcher's room and Settings own the window, their left column wearing the
+ * Which layout a page takes. Threads, Watcher's room, the Council and Settings own the window, their left column wearing the
  * sidebar's frame; Dictate, Usage and Help stand beside the Threads sidebar itself; the strip and footer remain
  * for the Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates
  * included; Watcher's room is the Threads page while its gate is off.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
-  if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
-  if (navigation === 'home' || navigation === 'usage' || navigation === 'council' || navigation === 'help') return 'sidebar'
+  if (threadsPage || navigation === 'settings' || navigation === 'watcher' || navigation === 'council') return 'page'
+  if (navigation === 'home' || navigation === 'usage' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
 

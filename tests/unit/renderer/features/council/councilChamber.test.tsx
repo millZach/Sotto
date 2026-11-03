@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, render, renderHook, screen, within } from '@testing-library/react'
+import { act, cleanup, render, renderHook, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
@@ -297,21 +297,11 @@ describe('the chamber’s figures', () => {
   })
 })
 
-describe('the Council page’s Layout menu', () => {
-  it('names the layout, changes the setting, and closes on Escape with focus back on its button', async () => {
-    const user = userEvent.setup()
-    const { updateSettings } = provide()
+describe('the Council page’s header', () => {
+  it('names the page by its mark and offers no Layout menu', () => {
+    provide()
     render(<CouncilView bridge={undefined} />)
-    const button = screen.getByRole('button', { name: 'Layout: Long table' })
-    await user.click(button)
-    const menu = screen.getByRole('listbox', { name: 'Layout' })
-    expect(within(menu).getAllByRole('option').map(option => option.textContent)).toEqual(['Long table', 'Half circle', 'Round table'])
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('listbox')).toBeNull()
-    expect(button).toHaveFocus()
-    await user.click(button)
-    await user.click(screen.getByRole('option', { name: 'Round table' }))
-    expect(updateSettings).toHaveBeenCalledWith({ councilLayout: 'round-table' })
-    expect(button).toHaveFocus()
+    expect(screen.getByRole('heading', { level: 1, name: 'Council' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Layout/ })).toBeNull()
   })
 })

@@ -2458,11 +2458,6 @@ msgstr ""
 msgid "Grok subscription"
 msgstr ""
 
-#. A Council chamber layout: tiered seats round an altar, the chair at the back.
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Half circle"
-msgstr ""
-
 #. The tag on a message that carries a handover
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Handover"
@@ -2959,11 +2954,6 @@ msgstr ""
 msgid "Launch when your Mac starts"
 msgstr ""
 
-#. The Council chamber's layout menu
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Layout"
-msgstr ""
-
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Leave my keys alone"
 msgstr ""
@@ -3040,11 +3030,6 @@ msgstr ""
 
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Loading your threads"
-msgstr ""
-
-#. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Long table"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
@@ -4810,11 +4795,6 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Room left on each subscription"
-msgstr ""
-
-#. A Council chamber layout: seen from a little above, the chair at the far side.
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Round table"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx

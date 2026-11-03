@@ -1,9 +1,13 @@
 /* The Council (ADR-0177): the chamber (decision 6), and beside or under it the Ask form and each Council's record as
    quiet text on a card, the deliberation's accessible form. Every colour is a theme role, and sizes and corners are
    steps of the scale. */
-.council-view { display: flex; flex: 1; flex-direction: column; width: 100%; min-width: 0; min-height: 0; container: council-room / inline-size; }
-.council-head { display: flex; flex: none; align-items: center; gap: 12px; min-height: 40px; padding: 4px 24px 8px 32px; }
-.council-head h1 { flex: 1; min-width: 0; margin: 0; color: var(--tt-text); font-size: var(--tt-type-title); font-weight: 500; }
+/* The page owns the window as Watcher's room does: its header is the Council's mark and the way off the page (Watcher's
+   own row, watcher.css), past the traffic lights on macOS and clear of the window controls on Windows. */
+.council-view { position: relative; display: flex; flex: 1; flex-direction: column; width: 100%; min-width: 0; min-height: 0; container: council-room / inline-size; }
+.council-head { gap: 6px; }
+.council-view--mac .council-head { padding-left: var(--mac-lights-room); }
+.app-shell[data-platform='win32'] .council-head { padding-right: calc(116px + var(--main-freeze-room, 0px)); }
+.council-head__mark { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin: 0 6px 0 0; color: var(--tt-text); }
 /* The long table sits over the record, as wide as the room; the half circle and the round table beside it, until the
    room is too narrow for both, as at the 820 by 560 minimum. */
 .council-body { display: grid; flex: 1; grid-template-rows: minmax(200px, 54%) minmax(0, 1fr); min-height: 0; }

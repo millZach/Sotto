@@ -17,5 +17,6 @@ describe('Usage navigation', () => {
   it('uses the existing sidebar beside Usage and the Threads page when its feature is hidden', () => {
     expect(layoutFor('usage', false)).toBe('sidebar')
     expect(layoutFor('usage', true)).toBe('page')
+    expect(layoutFor('council', false)).toBe('page')
   })
 })

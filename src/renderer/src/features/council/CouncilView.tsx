@@ -2,14 +2,16 @@ import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'reac
 import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentModel, type AgentThread } from '../../../../shared/agents'
 import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, DEFAULT_COUNCIL_LAYOUT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
-  type CouncilLayout, type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
+  type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { isThreadClosed } from '../../../../shared/threadActivity'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ModelPicker } from '../../agents/ModelPicker'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
 import { useOptionalApp } from '../../state/AppContext'
-import { ChoiceMenu } from '../usage/UsageMenu'
+import { Landmark } from 'lucide-react'
+import { WayOffThePage } from '../../agents/SidebarFrame'
+import { PageWindowControls } from '../../components/WindowControls'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
@@ -33,10 +35,15 @@ export function chamberCouncil(councils: readonly CouncilRecord[] | null, drafti
 /**
  * The Council page (ADR-0177): the chamber (`CouncilChamber`, decision 6), then beside or under it the Ask form and each
  * Council as a text record of its stages, its threads' states and the actions their rows offer, the verdict with
- * Sotto's counts, and Send to the thread. The record is the accessible form of the deliberation. The header's Layout
- * menu changes the same setting as Settings → Council.
+ * Sotto's counts, and Send to the thread. The record is the accessible form of the deliberation. The page owns the window
+ * as Watcher's room does: no sidebar, and a header of the Council's mark and the way off the page. The layout is chosen
+ * in Settings → Council alone.
  */
-export function CouncilView({ bridge = window.sotto?.council }: { readonly bridge?: CouncilBridge | undefined }): ReactNode {
+export function CouncilView({ bridge = window.sotto?.council, updateControl = null }: {
+  readonly bridge?: CouncilBridge | undefined
+  /** The update control for the way off the page; none where the app does not update itself. */
+  readonly updateControl?: ReactNode
+}): ReactNode {
   const { t } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
@@ -50,17 +57,14 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
-  const layouts: { value: CouncilLayout; label: string }[] = [
-    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
-    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
-    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
-  ]
-  return <div className="council-view" data-layout={layout}>
-    <header className="council-head">
-      <h1>{t({ message: 'Council', comment: 'The Council page: one question put to several models, which answer, review each other and get a verdict.' })}</h1>
-      {app ? <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={layout} options={layouts}
-        onChoose={value => void app.actions.updateSettings({ councilLayout: value })} /> : null}
+  const mac = app?.platform === 'darwin'
+  return <div className={`management-view council-view${mac ? ' council-view--mac' : ''}`} data-layout={layout}>
+    <header className="thread-workspace__head watcher-head council-head">
+      <h1 className="council-head__mark"><Landmark size={18} aria-hidden="true" />
+        <span className="tt-visually-hidden">{t({ message: 'Council', comment: 'The Council page: one question put to several models, which answer, review each other and get a verdict.' })}</span></h1>
+      <WayOffThePage className="watcher-head__way" roomsClassName="thread-nav__seg watcher-head__rooms" pagesClassName="thread-nav__pages watcher-head__pages" updateControl={updateControl} />
     </header>
+    <PageWindowControls />
     <div className="council-body">
       <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
       <div className="council-scroll"><div className="council-page">
