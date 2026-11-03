@@ -20,7 +20,7 @@ Gates (Windows) runs for every push to `main` and every pull request. Main's rul
 
 **Linux result** always runs after Changed areas and the Linux shards. It fails unless Changed areas succeeded and all Linux shards passed, including the typecheck, or Changed areas chose documents only and the shards were skipped, or the run is a pull request's and the shards were skipped. A failed, cancelled or unexpectedly skipped matrix fails the summary. This check is informational, not required: on October 28, 2026 Drake chose not to require it, because Linux shards flaked often (`coordinatorThreadChanges` failed 22 times in two days before its fix, and a `workspaceThreadChanges` 15 s timeout is still open) and requiring it would put every Linux flake in every merge's path. Since November 1, 2026 a pull request's Linux result passes with the shards skipped, so read Linux result on the run on `main` after a merge.
 
-Gates (Windows) fails unless Changed areas finished, the checks passed and every shard passed, or the shards were skipped for a documents-only change. The ruleset requires this job by name; a skipped job would count as passing, which is why it always runs. A shard cancelled at its limit is rerun, never bypassed. A newer push to a pull request cancels its earlier run; a push to `main` does not, so each run on `main` finishes, one at a time, and GitHub keeps only the newest waiting run, which covers the merges before it. A push to `main` also runs the other slower jobs every time, except Native iOS client (macOS), which runs only when the push changed what it reads (below). On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether those jobs are needed:
+Gates (Windows) fails unless Changed areas finished, the checks passed and every shard passed, or the shards were skipped for a documents-only change. The ruleset requires this job by name; a skipped job would count as passing, which is why it always runs. A shard cancelled at its limit needs a completed result under [Reading a failure](#reading-a-failure), never a bypass. A newer push to a pull request cancels its earlier run; a push to `main` does not, so each run on `main` finishes, one at a time, and GitHub keeps only the newest waiting run, which covers the merges before it. A push to `main` also runs the other slower jobs every time, except Native iOS client (macOS), which runs only when the push changed what it reads (below). On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether those jobs are needed:
 
 - **Host archive and socket contract (Linux)** runs unless every changed file is in the renderer (`src/renderer/`, `src/preload/`), the iOS client, `docs/`, `artifacts/`, `design/`, `handoff/`, the e2e, renderer-unit or perf tests, or a Markdown file at the root other than `THIRD_PARTY_NOTICES.md`. A path that list does not name runs the job, so a new area is covered until someone decides otherwise.
 - **Package (Windows)** runs unless every changed file is a document (`docs/`, `artifacts/`, `design/`, `handoff/`, a Markdown file at the root), a test under `tests/`, or the native iPhone or Android client. It runs `npm ci`, `npm run assets:verify` and `npm run package:dir`: the build, the build provenance, `electron-builder --dir --win --x64` and `scripts/verify-packaged-resources.mjs` on `release/win-unpacked`. That is the release's packaging step without the installer. It exists so a change to `electron-builder.yml`, the packaging scripts, the packaged resources or anything the build bundles fails on the pull request rather than on the Windows PC at release time. Linux work on the desktop app (#833) made it necessary (#844).
@@ -456,14 +456,80 @@ a full drive, point TEMP and TMP at a folder outside every checkout, such as `D:
 
 ## Reading a failure
 
-1. Open the pull request, find the failed **Gates (Windows)** check, and click **Details**.
-2. The failed step is the collapsed red one. Expand it; the command's own output is the whole story:
-   - *Typecheck* — `tsc` prints `file(line,col): error TS….` To run one project by hand, use `node node_modules/@typescript/native/bin/tsc --noEmit -p tsconfig.<project>.json`; `npx tsc` may run either version.
-   - *Lint* — eslint prints file, line and rule name.
-   - *Unit and integration tests* — vitest prints the failing test file and name, then the diff. The summary line at the end counts passed/failed/skipped; skipped perf and live tests are expected.
-   - *Third-party notices* — the verifier names the component that drifted; regenerate or update `THIRD_PARTY_NOTICES.md` to match the lockfile.
-3. Reproduce locally with the exact command from the table. The gates are the same ones in the guide's test matrix (`docs/guide.md`, under Development), so a clean local run means a clean CI run, with one common difference worth checking first when CI fails and your machine passes: stale `node_modules` (run `npm ci`, not `npm install`).
-4. Push a fix to the same branch. The previous run is cancelled automatically and a new one starts.
+Classify **each failing assertion**, not the job or the pull request. One shard can contain an own-diff failure and an unrelated intermittent failure. Never call a failure a flake without a same-head rerun pass or a pass of that exact test in a later completed run with its relevant inputs unchanged. A pass after a corrective change means **fixed**, not flake evidence.
+
+### Collect the evidence
+
+Read the failed job's log, not just Gates (Windows), Linux result or another summary. From this checkout, these commands read GitHub without running the app or the gates locally (replace the capitalized placeholders):
+
+```sh
+gh pr checks PR_NUMBER
+gh pr view PR_NUMBER --json headRefOid,baseRefOid,url
+gh run view RUN_ID --attempt ATTEMPT --json headSha,status,conclusion,jobs,url
+gh api repos/millZach/Sotto/actions/jobs/JOB_ID/logs
+```
+
+Record the PR head and the commit actually checked out. Pull request CI normally tests `refs/pull/PR_NUMBER/merge`, not the head alone; the checkout step's `git log -1 --format=%H` gives that tested merge. The PR's current base or merge ref may have moved since the failed attempt. For a push to `main`, the tested commit is the main head. Keep the run, attempt and job IDs together: the newest attempt can hide the original failure.
+
+For a test failure, retain the file, full test name, assertion and expected/received values or timeout. For typecheck or lint, retain the file, line and diagnostic; for notices, retain the component that drifted. An unchanged test file or a familiar timeout is a lead, not a classification. Trace the failing path through the diff, its imports, fixtures and configuration. Compare the same failure on `main` when checking whether it predates the PR.
+
+For pass evidence, verify the log says the **exact test executed and passed on the same platform**. A skipped file, an unfinished or cancelled comparison run, a green summary, or a pass in another shard without the test's name is insufficient. `tests/shardSequencer.ts` assigns files by recorded duration in `tests/fixtures/testDurations.json`, with a per-file overhead and a typical duration for unlisted files. Changes to those times or the collected files can move a test between shards. Find its name in the comparison run's logs rather than assuming that, for example, shard 5 still contains it. A completed run may be red elsewhere while the shard and test you need passed.
+
+Across different heads, inspect the intervening diff for changes to the assertion, code it exercises, fixtures, dependencies, deadlines, workflow and environment. Check the logs' OS, runner image, Node version and command too. Explain why any changed input is unrelated; if that is unresolved, the classification stays unknown. A local pass can help diagnosis but does not replace the GitHub pass evidence above.
+
+### Classify and act
+
+| Classification | Proof needed | Action |
+| --- | --- | --- |
+| **Own-diff** | A causal link from this PR's change to the failing assertion. | Fix the cause on this branch and keep the assertions. Do not weaken a guard or refresh an allowance merely to turn it green. A pass after the repair is fixed. |
+| **Pre-existing on main** | The same assertion and failure reproduced in a run on `main`, with the relevant path compared to this PR. | If the base branch already contains the fix, merge it in. Otherwise name one repair owner and link its issue or PR; other workers share that repair rather than opening competing fixes. Pre-existing does not mean flake and does not waive a required check. |
+| **Confirmed flake** | The exact test passes on a rerun at the same head and tested merge, or in a later completed run with relevant inputs unchanged, as checked above. | Rerun failed jobs only. Keep the failure and pass links; change no source or assertion merely to clear this occurrence. |
+| **Unknown** | Evidence does not yet establish any of the above. | Diagnose. At most one diagnostic rerun; it stays unknown unless a qualifying pass establishes intermittency or diagnosis proves another classification. A repeated failure is not a reason to keep rerunning. |
+
+When a rerun is justified, use:
+
+```sh
+gh run rerun RUN_ID --failed
+```
+
+This reruns failed jobs and their dependencies; do not rerun the whole workflow, push an empty commit or push the same tree again to clear a red check. If a failed job mixes classifications, resolve its own-diff failures and coordinate any main repair before treating the job as a rerun candidate. Never bypass a required check. Batch corrective changes into one push; that new run proves the repair, not a flake. A cancelled job at its limit still needs a completed result and follows the diagnostic rerun limit while its cause is unknown.
+
+In a watched thread with Restart stopped threads on, return the receipt and end the turn after pushing or requesting the rerun. Watcher's pull request news brings the thread back; do not hold a shell watch open. Without that news, keep any watch short and state what remains. The merge rules in `AGENTS.md` still apply.
+
+### Worker evidence receipt
+
+Return this for every failing assertion; shared run metadata can be written once. Link the failure and the proof, not just the PR's current check summary.
+
+```text
+Head: PR head SHA (or main head)
+Tested merge: checkout SHA and base, when known (main push: same as head)
+Run / attempt / job: IDs, platform, conclusion
+Failure: file, full test name, assertion or diagnostic
+Classification: own-diff / pre-existing on main / confirmed flake / unknown; why
+Proof links: failed job; main failure, passing job or corrective diff; input comparison
+Action / result: fix, merge base, repair owner or failed-jobs rerun; outcome or pending
+Remaining blocker: exact unresolved check, evidence or repair; otherwise none
+```
+
+### Worked examples (verified November 3, 2026)
+
+**PR #2079: Grok, same-head rerun.** Head `8763b87d1f79`, tested merge `b8452f120865`. In run `41563343835`, attempt 1's [Windows 4/6 job](https://github.com/millZach/Sotto/actions/runs/41563343835/job/125679024117) failed `tests/integration/nativeProviderActivity.test.ts` / “Grok restores tool snapshots, failures and exact output once across replay/reconnect” on a deep-equality assertion. Attempt 2's [Windows 4/6 job](https://github.com/millZach/Sotto/actions/runs/41563343835/job/125726358509) executed that same test and passed at the same checkout SHA, runner image and command. Classification: **confirmed flake** for this assertion. Action: the failed-jobs rerun cleared it, with no corrective commit between attempts. That says nothing about other failures in the run.
+
+**PR #1962: copySites, own-diff.** Head `b834cd84b480`, tested merge `728c43e3da3a`. Run `41252300528`, attempt 1's [Linux 5/6 job](https://github.com/millZach/Sotto/actions/runs/41252300528/job/124688677887) failed `tests/unit/main/copySites.test.ts` / “copies state only where the committed list says it does”: `openNotificationThread.ts` had one `shell()` call where the list allowed zero. The PR introduced that call. Classification: **own-diff**, even though the run was later cancelled. Action: [commit `1ded1c3b995c`](https://github.com/millZach/Sotto/commit/1ded1c3b995cd2d1f6f7a05aea9fcd47f5a5d1ab) read the router's live state instead, keeping the copy-site assertion and allowance unchanged. The later [Linux 5/6 job](https://github.com/millZach/Sotto/actions/runs/41253844886/job/124699415762) passed the file's sole test; [the PR's repair receipt](https://github.com/millZach/Sotto/pull/1962) records the reproduction. Result: **fixed**, not flake evidence. A different Grok assertion in a subsequent job needed its own classification.
+
+**Main `41524081805` → `41549893982`: git timeouts, completed-run shard pass.** At `e52948e84af0`, attempt 1's [Windows 5/6 job](https://github.com/millZach/Sotto/actions/runs/41524081805/job/125548615201) failed two tests: `threadWorktreeSubmodules.test.ts` / “requires acknowledgement of retained submodule history (deinitialized-tag)” with a Git checkout/stop timeout, and `gitRepository.test.ts` / “copies valid independent baselines without leaving automatic maintenance behind” at 15 s. At `6a4648d5548e`, attempt 1's [Windows 5/6 job](https://github.com/millZach/Sotto/actions/runs/41549893982/job/125673123458) passed those exact tests in 4,870 ms and 2,998 ms. The comparison run completed but remained red for other tests; that does not erase these passes. The tests, Git fixtures, worktree implementation, lockfile, test configuration and shard durations were unchanged. The `gitStatus.ts` changes concerned pull request state, not the imported `QUIET_GIT_ENV`; Windows runner image `20261030.294.1`, Node 24.22.1 and the shard command matched. Classification: **confirmed flake** for each timeout. Action, if clearing the older run is still needed: rerun its failed jobs only, without a timeout patch.
+
+**keyListenerWin32 → PR #2079: pre-existing on main, then fixed.** At `6a4648d5548e`, run `41549893982`, attempt 1's [Windows 1/6 job](https://github.com/millZach/Sotto/actions/runs/41549893982/job/125673123591) failed `tests/integration/keyListenerWin32.test.ts` / “compiles, installs the hook, prints only protocol lines and exits when stdin closes”: no `permission granted` within 10,000 ms, with empty stdout/stderr. For an unrelated PR with the same unchanged helper and test path, that main failure proves **pre-existing on main**. [PR #2079](https://github.com/millZach/Sotto/pull/2079) was the repair owner: it raised the helper-start allowance to 60 s and kept the protocol and exit assertions. Once its merge `9612b0b93ee8` is in the base, merge that fix instead of duplicating it. A pass after that deadline change is **fixed**; it is not the same-head Grok flake evidence above.
+
+**Main `41576765981` → `41579537326`: three separate later-run passes.** The failed run at `a0df5f23c6d3` and the successful completed run at `9612b0b93ee8` are both attempt 1. Classify their assertions separately:
+
+| Exact failing test | Failure in `41576765981` | Pass in completed run `41579537326` |
+| --- | --- | --- |
+| `sshLauncher.test.ts` / “asks for a password once per connect although three ssh processes sign in, and never records it” | [Windows 6/6](https://github.com/millZach/Sotto/actions/runs/41576765981/job/125725953885): SSH sign-in refused | [Windows 6/6](https://github.com/millZach/Sotto/actions/runs/41579537326/job/125730997167): passed in 1,809 ms |
+| `council.test.ts` / “sends a conversation too long for one prompt whole, in parts and in order, writing none of it to disk” | [Windows 1/6](https://github.com/millZach/Sotto/actions/runs/41576765981/job/125725953906): 15 s timeout | [Windows 1/6](https://github.com/millZach/Sotto/actions/runs/41579537326/job/125730997231): passed in 2,893 ms |
+| `devinAdapter.test.ts` / Devin ACP contract / “keeps ordinary permissions when main supplies no Watcher profile” | [Linux 5/6](https://github.com/millZach/Sotto/actions/runs/41576765981/job/125725954020): expected `{ accepted: true }`, received `{ accepted: false, uncertain: true }` | [Linux 5/6](https://github.com/millZach/Sotto/actions/runs/41579537326/job/125730997214): passed in 685 ms |
+
+The [entire intervening diff](https://github.com/millZach/Sotto/compare/a0df5f23c6d3b3815fe26adeda7c380754a47a19...9612b0b93ee83a743421a2e7f21c741635c157d4) changes only `keyListenerWin32.test.ts` for #2079. These three tests, their exercised code, fixtures, dependencies, workflow and deadlines were unchanged; their platform, runner images, Node version and commands matched. Classification: **confirmed flake** for each, supported by its own later pass, without claiming a root cause. Action, if the older run still needs clearing: rerun failed jobs only. The key-listener repair in the same range remains a fix, not evidence that every failure was intermittent.
 
 ## Expected duration
 
