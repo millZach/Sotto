@@ -191,6 +191,21 @@ describe('deleting settled threads (ADR-0140)', () => {
     expect((await git(f.project, ['rev-parse', '--verify', `refs/heads/${built.branch}`])).trim()).toMatch(/^[0-9a-f]{40}$/u)
   })
 
+  it('clears a thread on a detached HEAD whose commit a branch has, and keeps one on a commit no branch has', async () => {
+    const f = await fixture()
+    const built = await f.checkout(); await git(built.path!, ['checkout', '--detach'])
+    const lost = await f.checkout(); await git(lost.path!, ['checkout', '--detach'])
+    await git(lost.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-m', 'Detached work'])
+    f.adapter.state.threads[0]!.worktree = await f.worktrees.inspect(built)
+    f.adapter.state.threads[1]!.worktree = await f.worktrees.inspect(lost)
+    const host = await f.open()
+    // Delete thread… still asks for a branch: its question has no words for a detached folder yet.
+    expect((await host.previewThreadDeletion('session-workshop')).kept).toBe('worktree-error')
+    expect(await host.deleteThreads(['session-workshop', 'session-docs'], automatic)).toEqual({ deleted: ['session-workshop'], kept: [{ threadId: 'session-docs', reason: 'worktree-error' }] })
+    expect(await exists(built.path!)).toBe(false)
+    expect(await exists(lost.path!)).toBe(true)
+  })
+
   it('leaves a shared project checkout alone', async () => {
     const f = await fixture()
     const host = await f.open()

@@ -2134,9 +2134,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /**
    * Why the thread's own worktree keeps the thread, read from the folder (ADR-0140 decision 3), with the facts read. A
-   * folder another thread or a terminal uses, one with uncommitted changes, and one with a link out of it are always
-   * kept; ignored files besides dependencies and nested work keep it only for a rule or Clear now (`automatic`), since
-   * Delete thread… lists them for the user to tick.
+   * folder another thread or a terminal uses, one with uncommitted changes, one with a link out of it and one on a
+   * detached HEAD whose commit no branch or remote branch has are always kept, and for Delete thread… any detached HEAD,
+   * since its question has no words for one yet. Ignored files besides dependencies and nested work keep it only for a
+   * rule or Clear now (`automatic`), since Delete thread… lists them for the user to tick.
    */
   private async worktreeDeletionHold(thread: AgentThread, worktree: AgentWorktree, automatic: boolean): Promise<{ reason: ThreadClearKeptReason | null; facts?: WorktreeReclaimPreview }> {
     if (!await this.ownsCheckoutAlone(thread.id) || this.worktreeInUse(thread.id)) return { reason: 'worktree-in-use' }
@@ -2146,7 +2147,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       facts = { ...read, ignored: [...read.ignored], items: [...read.items], repositories: [...read.repositories], untracked: [...read.untracked] }
     } catch { return { reason: 'worktree-error' } }
     if (facts.dirty) return { reason: 'uncommitted', facts }
-    if (facts.outsideLink || !facts.branch) return { reason: 'worktree-error', facts }
+    // A rule or Clear now takes a detached HEAD's folder only when a branch or remote branch has its commit (ADR-0041).
+    if (facts.outsideLink || (!facts.branch && !(automatic && await this.worktrees.keptDetachedCommit(facts.path).catch(() => undefined)))) return { reason: 'worktree-error', facts }
     if (automatic && (facts.ignored.length || facts.repositories.length)) return { reason: 'worktree-files', facts }
     return { reason: null, facts }
   }

@@ -44,7 +44,7 @@ describe("independent working-copy allocation", () => {
     expect((await f.service.reclaim(a, { withUncommittedChanges: true })).reclaimedAt).toBeTruthy()
     await expect(lstat(a.path!)).rejects.toThrow()
   })
-  it('leaves a folder alone when a rule finds ignored files besides dependencies, a link out of it, or no branch', async () => {
+  it('leaves a folder alone when a rule finds ignored files besides dependencies, a link out of it, or a commit on no branch', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     await writeFile(join(a.path!, '.gitignore'), 'node_modules/\nout/\n'); await git(a.path!, ['add', '.gitignore'])
     await git(a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Ignore'])
@@ -59,8 +59,14 @@ describe("independent working-copy allocation", () => {
     expect(await readFile(join(shared, 'keep.txt'), 'utf8')).toBe('real install')
     await rm(join(a.path!, 'node_modules'), { recursive: false }).catch(() => unlink(join(a.path!, 'node_modules')))
     await rm(join(a.path!, 'out'), { recursive: true })
+    // A commit made on a detached HEAD is the folder's alone; removing the folder would lose it.
     await git(a.path!, ['checkout', '--detach'])
-    await expect(f.service.reclaim(a)).rejects.toThrow('no branch checked out')
+    await git(a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-m', 'Detached work'])
+    await expect(f.service.reclaim(a)).rejects.toThrow('no branch checked out, so it goes only under a cleanup rule')
+    await expect(f.service.reclaim(a, { automatic: true })).rejects.toThrow('no branch or remote branch has its commit')
+    // Remove worktree asks for a branch even when one has the commit; only a rule or a clear takes a detached folder.
+    await git(a.path!, ['branch', 'keep'])
+    await expect(f.service.reclaim(a)).rejects.toThrow('no branch checked out, so it goes only under a cleanup rule')
     expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
     await expect(f.service.reclaim({ mode: 'shared', status: 'ready', path: f.project })).rejects.toThrow('shared or reused folder stays')
     expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
