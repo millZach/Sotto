@@ -1918,6 +1918,8 @@ msgid "Could not stop"
 msgstr "Could not stop"
 
 #. The Council page: one question put to several models, which answer, review each other and get a verdict.
+#. The room switch: the Council page, one question put to several models (ADR-0177).
+#: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Council"
 msgstr "Council"
