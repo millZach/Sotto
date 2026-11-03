@@ -6,7 +6,7 @@ import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
-import { swarmCountSchema, swarmReceiptSchema, SWARM_ANGLES_MAX } from './workerSwarms'
+import { distinctSwarmBriefs, swarmCountSchema, swarmReceiptSchema, SWARM_ANGLES_MAX } from './workerSwarms'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -328,7 +328,8 @@ export const watcherToolSchemas = {
     // goes too as a snapshot (#1033, #1312): main takes both off before admission and puts `fromMove` in their place, the
     // move it makes just before the start, which is all a paired host is sent. Watcher never names a move itself.
     input: z.object({ ...mutation, project: watcherProjectTargetSchema, machine: z.uuid().optional(), os: workerSystemSchema.optional(), role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
-      count: swarmCountSchema.optional(), prompts: z.array(prompt).max(SWARM_ANGLES_MAX).optional(),
+      count: swarmCountSchema.optional(), prompts: z.array(prompt).max(SWARM_ANGLES_MAX)
+        .refine(distinctSwarmBriefs, 'Give each angle a distinct brief.').optional(),
       speed: agentSpeedSchema.nullable().optional().describe('Fast or ultrafast, one the worker model offers; null means standard speed.'),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt,
       fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional(),
