@@ -4,7 +4,7 @@ This audit follows [PR #1964](https://github.com/millZach/Sotto/pull/1964), merg
 
 ## Defects fixed
 
-- **A new limit failure could create a restart card for a settled or archived thread.** `LimitRestart.read` recorded the new failure before checking whether the thread was closed. With no reset time, that record had no timer to remove it. The closed-thread check now precedes recording a stop, while still remembering the observed turn so reopening does not treat an old failure as new. Regressions cover settled timestamps, the settled override and archives, with and without a reset, both an existing record and a first stop.
+- **A new limit failure could create a restart card for a settled or archived thread.** `LimitRestart.read` recorded the new failure before checking whether the thread was closed. With no reset time, that record had no timer to remove it. The closed-thread check now precedes recording a stop, while still remembering the observed turn so reopening does not treat an old failure as new. A wake-up already being delivered keeps its record until delivery finishes, so settling or archiving during the send cannot prevent saving the sent state or reporting the restart. Successful delivery removes the visible card. Regressions cover settled timestamps, the settled override and archives, with and without a reset, both an existing record and a first stop.
 - **Another thread's stop could recreate a restart card for Watcher history.** At a provider's first stop, `LimitRestart.stopped` also recorded threads with background work. That path did not exclude read-only Watcher history. `Workspace.setWatcherKind` retains background work, so this is a reachable state. If history was read before the failing sibling, its cleanup had already run. The background-work path now applies the same history exclusion as #1964. Regressions put history first, with and without a reset, and check that only the worker is persisted.
 - **Claude Code's failure notice promised a reset time elsewhere when none was supplied.** `claudeUsageLimitSentence(undefined)` said “Claude Code shows when.” It now says Claude Code did not say when its limit resets, using the existing restart-strip wording. The supplied-time sentence and recognition of saved older notices stay covered.
 
@@ -29,11 +29,13 @@ This audit follows [PR #1964](https://github.com/millZach/Sotto/pull/1964), merg
 
 Before the fixes, the eight new restart cases failed at their stale-card assertions and the missing-reset sentence case failed at its exact wording assertion. With the fixes, separate `NODE_OPTIONS=--no-experimental-webstorage npx vitest run <file> --maxWorkers=1` invocations produced:
 
-- `tests/unit/main/limitRestart.test.ts`: 26 passed.
+- `tests/unit/main/limitRestart.test.ts`: 28 passed.
 - `tests/unit/shared/continueThread.test.ts`: 13 passed.
 - `tests/unit/shared/interfaceCatalogs.test.ts`: 4 passed in 12.37 seconds on the final run. Its initial run alongside other checks hit the 120-second collection and 15-second parsing deadlines; the unchanged file passed when rerun after those checks finished. No deadline was changed.
 
 `npm run typecheck`, `npm run lint` and `git diff --check` passed.
+
+Review follow-up: two deterministic cases hold delivery in flight while the thread is settled or archived. Both failed before the delivery guard because no restart was reported. With the guard, both verify the restart callback, persisted sent state and removal of the scheduled card. The 28-case restart file, typecheck and lint were rerun for this follow-up.
 
 `npm run i18n:extract` completed without catalog changes. It emitted three warnings about the unchanged `COMMAND_NOTE` comments in `MessageContent.tsx`. No full suite, Playwright, design captures or app launch is part of this audit, as requested. There is no layout or styling change and no screenshot claim.
 

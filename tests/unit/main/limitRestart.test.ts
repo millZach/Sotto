@@ -232,6 +232,26 @@ describe('restarting threads a usage limit stopped', () => {
     expect(f.delivered.map(item => item.threadId)).toEqual(['a', 'b'])
   })
 
+  it.each([
+    ['settled', { settledAt: new Date(START).toISOString() }],
+    ['archived', { archivedAt: new Date(START).toISOString() }],
+  ])('records a delivered restart when its thread is %s while delivery is in flight', async (_name, closed) => {
+    let entered!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    const f = await fixture({ deliver: async () => { entered(); await held } })
+    f.update('workshop', limitStop('workshop', new Date(START + 60_000).toISOString()))
+    const fired = f.fire()
+    await started
+    f.update('workshop', closed)
+    release(); await fired
+    expect(f.delivered.map(item => item.threadId)).toEqual(['workshop'])
+    expect(f.restart.scheduled('workshop')).toBeUndefined()
+    expect(f.told).toEqual([{ provider: 'claude', threadIds: ['workshop'] }])
+    await f.restart.close()
+    expect(await f.saved()).toEqual([{ threadId: 'workshop', provider: 'claude', stoppedAt: new Date(START).toISOString(), restarts: 1, sent: true }])
+  })
+
   it('reads the clock again each minute, so a computer asleep past the reset restarts within a minute of waking', async () => {
     const f = await fixture({ checkEveryMs: LIMIT_RESTART_CHECK_MS })
     f.update('workshop', limitStop('workshop', new Date(START + 3 * 60 * 60_000).toISOString()))

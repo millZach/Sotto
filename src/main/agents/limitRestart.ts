@@ -184,7 +184,8 @@ export class LimitRestart {
     this.turns.set(thread.id, key)
     // Settled or archived threads cannot restart, even when this update also reports a new limit stop.
     if (isThreadClosed(thread)) {
-      if (!this.records.has(thread.id)) return false
+      // A send in flight needs its record until its result is saved and the restart reported.
+      if (!this.records.has(thread.id) || this.delivering.has(thread.id)) return false
       this.drop(thread.id)
       return true
     }
