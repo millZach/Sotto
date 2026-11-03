@@ -3,6 +3,7 @@ import type { AgentThread } from '../../../../shared/agents'
 import { isThreadClosed } from '../../../../shared/threadActivity'
 import { COUNCIL_QUESTION_MAX } from '../../../../shared/council'
 import { paneTerminalChromeStore, type PaneTerminalChromeStore } from '../../tools/paneTerminalStore'
+import type { CouncilPanel } from './CouncilSeats'
 
 /** What Ask the Council on a reply hands the Council tab: the thread it comes from and the question to start with. */
 export interface CouncilDraft { readonly originThread: string; readonly question: string }
@@ -22,6 +23,18 @@ export function clearCouncilDraft(): void { offered = null }
 export function onCouncilDraft(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
+}
+
+/**
+ * What a pane's Council tab holds while the drawer shows a shell or is hidden, so it comes back as it was left: the
+ * question, the seats changed for this Council, and the thread chosen in From, if the user chose one.
+ */
+export interface CouncilForm { readonly question: string; readonly panel: CouncilPanel | null; readonly origin: string | null }
+const forms = new Map<string, CouncilForm>()
+export function heldCouncilForm(thread: string): CouncilForm | undefined { return forms.get(thread) }
+export function holdCouncilForm(thread: string, form: CouncilForm): void {
+  if (!form.question && form.panel === null && form.origin === null) forms.delete(thread)
+  else forms.set(thread, form)
 }
 
 /** Ask the Council on a reply: offers the draft and opens the Council tab of the drawer in the pane of the thread it comes from. */

@@ -6,7 +6,7 @@ import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentC
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
 import { ChamberPainter } from '../../../../../src/renderer/src/features/council/chamberPainter'
 import { chamberCouncil, CouncilLayoutMenu, CouncilView, useSeatsInForce } from '../../../../../src/renderer/src/features/council/CouncilView'
-import { clearCouncilDraft, offerCouncilDraft, readCouncilDraft } from '../../../../../src/renderer/src/features/council/councilDraft'
+import { clearCouncilDraft, holdCouncilForm, offerCouncilDraft, readCouncilDraft } from '../../../../../src/renderer/src/features/council/councilDraft'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
 import * as canvasColor from '../../../../../src/renderer/src/watcher/canvasColor'
 import * as watcherScene from '../../../../../src/renderer/src/watcher/WatcherNightScene'
@@ -62,7 +62,7 @@ function withLayout(width = 1020, height = 380): { readonly asked: () => number;
   return { asked: () => asked, resize: () => resize(), flush: () => { const pending = [...frames.values()]; frames.clear(); for (const frame of pending) frame(performance.now()) } }
 }
 
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
+afterEach(() => { cleanup(); holdCouncilForm('thread-a', { question: '', panel: null, origin: null }); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
 
 describe('the Council tab’s reads', () => {
   it('shows the pending list read, then a safe failure instead of keeping it pending', async () => {
@@ -95,6 +95,17 @@ describe('the Council tab’s reads', () => {
     act(() => offerCouncilDraft({ originThread: 'thread-a', question: '> Second' }))
     expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('> Second')
     clearCouncilDraft()
+  })
+
+  it('comes back as it was left when the drawer showed a shell or hid in between', async () => {
+    withLayout()
+    provide([{ id: 'thread-a', title: 'Thread A' }])
+    const bridge: CouncilBridge = { read: async () => [], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(), onChanged: () => () => undefined }
+    const first = render(<CouncilView thread="thread-a" bridge={bridge} />)
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Question' }), 'Which store?')
+    first.unmount()
+    render(<CouncilView thread="thread-a" bridge={bridge} />)
+    expect(await screen.findByRole('textbox', { name: 'Question' })).toHaveValue('Which store?')
   })
 
   it('replaces Council preparation with the agent read failure', async () => {

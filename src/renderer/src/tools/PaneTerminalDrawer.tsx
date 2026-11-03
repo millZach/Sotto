@@ -96,7 +96,8 @@ export function PaneTerminalDrawer({ threadId, thread, project, machine, bridge,
   // The Council asks from a thread on this computer, so a paired host's thread has no Council tab.
   const council = useCouncilEnabled() && machine === undefined
   const view = shownView(chrome, council)
-  const { factory: baseFactory, failed } = useTerminalViewFactory(viewFactory, chrome.open)
+  // The terminal's view loads once the shells are shown, not for a drawer that opens on the Council.
+  const { factory: baseFactory, failed } = useTerminalViewFactory(viewFactory, chrome.open && view === 'terminal')
   const { t } = useLingui()
   const shortcut = usePaneTerminalShortcut()
   const keys = shortcut?.label

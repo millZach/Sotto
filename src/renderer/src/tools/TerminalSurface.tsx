@@ -137,6 +137,9 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
     focusNext.current = true
     void store.create(bridge, threadId, startSize?.())
   }, [autoStart, leading, terminals, bridge, store, threadId, focusNext, sessionCount])
+  // Showing the lead tab drops a close's confirmation, and lets the shells start one of their own again if they come
+  // back with none, as a drawer opened afresh would.
+  useEffect(() => { if (!leading) return; setConfirming(null); autoStarted.current = false }, [leading])
   const sessions = terminals?.sessions ?? []
   const active = leading ? null : sessions.find(session => session.id === terminals?.activeSessionId) ?? null
   const names = sessionNames(sessions)

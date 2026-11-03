@@ -43,10 +43,14 @@ export function PaneTerminalToggle({ threadId, store = paneTerminalChromeStore }
  * Shows or hides the Council in this pane's drawer (ADR-0177; Owl only), a symbol in the pane's header right after Watch.
  * Pressed while the drawer shows the Council; while it shows the shells, a press brings the Council up in their place.
  */
-export function PaneCouncilToggle({ threadId, store = paneTerminalChromeStore }: { readonly threadId: string; readonly store?: PaneTerminalChromeStore }): ReactNode {
+export function PaneCouncilToggle(props: { readonly threadId: string; readonly store?: PaneTerminalChromeStore }): ReactNode {
+  // Without the Council, a pane does not follow the drawer's state for a button it never draws.
+  return useCouncilEnabled() ? <CouncilToggle {...props} /> : null
+}
+
+function CouncilToggle({ threadId, store = paneTerminalChromeStore }: { readonly threadId: string; readonly store?: PaneTerminalChromeStore }): ReactNode {
   const { t } = useLingui()
   const chrome = usePaneTerminalChrome(threadId, store)
-  if (!useCouncilEnabled()) return null
   const shown = chrome.open && chrome.view === 'council'
   return <button type="button" className="pane-action tt-focusable" data-pane-council-toggle aria-pressed={shown}
     aria-label={t({ message: 'Council', comment: 'The pane header button that shows the Council in the drawer under the thread (ADR-0177).' })}

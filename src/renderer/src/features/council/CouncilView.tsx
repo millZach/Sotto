@@ -13,7 +13,7 @@ import { ChoiceMenu } from '../usage/UsageMenu'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
-import { clearCouncilDraft, councilAskable, onCouncilDraft, readCouncilDraft, type CouncilDraft } from './councilDraft'
+import { clearCouncilDraft, councilAskable, heldCouncilForm, holdCouncilForm, onCouncilDraft, readCouncilDraft, type CouncilDraft } from './councilDraft'
 import './council.css'
 
 /**
@@ -60,23 +60,28 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
   const settings = app?.settings
   const state = agents?.state
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
+  // What the tab held when the drawer last showed a shell or hid.
+  const [held] = useState(() => thread === undefined ? undefined : heldCouncilForm(thread))
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
-  const [panel, setPanel] = useState<CouncilPanel | null>(null)
+  const [panel, setPanel] = useState<CouncilPanel | null>(held?.panel ?? null)
   // Ask the Council on a reply opens this tab with that thread and reply filled in, or fills it in when it is open.
   const [taken, setTaken] = useState(() => ({ draft: ownDraft(thread), revision: 0 }))
   const draft = taken.draft
-  const [question, setQuestion] = useState(draft?.question ?? '')
+  const [question, setQuestion] = useState(draft?.question ?? held?.question ?? '')
+  const [chosenOrigin, setChosenOrigin] = useState<string | null>(draft ? null : held?.origin ?? null)
   useEffect(() => {
     const take = (): void => {
       const next = ownDraft(thread)
       if (!next) return
       clearCouncilDraft()
-      setTaken(held => held.draft === next ? held : { draft: next, revision: held.revision + 1 })
+      setTaken(current => current.draft === next ? current : { draft: next, revision: current.revision + 1 })
       setQuestion(next.question)
+      setChosenOrigin(null)
     }
     take()
     return onCouncilDraft(take)
   }, [thread])
+  useEffect(() => { if (thread !== undefined) holdCouncilForm(thread, { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
@@ -86,8 +91,8 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
     {bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
     <div className="council-scroll"><div className="council-page">
       {/* A new draft is a new question from its thread: the form starts again from it. */}
-      {bridge ? <AskForm key={taken.revision} bridge={bridge} origin={draft?.originThread ?? thread} panel={seatsPanel} onPanel={setPanel}
-        question={question} onQuestion={setQuestion} /> : null}
+      {bridge ? <AskForm key={taken.revision} bridge={bridge} origin={draft?.originThread ?? chosenOrigin ?? thread} onOrigin={setChosenOrigin} panel={seatsPanel}
+        onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
       {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
       {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the Council again.`}</p> : null}
       <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
@@ -157,7 +162,8 @@ function OriginPicker({ threads, projects, chosen, onChoose }: { readonly thread
   </div>
 }
 
-function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly origin: string | undefined; readonly panel: CouncilPanel
+function AskForm({ bridge, origin: offeredOrigin, onOrigin, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly origin: string | undefined
+  readonly onOrigin: (origin: string) => void; readonly panel: CouncilPanel
   readonly onPanel: (panel: CouncilPanel | null) => void; readonly question: string; readonly onQuestion: (question: string) => void }): ReactNode {
   const { t, i18n } = useLingui()
   const app = useOptionalApp()
@@ -210,7 +216,7 @@ function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: se
   }
   return <section className="council-ask" aria-labelledby={questionId}>
     <h2 id={questionId} className="tt-visually-hidden">{t`Ask the Council`}</h2>
-    <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={setOrigin} />
+    <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={id => { setOrigin(id); onOrigin(id) }} />
     <label className="council-field"><span>{t({ message: 'Question', comment: 'The question put to the Council' })}</span>
       <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={2} aria-describedby={estimateId}
         onChange={event => setQuestion(event.currentTarget.value)}
