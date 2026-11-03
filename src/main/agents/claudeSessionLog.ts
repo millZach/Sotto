@@ -34,6 +34,20 @@ export function claudeUserText(content: unknown, attachments?: RecordedAttachmen
   if (!Array.isArray(content)) return stripAttachedFilesNote(claudeText(content))
   return claudeText(content.filter(block => { const text = object(block); return !(text?.type === 'text' && typeof text.text === 'string' && isAttachedFilesNote(text.text)) }))
 }
+const COMMAND_TAG = /<(command-(?:message|name|args))>([\s\S]*?)<\/\1>/gu
+/**
+ * A prompt that ran a slash command, a skill included, as it was typed. Claude Code files it under the prompt's own ID as
+ * the command's envelope, `<command-message>`, `<command-name>` and `<command-args>` in either order, so it reads back as
+ * `/name args`, which is also what Sotto sent. Any other text, an envelope quoted among other words included, is left whole.
+ */
+export function claudeTypedCommand(text: string): string {
+  let name = '', args = ''
+  const rest = text.replace(COMMAND_TAG, (_tag, kind: string, value: string) => {
+    if (kind === 'command-name') name = value; else if (kind === 'command-args') args = value
+    return ''
+  })
+  return name.startsWith('/') && !rest.trim() ? args ? `${name} ${args}` : name : text
+}
 /**
  * The origins one digest names, in the order they were sent. `start` is the first not yet read back from the log, so a
  * lookup does not check the ones before it again; it counts against `consumed`, the thread's set of read-back origins,
@@ -76,7 +90,7 @@ export interface ClaudeOriginLookups<T> {
  */
 export function claudeReadBack<T extends { readonly attachments?: RecordedAttachments | undefined; readonly delivered?: { readonly digest: string; readonly suffixLength: number } | undefined }>(
   content: unknown, known: T | undefined, lookups: ClaudeOriginLookups<T> = {}): { readonly text: string; readonly origin: T | undefined } {
-  const text = claudeText(content)
+  const text = claudeTypedCommand(claudeText(content))
   const digest = claudeDigest(text)
   const exact = (origin: T): string | undefined => origin.delivered && origin.delivered.digest === digest && origin.delivered.suffixLength <= text.length
     ? text.slice(0, text.length - origin.delivered.suffixLength) : undefined

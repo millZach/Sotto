@@ -24,6 +24,7 @@ import { formatAttachmentSize } from '../../../shared/attachmentLabels'
 import { runnableBlock, runnableInline } from '../../../shared/runnableCommand'
 import { RunCommandContext, useRunCommand, type RunCommand } from '../tools/runCommand'
 import { flipsBelow } from './ReplyQuoteButton'
+import { rehypeSkillTokens, SkillToken } from './sentSkills'
 import './rich-messages.css'
 import './runCommand.css'
 
@@ -41,6 +42,8 @@ export interface MessageContentProps {
   readonly onOpenLink?: (url: string) => Promise<LinkOpenResult> | LinkOpenResult
   /** An agent's reply: its commands offer Run when the surrounding thread pane can run them (ADR-0139). */
   readonly commands?: boolean
+  /** A message the user sent: a skill it names shows as the pill the composer drew (`SentSkillsContext`). */
+  readonly skills?: boolean
 }
 
 export interface AttachmentPreviewsProps {
@@ -395,8 +398,10 @@ const components: Components = {
       : i18n._(msg({ message: 'Not done', comment: 'An unticked task in a Markdown task list.' }))} />
     : null,
   h1: heading(3, 1), h2: heading(4, 2), h3: heading(5, 3), h4: heading(6, 4), h5: heading(6, 5), h6: heading(6, 6),
+  span: ({ node, ...props }) => typeof node?.properties.dataSkillToken === 'string' ? <SkillToken token={node.properties.dataSkillToken}>{props.children}</SkillToken> : <span {...props} />,
 }
 const remarkPlugins = [remarkGfm]
+const skillPlugins = [rehypeSkillTokens]
 
 const BLOCK_FENCE = /^ {0,3}(`{3,}|~{3,})/u
 const BLOCK_FENCE_END = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u
@@ -462,18 +467,18 @@ export function splitStreamingMarkdown(text: string): string[] {
 }
 
 /** One parse unit. Memoized so an appended chunk only re-parses the block it lands in. */
-const MarkdownSegment = memo(function MarkdownSegment({ source, streaming }: { source: string; streaming: boolean }): ReactNode {
+const MarkdownSegment = memo(function MarkdownSegment({ source, streaming, skills }: { source: string; streaming: boolean; skills: boolean }): ReactNode {
   // Its tables and task boxes are named in the interface language, so it draws again when that changes.
   useInterfaceLanguageState()
   // Node offsets are relative to this segment, so a fenced diagram is told its own source.
   const markdownSource = useMemo(() => ({ text: source, streaming }), [source, streaming])
   return <MarkdownSourceContext.Provider value={markdownSource}>
-    <ReactMarkdown remarkPlugins={remarkPlugins} components={components} urlTransform={urlTransform}>{source}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={skills ? skillPlugins : undefined} components={components} urlTransform={urlTransform}>{source}</ReactMarkdown>
   </MarkdownSourceContext.Provider>
 })
 
 /** Renders one message's text as safe Markdown. Raw HTML stays literal text; only vetted web links are links. */
-export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink, commands = false }: MessageContentProps): ReactNode {
+export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink, commands = false, skills = false }: MessageContentProps): ReactNode {
   const { t } = useLingui()
   const runCommand = useRunCommand()
   const [failedLink, setFailedLink] = useState<string | null>(null)
@@ -524,7 +529,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   const menuHost = linkMenu ? linkLabel(linkMenu.url) : ''
   return <LinkContext.Provider value={context}><RunCommandContext.Provider value={commands ? runCommand : undefined}>
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
-      {segments.map((source, index) => <MarkdownSegment key={index} source={source} streaming={streaming && index === segments.length - 1} />)}
+      {segments.map((source, index) => <MarkdownSegment key={index} source={source} streaming={streaming && index === segments.length - 1} skills={skills} />)}
       <div className="rich-message__feedback" role="status" aria-live="polite">
         {failedLink ? <><span>{shownWords(linkNotice) ?? t({ message: `Could not open ${failedHost}.`, comment: '{failedHost} is a web site\'s host name or an email address.' })}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>{t`Copy link`}</button></> : shownWords(linkNotice) ?? copyFeedback}
       </div>
