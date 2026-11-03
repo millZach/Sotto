@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 import { Landmark } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 
