@@ -773,11 +773,13 @@ export class DelegationService {
   }
 
   private async swarmResult(swarm: WorkerSwarm): Promise<Record<string, unknown>> {
+    let recovered = false
     for (const member of swarm.members) {
       const record = member.delegationId ? this.byId.get(member.delegationId) : undefined
-      if (record) this.reconsiderRestarted(record)
+      if (record && this.reconsiderRestarted(record)) recovered = true
     }
     const lead = swarm.leadDelegationId ? this.byId.get(swarm.leadDelegationId) : undefined
+    if (recovered && !lead) await this.persist()
     return { ...lead ? await this.result(lead) : { status: 'ok' }, ...swarmReceipt(swarm) }
   }
 
@@ -2339,7 +2341,7 @@ export class DelegationService {
     for (const record of open) {
       const thread = threads.get(record.delegatedThreadId)
       if (!thread) {
-        if (!this.restarted(record) && this.gone(record)) changed = true
+        if (this.gone(record)) changed = true
         continue
       }
       if (!isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
@@ -2390,10 +2392,10 @@ export class DelegationService {
     if (seen && seen.outcome !== 'working' && !isThreadTurnRunning(thread)) this.options.swarms?.admission.leave(record.id)
     if (seen?.outcome === 'answered' && swarm?.pending) seen = { ...seen, outcome: 'background' }
     if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) return false
-    if (restarted) this.accept(record.id, 'accepted')
     this.update(record.id, saved => {
       saved.outcome = seen.outcome; saved.outcomeAt = now(); delete saved.releasedAt; delete saved.releaseTold
-      if (restarted) delete saved.unknownBecause
+      // Proof of an older turn does not change the caller's last-seen head, which a newer brief may have advanced.
+      if (restarted) { saved.deliveryState = 'accepted'; delete saved.unknownBecause }
       for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) { if (seen[field]) saved[field] = seen[field]; else delete saved[field] }
     })
     if (seen.outcome === 'answered' && !restarted) this.answeredThisRun.add(record.id)

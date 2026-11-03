@@ -223,6 +223,19 @@ it('ends the briefs of a delegated thread that is gone, stops looking at them an
   expect(f.delegation.views('parent').made).toMatchObject([{ id: working.id, unknownWhy: 'gone' }, { id: waiting.id, outcome: 'failed', notSent: 'provider' }])
 })
 
+it('stops looking for restart evidence after the delegated thread is deleted', async () => {
+  const lost = brief({})
+  const f = await service([lost], [thread('parent'), thread('child')], true)
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
+  f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== 'child')
+  f.hooks.observe(f.snapshot)
+  await settle()
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.delegation.views('parent').made).toMatchObject([{ id: lost.id, outcome: 'unknown', unknownWhy: 'gone' }])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
 /** Real admission and delivery, without a provider process or a worktree on disk. */
 async function swarmService(ceiling = 4, saved?: { root: string; snapshot: AgentHostSnapshot },
   delivery: { beforeWakeUp?: () => Promise<void>; pending?: boolean; queued?: DelegationNews[] } = {}) {
@@ -424,6 +437,27 @@ it('keeps a swarm unfinished while an angle has no exact turn, then recovers it 
   await vi.waitFor(() => expect(restored.told).toHaveLength(1))
   await restored.finish(receipt.lead.thread)
   expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('persists an angle recovered on a swarm read even when the lead delegation is missing', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  const saved = await f.file()
+  f.delegation.close(); f.admission.close()
+  saved.delegations = saved.delegations.filter(record => record['id'] !== receipt.lead.delegation)
+  await writeFile(join(f.root, 'delegations.json'), JSON.stringify(saved))
+  const children = receipt.receipts.map(member => f.snapshot.threads.find(item => item.id === member.thread)!)
+  for (const child of children) { child.status = 'idle'; delete child.lastTurn }
+  const restored = await swarmService(4, f)
+  children[0]!.lastTurn = { id: children[0]!.lastUserMessageId!, status: 'completed' }
+  expect(await restored.delegation.read('parent', { delegation: receipt.swarmId })).toMatchObject({ done: 1,
+    receipts: [{ state: 'answered' }, { state: 'unknown' }] })
+  // Read the disk directly: another save or a synthesis wake-up must not be needed to make recovery durable.
+  const persisted = JSON.parse(await readFile(join(f.root, 'delegations.json'), 'utf8')) as typeof saved
+  expect(persisted.swarms[0]?.members.map(member => member.state)).toEqual(['answered', 'unknown'])
+  expect(persisted.delegations.find(record => record['id'] === receipt.receipts[0]!.delegation)).toMatchObject({ outcome: 'answered' })
+  expect(restored.told).toEqual([])
   restored.delegation.close(); restored.admission.close()
 })
 

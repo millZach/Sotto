@@ -121,7 +121,10 @@ it('refuses a send queued before the user\'s newer message as the target having 
   expect(f.native(child).messages.some(message => message.text === 'Synthetic queued brief')).toBe(false)
 })
 
-it('leaves a brief unknown after a restart and sends nothing again', async () => {
+it.each([
+  { exact: true, outcome: 'answered', name: 'recovers a brief when its exact answering turn appears after a restart' },
+  { exact: false, outcome: 'unknown', name: 'leaves a brief unknown when only an unrelated turn appears after a restart' },
+])('$name and sends nothing again', async ({ exact, outcome }) => {
   const f = await fixture(), parent = await f.userThread('claude')
   const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
   const child = first.delegation.thread
@@ -131,15 +134,40 @@ it('leaves a brief unknown after a restart and sends nothing again', async () =>
   expect(f.ok(await f.read(parent, first.delegation.id)).delegation.outcome).toBe('unknown')
   // The window's card says it was the restart.
   expect(f.service.views(parent).made).toMatchObject([{ id: first.delegation.id, outcome: 'unknown', unknownWhy: 'restarted' }])
+  const briefId = f.native(child).messages.findLast(message => message.role === 'user')!.id
+  if (!exact) f.native(child).messages.push({ id: randomUUID(), role: 'user', text: 'Unrelated request', createdAt: new Date().toISOString() })
   await f.endTurn(child, 'Synthetic reply after restart')
+  expect(f.native(child).lastTurn?.id === briefId).toBe(exact)
   const read = f.ok(await f.read(parent, first.delegation.id))
-  expect(read.delegation.outcome).toBe('unknown')
-  expect(read.delegation.reply).toBeUndefined()
+  expect(read.delegation.outcome).toBe(outcome)
+  if (exact) expect(read.delegation.reply?.text).toBe('Synthetic reply after restart')
+  else expect(read.delegation.reply).toBeUndefined()
   expect(sends()).toBe(before)
   // The link survives the restart, on the thread's own record and in the delegation record.
   expect(f.control.shell().host.threads.find(thread => thread.id === child)?.delegatedBy).toBe(parent)
   expect((await f.tools.mcpServer(child))?.name).toBe(DELEGATE_MCP_SERVER)
-  expect(f.control.shell().followups?.some(item => item.threadId === parent && item.wakeUp)).toBeFalsy()
+  if (!exact) expect(f.control.shell().followups?.some(item => item.threadId === parent && item.wakeUp)).toBeFalsy()
+})
+
+it('recovers an older brief without rewinding the head a newer brief advanced, so the next send succeeds', async () => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  const child = first.delegation.thread, briefId = f.native(child).messages.findLast(message => message.role === 'user')!.id
+  await f.restart()
+  expect(f.service.views(parent).made).toMatchObject([{ id: first.delegation.id, outcome: 'unknown' }])
+  // The thread becomes free without proving the first brief's turn, and accepts another brief.
+  f.native(child).status = 'idle'
+  await f.emit(child)
+  const second = f.ok(await f.delegate(parent, { thread: child, brief: 'Synthetic second brief', wait_seconds: 0 }))
+  await f.endTurn(child, 'Synthetic second reply')
+  expect(f.service.views(parent).made).toMatchObject([{ id: first.delegation.id, outcome: 'unknown' }, { id: second.delegation.id, outcome: 'answered' }])
+  f.native(child).activities = [{ id: randomUUID(), sequence: 0, kind: 'turn', turnId: briefId, afterMessageId: briefId,
+    status: 'completed', title: 'Turn', startedAt: new Date().toISOString() }]
+  await f.emit(child)
+  expect(f.service.views(parent).made[0]).toMatchObject({ id: first.delegation.id, outcome: 'answered' })
+  // No read of either brief repairs the head before this send.
+  expect(f.ok(await f.delegate(parent, { thread: child, brief: 'Synthetic third brief', wait_seconds: 0 })).delegation.thread).toBe(child)
+  expect(f.adapterOf(child).commands.filter(command => command.type === 'send')).toHaveLength(3)
 })
 
 it('starts past the old Threads in flight limit, and warns once more than ten threads are working on this computer (#1183)', async () => {
