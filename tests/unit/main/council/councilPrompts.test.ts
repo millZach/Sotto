@@ -89,7 +89,7 @@ describe('prompt sizes', () => {
     expect(verdictPrompt({ ...input, research: true })).toContain('lookup:')
     const without = verdictPrompt({ ...input, research: false })
     expect(without).not.toContain('lookup:')
-    expect(without).toContain('giving a test to run in the snapshot')
+    expect(without).toContain('giving a test to run in the working folder')
   })
 
   it('asks a reviewer for a verdict on every ID it was handed, and an ideas reviewer for every score', () => {

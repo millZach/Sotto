@@ -9,7 +9,8 @@ import type { RunGitCommand } from '../agents/gitStatus'
  * its uncommitted changes, as a commit on no branch made from a copy of the index (`BranchBundles.snapshotOf`, which a
  * check's test run uses too), checked out as a detached worktree in Sotto's data folder. Every thread in the Council
  * works there, so they cite the same code and nothing they run can change the user's checkout. It is removed when the
- * Council is settled. Git's output never reaches a log or an answer.
+ * Council is settled. A folder that is not a Git repository has no snapshot: the Council works in the folder itself
+ * (Drake, November 3, 2026). Git's output never reaches a log or an answer.
  */
 
 export { COUNCIL_WORKTREE_FOLDER } from './councilFolders'
@@ -20,7 +21,6 @@ export interface CouncilSnapshot { readonly path: string; readonly repositoryRoo
 
 const refusalWords = (reason: string): string => {
   switch (reason) {
-    case 'not-a-repository': return t`The thread's folder is not a Git repository, so the Council has no snapshot to work in. Nothing was started.`
     case 'not-on-branch': return t`The thread's folder is not on a branch. Check out a branch, then ask the Council again. Nothing was started.`
     case 'unsupported': return t`The thread's branch has characters in its name a snapshot cannot carry. Rename the branch, then ask again. Nothing was started.`
     case 'uncommitted': return t`A submodule in the thread's folder has uncommitted changes, and a snapshot can't carry them. Commit them inside the submodule, then ask again. Nothing was started.`
@@ -28,10 +28,16 @@ const refusalWords = (reason: string): string => {
   }
 }
 
-/** Takes the snapshot of `folder` and checks it out at `path`; the words for the user when it cannot. */
-export async function makeCouncilSnapshot(input: { readonly bundles: Pick<BranchBundles, 'snapshotOf'>; readonly run: RunGitCommand; readonly folder: string; readonly path: string }): Promise<CouncilSnapshot | { readonly refused: string }> {
+/** Takes the snapshot of `folder` and checks it out at `path`; none for a folder outside Git; the words for the user when it cannot. */
+export async function makeCouncilSnapshot(input: { readonly bundles: Pick<BranchBundles, 'snapshotOf'>; readonly run: RunGitCommand; readonly folder: string; readonly path: string }): Promise<CouncilSnapshot | 'none' | { readonly refused: string }> {
   const source = await input.bundles.snapshotOf(input.folder)
-  if ('type' in source) return { refused: refusalWords(source.reason) }
+  if ('type' in source) {
+    if (source.reason !== 'not-a-repository') return { refused: refusalWords(source.reason) }
+    // Only Git's own word that the folder is in no repository puts the Council in it; Git failing any other way refuses.
+    const outside = await input.run(input.folder, 'git', ['rev-parse', '--is-inside-work-tree'], { timeoutMs: 30_000 })
+      .then(() => false, (error: unknown) => error instanceof Error && /not a git repository/u.test(error.message))
+    return outside ? 'none' : { refused: refusalWords('failed') }
+  }
   try {
     const repositoryRoot = (await input.run(input.folder, 'git', ['rev-parse', '--show-toplevel'], { timeoutMs: 30_000 })).trim()
     await mkdir(dirname(input.path), { recursive: true })

@@ -116,8 +116,9 @@ export const councilRecordSchema = z.object({
   originThread: id,
   originTitle: z.string().max(512),
   projectId: id,
+  /** Absent when the thread's folder is not a Git repository: the Council works in that folder itself. */
   snapshot: z.object({ path: z.string().max(4_096), repositoryRoot: z.string().max(4_096), commit: z.string().max(64), branch: z.string().max(512),
-    untracked: z.number().int().nonnegative(), dirty: z.boolean().optional(), removedAt: at.optional() }).strict(),
+    untracked: z.number().int().nonnegative(), dirty: z.boolean().optional(), removedAt: at.optional() }).strict().optional(),
   /** What each thread read of the origin conversation: inline, from a file in the snapshot, or its newest part. */
   history: z.object({ messages: z.number().int().nonnegative(), words: z.number().int().nonnegative(), tools: z.number().int().nonnegative(),
     /** How many prompts the conversation takes: 1 when it goes in the first stage prompt, more when it goes in parts before it. */

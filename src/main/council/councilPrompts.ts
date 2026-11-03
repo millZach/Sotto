@@ -140,7 +140,7 @@ export function fitWords(texts: readonly string[], fixed: readonly string[] = []
 // What each prompt says.
 
 export interface CouncilPromptContext {
-  /** The thread's first prompt: who it is in the Council, the snapshot and the conversation. Absent once the thread has them. */
+  /** The thread's first prompt: who it is in the Council, its working folder and the conversation. Absent once the thread has them. */
   readonly preamble?: string
   readonly question: string
   /** The previous verdict, for a follow-up question. */
@@ -155,18 +155,21 @@ const KIND_WORDS: Readonly<Record<CouncilKind, string>> = { decision: 'a decisio
 const RESEARCH_BRIEF = 'This question needs outside research. Research it with your own tools: search the web, and read papers and library documentation where they bear on it. '
   + 'Where your own setup has a skill or instructions for research, follow them. Cite what you found as a source: its link and the passage that supports your claim, quoted exactly. '
   + 'A source you could not open is not evidence.'
-/** What a panelist is told when the question needs none: the snapshot and the conversation only, and a source counts for nothing. */
-const NO_RESEARCH = 'This question needs no outside research. Answer from the snapshot and the conversation alone: do not search the web or read outside sources. A source you cite anyway is unchecked.'
-const SOURCE_EVIDENCE = '- source: a page, paper or document outside the snapshot, given as its link and the passage that supports the claim, quoted exactly'
+/** What a panelist is told when the question needs none: its working folder and the conversation only, and a source counts for nothing. */
+const NO_RESEARCH = 'This question needs no outside research. Answer from your working folder and the conversation alone: do not search the web or read outside sources. A source you cite anyway is unchecked.'
+const SOURCE_EVIDENCE = '- source: a page, paper or document outside your working folder, given as its link and the passage that supports the claim, quoted exactly'
 const fence = (name: string, lines: readonly string[]): string => ['```' + name, ...lines, '```'].join('\n')
 
-export function preambleFor(input: { readonly role: 'panelist' | 'chair'; readonly seat: string; readonly panelists: number; readonly snapshot: string; readonly history: string; readonly remote: boolean }): string {
+/** `snapshot` names the snapshot; without one the Council works in the thread's own folder, which is not a Git repository. */
+export function preambleFor(input: { readonly role: 'panelist' | 'chair'; readonly seat: string; readonly panelists: number; readonly snapshot: string | undefined; readonly history: string; readonly remote: boolean }): string {
   const who = input.role === 'chair'
     ? `You chair a Sotto Council: ${input.panelists} panelists on different models answer one question alone, then review each other's answers under letters. You never answer it yourself: you frame it first, and at the end you write the verdict.`
     : `You are panelist ${input.seat} on a Sotto Council: ${input.panelists} panelists on different models answer one question alone, then review each other's answers under letters, and a chair writes the verdict.`
   const where = input.remote
     ? 'Your thread cannot read this computer\'s files, so mark every claim about the code inferred or judgement: it stays unchecked.'
-    : `Your working folder is a snapshot of the thread's folder: ${input.snapshot}. Everyone in the Council reads the same snapshot, so a path and lines mean one thing to all of you. Don't change files there: you are here to answer, not to build.`
+    : input.snapshot === undefined
+      ? 'Your working folder is the thread\'s own folder. It is not a Git repository, so there is no snapshot: these are the user\'s own files, and Sotto cannot check the lines you cite. Don\'t change anything there: you are here to answer, not to build.'
+      : `Your working folder is a snapshot of the thread's folder: ${input.snapshot}. Everyone in the Council reads the same snapshot, so a path and lines mean one thing to all of you. Don't change files there: you are here to answer, not to build.`
   return [who, where, input.history].join('\n\n')
 }
 
@@ -185,7 +188,7 @@ export function framingPrompt(context: CouncilPromptContext, letters: readonly s
     '- three to five criteria a good answer must meet, each marked question (its user said or clearly implied it) or assumed (your own)',
     '- the headings every answer uses, and a word limit',
     `- for a decision or ideas, an extra angle for each panelist to weigh as well as the whole question, never instead of it: panelists ${letters.join(', ')}`,
-    '- whether answering it needs outside research, such as web pages, papers or library docs, beyond the snapshot and the conversation: yes or no, with why in a line',
+    '- whether answering it needs outside research, such as web pages, papers or library docs, beyond your working folder and the conversation: yes or no, with why in a line',
     'End your reply with this block, using only these fields:',
     fence(COUNCIL_BLOCK_NAMES.framing, ['kind: decision', 'criterion: question | <a criterion>', 'criterion: assumed | <a criterion>', 'headings: <heading>; <heading>; <heading>', 'words: 500', 'research: no | <why, in a line>',
       ...letters.map(letter => `angle: ${letter} | <an angle for ${letter}, for a decision or ideas>`)]),
@@ -215,15 +218,15 @@ export interface CouncilCriterion { readonly id: string; readonly source: 'quest
 
 export function answerPrompt(context: CouncilPromptContext, input: { readonly letter: string; readonly framing: CouncilFraming | undefined; readonly kinds?: readonly CouncilKind[];
   readonly criteria?: readonly CouncilCriterion[];
-  readonly research?: boolean; readonly again?: boolean; readonly snapshot: string; readonly remote: boolean }): string {
+  readonly research?: boolean; readonly again?: boolean; readonly snapshot: string | undefined; readonly remote: boolean }): string {
   const { letter, framing } = input
   const headings = framing?.headings.length ? framing.headings.join('; ') : 'Answer; Evidence; Risks; First step'
   return [...questionPart(context),
     ...input.again ? ['The user changed the framing below, so answer again from the start. Your earlier answer to this question no longer counts.'] : [],
     framingWords(framing, letter, input.kinds, input.criteria),
     input.research ? RESEARCH_BRIEF : NO_RESEARCH,
-    `Answer alone, as panelist ${letter}. ${input.remote ? 'You cannot read the snapshot.' : `Work in your working folder, the snapshot at ${input.snapshot}.`} Mark each load-bearing claim:`,
-    ['- observed: a file and lines you read, with the lines quoted, or a command you ran in the snapshot, with its output', '- inferred: from what you observed, saying from what', '- judgement: your opinion',
+    `Answer alone, as panelist ${letter}. ${input.remote ? 'You cannot read this computer\'s files.' : input.snapshot === undefined ? 'Work in your working folder, the thread\'s own folder.' : `Work in your working folder, the snapshot at ${input.snapshot}.`} Mark each load-bearing claim:`,
+    ['- observed: a file and lines you read, with the lines quoted, or a command you ran in your working folder, with its output', '- inferred: from what you observed, saying from what', '- judgement: your opinion',
       ...input.research ? [SOURCE_EVIDENCE] : []].join('\n'),
     'A claim about how something behaves needs an observation, not a line number. Evidence you could not reach, such as a screenshot or an old command\'s output named in the thread, is unchecked and never proof.',
     `Use these headings: ${headings}, in under ${framing?.words ?? 500} words. Write your whole answer in your last message, and end it with this block, using only these fields. Name your findings ${letter}1, ${letter}2 and so on, and give a challenge line only for a criterion you challenge.`,
@@ -234,8 +237,8 @@ export function answerPrompt(context: CouncilPromptContext, input: { readonly le
 }
 
 const REVIEW_WORK: Readonly<Record<CouncilKind, string>> = {
-  decision: 'For each answer, give its strongest point, its weakest point, and which of its claims you checked in the snapshot: confirmed, rejected or unchecked. Then rank them, when you read two or more.',
-  fact: 'Check each answer\'s observed evidence in the snapshot, say which answer the evidence supports, and give your own answer.',
+  decision: 'For each answer, give its strongest point, its weakest point, and which of its claims you checked in your working folder: confirmed, rejected or unchecked. Then rank them, when you read two or more.',
+  fact: 'Check each answer\'s observed evidence in your working folder, say which answer the evidence supports, and give your own answer.',
   review: 'For each finding, confirm it with evidence, reject it with the reason, or say you could not check it. Add any finding you now see, under your own letter.',
   ideas: 'Score each option against the criteria from 1 to 5, without revising your own, and name your three favourites.',
 }
@@ -281,7 +284,7 @@ export function verdictPrompt(input: { readonly kinds: readonly CouncilKind[]; r
   readonly reviews: readonly { readonly letter: string; readonly text: string }[]; readonly leftOut: readonly string[]; readonly panelists: number;
   readonly crux?: { readonly plan: CouncilCrux; readonly results: readonly { readonly letter: string; readonly text: string }[] }; readonly cruxAllowed: boolean; readonly preamble?: string;
   readonly question?: string
-  /** Whether the question needs outside research: without it, a crux check is a test in the snapshot and never a lookup. */
+  /** Whether the question needs outside research: without it, a crux check is a test in the working folder and never a lookup. */
   readonly research?: boolean }): string {
   const fixed = [input.preamble ?? '', input.question ?? '', ...input.crux ? [input.crux.plan.test, ...input.crux.plan.meanings.map(meaning => `${meaning.result} ${meaning.meaning}`)] : []]
   const texts = fitWords([...input.answers, ...input.reviews, ...input.crux?.results ?? []].map(item => item.text), fixed)
@@ -308,8 +311,8 @@ export function verdictPrompt(input: { readonly kinds: readonly CouncilKind[]; r
     ...input.cruxAllowed ? [
       input.research
         ? 'If the panel splits on something observable, such as what a file does, what a command prints or what a source says, you may ask for one crux check instead of writing the verdict now: reply with only this block, giving either a test to run or a source to look up. Never for a matter of taste, and never more than once.'
-        : 'If the panel splits on something observable, such as what a file does or what a command prints, you may ask for one crux check instead of writing the verdict now: reply with only this block, giving a test to run in the snapshot. Never for a matter of taste, and never more than once.',
-      fence(COUNCIL_BLOCK_NAMES.crux, ['test: <one command to run, or file to read, in the snapshot>',
+        : 'If the panel splits on something observable, such as what a file does or what a command prints, you may ask for one crux check instead of writing the verdict now: reply with only this block, giving a test to run in the working folder. Never for a matter of taste, and never more than once.',
+      fence(COUNCIL_BLOCK_NAMES.crux, ['test: <one command to run, or file to read, in the working folder>',
         ...input.research ? ['lookup: <or instead of test: the source to check, a link or where to look, and what to find there>'] : [], 'sides: A, C | B',
         'if: <a result or finding> => <what it would mean>', 'if: <another> => <what it would mean>']),
       'Otherwise write the verdict, with no block.',
@@ -322,7 +325,7 @@ export function cruxPrompt(input: { readonly preamble?: string; readonly plan: C
     ...input.preamble ? [input.preamble] : [],
     input.plan.lookup
       ? `The chair asks for one crux check, a lookup. Check this source with your own tools and report what it says, quoting the passage that settles it, with its link:\n${input.plan.test}`
-      : `The chair asks for one crux check. Run this in your working folder, the snapshot, and report its output verbatim:\n${input.plan.test}`,
+      : `The chair asks for one crux check. Run this in your working folder and report its output verbatim:\n${input.plan.test}`,
     ...input.establish ? [`No panelist is on neither side, so you try to establish the other side's claim, that of ${input.establish.letters.join(', ')}: ${input.establish.claims.join(' / ') || 'see its answers'}. Report what came out either way.`] : [],
     `What each ${input.plan.lookup ? 'finding' : 'result'} would mean, as the chair wrote before it ran:\n${input.plan.meanings.map((meaning, index) => `${index + 1}. ${meaning.result} => ${meaning.meaning}`).join('\n')}`,
     'End your reply with this block:',
