@@ -286,6 +286,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     app.actions.navigate(opening.page)
   }, [app.actions])
   useOpenNotification(openNotification)
+  // The popup's Show in Sotto (ADR-0181): main selected the thread; the window opens its room the same way.
+  const popupOn = useOwlFeature('popup')
+  useEffect(() => popupOn ? window.sotto?.popup?.onOpened(openNotification) : undefined, [popupOn, openNotification])
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()

@@ -5521,12 +5521,14 @@ export class AgentControl {
           ...(command.check ? { check: true as const } : {}),
           ...(origin?.keptSpeed ? { keptSpeed: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
-        if (!origin && selectionRevision === this.selectionRevision) {
+        // A thread the popup starts stays the popup's: the window keeps what it shows (ADR-0181).
+        const opens = !origin && client.keepsSelection !== true
+        if (opens && selectionRevision === this.selectionRevision) {
           this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId
         }
         this.observe(); this.acceptSnapshot(await this.readThread(threadId))
-        if (!origin && selectionRevision === this.selectionRevision) this.state.activeProjectId = this.thread(threadId).projectId
-        this.say(`Opened ${command.title}.`)
+        if (opens && selectionRevision === this.selectionRevision) this.state.activeProjectId = this.thread(threadId).projectId
+        if (client.keepsSelection !== true) this.say(`Opened ${command.title}.`)
         return
       }
       case 'continue-agent':

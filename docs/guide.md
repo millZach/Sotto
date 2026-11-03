@@ -29,6 +29,7 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Continue an agent as its own thread](#continue-an-agent-as-its-own-thread)
 - [Fork a thread from a reply](#fork-a-thread-from-a-reply)
 - [The Council](#the-council)
+- [The popup](#the-popup)
 - [Sotto Owl](#sotto-owl)
 
 ## Threads
@@ -1291,6 +1292,22 @@ Every thread in the Council works in a snapshot of the thread's folder: its comm
 **The verdict.** It keeps where the panelists split, weighs evidence rather than headcount, and refers to panelists by letter. Beside it Sotto shows its own counts from the result blocks, each with its denominator, or marked partial when a result was unavailable; with two panelists nothing is counted. It shows **Fairness check pending** until every panelist has answered or two minutes have passed since the check was sent, and the chair has answered every objection. Then **Send to <thread>** puts the verdict in that thread's message box, with Sotto's table of which letter is which model and its counts; nothing is sent until you send it. **Ask a follow-up** puts a new question to the same threads, with the verdict before it. **Stop** stops every thread still working; **Settle** settles the Council's threads and removes its snapshot.
 
 **Settings → Council**, below Watcher, holds how many panelists sit, each one's model and effort, the chair's, the chamber's layout and the stage deadline, ten minutes at first. Sotto fills an empty seat with the strongest model of each connected provider in turn, and the chair with one more, on a provider no panelist uses where there is one. The page says when a seat's provider is not connected, when a seat cannot read this computer's files, as Devin in the cloud cannot, and when two seats hold the same model, since a second copy adds less than a different model.
+
+## The popup
+
+In Sotto Owl, press `Alt+Shift+Space` (`⌥⇧Space` on a Mac) in any app, or choose **Show popup** from the tray, and a small card floats over whatever is in front, on the current desktop, without bringing Sotto's window forward. It takes the keyboard while it shows. Press the shortcut again to hide it.
+
+Type at the bottom and press Return to send; Shift+Return (or Option/Alt+Return) starts a new line. The conversation grows upward above the prompt as the reply streams in, up to most of the screen, and then scrolls. While a turn runs the owl beside the prompt watches and the card says Working; Escape stops the turn. With nothing running, Escape hides the card.
+
+The switch at the bottom left says who you are talking to: **Thread**, or **Watcher** while Watcher is on. Press it to change, or type `/watcher` or `/thread`. The popup remembers its choice. On a thread it continues the thread it last used, named beside the switch, until you press **New thread** or type `/new`; the next prompt then starts a new thread, in the project of the thread you were on, or else the project chosen in Sotto, on your new-thread defaults from Settings → Threads. A prompt sent while the thread works waits in its queue, as it does in Sotto.
+
+Type `/` at the start of the prompt for the commands: `/new`, `/stop`, `/open`, and `/watcher` or `/thread`. Up and Down move through them, Return runs one and Tab fills it in. `/open`, the arrow at the bottom right, and Command+O (Ctrl+O on Windows and Linux) show the thread, or Watcher's room, in Sotto's window and hide the card.
+
+A question or permission the thread or Watcher waits on shows on the card with the same choices as in Sotto, and is answered only when you press one. Questions Watcher passes on from the threads it watches are answered in its room.
+
+Drag the card by any part that is not words or a control to move it; it keeps that place, and grows from its bottom edge, until Sotto quits. Its width is fixed. It wears Sotto's theme, light or dark, and holds still when motion is reduced.
+
+Change the shortcut in **Settings → Keyboard → Popup**: press the shortcut, then the new keys, and let go. Keys a dictation shortcut uses are refused, and so are keys another app already holds, which Sotto finds out by trying them; the old shortcut keeps working until the new one is taken. **Remove shortcut** leaves the popup to the tray; the reset arrow brings back `Alt+Shift+Space`. On Linux, whether a desktop lets Sotto take a shortcut depends on the desktop, and the row says when it could not. Stable shows none of this and keeps a shortcut you saved.
 
 ## Sotto Owl
 

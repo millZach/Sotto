@@ -16,6 +16,7 @@ import { ShortcutKey } from '../../components/ShortcutKey'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
 import { useChordRecorder } from './useChordRecorder'
+import { useOwlFeature } from '../../state/owlFeature'
 import './dictationShortcuts.css'
 import './threadShortcuts.css'
 
@@ -25,6 +26,8 @@ export interface ThreadShortcutsSettingsProps {
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   /** Dictation's keys keep their own rows; this page's entry for them only points there. */
   readonly onOpenDictation?: (() => void) | undefined
+  /** A row of the page's own drawn under its lead and filter, before the thread shortcuts: the popup's (ADR-0181). */
+  readonly before?: ReactNode
 }
 
 /** What the application menu calls each chord it owns (`menuOwnedChords`), for naming it in a refusal. */
@@ -94,9 +97,10 @@ const UNSUPPORTED_KEY = msg`That key can’t be part of a shortcut here. Try a l
  * and dictation pointed to rather than repeated. Recording, messages and focus follow Dictation's rows; the
  * chords are T3's spelling, read from the window's keys — dictation stays the one global exception.
  */
-export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation }: ThreadShortcutsSettingsProps): ReactNode {
+export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation, before }: ThreadShortcutsSettingsProps): ReactNode {
   const { t, i18n } = useLingui()
   const recorder = useChordRecorder(platform, false)
+  const popupOn = useOwlFeature('popup')
   const [filter, setFilter] = useState('')
   const [target, setTarget] = useState<ThreadShortcutId | null>(null)
   const [message, setMessage] = useState<RowMessage | null>(null)
@@ -322,10 +326,12 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
   )
 
   const dictationAccelerator = settings.hotkey
+  // With the popup on (ADR-0181) its shortcut works outside Sotto too, so dictation's is no longer the only one.
+  const global = popupOn ? <Trans>Global — works outside Sotto, as the popup’s does.</Trans> : <Trans>Global — the one set that works outside Sotto.</Trans>
   const fixedRows: ReactNode[] = [
     fixedRow(t`Dictation (press & hold)`, onOpenDictation
-      ? <><Trans>Global — the one set that works outside Sotto.</Trans>{' '}<button type="button" className="dictation-shortcuts__add tt-focusable" onClick={onOpenDictation}><Trans>Settings › Dictation</Trans></button></>
-      : <Trans>Global — the one set that works outside Sotto. Changed in Settings › Dictation.</Trans>, dictationAccelerator, 'dictation'),
+      ? <>{global}{' '}<button type="button" className="dictation-shortcuts__add tt-focusable" onClick={onOpenDictation}><Trans>Settings › Dictation</Trans></button></>
+      : <>{global} <Trans>Changed in Settings › Dictation.</Trans></>, dictationAccelerator, 'dictation'),
     fixedRow(t`Send the prompt`, <Trans>The composer’s own key. Shift+Enter adds a line.</Trans>, 'Enter', 'send'),
     fixedRow(t`Steer now`, <Trans>In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does.</Trans>, acceleratorOf('mod+enter'), 'steer'),
     fixedRow(t`Commit, use folder`, <Trans>Inside its dialog only.</Trans>, acceleratorOf('mod+enter'), 'commit'),
@@ -349,6 +355,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       <p className="tt-paragraph thread-shortcuts__lead"><Trans>Click a shortcut and press the new keys; let go to save. These keys work while Sotto is in front, and stand down in terminals and dialogs. Dictation’s keys always win a tie.</Trans></p>
       <input className="tt-input thread-shortcuts__filter" type="search" aria-label={t`Filter shortcuts`} placeholder={t`Filter by action or keys`} value={filter} onChange={event => setFilter(event.currentTarget.value)} />
       {notice !== null ? <p className="tt-paragraph thread-shortcuts__notice" role="status">{shownWords(notice)}</p> : null}
+      {before}
       {GROUPS.map(group => {
         const rows = groupRows(group).filter(matches)
         if (rows.length === 0) return null
