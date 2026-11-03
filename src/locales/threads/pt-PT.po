@@ -983,6 +983,11 @@ msgstr ""
 msgid "{provider} forked {agent} from {source} into this thread, {time}. It carried the agent’s whole conversation, including its task, which {provider} keeps encrypted, so Sotto can’t show it here. The agent’s row in {sourceName} is unchanged.{open}"
 msgstr ""
 
+#. {provider} is the coding agent’s name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} gave no summary of this command."
+msgstr ""
+
 #. {provider} is a provider's name; {chosen} and {fit} are permission modes.
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 msgid "{provider} has no \"{chosen}\", so its threads start on \"{fit}\"."
@@ -1017,6 +1022,11 @@ msgstr ""
 #. {provider} is the name of the provider, such as Codex.
 #: src/renderer/src/agents/FailedTurnNotice.tsx
 msgid "{provider} reported an error on this thread."
+msgstr ""
+
+#. Over the words a coding agent wrote about what it asks to do. {provider} is its name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} says"
 msgstr ""
 
 #. {provider} is a provider's name or "The provider"; {mode} is the provider's own name for a permission mode.
@@ -7051,6 +7061,11 @@ msgstr ""
 msgid "Run"
 msgstr ""
 
+#. The heading of a card that asks to run a command.
+#: src/renderer/src/agents/requests/requestAnswers.ts
+msgid "Run a command"
+msgstr ""
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Run again"
 msgstr ""
@@ -8368,6 +8383,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "The address could not be copied. Select it and copy it yourself."
+msgstr ""
+
+#. Stands in for the coding agent’s name when it is not known, as in “The agent says”.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "The agent"
 msgstr ""
 
 #. {title} is an agent's title.

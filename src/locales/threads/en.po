@@ -983,6 +983,11 @@ msgstr "{provider} doesn’t list skills here."
 msgid "{provider} forked {agent} from {source} into this thread, {time}. It carried the agent’s whole conversation, including its task, which {provider} keeps encrypted, so Sotto can’t show it here. The agent’s row in {sourceName} is unchanged.{open}"
 msgstr "{provider} forked {agent} from {source} into this thread, {time}. It carried the agent’s whole conversation, including its task, which {provider} keeps encrypted, so Sotto can’t show it here. The agent’s row in {sourceName} is unchanged.{open}"
 
+#. {provider} is the coding agent’s name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} gave no summary of this command."
+msgstr "{provider} gave no summary of this command."
+
 #. {provider} is a provider's name; {chosen} and {fit} are permission modes.
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 msgid "{provider} has no \"{chosen}\", so its threads start on \"{fit}\"."
@@ -1018,6 +1023,11 @@ msgstr "{provider} no longer shows this question. {delivery}"
 #: src/renderer/src/agents/FailedTurnNotice.tsx
 msgid "{provider} reported an error on this thread."
 msgstr "{provider} reported an error on this thread."
+
+#. Over the words a coding agent wrote about what it asks to do. {provider} is its name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} says"
+msgstr "{provider} says"
 
 #. {provider} is a provider's name or "The provider"; {mode} is the provider's own name for a permission mode.
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -7051,6 +7061,11 @@ msgstr "Right-click a link in a reply, or press <0>Shift+F10</0> on it, to choos
 msgid "Run"
 msgstr "Run"
 
+#. The heading of a card that asks to run a command.
+#: src/renderer/src/agents/requests/requestAnswers.ts
+msgid "Run a command"
+msgstr "Run a command"
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Run again"
 msgstr "Run again"
@@ -8369,6 +8384,11 @@ msgstr "The action could not be confirmed. Your draft is retained; check the con
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "The address could not be copied. Select it and copy it yourself."
 msgstr "The address could not be copied. Select it and copy it yourself."
+
+#. Stands in for the coding agent’s name when it is not known, as in “The agent says”.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "The agent"
+msgstr "The agent"
 
 #. {title} is an agent's title.
 #: src/renderer/src/agents/ThreadStart.tsx

@@ -2848,7 +2848,6 @@ struct RequestSheet: View {
         let permission = current.kind == "permission"
         let count = current.questions?.count ?? 0
         let from = Self.from(count: count, provider: provider, threadTitle: threadTitle)
-        let ask: (headline: String?, rest: String?)? = permission ? Self.permissionAsk(current) : nil
         // Who asks and where is one quiet line over the request, and VoiceOver reads the request first (#1855).
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
@@ -2858,7 +2857,7 @@ struct RequestSheet: View {
             .accessibilityElement(children: .combine)
             // Several questions have no headline: each carries its own, and the text a provider built from them would only
             // repeat them.
-            if let headline = title(current, provider, ask: ask) {
+            if let headline = title(current, provider) {
                 Text(headline)
                     .font(.sotto(.title, .semibold))
                     .headingTracking(-0.4)
@@ -2887,18 +2886,15 @@ struct RequestSheet: View {
                 LinkRows(pages: pages, links: links) { opening = $0 }.padding(.top, Space.s4)
             }
         }
-        if let context = current.context {
+        if permission {
+            permissionBody(current, provider: provider)
+        } else if let context = current.context {
             if let command = context.command { PermissionCommand(command: command).padding(.top, Space.s5) }
             if let cwd = context.cwd { runsIn(cwd) }
             if let details = context.details {
                 Text(details).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
             }
-        }
-        // The rest of a permission's words, where its first line is the headline and it names no command of its own.
-        if let rest = ask?.rest, current.context?.command == nil {
-            Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
         }
         if !current.supported {
             note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
@@ -2920,6 +2916,46 @@ struct RequestSheet: View {
         }
     }
 
+    /// What a permission asks: a command under the model's summary of it, or what another request does, on what, with
+    /// every other field in readable lines. The summary is the model's own words, so it is marked as theirs (ADR-0185).
+    @ViewBuilder private func permissionBody(_ current: AgentRequest, provider: String) -> some View {
+        let context = current.context
+        if let command = context?.command {
+            if let summary = context?.summary {
+                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
+            } else {
+                Text(RequestText.noSummary(provider: provider)).font(.sotto(.body)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.top, Space.s3)
+            }
+            PermissionCommand(command: command).padding(.top, Space.s4)
+            ForEach(Array((context?.details ?? "").split(separator: "\n").enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Light(tone: .warning)
+                    Text(verbatim: String(line)).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .padding(.top, Space.s3)
+            }
+            if let cwd = context?.cwd { runsIn(cwd) }
+        } else {
+            if let summary = context?.summary {
+                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
+            }
+            // The rest of its words, where its first line is the headline.
+            if let rest = RequestText.permissionLead(current).rest {
+                Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+            }
+            if let target = context?.target {
+                Text(verbatim: target).font(.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s1)
+            }
+            if let details = context?.details { PermissionDetails(details: details).padding(.top, Space.s3) }
+            if let cwd = context?.cwd { runsIn(cwd) }
+        }
+    }
+
     /// Who asks, and in which thread, over the headline: "Claude Code · Choose the release target", the same on a
     /// permission and a question (#1855). Several questions have no headline, so the line counts them first.
     private static func from(count: Int, provider: String, threadTitle: String) -> String {
@@ -2929,23 +2965,11 @@ struct RequestSheet: View {
         return "\(questions) · \(place)"
     }
 
-    /// A permission as the desktop's card reads it (`permissionSummary` in `requestAnswers.ts`): its first line is what it
-    /// asks, and the rest of its words follow. A first line that only repeats the command it would run asks nothing of
-    /// its own, as Codex's does.
-    private static func permissionAsk(_ request: AgentRequest) -> (headline: String?, rest: String?) {
-        let lines = request.text.split(separator: "\n", omittingEmptySubsequences: false)
-        let first = lines.first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-        let rest = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        let command = (request.context?.command ?? "").split(separator: "\n").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-        let headline: String? = first.isEmpty || first == command ? nil : first
-        return (headline, rest.isEmpty ? nil : rest)
-    }
-
     /// The sheet's headline: what a permission asks, a lone question, or a request's own words when it has no
     /// structured questions. Nil for several questions.
-    private func title(_ request: AgentRequest, _ provider: String, ask: (headline: String?, rest: String?)?) -> String? {
+    private func title(_ request: AgentRequest, _ provider: String) -> String? {
         if request.kind == "permission" {
-            if let headline = ask?.headline { return headline }
+            if let headline = RequestText.permissionLead(request).headline { return headline }
             return request.context?.command != nil
                 ? String(localized: "\(provider) wants to run a command", comment: "%@ is the agent's name")
                 : String(localized: "\(provider) is asking permission", comment: "%@ is the agent's name")
@@ -3317,6 +3341,56 @@ private struct OptionLabel: View {
         .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
+    }
+}
+
+/// What a short permission card, which can answer, shows beyond its words: a setting beside a command, or the opening of a
+/// request's change and fields. **Details** opens the whole of it.
+struct CompactPermissionDetails: View {
+    let context: RequestContext?
+    var body: some View {
+        if let details = context?.details, !details.isEmpty {
+            if context?.command != nil {
+                Text(verbatim: details).font(.sotto(.small)).foregroundStyle(Palette.ink).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, Space.s2)
+            } else {
+                Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(4)
+                    .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                    .padding(.top, Space.s2)
+            }
+        }
+    }
+}
+
+/// The words a model wrote about what it asks, under whose they are: never a headline, since Sotto checked none of them.
+private struct ModelSummary: View {
+    let provider: String
+    let summary: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(RequestText.says(provider: provider)).font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text(verbatim: summary).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The rest of what a permission that is not a command asks: its change and every other field, on the code surface.
+private struct PermissionDetails: View {
+    let details: String
+    var body: some View {
+        Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s3)
+            .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
 

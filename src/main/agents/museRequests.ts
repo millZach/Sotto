@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
+import { cardUnderHeadline, commandCard, inputFields, otherRequestCard } from './requestInput'
 
 /**
  * Muse's two things only the user can settle, as MSP carries them: an approval for a tool action
@@ -80,6 +81,13 @@ function approvalText(approval: MuseApproval): string {
   return `Use ${bounded(approval.toolName, 200)}`
 }
 
+/** What a card shows beyond the action. `rawArgs` is the tool's input as text, so its fields read as lines. */
+function museCardContext(approval: MuseApproval): NonNullable<AgentRequest['context']> {
+  const args = approval.rawArgs ? inputFields(approval.rawArgs) : {}
+  const command = approval.subject.kind === 'shell' ? approval.subject.command : undefined
+  return command ? commandCard(bounded(command), args).context : cardUnderHeadline(otherRequestCard(args, approval.toolName), approvalText(approval))
+}
+
 /** One approval as Sotto shows it. The native choices keep their own labels; Sotto only sorts them by kind. */
 export function museApprovalPending(threadId: string, approval: MuseApproval): Extract<MusePending, { kind: 'approval' }> {
   // A shell approval may ask about several requirements under one native ID. Each is a new request to
@@ -97,8 +105,7 @@ export function museApprovalPending(threadId: string, approval: MuseApproval): E
     }),
     context: {
       toolName: approval.toolName, toolCallId: approval.toolCallId,
-      ...(approval.subject.kind === 'shell' && approval.subject.command ? { command: bounded(approval.subject.command) } : {}),
-      ...(approval.rawArgs ? { details: bounded(approval.rawArgs) } : {}),
+      ...museCardContext(approval),
     },
   }
   return { kind: 'approval', threadId, request, approval }

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
 import { browserRequestText } from './browserRequests'
+import { inputFields, toolInputCard, type ToolInputCard } from './requestInput'
 
 const questionAnswersSchema = z.record(z.string(), z.string())
 
@@ -37,6 +38,19 @@ export function grokToolAdmission(pending: GrokPending, server: string, tools: r
   return once ? { outcome: { outcome: 'selected', optionId: once.optionId } } : undefined
 }
 
+/** A request's card: Grok's `command` and `description` when it runs one, and otherwise the tool `use_tool` names, or its title. */
+function grokCard(title: string | undefined, rawInput: unknown): ToolInputCard {
+  const fallback = title ?? 'Grok requests permission to use a tool.'
+  const used = useToolSchema.safeParse(rawInput)
+  return used.success ? toolInputCard(inputFields(used.data.tool_input), used.data.tool_name) : toolInputCard(inputFields(rawInput), undefined, fallback)
+}
+
+/** A browser request's own words head its card, so only its summary and fields go under them. */
+function browserContext({ context: { action: _action, ...context } }: ToolInputCard): ToolInputCard['context'] {
+  void _action
+  return context
+}
+
 export function grokPending(wireId: string | number, method: string, value: unknown, threadId: string): GrokPending | undefined {
   const id = `grok-request-${JSON.stringify(wireId)}`
   if (method === 'session/request_permission') {
@@ -44,10 +58,11 @@ export function grokPending(wireId: string | number, method: string, value: unkn
     if (!parsed.success) return
     const permission = parsed.data
     const browser = grokBrowserText(permission.toolCall.rawInput)
-    return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'permission', text: browser ?? `${permission.toolCall.title ?? 'Grok requests permission to use a tool.'}${permission.toolCall.rawInput === undefined ? '' : `\n${JSON.stringify(permission.toolCall.rawInput).slice(0, 20000)}`}`, options: [],
+    const card = grokCard(permission.toolCall.title, permission.toolCall.rawInput)
+    return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'permission', text: browser ?? card.text, options: [],
       permissionChoices: permission.options.map(option => ({ id: option.optionId, label: option.name, kind: option.kind === 'allow_once' ? 'allow-once' : option.kind === 'allow_always' ? 'allow-always' : 'deny',
         ...(['allow_always', 'reject_always'].includes(option.kind) ? { description: 'Remember this decision using the native provider’s offered scope.' } : {}) })),
-      context: { toolCallId: permission.toolCall.toolCallId, details: permission.toolCall.rawInput === undefined ? undefined : JSON.stringify(permission.toolCall.rawInput).slice(0, 100000) } } }
+      context: { toolCallId: permission.toolCall.toolCallId, ...(browser ? browserContext(card) : card.context) } } }
   }
   if (method === 'x.ai/ask_user_question') {
     const parsed = questionSchema.safeParse(value)
