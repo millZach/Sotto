@@ -1881,6 +1881,10 @@ msgstr "Could not download update"
 msgid "Could not install update"
 msgstr "Could not install update"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+msgstr "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Could not reach OpenRouter."
 msgstr "Could not reach OpenRouter."
@@ -4528,6 +4532,10 @@ msgstr "reading the conversation"
 msgid "Reading the conversation"
 msgstr "Reading the conversation"
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Reading the Councils…"
+msgstr "Reading the Councils…"
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "reading the other answers"
 msgstr "reading the other answers"
@@ -5367,6 +5375,10 @@ msgstr "Sotto could not read the saved OpenRouter key. Nothing was deleted. Quit
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 msgstr "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read the threads. Reopen the popup and try again."
+msgstr "Sotto could not read the threads. Reopen the popup and try again."
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
 msgstr "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
@@ -5374,6 +5386,10 @@ msgstr "Sotto could not read this computer’s load just now. Watcher treats it 
 #: src/renderer/src/watcher/watcherRoom.tsx
 msgid "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
 msgstr "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read Watcher’s room. Reopen the popup and try again."
+msgstr "Sotto could not read Watcher’s room. Reopen the popup and try again."
 
 #: src/renderer/src/features/onboarding/ComputersStep.tsx
 msgid "Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones."

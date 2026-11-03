@@ -65,6 +65,7 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
       <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
       <div className="council-scroll"><div className="council-page">
         {bridge ? <AskForm bridge={bridge} panel={seatsPanel} onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
+        {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
         {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
         <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
       </div></div>
@@ -114,7 +115,7 @@ function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQue
     void bridge.estimate({ originThread: shownOrigin }).then(read => { if (live) setEstimate(read) }, () => undefined)
     return () => { live = false }
   }, [bridge, shownOrigin])
-  if (!state || !settings) return <p className="council-notice tt-paragraph">{t`Preparing the Council…`}</p>
+  if (!state || !settings) return <p className="council-notice tt-paragraph" role={agents?.error ? 'alert' : 'status'}>{agents?.error ?? t`Preparing the Council…`}</p>
   const seats = councilSeatsInForce(seatsPanel.panelists, seatsPanel.chair, catalog)
   const ready = councilSeatsReady(seats)
   const providers = [...new Set([...seats.panelists, seats.chair].flatMap(seat => seat?.provider ? [PROVIDER_LABELS[seat.provider]] : []))]

@@ -1717,6 +1717,10 @@ msgstr ""
 msgid "Cloud iPhone minutes used this month"
 msgstr ""
 
+#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
+msgid "Cloud iPhone status could not be read. Reopen Settings and try again."
+msgstr ""
+
 #. {spoken} is a sign-in code read one character at a time.
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Code {spoken}"
@@ -3152,6 +3156,10 @@ msgstr ""
 msgid "load unknown"
 msgstr ""
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Local app access could not be read. Reopen Settings and try again."
+msgstr ""
+
 #. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
 #: src/renderer/src/features/settings/CouncilSettings.tsx
 msgid "Long table"
@@ -3505,6 +3513,10 @@ msgstr ""
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "No shortcut"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "No speech models were returned."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -4269,6 +4281,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Reaching {name}…"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
+msgid "Reading Cloud iPhone status…"
+msgstr ""
+
+#: src/renderer/src/features/settings/HostsSettings.tsx
+msgid "Reading hosts…"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
@@ -6681,10 +6701,6 @@ msgstr ""
 #. {month} is the name of a month, such as October.
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Used in {month}"
-msgstr ""
-
-#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "Used in this month"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx

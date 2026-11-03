@@ -1717,6 +1717,10 @@ msgstr "Cloud iPhone"
 msgid "Cloud iPhone minutes used this month"
 msgstr "Cloud iPhone minutes used this month"
 
+#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
+msgid "Cloud iPhone status could not be read. Reopen Settings and try again."
+msgstr "Cloud iPhone status could not be read. Reopen Settings and try again."
+
 #. {spoken} is a sign-in code read one character at a time.
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Code {spoken}"
@@ -3152,6 +3156,10 @@ msgstr "Listening. Say something."
 msgid "load unknown"
 msgstr "load unknown"
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Local app access could not be read. Reopen Settings and try again."
+msgstr "Local app access could not be read. Reopen Settings and try again."
+
 #. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
 #: src/renderer/src/features/settings/CouncilSettings.tsx
 msgid "Long table"
@@ -3506,6 +3514,10 @@ msgstr "No settled thread on this computer has been quiet that long."
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "No shortcut"
 msgstr "No shortcut"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "No speech models were returned."
+msgstr "No speech models were returned."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "No supported open-source themes found. Try a broader search."
@@ -4270,6 +4282,14 @@ msgstr "Reaching {name} over your tailnet…"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Reaching {name}…"
 msgstr "Reaching {name}…"
+
+#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
+msgid "Reading Cloud iPhone status…"
+msgstr "Reading Cloud iPhone status…"
+
+#: src/renderer/src/features/settings/HostsSettings.tsx
+msgid "Reading hosts…"
+msgstr "Reading hosts…"
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Reading OpenRouter’s speech models…"
@@ -6682,10 +6702,6 @@ msgstr "Used for AI cleanup and for transcribing with OpenRouter, and kept in yo
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Used in {month}"
 msgstr "Used in {month}"
-
-#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "Used in this month"
-msgstr "Used in this month"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Used when {system} turns dark."

@@ -1313,6 +1313,8 @@ Type `/` at the start of the prompt for the commands: `/new`, `/stop`, `/open`, 
 
 A question or permission the thread or Watcher waits on shows on the card with the same choices as in Sotto, and is answered only when you press one. Web links open in your browser; a prototype link opens its thread or Watcher's room in Sotto, where you can open the prototype. Questions Watcher passes on from the threads it watches are answered in its room.
 
+If the popup cannot read the threads or their messages, a notice says so. Reopen the popup to try again, or open the thread in Sotto.
+
 Drag the card by any part that is not words or a control to move it; it keeps that place, and grows from its bottom edge, until Sotto quits. Its width is fixed. It wears Sotto's theme, light or dark, and holds still when motion is reduced.
 
 Change the shortcut in **Settings → Keyboard → Popup**: press the shortcut, then the new keys, and let go. Keys a dictation shortcut uses are refused, and so are keys another app already holds, which Sotto finds out by trying them; the old shortcut keeps working until the new one is taken. **Remove shortcut** leaves the popup to the tray; the reset arrow brings back `Alt+Shift+Space`. On Linux, whether a desktop lets Sotto take a shortcut depends on the desktop, and the row says when it could not. Stable shows none of this and keeps a shortcut you saved.

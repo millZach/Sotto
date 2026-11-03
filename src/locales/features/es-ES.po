@@ -1881,6 +1881,10 @@ msgstr ""
 msgid "Could not install update"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+msgstr ""
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Could not reach OpenRouter."
 msgstr ""
@@ -4528,6 +4532,10 @@ msgstr ""
 msgid "Reading the conversation"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Reading the Councils…"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "reading the other answers"
 msgstr ""
@@ -5367,12 +5375,20 @@ msgstr ""
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read the threads. Reopen the popup and try again."
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
 msgstr ""
 
 #: src/renderer/src/watcher/watcherRoom.tsx
 msgid "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read Watcher’s room. Reopen the popup and try again."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ComputersStep.tsx

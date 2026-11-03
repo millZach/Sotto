@@ -15,11 +15,12 @@ export function LocalAppsSettings({ localApps, onUpdateSettings, bridge = window
   const { t } = useLingui()
   const [state, setState] = useState<LocalAppsState | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
+  const [readFailed, setReadFailed] = useState(false)
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => undefined)
-    const off = bridge.onChanged(value => { if (alive) setState(value) })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setReadFailed(true) })
+    const off = bridge.onChanged(value => { if (alive) { setState(value); setReadFailed(false) } })
     return () => { alive = false; off() }
   }, [bridge])
   const localHostRunning = state?.localHostRunning ?? true
@@ -30,6 +31,7 @@ export function LocalAppsSettings({ localApps, onUpdateSettings, bridge = window
           onCheckedChange={enabled => { void onUpdateSettings({ localApps: enabled }).then(saved => setSaveFailed(!saved)) }}
           description={t`Apps on this computer can read and send to your threads and Watcher, and answer questions and permissions, without a pairing code.`} />
         {!localHostRunning ? <p className="tt-paragraph"><Trans>Needs the local host. Turn on Run the local host above, then restart Sotto.</Trans></p> : null}
+        {readFailed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Local app access could not be read. Reopen Settings and try again.</Trans></p> : null}
         {saveFailed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>The setting could not be saved. Nothing was changed. Try again.</Trans></p> : null}
         {localApps && state?.phase === 'failed' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Apps on this computer can’t connect. Sotto couldn’t open their listener or save their files in its data folder. Turn this off and on again, or restart Sotto.</Trans></p> : null}
       </div>
