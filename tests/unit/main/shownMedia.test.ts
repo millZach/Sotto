@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { requestedCaptures, ThreadMediaStore } from '../../../src/main/agents/threadMedia'
+import { agentCaptures, ThreadMediaStore } from '../../../src/main/agents/threadMedia'
 import { readVideo, shownMedia, videoHandle, videoTypeOf } from '../../../src/main/agents/shownMedia'
 import { MediaToolServer, SHOW_IN_THREAD_TOOL } from '../../../src/main/agents/mediaTools'
 import { AGENT_VIDEO_MAX_BYTES } from '../../../src/shared/agentActivity'
@@ -22,10 +22,30 @@ const mp4 = (size = 4096, brand = 'isom'): Buffer => { const bytes = Buffer.allo
 const webm = (): Buffer => Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x82, 0x84]), Buffer.from('webm', 'latin1'), Buffer.alloc(2048, 3)])
 const sha = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex')
 
-describe('what Sotto captures on its own (ADR-0170, request-only)', () => {
-  it('keeps an image the agent generated, and no tool result\'s picture, viewed picture or file', async () => {
+describe('what Sotto captures on its own (ADR-0170, part 7)', () => {
+  it('with the switch on, keeps a tool result\'s picture and a viewed picture as well, and follows the switch from the next one', async () => {
     const root = await folder(), store = new ThreadMediaStore(join(root, 'media')); await store.load()
-    const { captureMedia, captureMediaFile } = requestedCaptures(store)
+    const wanted = { on: true }
+    const { captureMedia, captureMediaFile } = agentCaptures(store, () => wanted.on)
+    const picture = { mimeType: 'image/png', data: pngHeader(640, 400).toString('base64') }
+    expect(captureMedia([picture], 'tool')).toEqual([expect.objectContaining({ kind: 'image', width: 640, height: 400, source: 'tool' })])
+    await writeFile(join(root, 'viewed.png'), pngHeader(32, 32))
+    expect(await captureMediaFile(join(root, 'viewed.png'), 'tool')).toEqual([expect.objectContaining({ kind: 'image', source: 'tool' })])
+    wanted.on = false
+    expect(captureMedia([picture], 'tool')).toEqual([])
+    expect(await captureMediaFile(join(root, 'viewed.png'), 'tool')).toEqual([])
+  })
+
+  it('does not ask the switch for an update with no picture', () => {
+    const asked = { count: 0 }
+    const { captureMedia } = agentCaptures({ capture: () => [], captureFile: async () => [] }, () => { asked.count += 1; return true })
+    expect(captureMedia([], 'tool')).toEqual([])
+    expect(asked.count).toBe(0)
+  })
+
+  it('with the switch off, keeps an image the agent generated, and no tool result\'s picture, viewed picture or file', async () => {
+    const root = await folder(), store = new ThreadMediaStore(join(root, 'media')); await store.load()
+    const { captureMedia, captureMediaFile } = agentCaptures(store, () => false)
     const picture = { mimeType: 'image/png', data: pngHeader(640, 400).toString('base64') }
     expect(captureMedia([picture], 'tool')).toEqual([])
     await writeFile(join(root, 'viewed.png'), pngHeader(32, 32))

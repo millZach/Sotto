@@ -42,6 +42,25 @@ describe('the desktop defaults a host keeps', () => {
     expect(again.ceiling(() => true)).toEqual({ mode: 'approval-required' })
   })
 
+  it('shows every agent picture until a desktop that counts says otherwise, across a restart and while a desktop sends no word of it (ADR-0170, part 7)', async () => {
+    const root = await folder(), store = new DesktopDefaultsStore(root)
+    await store.load()
+    expect(store.showEveryAgentPicture(() => true)).toBe(true)
+    await store.record('desktop-a', { newThreadRuntimeMode: 'auto', showEveryAgentPicture: false })
+    expect(store.showEveryAgentPicture(() => true)).toBe(false)
+    // A desktop that stops counting stops deciding; it is a setting, so an answers grant is not what counts here.
+    expect(store.showEveryAgentPicture(() => false)).toBe(true)
+    await store.record('desktop-a', { newThreadRuntimeMode: 'approval-required' })
+    expect(store.showEveryAgentPicture(() => true)).toBe(false)
+    const again = new DesktopDefaultsStore(root); await again.load()
+    expect(again.showEveryAgentPicture(() => true)).toBe(false)
+    // Another desktop that sends no word of it, newer or not, changes nothing.
+    await again.record('desktop-b', { newThreadRuntimeMode: 'auto' })
+    expect(again.showEveryAgentPicture(() => true)).toBe(false)
+    await again.record('desktop-a', { newThreadRuntimeMode: 'auto', showEveryAgentPicture: true })
+    expect(again.showEveryAgentPicture(() => true)).toBe(true)
+  })
+
   it('holds every start to Ask for approval until a desktop tells it, and then only as far as that desktop may answer', async () => {
     const root = await folder(), store = new DesktopDefaultsStore(root)
     await store.load()
@@ -204,6 +223,28 @@ describe('the desktop\'s push of its defaults', () => {
     push.close()
   })
 
+  it('tells only a host that takes it of the picture switch, again when it changes, and no host while inline-media is off (ADR-0170, part 7)', async () => {
+    const sent: DesktopDefaultsInput[][] = [[], []]
+    const connections: DesktopDefaultsTarget[] = sent.map((items, index) => ({ hostId: index ? 'older' : 'forge', kind: 'remote',
+      service: { supportsHostDelegation: true, supportsEveryAgentPicture: index === 0, desktopDefaults: async defaults => {
+        items.push(defaults); return { receivedAt: new Date().toISOString() }
+      } } }))
+    const push = new DesktopDefaultsPush({ connections: () => connections })
+    push.update('auto', undefined, undefined, undefined)
+    await push.settled()
+    push.update('auto', undefined, undefined, true)
+    await push.settled()
+    // The same again sends nothing.
+    push.update('auto', undefined, undefined, true)
+    await push.settled()
+    push.update('auto', undefined, undefined, false)
+    await push.settled()
+    expect(sent[0]).toEqual([{ newThreadRuntimeMode: 'auto' }, { newThreadRuntimeMode: 'auto', showEveryAgentPicture: true }, { newThreadRuntimeMode: 'auto', showEveryAgentPicture: false }])
+    // A host from before the switch refuses a field it does not know, and with it the new-thread default.
+    expect(sent[1]!.every(defaults => !('showEveryAgentPicture' in defaults))).toBe(true)
+    push.close()
+  })
+
   const target = (hostId: string, supports: boolean, sent: DesktopDefaultsInput[], fail = false): DesktopDefaultsTarget => ({ hostId, kind: 'remote',
     service: { supportsHostDelegation: supports, desktopDefaults: async defaults => {
       await new Promise(resolve => setTimeout(resolve, 5)); sent.push(defaults)
@@ -295,7 +336,7 @@ describe('the desktop\'s push of its defaults', () => {
     const follow = followDesktopDefaults(push, source, () => roles)
     // Roles that change before any state go with the first one.
     roles = { 'code-review': { modelId: 'model-a', reasoningEffort: null } }
-    follow.rolesChanged()
+    follow.defaultsChanged()
     await push.settled(); expect(sent).toEqual([])
     // The router's state carries this computer's default while its host runs, the selected host's while it is off.
     for (const listener of states) listener({ configuration: { newThreadRuntimeMode: 'auto' } })
@@ -307,7 +348,7 @@ describe('the desktop\'s push of its defaults', () => {
     // New roles keep the default last published.
     for (const listener of states) listener({ configuration: { newThreadRuntimeMode: 'full-access' } })
     roles = { 'code-review': { modelId: 'model-b', reasoningEffort: null } }
-    follow.rolesChanged()
+    follow.defaultsChanged()
     await push.settled()
     expect(sent.at(-1)).toEqual({ newThreadRuntimeMode: 'full-access', workerRoles: roles })
     // A connection the router takes is told.

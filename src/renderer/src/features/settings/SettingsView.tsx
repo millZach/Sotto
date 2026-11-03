@@ -465,6 +465,7 @@ export function SettingsView({
   const workerMachine = watcherOn && crossMachineOn
   const performanceOn = useOwlFeature('main-freeze')
   const councilOn = useOwlFeature('council')
+  const inlineMediaOn = useOwlFeature('inline-media')
   const popupOn = useOwlFeature('popup') && window.sotto?.popup !== undefined
   const localAppsOn = useOwlFeature('local-apps')
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
@@ -494,7 +495,7 @@ export function SettingsView({
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'local-apps': localAppsOn }
+  const gates: Record<SettingGate, boolean> = { 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'local-apps': localAppsOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -794,6 +795,8 @@ export function SettingsView({
                 <SettingsGroup title={t`What agents can do without asking`} icon={ShieldCheck}>
                   <Toggle setting="browser-without-asking" label={t`Let agents use the browser without asking`} checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description={t`Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser.`} />
                   <Toggle setting="visuals-in-threads" label={t`Let agents draw visuals in threads`} checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description={t`Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online.`} />
+                  {/* ADR-0170, part 7: behind the same Owl feature as the pictures themselves. */}
+                  {inlineMediaOn ? <Toggle setting="every-agent-picture" label={t`Show every picture and video an agent makes`} checked={settings.showEveryAgentPicture} onCheckedChange={checked => void save({ showEveryAgentPicture: checked })} description={t`Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make.`} /> : null}
                 </SettingsGroup>
                 {/* ADR-0140: an Owl feature. Last on the page, since what it does cannot be taken back. */}
                 {clearThreadsOn ? <ClearThreadsSettings settings={settings} onSave={save} onNotice={text => setNotice({ text, error: false })} /> : null}
