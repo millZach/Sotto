@@ -4,7 +4,6 @@ import { PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentThread }
 import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, DEFAULT_COUNCIL_LAYOUT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
   type CouncilLayout, type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
-import { isThreadClosed } from '../../../../shared/threadActivity'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ModelPicker } from '../../agents/ModelPicker'
 import { ProviderMark } from '../../agents/ProviderMark'
@@ -14,6 +13,7 @@ import { ChoiceMenu } from '../usage/UsageMenu'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
+import { clearCouncilDraft, councilAskable, readCouncilDraft } from './councilDraft'
 import './council.css'
 
 /**
@@ -47,7 +47,10 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
   const [panel, setPanel] = useState<CouncilPanel | null>(null)
-  const [question, setQuestion] = useState('')
+  // Ask the Council on a reply opens the page with that thread and reply filled in.
+  const [draft] = useState(readCouncilDraft)
+  useEffect(clearCouncilDraft, [])
+  const [question, setQuestion] = useState(draft?.question ?? '')
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
@@ -65,7 +68,7 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
     <div className="council-body">
       <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
       <div className="council-scroll"><div className="council-page">
-        {bridge ? <AskForm bridge={bridge} panel={seatsPanel} onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
+        {bridge ? <AskForm bridge={bridge} origin={draft?.originThread} panel={seatsPanel} onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
         {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
         {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
         <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
@@ -84,12 +87,6 @@ export function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentMode
   const seats = useMemo(() => councilSeatsInForce(panel.panelists, panel.chair, catalog), [panelKey, catalog])
   const seatsKey = JSON.stringify([...seats.panelists, seats.chair].map(seat => seat && [seat.modelId, seat.model?.name, seat.provider, seat.ready, seat.reasoningEffort, seat.from]))
   return useMemo(() => seats, [seatsKey])
-}
-
-/** A thread the Council can start from: an ordinary thread on this computer, open, not one another thread started. */
-function askable(thread: AgentThread, localHostId: string | undefined): boolean {
-  return thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.remoteHost !== true && (thread.hostId === undefined || thread.hostId === localHostId)
-    && thread.delegatedBy === undefined && !isThreadClosed(thread)
 }
 
 /**
@@ -136,7 +133,7 @@ function OriginPicker({ threads, projects, chosen, onChoose }: { readonly thread
   </div>
 }
 
-function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly panel: CouncilPanel
+function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly origin: string | undefined; readonly panel: CouncilPanel
   readonly onPanel: (panel: CouncilPanel | null) => void; readonly question: string; readonly onQuestion: (question: string) => void }): ReactNode {
   const { t, i18n } = useLingui()
   const app = useOptionalApp()
@@ -146,9 +143,9 @@ function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQue
   const questionId = useId(), estimateId = useId()
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   const local = state?.connections?.find(connection => connection.kind === 'local')?.hostId
-  const threads = useMemo(() => (state?.host.threads ?? []).filter(thread => askable(thread, local))
+  const threads = useMemo(() => (state?.host.threads ?? []).filter(thread => councilAskable(thread, local))
     .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '')), [state, local])
-  const [origin, setOrigin] = useState<string>('')
+  const [origin, setOrigin] = useState<string>(offeredOrigin ?? '')
   const [estimate, setEstimate] = useState<CouncilEstimate | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
