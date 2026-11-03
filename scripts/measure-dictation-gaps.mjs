@@ -197,7 +197,8 @@ if (values.summarize) {
   async function desktopCommand(args, timeout = 15_000) {
     // Keep command output (AX values included) out of saved artifacts and console logs.
     const { stdout } = await execute('agent-desktop', args, { timeout }).catch(error => {
-      throw new Error(`agent-desktop ${args[0]} failed (${error.code ?? 'unknown'}); observe app state before retrying`)
+      const code = /"code"\s*:\s*"([A-Z_]+)"/.exec(error.stdout ?? '')?.[1] ?? error.code ?? 'unknown'
+      throw new Error(`agent-desktop ${args[0]} failed (${code}); observe app state before retrying`)
     })
     const result = JSON.parse(stdout)
     if (!result.ok) throw new Error(`agent-desktop ${args[0]} failed: ${result.error?.code ?? 'unknown'}`)
@@ -208,8 +209,9 @@ if (values.summarize) {
   async function coldLaunch() {
     await desktopCommand(['close-app', 'Sotto'])
     await desktopCommand(['launch', 'com.sotto.desktop', '--arg=--dictation-timing', '--activate'], 45_000)
-    // Launch activation can leave the restored window hidden and its startup paint pending.
+    // A restored Electron window can exist while hidden; make it visible before asking for focus.
     await desktopCommand(['wait', '--app', 'Sotto', '--window', 'Sotto Owl', '--timeout', '60000'], 75_000)
+    await desktopCommand(['restore', '--app', 'Sotto'])
     await desktopCommand(['focus-window', '--app', 'Sotto', '--title', 'Sotto Owl'])
     const room = await desktopCommand(['snapshot', '--app', 'Sotto', '--wait-for', 'radiobutton:Dictate', '--wait-timeout', '60000'], 75_000)
     const roomNodes = [room.tree]
