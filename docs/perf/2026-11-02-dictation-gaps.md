@@ -279,6 +279,19 @@ The 30.107-second idle interval measured 11.160% of one core across nine install
 
 Cold-launch preparation initially failed before any hotkey. The final collector (`703926082`) waits for the exact main window, invokes Sotto's native Settings menu to show it and publish visibility, then waits for enabled Start dictation before activating TextEdit. Native unminimize/focus alone did not consistently expose the ready renderer. Preparation failures yielded zero accepted recordings; all 30 completed measurements are retained. B typecheck, lint, catalog extraction and the measurement build passed. Unit and perf test sources await GitHub CI; no local test, e2e or design capture was run.
 
+### B cue isolation
+
+Before C, five additional warm recordings in the unchanged B app temporarily disabled Sound cues through Settings. They are diagnostic samples, not a replacement for B's twenty warm recordings. Five seconds separated presses; the model, microphone and output settings were unchanged. Sound cues was restored and verified on afterward. Independent TextEdit readback reached 96 matches of both expected clauses, confirming all five additional pastes. [Raw evidence](2026-11-02-dictation-gaps/b-cues-off.jsonl).
+
+| Interval | B cues on (20), p50 / p95 ms | B cues off (5), p50 / p95 ms |
+| --- | ---: | ---: |
+| Hotkey → Listening shown | 105.444 / 127.735 | 113.336 / 121.784 |
+| Hotkey → first chunk | 142.812 / 162.008 | 113.631 / 120.036 |
+| Source connected → first chunk | 48.300 / 56.599 | 13.800 / 21.500 |
+| Stop → paste | 383.099 / 408.155 | 372.571 / 629.812 |
+
+This small comparison supports the inference that fresh start-cue setup blocks receipt of capture chunks in the renderer: removing cues reduces the source-to-first-chunk interval by roughly 35 ms at both percentiles, without a corresponding Listening improvement. It does not prove a particular Chromium output-cache mechanism or late hardware capture. C will retain the cue and measure its implementation with a full cold/warm batch.
+
 ## Acceptance and limitations
 
 | Measure | Required |
