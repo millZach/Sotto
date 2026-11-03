@@ -754,7 +754,7 @@ export class WatcherService implements WatcherControlHooks {
       ...options.swarms ? { swarmPending: (target: WatcherThreadTarget) => {
         const service = options.swarms!.service(), row = service?.swarmForThread(target.threadId)
           ?? this.owningSnapshot(target.hostId)?.threads.find(thread => thread.id === target.threadId)?.swarm
-        return row?.leadThreadId === target.threadId && row.synthesisDone !== true && row.stopped !== true
+        return row?.leadThreadId === target.threadId && row.synthesisDone !== true && !row.synthesisFailed && row.stopped !== true
       } } : {},
       reportsWork: () => {
         // One host list per pass, and only once a paired host's thread asks.
@@ -3794,7 +3794,8 @@ export class WatcherService implements WatcherControlHooks {
     if (!thread || !this.connected(thread)) return undefined
     const swarm = this.options.swarms?.service()?.swarmOutcome(thread.id, thread)
     const result = watcherTurnOutcome(swarm?.messageId ? { ...operation, messageId: swarm.messageId } : operation, thread, isWatcherMessage)
-    const seen = result && swarm?.pending && result.outcome === 'answered' ? { ...result, outcome: 'background' as const } : result
+    const seen = result && swarm?.outcome ? { ...result, outcome: swarm.outcome }
+      : result && swarm?.pending && result.outcome === 'answered' ? { ...result, outcome: 'background' as const } : result
     if (!seen || seen.outcome === operation.outcome && seen.turnMessageId === operation.turnMessageId
       && seen.nativeTurnId === operation.nativeTurnId && seen.replyMessageId === operation.replyMessageId) return undefined
     return seen
