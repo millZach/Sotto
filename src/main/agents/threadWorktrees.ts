@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Dirent, Stats } from 'node:fs'
-import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, opendir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
@@ -348,16 +348,33 @@ export interface WorktreeReclaimOptions {
   readonly confirmedRepositories?: readonly { path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }[]
   /** The user's answer to the uncommitted-changes confirmation. */
   readonly withUncommittedChanges?: boolean
-  /** A rule acting on its own: a folder with anything but dependencies in its ignored files is left alone. */
+  /** A rule acting on its own: a folder with anything but dependencies and regenerable build output in its ignored files is left alone. */
   readonly automatic?: boolean
 }
 const DEPENDENCY_FOLDER = /(^|\/)node_modules\/$/u
+/** The Git attribute a repository sets on a build folder its build makes again, such as `/out sotto-build-output`, so a rule may remove it (ADR-0041). */
+export const BUILD_OUTPUT_ATTRIBUTE = 'sotto-build-output'
+/** How a `CACHEDIR.TAG` begins under the Cache Directory Tagging standard, which SwiftPM's `.build/` and Cargo's `target/` follow. */
+const CACHE_DIRECTORY_SIGNATURE = 'Signature: 8a477f597d28d172789f06886806bc55'
 /**
  * The lock reason Sotto gives Git while it removes a worktree (#1297). Git refuses to prune or remove a locked worktree,
  * Sotto's inspection refuses to send into one, and a lock with this reason found later is a removal Sotto started and
  * finishes. Plain words, because `git worktree list` shows them.
  */
 export const REMOVING_LOCK_REASON = 'Sotto is removing this folder'
+const RULE_KEEPS_IGNORED = 'This folder holds ignored files besides installed dependencies and build output, so a rule leaves it alone.'
+/** Whether `folder` holds a `CACHEDIR.TAG` file that begins with the standard's signature. A tag that cannot be read, as one an antivirus holds open on Windows, does not count. */
+async function cacheTagged(folder: string): Promise<boolean> {
+  const tag = join(folder, 'CACHEDIR.TAG')
+  try {
+    if (!(await lstat(tag)).isFile()) return false
+    const handle = await open(tag, 'r')
+    try {
+      const { bytesRead, buffer } = await handle.read(Buffer.alloc(CACHE_DIRECTORY_SIGNATURE.length), 0, CACHE_DIRECTORY_SIGNATURE.length, 0)
+      return buffer.toString('latin1', 0, bytesRead) === CACHE_DIRECTORY_SIGNATURE
+    } finally { await handle.close() }
+  } catch { return false }
+}
 /** Why a folder on a detached HEAD stays: removing it would lose a commit only that folder's HEAD has. */
 const DETACHED_COMMIT_ON_NO_BRANCH = 'This folder has no branch checked out, and no branch or remote branch has its commit, so removing it would lose that commit. Create a branch at it first. Nothing was changed.'
 /** Remove worktree, Settle's question and Delete thread… ask for a branch; only a rule or a clear takes a detached folder. */
@@ -1284,6 +1301,27 @@ export class ThreadWorktrees {
     return COMMIT_ID.test(commit) && await this.onABranch(path, commit) ? commit : undefined
   }
 
+  /**
+   * The ignored paths in `path` a rule may not remove (ADR-0041): all of `ignored` but the folders a build makes again,
+   * which are those the repository marks with the `sotto-build-output` attribute, read from this checkout's own
+   * attributes, and those holding a `CACHEDIR.TAG` that begins with the standard's signature. When Git cannot answer,
+   * all of them are kept.
+   */
+  async ruleKeptIgnored(path: string, ignored: readonly string[]): Promise<string[]> {
+    const folders = ignored.filter(entry => entry.endsWith('/'))
+    const marked = new Set<string>()
+    try {
+      // Bound each argument list on Windows.
+      for (let offset = 0; offset < folders.length; offset += 100) {
+        const answers = (await this.git(path, ['check-attr', '-z', BUILD_OUTPUT_ATTRIBUTE, '--', ...folders.slice(offset, offset + 100)])).split('\0')
+        for (let i = 0; i + 2 < answers.length; i += 3) if (answers[i + 2] === 'set') marked.add(answers[i]!)
+      }
+    } catch { return [...ignored] }
+    const kept: string[] = []
+    for (const entry of ignored) if (!marked.has(entry) && !(entry.endsWith('/') && await cacheTagged(join(path, entry)))) kept.push(entry)
+    return kept
+  }
+
   /** Whether a local branch or remote-tracking ref has `commit`; tags do not count. */
   private async onABranch(cwd: string, commit: string): Promise<boolean> {
     return !(await this.git(cwd, ['rev-list', '--max-count=1', commit, '--not', '--branches', '--remotes'])).trim()
@@ -1294,8 +1332,9 @@ export class ThreadWorktrees {
    * commits, the thread keeps its record, and `restore` puts the folder back on the next send. It
    * refuses a folder that is not the registered checkout, one on a detached HEAD unless a rule or a
    * clear asks and a branch or remote branch has its commit, one holding a link out of itself, and,
-   * for a rule acting alone, one with anything but dependencies among its ignored files. Uncommitted
-   * work goes only after the user's answer. A detached folder is put back on its commit.
+   * for a rule acting alone, one with anything but dependencies and marked or cache-tagged build
+   * output among its ignored files. Uncommitted work goes only after the user's answer. A detached
+   * folder is put back on its commit.
    */
   async reclaim(metadata: AgentWorktree, options: WorktreeReclaimOptions = {}): Promise<AgentWorktree> {
     if (metadata.mode !== 'independent' || metadata.reused) throw new Error('Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.')
@@ -1312,7 +1351,7 @@ export class ThreadWorktrees {
     const detachedCommit = facts.branch ? undefined : await this.keptDetachedCommit(facts.path)
     if (!facts.branch && !detachedCommit) throw new Error(DETACHED_COMMIT_ON_NO_BRANCH)
     if (facts.outsideLink) throw new Error(`This folder contains a link to another folder (${facts.outsideLink}). Remove the link first so nothing outside the folder is touched. Nothing was changed.`)
-    if (options.automatic && facts.ignored.length) throw new Error('This folder holds ignored files besides installed dependencies, so a rule leaves it alone.')
+    if (options.automatic && (await this.ruleKeptIgnored(facts.path, facts.ignored)).length) throw new Error(RULE_KEEPS_IGNORED)
     if (!options.automatic && facts.ignored.length && !options.confirmedIgnored) throw new Error('This folder holds ignored files. Nothing was removed. Choose Remove worktree to review them.')
     if (!options.automatic && ((facts.ignored.length && !options.confirmedIgnored) || (options.confirmedIgnored && JSON.stringify([...options.confirmedIgnored].sort()) !== JSON.stringify(facts.ignored)))) throw new Error('The ignored items changed. Nothing was removed. Close this question and choose Remove worktree again to review them.')
     if (facts.repositories.length && JSON.stringify(options.confirmedRepositories) !== JSON.stringify(facts.repositories)) throw new Error('The nested work changed. Nothing was removed. Choose Remove worktree again to review it.')
@@ -1339,13 +1378,14 @@ export class ThreadWorktrees {
         if (JSON.stringify(ignoredRows) !== JSON.stringify(facts.ignored) ||
           JSON.stringify(untrackedNow.split('\0').filter(Boolean).sort()) !== JSON.stringify(facts.untracked) ||
           Boolean(statusNow.length) !== facts.dirty) throw new Error('The files changed. Nothing was removed. Choose Remove worktree again to review them.')
-        // Asked last, just before the lock: the folder may have moved to another commit, or the last branch with its commit
-        // been deleted.
+        const registration = (await gitDirectories(facts.path))?.gitDir
+        // Asked last, just before the lock: a build folder may have lost its mark or its cache tag, the folder may have moved
+        // to another commit, or the last branch with its commit been deleted.
+        if (options.automatic && (await this.ruleKeptIgnored(facts.path, facts.ignored)).length) throw new Error(RULE_KEEPS_IGNORED)
         if (detachedCommit && await this.keptDetachedCommit(facts.path) !== detachedCommit) throw new Error(DETACHED_COMMIT_ON_NO_BRANCH)
         // Nothing is deleted until Git holds the folder locked for Sotto's removal: from here on, a removal cut off by a
         // crash, a quit or a file kept in use is one Sotto recognises and finishes (#1297). The checks above covered
         // submodules, nested work and uncommitted changes, which is what Git's own clean check would have asked about.
-        const registration = (await gitDirectories(facts.path))?.gitDir
         if (registration) await writeFile(join(registration, REMOVAL_RECORD), JSON.stringify({ nestedWorktrees }))
         await this.git(metadata.repositoryRoot!, ['worktree', 'lock', '--reason', REMOVING_LOCK_REASON, '--', facts.path])
         return nestedWorktrees

@@ -25,3 +25,10 @@ apps/omarchy/sotto.desktop text eol=lf
 apps/omarchy/*.tpl text eol=lf
 apps/omarchy/bindings.lua text eol=lf
 apps/omarchy/.SRCINFO text eol=lf
+
+# Build output a build makes again. A cleanup rule may remove a worktree whose ignored files are only
+# these and node_modules (ADR-0041).
+/out sotto-build-output
+/release sotto-build-output
+/native/coreml-asr/.build sotto-build-output
+/native/key-listener/build sotto-build-output
