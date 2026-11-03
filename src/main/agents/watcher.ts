@@ -1392,7 +1392,7 @@ export class WatcherService implements WatcherControlHooks {
     const thread = this.owningThread(target.hostId, target.threadId)
     if (!thread) return
     const master = this.view().current
-    if (!master) refuse('NOT_CURRENT_WATCHER', 'Open Watcher before settling a thread.')
+    if (target.hostId !== this.hostId() && !master) refuse('NOT_CURRENT_WATCHER', 'Open Watcher before settling a thread.')
     const descendants = this.settlesWith(thread)
     const heads = [thread, ...descendants].map(item => ({ id: item.id, title: item.title, head: nativeHead(item) }))
     const blocking = descendants.filter(item => this.settleBlockingField(item))
@@ -1400,7 +1400,7 @@ export class WatcherService implements WatcherControlHooks {
       const input = { target: { hostId: target.hostId, threadId: child.id }, limit: 1, includeActivities: false, requireFresh: true as const }
       try {
         const read = target.hostId === this.hostId() ? await this.readThread(input)
-          : watcherToolSchemas.read_thread.output.parse(await this.remote!.read(target.hostId, { master, ...this.adoptOn(target.hostId), call: { name: 'read_thread', input } }))
+          : watcherToolSchemas.read_thread.output.parse(await this.remote!.read(target.hostId, { master: master!, ...this.adoptOn(target.hostId), call: { name: 'read_thread', input } }))
         return read.status !== 'ok' ? child : undefined
       } catch { return child }
     }))
