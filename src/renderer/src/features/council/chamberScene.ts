@@ -265,11 +265,14 @@ export function sceneBusy(scene: ChamberScene): boolean {
 
 /**
  * How long until the chamber draws again, or null to draw nothing until something changes: about 30 frames a second
- * while a figure is busy or something is on its way, 8 while only the fire flickers and the idle glance about, and
- * nothing with motion reduced once everything has arrived.
+ * while a figure is busy or something is on its way, 8 while only the fire flickers and the idle glance about or
+ * throughout the fairness check, and nothing with motion reduced. A reduced-motion draw lands
+ * every pose and scroll at once, so it never needs another frame until the scene changes.
  */
-export function chamberPace(still: boolean, moving: boolean, busy: boolean): number | null {
-  if (still) return moving ? MOVING_MS : null
+export function chamberPace(still: boolean, moving: boolean, busy: boolean, stage: ChamberScene['stage']): number | null {
+  if (still) return null
+  // Nodding can lag its target enough to count as moving. It must never switch the fairness check to the fast pace.
+  if (stage === 'fairness') return IDLE_CHECK_MS
   return moving || busy ? MOVING_MS : IDLE_CHECK_MS
 }
 

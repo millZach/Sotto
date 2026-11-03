@@ -46,6 +46,7 @@ const customSettings = {
   showBrowserPreviews: false,
   browserWithoutAsking: false,
   visualsInThreads: false,
+  showEveryAgentPicture: false,
   babysitPullRequests: false,
   resumeThreadsAfterRestart: false,
   restartStoppedThreads: false,
@@ -176,6 +177,11 @@ describe('settings', () => {
     expect(parseSettings({}).browserWithoutAsking).toBe(true)
     expect(parseSettings({ browserWithoutAsking: false }).browserWithoutAsking).toBe(false)
     expect(parseSettings({ browserWithoutAsking: 'no' }).browserWithoutAsking).toBe(true)
+  })
+  it('shows every picture and video an agent makes for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0170, part 7)', () => {
+    expect(parseSettings({}).showEveryAgentPicture).toBe(true)
+    expect(parseSettings({ showEveryAgentPicture: false }).showEveryAgentPicture).toBe(false)
+    expect(parseSettings({ showEveryAgentPicture: 'no' }).showEveryAgentPicture).toBe(true)
   })
   it('lets agents draw visuals for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0056)', () => {
     expect(parseSettings({}).visualsInThreads).toBe(true)
@@ -462,6 +468,7 @@ describe('settings', () => {
       showBrowserPreviews: true,
       browserWithoutAsking: true,
       visualsInThreads: true,
+      showEveryAgentPicture: true,
       babysitPullRequests: true,
       resumeThreadsAfterRestart: true,
       restartStoppedThreads: true,

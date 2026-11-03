@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
+import { runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../src/main/agents/threadWorktrees'
 import { WorktreeCleanup } from '../../src/main/agents/worktreeCleanup'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread, type AgentWorktree } from '../../src/shared/agents'
 import { DEFAULT_WORKTREE_CLEANUP, type WorktreeCleanupRules } from '../../src/shared/settings'
@@ -22,11 +22,11 @@ afterEach(async () => {
 })
 const commit = (cwd: string, message: string) => git(cwd, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', message])
 
-async function repository() {
+async function repository(run?: RunGit) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-cleanup-test-')); roots.push(root)
   const project = join(root, 'project'); await mkdir(project)
   await initializeGitRepository(project, { files: { 'tracked.txt': 'baseline', '.gitignore': 'node_modules/\n' } })
-  const worktrees = new ThreadWorktrees(root)
+  const worktrees = new ThreadWorktrees(root, run)
   const checkout = async () => worktrees.inspect(await worktrees.ensure(await worktrees.allocate(project, 'independent')))
   return { root, project, worktrees, checkout }
 }
@@ -84,6 +84,60 @@ describe('worktree cleanup rules', () => {
     await new WorktreeCleanup({ host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, unchanged: true }) }).sweep()
     expect(host.reclaimed).toEqual(['integrated'])
     expect((await git(r.project, ['rev-parse', ahead.branch!])).trim()).toBe((await git(ahead.path!, ['rev-parse', 'HEAD'])).trim())
+  })
+  it('reclaims a clean detached folder whose commit a branch or remote branch has, keeps one on a commit no branch has, and puts it back on that commit', async () => {
+    const r = await repository()
+    const settled = { workspaceSettledAt: '2026-11-01T00:00:00.000Z' }
+    // A build thread's checkout of a commit the default branch has.
+    const onBranch = await r.checkout()
+    await git(onBranch.path!, ['checkout', '--detach'])
+    // A review thread's checkout of a pull request's commit, which only a remote-tracking ref has once the branch is gone.
+    const onRemote = await r.checkout()
+    await writeFile(join(onRemote.path!, 'tracked.txt'), 'pull request work'); await git(onRemote.path!, ['add', '.']); await commit(onRemote.path!, 'Pull request work')
+    const reviewed = (await git(onRemote.path!, ['rev-parse', 'HEAD'])).trim()
+    await git(r.project, ['update-ref', 'refs/remotes/origin/pull-request', reviewed])
+    await git(onRemote.path!, ['checkout', '--detach'])
+    await git(r.project, ['branch', '-D', onRemote.branch!])
+    // A commit made on no branch is the folder's alone.
+    const lost = await r.checkout()
+    await git(lost.path!, ['checkout', '--detach'])
+    await writeFile(join(lost.path!, 'tracked.txt'), 'detached work'); await git(lost.path!, ['add', '.']); await commit(lost.path!, 'Detached work')
+    const threads = [thread('onBranch', await r.worktrees.inspect(onBranch), settled), thread('onRemote', await r.worktrees.inspect(onRemote), settled), thread('lost', await r.worktrees.inspect(lost), settled)]
+    expect(threads.map(item => item.worktree!.branch)).toEqual([undefined, undefined, undefined])
+    const host = fakeHost(threads, r.worktrees)
+    const logged: string[] = []
+    await new WorktreeCleanup({ host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, onSettle: true }), log: code => logged.push(code) }).sweep()
+    expect(host.reclaimed).toEqual(['onBranch', 'onRemote'])
+    expect(logged).toEqual(['worktree-cleanup-reclaimed', 'worktree-cleanup-reclaimed', 'worktree-cleanup-skipped'])
+    await expect(lstat(onRemote.path!)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(join(lost.path!, 'tracked.txt'), 'utf8')).toBe('detached work')
+    const record = threads[1]!.worktree!
+    expect(record).toMatchObject({ branch: undefined, detachedCommit: reviewed })
+    expect(record.reclaimedAt).toBeTruthy()
+    // The next send puts the folder back on the same commit, still on no branch.
+    expect(await r.worktrees.ensure(record)).toMatchObject({ status: 'ready', branch: undefined, reclaimedAt: undefined, detachedCommit: undefined })
+    expect((await git(onRemote.path!, ['rev-parse', 'HEAD'])).trim()).toBe(reviewed)
+    await expect(git(onRemote.path!, ['symbolic-ref', '-q', 'HEAD'])).rejects.toThrow()
+    expect(await readFile(join(onRemote.path!, 'tracked.txt'), 'utf8')).toBe('pull request work')
+  })
+  it('keeps a detached folder when the last branch with its commit is deleted while the rule removes it', async () => {
+    let race: (() => Promise<unknown>) | undefined
+    // The reachability check before the registry lane answers before the branch goes; the one inside the lane sees it gone.
+    const r = await repository(async (cwd, args, options) => {
+      const output = await git(cwd, args, options)
+      if (args[0] === 'rev-list' && args.includes('--branches') && race) { const run = race; race = undefined; await run() }
+      return output
+    })
+    const copy = await r.checkout()
+    await writeFile(join(copy.path!, 'tracked.txt'), 'work'); await git(copy.path!, ['add', '.']); await commit(copy.path!, 'Work')
+    await git(copy.path!, ['checkout', '--detach'])
+    race = () => git(r.project, ['branch', '-D', copy.branch!])
+    const host = fakeHost([thread('a', await r.worktrees.inspect(copy), { workspaceSettledAt: '2026-11-01T00:00:00.000Z' })], r.worktrees)
+    await new WorktreeCleanup({ host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, onSettle: true }) }).sweep()
+    expect(race).toBeUndefined()
+    expect(host.reclaimed).toEqual([])
+    expect(await readFile(join(copy.path!, 'tracked.txt'), 'utf8')).toBe('work')
+    expect((await git(r.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
   })
   it('does not reuse a merged answer after auto-settle advances the branch during the sweep', async () => {
     const r = await repository(), copy = await r.checkout()

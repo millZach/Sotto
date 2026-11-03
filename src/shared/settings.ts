@@ -172,6 +172,11 @@ export interface AppSettings {
   /** On by default (ADR-0056): an agent in a project thread may draw a visual in that thread. Off, new launches get no visual tool and calls are refused; visuals already drawn stay. */
   visualsInThreads: boolean
   /**
+   * Whether a thread shows on its own every picture and video its agent makes or looks at (ADR-0170, part 7). Off, only
+   * what the user asks for, through `show_in_thread`, and an image the user asked to be generated.
+   */
+  showEveryAgentPicture: boolean
+  /**
    * On by default (ADR-0061 decision 12): an agent in a Claude Code, Codex or Grok Build project thread on this computer
    * may babysit its pull requests with Sotto's tool. Off, new launches get no tool, calls are refused, and what agents
    * started ends at once; what the user started from the Pull request surface stays.
@@ -486,6 +491,7 @@ const fieldSchemas = {
   showBrowserPreviews: z.boolean(),
   browserWithoutAsking: z.boolean(),
   visualsInThreads: z.boolean(),
+  showEveryAgentPicture: z.boolean(),
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
   restartStoppedThreads: z.boolean(),
@@ -611,6 +617,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showBrowserPreviews: true,
   browserWithoutAsking: true,
   visualsInThreads: true,
+  showEveryAgentPicture: true,
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
   restartStoppedThreads: true,
@@ -805,6 +812,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
+    showEveryAgentPicture: parseField(persisted, 'showEveryAgentPicture', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
     restartStoppedThreads: parseField(persisted, 'restartStoppedThreads', defaults),

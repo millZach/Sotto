@@ -33,6 +33,8 @@ export interface AgentRequestCardProps {
   /** The thread that owns the request; answers always carry this and `request.id`. */
   readonly ownerId: string
   readonly ownerTitle: string
+  /** Popup links for the Watcher target open its room, as the popup's own Open does. */
+  readonly watcher?: boolean
   readonly draftOwner?: RequestDraftOwner
   readonly request: AgentRequest
   /** Why the choices cannot be used right now (disconnected, busy); null when they can. */
@@ -59,7 +61,7 @@ export interface AgentRequestCardProps {
  * exactly the choices the provider offered, sends one answer for this request's own ID, and holds instead of
  * resending when delivery is unknown — the sidebar's Needs you card pops this same card open, on the same store.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const { t } = useLingui()
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
@@ -136,7 +138,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
             : blocked !== null ? <p className="agent-request__status tt-paragraph">{blocked}</p> : null
 
   const questionCount = questions.length
-  const fields = questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []} pages={index === 0 ? pages : []} owner={{ threadId: ownerId, requestId: request.id }}
+  const fields = questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []} pages={index === 0 ? pages : []} owner={{ threadId: ownerId, requestId: request.id, watcher }}
     linkMissing={index === 0 && request.linkMissing === true}
     selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
     onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)
@@ -201,7 +203,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}><Trans>Question</Trans></strong></div>
         <p className="agent-request__text"><LinkedText text={request.text} /></p>
-        <MessageLinks links={rows} pages={pages} owner={{ threadId: ownerId, requestId: request.id }} linkMissing={request.linkMissing === true} />
+        <MessageLinks links={rows} pages={pages} owner={{ threadId: ownerId, requestId: request.id, watcher }} linkMissing={request.linkMissing === true} />
         {mode === 'legacy-options' ? <>
           <fieldset className="agent-request__question" disabled={disabled}>
             <legend className="tt-visually-hidden">{request.text}</legend>
@@ -299,7 +301,7 @@ function servedAsPage(url: string, pages: readonly QuestionPage[]): boolean {
  * What a row's page belongs to, which main opens it through: the thread and the request it is on, or, with no request,
  * the thread's prototype waiting for review (ADR-0108).
  */
-export interface PageOwner { readonly threadId: string; readonly requestId?: string | undefined }
+export interface PageOwner { readonly threadId: string; readonly requestId?: string | undefined; readonly watcher?: boolean | undefined }
 
 /** What a row says when its page could not be opened. */
 const PAGE_OPEN_FAILURES = {
@@ -328,6 +330,12 @@ export function usePageOpener(owner: PageOwner | undefined): { readonly open: (p
     const press = ++latest.current
     setFailure(null)
     const settle = (said: LaterWords | null): void => { if (press === latest.current) setFailure(said) }
+    // The popup has no browser pane or page channel. Its existing Open path takes the user to the owning thread or
+    // Watcher's room, where this same card can open the page through main, without giving the popup any further authority.
+    if (window.sottoPopup && !window.sotto?.openQuestionPage) {
+      void window.sottoPopup.open({ threadId: owner.threadId, watcher: owner.watcher === true }).catch(() => settle(PAGE_OPEN_FAILURES.unavailable))
+      return
+    }
     const input = owner.requestId === undefined ? { threadId: owner.threadId, token: page.token } : { threadId: owner.threadId, requestId: owner.requestId, token: page.token }
     void (window.sotto?.openQuestionPage?.(input) ?? Promise.resolve({ ok: false as const, reason: 'unavailable' as const }))
       .then(result => {
@@ -373,7 +381,7 @@ export function MessageLinks({ links, pages = [], owner, linkMissing = false, la
     {links.map(url => {
       const place = linkPlace(url)
       return <a key={url} className="agent-request__link-row tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={url} aria-label={t`Open the link, ${place}`}
-        onClick={event => { event.preventDefault(); event.stopPropagation(); void window.sotto?.openExternalLink?.(url) }}
+        onClick={event => { event.preventDefault(); event.stopPropagation(); void (window.sotto?.openExternalLink ?? window.sottoPopup?.openExternalLink)?.(url) }}
         onAuxClick={event => event.preventDefault()}>
         <Link2 size={16} aria-hidden="true" />
         <span><strong><Trans>Open the link</Trans></strong><small>{place}</small></span>
