@@ -639,7 +639,13 @@ export class DictationController {
   private handleSegment(session: ActiveSession, segment: AudioRecordingResult): void {
     if (!this.isCurrent(session) || session.stopClaimed || segment.samples.length === 0) return
     const result = this.sendPart(session, segment.samples, false)
-    session.parts.push({ audio: segment.samples, rms: roundRms(calculateRms(segment.samples)), result })
+    const part: RecordingPart = { audio: segment.samples, rms: roundRms(calculateRms(segment.samples)), result }
+    session.parts.push(part)
+    // Its audio goes as soon as its text is back, so a dictation with no limit holds only the parts still on their way.
+    void result.then((transcript) => {
+      part.transcript ??= transcript
+      part.audio = null
+    }, () => undefined)
   }
 
   /** Sends one part for transcription; the last part sent reports progress. */
