@@ -70,13 +70,15 @@ export class PopupShortcut {
     if (refusal !== null) return this.resume({ ok: false, reason: 'invalid' })
     const previous = this.registered
     if (previous === chord) return this.resume({ ok: true })
-    // The same keys in another spelling: the system refuses them while the old spelling holds them, so let go first.
-    if (previous !== null && sameChord(previous, chord, this.platform)) this.release()
+    // The same keys in another spelling: the system refuses them while the old spelling holds them, so let go first. They
+    // are one shortcut to the system, so letting go of the old spelling afterwards would let go of the new one too.
+    const respelled = previous !== null && sameChord(previous, chord, this.platform)
+    if (respelled) this.release()
     if (!this.register(chord)) {
       if (this.registered === null && previous !== null) this.register(previous)
       return this.resume({ ok: false, reason: 'taken' })
     }
-    if (previous !== null && previous !== chord && this.registered === chord) this.unregister(previous)
+    if (previous !== null && !respelled) this.unregister(previous)
     this.keys = { ...keys, popupShortcut: chord }
     this.publish({ status: 'on', chord })
     return { ok: true }
