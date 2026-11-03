@@ -35,6 +35,8 @@ export interface ChordMatcher {
   /** Every started hold goes inert with no event: a press shortcut took the session over. */
   releaseHolds(): void
   watchedTokens(): string[]
+  /** The chords with a key besides modifiers, whose key the macOS listener keeps from the app in front. */
+  keyChords(): string[]
 }
 
 const MODIFIERS: ReadonlySet<string> = new Set(['Fn', 'Control', 'Alt', 'Shift', 'CommandOrControl', 'Super'])
@@ -144,6 +146,10 @@ export function createChordMatcher(
 
     watchedTokens() {
       return [...new Set(states.flatMap((state) => state.tokens))]
+    },
+
+    keyChords() {
+      return states.filter((state) => state.key !== null).map((state) => state.tokens.join('+'))
     },
   }
 }

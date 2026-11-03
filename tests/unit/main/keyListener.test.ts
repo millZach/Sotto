@@ -96,20 +96,20 @@ function setup(extra: Partial<KeyListenerOptions> = {}) {
 }
 
 describe('createKeyListener', () => {
-  it('spawns lazily and stops when nothing is watched or recorded', () => {
+  it('spawns lazily, sends the chords to keep from the app in front, and stops when nothing is watched or recorded', () => {
     const { listener, children, calls } = setup()
     listener.watch([])
     listener.record(false)
     expect(children).toHaveLength(0)
     expect(listener.running()).toBe(false)
 
-    listener.watch(['Fn', 'Space'])
+    listener.watch(['Fn', 'Space'], ['Fn+Space', 'Fn+;rm', 'Fn++Space'])
     expect(children).toHaveLength(1)
-    expect(children[0]!.written).toEqual(['keys Fn Space\n'])
+    expect(children[0]!.written).toEqual(['keys Fn Space\n', 'swallow Fn+Space\n'])
     listener.record(true)
     listener.watch([])
     expect(listener.running()).toBe(true)
-    expect(children[0]!.written).toEqual(['keys Fn Space\n', 'record on\n', 'keys\n'])
+    expect(children[0]!.written).toEqual(['keys Fn Space\n', 'swallow Fn+Space\n', 'record on\n', 'keys\n', 'swallow\n'])
 
     listener.record(false)
     expect(listener.running()).toBe(false)
@@ -122,7 +122,7 @@ describe('createKeyListener', () => {
 
     listener.record(true)
     expect(children).toHaveLength(2)
-    expect(children[1]!.written).toEqual(['keys\n', 'record on\n'])
+    expect(children[1]!.written).toEqual(['keys\n', 'swallow\n', 'record on\n'])
   })
 
   it('parses lines strictly, tolerates CRLF and split chunks, and never logs line content', () => {
@@ -146,7 +146,7 @@ describe('createKeyListener', () => {
     listener.request()
     listener.watch(['Fn'])
     listener.request()
-    expect(children[0]!.written).toEqual(['keys Fn\n', 'request\n'])
+    expect(children[0]!.written).toEqual(['keys Fn\n', 'swallow\n', 'request\n'])
   })
 
   it('kills a helper that is not ready within 5 s and counts it as a failure', () => {

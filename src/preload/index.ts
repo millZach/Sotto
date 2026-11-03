@@ -151,6 +151,7 @@ import {
   updateStatusSchema,
   widgetSnapshotSchema,
   widgetVisibilitySchema,
+  LIVING_OWL_RENDERER_ARGUMENT,
   type SottoBridge,
   type SottoWidgetBridge,
   type WidgetDragPayload,
@@ -736,6 +737,8 @@ export function createSottoWidgetBridge(
   platform: SottoPlatform,
   /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
+  /** The living owl (ADR-0178): only while its Owl feature is on. */
+  livingOwl = false,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
@@ -752,6 +755,7 @@ export function createSottoWidgetBridge(
   return Object.freeze({
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
+    ...(livingOwl ? { livingOwl: true as const } : {}),
 
     onWidgetState,
     onWidgetVisibilityChange,
@@ -823,7 +827,7 @@ export function exposeRendererBridge(
   if (rendererRole === 'widget') {
     context.exposeInMainWorld(
       'sottoWidget',
-      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_)),
+      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(LIVING_OWL_RENDERER_ARGUMENT)),
     )
     return true
   }

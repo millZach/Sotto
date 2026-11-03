@@ -18,6 +18,7 @@ export default tseslint.config(
       'artifacts/codex-reasoning-rows/**',
       'artifacts/linux-test-findings/**',
       'artifacts/omarchy-setup/**',
+      '**/.wrangler/**',
       '.t/**',
       '.zstack/**',
       'artifacts/omarchy-theme/**',

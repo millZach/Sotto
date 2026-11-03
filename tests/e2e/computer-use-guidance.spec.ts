@@ -57,3 +57,41 @@ test('Computer Use connection guidance wraps in the built app and opens from the
     } finally { await closeSotto(launched) }
   } finally { await removeOwnedE2EProfile(profile) }
 })
+
+test('the address stop says what to do above the helper\'s words, and fits at the minimum size', async () => {
+  test.setTimeout(120_000)
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-computer-use-address-' })).directory
+  const refusal = 'Computer Use has been stopped for this turn because it could not determine the current browser URL on Windows with enough confidence to enforce policy. Stop your work and send a final message noting why Computer Use ended.'
+  const guidance = computerUseNeeds(refusal, false)!
+  const snapshot = { ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title: 'Test project', path: profile }],
+    threads: [{ id: 'workshop', projectId: 'project', title: 'Computer Use address', modelId: 'codex:test', runtimeMode: 'full-access', status: 'idle', requests: [],
+      messages: [{ id: 'prompt', role: 'user', text: 'Use Computer Use to read the open page.', createdAt: '2026-11-02T10:00:00.000Z' }],
+      activities: [{ id: 'computer-use', turnId: 'turn', sequence: 0, afterMessageId: 'prompt', kind: 'tool', status: 'failed', title: 'Computer Use', error: `${guidance}\n${refusal}` }] }] }
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, }, activeProjectId: 'project', activeThreadId: 'workshop' }))
+  await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot, creations: [], projectAliases: [] }))
+  const shots = test.info().outputPath('captures')
+  await mkdir(shots, { recursive: true })
+  try {
+    const launched = await launchSotto('success', profile)
+    try {
+      const { page } = launched
+      await openThreads(page)
+      await page.evaluate(() => window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' }))
+      const log = page.getByRole('log', { name: 'Thread transcript' })
+      await expect(log).toContainText('Use Computer Use to read the open page.')
+      const row = log.getByRole('button', { name: /Computer Use/ })
+      if (!await row.isVisible()) await log.locator('.thread-activity__summary').click()
+      await row.focus()
+      await page.keyboard.press('Enter')
+      const error = log.locator('.thread-activity__error')
+      await expect(error).toContainText(guidance)
+      await expect(error).toContainText(refusal)
+      expect((await error.innerText()).indexOf(guidance)).toBeLessThan((await error.innerText()).indexOf(refusal))
+      await resizeWindow(launched, 820, 560)
+      await expect(error).toBeVisible()
+      expect(await log.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0)
+      await page.screenshot({ animations: 'disabled', path: resolve(shots, '820-560.png') })
+    } finally { await closeSotto(launched) }
+  } finally { await removeOwnedE2EProfile(profile) }
+})

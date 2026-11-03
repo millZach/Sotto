@@ -1,0 +1,159 @@
+<!doctype html>
+<!--
+  Throwaway mock-up: the living owl while Sotto transcribes (ADR-0178).
+  Question: what should the owl do while it transcribes? Today it tilts its
+  head and rolls its eyes up beside a spinner, which reads as puzzled and says
+  "working" twice. Each new variant drops the spinner: the owl and the
+  progress bar say it.
+  A. Reading: eyes sweep left to right along a line, a small nod at each new line.
+  B. Orbit: the pupils circle in their sockets, the owl itself the spinner.
+  C. Focus: calm half-closed eyes, their light pulsing slowly.
+  Picked: Keep today's, November 2, 2026 (Drake): the head tilts 8 degrees in place beside the spinner.
+-->
+<html lang="en" data-mode="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto · The transcribing owl</title>
+<style>
+:root {
+  --canvas: #121211; --desk: #262624; --surface: #1a1a19; --raised: #262624;
+  --text: #ededea; --muted: #a3a39e; --accent: #a9b8ff; --lit: #d6ddff;
+  --top: color-mix(in oklab, var(--raised) 55%, var(--surface));
+  --bottom: color-mix(in oklab, var(--surface) 70%, var(--canvas));
+  --edge: rgb(255 255 255 / 11%); --sheen: rgb(255 255 255 / 7%);
+  --shadow: 0 8px 20px -6px rgb(0 0 0 / 60%), 0 1px 3px rgb(0 0 0 / 40%);
+}
+:root[data-mode='light'] {
+  --canvas: #fafaf8; --desk: #ecece8; --surface: #ffffff; --raised: #f1f1ee;
+  --text: #1a1a19; --muted: #5f5f5a; --accent: #4057d6; --lit: #b7c2f2;
+  --top: var(--surface); --bottom: color-mix(in oklab, var(--surface) 55%, var(--raised));
+  --edge: color-mix(in srgb, var(--text) 16%, transparent); --sheen: rgb(255 255 255 / 60%);
+  --shadow: 0 8px 20px -6px color-mix(in srgb, var(--text) 26%, transparent), 0 1px 3px color-mix(in srgb, var(--text) 14%, transparent);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--text); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--edge); }
+header strong { font-weight: 600; }
+header .spacer { flex: 1; }
+header button { font: inherit; font-size: 13px; color: var(--text); background: var(--raised); border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+header button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+main { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 16px 20px; }
+.card { background: var(--desk); border-radius: 12px; padding: 14px 16px 18px; }
+.card h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.card p { margin: 2px 0 10px; font-size: 13px; color: var(--muted); }
+.big { display: grid; place-items: center; height: 150px; }
+.big .zoom { zoom: 2.4; }
+.small { display: grid; place-items: center; height: 56px; }
+
+/* the capsule, as widget.css paints it */
+.capsule { position: relative; display: flex; width: 212px; height: 40px; align-items: center; gap: 7px; padding: 0 12px 4px 10px; overflow: hidden;
+  border: 1px solid var(--edge); border-radius: 20px; background: linear-gradient(180deg, var(--top), var(--bottom));
+  box-shadow: var(--shadow), inset 0 1px 0 var(--sheen); font-family: Manrope, system-ui, sans-serif; }
+.copy { font-size: 11.5px; white-space: nowrap; }
+.spin { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top-color: var(--accent); animation: orbit .9s linear infinite; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+.progress { position: absolute; left: 15px; right: 15px; bottom: 5px; height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--text) 12%, transparent); }
+.progress span { display: block; height: 100%; border-radius: 2px; background: var(--accent); animation: fill 6s linear infinite; }
+@keyframes fill { from { width: 4%; } to { width: 100%; } }
+
+/* the owl, in the mark's 96-unit tile */
+.owl { width: 22px; height: 22px; flex: none; overflow: visible; display: block; }
+.owl * { transform-box: view-box; }
+.owl .head { fill: var(--accent); }
+.owl .pupil { fill: var(--accent); }
+.owl .lit { fill: var(--lit); opacity: 0; }
+.owl .glow { opacity: .3; }
+.owl .lid { fill: var(--accent); transform: scaleY(0); transform-box: fill-box; transform-origin: 50% 0; }
+.owl .whole { transform-origin: 48px 52px; }
+
+/* Today: the head tilts and the eyes roll up, beside a spinner */
+[data-v='today'] .whole { transform: rotate(8deg); }
+[data-v='today'] .pupils { transform: translate(3px, -2.4px); }
+[data-v='today'] .glow { animation: pulse 1.4s ease-in-out infinite; }
+
+/* A. Reading: the eyes follow a line left to right, then drop to the next with a small nod */
+[data-v='read'] .pupils { animation: read 1.5s cubic-bezier(.5, 0, .5, 1) infinite; }
+[data-v='read'] .whole { animation: nod 1.5s ease-in-out infinite; }
+[data-v='read'] .lid { transform: scaleY(.22); }
+[data-v='read'] .glow { opacity: .45; }
+@keyframes read {
+  0% { transform: translate(-3.6px, .6px); }
+  78% { transform: translate(3.6px, .6px); }
+  86% { transform: translate(3.6px, 1.6px); }
+  100% { transform: translate(-3.6px, .6px); }
+}
+@keyframes nod { 0%, 80%, 100% { transform: none; } 88% { transform: translateY(1.4px) rotate(-1.5deg); } }
+
+/* B. Orbit: the pupils circle in their sockets; the owl is the spinner */
+[data-v='orbit'] .pupils { animation: circle 1.1s linear infinite; }
+[data-v='orbit'] .lit { opacity: .9; }
+[data-v='orbit'] .glow { opacity: .6; }
+@keyframes circle {
+  0% { transform: translate(3px, 0); } 12.5% { transform: translate(2.1px, 2.1px); } 25% { transform: translate(0, 3px); }
+  37.5% { transform: translate(-2.1px, 2.1px); } 50% { transform: translate(-3px, 0); } 62.5% { transform: translate(-2.1px, -2.1px); }
+  75% { transform: translate(0, -3px); } 87.5% { transform: translate(2.1px, -2.1px); } 100% { transform: translate(3px, 0); }
+}
+
+/* C. Focus: calm half-closed eyes, their light pulsing slowly, breathing a little faster */
+[data-v='focus'] .lid { transform: scaleY(.46); }
+[data-v='focus'] .pupils { transform: translateY(1.6px); }
+[data-v='focus'] .glow { animation: pulse 1.6s ease-in-out infinite; }
+[data-v='focus'] .lit { animation: litpulse 1.6s ease-in-out infinite; }
+[data-v='focus'] .whole { animation: breathe 1.6s ease-in-out infinite; transform-origin: 48px 80px; }
+@keyframes pulse { 0%, 100% { opacity: .25; } 50% { opacity: .8; } }
+@keyframes litpulse { 0%, 100% { opacity: 0; } 50% { opacity: .85; } }
+@keyframes breathe { 50% { transform: scale(.985, 1.03); } }
+
+/* every owl blinks now and then */
+.blink { animation: blink 5.3s linear infinite; }
+@keyframes blink { 0%, 92%, 96%, 100% { transform: scaleY(0); } 94% { transform: scaleY(1); } }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <strong>The transcribing owl</strong>
+  <span class="spacer"></span>
+  <button type="button" id="mode">Light</button>
+</header>
+<main id="grid"></main>
+<script>
+const HEAD = 'M18.24 33.84C16.32 30 15.84 22.8 19.2 18C19.8 16.8 21.12 15.6 21.72 18C21.96 21.6 24.6 25.44 30 25.44C38.4 22.32 57.6 20.4 69.84 27.36C73.2 27.12 76.32 24.6 76.56 20.64C76.8 19.56 77.76 19.56 78.24 21.36C80.4 24 81.36 31.44 78.72 37.2C80.64 39.6 82.08 45.6 82.08 55.2C82.32 66.24 80.28 71.76 74.4 75.6C69 79.8 57.6 80.04 48 80.04C38.28 80.04 26.88 79.8 21.48 75.6C15.6 71.76 13.56 66.24 13.8 55.2C13.68 44.4 14.88 38.4 18.24 33.84Z'
+const EYES = [
+  { d: 'M20.76 52.2C20.64 43.8 22.56 39.48 28.8 39.48C36.24 39.24 42.48 40.08 42.36 50.4C42.36 58.8 39.6 62.64 31.8 62.64C24 62.76 20.64 59.4 20.76 52.2Z', x: 36, y: 48.96, top: 39.2, bottom: 62.8 },
+  { d: 'M53.88 53.4C53.88 48.6 55.2 46.56 58.8 45.6L70.56 43.2C73.68 42.6 75.12 45.6 75.12 51.6C75.24 60 73.2 62.76 64.2 62.76C57.6 62.76 53.88 60 53.88 53.4Z', x: 60.36, y: 51.84, top: 43, bottom: 62.8 },
+]
+const BEAK = 'M45.6 59.88C47.04 59.52 48.96 59.52 50.4 59.88C51.6 60.12 51.72 61.08 51.12 61.8L48.6 65.64C48.24 66.24 47.76 66.24 47.4 65.64L44.88 61.8C44.28 61.08 44.4 60.12 45.6 59.88Z'
+let n = 0
+function owl() {
+  const id = 'o' + (n++)
+  return `<svg class="owl" viewBox="8 12 80 72" aria-hidden="true"><defs>
+    <mask id="${id}m" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96"><rect width="96" height="96" fill="#fff"/>${EYES.map(e => `<path d="${e.d}"/>`).join('')}<path d="${BEAK}"/></mask>
+    ${EYES.map((e, i) => `<clipPath id="${id}c${i}"><path d="${e.d}"/></clipPath>`).join('')}
+    <radialGradient id="${id}g"><stop offset="0" stop-color="var(--lit)" stop-opacity=".9"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".12"/></radialGradient>
+  </defs><g class="whole"><path class="head" d="${HEAD}" mask="url(#${id}m)"/>
+    ${EYES.map((e, i) => `<g clip-path="url(#${id}c${i})"><circle class="glow" cx="${e.x}" cy="${e.y}" r="13" fill="url(#${id}g)"/>
+      <g class="pupils"><circle class="pupil" cx="${e.x}" cy="${e.y}" r="3.12"/><circle class="lit" cx="${e.x}" cy="${e.y}" r="4"/></g>
+      <rect class="lid" x="${e.x - 30}" y="${e.top - 2}" width="60" height="${e.bottom - e.top + 4}"/>
+      <g class="blink-wrap"><rect class="lid blink" x="${e.x - 30}" y="${e.top - 2}" width="60" height="${e.bottom - e.top + 4}"/></g></g>`).join('')}
+  </g></svg>`
+}
+const capsule = v => `<div class="capsule" data-v="${v}">${owl()}${v === 'today' ? '<span class="spin"></span>' : ''}<span class="copy">Transcribing</span><span class="progress"><span></span></span></div>`
+const VARIANTS = [
+  ['today', 'Today', 'Head tilted, eyes rolled up, beside a spinner.'],
+  ['read', 'A. Reading', 'Eyes follow a line left to right, then drop to the next with a small nod. No spinner.'],
+  ['orbit', 'B. Orbit', 'The pupils circle in their sockets, lit: the owl is the spinner. No spinner.'],
+  ['focus', 'C. Focus', 'Calm half-closed eyes, their light pulsing slowly. No spinner.'],
+]
+document.getElementById('grid').innerHTML = VARIANTS.map(([v, title, note]) => `<section class="card"><h2>${title}</h2><p>${note}</p>
+  <div class="big"><div class="zoom">${capsule(v)}</div></div><div class="small">${capsule(v)}</div></section>`).join('')
+const mode = document.getElementById('mode')
+mode.addEventListener('click', () => {
+  const light = document.documentElement.dataset.mode !== 'light'
+  document.documentElement.dataset.mode = light ? 'light' : 'dark'
+  mode.textContent = light ? 'Dark' : 'Light'
+})
+</script>
+</body>
+</html>
