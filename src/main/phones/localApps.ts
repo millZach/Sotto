@@ -205,6 +205,8 @@ export class LocalApps {
       service: this.options.service!, pairing, admin: false,
       // Its own key: the phone listener observes threads over the same service.
       observationKey: 'local-apps-observations',
+      // And its own clients: a phone's follow-up for Watcher is the phone listener's to admit or refuse.
+      ownClientsOnly: true as const,
       mayAnswer: (client: ClientIdentity) => this.options.policy?.mayGrant(client).allowed ?? false,
       onRevoked: (clientId: string) => this.enqueue(() => this.revoked(clientId)),
     }
