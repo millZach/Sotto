@@ -208,6 +208,8 @@ if (values.summarize) {
   async function coldLaunch() {
     await desktopCommand(['close-app', 'Sotto'])
     await desktopCommand(['launch', 'com.sotto.desktop', '--arg=--dictation-timing', '--activate'], 45_000)
+    // Launch activation can leave the restored window hidden and its startup paint pending.
+    await desktopCommand(['focus-window', '--app', 'Sotto', '--title', 'Sotto Owl'])
     const room = await desktopCommand(['snapshot', '--app', 'Sotto', '--wait-for', 'radiobutton:Dictate', '--wait-timeout', '60000'], 75_000)
     const roomNodes = [room.tree]
     let dictate
