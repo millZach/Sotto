@@ -148,7 +148,9 @@ export class WatchedPullRequestReader {
     const bugBotReviews = !last || last.observation.head !== fingerprint.head || last.reviews !== reviews
       || last.observation.bugBotReview?.coverage === 'unknown' && now - last.reviewsReadAt >= REMARKS_REREAD_MS
     let detail: DetailAnswer | null = null
+    let reviewsAsked = false
     if ((checks || bugBotReviews) && this.mayRead()) {
+      reviewsAsked = bugBotReviews
       const read = await askPullRequests(this.asker(), ['-f', `query=${DETAIL_QUERY}`, '-f', `owner=${target.owner}`, '-f', `name=${target.name}`,
         '-F', `number=${target.number}`, '-F', `checks=${checks}`, '-F', 'remarks=false', '-F', `bugBotReviews=${bugBotReviews}`],
       text => readDetail(text, { checks, remarks: false, bugBotReviews }))
@@ -169,8 +171,9 @@ export class WatchedPullRequestReader {
     if (fingerprint.state !== 'open') {
       this.lastReads.delete(target.key)
       this.ended.add(target.key)
-    } else this.lastReads.set(target.key, { observation, reviews: bugBotReviews && detail && detail.head !== fingerprint.head ? '' : reviews,
-      reviewsReadAt: bugBotReviews ? now : last!.reviewsReadAt, ...checksAfter(last, checks, detail, fingerprint, now) })
+    } else this.lastReads.set(target.key, { observation,
+      reviews: reviewsAsked ? detail && detail.head !== fingerprint.head ? '' : reviews : last!.reviews,
+      reviewsReadAt: reviewsAsked ? now : last!.reviewsReadAt, ...checksAfter(last, checks, detail, fingerprint, now) })
   }
 
   /** A pass that could not read the pull request: Watcher hears it is unavailable, keeping the head it last knew. */

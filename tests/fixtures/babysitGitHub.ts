@@ -54,7 +54,7 @@ export function graphqlVariables(args: readonly string[]): Record<string, string
   return variables
 }
 
-export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string; now?: () => number } = {}) {
+export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string; now?: () => number; remaining?: () => number } = {}) {
   const questions: GhQuestion[] = []
   /** Set to make gh fail the next questions with this error; cleared by setting null. */
   let failure: Error | null = null
@@ -63,7 +63,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
   let reviewsFailure: Error | null = null
   const find = (owner: string, name: string, number: number): ScriptedPull | undefined =>
     pulls.find(pull => (pull.owner ?? 'o') === owner && (pull.name ?? 'r') === name && pull.number === number)
-  const rateLimit = () => ({ limit: 5000, remaining: 4000, resetAt: new Date((options.now?.() ?? Date.now()) + 3_600_000).toISOString() })
+  const rateLimit = () => ({ limit: 5000, remaining: options.remaining?.() ?? 4000, resetAt: new Date((options.now?.() ?? Date.now()) + 3_600_000).toISOString() })
   const countsBy = (checks: readonly ScriptedCheck[]) => {
     const counts = new Map<string, number>()
     for (const check of checks) counts.set(check.state, (counts.get(check.state) ?? 0) + 1)
@@ -100,7 +100,8 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
       nodes: (pull.reviews ?? []).slice(-100).map(review => ({ body: review.body ?? '', state: review.state,
         submittedAt: review.state === 'PENDING' ? null : review.publishedAt ?? review.at,
         url: review.url ?? `https://github.com/o/r/pull/${pull.number}#${review.id}`,
-        commit: review.commit === null ? null : { oid: review.commit ?? pull.head ?? 'head-1' } })),
+        commit: review.commit === null ? null : { oid: review.commit ?? pull.head ?? 'head-1' },
+        author: review.author === null ? null : { login: review.author } })),
     } } : {},
     ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: rollupOf(pull) } }] } } : {},
     ...checks ? { baseRef: pull.rulesUnreadable ? null : { rules: { nodes: pull.requiredChecks

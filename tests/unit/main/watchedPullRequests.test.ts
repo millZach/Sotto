@@ -18,10 +18,10 @@ import { centerTarget } from '../../fixtures/watcher'
 const START = Date.parse('2026-10-26T12:00:00Z')
 const url = (number: number, name = 'r') => `https://github.com/o/${name}/pull/${number}`
 
-function harness(pulls: ScriptedPull[], asked: string[]) {
+function harness(pulls: ScriptedPull[], asked: string[], options: { remaining?: () => number } = {}) {
   let now = START
   const clock = { now: () => now, advance: (minutes: number) => { now += minutes * 60_000 } }
-  const github = scriptedGitHub(pulls, { now: clock.now })
+  const github = scriptedGitHub(pulls, { now: clock.now, ...options })
   const observations: PullRequestObservation[] = []
   const events: WatchedPullRequestEvent[] = []
   const rateLimit = new GitHubRateLimit({ now: clock.now })
@@ -132,7 +132,7 @@ const HEAD = 'abcdef0123456789abcdef0123456789abcdef01'
 const NEXT = 'def5678123456789abcdef0123456789abcdef01'
 const MARKER = '<!-- sotto-bug-bot -->'
 const reviewUrl = `${url(1)}#pullrequestreview-7`
-const marked = (commit = HEAD) => ({ id: 'review-7', author: 'bot', bot: true, state: 'COMMENTED' as const,
+const marked = (commit = HEAD) => ({ id: 'review-7', author: 'millZach', state: 'COMMENTED' as const,
   at: '2026-10-26T12:00:00Z', body: `${MARKER}\nprivate review words`, commit, url: reviewUrl })
 
 describe('Bug Bot review coverage in Watcher evidence and news', () => {
@@ -140,6 +140,9 @@ describe('Bug Bot review coverage in Watcher evidence and news', () => {
     { name: 'marked review on the head', reviews: [marked()], coverage: 'current', commit: HEAD },
     { name: 'marked review on an earlier head', reviews: [marked(NEXT)], coverage: 'stale', commit: NEXT },
     { name: 'an unmarked review', reviews: [{ ...marked(), body: 'ordinary review' }], coverage: 'missing', commit: null },
+    { name: 'a marker from another author', reviews: [{ ...marked(), author: 'someone-else' }], coverage: 'missing', commit: null },
+    { name: 'a marker with no author', reviews: [{ ...marked(), author: null }], coverage: 'missing', commit: null },
+    { name: 'a marker in the middle of the body', reviews: [{ ...marked(), body: `A quoted review:\n${MARKER}` }], coverage: 'missing', commit: null },
     { name: 'no reviews', reviews: [], coverage: 'missing', commit: null },
     { name: 'a pending marked draft', reviews: [{ ...marked(), state: 'PENDING' as const }], coverage: 'missing', commit: null },
     { name: 'a marked review whose commit is unreadable', reviews: [{ ...marked(), commit: null }], coverage: 'unknown', commit: null },
@@ -153,7 +156,9 @@ describe('Bug Bot review coverage in Watcher evidence and news', () => {
 
   it('uses the latest submitted marked review, not an unmarked review or inline comments remapped to the head', async () => {
     const pull: ScriptedPull = { number: 1, head: NEXT, reviews: [marked(),
-      { ...marked(NEXT), id: 'human', body: 'unmarked', at: '2026-10-26T12:02:00Z' }],
+      { ...marked(NEXT), id: 'human', body: 'unmarked', at: '2026-10-26T12:02:00Z' },
+      { ...marked(NEXT), id: 'spoof', author: 'someone-else', at: '2026-10-26T12:03:00Z' },
+      { ...marked(NEXT), id: 'quoted', body: `A quoted review:\n${MARKER}`, at: '2026-10-26T12:03:30Z' }],
     threads: [{ path: 'a.ts', comments: [{ ...marked(NEXT), id: 'inline' }] }] }
     const f = harness([pull], [url(1)])
     await f.pass()
@@ -166,7 +171,7 @@ describe('Bug Bot review coverage in Watcher evidence and news', () => {
   it('does not use remapped inline commit_id and original_commit_id as the review commit', () => {
     const read = readDetail(JSON.stringify({ data: { rateLimit: null, repository: { pullRequest: {
       headRefOid: NEXT, bugBotReviews: { pageInfo: { hasPreviousPage: false }, nodes: [{ body: MARKER, state: 'COMMENTED',
-        submittedAt: '2026-10-26T12:00:00Z', url: reviewUrl, commit: { oid: HEAD },
+        submittedAt: '2026-10-26T12:00:00Z', url: reviewUrl, commit: { oid: HEAD }, author: { login: 'millZach' },
         comments: { nodes: [{ commit_id: NEXT, original_commit_id: HEAD }] } }] },
     } } } }), { checks: false, remarks: false, bugBotReviews: true })
     expect(read.bugBotReview).toEqual({ coverage: 'stale', commit: HEAD, url: reviewUrl })
@@ -217,6 +222,34 @@ describe('Bug Bot review coverage in Watcher evidence and news', () => {
     expect(f.seen(1)).toMatchObject({ availability: 'available', state: 'merged', head: NEXT, bugBotReview: { coverage: 'unknown' } })
     await f.pass()
     expect(f.github.questions).toEqual([])
+  })
+
+  it.each(['review-change', 'unknown-retry'] as const)('keeps skipped %s coverage due for the next permitted poll', async reason => {
+    let remaining = 4000
+    const pull: ScriptedPull = { number: 1, head: HEAD, reviews: [marked()], refuseReviews: reason === 'unknown-retry',
+      checks: [{ name: 'build', state: 'SUCCESS', required: true }] }
+    const f = harness([pull], [url(1)], { remaining: () => remaining })
+    await f.pass()
+    const checksObservedAt = f.seen(1)!.checksObservedAt
+    if (reason === 'review-change') pull.reviews!.push({ ...marked(), id: 'new-review', at: '2026-10-26T12:10:00Z' })
+    else { pull.refuseReviews = false; f.clock.advance(REMARKS_REREAD_MS / 60_000) }
+
+    // The fingerprint is allowed, but its rate-limit answer puts the following coverage-only read in the reserve.
+    remaining = 499
+    await f.pass()
+    expect(f.github.count('fingerprint')).toBe(1)
+    expect(f.github.count('detail')).toBe(0)
+    expect(f.seen(1)).toMatchObject({ availability: 'available', checks: 'passed', checksObservedAt, bugBotReview: { coverage: 'unknown' } })
+
+    // A foreground read observes a replenished shared budget. Neither reviews nor their retry time moved during the skip.
+    remaining = 4000
+    f.rateLimit.answered('github.com', f.rateLimit.asking(), { limit: 5000, remaining, resetAt: new Date(f.clock.now() + 3_600_000).toISOString() })
+    await f.pass()
+    expect(f.github.count('detail')).toBe(1)
+    expect(f.github.questions.find(question => question.kind === 'detail')?.variables).toMatchObject({ checks: 'false', bugBotReviews: 'true' })
+    expect(f.seen(1)).toMatchObject({ checks: 'passed', checksObservedAt, bugBotReview: { coverage: 'current', commit: HEAD } })
+    await f.pass()
+    expect(f.github.count('detail')).toBe(0)
   })
 
   it('retries a head that moved during the detail read on the next poll', async () => {
