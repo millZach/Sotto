@@ -129,7 +129,7 @@ export function legacyPermissionAnswer(approved: boolean): RequestAnswer {
 }
 
 /** Title and body for a permission: the native tool context when present, otherwise the request text. */
-export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly summary?: string; readonly target?: string; readonly cwd?: string; readonly details?: string } {
+export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly summary?: string; readonly summaryAsk?: 'waiting' | 'answered' | 'failed'; readonly target?: string; readonly cwd?: string; readonly details?: string } {
   const [first = '', ...rest] = request.text.split('\n')
   const context = request.context
   const restText = rest.join('\n').trim()
@@ -138,7 +138,7 @@ export function permissionSummary(request: AgentRequest): { readonly title: stri
   const title = worded ?? (first.trim() || (toolName ? t({ message: `Use ${toolName}`, comment: 'A permission request\'s title: {toolName} is the tool the agent asks to use.' }) : t`Permission request`))
   const command = context?.command ?? (restText && !context?.details && !context?.action ? restText : undefined)
   const details = context?.details && context.details.trim() !== command?.trim() ? context.details : undefined
-  return { title, ...(command ? { command } : {}), ...(context?.summary ? { summary: context.summary } : {}), ...(context?.target ? { target: context.target } : {}),
+  return { title, ...(command ? { command } : {}), ...(context?.summary ? { summary: context.summary } : {}), ...(context?.summaryAsk ? { summaryAsk: context.summaryAsk } : {}), ...(context?.target ? { target: context.target } : {}),
     ...(context?.cwd ? { cwd: context.cwd } : {}), ...(details ? { details } : {}) }
 }
 

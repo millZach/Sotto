@@ -176,7 +176,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       </> : summary ? <>
         <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
           {request.context?.toolName && !request.context.toolName.includes('/') ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
-        <ModelSummary summary={summary.summary} isCommand={request.context?.command !== undefined} providerId={providerId} />
+        <CommandSummaryLine summary={summary.summary} ask={summary.summaryAsk} isCommand={request.context?.command !== undefined} providerId={providerId} />
         {summary.target ? <p className="agent-request__target" dir="ltr">{summary.target}</p> : null}
         {summary.command ? <pre className="agent-request__command"><code>{summary.command}</code></pre> : null}
         {summary.details && request.context?.command ? <ul className="agent-request__also">{summary.details.split('\n').map((line, index) => <li key={index} className="tt-paragraph">{line}</li>)}</ul> : null}
@@ -462,14 +462,21 @@ function FormContext({ request }: { readonly request: AgentRequest }): ReactNode
 }
 
 /**
- * The asking model's own words for what it asks, marked as its own: Sotto wrote and checked none of them, and the
- * command under them is what the user answers (ADR-0180). A command that came with none says so.
+ * Whose words a summary is, and what became of it: the asking model's own, or what Sotto got by asking its provider about the
+ * command alone (ADR-0180). Sotto checks neither, and the command under them is what the user answers. The card never waits
+ * for one. Only a command says that none came.
  */
-function ModelSummary({ summary, isCommand, providerId }: { readonly summary: string | undefined; readonly isCommand: boolean; readonly providerId: ProviderId | undefined }): ReactNode {
+function CommandSummaryLine({ summary, ask, isCommand, providerId }: { readonly summary: string | undefined; readonly ask: 'waiting' | 'answered' | 'failed' | undefined; readonly isCommand: boolean; readonly providerId: ProviderId | undefined }): ReactNode {
   const { t } = useLingui()
-  const provider = providerId ? PROVIDER_LABELS[providerId] : t({ message: 'The agent', comment: 'Stands in for the coding agent’s name when it is not known, as in “The agent says”.' })
-  if (summary) return <p className="agent-request__summary tt-paragraph"><span className="agent-request__summary-who">{t({ message: `${provider} says`, comment: 'Over the words a coding agent wrote about what it asks to do. {provider} is its name.' })}</span>{summary}</p>
+  const named = providerId ? PROVIDER_LABELS[providerId] : undefined
+  const provider = named ?? t({ message: 'The agent', comment: 'Stands in for the coding agent’s name when it is not known, as in “The agent says”.' })
+  const inSentence = named ?? t({ message: 'the agent', comment: 'Stands in for the coding agent’s name in mid-sentence, as in “Asking the agent for a summary”.' })
+  if (summary) return <p className="agent-request__summary tt-paragraph"><span className="agent-request__summary-who">{ask === 'answered'
+    ? t({ message: `Sotto asked ${inSentence} what this does`, comment: 'Over a summary of a command that Sotto asked the coding agent’s provider for. {inSentence} is its name.' })
+    : t({ message: `${provider} says`, comment: 'Over the words a coding agent wrote about what it asks to do. {provider} is its name.' })}</span>{summary}</p>
   if (!isCommand) return null
+  if (ask === 'waiting') return <p className="agent-request__summary tt-paragraph" data-none="true" role="status">{t({ message: `Asking ${inSentence} for a summary…`, comment: 'Shown while Sotto waits for a summary of a command. The user can answer without waiting.' })}</p>
+  if (ask === 'failed') return <p className="agent-request__summary tt-paragraph" data-none="true">{t({ message: `${provider} couldn’t give a summary of this command.`, comment: '{provider} is the coding agent’s name.' })}</p>
   return <p className="agent-request__summary tt-paragraph" data-none="true">{t({ message: `${provider} gave no summary of this command.`, comment: '{provider} is the coding agent’s name.' })}</p>
 }
 

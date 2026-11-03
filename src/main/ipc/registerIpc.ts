@@ -159,6 +159,7 @@ const settingKeys = [
   'llmMode',
   'llmOwnModel',
   'threadTitles',
+  'commandSummaries',
   'nextPromptSuggestions',
   'threadTips',
   'threadWorkingCopyDefault',

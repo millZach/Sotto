@@ -943,6 +943,11 @@ msgstr "{provider} cannot take prompts from Sotto."
 msgid "{provider} changed this question. {delivery}"
 msgstr "{provider} changed this question. {delivery}"
 
+#. {provider} is the coding agent’s name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} couldn’t give a summary of this command."
+msgstr "{provider} couldn’t give a summary of this command."
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{provider} couldn’t list skills for this folder."
 msgstr "{provider} couldn’t list skills for this folder."
@@ -1962,6 +1967,11 @@ msgstr "Asked for {asked}. {machine} can start threads only on {machine} for now
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Asked for {asked}. This computer couldn't start it there, so nothing was started."
 msgstr "Asked for {asked}. This computer couldn't start it there, so nothing was started."
+
+#. Shown while Sotto waits for a summary of a command. The user can answer without waiting.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Asking {inSentence} for a summary…"
+msgstr "Asking {inSentence} for a summary…"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Asking the server for its models…"
@@ -7696,6 +7706,11 @@ msgstr "Sotto · Wake-up"
 msgid "Sotto application"
 msgstr "Sotto application"
 
+#. Over a summary of a command that Sotto asked the coding agent’s provider for. {inSentence} is its name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Sotto asked {inSentence} what this does"
+msgstr "Sotto asked {inSentence} what this does"
+
 #. {folder} is a folder's name or "this folder"; {place} is "this computer" or a saved host's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Sotto can't read {folder} on {place}. It may belong to another account. Nothing was changed; choose another folder."
@@ -8381,6 +8396,11 @@ msgstr "The action could not be confirmed. Your draft is retained; check the con
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "The address could not be copied. Select it and copy it yourself."
 msgstr "The address could not be copied. Select it and copy it yourself."
+
+#. Stands in for the coding agent’s name in mid-sentence, as in “Asking the agent for a summary”.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "the agent"
+msgstr "the agent"
 
 #. Stands in for the coding agent’s name when it is not known, as in “The agent says”.
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx

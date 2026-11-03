@@ -7,6 +7,7 @@ import type { ProjectSetupRequest } from '../../shared/workerMachine'
 import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/babysitting'
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
+import { commandSummaryWriter } from '../llm/commandSummary'
 import { threadBranchWriter } from '../llm/threadBranch'
 import { nextPromptOpeningWriter, nextPromptWriter } from '../llm/nextPrompt'
 import { NextPrompts } from './nextPrompts'
@@ -420,6 +421,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
     ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
+    writeCommandSummary: commandSummaryWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
     ...(nextPrompts ? { nextPrompts } : {}),
     reasoner,

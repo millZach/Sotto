@@ -19,6 +19,7 @@ import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchem
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import { watcherMayWrite } from './host'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
@@ -1007,7 +1008,7 @@ export class GrokAcpHost implements AgentHost {
     const generation = this.generation
     const profile = await this.checkLaunchProfile(id)
     this.assertGeneration(generation)
-    if (profile && prompt.purpose !== 'next-prompt') return null
+    if (profile && !watcherMayWrite(prompt.purpose)) return null
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias?.grokSessionId) return null

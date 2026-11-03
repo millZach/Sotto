@@ -2897,10 +2897,10 @@ struct RequestSheet: View {
     @ViewBuilder private func permissionBody(_ current: AgentRequest, provider: String) -> some View {
         let context = current.context
         if let command = context?.command {
-            if let summary = context?.summary {
-                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
-            } else {
-                Text(RequestText.noSummary(provider: provider)).font(.sotto(.body)).foregroundStyle(Palette.muted)
+            if let context, let summary = context.summary {
+                ModelSummary(heading: RequestText.summaryHeading(context, provider: provider), summary: summary).padding(.top, Space.s3)
+            } else if let context {
+                Text(RequestText.noSummary(context, provider: provider)).font(.sotto(.body)).foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.top, Space.s3)
             }
             PermissionCommand(command: command).padding(.top, Space.s4)
@@ -2915,8 +2915,8 @@ struct RequestSheet: View {
             }
             if let cwd = context?.cwd { runsIn(cwd) }
         } else {
-            if let summary = context?.summary {
-                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
+            if let context, let summary = context.summary {
+                ModelSummary(heading: RequestText.summaryHeading(context, provider: provider), summary: summary).padding(.top, Space.s3)
             }
             Text(verbatim: context?.action ?? current.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
@@ -3344,13 +3344,13 @@ struct CompactPermissionDetails: View {
     }
 }
 
-/// The words a model wrote about what it asks, under whose they are: never a headline, since Sotto checked none of them.
+/// A summary, under whose words it is: never a headline, since Sotto checked none of them.
 private struct ModelSummary: View {
-    let provider: String
+    let heading: String
     let summary: String
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(RequestText.says(provider: provider)).font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text(heading).font(.sotto(.small)).foregroundStyle(Palette.muted)
             Text(verbatim: summary).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
         }
         .fixedSize(horizontal: false, vertical: true)

@@ -400,6 +400,9 @@ export const agentRequestSchema = z.object({
   context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(),
     /** The asking model's own words for what it asks (a **command summary**, ADR-0180). Absent when it gave none; Sotto never writes one. */
     summary: text.optional(),
+    /** Set when Sotto asked the thread's own provider for the summary because the model sent none (ADR-0180): still waiting,
+     *  answered with `summary`, or failed. Absent when the summary is the model's own, or none was asked for. */
+    summaryAsk: z.enum(['waiting', 'answered', 'failed']).optional(),
     /** What a request that is not a command does, and the path or address it acts on, for the card's head (ADR-0180). */
     action: text.optional(), target: text.optional(),
     /** The rest of what is asked, in readable lines: a setting beside a command in words, and otherwise every field and change. */

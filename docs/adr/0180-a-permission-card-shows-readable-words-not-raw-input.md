@@ -16,7 +16,7 @@ The raw box was doing two other jobs. It was the only place some settings showed
 
 **A command summary is the model's words, marked as its own.** `context.summary` carries what the provider sent, on one line and bounded. The card shows it under a line such as **Claude Code says**, then the command. It is never the headline, and the command stays what the user answers.
 
-**Sotto generates nothing.** A command that came with no summary says so and shows the command. No command goes to another model for this.
+**Sotto generates nothing.** A command that came with no summary says so and shows the command. No command goes to another model for this. (Replaced by the amendment below.)
 
 **No raw input on a permission card.** An adapter turns a tool's input into readable text in `src/main/agents/requestInput.ts`:
 
@@ -34,3 +34,19 @@ The raw box was doing two other jobs. It was the only place some settings showed
 - Cursor sends no summary. OpenCode sends none on a permission, though its tool call may hold one; reading it means joining the two, and it wasn't checked against a real OpenCode.
 - The words an adapter writes, such as **Edit a file** and **It also asks to run outside the sandbox.**, stay English in every interface language, as adapters' words already do. Adapters also run in the headless host, which sets no language, so a translation call there would throw and lose the request. Translating them means the clients translating from a stable key. **Run a command**, **says** and **gave no summary** are written by the clients, so they are translated.
 - Which summaries show depends on what each provider chooses to send, and Codex's `reason` often isn't there.
+
+## Amendment: Sotto asks when the model sends none (November 2, 2026)
+
+Zach asked that a user always gets a summary, reversing **Sotto generates nothing** above, by his picks from `docs/prototypes/asked-command-summary-prototype.html`.
+
+**Sotto asks the thread's own provider.** When a command's model sent no summary, the coordinator makes a side call (ADR-0026) to that thread's provider, with the command as its only material. It adds no host and no key, and the command goes only to the provider that proposed it. The side call sees no thread, so it can say what a command does but not why the thread wants it. A crafted command could mislead it, and the instruction tells it to treat the command as something to describe. It runs no tools, as every side call does, and Watcher's own thread may make it, as it may a next-prompt one. Nothing it sends approves anything, and the command stays what the user answers (ADR-0004).
+
+**The card says so.** `context.summaryAsk` carries `waiting`, `answered` or `failed`. An answer shows under **Sotto asked Codex what this does**, apart from the model's own **Codex says**.
+
+**The card never waits.** Allow and Deny work from the start while it reads **Asking Codex for a summary…**. Answering a request, or its thread going, stops its call. The outcome is taken like a new snapshot, because a thread waiting on a permission may send no other. Two run at once and the rest wait their turn, since a client starts cold for each.
+
+**"Always" has limits.** No other provider is asked in a thread's place, as ADR-0026 says, so a side call that fails says **Codex couldn't give a summary of this command.** Devin, DeepSeek Harness and Muse have no side call, and without their own summary they say **gave no summary**. A command too long to send whole, over 20,000 characters, gets no summary rather than one of its opening. Sending a command to another provider would be a new place it goes, and that is an ADR and a README change of its own.
+
+**Off with a switch.** **Generated command summaries**, on by default, sits with Generated thread titles, and each computer reads its own. Unlike titles it does not need Keep local history: the asks live in memory alone, and Sotto keeps nothing about a command.
+
+**A cost:** each ask comes out of the thread's subscription at the lowest effort, and may take 10 to 20 seconds. It goes straight to stable.
