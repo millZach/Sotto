@@ -19,6 +19,7 @@ export type { ProductEventPermission }
 const SEND_EVERY_MS = 30_000
 const BATCH_SIZE = 20
 const MAX_WAITING_EVENTS = 1_000
+const FEATURE_USED_EVERY_MS = 24 * 60 * 60 * 1000
 const SEND_TIMEOUT_MS = 10_000
 const RETRY_BASE_MS = 2_000
 const RETRY_MAX_MS = 5 * 60_000
@@ -92,6 +93,7 @@ export class ProductEvents {
   private firstFailureAt = 0
   private retryAt = 0
   private removingId: Promise<void> = Promise.resolve()
+  private readonly featuresAt = new Map<string, number>()
   private readonly fetcher: typeof fetch
   private readonly now: () => number
   private readonly random: () => number
@@ -118,10 +120,13 @@ export class ProductEvents {
     else this.forget()
   }
 
+  private keeping(): boolean {
+    return !this.dark && !this.stopped && this.permission !== 'off' && (this.permission !== 'waiting' || this.options.holdWhileWaiting)
+  }
+
   /** One event, checked against its schema. It never throws and does no I/O. */
   record<E extends ProductEventName>(event: E, properties: ProductEventProperties<E>): void {
-    if (this.dark || this.stopped) return
-    if (this.permission === 'off' || (this.permission === 'waiting' && !this.options.holdWhileWaiting)) return
+    if (!this.keeping()) return
     try {
       const allowed = parseProductEvent(event, properties)
       if (!allowed) { this.options.log?.('product-events-event-refused'); return }
@@ -129,6 +134,19 @@ export class ProductEvents {
       if (this.waiting.length > MAX_WAITING_EVENTS) this.waiting.shift()
       if (this.permission === 'on') this.arm()
     } catch { /* A product event never gets in a thread's way. */ }
+  }
+
+  /**
+   * That a feature was used, at most once a day per feature while Sotto runs, and once more after a start: whether this
+   * install used it, rather than how often. The number of Watcher, delegated, Council and swarm threads is in
+   * `thread.started`. It does no I/O, so a call site that runs often costs a look-up, and that is why a start forgets.
+   */
+  featureUsed(feature: ProductEventProperties<'feature.used'>['feature']): void {
+    if (!this.keeping()) return
+    const at = this.now(), last = this.featuresAt.get(feature)
+    if (last !== undefined && at - last < FEATURE_USED_EVERY_MS) return
+    this.featuresAt.set(feature, at)
+    this.record('feature.used', { feature })
   }
 
   /** At quit: one last batch that nothing waits for. */
@@ -191,6 +209,7 @@ export class ProductEvents {
   private forget(): void {
     this.stopSending()
     this.waiting = []
+    this.featuresAt.clear()
     this.failures = 0; this.firstFailureAt = 0; this.retryAt = 0
     this.distinctId = null
     this.ownersRead = false

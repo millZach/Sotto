@@ -81,6 +81,22 @@ describe('browser service lifecycle', () => {
     unwrap(await mounting)
     expect(attached).toEqual(new Set([vi.mocked(WebContentsView).mock.results[1]!.value]))
   })
+  it('counts the browser and the test iPhone as used when a page opens', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-unit-'))
+    cleanup.push(() => rm(directory, { recursive: true, force: true }))
+    const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
+    const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, getContentSize: () => [1200, 800], webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1 }),
+      contentView: { addChildView: vi.fn(), removeChildView: vi.fn() } }) as unknown as BrowserWindow
+    const used: string[] = []
+    const service = new BrowserService({ files, getWindow: () => window, emit: vi.fn(), openExternal: vi.fn(), destination: async () => 'external', byDefault: () => false, featureUsed: feature => { used.push(feature) } })
+    cleanup.push(async () => service.dispose())
+    const target = { threadId: 'a', workspaceId: unwrap(await service.list({ threadId: 'a' })).workspace.workspaceId }
+    unwrap(await service.create({ ...target, url: 'http://localhost/first' }))
+    expect(used).toEqual(['browser'])
+    // What a test iPhone's page needs of Chromium is not in this mock; what counts is said before any of it runs.
+    await service.create({ ...target, url: 'http://localhost/phone', device: 'iphone' })
+    expect(used).toEqual(['browser', 'test-iphone'])
+  })
   it('keeps failed navigation unavailable when Chromium finishes an error document, then supports explicit reload', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-unit-'))
     cleanup.push(() => rm(directory, { recursive: true, force: true }))

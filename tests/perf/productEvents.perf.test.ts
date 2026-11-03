@@ -6,6 +6,9 @@ import { join } from 'node:path'
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ProductEvents, type ProductEventsOptions } from '../../src/main/productEvents/productEvents'
+import { ThreadProductEvents, type ProductEventRecorder } from '../../src/main/productEvents/threadEvents'
+import type { AgentThread } from '../../src/shared/agents'
+import { copyBudgetPipeline } from '../fixtures/copyBudgetPipeline'
 
 /**
  * What product events cost the process that sends them (ADR-0179). The turn event below is the largest one. A timing
@@ -102,4 +105,67 @@ describe.skipIf(process.env.SOTTO_PERF_BENCH !== '1')('product events cost', () 
     report('an hour offline, work', performance.now() - started, 'ms')
     if (ASSERT) expect(tries).toBeLessThan(120)
   })
+
+  it('adds a few look-ups to an update, on the tracker alone', () => {
+    const recorder: ProductEventRecorder = { record: () => undefined, featureUsed: () => undefined }
+    const tracker = new ThreadProductEvents({ recorder, startedBy: () => 'user' })
+    tracker.trackAll([])
+    const running = { id: 'one', providerId: 'codex', modelId: 'gpt-5.5', status: 'running', lastTurn: { id: 'turn', status: 'running' }, messages: [], requests: [] } as unknown as AgentThread
+    const times = 2_000_000, named = [running], gone: string[] = []
+    const measure = (): number => {
+      const started = process.hrtime.bigint()
+      for (let index = 0; index < times; index += 1) tracker.track(named, gone)
+      return Number(process.hrtime.bigint() - started) / times
+    }
+    measure()
+    const nanoseconds = measure()
+    report('tracker, one thread named by an update', nanoseconds, 'ns per update')
+    if (ASSERT) expect(nanoseconds).toBeLessThan(2_000)
+  })
+
+  /**
+   * Before and after on main's real update path: the adapter, the provider switch, the workspace, the coordinator and the
+   * window's publisher at 200 threads. "After" has the real sender switched on, sending to a local server, as a release will.
+   * The runs take turns and the first of each is thrown away, so a machine's drift falls on both sides.
+   */
+  it.each([[false, 'stable'], [true, 'owl']] as const)('costs a turn nothing measurable on the update path, %s', async (owl, name) => {
+    const TURNS = 5, CHUNKS = 100, ROUNDS = 6
+    const round = async (withEvents: boolean): Promise<{ cpu: number; updates: number }> => {
+      const root = await mkdtemp(join(tmpdir(), 'sotto-product-events-turn-'))
+      const events = make()
+      events.setPermission('on')
+      const pipeline = await copyBudgetPipeline(root, 200, owl, withEvents ? events : null)
+      try {
+        const stream = pipeline.adapter.state.threads.find(thread => thread.id === 'stream-0')!
+        pipeline.adapter.log.add(stream.id, { id: 'reply', role: 'assistant', text: 'First', createdAt: new Date().toISOString() })
+        const before = process.cpuUsage()
+        for (let turn = 0; turn < TURNS; turn += 1) {
+          stream.status = 'running'; stream.lastTurn = { id: `turn-${turn}`, status: 'running' }
+          pipeline.adapter.mark(stream.id); pipeline.adapter.publish(false)
+          await new Promise(resolve => setTimeout(resolve, 50))
+          for (let chunk = 0; chunk < CHUNKS; chunk += 1) {
+            pipeline.adapter.log.appendText(stream.id, 'reply', ` word${chunk}`)
+            pipeline.adapter.publish(true)
+            await new Promise(resolve => setTimeout(resolve, 1))
+          }
+          stream.status = 'idle'; stream.lastTurn = { id: `turn-${turn}`, status: 'completed' }
+          pipeline.adapter.mark(stream.id); pipeline.adapter.publish(false)
+          await new Promise(resolve => setTimeout(resolve, 50))
+        }
+        const used = process.cpuUsage(before)
+        if (withEvents && events.waitingCount !== TURNS) throw new Error(`${events.waitingCount} events of ${TURNS} were recorded, so this measured something else.`)
+        return { cpu: (used.user + used.system) / 1_000, updates: TURNS * CHUNKS }
+      } finally { events.stop(); await pipeline.stop(); await rm(root, { recursive: true, force: true, maxRetries: 5 }) }
+    }
+    await round(false); await round(true)
+    const without: number[] = [], withIt: number[] = []
+    for (let index = 0; index < ROUNDS; index += 1) {
+      for (const on of index % 2 === 0 ? [false, true] : [true, false]) (on ? withIt : without).push((await round(on)).cpu / (TURNS * CHUNKS))
+    }
+    const median = (values: number[]): number => [...values].sort((left, right) => left - right)[Math.floor(values.length / 2)]!
+    const spread = (values: number[]): string => `${Math.min(...values).toFixed(3)} to ${Math.max(...values).toFixed(3)}`
+    report(`${name} update, before`, median(without), `ms CPU per update (${spread(without)})`)
+    report(`${name} update, after`, median(withIt), `ms CPU per update (${spread(withIt)})`)
+    if (ASSERT) expect(median(withIt)).toBeLessThan(median(without) * 1.25)
+  }, 300_000)
 })

@@ -308,4 +308,38 @@ describe('ProductEvents', () => {
     expect(productEventsEndpoint({ SOTTO_PRODUCT_EVENTS_ENDPOINT: 'http://events.test' })).toBeNull()
     expect(productEventsEndpoint({ SOTTO_PRODUCT_EVENTS_ENDPOINT: 'not a url' })).toBeNull()
   })
+
+  describe('featureUsed', () => {
+    it('keeps one per feature per day, and lets another feature through', () => {
+      const events = make(); events.setPermission('on')
+      events.featureUsed('usage'); events.featureUsed('usage'); events.featureUsed('terminal')
+      expect(events.waitingCount).toBe(2)
+      clock += 24 * 60 * 60 * 1000 - 1
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(2)
+      clock += 1
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(3)
+    })
+    it('keeps nothing while off, and a use while off does not stop the next one counting', () => {
+      const events = make(); events.setPermission('off')
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(0)
+      events.setPermission('on')
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(1)
+    })
+    it('counts again after being turned off and on, since off forgets everything', () => {
+      const events = make(); events.setPermission('on')
+      events.featureUsed('usage')
+      events.setPermission('off'); events.setPermission('on')
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(1)
+    })
+    it('refuses a name not on the list', () => {
+      const events = make(); events.setPermission('on')
+      events.featureUsed('secret-repo-name' as never)
+      expect(events.waitingCount).toBe(0)
+    })
+  })
 })

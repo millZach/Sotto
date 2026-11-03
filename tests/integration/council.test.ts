@@ -139,6 +139,11 @@ it('runs a Council end to end in a snapshot, keeps the user\'s checkout as it wa
   expect(await f.council.command({ type: 'settle', council: snapshot.id })).toMatchObject({ ok: true })
   await vi.waitFor(() => expect(f.view()).toMatchObject({ status: 'settled', snapshot: { removed: true } }), { timeout: 20_000 })
   expect(existsSync(path!)).toBe(false)
+  // A seat stays the Council's after it stops following it, for who product events say started the thread (ADR-0179).
+  const hooks = (f.control as unknown as { councilHooks: { madeThread(id: string): boolean; observedThreadIds(): readonly string[] } }).councilHooks
+  expect(hooks.observedThreadIds()).not.toContain(f.seat('chair'))
+  expect(hooks.madeThread(f.seat('chair'))).toBe(true)
+  expect(hooks.madeThread(f.origin)).toBe(false)
   expect(git(f.folder, 'worktree', 'list')).not.toContain('council-worktrees')
   expect(f.control.shell().host.threads.find(thread => thread.id === f.seat('A'))?.workspaceSettledAt).toEqual(expect.any(String))
 })

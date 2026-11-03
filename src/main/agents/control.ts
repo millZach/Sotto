@@ -87,6 +87,7 @@ import { attachedFileRelativePath, attachedFilesNote, saveAttachedFiles } from '
 import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
+import { ThreadProductEvents, type ProductEventRecorder } from '../productEvents/threadEvents'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
 import { WATCHER_RECORD_FILE } from './watcherRecordFile'
 import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
@@ -562,6 +563,7 @@ export class AgentControl {
   private restartHooks: RestartResumeHooks | undefined
   /** Restarting threads a usage limit stopped (ADR-0144): given before start, only while that Owl feature is on. */
   private limitRestart: LimitRestart | undefined
+  private threadProductEvents: ThreadProductEvents | undefined
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
@@ -1337,6 +1339,8 @@ export class AgentControl {
     restartStoppedThreads?: boolean
     /** Numeric-only Owl history. It never gates or retries a provider send. */
     usage?: UsagePromptRecorder
+    /** Where `thread.started` and `turn.completed` go (ADR-0179). Absent, nothing watches for them. */
+    productEvents?: ProductEventRecorder
     observeActiveThread?: boolean
     turns?: TurnRecorder
     authority?: Authority
@@ -1395,6 +1399,7 @@ export class AgentControl {
     /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
     nextPrompts?: NextPromptHooks
   }) {
+    if (dependencies.productEvents) this.threadProductEvents = new ThreadProductEvents({ recorder: dependencies.productEvents, startedBy: thread => this.productEventStartedBy(thread) })
     this.held = heldProvidersOption(dependencies)
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.watcherArchive = dependencies.watcherEnabled === true ? new WatcherArchive(dependencies.directory, () => dependencies.historyEnabled?.() !== false) : undefined
@@ -1595,7 +1600,7 @@ export class AgentControl {
   private subscribeHost(): void {
     const host = this.dependencies.host
     if (!host.subscribeActivityChanges || this.acceptsWhole) {
-      this.unsubscribe = subscribeActivitySnapshots(host, snapshot => this.acceptSnapshot(snapshot))
+      this.unsubscribe = subscribeActivitySnapshots(host, snapshot => { this.threadProductEvents?.trackAll(snapshot.threads); this.acceptSnapshot(snapshot) })
       return
     }
     const map = new ThreadMap({ verify: false })
@@ -6517,6 +6522,8 @@ export class AgentControl {
     const applied = map.apply(changes)
     if (applied === 'resync') { this.incomingSubscription?.resync(); return }
     if (applied === 'stale') return
+    // From the change itself, whichever way it is taken in below, so this walks no list of threads (ADR-0179).
+    if (this.threadProductEvents) { if (changes.whole) this.threadProductEvents.trackAll(map.threads()); else this.threadProductEvents.track(changes.upserts, changes.removals) }
     if (changes.whole || changes.rest !== undefined || this.state.host !== this.hostFromChanges || this.state.host.threads !== this.hostListFromChanges
       || before !== undefined && (changes.removals.length > 0 || before.some((provider, at) => provider === null || provider !== changes.upserts[at]!.providerId))) {
       this.acceptSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot, true)
@@ -6703,6 +6710,15 @@ export class AgentControl {
    * What taking a host snapshot in does once the snapshot is shown, whole or by a change. `changed` names, for a change,
    * the threads it showed again and the threads that went: only those are tracked, every other being as it was.
    */
+  /** Who started a thread, as `thread.started` and `turn.completed` say it. Read just after an update, never during one. */
+  private productEventStartedBy(thread: AgentThread): 'user' | 'watcher' | 'delegation' | 'council' | 'swarm' {
+    if (isWatcherKind(thread)) return 'watcher'
+    if (this.swarmView?.(thread.id)) return 'swarm'
+    if (this.councilHooks?.madeThread(thread.id)) return 'council'
+    if (thread.delegatedBy !== undefined) return 'delegation'
+    const hostId = this.hostId()
+    return hostId && this.watcherHooks?.startedByWatcher?.(hostId, thread.id) ? 'watcher' : 'user'
+  }
   private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: HostThreadsChange & { readonly gone: ReadonlySet<string> }): void {
     this.observeWatcher(snapshot, changed)
     if (!this.disposed) this.delegationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
