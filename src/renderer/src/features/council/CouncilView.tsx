@@ -107,7 +107,7 @@ function OriginPicker({ threads, projects, chosen, onChoose }: { readonly thread
   const close = (): void => { setOpen(false); setQuery(''); change.current?.focus() }
   const words = query.trim().toLocaleLowerCase()
   const hits = threads.filter(item => !words || `${item.title} ${projectTitle(item)}`.toLocaleLowerCase().includes(words))
-  const groups = [...new Set(hits.map(projectTitle))]
+  const groups = [...new Set(hits.map(item => item.projectId))]
   const choose = (id: string): void => { onChoose(id); close() }
   return <div className="council-field">
     <span id={labelId}>{t({ message: 'From', comment: 'The thread a Council question comes from' })}</span>
@@ -119,17 +119,17 @@ function OriginPicker({ threads, projects, chosen, onChoose }: { readonly thread
       {threads.length > 1 ? <button ref={change} type="button" className="council-origin__change tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
         onClick={() => open ? close() : setOpen(true)}>{open ? t({ message: 'Done', comment: 'Closes the list of threads a Council question can come from' }) : t({ message: 'Change', comment: 'Opens the list of threads a Council question can come from' })}</button> : null}
     </div>
-    {open ? <div id={listId} className="council-origin__list" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
+    {open && threads.length > 1 ? <div id={listId} className="council-origin__list" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
       <input className="tt-input tt-focusable council-origin__search" autoFocus value={query} aria-label={t`Find a thread`} placeholder={t`Find a thread`}
         onChange={event => setQuery(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter' && hits[0]) { event.preventDefault(); choose(hits[0].id) } }} />
       <div className="council-origin__rows">
-        {hits.length === 0 ? <p className="council-origin__empty tt-paragraph">{t`No thread matches.`}</p> : groups.map(group => <div key={group} role="group" aria-label={group || undefined}>
-          {group ? <p className="council-origin__group">{group}</p> : null}
-          {hits.filter(item => projectTitle(item) === group).map(item => <button key={item.id} type="button" className="council-origin__row tt-focusable"
+        {hits.length === 0 ? <p className="council-origin__empty tt-paragraph">{t`No thread matches.`}</p> : groups.map(group => { const items = hits.filter(item => item.projectId === group), title = projectTitle(items[0]!); return <div key={group} role="group" aria-label={title || undefined}>
+          {title ? <p className="council-origin__group">{title}</p> : null}
+          {items.map(item => <button key={item.id} type="button" className="council-origin__row tt-focusable"
             aria-current={item.id === chosen || undefined} onClick={() => choose(item.id)}>
             <ProviderMark provider={item.providerId} name={item.title} size={14} /><span className="council-origin__title">{item.title}</span></button>)}
-        </div>)}
+        </div> })}
       </div>
     </div> : null}
   </div>
@@ -151,7 +151,7 @@ function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQue
   const [estimate, setEstimate] = useState<CouncilEstimate | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const shownOrigin = origin || (threads.some(thread => thread.id === state?.activeThreadId) ? state!.activeThreadId! : threads[0]?.id ?? '')
+  const shownOrigin = threads.some(thread => thread.id === origin) ? origin : (threads.some(thread => thread.id === state?.activeThreadId) ? state!.activeThreadId! : threads[0]?.id ?? '')
   useEffect(() => {
     setEstimate(null)
     if (!shownOrigin) return
