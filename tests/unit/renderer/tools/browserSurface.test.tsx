@@ -6,7 +6,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserPage } from '../../../../src/shared/browser'
+import type { BrowserBridge, BrowserPage } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { MessageContent } from '../../../../src/renderer/src/agents/MessageContent'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
@@ -420,6 +420,52 @@ describe('web links in a thread', () => {
     await userEvent.click(screen.getByRole('link', { name: 'the docs' }))
     expect(await screen.findByText('Opened in Visual gate flake’s browser, and Tools is pinned to another thread. Unpin it to see the page.')).toBeInTheDocument()
     expect(store.getSnapshot()).toMatchObject({ open: false, pinnedThreadId: 'grok-previews' })
+  })
+
+  describe('in a thread on a paired host', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    /** This computer's real bridge: `browser` refuses another host's thread by throwing before it returns a promise. */
+    function pairedHostBridge(openExternalLink: (url: string) => Promise<{ ok: boolean }>) {
+      const browser = fakeBrowser()
+      const refused = vi.fn((request: unknown) => { void request; throw new Error('This action belongs to another host. Select that host before trying again.') })
+      const bridge: BrowserBridge = { ...browser.bridge, list: refused as unknown as BrowserBridge['list'], create: refused as unknown as BrowserBridge['create'] }
+      vi.stubGlobal('sotto', { openExternalLink, browser: bridge })
+      return { bridge, browser }
+    }
+    const transcript = (url: string): void => {
+      render(<ThreadWebLinks threadId="host:62c79358-687d-4274-a876-1a0d79e1c195:thread" threadTitle="Lonely Robot" onPairedHost store={new ToolsPanelStore()}>
+        <MessageContent text={`See [the page](${url}).`} />
+      </ThreadWebLinks>)
+    }
+
+    it.each(['https://forge.tail5728ca.ts.net/lonely-robot/', 'https://example.com/docs'])('opens %s in the system browser, says nothing, and never asks this computer’s browser', async url => {
+      const openExternalLink = vi.fn(async () => ({ ok: true }))
+      const { bridge } = pairedHostBridge(openExternalLink)
+      transcript(url)
+      await userEvent.click(screen.getByRole('link', { name: 'the page' }))
+      await waitFor(() => expect(openExternalLink).toHaveBeenCalledWith(url))
+      expect(bridge.list).not.toHaveBeenCalled()
+      expect(bridge.openLink).not.toHaveBeenCalled()
+      expect(screen.queryByText(/Could not open/u)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Copy link' })).not.toBeInTheDocument()
+    })
+
+    it('does not offer Sotto’s browser, which that thread does not have', async () => {
+      pairedHostBridge(vi.fn(async () => ({ ok: true })))
+      transcript('https://example.com/docs')
+      fireEvent.contextMenu(screen.getByRole('link', { name: 'the page' }))
+      expect(await screen.findByRole('menuitem', { name: 'Open in system browser' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Open in Sotto browser' })).not.toBeInTheDocument()
+    })
+
+    it('still offers Copy link when the system browser really cannot open it', async () => {
+      pairedHostBridge(vi.fn(async () => ({ ok: false })))
+      transcript('https://forge.tail5728ca.ts.net/lonely-robot/')
+      await userEvent.click(screen.getByRole('link', { name: 'the page' }))
+      expect(await screen.findByText('Could not open forge.tail5728ca.ts.net.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument()
+    })
   })
 
   it('adopts the page but never opens Tools when the click came from a pane that is not focused (#331)', async () => {
