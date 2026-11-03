@@ -117,7 +117,8 @@ enum PhoneWorkingCopy: String, CaseIterable {
 }
 
 /// Where the iPhone Duo, unfolded and held sideways, puts the tabs: in the clock's strip on the right, or down the
-/// left edge (Zach's pick, October 30, 2026). Upright they run along the bottom, and folded they stand in the strip.
+/// left edge (Zach's pick, October 30, 2026). Upright they stand down the right edge (his pick, November 1, 2026), and
+/// folded they stand in the strip.
 enum DuoTabsSide: String, CaseIterable {
     case right, left
     var title: String {

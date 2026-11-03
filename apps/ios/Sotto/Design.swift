@@ -277,6 +277,25 @@ extension UIFont {
     }
 }
 
+/// An SF Symbol's size that grows with the text size, as a symbol does when it takes a text style, so an icon beside
+/// words keeps step with them (#1858). At the default text size it is the size given. Glyphs drawn inside a control
+/// or a tile of fixed size, such as Send, a close button or a row's round mark, keep a fixed font instead.
+private struct IconFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    private let weight: Font.Weight
+    init(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
+        self.weight = weight
+    }
+    func body(content: Content) -> some View { content.font(.system(size: size, weight: weight)) }
+}
+
+extension View {
+    func iconFont(_ size: CGFloat, weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> some View {
+        modifier(IconFont(size: size, weight: weight, relativeTo: style))
+    }
+}
+
 /// The spacing scale.
 enum Space {
     static let s1: CGFloat = 4
@@ -715,7 +734,8 @@ struct SheetPage<Content: View>: View {
                         Color.clear.frame(height: 0).id(sheetPageTop)
                         content
                     }
-                    .padding(.horizontal, Space.gutter)
+                    // The unfolded Duo's wide page keeps a wider margin, as its columns and reading width do.
+                    .padding(.horizontal, duo.sideways || duo == .upright ? Space.s6 : Space.gutter)
                     .padding(.bottom, Space.s8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(alignment: .top) {
@@ -732,9 +752,13 @@ struct SheetPage<Content: View>: View {
                         .frame(height: 0)
                     }
                 }
-                // Lets the wash out sideways into the Duo's strip, and nothing out above or below the page.
+                // On the Duo the page reaches every edge of the screen (Zach, November 1, 2026): the wash goes out sideways
+                // into the strip or the rail's column, and the page runs on under the status bar, where the fade over it
+                // keeps words off the clock, and under the home indicator, rather than stopping at the safe area and
+                // leaving a band of plain ground above and below it.
                 .scrollClipDisabled(duo.strip.leading + duo.strip.trailing > 0)
-                .clipShape(WiderRect(leading: duo.strip.leading, trailing: duo.strip.trailing))
+                .clipShape(WiderRect(leading: duo.strip.leading, trailing: duo.strip.trailing,
+                                     vertical: duo.strip.leading + duo.strip.trailing > 0 ? 1000 : 0))
                 .onChange(of: topRequest) {
                     withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(sheetPageTop, anchor: .top) }
                 }
@@ -755,8 +779,11 @@ struct SheetPage<Content: View>: View {
 private struct WiderRect: Shape {
     let leading: CGFloat
     let trailing: CGFloat
+    /// How far past its top and bottom edges it reaches too.
+    var vertical: CGFloat = 0
     func path(in rect: CGRect) -> Path {
-        Path(CGRect(x: rect.minX - leading, y: rect.minY, width: rect.width + leading + trailing, height: rect.height))
+        Path(CGRect(x: rect.minX - leading, y: rect.minY - vertical, width: rect.width + leading + trailing,
+                    height: rect.height + vertical * 2))
     }
 }
 
@@ -766,8 +793,9 @@ private let sheetPageTop = "sheet-page-top"
 /// The page's ground fading in under the status bar: solid over the clock and clear 10 points below the status bar.
 /// A strip at the top of the safe area carries it as a background that reaches up through the status bar, so its
 /// height follows the status bar's without reading it. It used to take its height from the inset a `GeometryReader`
-/// read while ignoring the safe area itself, and scrolled text ran under the clock on every tab page (#1851).
-private struct StatusBarFade: View {
+/// read while ignoring the safe area itself, and scrolled text ran under the clock on every tab page (#1851). Watcher's
+/// page uses it too, where it meets the status bar.
+struct StatusBarFade: View {
     var body: some View {
         Color.clear
             .frame(maxWidth: .infinity)
@@ -943,14 +971,16 @@ enum ComposerMetrics {
     /// From the card's leading edge to the words, and above them.
     static let wordsInset: CGFloat = 16
     static let wordsTop: CGFloat = 12
+    /// Between the words and the row under them. The words take every press down to the row, and nothing in the row
+    /// takes one above it, so a press at the foot of the words types rather than opening the model pill (Zach, November
+    /// 1, 2026: it was 2 points, with the pill's press area reaching 5 more up into the words).
+    static let wordsGap: CGFloat = 12
     /// Around the photos and files above the words.
     static let attachmentsInset: CGFloat = 6
     /// The row's round buttons (+, the mic, Send and Stop) and the settings pill: how tall they are drawn.
     static let button: CGFloat = 34
     /// From the card's edge to the row.
     static let rowInset: CGFloat = 8
-    /// Between the words and the row's own margin.
-    static let wordsGap: CGFloat = 2
     /// Between the row's buttons: wide enough that each keeps all 44 points of its press area, so a press between Stop
     /// and Send neither stops a turn meant to be queued nor queues a reply meant to stop it.
     static let gap: CGFloat = 44 - button
@@ -992,7 +1022,17 @@ extension View {
     func composerDisc<F: ShapeStyle>(_ fill: F) -> some View {
         frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
             .background(fill, in: Circle())
-            .pressArea(drawn: ComposerMetrics.button)
+            .rowPressArea()
+    }
+    /// A press area 44 points wide and tall for something drawn the reply box's row's height, reaching down from its top
+    /// edge rather than up, so it never takes a press meant for the words above the row. It takes no more room than it
+    /// is drawn.
+    func rowPressArea() -> some View {
+        let spare = 44 - ComposerMetrics.button
+        return frame(minWidth: 44, minHeight: 44, alignment: .top)
+            .contentShape(Rectangle())
+            .padding(.horizontal, -spare / 2)
+            .padding(.bottom, -spare)
     }
     /// The light round the reply box, whose corners are `radius`, at the top effort; see `EffortTraceLight`. Nothing is
     /// drawn while `lit` is false. `top` follows the small box's top edge down, with the lap unchanged: the light turns on

@@ -19,13 +19,13 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
     let small: Bool
     /// The light round the card at the top effort (`effortTrace`), on whichever shape the card has.
     let lit: Bool
-    /// Puts the caret in the words, for a press on the small box beside them.
+    /// Puts the caret in the words, for a press beside them, in the gap under them or on the small box.
     let focus: () -> Void
-    @ViewBuilder let attachments: Attachments
-    @ViewBuilder let words: Words
-    @ViewBuilder let plus: Plus
-    @ViewBuilder let pill: Pill
-    @ViewBuilder let trailing: Trailing
+    let attachments: Attachments
+    let words: Words
+    let plus: Plus
+    let pill: Pill
+    let trailing: Trailing
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.layoutDirection) private var direction
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -37,6 +37,18 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
     /// The shape on screen, which follows `small` on its own animation. The keyboard starts or ends with the change to
     /// `small`, and in the recordings the words and the top edge jumped or kept the keyboard's curve instead of this one.
     @State private var shownSmall: Bool?
+
+    init(small: Bool, lit: Bool, focus: @escaping () -> Void, @ViewBuilder attachments: () -> Attachments, @ViewBuilder words: () -> Words,
+         @ViewBuilder plus: () -> Plus, @ViewBuilder pill: () -> Pill, @ViewBuilder trailing: () -> Trailing) {
+        self.small = small
+        self.lit = lit
+        self.focus = focus
+        self.attachments = attachments()
+        self.words = words()
+        self.plus = plus()
+        self.pill = pill()
+        self.trailing = trailing()
+    }
 
     var body: some View {
         let shaped = shownSmall ?? small
@@ -54,6 +66,20 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
                 .padding(.trailing, shaped ? ComposerMetrics.smallWordsTrailing + slide : ComposerMetrics.wordsInset)
                 .padding(.top, ComposerMetrics.wordsTop)
                 .padding(.bottom, ComposerMetrics.wordsGap)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // Everything above the row's buttons is the words': a press beside them, in the gap under them or in the
+                // row's own margin over its buttons types there. Left to nothing, a press in that margin went to the
+                // nearest control, the model pill, as a press near a small target does (Duo captures, November 1, 2026).
+                .background {
+                    // The clear area is offered the margin too and takes it, so its press area reaches the buttons' top.
+                    // Not while small: the room over the small box is the conversation's.
+                    if !small {
+                        Color.clear.contentShape(Rectangle())
+                            .onTapGesture(perform: focus)
+                            .padding(.bottom, -ComposerMetrics.rowInset)
+                            .accessibilityHidden(true)
+                    }
+                }
                 // An offset doesn't follow the writing direction as padding does.
                 .offset(x: !shaped ? 0 : direction == .rightToLeft ? -slide : slide, y: shaped ? drop : 0)
             Group {
@@ -140,9 +166,8 @@ struct ComposerPill: View {
         .padding(.horizontal, Space.s3)
         .frame(minHeight: ComposerMetrics.button)
         .background(Palette.fillSoft, in: Capsule())
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .padding(.vertical, -(44 - ComposerMetrics.button) / 2)
+        // Pressed across 44 points, reaching down from the row's top and never up into the words (`rowPressArea`).
+        .rowPressArea()
     }
 }
 
