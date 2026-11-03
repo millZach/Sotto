@@ -20,6 +20,8 @@ export const workerSwarmSchema = z.object({
   /** The accepted angle plan's digest makes a retry harmless without retaining any brief text. */
   planDigest: z.string().length(64).optional(), completionSent: z.boolean().optional(), synthesisStarted: z.boolean().optional(),
   synthesisAfterMessageId: id.optional(), synthesisMessageId: id.optional(), synthesisDone: z.boolean().optional(),
+  /** A terminal attempt with missing synthesis, distinct from a completed synthesis; a later lead turn may retry it. */
+  synthesisFailed: z.enum(['failed', 'stopped']).optional(),
 }).strict()
 export type WorkerSwarm = z.infer<typeof workerSwarmSchema>
 export const swarmReceiptSchema = z.object({
@@ -27,6 +29,7 @@ export const swarmReceiptSchema = z.object({
   receipts: z.array(z.object({ index: z.number().int().nonnegative(), state: swarmMemberStateSchema,
     thread: id.optional(), delegation: z.uuid().optional(), refusal: swarmMemberSchema.shape.refusal }).strict()).max(SWARM_ANGLES_MAX),
   queued: z.number().int().nonnegative(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(),
+  synthesisFailed: workerSwarmSchema.shape.synthesisFailed,
   role: z.object({ usual: swarmCountSchema, upTo: swarmCountSchema }).strict(),
   costShape: z.object({ angles: swarmCountSchema, lead: z.literal(1), effort: z.string().nullable() }).strict(),
   note: z.string(),
@@ -42,6 +45,7 @@ export interface SwarmThreadView {
   readonly failed: number
   readonly queued: number
   readonly synthesisDone: boolean
+  readonly synthesisFailed?: 'failed' | 'stopped'
   readonly stopped: boolean
   readonly state?: SwarmMemberState
 }

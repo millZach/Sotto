@@ -150,10 +150,10 @@ async function swarmService(ceiling = 4, saved?: { root: string; snapshot: Agent
     host: { setDelegatedBy: async (id, parent) => { snapshot.threads.find(item => item.id === id)!.delegatedBy = parent }, threadMessage: () => undefined },
     historyEnabled: () => true, swarms: { admission } })
   await delegation.recover()
-  const finish = async (id: string, status: 'completed' | 'failed' | 'interrupted' = 'completed') => {
+  const finish = async (id: string, status: 'completed' | 'failed' | 'interrupted' = 'completed', reply = 'The checks found no permission bypass. Storage failures need a retry; the unavailable angle remains missing.') => {
     const target = snapshot.threads.find(item => item.id === id)!
     target.status = status === 'failed' ? 'error' : 'idle'; target.lastTurn = { id: target.lastUserMessageId!, status }
-    if (status === 'completed') target.messages.push({ id: randomUUID(), role: 'assistant', text: 'Done', createdAt: at })
+    if (status === 'completed') target.messages.push({ id: randomUUID(), role: 'assistant', text: reply, createdAt: at })
     hooks!.observe(snapshot); await settle(); await settle()
   }
   const start = async (prompts: string[] | null = ['Check errors', 'Check permissions']) => {
@@ -167,6 +167,7 @@ async function swarmService(ceiling = 4, saved?: { root: string; snapshot: Agent
     return JSON.parse(await readFile(join(root, 'delegations.json'), 'utf8'))
   }
   return { root, delegation, admission, snapshot, created, sent, told, finish, start, file, observe: () => hooks!.observe(snapshot),
+    observed: () => hooks!.observedThreadIds(),
     newsReady: (id: string, news: DelegationNews[]) => hooks!.newsReady!(id, news),
     newsText: (id: string, news: DelegationNews[]) => hooks!.newsText!(id, news) }
 }
@@ -227,7 +228,7 @@ it('lets an unplanned lead fill its reserved angles once and keeps their outcome
   f.delegation.close(); f.admission.close()
 })
 
-for (const status of ['failed', 'interrupted'] as const) it(`keeps synthesis unfinished after the turn ${status}, releases capacity and tells the owner`, async () => {
+for (const status of ['failed', 'interrupted'] as const) it(`records a ${status} synthesis as missing, tells its owner and permits settlement and pruning after restart`, async () => {
   const f = await swarmService(), { receipt } = await f.start()
   await f.finish(receipt.lead.thread)
   for (const angle of receipt.receipts) await f.finish(angle.thread!)
@@ -237,21 +238,101 @@ for (const status of ['failed', 'interrupted'] as const) it(`keeps synthesis unf
   const outcome = status === 'failed' ? 'failed' : 'stopped'
   await vi.waitFor(() => expect(f.told).toHaveLength(2))
   expect(f.told[1]).toMatchObject({ items: [{ delegationId: receipt.lead.delegation, threadId: receipt.lead.thread, outcome }] })
-  expect(f.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: false, stopped: false })
-  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  expect(f.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: false, synthesisFailed: outcome, stopped: false })
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(true)
   expect(f.admission.reserved('this-computer')).toBe(0)
-  expect(await f.delegation.read('parent', { delegation: receipt.lead.delegation })).toMatchObject({ delegation: { outcome } })
-  expect((await f.file()).swarms[0]?.synthesisDone).not.toBe(true)
+  expect(await f.delegation.read('parent', { delegation: receipt.lead.delegation }))
+    .toMatchObject({ delegation: { outcome, note: expect.stringContaining('synthesis result is missing') } })
+  expect(f.newsText('parent', [f.told[1]!])).toContain('its result is missing')
+  expect(f.delegation.swarmReceiptForLead(receipt.lead.thread))
+    .toMatchObject({ synthesisFailed: outcome, note: expect.stringContaining('its result is missing') })
+  const failed = (await f.file()).swarms[0]!
+  expect(failed.synthesisDone).not.toBe(true)
+  expect(failed.synthesisFailed).toBe(outcome)
+  expect(failed.synthesisMessageId).toBeUndefined()
+  expect(failed.synthesisAfterMessageId).toBe(f.snapshot.threads.find(item => item.id === receipt.lead.thread)!.lastUserMessageId)
   f.observe(); await settle()
   expect(f.told).toHaveLength(2)
   f.delegation.close(); f.admission.close()
   const restored = await swarmService(4, f)
   restored.observe(); await settle()
   expect(restored.delegation.swarmForThread(receipt.lead.thread)?.synthesisDone).toBe(false)
-  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.synthesisFailed).toBe(outcome)
   expect(restored.admission.reserved('this-computer')).toBe(0)
   expect(restored.told).toHaveLength(0)
+  await restored.delegation.forgetThreads(new Set([receipt.lead.thread]))
+  expect(restored.delegation.swarmForThread(receipt.lead.thread)).toBeUndefined()
+  expect(restored.observed()).not.toContain(receipt.lead.thread)
+  expect((await restored.file()).swarms).toBeUndefined()
   restored.delegation.close(); restored.admission.close()
+})
+
+for (const restart of [false, true]) it(`completes synthesis when a later lead turn answers after failure${restart ? ' across restart' : ''}`, async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  await f.finish(receipt.lead.thread, 'failed')
+  await vi.waitFor(() => expect(f.told).toHaveLength(2))
+  const failedTurn = (await f.file()).swarms[0]!.synthesisAfterMessageId
+  let retry = f
+  if (restart) {
+    f.delegation.close(); f.admission.close()
+    retry = await swarmService(4, f)
+  }
+  const lead = retry.snapshot.threads.find(item => item.id === receipt.lead.thread)!, messageId = randomUUID()
+  // A normal later turn, without a new completion wake-up, can retry the missing synthesis.
+  lead.messages.push({ id: messageId, role: 'user', text: 'Retry the synthesis', createdAt: at })
+  lead.lastUserMessageId = messageId; lead.lastTurn = { id: messageId, status: 'running' }; lead.status = 'running'
+  retry.observe(); await settle()
+  expect(retry.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  expect((await retry.file()).swarms[0]).toMatchObject({ synthesisAfterMessageId: failedTurn, synthesisMessageId: messageId })
+  await retry.finish(receipt.lead.thread)
+  await vi.waitFor(() => expect(retry.told).toHaveLength(restart ? 1 : 3))
+  expect(retry.told.at(-1)).toMatchObject({ items: [{ delegationId: receipt.lead.delegation, turnMessageId: messageId, outcome: 'answered' }] })
+  expect(retry.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: true, stopped: false })
+  expect(retry.delegation.swarmReceiptForLead(receipt.lead.thread)?.synthesisFailed).toBeUndefined()
+  expect(retry.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  expect(retry.admission.reserved('this-computer')).toBe(0)
+  expect(retry.observed()).not.toContain(receipt.lead.thread)
+  expect(await retry.delegation.read('parent', { delegation: receipt.lead.delegation }))
+    .toMatchObject({ delegation: { outcome: 'answered', turnMessageId: messageId } })
+  retry.delegation.close(); retry.admission.close()
+})
+
+it('does not certify a bare Done as synthesis or let it erase a failed attempt', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  const lead = f.snapshot.threads.find(item => item.id === receipt.lead.thread)!
+  lead.status = 'idle'; lead.lastTurn = { id: lead.lastUserMessageId!, status: 'completed' }
+  lead.messages.push({ id: randomUUID(), role: 'assistant', text: 'Done', createdAt: at })
+  // Watcher observes first in the real coordinator, before the delegation pass saves the failed disposition.
+  expect(f.delegation.swarmOutcome(lead.id, lead)).toMatchObject({ pending: false, outcome: 'failed' })
+  f.observe()
+  await vi.waitFor(() => expect(f.told).toHaveLength(2))
+  expect(f.told[1]).toMatchObject({ items: [{ outcome: 'failed' }] })
+  expect(f.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: false, synthesisFailed: 'failed' })
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  lead.messages.push({ id: randomUUID(), role: 'assistant', text: 'Done', createdAt: at })
+  f.observe(); await settle()
+  expect(f.told).toHaveLength(2)
+  expect((await f.file()).swarms[0]?.synthesisDone).not.toBe(true)
+  f.delegation.close(); f.admission.close()
+})
+
+it('gives the lead one swarm read instruction while retaining the standalone completion formatter', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  const text = f.newsText(receipt.lead.thread, f.told)!
+  expect(text.match(/Swarm /gu)).toHaveLength(1)
+  expect(text).toContain('Read the swarm receipt with read_delegation')
+  expect(queuedWakeUpText(f.told, { tool: false })).toContain(receipt.swarmId)
+  f.delegation.close(); f.admission.close()
 })
 
 it('rejects exact duplicate trimmed angle briefs before accepting a plan or starting any of its workers', async () => {

@@ -32,6 +32,8 @@ export const DELEGATION_NEWS_OPENING = 'Sotto has news of work this thread deleg
 
 /** What Sotto adds to one delegation's line as the news is sent, from its own record, never from the queue. */
 export interface DelegationNewsDetail {
+  /** A terminal swarm attempt left its synthesis missing, rather than completing it. */
+  readonly synthesisFailed?: 'failed' | 'stopped'
   /** An answered delegation's reply: the delegated thread's own words, cut as `read_delegation` cuts them. */
   readonly reply?: { readonly messageId: string; readonly text: string; readonly truncated: boolean }
   /** Why an answered delegation's reply is not included, as `read_delegation` would say it. */
@@ -70,17 +72,19 @@ function replyBlock(item: DelegationNews['items'][number], reply: NonNullable<De
  * a brief that was never sent. Replies are included oldest first while the message has room (`maxChars`); one that does
  * not fit says how to read it instead.
  */
-export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<string, DelegationNewsDetail>, maxChars = AGENT_TEXT_MAX): string {
+export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<string, DelegationNewsDetail>, maxChars = AGENT_TEXT_MAX, swarmNote?: string): string {
   const says = (item: DelegationNews['items'][number]): string => {
     const detail = details?.get(item.delegationId)
     if (detail?.notSent) return `was not sent. ${detail.notSent}`
+    if (detail?.synthesisFailed) return `synthesis ${detail.synthesisFailed === 'stopped' ? 'was stopped' : 'failed'}; its result is missing. Read the swarm receipt before retrying or settling it. This is not a completed synthesis.`
     if (item.outcome === 'answered' && detail?.replyUnavailable) return `answered. ${detail.replyUnavailable}`
     if (item.outcome === 'background' && item.heldMinutes !== undefined) return `${heldWords(item.heldMinutes, detail?.laterTurn === true)}${detail?.lastReply?.trim() ? lastReplyStart(detail.lastReply) : ''}`
     return SAYS[item.outcome]
   }
   const lines = news.items.map(item => `${head(item)} ${says(item)}`)
-  const opening = [DELEGATION_NEWS_OPENING, ...news.swarmId
-    ? [`Swarm ${news.swarmId} has finished its angles. Call ${READ_DELEGATION_TOOL} with this swarm ID for every angle, including refused starts, before writing the synthesis.`] : []]
+  const swarm = swarmNote ?? (news.swarmId
+    ? `Swarm ${news.swarmId} has finished its angles. Call ${READ_DELEGATION_TOOL} with this swarm ID for every angle, including refused starts, before writing the synthesis.` : undefined)
+  const opening = [DELEGATION_NEWS_OPENING, ...swarm ? [swarm] : []]
   let used = [...opening, ...lines].join('\n').length
   for (const [index, item] of news.items.entries()) {
     const reply = item.outcome === 'answered' ? details?.get(item.delegationId)?.reply : undefined

@@ -624,7 +624,7 @@ export class DelegationService {
           } else if (member.state !== 'planned') member.state = 'unknown'
         }
         swarm.planned = !swarm.stopped && swarm.members.some(member => member.state === 'planned')
-        if (!swarm.synthesisDone && !swarm.stopped && (swarm.completionSent || swarm.synthesisStarted)) this.recoveringSwarmCompletions.add(swarm.id)
+        if (!swarm.synthesisDone && !swarm.synthesisFailed && !swarm.stopped && (swarm.completionSent || swarm.synthesisStarted)) this.recoveringSwarmCompletions.add(swarm.id)
       }
       this.indexSwarm(swarm)
     }
@@ -775,19 +775,37 @@ export class DelegationService {
     return { ...lead ? await this.result(lead) : { status: 'ok' }, ...swarmReceipt(swarm) }
   }
 
-  /** Planning is not the final answer. Only the confirmed completion wake-up's turn can supply the synthesis. */
-  swarmOutcome(leadId: string, thread: AgentThread): { readonly pending: boolean; readonly messageId?: string } | undefined {
+  /** Planning is not the final answer. After a failed synthesis attempt, a later lead turn can replace that attempt. */
+  swarmOutcome(leadId: string, thread: AgentThread): { readonly pending: boolean; readonly messageId?: string; readonly outcome?: 'failed' | 'stopped' } | undefined {
     const swarm = this.options.swarms ? this.swarmByLead.get(leadId) : undefined
     if (!swarm) return undefined
     if (swarm.stopped) return { pending: false }
     if (!swarmReady(swarm) || !swarm.synthesisStarted) return { pending: true }
     if (!swarm.synthesisMessageId) {
       const head = nativeHead(thread)
-      if (head && head !== swarm.synthesisAfterMessageId && (thread.hiddenWakeUpMessageIds?.includes(head)
+      if (head && head !== swarm.synthesisAfterMessageId && (swarm.synthesisFailed || thread.hiddenWakeUpMessageIds?.includes(head)
         || thread.messages.some(message => message.id === head && message.hiddenWakeUp === true))) {
         swarm.synthesisMessageId = head
+        if (swarm.synthesisFailed) {
+          delete swarm.synthesisFailed
+          // The lead delegation represents the whole swarm. Its failed attempt ended, but this later turn retries it.
+          if (swarm.leadDelegationId) this.update(swarm.leadDelegationId, record => {
+            record.outcome = 'working'; record.outcomeAt = now()
+            delete record.turnMessageId; delete record.nativeTurnId; delete record.replyMessageId
+          })
+          this.options.swarms!.changed?.(swarm)
+        }
         void this.persist()
       }
+    }
+    if (swarm.synthesisFailed) return { pending: false, ...swarm.synthesisAfterMessageId ? { messageId: swarm.synthesisAfterMessageId } : {}, outcome: swarm.synthesisFailed }
+    // This read also precedes Watcher's outcome observation: it must not certify an acknowledgement before our pass.
+    if (swarm.synthesisMessageId && thread.lastTurn?.status === 'completed') {
+      const synthesis = watcherTurnOutcome({ messageId: swarm.synthesisMessageId, delivery: 'now' }, thread, messageId => isWakeUpOf(thread, messageId))
+      const reply = synthesis?.replyMessageId ? thread.messages.find(message => message.id === synthesis.replyMessageId)
+        ?? this.options.host.threadMessage(leadId, synthesis.replyMessageId) : undefined
+      if (synthesis?.outcome === 'answered' && /^done[.!]?$/iu.test(reply?.text.trim() ?? ''))
+        return { pending: false, messageId: swarm.synthesisMessageId, outcome: 'failed' }
     }
     return swarm.synthesisMessageId ? { pending: false, messageId: swarm.synthesisMessageId } : { pending: true }
   }
@@ -807,7 +825,7 @@ export class DelegationService {
       this.swarmCounts.set(swarm, counts)
     }
     return { threadId, id: swarm.id, leadThreadId: swarm.leadThreadId, count: swarm.count, ...counts,
-      synthesisDone: swarm.synthesisDone === true, stopped: swarm.stopped === true,
+      synthesisDone: swarm.synthesisDone === true, ...swarm.synthesisFailed ? { synthesisFailed: swarm.synthesisFailed } : {}, stopped: swarm.stopped === true,
       ...member ? { index: member.index, state: swarm.members[member.index]!.state } : {} }
   }
 
@@ -823,7 +841,7 @@ export class DelegationService {
   canSettle(threadId: string): boolean {
     if (!this.options.swarms) return true
     const swarm = this.swarmByLead.get(threadId)
-    if (swarm) return swarm.stopped === true || swarmReady(swarm) && swarm.synthesisDone === true
+    if (swarm) return swarm.stopped === true || swarmReady(swarm) && (swarm.synthesisDone === true || swarm.synthesisFailed !== undefined)
     const member = this.swarmByMember.get(threadId)
     return !member || swarmMemberTerminal(member.swarm.members[member.index]!.state)
   }
@@ -2281,11 +2299,12 @@ export class DelegationService {
       && !isThreadTurnRunning(thread) && !this.options.control.hasPendingThreadWork(thread.id)
   }
   private observedThreadIds(): string[] {
-    return [...new Set([...this.records.filter(record => this.open(record)).map(record => record.delegatedThreadId), ...this.paused])]
+    return [...new Set([...this.records.filter(record => this.open(record)).map(record => record.delegatedThreadId), ...this.paused,
+      ...[...this.activeSwarms.values()].flatMap(swarm => swarm.leadThreadId ? [swarm.leadThreadId] : [])])]
   }
   /**
    * One pass over the coordinator's snapshot: each open brief's outcome from its thread, pauses whose turn has ended, and
-   * briefs whose thread is free. It reads only the threads its open delegations and its pauses name: by `view`, the
+   * briefs whose thread is free. It also follows a failed synthesis's lead for a later retry. It reads those threads by `view`, the
    * coordinator's index, when it gives one (#925 step 5), otherwise from the snapshot's thread list read once, whatever the
    * number of delegations. Each of those threads is read on every pass, since what the pass decides of one also follows
    * the queue, the user's composer, delegation's own sends and the clock, which move without the thread.
@@ -2301,10 +2320,18 @@ export class DelegationService {
         this.sendSwarmCompletion(swarm)
         const progress = this.swarmOutcome(lead.id, lead)
         if (!progress?.messageId) continue
-        const synthesis = watcherTurnOutcome({ messageId: progress.messageId, delivery: 'now' }, lead, messageId => isWakeUpOf(lead, messageId))
+        if (progress.outcome && swarm.synthesisFailed) continue // Already reported; watch for a later turn without resending.
+        const seen = watcherTurnOutcome({ messageId: progress.messageId, delivery: 'now' }, lead, messageId => isWakeUpOf(lead, messageId))
+        const synthesis = seen && progress.outcome ? { ...seen, outcome: progress.outcome } : seen
         if (synthesis && swarmMemberTerminal(synthesis.outcome)) {
-          if (synthesis.outcome === 'answered') swarm.synthesisDone = true
-          this.activeSwarms.delete(swarm.id)
+          if (synthesis.outcome === 'answered') {
+            swarm.synthesisDone = true
+            this.activeSwarms.delete(swarm.id)
+          } else {
+            swarm.synthesisFailed = synthesis.outcome === 'stopped' ? 'stopped' : 'failed'
+            swarm.synthesisAfterMessageId = progress.messageId
+            delete swarm.synthesisMessageId
+          }
           this.options.swarms.admission.leave(`swarm-synthesis:${swarm.id}`)
           this.options.swarms.changed?.(swarm)
           void this.persist()
@@ -2351,6 +2378,7 @@ export class DelegationService {
       }
       const swarm = this.swarmOutcome(thread.id, thread)
       let seen = watcherTurnOutcome({ messageId: swarm?.messageId ?? record.messageId, delivery: 'now', ...(record.outcome ? { outcome: record.outcome } : {}) }, thread, messageId => briefs.has(messageId) || isWakeUpOf(thread, messageId))
+      if (seen && swarm?.outcome) seen = { ...seen, outcome: swarm.outcome }
       if (seen && seen.outcome !== 'working' && !isThreadTurnRunning(thread)) this.options.swarms?.admission.leave(record.id)
       if (seen?.outcome === 'answered' && swarm?.pending) seen = { ...seen, outcome: 'background' }
       if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) continue
@@ -2424,7 +2452,7 @@ export class DelegationService {
     const swarm = this.swarmByDelegation.get(delegationId)?.swarm
     if (swarm) return
     const lead = this.swarmByLead.get(record.delegatedThreadId)
-    if (lead && !lead.synthesisDone && !lead.stopped && outcome !== 'failed' && outcome !== 'stopped') return
+    if (lead && !lead.synthesisDone && !lead.synthesisFailed && !lead.stopped && outcome !== 'failed' && outcome !== 'stopped') return
     const pending = this.untold.get(record.delegatingThreadId) ?? { ids: new Set<string>(), attempts: 0 }
     pending.ids.add(record.id); this.untold.set(record.delegatingThreadId, pending)
     this.scheduleNews()
@@ -2498,7 +2526,8 @@ export class DelegationService {
     const note = record.deliveryState === 'failed' ? FAILURE_NOTES[record.failure ?? 'provider'] : !thread && (outcome === 'unknown' || outcome === 'failed') ? GONE
       : held ? heldWords(held.minutes, held.laterTurn).replace(/^h/u, 'H') : NOTES[outcome]
     const read: { -readonly [K in keyof DelegationRead]: DelegationRead[K] } = { id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action,
-      outcome, note, createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
+      outcome, note: this.swarmByLead.get(record.delegatedThreadId)?.synthesisFailed
+        ? `${note} The synthesis result is missing; it was not completed.` : note, createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
       ...(record.failure === 'target-changed' ? { refusal: 'TARGET_CHANGED' as const } : record.failure === 'paused' ? { refusal: 'PAUSED' as const } : {}) }
     const ticket = this.waitingChecks.has(record.id) ? this.checkTickets.get(record.id) : undefined
@@ -2571,6 +2600,8 @@ export class DelegationService {
         continue
       }
       if (record.delegatingThreadId !== threadId) continue
+      const synthesisFailed = this.swarmByLead.get(record.delegatedThreadId)?.synthesisFailed
+      if (synthesisFailed && (item.outcome === 'failed' || item.outcome === 'stopped')) details.set(record.id, { synthesisFailed })
       if (record.deliveryState === 'failed') details.set(record.id, { notSent: FAILURE_NOTES[record.failure ?? 'provider'] })
       else if (item.outcome === 'answered' && this.outcomeOf(record) === 'answered') details.set(record.id, this.replyOf(record, threads.get(record.delegatedThreadId)))
       else if (item.heldMinutes !== undefined) {
@@ -2585,9 +2616,8 @@ export class DelegationService {
     const included = new Set(folded.items.map(item => item.delegationId))
     const omitted = group && swarmReady(group)
       ? group.members.filter(member => member.delegationId && this.byId.has(member.delegationId) && !included.has(member.delegationId)).length : 0
-    return [summary ? `Swarm ${summary.swarmId}: ${summary.note} Read the swarm receipt with read_delegation for every angle, including missing and refused ones. Write the synthesis only after reading their results.` : '',
-      omitted ? `${omitted} angle results omitted from this news. Call read_delegation with delegation: "${group!.id}" for the full receipt, then read those delegations for their results.` : '',
-      delegationNewsText(folded, details)].filter(Boolean).join('\n\n')
+    return [omitted ? `${omitted} angle results omitted from this news. Call read_delegation with delegation: "${group!.id}" for the full receipt, then read those delegations for their results.` : '',
+      delegationNewsText(folded, details, undefined, summary ? `Swarm ${summary.swarmId}: ${summary.note}${omitted ? '' : ' Read the swarm receipt with read_delegation for every angle, including missing and refused ones. Write the synthesis only after reading their results.'}` : undefined)].filter(Boolean).join('\n\n')
   }
   private listing(caller: AgentThread, snapshot: AgentHostSnapshot) {
     // The newest twenty, refused ones among them, oldest first.
@@ -2675,7 +2705,7 @@ export class DelegationService {
       this.queuedBriefs.delete(threadId); this.paused.delete(threadId); this.untold.delete(threadId); this.lastWorking.delete(threadId); this.viewsChanged.delete(threadId)
     }
     for (const [id, swarm] of this.swarms) {
-      if (!(swarm.synthesisDone || swarm.stopped) || !threadIds.has(swarm.ownerThreadId) && !(swarm.leadThreadId && threadIds.has(swarm.leadThreadId))) continue
+      if (!(swarm.synthesisDone || swarm.synthesisFailed || swarm.stopped) || !threadIds.has(swarm.ownerThreadId) && !(swarm.leadThreadId && threadIds.has(swarm.leadThreadId))) continue
       this.swarms.delete(id); this.activeSwarms.delete(id); this.swarmByLeadKey.delete(swarm.leadKey)
       this.swarmByRetry.delete(retryIndex(swarm.ownerThreadId, swarm.retryKey))
       if (swarm.leadThreadId) this.swarmByLead.delete(swarm.leadThreadId)
