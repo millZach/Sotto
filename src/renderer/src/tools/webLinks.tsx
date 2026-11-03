@@ -30,7 +30,7 @@ function bridgeBrowser(): BrowserBridge | undefined {
 }
 
 async function openSystem(url: string): Promise<WebLinkResult> {
-  const open = window.sotto?.openExternalLink
+  const open = window.sotto?.openExternalLink ?? window.sottoPopup?.openExternalLink
   return open ? open(url).then(result => ({ ok: result.ok }), () => ({ ok: false })) : { ok: false }
 }
 

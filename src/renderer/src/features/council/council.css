@@ -21,11 +21,11 @@
 .council-chamber { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .council-chamber__scene { position: absolute; top: 0; left: 0; pointer-events: none; }
 .council-chamber__figure { position: absolute; padding: 0; border: 0; border-radius: var(--tt-radius-card); background: transparent; }
-.council-chamber__figure:hover { background: color-mix(in srgb, var(--tt-text) 5%, transparent); }
-.council-chamber__figure:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.council-chamber__figure:hover { box-shadow: inset 0 0 0 1px var(--tt-border); }
+.council-chamber__figure:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: -3px; box-shadow: inset 0 0 0 5px var(--tt-canvas); }
 /* The chamber's inks, read and never seen: the text colour for its ink, the accent for its accent, and the glyph face. */
 .council-chamber__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
-  color: var(--tt-text); background-color: var(--tt-accent); font-family: var(--tt-font-mono); }
+  color: var(--tt-text); background-color: var(--tt-accent-text); font-family: var(--tt-font-mono); }
 
 .council-ask { display: grid; gap: 12px; padding: 16px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
 .council-field { display: grid; gap: 5px; min-width: 0; }

@@ -499,6 +499,16 @@ A host that lists `delegation-relay` lists `delegation-relay-send` with it, on t
 
 A relayed start may now be placed on a third machine the desktop is connected to. The desktop starts it there with its own delegation, as a **remote delegation** (below), and answers the host with that delegation's result; the thread it names is the desktop's key for it, `host:<hostId>:<threadId>`, which a second brief names again. A machine the desktop knows but is not connected to is refused with "This computer isn't connected to the Mac, so nothing was started there. Start it on forge or on This computer instead, or try again when the Mac is connected." A relayed start that asks for `from_my_branch` or `test_run` goes through a desktop that accepted `delegation-branch-starts` (below); one from before it is refused on the host, and nothing is asked.
 
+## A thread's message for Watcher (November 2, 2026)
+
+A thread on a headless host sends Watcher a message with `tell_watcher` ([ADR-0073](adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md)). Watcher runs on a desktop, so the host offers `watcher-tell` to a desktop the launch script recorded, and such a desktop accepts it in its hello while Watcher is available to it.
+
+The host pushes `{ v: 1, event: "watcher-tell-ask", askId, ask }`, where `ask` is `{ threadId, words, userMessage? }`: the worker's words, and the user's own newest message in that thread from the host's record, as `{ id, words, named, cut }`. `named` says the whole message names Watcher.
+
+The desktop answers with the request `watcher-tell-answer` `{ askId, answer }`, where `answer` is `{ status: "told", requestOpened }` or `{ status: "refused", reason: "no-watcher" | "not-connected" | "no-answer" }`. The desktop names the thread by the connection the ask came over, so a host speaks only for its own threads.
+
+The host asks the desktop connected last. It asks the next only when one answers `no-watcher` or its socket would not take the push. One that does not answer may have taken it, so no other is asked. Nothing is kept on the host. Phones are never offered this.
+
 ## Remote delegation (October 27, 2026)
 
 Contract (#1316 part 2, Owl `cross-machine-work`, [ADR-0105](adr/0105-hosts-reach-each-other-over-host-links-the-desktop-sets-up.md) decision 1): the desktop starts a delegated thread on a paired host for a thread on another machine, one of its own or one that asked through the desktop relay. A host that runs delegation for its own threads lists `delegation-remote`, on both listeners, to a client the launch script recorded as a desktop, never to a phone. A desktop accepts it in hello only where its own Owl answer turns on Work across machines and its Watcher runs. A stable host never lists it and refuses the request below as `invalid_request`; a stable desktop never accepts it.

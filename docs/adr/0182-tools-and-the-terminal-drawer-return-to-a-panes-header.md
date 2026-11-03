@@ -6,6 +6,8 @@ Accepted November 2, 2026, by Zach's review of `docs/prototypes/pane-header-tool
 
 It fixes an existing surface and goes straight to stable; it is not an Owl feature (ADR-0072).
 
+Amended by [ADR-0183](0183-a-paired-hosts-thread-opens-its-terminal-over-ssh.md): on Owl, the greyed button of decision 4 opens a real terminal over SSH.
+
 Amends [ADR-0163](0163-a-pane-header-is-the-git-action-watch-one-menu-and-close.md): this replaces its decision 3 and the Tools and Terminal drawer rows of its decision 2, and adds both buttons to its decision 1. It also amends [ADR-0049](0049-a-thread-pane-has-its-own-terminal-drawer.md), since a thread on a paired host now shows the drawer's button.
 
 ## Context
