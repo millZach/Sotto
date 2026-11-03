@@ -30,6 +30,14 @@ private struct CardAnswer {
     var asked: AskedRequest { AskedRequest(thread: asking.ref, requestID: requestID) }
 }
 
+/// The thread list as the Threads page last drew it, held while the page is out of sight (`ThreadsView.held`).
+private struct HeldList {
+    let id = UUID()
+    let groups: FocusThreads
+    let unsearched: FocusThreads
+    let watch: ListWatch
+}
+
 /// What the Settled shelf shows besides the threads the phone holds: how many settled threads its computers left out of
 /// their lists, and those read from them, or found by a search (ADR-0028, November 1 amendment, part 2).
 private struct Shelf {
@@ -62,6 +70,12 @@ struct ThreadsView: View {
     @State private var settledExpanded = false
     @State private var sent: [String: CardAnswer] = [:]
     @State private var searchBox = FrameBox()
+    /// The list as the page last drew it, held while the page is out of sight: under a thread opened over it, or on
+    /// another tab. The page stays alive there and the list is its costliest part: made again with every update to any
+    /// thread, for nobody to see, it was half the work of each word a reply streamed into the thread over it. The page
+    /// lets go as it starts to come back, at the start of a swipe back or a press on Back and before that first frame,
+    /// so it never shows an old row.
+    @State private var held: HeldList?
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -74,8 +88,10 @@ struct ThreadsView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
-        let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
-        let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
+        let shown = held.map { (groups: $0.groups, unsearched: $0.unsearched) } ?? lists()
+        let groups = shown.groups
+        let unsearched = shown.unsearched
+        let _ = BenchPage.drawn(held: held != nil)
         SheetPage(warm: unsearched.requestCount > 0) {
             VStack(alignment: .leading, spacing: 0) {
                 heading
@@ -116,7 +132,9 @@ struct ThreadsView: View {
             NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
-        .onAppear { openForShare(model.shareOpened) }
+        .onAppear { held = nil; openForShare(model.shareOpened) }
+        .onDisappear { hold() }
+        .benchPageWindow()
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
         // The search also asks the computers for their older settled threads, a moment after typing stops, and again when
@@ -126,6 +144,19 @@ struct ThreadsView: View {
             guard !Task.isCancelled else { return }
             await model.searchSettled(query, show: model.show)
         }
+    }
+
+    /// The list as it stands, searched for what is typed, and unsearched.
+    private func lists() -> (groups: FocusThreads, unsearched: FocusThreads) {
+        let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
+        return (groups, query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected))
+    }
+
+    /// Holds the list as it stands, as the page goes out of sight.
+    private func hold() {
+        BenchPage.holding()
+        let (groups, unsearched) = lists()
+        held = HeldList(groups: groups, unsearched: unsearched, watch: model.listWatch(groups))
     }
 
     private func openForShare(_ destination: ShareDestination?) {
@@ -212,7 +243,9 @@ struct ThreadsView: View {
     /// November 1).
     @ViewBuilder private func list(_ groups: FocusThreads, _ shelf: Shelf) -> some View {
         if groups.isEmpty && !shows(shelf, settled: groups.settled, groups) { empty(groups) }
-        ThreadListSections(groups: groups, open: open).equatable()
+        ThreadListSections(groups: groups, watch: held?.watch ?? model.listWatch(groups), held: held?.id, open: open,
+                           setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+            .equatable()
         if shows(shelf, settled: groups.settled, groups) {
             if groups.searching {
                 ThreadListHeading(title: String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: groups.settled.count + shelf.older.count, id: "settled")

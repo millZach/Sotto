@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import { BROWSER_WAITING_TO_OPEN, safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserGrantView, type BrowserTask } from '../../../shared/browser'
@@ -496,6 +496,20 @@ export function useOpenedAddresses(store: BrowserStore, threadId: string): reado
   return useSyncExternalStore(store.subscribe, read)
 }
 
-export function useBrowserTasks(store: BrowserStore): readonly BrowserTask[] {
-  return useSyncExternalStore(store.subscribe, store.taskSnapshot)
+/** Keep a thread's task list until its entries change, even when another thread publishes a task. */
+export function useThreadBrowserTasks(store: BrowserStore, threadId: string | null): readonly BrowserTask[] {
+  const read = useMemo(() => {
+    let all: readonly BrowserTask[] | undefined
+    let held: readonly BrowserTask[] = []
+    return (): readonly BrowserTask[] => {
+      const tasks = store.taskSnapshot()
+      if (tasks !== all) {
+        all = tasks
+        const next = tasks.filter(task => task.threadId === threadId)
+        if (next.length !== held.length || next.some((task, index) => task !== held[index])) held = next
+      }
+      return held
+    }
+  }, [store, threadId])
+  return useSyncExternalStore(store.subscribe, read)
 }

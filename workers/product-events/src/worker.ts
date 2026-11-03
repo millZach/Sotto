@@ -39,6 +39,8 @@ const RETRY_FORWARD_ROWS = 500
 /** Enough for any backlog PostHog would have left, while each try's timeout keeps the hour's sweep from waiting long. */
 const RETRY_FORWARD_ROUNDS = 10
 const FORWARD_TIMEOUT_MS = 10_000
+/** What PostHog says about the events themselves. Any other failure, such as a bad key or an outage, would stop newer events too. */
+const REFUSED = new Set([400, 413, 422])
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -93,28 +95,39 @@ async function keep(env: ProductEventsEnv, events: readonly CheckedEvent[], now:
 }
 
 /**
- * Sends events to PostHog and marks them done. It throws when PostHog does not take them, and they stay due. If the marking
- * fails after PostHog took them, they go again with the same uuids, which PostHog uses to drop the copy.
+ * Sends events to PostHog and marks them done. They stay due if PostHog refuses them, and it throws on any other failure. If
+ * the marking fails after PostHog took them, they go again with the same uuids, which PostHog uses to drop the copy.
  */
 async function forward(env: ProductEventsEnv, events: readonly CheckedEvent[]): Promise<void> {
   if (events.length === 0) return
   const host = (env.POSTHOG_HOST || DEFAULT_POSTHOG_HOST).replace(/\/+$/, '')
   const response = await fetch(`${host}/batch/`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ api_key: env.POSTHOG_KEY, batch: events }), signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS) })
   await response.body?.cancel()
+  if (REFUSED.has(response.status)) return
   if (!response.ok) throw new Error('not taken')
   const done = env.EVENTS.prepare('UPDATE product_events SET forward_due = 0 WHERE uuid = ?')
   await env.EVENTS.batch(events.map(event => done.bind(event.uuid)))
 }
 
-/** Tries again what PostHog did not take, oldest first, until none is due or PostHog stops taking them. Without a key nothing goes. */
+/**
+ * Tries again what PostHog did not take, oldest first, until none is due or PostHog stops taking anything. A batch it refused
+ * is passed over until the next hour, so it cannot hold up newer events, and it goes then if the refusal has ended. Refused
+ * batches are never given up on before the sweep: a 400 can be passing, and PostHog could refuse everything for a while.
+ * Without a key nothing goes.
+ */
 export async function retryForwards(env: ProductEventsEnv, now: number = Date.now()): Promise<void> {
   if (!env.POSTHOG_KEY) return
   const before = new Date(now - RETRY_FORWARD_AFTER_MS).toISOString()
-  const select = env.EVENTS.prepare('SELECT body FROM product_events WHERE forward_due = 1 AND received_at < ? ORDER BY received_at LIMIT ?').bind(before, RETRY_FORWARD_ROWS)
+  const select = env.EVENTS.prepare('SELECT uuid, received_at, body FROM product_events WHERE forward_due = 1 AND received_at < ? AND (received_at, uuid) > (?, ?) ORDER BY received_at, uuid LIMIT ?')
+  let afterReceivedAt = ''
+  let afterUuid = ''
   for (let round = 0; round < RETRY_FORWARD_ROUNDS; round += 1) {
-    const rows = ((await select.all()).results ?? []) as readonly { readonly body: string }[]
-    if (rows.length === 0) return
+    const rows = ((await select.bind(before, afterReceivedAt, afterUuid, RETRY_FORWARD_ROWS).all()).results ?? []) as readonly { readonly uuid: string; readonly received_at: string; readonly body: string }[]
+    const last = rows.at(-1)
+    if (!last) return
     await forward(env, rows.map(row => JSON.parse(row.body) as CheckedEvent))
+    afterReceivedAt = last.received_at
+    afterUuid = last.uuid
   }
 }
 
