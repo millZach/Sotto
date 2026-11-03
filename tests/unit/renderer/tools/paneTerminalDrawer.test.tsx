@@ -39,14 +39,14 @@ const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDir
 
 type DrawerThread = Omit<typeof thread, 'worktree'> & { worktree: Omit<typeof thread.worktree, 'mode'> & { mode: 'shared' | 'independent' } }
 
-function setup(terminal: ReturnType<typeof fakeTerminal>, drawerThread: DrawerThread = thread, projectPath = 'D:\\work\\workshop') {
+function setup(terminal: ReturnType<typeof fakeTerminal>, drawerThread: DrawerThread = thread, projectPath = 'D:\\work\\workshop', machine?: string) {
   const chromeStore = new PaneTerminalChromeStore(null)
   const store = new TerminalStore('drawer')
   const { views, factory } = fakeViews()
   render(<div className="thread-pane" id="thread-pane-thread-a" data-thread-id="thread-a">
     <PaneTerminalToggle threadId="thread-a" store={chromeStore} />
     <div className="thread-workspace__compose"><textarea aria-label="Prompt" /></div>
-    <PaneTerminalDrawer threadId="thread-a" thread={drawerThread} project={{ path: projectPath }} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
+    <PaneTerminalDrawer threadId="thread-a" thread={drawerThread} project={{ path: projectPath }} machine={machine} bridge={terminal.bridge} viewFactory={factory} store={store} chromeStore={chromeStore} />
   </div>)
   return { chromeStore, store, views }
 }
@@ -68,6 +68,34 @@ describe('the pane terminal drawer', () => {
     expect(divider).toHaveAttribute('aria-valuenow', '184')
     act(() => views[0]!.handlers.onSearchVisibilityChange!(false))
     expect(divider).toHaveAttribute('aria-valuenow', '120')
+  })
+  it('says on its bar which machine a paired host\'s shell is on, and nothing for a shell here (ADR-0183)', async () => {
+    const terminal = fakeTerminal()
+    const { chromeStore } = setup(terminal, thread, 'D:\\work\\workshop', 'forge')
+    act(() => chromeStore.setOpen('thread-a', true))
+    const machine = await screen.findByText('on forge')
+    expect(machine.closest('.terminal-machine')).toHaveAttribute('title', 'This shell runs on forge')
+    cleanup()
+    const here = setup(fakeTerminal())
+    act(() => here.chromeStore.setOpen('thread-a', true))
+    await screen.findByRole('button', { name: 'Hide terminal drawer' })
+    expect(screen.queryByText(/^on /u)).toBeNull()
+  })
+  it('says a connection ended when ssh exits 255, and treats a shell\'s own exit as any other (ADR-0183)', async () => {
+    const lost = session(ID_1, { workspace, status: 'exited', exitCode: 255 })
+    const { chromeStore } = setup(fakeTerminal([lost]), thread, 'D:\\work\\workshop', 'forge')
+    act(() => chromeStore.setOpen('thread-a', true))
+    expect(await screen.findByText('The connection to forge ended.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeVisible()
+    cleanup()
+    const own = setup(fakeTerminal([session(ID_1, { workspace, status: 'exited', exitCode: 7 })]), thread, 'D:\\work\\workshop', 'forge')
+    act(() => own.chromeStore.setOpen('thread-a', true))
+    expect(await screen.findByText('Exited with code 7.')).toBeVisible()
+    cleanup()
+    // On this computer 255 is just a shell's exit code.
+    const local = setup(fakeTerminal([lost]))
+    act(() => local.chromeStore.setOpen('thread-a', true))
+    expect(await screen.findByText('Exited with code 255.')).toBeVisible()
   })
   it('toggles open and starts a shell on its own, with no empty "Start terminal" step', async () => {
     const terminal = fakeTerminal()

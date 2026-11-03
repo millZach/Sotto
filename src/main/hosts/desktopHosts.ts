@@ -1,3 +1,4 @@
+import type { SshTerminalHost } from './sshTerminal'
 import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { msg, t } from '@lingui/core/macro'
 import { join } from 'node:path'
@@ -266,6 +267,8 @@ export class DesktopHosts {
     watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     /** Work across machines (#1310): each host's socket reads its own threads' delegations only where this is on. */
     crossMachineEnabled?: boolean;
+    /** Told when the user sends a host away, by its own ID, so that shells over SSH to it end (ADR-0183). */
+    onHostLeft?: (hostId: string) => void;
     /** Whether this desktop wants its hosts' next prompts now (ADR-0173), present only while its `next-prompt` Owl answer is on. */
     nextPromptsWanted?: () => boolean;
     /** This desktop's answer for its hosts' product events (ADR-0179). */
@@ -682,6 +685,11 @@ export class DesktopHosts {
     if (!held) return
     this.held.delete(id)
     this.options.router.remove(held)
+  }
+  /** A saved host as a shell over SSH needs it, found by the host's own ID (ADR-0183). */
+  terminalHost(hostId: string): SshTerminalHost | undefined {
+    const host = this.saved.find(item => item.hostId === hostId)
+    return host && { target: host.target, identityFile: host.identityFile, sshPort: host.sshPort }
   }
   /** A saved host as a provider job needs it. */
   jobHost(id: string): ProviderJobHost | undefined {
@@ -1958,6 +1966,9 @@ export class DesktopHosts {
   private async disconnect(id: string, keepRetry = false): Promise<void> {
     if (!keepRetry) { this.clearRetry(id); this.releaseHeld(id); await this.admins.close(id) }
     this.clearReturn(id)
+    // A host the user sent away takes its threads with it, and shells nobody can reach must not stay open there (ADR-0183).
+    const leaving = keepRetry ? undefined : this.saved.find(item => item.id === id)?.hostId
+    if (leaving) this.options.onHostLeft?.(leaving)
     const active = this.live.get(id)
     this.live.delete(id)
     // A move to the tailnet under way still has the SSH connection it is leaving, which goes too.

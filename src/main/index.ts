@@ -1,5 +1,5 @@
 import { mediaThumbnailMaker } from './agents/mediaThumbnail'
-import { requestedCaptures, ThreadMediaStore } from './agents/threadMedia'
+import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
@@ -17,6 +17,8 @@ import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { MediaToolServer, SHOW_IN_THREAD_TOOL } from './agents/mediaTools'
+import { tellWatcherTools } from './agents/tellWatcherTools'
+import { DesktopTellWatcherRelay } from './agents/tellWatcherRelay'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
@@ -57,6 +59,8 @@ import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
 import { e2eTailscale } from './e2e/tailscale'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
+import { hostedTerminals } from './hosts/hostedTerminals'
+import { sshExecutable } from './hosts/sshProcess'
 import { e2eTailnetMap } from './e2e/tailnetStandIn'
 import { SshHostLauncher } from './hosts/sshLauncher'
 import { HostPhones } from './hosts/hostPhones'
@@ -368,6 +372,7 @@ type NativeDiagnostic =
   | NativeRuntimeDiagnostic
   | RendererDiagnostic
   | 'bootstrap-terminal-failed'
+  | 'host-terminals-end-failed'
   | 'native-main-send-failed'
   | 'native-widget-state-delivery-failed'
   | 'native-widget-show-failed'
@@ -1051,8 +1056,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   // Pictures in threads (ADR-0170): one store, which the runtime's providers and the native e2e fixtures' capture into.
   const threadMedia = owlFeatures['inline-media'] ? new ThreadMediaStore(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
-  // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, request-only).
-  const fixtureCaptures = threadMedia ? requestedCaptures(threadMedia) : {}
+  // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
+  const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
+  const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
@@ -1060,7 +1066,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
     answerImages: owlFeatures['answer-images'],
-    inlineMedia: owlFeatures['inline-media'],
+    inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     ...threadMedia ? { threadMedia } : {},
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
@@ -1169,6 +1175,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Moving threads to a paired host (#1178) reaches the machines through Watcher's view of them, and its placement.
   const threadMoves = 'threadMoves' in localRuntime ? localRuntime.threadMoves : undefined
   if (threadMoves && localRuntime.watcher) threadMoves.useTargets(moveTargetsOf(hostRouter.watcherHosts(), localRuntime.watcher, listener => hostRouter.subscribeChanges(listener)))
+  // A thread on a paired host reaches this computer's Watcher over its connection here (ADR-0073, November 2, 2026).
+  const localWatcher = localRuntime.watcher
+  const watcherTells = localWatcher ? new DesktopTellWatcherRelay((target, ask) => localWatcher.threadTold(target, ask)) : undefined
+  watcherTells?.useHosts(hostRouter)
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
@@ -1184,7 +1194,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // computer's while its host runs, the selected host's while it is off (ADR-0074). The roles are compared by identity.
   const desktopDefaultsFollow = desktopDefaultsPush
     ? followDesktopDefaults(desktopDefaultsPush, hostRouter, () => workerRolesEnabled ? workingCopySettings.workerRoles : undefined,
-      () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined) : undefined
+      () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined,
+      () => owlFeatures['inline-media'] ? workingCopySettings.showEveryAgentPicture : undefined) : undefined
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
@@ -1212,6 +1223,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
   const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+    // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
+    ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
@@ -1275,7 +1288,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : [])])
+  // Lets a thread on this computer send Watcher a message when the user tells it to (ADR-0073, November 2, 2026).
+  const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
+    const hostId = agentControl.hostId()
+    return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
+  }) : undefined
+  if (tellTools) quitHandles.tellWatcherTools = tellTools
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
@@ -1337,6 +1356,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   // A pane drawer starts in the project folder, even for a thread with its own worktree.
   const terminalService = new TerminalService({ files, directory: userDataPath,
+    // A thread on a paired host opens its terminal over the user's own SSH (ADR-0183; Owl only).
+    hosted: owlFeatures['paired-host-terminal'] ? hostedTerminals({ folders: threadId => hostRouter.hostedThreadFolders(threadId), host: hostId => desktopHosts.terminalHost(hostId),
+      ssh: sshStandInScript && sshStandInExecutable ? { file: sshStandInExecutable, args: [sshStandInScript] } : { file: sshExecutable(process.platform, process.env) } }) : undefined,
     projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],
@@ -1992,7 +2014,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       // Hosts whose own threads delegate are told the new worker roles (#1310).
-      if (workerRolesChanged || settings.workerCeiling !== previous.workerCeiling || settings.workerMachineCeilings !== previous.workerMachineCeilings) desktopDefaultsFollow?.rolesChanged()
+      if (workerRolesChanged || settings.workerCeiling !== previous.workerCeiling || settings.workerMachineCeilings !== previous.workerMachineCeilings || settings.showEveryAgentPicture !== previous.showEveryAgentPicture) desktopDefaultsFollow?.defaultsChanged()
       worktreeCleanup?.settingsChanged()
       if (settings.keepMainCurrent !== previous.keepMainCurrent || JSON.stringify(settings.projectKeepMainCurrent) !== JSON.stringify(previous.projectKeepMainCurrent)) localRuntime.mainCheckout?.settingsChanged()
       localRuntime.watcher?.settingsChanged()

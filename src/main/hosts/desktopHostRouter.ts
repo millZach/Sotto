@@ -37,6 +37,7 @@ import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } fr
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
+import type { HostThreadFolders } from './hostedTerminals'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
@@ -49,7 +50,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -1352,6 +1353,20 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     if (!connection.service.threadPrompts || connection.available?.() === false) return null
     return connection.service.threadPrompts(id!, request.beforeMessageId)
+  }
+  /**
+   * Where a thread on a paired host's terminal would start, from what its host last published (ADR-0183). It asks the host
+   * nothing and copies nothing, so it answers while the socket is down. Only a remote host's thread has an answer.
+   */
+  hostedThreadFolders(threadId: string): HostThreadFolders | undefined {
+    const key = parseHostEntityKey(threadId)
+    const connection = key ? this.hosts.get(key.hostId)?.connection : undefined
+    if (!key || connection?.kind !== 'remote') return undefined
+    const { host } = readView(connection.service)
+    const thread = host.threads.find(item => item.id === key.id)
+    if (!thread) return undefined
+    return { hostId: connection.hostId, projectId: hostEntityKey(connection.hostId, thread.projectId), workingDirectory: thread.workingDirectory,
+      projectFolder: host.projects.find(project => project.id === thread.projectId)?.path }
   }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {

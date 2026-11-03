@@ -94,6 +94,12 @@ it('keeps routed agent and remote answer references intact, passes a paired host
   // Anything else that would act here for another host's thread is refused before dispatch.
   expect(() => bridge.files.reveal({ threadId: key })).toThrow('another host')
   expect(raw.files.reveal).not.toHaveBeenCalled()
+  // A terminal's calls pass too, for main to run over SSH (ADR-0183); this computer's own thread keeps its own ID.
+  ;(raw as unknown as { terminal: { list: unknown } }).terminal = { list: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) }
+  const terminalBridge = hostClientBridge(raw); await terminalBridge.agents.get()
+  const terminal = (terminalBridge as unknown as { terminal: { list(request: { threadId: string }): Promise<unknown> } }).terminal
+  expect(await terminal.list({ threadId: key })).toEqual({ ok: true, value: { threadId: key } })
+  expect(await terminal.list({ threadId: hostEntityKey(HOST, 'thread') })).toEqual({ ok: true, value: { threadId: hostEntityKey(HOST, 'thread') } })
   // Changes' comparison and Agents' roster pass the same way; Changes' watch does not.
   expect(await bridge.gitChanges.review({ threadId: key })).toEqual({ ok: true, value: { threadId: key } })
   expect(await bridge.subagents.page({ threadId: key })).toEqual({ threadId: key })

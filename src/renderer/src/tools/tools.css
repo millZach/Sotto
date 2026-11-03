@@ -78,6 +78,9 @@
 .terminal-tabs__tab:not([data-status='running']) .terminal-tabs__dot { border: 1px solid var(--tt-text-muted); background: transparent; }
 .terminal-tabs__tab[data-status='unavailable'] .terminal-tabs__dot { border-color: var(--tt-error); }
 .terminal-bar__actions { display: flex; flex: none; align-items: center; gap: 2px; }
+/* Which machine a shell over SSH is on (ADR-0183). It stays at the narrowest pane: where a shell runs matters more than the branch. */
+.terminal-machine { display: inline-flex; flex: none; align-items: center; gap: 4px; max-width: 140px; margin-right: 4px; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
+.terminal-machine bdi { overflow: hidden; text-overflow: ellipsis; }
 .tools-panel .files-icon:disabled { color: var(--tt-text-faint); opacity: .5; cursor: default; }
 .tools-panel .files-icon:disabled:hover { background: transparent; }
 .terminal-confirm { display: grid; flex: none; gap: 10px; margin: 8px; padding: 12px 14px; border: 1px solid var(--tt-error-border); border-radius: var(--tt-radius-inset); background: var(--tt-error-surface); color: var(--tt-text-2); font-size: var(--tt-type-small); }

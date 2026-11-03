@@ -46,7 +46,7 @@ test('a screenshot and a recording a turn wrote show nothing until the agent sho
     launched = await launchSotto('success', profile)
     const { page } = launched
     const sottoThreadId = await page.evaluate(async project => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', showEveryAgentPicture: false })
       const agents = window.sotto!.agents!
       await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
       await agents.command({ type: 'connect', provider: 'codex' })

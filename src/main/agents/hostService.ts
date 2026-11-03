@@ -29,6 +29,7 @@ import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
+import type { TellWatcherAnswer, TellWatcherAsk } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -128,6 +129,8 @@ export interface HostService {
   readonly supportsHostFacts?: boolean
   /** This host enforces its own worker ceiling and supports queued swarm starts. */
   readonly supportsWorkerSwarms?: boolean
+  /** This host keeps its agents' pictures and takes **Show every picture and video an agent makes** in the desktop defaults (ADR-0170, part 7). */
+  readonly supportsEveryAgentPicture?: boolean
   hostFacts?(): Promise<HostMachineReport>
   /**
    * The host reports the GitHub repository of each of its projects (#1032), present only when its Owl answer turns on Work
@@ -184,6 +187,9 @@ export interface HostService {
   nextPrompts?(): readonly NextPromptEntry[]
   subscribeNextPrompts?(listener: (entry: NextPromptEntry) => void): () => void
   setNextPromptsWanted?(wanted: boolean): void
+  /** The host's threads reach this desktop's Watcher (`watcher-tell`): each message they send it, and the answer that says it got through. */
+  subscribeWatcherTell?(listener: (askId: string, ask: TellWatcherAsk) => void): () => void
+  answerWatcherTell?(askId: string, answer: TellWatcherAnswer): Promise<void>
   /** Tells a remote host this desktop's latest answer for its product events (ADR-0179), and keeps trying until it has it. */
   tellProductEventAnswer?(): void
   /**
@@ -452,6 +458,8 @@ export class LocalHostService implements HostService {
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
     workerSwarms?: boolean
+    /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
+    everyAgentPicture?: boolean
     /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
     delegationViews?: DelegationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
@@ -471,6 +479,7 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsWorkerSwarms(): boolean { return this.options.workerSwarms === true }
+  get supportsEveryAgentPicture(): boolean { return this.options.everyAgentPicture === true }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
   get supportsProjectSetup(): boolean { return this.options.setUpProject !== undefined }

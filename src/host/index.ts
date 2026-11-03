@@ -41,6 +41,8 @@ import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
 import { MediaToolServer } from '../main/agents/mediaTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
+import { tellWatcherTools } from '../main/agents/tellWatcherTools'
+import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -232,10 +234,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // threads' pictures. `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
     // stays the desktop's.
     const agentHost = runtime.agentHost
+    // Watcher runs on a desktop, so a thread here reaches it over that desktop's connection (ADR-0073, November 2, 2026).
+    const tellWatcherRelay = watcherEnabled && runtime.watcher ? new HostTellWatcherRelay() : undefined
     const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = [
       ...(runtime.delegation && crossMachineEnabled
         ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []),
       ...(owlFeatures['inline-media'] ? [new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) })] : []),
+      ...(tellWatcherRelay && runtime.watcher ? [tellWatcherTools(agentHost, runtime.watcher, (threadId, words, userMessage) => tellWatcherRelay.tell({ threadId, words, ...userMessage ? { userMessage } : {} }))] : []),
     ]
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
@@ -303,7 +308,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         if (heldMoves) { const held = heldMoves; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
         threadMoves = branchMoves ? new HostThreadMoves(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false, ...heldMoves ? { sources: heldMoves } : {} }) : undefined
-        const moves = { ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
+        const moves = { ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,

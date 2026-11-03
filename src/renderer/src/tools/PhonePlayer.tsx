@@ -5,7 +5,7 @@ import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import { TEST_IPHONE, type BrowserBounds, type BrowserBridge, type BrowserPage } from '../../../shared/browser'
-import { phonePage, useBrowserTasks, useThreadBrowser } from './browserStore'
+import { phonePage, useThreadBrowserTasks, useThreadBrowser } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
@@ -45,13 +45,13 @@ export interface PhonePlayerProps {
  */
 export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = true, phoneStore = phonePlayerStore, cloudStore = cloudIphoneStore, cloudBridge = bridgeCloudIphone() }: PhonePlayerProps): ReactNode {
   const { t } = useLingui()
-  const tasks = useBrowserTasks(store.browser)
   // Its own subscription, though the Browser player beside it asks for the same: neither relies on the other being drawn.
   const ids = state.host.threads.filter(item => !item.remoteHost).map(item => item.id).join(' ')
   useEffect(() => { store.browser.watchTasks(bridge, ids.split(' ').filter(Boolean)) }, [bridge, store, ids])
   // Sotto's browser is this computer's, so a remote host's threads have no phone here.
   const thread = state.host.threads.find(item => item.id === focusedThreadId && !item.remoteHost)
   const threadId = thread?.id ?? null
+  const tasks = useThreadBrowserTasks(store.browser, threadId)
   const task = threadId === null ? undefined : tasks.find(item => item.threadId === threadId && item.device === 'iphone')
   const taskId = task?.id
   useEffect(() => { if (threadId && taskId) phoneStore.taskSeen(threadId, taskId, autoShow) }, [threadId, taskId, autoShow, phoneStore])

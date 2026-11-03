@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { useBrowserTasks } from './browserStore'
+import type { BrowserTask } from '../../../shared/browser'
 import { useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
 
 /**
@@ -11,18 +11,26 @@ import { useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
  */
 export function useBrowserOpensItself(enabled: boolean, focusedThreadId: string | null, store: ToolsPanelStore, panel: RefObject<HTMLElement | null>): void {
   const chrome = useToolsPanelChrome(store)
-  const tasks = useBrowserTasks(store.browser)
   /** Every task this window has seen, so a late update to an older task never reads as a page just opened. */
   const seen = useRef(new Set<string>())
   useEffect(() => {
-    const fresh = tasks.filter(task => !seen.current.has(task.id))
-    for (const task of fresh) seen.current.add(task.id)
-    if (!enabled || focusedThreadId === null || !chrome.open) return
-    // The newest task is first; a test iPhone's task belongs to Tools > iPhone (ADR-0045).
-    const task = fresh.find(item => item.threadId === focusedThreadId && !item.device && item.status === 'working')
-    if (!task || (chrome.pinnedThreadId ?? focusedThreadId) !== focusedThreadId) return
-    if (panel.current?.contains(document.activeElement)) return
-    store.setSurface('browser')
-    store.browser.showPage(task.threadId, task.pageId)
-  }, [tasks, enabled, focusedThreadId, chrome, store, panel])
+    let last: readonly BrowserTask[] | undefined
+    const receive = (): void => {
+      const tasks = store.browser.taskSnapshot()
+      if (tasks === last) return
+      last = tasks
+      const fresh = tasks.filter(task => !seen.current.has(task.id))
+      for (const task of fresh) seen.current.add(task.id)
+      if (!enabled || focusedThreadId === null || !chrome.open) return
+      // The newest task is first; a test iPhone's task belongs to Tools > iPhone (ADR-0045).
+      const task = fresh.find(item => item.threadId === focusedThreadId && !item.device && item.status === 'working')
+      if (!task || (chrome.pinnedThreadId ?? focusedThreadId) !== focusedThreadId) return
+      if (panel.current?.contains(document.activeElement)) return
+      store.setSurface('browser')
+      store.browser.showPage(task.threadId, task.pageId)
+    }
+    const stop = store.browser.subscribe(receive)
+    receive()
+    return stop
+  }, [enabled, focusedThreadId, chrome, store, panel])
 }

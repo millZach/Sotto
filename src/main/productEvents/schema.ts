@@ -42,7 +42,7 @@ export type ProductEventProperties<E extends ProductEventName> = z.input<(typeof
 
 /** What every event says about the install it came from, read once when the sender is made. */
 const productEventInstall = z.strictObject({
-  appVersion: z.string().regex(/^\d+\.\d+\.\d+(-[0-9a-z.-]{1,32})?$/),
+  appVersion: z.string().regex(/^\d{1,9}\.\d{1,9}\.\d{1,9}(-[0-9a-z.-]{1,32})?$/),
   channel: z.enum(['stable', 'owl']),
   surface: z.enum(['desktop', 'host']),
   platform: z.enum(['windows', 'macos', 'linux', 'other']),

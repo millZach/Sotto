@@ -6,10 +6,11 @@ import { useOptionalAgents } from '../../agents/AgentContext'
 import { useOptionalApp } from '../../state/AppContext'
 import { useReducedMotion } from '../../state/reducedMotion'
 import { toRgb } from '../../watcher/canvasColor'
-import { frameDue, frameSleep, sceneInk } from '../../watcher/nightScene'
+import { frameDue, frameSleep, IDLE_CHECK_MS } from '../../watcher/nightScene'
 import { surfaceOf } from '../../watcher/WatcherNightScene'
 import { watchResolution } from '../../watcher/watchResolution'
 import { fitCells } from './chamberGrid'
+import { chamberInk } from './chamberInk'
 import { figureBox } from './chamberLayout'
 import { ChamberPainter, type ChamberFlightNow, type SeatWords } from './chamberPainter'
 import { askScene, chamberPace, councilScene, flightsBetween, sceneBusy, threadFacts, type ChamberScene, type ChamberSeat } from './chamberScene'
@@ -103,8 +104,8 @@ function useChamberWords(): {
  * beside it is the deliberation's accessible form.
  *
  * It draws about 30 frames a second while a figure is busy or something is on its way, checks 8 times a second while
- * the room only flickers and glances, or a finished Council's fire only flickers, draws nothing at all with motion
- * reduced until something changes, and nothing while the window is hidden.
+ * the room only flickers and glances, throughout the fairness check, or a finished Council's fire only flickers. With
+ * motion reduced it draws nothing until something changes, and nothing while the window is hidden.
  */
 export function CouncilChamber({ council, askSeats, layout }: {
   /** The Council shown, live or finished, or null for the Ask view. */
@@ -207,15 +208,17 @@ export function CouncilChamber({ council, askSeats, layout }: {
       kept.flights = kept.flights.filter(flight => still ? false : t - flight.t0 < 1.7)
       const dt = Math.min(0.1, Math.max(0, t - lastDrawn)); lastDrawn = t
       const moving = painter.draw({ t, dt, still, scene: shown, words: said, flights: kept.flights, verdictSince: kept.verdictSince, finishedSince: kept.finishedSince, verdictText: text })
-      delay = chamberPace(still, moving, busy)
+      delay = chamberPace(still, moving, busy, shown.stage)
       schedule()
     }
-    const wake = (): void => {
+    const wake = (force = false): void => {
       if (disposed) return
       if (timer !== null) { window.clearTimeout(timer); timer = null }
-      delay = 0
-      last = Number.NEGATIVE_INFINITY
-      if (request === null) request = requestAnimationFrame(frame)
+      // Streaming keeps its deadline; a cleared or newly visible canvas needs its ink on the next frame.
+      const slow = !force && latest.current.scene.stage === 'fairness' && !latest.current.reduced
+      delay = slow ? IDLE_CHECK_MS : 0
+      if (!slow) last = Number.NEGATIVE_INFINITY
+      if (request === null) schedule()
     }
     wakeRef.current = wake
 
@@ -226,8 +229,8 @@ export function CouncilChamber({ council, askSeats, layout }: {
       const key = JSON.stringify([text, accent, surface, style.fontFamily])
       if (key === inked) return
       inked = key
-      painter.setInk(sceneInk(surface, text, accent), style.fontFamily)
-      wake()
+      painter.setInk(chamberInk(surface, text, accent), style.fontFamily)
+      wake(true)
     }
     const relayout = (): void => {
       if (disposed) return
@@ -246,7 +249,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
       const key = JSON.stringify([...next])
       if (key !== boxKey) { boxKey = key; setBoxes(next) }
       halt()
-      wake()
+      wake(true)
     }
     relayoutRef.current = relayout
 
@@ -254,7 +257,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
     sizes.observe(element)
     const theme = new MutationObserver(readInk)
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
-    const visibility = (): void => { if (document.visibilityState !== 'hidden') wake() }
+    const visibility = (): void => { if (document.visibilityState !== 'hidden') wake(true) }
     document.addEventListener('visibilitychange', visibility)
     const unwatchResolution = watchResolution(relayout)
     void document.fonts?.load(`10.5px ${getComputedStyle(ink).fontFamily}`).then(() => { if (!disposed) { inked = ''; readInk() } }, () => undefined)
