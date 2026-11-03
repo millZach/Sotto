@@ -1,19 +1,12 @@
 import type { OpenRouterKeyCheck } from '../../shared/contracts'
 import type { AppSettings } from '../../shared/settings'
+import { networkReason } from './networkReason'
 
 const KEY_URL = 'https://openrouter.ai/api/v1/key'
 
 export interface OpenRouterKeyCheckDependencies {
   readonly getSettings: () => Promise<AppSettings>
   readonly fetchFn?: typeof fetch
-}
-
-function networkReason(error: unknown, signal: AbortSignal): 'timeout' | 'network' {
-  const cause: unknown = signal.aborted ? signal.reason : error
-  // DOMException and AbortSignal reasons may come from a different runtime realm.
-  return typeof cause === 'object' && cause !== null && 'name' in cause && cause.name === 'TimeoutError'
-    ? 'timeout'
-    : 'network'
 }
 
 /**

@@ -159,7 +159,7 @@ import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
 import { CloudTranscriptionService } from './asr/cloudTranscriptionService'
-import { OpenRouterSpeechModels } from './llm/openRouterSpeechModels'
+import { OpenRouterSpeechModels, type OpenRouterSpeechModelsEvent } from './llm/openRouterSpeechModels'
 import { defaultCloudSpeechModel } from '../shared/cloudSpeechModels'
 import { createParakeetEngineLoader } from './asr/parakeetEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
@@ -168,7 +168,7 @@ import { createDictationGate } from './hotkeys/dictationGate'
 import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
-import { listOpenRouterModels } from './llm/openRouterModels'
+import { listOpenRouterModels, type OpenRouterModelsEvent } from './llm/openRouterModels'
 import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
@@ -178,7 +178,7 @@ import { registerGlassWindowIpc } from './windows/glassWindowIpc'
 import { readTransparencyEffects } from './windows/transparencyEffects'
 import { GLASS_WINDOW_CHANGED } from '../shared/glassWindow'
 import { GLASS_THEME_ID } from '../shared/themes/glass'
-import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
+import { RecoveryNoticeCenter, type RecoveryNoticeLogEvent } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import type { HistoryLogEvent } from './storage/historyRepository'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
@@ -357,6 +357,9 @@ const profile = platformProfile(platform)
 const platformDefaults = defaultSettings(profile.defaultHotkey, profile.defaultHoldShortcuts)
 
 type NativeDiagnostic =
+  | OpenRouterModelsEvent
+  | OpenRouterSpeechModelsEvent
+  | RecoveryNoticeLogEvent
   | 'omarchy-theme-missing'
   | 'popup-load-failed'
   | 'popup-renderer-gone'
@@ -824,7 +827,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   app.on('will-quit', () => omarchyTheme.dispose())
   // Whether Omarchy's shell pill has taken the floating widget's place; Settings reads it to explain the idle widget row.
   let shellPillInUse = false
-  const recoveryNotices = new RecoveryNoticeCenter()
+  const recoveryNotices = new RecoveryNoticeCenter(logOperational)
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
     recoveryNotices,
@@ -1688,7 +1691,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // the same diagnostics, never the audio.
   let cloudChosen = cloudTranscriptionOn(startupSettings, cloudDictationEnabled)
   const speechModelsReader = cloudDictationEnabled
-    ? new OpenRouterSpeechModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) })
+    ? new OpenRouterSpeechModels({ log: logOperational, ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }) })
     : null
   const cloudTranscription = speechModelsReader === null ? null : new CloudTranscriptionService({
     getSettings: () => settings.forFormatting(),
@@ -2552,7 +2555,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           }),
           ...(cleanupModelEnabled ? {
             models: () => listOpenRouterModels({
-              getApiKey: async () => (await settings.forFormatting()).llmApiKey,
+              getApiKey: async () => settings.formattingKey(),
+              log: logOperational,
               ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
             }),
           } : {}),

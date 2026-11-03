@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { listOpenRouterModels } from '../../../src/main/llm/openRouterModels'
+import { deferred } from '../../fixtures/deferred'
 
 const page = (data: unknown[], next: string | null = null): Response =>
   new Response(JSON.stringify({ data, links: { next } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -77,14 +78,67 @@ describe('listOpenRouterModels', () => {
   })
 
   it('keeps the public catalog when the saved key cannot be read', async () => {
+    const log = vi.fn()
     const getApiKey = vi.fn<() => Promise<string>>().mockRejectedValue(new Error('key unreadable'))
     const fetchFn = vi.fn().mockResolvedValue(page([{ id: 'a/model', name: 'A model' }]))
-    await expect(listOpenRouterModels({ fetchFn, getApiKey })).resolves.toEqual({
+    await expect(listOpenRouterModels({ fetchFn, getApiKey, log })).resolves.toEqual({
       ok: true, complete: true, models: [{ id: 'a/model', name: 'A model' }],
     })
     expect(getApiKey).toHaveBeenCalledOnce()
+    expect(log.mock.calls).toEqual([['openrouter-presets-key-unreadable']])
     expect(fetchFn.mock.calls).toEqual([
       ['https://openrouter.ai/api/v1/models', expect.not.objectContaining({ headers: expect.anything() })],
     ])
+  })
+
+  it.each([
+    ['http', () => Promise.resolve(new Response('private account details', { status: 403 }))],
+    ['invalid-response', () => Promise.resolve(new Response('private invalid JSON'))],
+    ['invalid-response', () => Promise.resolve(Response.json({ data: 'private malformed list' }))],
+    ['network', () => Promise.reject(new TypeError('private key in network error'))],
+    ['timeout', () => Promise.reject(new DOMException('private timeout details', 'TimeoutError'))],
+  ] as const)('logs only the %s preset failure cause and keeps anonymous models', async (reason, fail) => {
+    const log = vi.fn()
+    const fetchFn = vi.fn<typeof fetch>(async url => String(url).endsWith('/models')
+      ? page([{ id: 'a/model', name: 'A model' }]) : fail())
+    await expect(listOpenRouterModels({ fetchFn, getApiKey: async () => 'private-key', log })).resolves.toEqual({
+      ok: true, complete: true, models: [{ id: 'a/model', name: 'A model' }],
+    })
+    expect(log.mock.calls).toEqual([[`openrouter-presets-${reason}`]])
+  })
+
+  it.each([
+    ['http', 'http', () => Promise.resolve(new Response('private details', { status: 503 }))],
+    ['invalid-response', 'http', () => Promise.resolve(Response.json({ data: 'private malformed list' }))],
+    ['invalid-response', 'network', () => Promise.resolve(new Response('private invalid JSON'))],
+    ['network', 'network', () => Promise.reject(new TypeError('private network details'))],
+    ['timeout', 'timeout', () => Promise.reject(new DOMException('private timeout details', 'TimeoutError'))],
+  ] as const)('logs the %s public catalog cause while preserving the %s result', async (cause, reason, fail) => {
+    const log = vi.fn()
+    await expect(listOpenRouterModels({ fetchFn: vi.fn(fail), log })).resolves.toEqual({ ok: false, reason })
+    expect(log.mock.calls).toEqual([[`openrouter-models-${cause}`]])
+  })
+
+  it('starts the anonymous catalog while the key is still being read', async () => {
+    const key = deferred<string>()
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(page([{ id: 'a/model', name: 'A model' }]))
+    const reading = listOpenRouterModels({ fetchFn, getApiKey: () => key.promise })
+    expect(fetchFn).toHaveBeenCalledOnce()
+    expect(fetchFn.mock.calls[0]![0]).toBe('https://openrouter.ai/api/v1/models')
+    key.resolve('')
+    await expect(reading).resolves.toMatchObject({ ok: true, models: [{ id: 'a/model', name: 'A model' }] })
+    expect(fetchFn).toHaveBeenCalledOnce()
+  })
+
+  it('keeps earlier preset pages when a later page is refused', async () => {
+    const log = vi.fn()
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(page([]))
+      .mockResolvedValueOnce(Response.json({ data: [{ slug: 'kept', name: 'Kept', status: 'active' }], total_count: 2 }))
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+    await expect(listOpenRouterModels({ fetchFn, getApiKey: async () => 'key', log })).resolves.toEqual({
+      ok: true, complete: true, models: [{ id: '@preset/kept', name: 'Kept' }],
+    })
+    expect(log.mock.calls).toEqual([['openrouter-presets-http']])
   })
 })
