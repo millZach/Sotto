@@ -18,15 +18,19 @@ export interface ShownPictureThread {
   readonly pane: Locator
   /** Sotto's ID for the thread, which `show_in_thread` is called for. */
   readonly threadId: string
+  /** The fixture's folder and the thread's project, for a journey that plays a further turn. */
+  readonly root: string
+  readonly project: string
 }
 
 /**
  * Runs `journey` in a Codex thread over the fake app server (ADR-0170): its turn writes a screenshot into the project's
- * git-ignored `test-results/` and ends with "Here is the checkout page.", which shows nothing of its own (request-only).
- * The journey shows it through `sotto_media`'s show_in_thread, as an agent does when the user asks to see it. The
- * profile, the fixture and the environment are put back afterwards.
+ * git-ignored `test-results/` and ends with "Here is the checkout page.", which shows nothing of its own with **Show every
+ * picture and video an agent makes** off, as it is here unless `everyPicture` says otherwise. The journey shows it through
+ * `sotto_media`'s show_in_thread, as an agent does when the user asks to see it. The profile, the fixture and the
+ * environment are put back afterwards.
  */
-export async function withShownPictureThread(prefix: string, journey: (thread: ShownPictureThread) => Promise<void>): Promise<void> {
+export async function withShownPictureThread(prefix: string, journey: (thread: ShownPictureThread) => Promise<void>, options: { readonly everyPicture?: boolean } = {}): Promise<void> {
   const profile = (await ownedE2EProfile({ prefix })).directory
   const root = join(profile, 'native-fixture')
   const project = join(root, 'project')
@@ -42,8 +46,8 @@ export async function withShownPictureThread(prefix: string, journey: (thread: S
   try {
     launched = await launchSotto('success', profile)
     const { page } = launched
-    const threadId = await page.evaluate(async project => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+    const threadId = await page.evaluate(async ({ project, everyPicture }) => {
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', showEveryAgentPicture: everyPicture })
       const agents = window.sotto!.agents!
       await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
       await agents.command({ type: 'connect', provider: 'codex' })
@@ -55,7 +59,7 @@ export async function withShownPictureThread(prefix: string, journey: (thread: S
       const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Take a screenshot of the checkout page.' })
       if (sent.error) throw new Error(sent.error)
       return thread.activeThreadId
-    }, project)
+    }, { project, everyPicture: options.everyPicture === true })
     const nativeThread = async () => {
       const state = JSON.parse(await readFile(join(root, 'codex', 'state.json'), 'utf8')) as { threads: Record<string, { id: string; turns: { id: string }[] }> }
       const thread = Object.values(state.threads)[0]
@@ -75,7 +79,7 @@ export async function withShownPictureThread(prefix: string, journey: (thread: S
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Check the checkout page', exact: true }).click()
     const pane = page.locator('section.thread-pane:not([data-hidden])')
     await expect(pane.getByText('Here is the checkout page.')).toBeVisible({ timeout: 30_000 })
-    await journey({ launched, page, pane, threadId })
+    await journey({ launched, page, pane, threadId, root, project })
   } finally {
     if (launched) await closeSotto(launched)
     for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable], ['SOTTO_OWL_FEATURES', previous.owl]] as const) {

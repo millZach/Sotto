@@ -3,6 +3,7 @@ import { CELL, inkAt, type SceneInk } from '../../watcher/nightScene'
 import { GLYPH_PX } from '../../watcher/nightScenePainter'
 import { chamberLayout, type ChamberFigure, type ChamberGeometry, type ChamberPoint } from './chamberLayout'
 import { bubbleShape, drawBubble, GlyphGrid, placeBubble, wrapWords, type CellRect } from './chamberGrid'
+import type { ChamberInk } from './chamberInk'
 import type { ChamberAct, ChamberLook, ChamberScene, ChamberSeat } from './chamberScene'
 
 /**
@@ -74,7 +75,7 @@ export class ChamberPainter {
   private readonly b: CanvasRenderingContext2D
   private readonly a: CanvasRenderingContext2D
   private readonly l: CanvasRenderingContext2D
-  private ink: SceneInk | null = null
+  private ink: ChamberInk | null = null
   private font = ''
   private width = 0
   private height = 0
@@ -119,7 +120,7 @@ export class ChamberPainter {
 
   get ready(): boolean { return this.ink !== null && this.geometry !== null && this.cols > 0 && this.rows > 0 }
 
-  setInk(ink: SceneInk, fontFamily: string): void {
+  setInk(ink: ChamberInk, fontFamily: string): void {
     this.ink = ink
     this.font = `600 ${GLYPH_PX}px ${fontFamily}`
   }
@@ -688,12 +689,12 @@ export class ChamberPainter {
       drawBubble(this.grid, box, shape, bubble.say, { c: this.col(item.head.x), r: this.row(item.head.y) })
     }
     this.settling = moving
-    this.rasterize()
+    this.rasterize(ink)
     this.paint(ink)
     return moving
   }
 
-  private rasterize(): void {
+  private rasterize(ink: ChamberInk): void {
     const cols = this.cols, rows = this.rows, sw = cols * SX
     const db = this.b.getImageData(0, 0, cols * SX, rows * SY).data, da = this.a.getImageData(0, 0, cols * SX, rows * SY).data, dl = this.l.getImageData(0, 0, cols * SX, rows * SY).data
     const D = this.D, E = this.E, LT = this.LT, noise = this.noise
@@ -710,19 +711,19 @@ export class ChamberPainter {
       const k = r * cols + c, e = E[k]!, dk = D[k]!, lit = LT[k]! > 0.34 + noise[k]! * 0.2
       const d = dk > 0.25 ? Math.round(dk * 7) / 7 : clamp(dk + (noise[k]! - 0.5) * 0.03, 0, 1)
       code[k] = 0
-      if (e > 0.1 && e > d * 0.55) { code[k] = RAMP.charCodeAt(Math.max(1, Math.round(e * 10))); strength[k] = Math.min(1, 0.25 + e); accent[k] = 1 }
+      if (e > 0.1 && e > d * 0.55) { code[k] = RAMP.charCodeAt(Math.max(1, Math.round(e * 10))); strength[k] = Math.max(ink.figure.accent, Math.min(1, 0.25 + e)); accent[k] = 1 }
       else {
         const gx = c > 0 && c < cols - 1 ? D[k + 1]! - D[k - 1]! : 0, gy = r > 0 && r < rows - 1 ? (D[k + cols]! - D[k - cols]!) * 0.75 : 0
         const mag = Math.hypot(gx, gy)
         if (mag > 0.3 && Math.max(dk, D[k - 1] ?? 0, D[k + 1] ?? 0) > 0.2) {
           const ax = Math.abs(gx), ay = Math.abs(gy)
           code[k] = (ax > ay * 2.2 ? '|' : ay > ax * 2.2 ? (gy > 0 ? '_' : '-') : (gx * gy > 0 ? '/' : '\\')).charCodeAt(0)
-          strength[k] = clamp(0.45 + mag * 0.6, 0.5, 1); accent[k] = lit ? 1 : 0
-        } else if (d > 0.145) { code[k] = RAMP.charCodeAt(Math.max(1, Math.round(d * 10))); strength[k] = 0.06 + d * 0.66; accent[k] = d > 0.2 && lit ? 1 : 0 }
+          strength[k] = Math.max(lit ? ink.figure.accent : ink.figure.ink, clamp(0.45 + mag * 0.6, 0.5, 1)); accent[k] = lit ? 1 : 0
+        } else if (d > 0.145) { code[k] = RAMP.charCodeAt(Math.max(1, Math.round(d * 10))); accent[k] = d > 0.2 && lit ? 1 : 0; strength[k] = Math.max(accent[k] ? ink.figure.accent : ink.figure.ink, 0.06 + d * 0.66) }
         else if (art.code[k]) { code[k] = art.code[k]!; strength[k] = art.strength[k]!; accent[k] = art.accent[k]! }
       }
       const written = over.code[k]!
-      if (written) { if (written === 32) code[k] = 0; else { code[k] = written; strength[k] = over.strength[k]!; accent[k] = over.accent[k]! } }
+      if (written) { if (written === 32) code[k] = 0; else { code[k] = written; accent[k] = over.accent[k]!; strength[k] = Math.max(accent[k] ? ink.words.accent : ink.words.ink, over.strength[k]!) } }
     }
   }
 
