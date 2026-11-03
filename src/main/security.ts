@@ -9,7 +9,8 @@ export function blockSpellcheckDictionaryDownloads(
   session.setSpellCheckerDictionaryDownloadURL('data:,')
 }
 
-export type RendererRole = 'main' | 'widget'
+/** The popup's window (ADR-0181) is its own role: it may call only the channels that name it. */
+export type RendererRole = 'main' | 'widget' | 'popup'
 
 export type RendererSource =
   | Readonly<{ kind: 'url'; value: string }>
@@ -64,7 +65,7 @@ function isTrustedDevelopmentRenderer(url: URL): boolean {
     hostname === '[::1]' ||
     hostname === '::1'
   const isKnownDocument =
-    url.pathname === '/index.html' || url.pathname === '/widget.html'
+    url.pathname === '/index.html' || url.pathname === '/widget.html' || url.pathname === '/popup.html'
 
   return (
     (url.protocol === 'http:' || url.protocol === 'https:') &&

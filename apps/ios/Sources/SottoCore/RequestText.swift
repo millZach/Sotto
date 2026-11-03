@@ -36,6 +36,18 @@ public enum RequestText {
         return String(localized: "\(provider) says: \(summary)", bundle: .module, comment: "The first %@ is the coding agent's name, such as Claude Code; the second is the words it wrote about what it asks to do.")
     }
 
+    /// What a permission's sheet leads with, and the rest of its words (#1855). A command's words never lead: they can hold
+    /// the model's summary, which reads as the model's under the headline (ADR-0180), so the sheet says a command is asked.
+    /// Any other request leads with what it does, or with the first line of its words when it says nothing more exact.
+    public static func permissionLead(_ request: AgentRequest) -> (headline: String?, rest: String?) {
+        guard request.context?.command == nil else { return (nil, nil) }
+        if let action = request.context?.action { return (action, nil) }
+        let lines = request.text.split(separator: "\n", omittingEmptySubsequences: false)
+        let first = lines.first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        let rest = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (first.isEmpty ? nil : first, rest.isEmpty ? nil : rest)
+    }
+
     /// Every run of white space as one space, with none at either end.
     private static func collapse(_ value: String) -> String {
         value.split(whereSeparator: \.isWhitespace).joined(separator: " ")

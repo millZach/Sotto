@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { MessagesSquare, Mic } from 'lucide-react'
+import { Landmark, MessagesSquare, Mic } from 'lucide-react'
 import { i18n as interfaceI18n, type MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -22,8 +22,8 @@ import { pageShortcutFor, usePageShortcutLabels } from './pageShortcuts'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
-/** The rooms the switch flips between; Watcher's only while its gate is on. */
-export type AppRoom = 'dictate' | 'watcher' | 'threads'
+/** The rooms the switch flips between; Watcher's only while its gate is on, the Council's only while its Owl feature is. */
+export type AppRoom = 'dictate' | 'council' | 'watcher' | 'threads'
 export type AppLayout = 'strip' | 'page' | 'sidebar'
 
 export interface AppShellProps {
@@ -57,16 +57,23 @@ export interface Room { readonly id: AppRoom; readonly label: string; readonly d
 
 // Dictate and Threads are written as the switch is drawn, in the interface language; Watcher is a name.
 const dictate = (): Room => ({ id: 'dictate', label: interfaceI18n._(msg({ message: 'Dictate', comment: 'The room switch: the page you dictate on' })), destination: 'home' })
+const council = (): Room => ({ id: 'council', label: interfaceI18n._(msg({ message: 'Council', comment: 'The room switch: the Council page, one question put to several models (ADR-0177).' })), destination: 'council' })
 const watcher: Room = { id: 'watcher', label: 'Watcher', destination: 'watcher' }
 const threads = (): Room => ({ id: 'threads', label: interfaceI18n._(msg({ message: 'Threads', comment: 'The room switch and page links: the Threads page' })), destination: 'threads' })
 
 /**
  * The room switch, the one definition every switch draws: Dictate | Threads, with Watcher's owl between them
- * while the Watcher gate is on (ADR-0072, ADR-0073). Dictate leaves while dictation is off (ADR-0107). A switch
+ * while the Watcher gate is on (ADR-0072, ADR-0073), and the Council just left of the owl while its Owl feature is
+ * on and main gave the window its bridge (ADR-0177). Dictate leaves while dictation is off (ADR-0107). A switch
  * left with one room is not drawn.
  */
-export function appRooms({ watcher: watcherOn, dictation }: { readonly watcher: boolean; readonly dictation: boolean }): ReadonlyArray<Room> {
-  return [...(dictation ? [dictate()] : []), ...(watcherOn ? [watcher] : []), threads()]
+export function appRooms({ watcher: watcherOn, dictation, council: councilOn = false }: { readonly watcher: boolean; readonly dictation: boolean; readonly council?: boolean }): ReadonlyArray<Room> {
+  return [...(dictation ? [dictate()] : []), ...(councilOn ? [council()] : []), ...(watcherOn ? [watcher] : []), threads()]
+}
+
+/** Whether the Council's room exists: its Owl feature is on and main gave the window its bridge, which needs this computer's threads. */
+export function useCouncilRoom(): boolean {
+  return useOwlFeature('council') && window.sotto?.council !== undefined
 }
 
 
@@ -114,7 +121,7 @@ export interface RoomTabProps {
  */
 export function RoomTabFace({ room, named = true }: { readonly room: Room; readonly named?: boolean }): ReactNode {
   return <>
-    {room.id === 'dictate' ? <Mic size={16} aria-hidden="true" /> : room.id === 'watcher' ? <WatcherOwl size={16} /> : <MessagesSquare size={16} aria-hidden="true" />}
+    {room.id === 'dictate' ? <Mic size={16} aria-hidden="true" /> : room.id === 'council' ? <Landmark size={16} aria-hidden="true" /> : room.id === 'watcher' ? <WatcherOwl size={16} /> : <MessagesSquare size={16} aria-hidden="true" />}
     {named ? <span className="room-tab__name" aria-hidden="true">{room.label}</span> : null}
   </>
 }
@@ -175,6 +182,7 @@ const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: MessageDescr
 /** Which switch tab a page lights: Memory belongs to the Threads room. */
 export function roomFor(navigation: ManagementNavigation | null): AppRoom | null {
   if (navigation === 'home') return 'dictate'
+  if (navigation === 'council') return 'council'
   if (navigation === 'watcher') return 'watcher'
   if (navigation === 'threads' || navigation === 'memory') return 'threads'
   return null
@@ -226,7 +234,7 @@ export function AppShell({
   const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
-  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
+  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn(), council: useCouncilRoom() })
   // Memory is hidden for the beta: its link goes with it.
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
