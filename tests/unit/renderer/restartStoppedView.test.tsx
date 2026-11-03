@@ -292,7 +292,7 @@ describe('Settings', () => {
     expect(toggle).toBeChecked()
     expect(toggle).toHaveAccessibleDescription('When a provider’s usage limit resets, or Sotto opens again after closing, every thread that was working carries on, with a short note from Sotto in the thread.')
     const switches = screen.getAllByRole('switch').map(item => item.getAttribute('aria-label'))
-    expect(switches.indexOf('Restart stopped threads')).toBe(switches.indexOf('Generated thread titles') + 1)
+    expect(switches.indexOf('Restart stopped threads')).toBe(switches.indexOf('Generated command summaries') + 1)
     await user.click(toggle)
     expect(update).toHaveBeenCalledWith({ restartStoppedThreads: false })
     view.rerender(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, restartStoppedThreads: false } })} />)
