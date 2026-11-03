@@ -456,11 +456,11 @@ a full drive, point TEMP and TMP at a folder outside every checkout, such as `D:
 
 ## Reading a failure
 
-Classify **each failing assertion**, not the job or the pull request. One shard can contain an own-diff failure and an unrelated intermittent failure. Never call a failure a flake without a same-head rerun pass or a pass of that exact test in a later completed run with its relevant inputs unchanged. A pass after a corrective change means **fixed**, not flake evidence.
+Classify **each failing assertion**, not the job or the pull request. One shard can contain an own-diff failure and an unrelated intermittent failure. Never call a failure a flake without a same-head rerun pass or a later completed-run pass meeting the platform evidence rules below, with relevant inputs unchanged. A pass after a corrective change means **fixed**, not flake evidence.
 
 ### Collect the evidence
 
-Read the failed job's log, not just Gates (Windows), Linux result or another summary. From this checkout, these commands read GitHub without running the app or the gates locally (replace the capitalized placeholders):
+Read the failed job's log, not just Gates (Windows), Linux result or another summary. Typecheck, lint, notices and document-test failures surface in **Checks and desktop (Windows)**; unit and integration failures surface in their test shard. Open that job's Details and expand the failed step. From this checkout, these commands read GitHub without running the app or the gates locally (replace the capitalized placeholders):
 
 ```sh
 gh pr checks PR_NUMBER
@@ -471,9 +471,20 @@ gh api repos/millZach/Sotto/actions/jobs/JOB_ID/logs
 
 Record the PR head and the commit actually checked out. Pull request CI normally tests `refs/pull/PR_NUMBER/merge`, not the head alone; the checkout step's `git log -1 --format=%H` gives that tested merge. The PR's current base or merge ref may have moved since the failed attempt. For a push to `main`, the tested commit is the main head. Keep the run, attempt and job IDs together: the newest attempt can hide the original failure.
 
-For a test failure, retain the file, full test name, assertion and expected/received values or timeout. For typecheck or lint, retain the file, line and diagnostic; for notices, retain the component that drifted. An unchanged test file or a familiar timeout is a lead, not a classification. Trace the failing path through the diff, its imports, fixtures and configuration. Compare the same failure on `main` when checking whether it predates the PR.
+The failed step contains the command's diagnostic:
 
-For pass evidence, verify the log says the **exact test executed and passed on the same platform**. A skipped file, an unfinished or cancelled comparison run, a green summary, or a pass in another shard without the test's name is insufficient. `tests/shardSequencer.ts` assigns files by recorded duration in `tests/fixtures/testDurations.json`, with a per-file overhead and a typical duration for unlisted files. Changes to those times or the collected files can move a test between shards. Find its name in the comparison run's logs rather than assuming that, for example, shard 5 still contains it. A completed run may be red elsewhere while the shard and test you need passed.
+- **Typecheck:** `tsc` prints `file(line,col): error TS…`. To check one project where local checks are allowed, use `node node_modules/@typescript/native/bin/tsc --noEmit -p tsconfig.<project>.json`; `npx tsc` may run either installed TypeScript version.
+- **Lint:** ESLint prints the file, line and rule name.
+- **Unit and integration tests:** Vitest prints the failing file and full test name, then the assertion diff or timeout. Its summary counts passed, failed and skipped tests; skipped opt-in perf and live tests are expected.
+- **Third-party notices:** the verifier names the component that drifted. Regenerate or update `THIRD_PARTY_NOTICES.md` to match the lockfile.
+
+Retain those diagnostics in the receipt. Where the project's instructions allow local reproduction, use the failed command from the table above. If CI fails while a local run passes, check for stale `node_modules`: use `npm ci`, not `npm install`, to reproduce the lockfile's install. A local pass helps diagnosis; it does not promise a CI pass.
+
+An unchanged test file or a familiar timeout is a lead, not a classification. Trace the failing path through the diff, its imports, fixtures and configuration. Compare the same failure on `main` when checking whether it predates the PR.
+
+For pass evidence, compare the same platform. Where verbose logs exist, including Windows shards (`--reporter=verbose`), require the **exact test's named pass**. Linux shards use the default reporter, which lists passing files without every test name: a **file-level pass in the same shard, with no relevant-input change**, is sufficient. Record the passing file, job and input comparison. A skipped file, an unfinished or cancelled comparison run, or a green summary alone is insufficient.
+
+`tests/shardSequencer.ts` assigns files by recorded duration in `tests/fixtures/testDurations.json`, with a per-file overhead and a typical duration for unlisted files. Changes to those times or the collected files can move a test between shards. Find the test's name where verbose logs exist, or its passing file on Linux, in the comparison shard's log rather than assuming that, for example, shard 5 still contains it. A completed run may be red elsewhere while the shard and test you need passed.
 
 Across different heads, inspect the intervening diff for changes to the assertion, code it exercises, fixtures, dependencies, deadlines, workflow and environment. Check the logs' OS, runner image, Node version and command too. Explain why any changed input is unrelated; if that is unresolved, the classification stays unknown. A local pass can help diagnosis but does not replace the GitHub pass evidence above.
 
@@ -483,7 +494,7 @@ Across different heads, inspect the intervening diff for changes to the assertio
 | --- | --- | --- |
 | **Own-diff** | A causal link from this PR's change to the failing assertion. | Fix the cause on this branch and keep the assertions. Do not weaken a guard or refresh an allowance merely to turn it green. A pass after the repair is fixed. |
 | **Pre-existing on main** | The same assertion and failure reproduced in a run on `main`, with the relevant path compared to this PR. | If the base branch already contains the fix, merge it in. Otherwise name one repair owner and link its issue or PR; other workers share that repair rather than opening competing fixes. Pre-existing does not mean flake and does not waive a required check. |
-| **Confirmed flake** | The exact test passes on a rerun at the same head and tested merge, or in a later completed run with relevant inputs unchanged, as checked above. | Rerun failed jobs only. Keep the failure and pass links; change no source or assertion merely to clear this occurrence. |
+| **Confirmed flake** | Pass evidence meeting the platform rules above, from a rerun at the same head and tested merge or a later completed run with relevant inputs unchanged. | Rerun failed jobs only. Keep the failure and pass links; change no source or assertion merely to clear this occurrence. |
 | **Unknown** | Evidence does not yet establish any of the above. | Diagnose. At most one diagnostic rerun; it stays unknown unless a qualifying pass establishes intermittency or diagnosis proves another classification. A repeated failure is not a reason to keep rerunning. |
 
 When a rerun is justified, use:
