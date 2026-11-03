@@ -8,7 +8,7 @@ import { useOptionalAgents } from '../agents/AgentContext'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { appendBrowserFeedback } from './BrowserFeedback'
 import { outlinedCapture, PointComment, PointLine, pointedWords, themeRgb, type PointedName } from './BrowserPoint'
-import { browserPages, normalizeAddress, pageLabel, useBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
+import { browserPages, normalizeAddress, pageLabel, useThreadBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { browsingWords, shortAddress } from './browserSteps'
 import type { BrowserSurfaceProps } from './BrowserSurface'
@@ -29,7 +29,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   const { t } = useLingui()
   const browserTitle = t({ message: 'Browser', comment: 'The Tools surface that shows a thread\'s browser pages.' })
   const browser = useThreadBrowser(store, threadId)
-  const tasks = useBrowserTasks(store)
+  const tasks = useThreadBrowserTasks(store, threadId)
   const opened = useOpenedAddresses(store, threadId)
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)

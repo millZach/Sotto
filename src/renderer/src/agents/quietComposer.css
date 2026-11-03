@@ -7,14 +7,16 @@
 .thread-prompt[data-quiet] .prompt-editor { min-height: 45px; max-height: 220px; padding: 0 6px 0 0; resize: none; }
 /* The footer: attach in the first column, everything else at the far end of the second. */
 .thread-prompt[data-quiet] .screenshot-input__tools > .tt-button { grid-column: 1; grid-row: 4; align-self: center; margin: 6px 0 0 -8px; }
-.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 2; grid-row: 4; align-self: center; justify-content: flex-end; gap: 4px; margin: 6px 0 0; }
+.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 2; grid-row: 4; align-self: center; justify-content: flex-end; gap: 4px; min-width: 0; margin: 6px 0 0; }
 /* What the user put in the prompt sits above it; what Sotto says about it, below. */
 .thread-prompt[data-quiet] :is(.review-chips, .thread-prompt__notice) { grid-row: 1; }
 .thread-prompt[data-quiet] :is(.screenshot-previews, .attached-files, .screenshot-input__tools > small, .review-chips__note) { grid-row: 3; }
 .thread-prompt[data-quiet] > .thread-options-notices { grid-column: 1 / -1; grid-row: 5; }
-.thread-prompt[data-quiet] :is(.thread-prompt__meta, .thread-options-bar, .thread-options--chips) { flex: none; flex-wrap: nowrap; gap: 0 2px; }
+.thread-prompt[data-quiet] :is(.thread-prompt__meta, .thread-options-bar, .thread-options--chips) { flex: 0 1 auto; flex-wrap: nowrap; gap: 0 2px; min-width: 0; }
 .thread-prompt[data-quiet] > .thread-prompt__footer > .thread-prompt__meta { flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
 .thread-prompt[data-quiet] .thread-prompt__actions { gap: 2px; }
+/* Let the existing model-name ellipsis take the squeeze; the shield, effort and disc keep their hit areas. */
+.thread-prompt[data-quiet] .model-picker__trigger { max-width: min(220px, 100%); }
 
 /* The model and its effort read as words, not a chip: no fill and no hairline between them. */
 .thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) { gap: 0; height: 28px; }
@@ -36,7 +38,7 @@
 }
 /* The shield says the mode even before it opens. Full access takes the theme's gold, with a slow sheen. */
 .thread-prompt[data-quiet] .thread-chip[data-permission] { color: var(--tt-text-muted); }
-.thread-prompt[data-quiet] .thread-chip:is([data-permission='auto'], [data-permission='auto-accept-edits']) { color: var(--tt-accent); }
+.thread-prompt[data-quiet] .thread-chip:is([data-permission='auto'], [data-permission='auto-accept-edits']) { color: var(--tt-accent-text); }
 .thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] { color: var(--tt-chart-6); }
 .thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] .thread-chip__icon { position: relative; filter: drop-shadow(0 0 3px color-mix(in oklab, var(--tt-chart-6) 40%, transparent)); }
 .thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] svg { fill: color-mix(in oklab, var(--tt-chart-6) 28%, transparent); }
@@ -49,7 +51,7 @@
 
 /* One disc. Steer, while its modifier is held, is the accent with the ink made for it. While a turn runs with nothing
    typed the disc is Stop, in the disc's own ink. */
-.thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; }
+.thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: var(--tt-radius-full); }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer'],
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer']:hover { background: var(--tt-accent); color: var(--tt-on-accent); }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='stop'] { background: var(--tt-pill); color: var(--tt-pill-ink); }
