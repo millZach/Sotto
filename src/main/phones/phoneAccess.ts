@@ -1,3 +1,4 @@
+import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { createServer, type Server } from 'node:net'
 import { hostname as osHostname } from 'node:os'
 import { join } from 'node:path'
@@ -93,7 +94,7 @@ export interface PhoneAccessOptions {
    * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
    */
-  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves'>
+  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
@@ -384,6 +385,8 @@ export class PhoneAccess {
   peers(): number { return this.listenerStopped ? 0 : this.listener?.peers() ?? 0 }
   /** Whether a desktop on the tailnet listener wants the host's next prompts now (ADR-0173). */
   nextPromptsWanted(): boolean { return !this.listenerStopped && (this.listener?.nextPromptsWanted() ?? false) }
+  /** What each desktop on the tailnet listener has answered for this host's product events (ADR-0179). */
+  productEventAnswers(): ProductEventPermission[] { return this.listenerStopped ? [] : this.listener?.productEventAnswers() ?? [] }
 
   private async reconcile(): Promise<void> {
     if (this.phase === 'cleanup-failed' || this.listenerStopped) {
