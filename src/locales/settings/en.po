@@ -328,6 +328,11 @@ msgstr "{minutes, plural, other {{sessionMinutes} min}}"
 msgid "{minutes, plural, other {The code lasts # minutes.}}"
 msgstr "{minutes, plural, other {The code lasts # minutes.}}"
 
+#. A recording limit in minutes, such as 5 min.
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
+msgid "{minutes} min"
+msgstr "{minutes} min"
+
 #. A model and its reasoning effort, as a list of defaults shows them
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{modelName}, {level}"
@@ -746,33 +751,18 @@ msgstr "<0>Tailscale is not installed.</0> Any machine you reach over SSH works;
 msgid "<0>Tailscale is off on this computer.</0> Connect to see the machines on your tailnet."
 msgstr "<0>Tailscale is off on this computer.</0> Connect to see the machines on your tailnet."
 
-#. One minute, a recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "1 min"
-msgstr "1 min"
-
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "100 entries"
 msgstr "100 entries"
-
-#. Two minutes, a recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "2 min"
-msgstr "2 min"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "25 entries"
 msgstr "25 entries"
 
 #. Thirty seconds, the shortest recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 msgid "30 s"
 msgstr "30 s"
-
-#. Five minutes, the longest recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "5 min"
-msgstr "5 min"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "500 entries"
@@ -3195,10 +3185,6 @@ msgstr "Match {system}"
 msgid "Max"
 msgstr "Max"
 
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Maximum recording time"
-msgstr "Maximum recording time"
-
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "may slow down"
 msgstr "may slow down"
@@ -3465,6 +3451,11 @@ msgstr "Night wood"
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No connected provider can do this work."
 msgstr "No connected provider can do this work."
+
+#. The last stop of the recording limit slider: a dictation runs until you stop it.
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
+msgid "No limit"
+msgstr "No limit"
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "No matches."
@@ -4324,8 +4315,8 @@ msgstr "Recent sessions"
 msgid "Reconnecting…"
 msgstr "Reconnecting…"
 
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Recording limit"
 msgstr "Recording limit"
 

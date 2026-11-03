@@ -68,6 +68,7 @@ import { useSidebarSize } from '../../agents/sidebarSize'
 import { PageWindowControls } from '../../components/WindowControls'
 import { AppearanceSettings } from './AppearanceSettings'
 import { CloudIphoneSettings } from './CloudIphoneSettings'
+import { RecordingLimitSetting } from './RecordingLimitSetting'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { ClearThreadsSettings } from './ClearThreadsSettings'
@@ -683,12 +684,7 @@ export function SettingsView({
                     : <DictationShortcuts settings={settings} platform={platform} onReplaceHotkey={onReplaceHotkey} onReplaceDictationShortcuts={onReplaceDictationShortcuts} />}
                 </SettingsGroup>
                 <SettingsGroup title={t`While you dictate`} icon={Timer}>
-                  <Field label={t`Recording limit`}><SegmentedControl setting="recording-limit" label={t`Maximum recording time`} value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[
-                    { value: '30', label: t({ message: '30 s', comment: 'Thirty seconds, the shortest recording limit.' }) },
-                    { value: '60', label: t({ message: '1 min', comment: 'One minute, a recording limit.' }) },
-                    { value: '120', label: t({ message: '2 min', comment: 'Two minutes, a recording limit.' }) },
-                    { value: '300', label: t({ message: '5 min', comment: 'Five minutes, the longest recording limit.' }) },
-                  ]} /></Field>
+                  <RecordingLimitSetting value={settings.maxRecordingSeconds} onSave={save} />
                   <Toggle setting="sound-cues" label={t`Sound cues`} checked={settings.soundCues} onCheckedChange={(checked) => void save({ soundCues: checked })} description={t`A short sound when recording starts and stops.`} />
                   <div className="settings-input-action"><Field setting="typing-speed" label={t`Typing speed`} description={t`How fast you type, in words per minute (${slowest} to ${fastest}). The Dictate room counts the time dictation saves you against it.`} {...(typingSpeedError === undefined ? {} : { error: shownWords(typingSpeedError) })}><input className="tt-input" inputMode="numeric" value={typingSpeedDraft.value} onBlur={() => void saveTypingSpeed()} onChange={(event) => { typingSpeedDraft.edit(event.currentTarget.value) }} /></Field></div>
                   {/* While Omarchy's shell pill stands in for the widget, the switch would change nothing anyone can see. */}

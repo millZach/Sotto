@@ -328,6 +328,11 @@ msgstr ""
 msgid "{minutes, plural, other {The code lasts # minutes.}}"
 msgstr ""
 
+#. A recording limit in minutes, such as 5 min.
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
+msgid "{minutes} min"
+msgstr ""
+
 #. A model and its reasoning effort, as a list of defaults shows them
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{modelName}, {level}"
@@ -746,18 +751,8 @@ msgstr ""
 msgid "<0>Tailscale is off on this computer.</0> Connect to see the machines on your tailnet."
 msgstr ""
 
-#. One minute, a recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "1 min"
-msgstr ""
-
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "100 entries"
-msgstr ""
-
-#. Two minutes, a recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "2 min"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -765,13 +760,8 @@ msgid "25 entries"
 msgstr ""
 
 #. Thirty seconds, the shortest recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 msgid "30 s"
-msgstr ""
-
-#. Five minutes, the longest recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "5 min"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3195,10 +3185,6 @@ msgstr ""
 msgid "Max"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Maximum recording time"
-msgstr ""
-
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "may slow down"
 msgstr ""
@@ -3464,6 +3450,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No connected provider can do this work."
+msgstr ""
+
+#. The last stop of the recording limit slider: a dictation runs until you stop it.
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
+msgid "No limit"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -4324,8 +4315,8 @@ msgstr ""
 msgid "Reconnecting…"
 msgstr ""
 
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Recording limit"
 msgstr ""
 
