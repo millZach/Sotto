@@ -18,6 +18,8 @@ The speaker-to-microphone pilot passed: a direct `say -r 220` utterance reached 
 
 The collector uses actual global hotkeys and observes capture before speaking. It aborts on a missing event rather than retrying a toggle. Cold launches wait for the selected model's enabled Start dictation control. Nearest-rank percentiles retain every completed sample; no outlier is removed. The Listening-shown mark is the second animation frame after React commits Listening, bounding its first paint opportunity. Paste-keystroke-sent is the native paste helper's acknowledgement; independent target readback verifies delivery separately. Neither mark pretends to be a hardware display or keyboard timestamp.
 
+After the baseline, independent accessibility readback in the task's TextEdit document found 31 occurrences of each expected phrase clause: the pilot plus all 30 baseline recordings. Only match counts and character counts were returned; no target text was saved as evidence.
+
 ## Baseline
 
 Thirty completed recordings: ten cold and twenty warm. All samples are retained, including the warm stop-to-paste maximum of 714.628 ms. With twenty samples the nearest-rank p95 is the nineteenth sorted result. No optimization has been applied.

@@ -19,6 +19,7 @@ import { performance } from 'node:perf_hooks'
 import process from 'node:process'
 import { clearTimeout, setTimeout } from 'node:timers'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { URL } from 'node:url'
 import { parseArgs, promisify } from 'node:util'
 
 const { values } = parseArgs({ options: {
