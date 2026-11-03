@@ -10,8 +10,10 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DelegationService, type DelegationControlHooks, type DelegationCoordinator } from '../../../src/main/agents/delegation'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
-import type { DelegationNews } from '../../../src/shared/delegation'
-import type { SwarmReceipt, WorkerSwarm } from '../../../src/shared/workerSwarms'
+import { delegateInputSchema, delegationNewsSchema, DELEGATION_NEWS_MAX, type DelegationNews } from '../../../src/shared/delegation'
+import { swarmReceiptSchema, workerSwarmSchema, type SwarmReceipt, type WorkerSwarm } from '../../../src/shared/workerSwarms'
+import { watcherToolSchemas } from '../../../src/shared/watcher'
+import { foldWakeUpNews, queuedWakeUpText, wakeUpNewsSchema } from '../../../src/main/agents/wakeUp'
 import { WorkerAdmission } from '../../../src/main/agents/workerAdmission'
 
 const roots: string[] = []
@@ -134,7 +136,8 @@ async function swarmService(ceiling = 4, saved?: { root: string; snapshot: Agent
       return { host: snapshot } as never
     },
     hasPendingThreadWork: () => delivery.pending === true, hasUserDraft: () => false, refreshDelegationObservation: () => undefined,
-    hasQueuedDelegationNews: (_threadId, ids) => delivery.queued?.some(news => news.items.some(item => ids.has(item.delegationId))) === true,
+    hasQueuedDelegationNews: (_threadId, ids) => delivery.queued?.some(news => news.swarmId !== undefined && ids.has(news.swarmId)
+      || news.items.some(item => ids.has(item.delegationId))) === true,
     deliverWakeUp: async (threadId, news) => {
       await delivery.beforeWakeUp?.()
       told.push(news)
@@ -147,15 +150,15 @@ async function swarmService(ceiling = 4, saved?: { root: string; snapshot: Agent
     host: { setDelegatedBy: async (id, parent) => { snapshot.threads.find(item => item.id === id)!.delegatedBy = parent }, threadMessage: () => undefined },
     historyEnabled: () => true, swarms: { admission } })
   await delegation.recover()
-  const finish = async (id: string) => {
+  const finish = async (id: string, status: 'completed' | 'failed' | 'interrupted' = 'completed', reply = 'The checks found no permission bypass. Storage failures need a retry; the unavailable angle remains missing.') => {
     const target = snapshot.threads.find(item => item.id === id)!
-    target.status = 'idle'; target.lastTurn = { id: target.lastUserMessageId!, status: 'completed' }
-    target.messages.push({ id: randomUUID(), role: 'assistant', text: 'Done', createdAt: at })
+    target.status = status === 'failed' ? 'error' : 'idle'; target.lastTurn = { id: target.lastUserMessageId!, status }
+    if (status === 'completed') target.messages.push({ id: randomUUID(), role: 'assistant', text: reply, createdAt: at })
     hooks!.observe(snapshot); await settle(); await settle()
   }
   const start = async (prompts: string[] | null = ['Check errors', 'Check permissions']) => {
     const input = { work: 'code-review', brief: 'Review it', provider: 'codex', model: 'model', permission: 'approval-required',
-      count: 2, ...(prompts ? { prompts } : {}), retry_key: randomUUID(), wait_seconds: 0 }
+      count: prompts?.length ?? 2, ...(prompts ? { prompts } : {}), retry_key: randomUUID(), wait_seconds: 0 }
     const receipt = await delegation.delegate('parent', input) as SwarmReceipt & { status: string }
     return { input, receipt }
   }
@@ -164,7 +167,9 @@ async function swarmService(ceiling = 4, saved?: { root: string; snapshot: Agent
     return JSON.parse(await readFile(join(root, 'delegations.json'), 'utf8'))
   }
   return { root, delegation, admission, snapshot, created, sent, told, finish, start, file, observe: () => hooks!.observe(snapshot),
-    newsReady: (id: string, news: DelegationNews[]) => hooks!.newsReady!(id, news) }
+    observed: () => hooks!.observedThreadIds(),
+    newsReady: (id: string, news: DelegationNews[]) => hooks!.newsReady!(id, news),
+    newsText: (id: string, news: DelegationNews[]) => hooks!.newsText!(id, news) }
 }
 
 it('starts one lead and one independent worktree per angle, and retries the same group without more starts', async () => {
@@ -210,11 +215,234 @@ it('lets an unplanned lead fill its reserved angles once and keeps their outcome
   expect(f.created).toHaveLength(3)
   await f.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['Review auth', 'Review storage'] })
   expect(f.created).toHaveLength(3)
+  expect(await f.delegation.delegate(receipt.lead.thread, { ...input, prompts: [' Review auth ', '\nReview storage\n'] }))
+    .toMatchObject({ swarmId: receipt.swarmId })
+  expect(await f.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['Review storage', 'Review auth'] }))
+    .toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  expect(f.created).toHaveLength(3)
   await f.finish(filled.receipts[0]!.thread!)
   await f.finish(filled.receipts[1]!.thread!)
   await vi.waitFor(() => expect(f.told).toHaveLength(1))
   expect(await f.delegation.read(receipt.lead.thread, { delegation: filled.receipts[0]!.delegation })).toMatchObject({ delegation: { outcome: 'answered' } })
   expect(await f.delegation.read(receipt.lead.thread, { delegation: receipt.swarmId })).toMatchObject({ swarmId: receipt.swarmId, done: 2 })
+  f.delegation.close(); f.admission.close()
+})
+
+for (const status of ['failed', 'interrupted'] as const) it(`records a ${status} synthesis as missing, tells its owner and permits settlement and pruning after restart`, async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  expect(f.admission.reserved('this-computer')).toBe(1)
+  await f.finish(receipt.lead.thread, status)
+  const outcome = status === 'failed' ? 'failed' : 'stopped'
+  await vi.waitFor(() => expect(f.told).toHaveLength(2))
+  expect(f.told[1]).toMatchObject({ items: [{ delegationId: receipt.lead.delegation, threadId: receipt.lead.thread, outcome }] })
+  expect(f.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: false, synthesisFailed: outcome, stopped: false })
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  expect(f.admission.reserved('this-computer')).toBe(0)
+  expect(await f.delegation.read('parent', { delegation: receipt.lead.delegation }))
+    .toMatchObject({ delegation: { outcome, note: expect.stringContaining('synthesis result is missing') } })
+  expect(f.newsText('parent', [f.told[1]!])).toContain('its result is missing')
+  expect(f.delegation.swarmReceiptForLead(receipt.lead.thread))
+    .toMatchObject({ synthesisFailed: outcome, note: expect.stringContaining('its result is missing') })
+  const failed = (await f.file()).swarms[0]!
+  expect(failed.synthesisDone).not.toBe(true)
+  expect(failed.synthesisFailed).toBe(outcome)
+  expect(failed.synthesisMessageId).toBeUndefined()
+  expect(failed.synthesisAfterMessageId).toBe(f.snapshot.threads.find(item => item.id === receipt.lead.thread)!.lastUserMessageId)
+  f.observe(); await settle()
+  expect(f.told).toHaveLength(2)
+  f.delegation.close(); f.admission.close()
+  const restored = await swarmService(4, f)
+  restored.observe(); await settle()
+  expect(restored.delegation.swarmForThread(receipt.lead.thread)?.synthesisDone).toBe(false)
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.synthesisFailed).toBe(outcome)
+  expect(restored.admission.reserved('this-computer')).toBe(0)
+  expect(restored.told).toHaveLength(0)
+  await restored.delegation.forgetThreads(new Set([receipt.lead.thread]))
+  expect(restored.delegation.swarmForThread(receipt.lead.thread)).toBeUndefined()
+  expect(restored.observed()).not.toContain(receipt.lead.thread)
+  expect((await restored.file()).swarms).toBeUndefined()
+  restored.delegation.close(); restored.admission.close()
+})
+
+for (const restart of [false, true]) it(`completes synthesis when a later lead turn answers after failure${restart ? ' across restart' : ''}`, async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  await f.finish(receipt.lead.thread, 'failed')
+  await vi.waitFor(() => expect(f.told).toHaveLength(2))
+  const failedTurn = (await f.file()).swarms[0]!.synthesisAfterMessageId
+  let retry = f
+  if (restart) {
+    f.delegation.close(); f.admission.close()
+    retry = await swarmService(4, f)
+  }
+  const lead = retry.snapshot.threads.find(item => item.id === receipt.lead.thread)!, messageId = randomUUID()
+  // A normal later turn, without a new completion wake-up, can retry the missing synthesis.
+  lead.messages.push({ id: messageId, role: 'user', text: 'Retry the synthesis', createdAt: at })
+  lead.lastUserMessageId = messageId; lead.lastTurn = { id: messageId, status: 'running' }; lead.status = 'running'
+  retry.observe(); await settle()
+  expect(retry.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  expect((await retry.file()).swarms[0]).toMatchObject({ synthesisAfterMessageId: failedTurn, synthesisMessageId: messageId })
+  await retry.finish(receipt.lead.thread)
+  await vi.waitFor(() => expect(retry.told).toHaveLength(restart ? 1 : 3))
+  expect(retry.told.at(-1)).toMatchObject({ items: [{ delegationId: receipt.lead.delegation, turnMessageId: messageId, outcome: 'answered' }] })
+  expect(retry.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: true, stopped: false })
+  expect(retry.delegation.swarmReceiptForLead(receipt.lead.thread)?.synthesisFailed).toBeUndefined()
+  expect(retry.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  expect(retry.admission.reserved('this-computer')).toBe(0)
+  expect(retry.observed()).not.toContain(receipt.lead.thread)
+  expect(await retry.delegation.read('parent', { delegation: receipt.lead.delegation }))
+    .toMatchObject({ delegation: { outcome: 'answered', turnMessageId: messageId } })
+  retry.delegation.close(); retry.admission.close()
+})
+
+it('does not certify a bare Done as synthesis or let it erase a failed attempt', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  const lead = f.snapshot.threads.find(item => item.id === receipt.lead.thread)!
+  lead.status = 'idle'; lead.lastTurn = { id: lead.lastUserMessageId!, status: 'completed' }
+  lead.messages.push({ id: randomUUID(), role: 'assistant', text: 'Done', createdAt: at })
+  // Watcher observes first in the real coordinator, before the delegation pass saves the failed disposition.
+  expect(f.delegation.swarmOutcome(lead.id, lead)).toMatchObject({ pending: false, outcome: 'failed' })
+  f.observe()
+  await vi.waitFor(() => expect(f.told).toHaveLength(2))
+  expect(f.told[1]).toMatchObject({ items: [{ outcome: 'failed' }] })
+  expect(f.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ synthesisDone: false, synthesisFailed: 'failed' })
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  lead.messages.push({ id: randomUUID(), role: 'assistant', text: 'Done', createdAt: at })
+  f.observe(); await settle()
+  expect(f.told).toHaveLength(2)
+  expect((await f.file()).swarms[0]?.synthesisDone).not.toBe(true)
+  f.delegation.close(); f.admission.close()
+})
+
+it('gives the lead one swarm read instruction while retaining the standalone completion formatter', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  const text = f.newsText(receipt.lead.thread, f.told)!
+  expect(text.match(/Swarm /gu)).toHaveLength(1)
+  expect(text).toContain('Read the swarm receipt with read_delegation')
+  expect(queuedWakeUpText(f.told, { tool: false })).toContain(receipt.swarmId)
+  f.delegation.close(); f.admission.close()
+})
+
+it('rejects exact duplicate trimmed angle briefs before accepting a plan or starting any of its workers', async () => {
+  const f = await swarmService()
+  const { input, receipt: rejected } = await f.start(['Check auth', ' \nCheck auth\n '])
+  expect(rejected).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(f.created).toHaveLength(0)
+  expect((await f.file()).swarms).toBeUndefined()
+  const valid = await f.delegation.delegate('parent', { ...input, prompts: ['Check auth', 'Check Auth'] }) as SwarmReceipt
+  expect(valid.receipts).toHaveLength(2)
+  expect(f.created).toHaveLength(3)
+  const unplanned = await f.start(null)
+  expect(await f.delegation.delegate(unplanned.receipt.lead.thread, { ...unplanned.input, prompts: ['Same', ' Same '] }))
+    .toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  const saved = (await f.file()).swarms.find(swarm => swarm.id === unplanned.receipt.swarmId)!
+  expect(saved.planDigest).toBeUndefined()
+  expect(saved.members.map(member => member.state)).toEqual(['planned', 'planned'])
+  const filled = await f.delegation.delegate(unplanned.receipt.lead.thread, { ...unplanned.input, prompts: ['First', 'Second'] }) as SwarmReceipt
+  expect(filled.receipts.every(member => member.delegation)).toBe(true)
+  f.delegation.close(); f.admission.close()
+})
+
+it('rejects duplicate briefs through both tool schemas while allowing distinct case and wording', () => {
+  const delegation = { work: 'research', brief: 'Review', count: 2, prompts: ['Same', ' Same '] }
+  const watcher = { requestId: randomUUID(), retryKey: randomUUID(), project: { hostId: randomUUID(), projectId: 'project' }, role: 'research',
+    title: 'Review', firstPrompt: 'Review', count: 2, prompts: ['Same', ' Same '], workingCopy: { kind: 'new-worktree' } }
+  expect(delegateInputSchema.safeParse(delegation).success).toBe(false)
+  expect(watcherToolSchemas.start_thread.input.safeParse(watcher).success).toBe(false)
+  expect(delegateInputSchema.safeParse({ ...delegation, prompts: ['Same', 'same'] }).success).toBe(true)
+  expect(watcherToolSchemas.start_thread.input.safeParse({ ...watcher, prompts: ['Same', 'same'] }).success).toBe(true)
+})
+
+it('keeps refused angle IDs and reasons in the receipt across restart and sends no fabricated answered item', async () => {
+  const f = await swarmService(), { receipt, input } = await f.start(null)
+  await f.finish(receipt.lead.thread)
+  f.snapshot.models[0]!.ready = false
+  const filled = await f.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['First', 'Second'] }) as SwarmReceipt
+  expect(swarmReceiptSchema.parse(f.delegation.swarmReceiptForLead(receipt.lead.thread)).receipts).toEqual(filled.receipts)
+  expect(filled.receipts).toEqual([0, 1].map(index => ({ index, state: 'refused', delegation: expect.any(String), refusal: expect.any(String) })))
+  expect(f.created).toHaveLength(1)
+  for (const angle of filled.receipts) {
+    expect(await f.delegation.read(receipt.lead.thread, { delegation: angle.delegation }))
+      .toMatchObject({ delegation: { id: angle.delegation, outcome: 'refused', note: angle.refusal } })
+  }
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  const news: DelegationNews = { source: 'delegation', swarmId: receipt.swarmId, items: [] }
+  expect(f.told).toEqual([news])
+  expect(wakeUpNewsSchema.parse(news)).toEqual(news)
+  expect(delegationNewsSchema.safeParse({ source: 'delegation', items: [] }).success).toBe(false)
+  expect(foldWakeUpNews([news], news)).toEqual([news])
+  expect(queuedWakeUpText([news], { tool: false })).toContain(receipt.swarmId)
+  expect(f.newsText(receipt.lead.thread, [news])).toContain('2 failed')
+  const saved = (await f.file()).swarms[0]!
+  expect(workerSwarmSchema.parse(saved).members).toEqual(filled.receipts.map(angle => ({ index: angle.index,
+    key: expect.any(String), state: angle.state, delegationId: angle.delegation, refusal: angle.refusal })))
+  f.delegation.close(); f.admission.close()
+  const restored = await swarmService(4, f)
+  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.receipts).toEqual(filled.receipts)
+  restored.observe(); await settle()
+  expect(restored.told).toHaveLength(0)
+  await restored.finish(receipt.lead.thread)
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('recovers queued completion news with no accepted angles without resending or bypassing capacity', async () => {
+  let attempted = false
+  const f = await swarmService(4, undefined, { beforeWakeUp: async () => { attempted = true; throw new Error('Delivery unconfirmed') } })
+  const { receipt, input } = await f.start(null)
+  await f.finish(receipt.lead.thread)
+  f.snapshot.models[0]!.ready = false
+  await f.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['First', 'Second'] })
+  await vi.waitFor(() => expect(attempted).toBe(true))
+  await settle()
+  await f.file()
+  f.delegation.close(); f.admission.close()
+  const news: DelegationNews = { source: 'delegation', swarmId: receipt.swarmId, items: [] }
+  f.snapshot.threads.push(thread('busy', { status: 'running' }))
+  const restored = await swarmService(1, f, { queued: [news] })
+  restored.observe(); await settle()
+  expect(restored.newsReady(receipt.lead.thread, [news])).toBe(false)
+  expect(restored.admission.waiting('this-computer')).toBe(1)
+  expect(restored.told).toHaveLength(0)
+  restored.snapshot.threads.find(item => item.id === 'busy')!.status = 'idle'
+  restored.admission.refresh()
+  expect(restored.newsReady(receipt.lead.thread, [news])).toBe(true)
+  expect(restored.admission.reserved('this-computer')).toBe(1)
+  expect(restored.told).toHaveLength(0)
+  restored.delegation.close(); restored.admission.close()
+})
+
+for (const count of [DELEGATION_NEWS_MAX, DELEGATION_NEWS_MAX + 2]) it(`delivers ${count} angle results with an explicit count of any omitted results`, async () => {
+  const f = await swarmService(count + 1), { receipt } = await f.start(Array.from({ length: count }, (_, index) => `Angle ${index}`))
+  await f.finish(receipt.lead.thread)
+  for (const angle of receipt.receipts) await f.finish(angle.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  expect(f.told[0]?.items).toHaveLength(DELEGATION_NEWS_MAX)
+  const text = f.newsText(receipt.lead.thread, f.told)!
+  if (count > DELEGATION_NEWS_MAX) {
+    expect(text).toContain('2 angle results omitted from this news')
+    expect(text).toContain(`delegation: "${receipt.swarmId}"`)
+  } else expect(text).not.toContain('omitted')
+  const saved = await f.file()
+  for (const [index, angle] of receipt.receipts.entries()) {
+    const record = saved.delegations.find(item => item['id'] === angle.delegation)!
+    expect(record['told']).toBe(index < DELEGATION_NEWS_MAX ? 'answered' : 'working')
+  }
+  const last = receipt.receipts.at(-1)!
+  expect(await f.delegation.read(receipt.lead.thread, { delegation: last.delegation }))
+    .toMatchObject({ delegation: { id: last.delegation, outcome: 'answered' } })
   f.delegation.close(); f.admission.close()
 })
 
@@ -355,6 +583,9 @@ it('lets the original plan retry fill only angles with no saved start after a re
   await writeFile(join(f.root, 'delegations.json'), JSON.stringify(saved))
   const restored = await swarmService(4, f)
   expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.receipts.map(item => item.state)).toEqual(['unknown', 'planned'])
+  expect(await restored.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['Changed', 'Plan'] }))
+    .toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  expect(restored.created).toHaveLength(0)
   const retried = await restored.delegation.delegate('parent', input) as SwarmReceipt
   expect(retried.receipts[0]).toMatchObject({ thread: originalFirstId, state: 'unknown' })
   expect(retried.receipts[1]?.thread).toBeDefined()

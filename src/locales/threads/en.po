@@ -4222,6 +4222,11 @@ msgstr "Folder on {hostName}"
 msgid "Folder removed. Sending to this thread puts it back on {branch}."
 msgstr "Folder removed. Sending to this thread puts it back on {branch}."
 
+#. {commit} is the start of a Git commit ID.
+#: src/renderer/src/agents/ThreadWorkingCopy.tsx
+msgid "Folder removed. Sending to this thread puts it back on commit {commit}."
+msgstr "Folder removed. Sending to this thread puts it back on commit {commit}."
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Folder removed. Sending to this thread puts it back on its branch."
 msgstr "Folder removed. Sending to this thread puts it back on its branch."

@@ -17,14 +17,15 @@ function kept(words: { decisions?: string[]; rules?: string[]; issues?: string[]
 }
 const nothing = kept({})
 
-it('queues open pull requests that are not drafts and whose checks passed, oldest pass first', () => {
+it('queues open pull requests whose summaries are not stale, that are not drafts and whose checks passed, oldest pass first', () => {
   const queue = watcherMergeQueue([
     { target: target('a'), title: 'Login fix', open: [
       { summary: { number: 12, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z' },
       { summary: { number: 13, state: 'open', checks: 'pending' }, draft: false },
       { summary: { number: 14, state: 'open', checks: 'passed' }, draft: true, checksPassedAt: '2026-10-21T09:00:00.000Z' },
       // Read only from evidence, which does not say whether it is a draft: not queued.
-      { summary: { number: 15, state: 'open', checks: 'passed' }, draft: undefined, checksPassedAt: '2026-10-21T08:30:00.000Z' }] },
+      { summary: { number: 15, state: 'open', checks: 'passed' }, draft: undefined, checksPassedAt: '2026-10-21T08:30:00.000Z' },
+      { summary: { number: 16, state: 'open', checks: 'passed', stale: true }, draft: false, checksPassedAt: '2026-10-21T08:00:00.000Z' }] },
     { target: target('b'), title: 'Docs pass', open: [
       { summary: { number: 9, state: 'open', checks: 'passed', approved: true }, draft: false, checksPassedAt: '2026-10-21T10:00:00.000Z' },
       { summary: { number: 8, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z' },

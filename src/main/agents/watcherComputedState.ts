@@ -13,11 +13,12 @@ import { WATCHER_KEPT_LISTS, WATCHER_KEPT_UNTOUCHED_MS, type WatcherKeptState, t
 export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSummary; readonly draft: boolean | undefined; readonly checksPassedAt?: string }
 
 /**
- * The merge queue: every open pull request of a watched thread that is not a draft and whose checks passed, in the order
- * Sotto first saw them pass, oldest first, by number when two passed at once. One not known to be a draft or not is left out.
+ * The merge queue: every open pull request of a watched thread whose summary is not stale, that is not a draft and whose
+ * checks passed, in the order Sotto first saw them pass, oldest first, by number when two passed at once. One not known to
+ * be a draft or not is left out.
  */
 export function watcherMergeQueue(threads: readonly { readonly target: WatcherThreadTarget; readonly title: string; readonly open: readonly WatcherOpenPullRequest[] }[]): WatcherMergeQueueItem[] {
-  return threads.flatMap(thread => thread.open.flatMap(pr => pr.summary.state === 'open' && pr.summary.checks === 'passed' && pr.draft === false && pr.checksPassedAt
+  return threads.flatMap(thread => thread.open.flatMap(pr => pr.summary.state === 'open' && pr.summary.stale !== true && pr.summary.checks === 'passed' && pr.draft === false && pr.checksPassedAt
     ? [{ target: thread.target, title: thread.title, pullRequest: pr.summary, checksPassedAt: pr.checksPassedAt }] : []))
     .sort((a, b) => Date.parse(a.checksPassedAt) - Date.parse(b.checksPassedAt) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
 }

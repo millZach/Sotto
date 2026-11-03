@@ -3,6 +3,7 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
 import { parsePrototypeSource, replySource, requestSource } from './prototypeSources'
+import type { WatcherEvidence } from '../../shared/watcher'
 
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
@@ -225,7 +226,7 @@ export function watcherReplyBefore(thread: Pick<AgentThread, 'messages'>, at: st
   }
   return undefined
 }
-const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks'>, string> = {
+const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks' | 'bug-bot-review'>, string> = {
   'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',
   'required-passed': 'its required checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
   approved: 'approved', 'changes-requested': 'a review asks for changes', conflicting: 'conflicts with its base branch',
@@ -234,13 +235,31 @@ const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks'>, string> 
  * What a thread's pull requests now say that needs Watcher, in Sotto's words (#1190): checks, merged or closed, the review
  * decision, a conflict, and comments or reviews that moved. Numbers come from the thread's links; never a comment's words.
  */
-export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<WatcherAttentionKind>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>): string | undefined {
+export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<WatcherAttentionKind>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>,
+  evidence: readonly WatcherEvidence[] = []): string | undefined {
   const links = [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
+  const reviews = new Map<string, WatcherEvidence>()
+  for (const item of evidence) if (item.bugBotReview && item.url) {
+    const key = pullRequestKey(item.url)
+    if (key && (!reviews.has(key) || Date.parse(item.observedAt) >= Date.parse(reviews.get(key)!.observedAt))) reviews.set(key, item)
+  }
   const parts: string[] = []
   for (const [pr, facts] of attention) {
     const number = links.find(link => pullRequestKey(link.url) === pr)?.number
-    const said = [...facts].flatMap(fact => fact === 'remarks' ? [] : [ATTENTION_WORDS[fact]])
+    const said = [...facts].flatMap(fact => fact === 'remarks' || fact === 'bug-bot-review' ? [] : [ATTENTION_WORDS[fact]])
     if (facts.has('remarks')) said.push('its comments or reviews changed; read them on GitHub')
+    // Each meaningful PR news line carries its coverage, including checks passing and a merge. Idle polls say nothing.
+    if (facts.size) {
+      const item = reviews.get(pr)
+      const review = item?.bugBotReview, head = item?.headId?.slice(0, 7) ?? 'unknown'
+      if (review) {
+        const coverage = review.coverage === 'current' ? `Bug Bot reviewed current head ${head}`
+          : review.coverage === 'stale' ? `Bug Bot reviewed ${review.commit?.slice(0, 7)}; head is ${head}`
+            : review.coverage === 'missing' ? `Bug Bot has no marked review; head is ${head}`
+              : `Bug Bot review coverage is unknown; head is ${head}${review.commit ? `; latest marked review is on ${review.commit.slice(0, 7)}` : ''}`
+        said.push(`${coverage}${review.url ? ` (${review.url})` : ''}`)
+      }
+    }
     if (said.length) parts.push(`Pull request ${number ? `#${number}` : pr}: ${said.join('; ')}.`)
   }
   return parts.length ? parts.join(' ') : undefined

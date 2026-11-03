@@ -38,6 +38,7 @@ function summariesByKey(evidence: readonly WatcherEvidence[]): Map<string, Watch
       if (item.checksState !== undefined) summary.checks = item.checksState
       if (item.githubReviewApproved !== undefined) { if (item.githubReviewApproved) summary.approved = true; else delete summary.approved }
       if (item.githubAutoMergeEnabled !== undefined) { if (item.githubAutoMergeEnabled) summary.autoMerge = true; else delete summary.autoMerge }
+      if (item.bugBotReview !== undefined) { summary.bugBotReview = item.bugBotReview; summary.headId = item.headId }
     }
     if (facts.some(item => item.freshness !== 'fresh')) summary.stale = true
     return [key, summary]

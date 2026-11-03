@@ -6,7 +6,7 @@ import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
-import { swarmCountSchema, swarmReceiptSchema, SWARM_ANGLES_MAX } from './workerSwarms'
+import { distinctSwarmBriefs, swarmCountSchema, swarmReceiptSchema, SWARM_ANGLES_MAX } from './workerSwarms'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -95,6 +95,10 @@ const freshness = z.enum(['fresh', 'stale', 'unknown'])
 const availability = z.enum(['available', 'unavailable', 'unsupported'])
 const pending = z.object({ id, kind: z.enum(['question', 'permission']), label: shortText,
   openTarget: watcherThreadTargetSchema }).strict()
+/** Bug Bot coverage of a pull request head, independent of approval and merge eligibility. No review text is retained. */
+export const watcherBugBotReviewSchema = z.object({ coverage: z.enum(['current', 'stale', 'missing', 'unknown']),
+  commit: id.nullable(), url: z.string().url().max(2_048).nullable() }).strict()
+export type WatcherBugBotReview = z.infer<typeof watcherBugBotReviewSchema>
 /** Evidence is sourced data. A worker's words remain messages, never an evidence source. */
 export const watcherEvidenceSchema = z.object({ id, source: z.enum(['sotto-delivery', 'sotto-takeover', 'native-turn', 'github', 'checkpoint', 'working-copy']),
   observedAt: time, target: watcherThreadTargetSchema, freshness, availability,
@@ -105,7 +109,8 @@ export const watcherEvidenceSchema = z.object({ id, source: z.enum(['sotto-deliv
   failureCategory: z.literal('provider-turn-failed').optional(), url: z.string().url().max(2_048).optional(),
   branch: z.string().max(512).nullable().optional(), ahead: counter.optional(), behind: counter.optional(), fetchedAt: time.nullable().optional(),
   pullRequestState: z.enum(['open', 'closed', 'merged']).optional(), checkCount: counter.optional(),
-  checksState: z.enum(['passed', 'failed', 'pending', 'unknown']).optional(), githubReviewApproved: z.boolean().optional(), githubAutoMergeEnabled: z.boolean().optional() }).strict()
+  checksState: z.enum(['passed', 'failed', 'pending', 'unknown']).optional(), githubReviewApproved: z.boolean().optional(), githubAutoMergeEnabled: z.boolean().optional(),
+  bugBotReview: watcherBugBotReviewSchema.optional() }).strict()
 export type WatcherEvidence = z.infer<typeof watcherEvidenceSchema>
 const takeover = z.object({ reason: z.enum(['user-send', 'native-user-send', 'user-stop', 'user-settle', 'user-reconfigure']), at: time }).strict()
 const participation = z.object({ requestId: z.uuid(), startedBy: z.enum(['watcher', 'user']), generation: counter,
@@ -130,7 +135,8 @@ const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(
  */
 export const watcherPullRequestSummarySchema = z.object({ number: z.number().int().positive().optional(), url: z.string().max(2_048).optional(),
   state: z.enum(['open', 'closed', 'merged']).optional(), checks: z.enum(['passed', 'failed', 'pending', 'unknown']).optional(),
-  approved: z.literal(true).optional(), autoMerge: z.literal(true).optional(), stale: z.literal(true).optional() }).strict()
+  approved: z.literal(true).optional(), autoMerge: z.literal(true).optional(), stale: z.literal(true).optional(),
+  headId: id.optional(), bugBotReview: watcherBugBotReviewSchema.optional() }).strict()
 export type WatcherPullRequestSummary = z.infer<typeof watcherPullRequestSummarySchema>
 /** A roster row in list_threads' slim detail, its default (#1191): who it is, where it stands and what it waits on. */
 const slimRow = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), projectId: entityId, status: z.enum(['idle', 'running', 'error']),
@@ -328,7 +334,8 @@ export const watcherToolSchemas = {
     // goes too as a snapshot (#1033, #1312): main takes both off before admission and puts `fromMove` in their place, the
     // move it makes just before the start, which is all a paired host is sent. Watcher never names a move itself.
     input: z.object({ ...mutation, project: watcherProjectTargetSchema, machine: z.uuid().optional(), os: workerSystemSchema.optional(), role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
-      count: swarmCountSchema.optional(), prompts: z.array(prompt).max(SWARM_ANGLES_MAX).optional(),
+      count: swarmCountSchema.optional(), prompts: z.array(prompt).max(SWARM_ANGLES_MAX)
+        .refine(distinctSwarmBriefs, 'Give each angle a distinct brief.').optional(),
       speed: agentSpeedSchema.nullable().optional().describe('Fast or ultrafast, one the worker model offers; null means standard speed.'),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt,
       fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional(),

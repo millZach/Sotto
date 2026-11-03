@@ -68,13 +68,22 @@ describe('the GraphQL babysitting asks', () => {
     expect(query).toContain('checkRunCountsByState { state count } statusContextCountsByState { state count }')
     expect(query).toContain('reviewThreads { totalCount }')
   })
-  it('asks checks with whether each is required, and remarks without their text, each only when switched on', () => {
+  it('asks required checks, text-free remarks and bounded Bug Bot coverage only when each is switched on', () => {
     expect(DETAIL_QUERY).toContain('$checks: Boolean!, $remarks: Boolean!')
     expect(DETAIL_QUERY).toContain('commits(last: 1) @include(if: $checks)')
     expect(DETAIL_QUERY).toContain('isRequired(pullRequestNumber: $number)')
     expect(DETAIL_QUERY).toContain('reviewThreads(last: 50) @include(if: $remarks)')
     expect(DETAIL_QUERY).toContain('comments(last: 20) { nodes { id url createdAt publishedAt lastEditedAt')
-    expect(DETAIL_QUERY).not.toMatch(/\bbody\b|\bbodyText\b/u)
+    expect(DETAIL_QUERY).toContain('comments(first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) @include(if: $remarks)')
+    expect(DETAIL_QUERY).toContain('reviews(last: 100) @include(if: $remarks)')
+    expect(DETAIL_QUERY).toContain('$bugBotReviews: Boolean! = false')
+    const coverage = `bugBotReviews: reviews(last: 100) @include(if: $bugBotReviews) {
+  pageInfo { hasPreviousPage }
+  nodes { body state submittedAt url commit { oid } author { login } }
+}`
+    expect(DETAIL_QUERY).toContain(coverage)
+    // Bodies belong only to this separately switched-on, bounded classification, never ordinary remarks.
+    expect(DETAIL_QUERY.replace(coverage, '')).not.toMatch(/\bbody\b|\bbodyText\b/u)
   })
   it('asks with the checks the ones the base branch requires by name, and whether each remark is a bot\'s', () => {
     expect(DETAIL_QUERY).toContain('baseRef @include(if: $checks) { rules(first: 50)')

@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { OpenRouterSpeechModels } from '../../../src/main/llm/openRouterSpeechModels'
+import { deferred } from '../../fixtures/deferred'
 
 const speechList = {
   data: [
@@ -20,6 +21,28 @@ function fetchFor(): ReturnType<typeof vi.fn<typeof fetch>> {
 }
 
 describe('OpenRouterSpeechModels', () => {
+  it('reads both response bodies before either body finishes', async () => {
+    const entered = deferred()
+    const modelBody = deferred<unknown>()
+    const models = Response.json(speechList)
+    const zdr = Response.json(zdrList)
+    vi.spyOn(models, 'json').mockImplementation(() => { entered.resolve(); return modelBody.promise })
+    const zdrJson = vi.spyOn(zdr, 'json')
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValueOnce(models).mockResolvedValueOnce(zdr)
+    const reader = new OpenRouterSpeechModels({ fetchFn })
+    const reading = reader.list()
+    await entered.promise
+    const overlap = zdrJson.mock.calls.length
+    modelBody.resolve(speechList)
+    await expect(reading).resolves.toMatchObject({ ok: true })
+    expect(overlap).toBe(1)
+  })
+
+  it('classifies a timeout without returning private error details', async () => {
+    const reader = new OpenRouterSpeechModels({ fetchFn: vi.fn<typeof fetch>().mockRejectedValue(new DOMException('private details', 'TimeoutError')) })
+    expect(await reader.list()).toEqual({ ok: false, reason: 'timeout' })
+  })
+
   it('reads both public lists without a key and ranks the speech models, best first', async () => {
     const fetchFn = fetchFor()
     const reader = new OpenRouterSpeechModels({ fetchFn })
@@ -46,8 +69,9 @@ describe('OpenRouterSpeechModels', () => {
 
   it('reads again only when asked for a fresh list or after ten minutes, and keeps the last good list when a read fails', async () => {
     let now = 0
+    const log = vi.fn()
     const fetchFn = fetchFor()
-    const reader = new OpenRouterSpeechModels({ fetchFn, now: () => now })
+    const reader = new OpenRouterSpeechModels({ fetchFn, now: () => now, log })
     await reader.list()
     await reader.list()
     expect(fetchFn).toHaveBeenCalledTimes(2)
@@ -56,11 +80,26 @@ describe('OpenRouterSpeechModels', () => {
     fetchFn.mockRejectedValue(new TypeError('offline'))
     expect((await reader.list()).ok).toBe(true)
     expect(fetchFn).toHaveBeenCalledTimes(4)
+    expect(log.mock.calls).toEqual([['openrouter-speech-models-network']])
     // A list older than ten minutes still says which models have a zero-retention host, but no longer that one has none.
     expect(reader.zeroRetention('qwen/qwen3-asr-1.7b')).toBe(true)
     expect(reader.zeroRetention('openai/gpt-transcribe')).toBeNull()
     // Sotto's own measurement that a model's zero-retention route is refused holds without any list.
     expect(new OpenRouterSpeechModels({ fetchFn }).zeroRetention('mistralai/voxtral-mini-transcribe')).toBe(false)
+  })
+
+  it.each([
+    ['http', 'http', () => Promise.resolve(new Response('private details', { status: 503 }))],
+    ['invalid-response', 'http', () => Promise.resolve(Response.json({ data: 'private malformed list' }))],
+    ['invalid-response', 'network', () => Promise.resolve(new Response('private invalid JSON'))],
+    ['network', 'network', () => Promise.reject(new TypeError('private network details'))],
+    ['timeout', 'timeout', () => Promise.reject(new DOMException('private timeout details', 'TimeoutError'))],
+  ] as const)('logs the %s speech catalog cause while preserving the %s result', async (cause, reason, fail) => {
+    const log = vi.fn()
+    const fetchFn = vi.fn<typeof fetch>(async url => String(url).includes('/endpoints/zdr') ? Response.json(zdrList) : fail())
+    const reader = new OpenRouterSpeechModels({ fetchFn, log })
+    expect(await reader.list()).toEqual({ ok: false, reason })
+    expect(log.mock.calls).toEqual([[`openrouter-speech-models-${cause}`]])
   })
 
   it('says OpenRouter could not be reached when nothing was ever read', async () => {

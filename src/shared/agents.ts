@@ -569,6 +569,10 @@ export const agentWorktreeSchema = z.object({
   /** When Sotto reclaimed this worktree's folder. The branch and the thread stay; the next send puts
    * the folder back on that branch (ADR-0041). Absent while the folder is there. */
   reclaimedAt: z.string().optional(),
+  /** The commit a reclaimed folder had checked out on no branch, a detached HEAD a cleanup rule removed because a branch
+   * or remote branch has it; the next send puts the folder back on it, detached (ADR-0041). Absent while the folder is
+   * there, and for a folder that was on a branch. */
+  detachedCommit: z.string().optional(),
   /** The worktree checks `branch` out as it stands instead of cutting a new branch from the base: a pull request
    * checked out into a worktree of its own, whose branch the first send puts in the new folder. */
   checkoutBranch: z.boolean().optional(),
@@ -613,7 +617,7 @@ export const agentThreadSchema = z.object({
   delegatedBy: id.optional(),
   /** Live swarm membership, supplied by its owner only while worker-swarms is on. */
   swarm: z.object({ id, leadThreadId: id, index: z.number().int().nonnegative().optional(), count: z.number().int().positive(),
-    synthesisDone: z.boolean().optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
+    synthesisDone: z.boolean().optional(), synthesisFailed: z.enum(['failed', 'stopped']).optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
     state: z.enum(['planned', 'queued', 'working', 'background', 'answered', 'failed', 'stopped', 'paused', 'unknown', 'refused']).optional() }).strict().optional(),
   /**
    * The thread this one continues on another provider (ADR-0089), and the threads that continue this one, newest last.

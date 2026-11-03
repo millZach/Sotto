@@ -61,7 +61,12 @@ export interface CloudIphoneSettingsProps {
 export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridgeCloudIphone(), store = cloudIphoneStore }: CloudIphoneSettingsProps): ReactNode {
   const { t } = useLingui()
   const status = useCloudStatus(store)
-  useEffect(() => { void store.loadStatus(bridge) }, [store, bridge])
+  const [readFailed, setReadFailed] = useState(false)
+  useEffect(() => {
+    let live = true
+    void store.loadStatus(bridge).then(ok => { if (live) setReadFailed(!ok) })
+    return () => { live = false }
+  }, [store, bridge])
 
   const [key, setKey] = useState('')
   const [savingKey, setSavingKey] = useState(false)
@@ -116,20 +121,21 @@ export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridg
         <input className="tt-input" inputMode="numeric" value={cap.draft} onBlur={() => void cap.commit()} onChange={event => cap.setDraft(event.target.value)} />
       </Field>
       {/* This month's minutes as a row: the words where a label goes, the meter where a control goes. */}
-      <div className="cloud-iphone-usage">
-        <p className="cloud-iphone-usage__label">{status ? t({ message: `Used in ${month}`, comment: '{month} is the name of a month, such as October.' }) : t`Used in this month`}</p>
+      {status ? <div className="cloud-iphone-usage">
+        <p className="cloud-iphone-usage__label">{t({ message: `Used in ${month}`, comment: '{month} is the name of a month, such as October.' })}</p>
         <p className="cloud-iphone-usage__text">{used}</p>
         <div className="cloud-iphone-meter" role="meter" aria-label={t`Cloud iPhone minutes used this month`} aria-valuenow={monthMinutes} aria-valuemin={0} aria-valuemax={capMinutes} aria-valuetext={used}>
           <i style={{ width: `${meterPercent}%` }} />
         </div>
-      </div>
+      </div> : null}
       <Field setting="cloud-iphone-idle" label={t`Idle sessions end after`} description={t`Minutes without any activity, 1 to 60.`} {...(idle.error === undefined ? {} : { error: shownWords(idle.error) })}>
         <input className="tt-input" inputMode="numeric" value={idle.draft} onBlur={() => void idle.commit()} onChange={event => idle.setDraft(event.target.value)} />
       </Field>
     </SettingsGroup>
 
     <SettingsGroup title={t`Recent sessions`} icon={History}>
-      {status && status.recent.length > 0
+      {status === null ? <p className="cloud-iphone-recent__empty tt-paragraph" role={readFailed ? 'alert' : 'status'}>{readFailed
+        ? t`Cloud iPhone status could not be read. Reopen Settings and try again.` : t`Reading Cloud iPhone status…`}</p> : status.recent.length > 0
         ? <ul className="cloud-iphone-recent">{status.recent.map(item => { const minutes = item.minutes, sessionMinutes = shownCount(minutes); return <li key={`${item.threadId}-${item.startedAt}`}>
           <span>{item.threadTitle}</span><span>{dateWords(item.startedAt)}</span><span>{plural(minutes, { other: `${sessionMinutes} min` })}</span></li> })}</ul>
         : <p className="cloud-iphone-recent__empty tt-paragraph"><Trans>No sessions yet.</Trans></p>}

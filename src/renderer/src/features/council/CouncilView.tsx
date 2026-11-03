@@ -1,11 +1,12 @@
-import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
-import { PROVIDER_LABELS, type AgentModel } from '../../../../shared/agents'
+import { PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentThread } from '../../../../shared/agents'
 import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, DEFAULT_COUNCIL_LAYOUT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
   type CouncilLayout, type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ModelPicker } from '../../agents/ModelPicker'
+import { ProviderMark } from '../../agents/ProviderMark'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
 import { useOptionalApp } from '../../state/AppContext'
 import { ChoiceMenu } from '../usage/UsageMenu'
@@ -68,6 +69,7 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
       <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
       <div className="council-scroll"><div className="council-page">
         {bridge ? <AskForm bridge={bridge} origin={draft?.originThread} panel={seatsPanel} onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
+        {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
         {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
         <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
       </div></div>
@@ -87,6 +89,50 @@ export function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentMode
   return useMemo(() => seats, [seatsKey])
 }
 
+/**
+ * The thread a Council question comes from: the thread the user was on when they opened the Council, shown as one line.
+ * Change opens a list grouped by project, as the sidebar groups threads, that typing narrows by title or project.
+ */
+function OriginPicker({ threads, projects, chosen, onChoose }: { readonly threads: readonly AgentThread[]; readonly projects: readonly AgentProject[]
+  readonly chosen: string; readonly onChoose: (id: string) => void }): ReactNode {
+  const { t } = useLingui()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const change = useRef<HTMLButtonElement>(null)
+  const listId = useId(), labelId = useId()
+  const projectTitle = (thread: AgentThread): string => projects.find(project => project.id === thread.projectId)?.title ?? ''
+  const thread = threads.find(item => item.id === chosen)
+  const close = (): void => { setOpen(false); setQuery(''); change.current?.focus() }
+  const words = query.trim().toLocaleLowerCase()
+  const hits = threads.filter(item => !words || `${item.title} ${projectTitle(item)}`.toLocaleLowerCase().includes(words))
+  const groups = [...new Set(hits.map(item => item.projectId))]
+  const choose = (id: string): void => { onChoose(id); close() }
+  return <div className="council-field">
+    <span id={labelId}>{t({ message: 'From', comment: 'The thread a Council question comes from' })}</span>
+    <div className="council-origin">
+      {thread ? <><ProviderMark provider={thread.providerId} name={thread.title} size={14} />
+        <span className="council-origin__title">{thread.title}</span>
+        <span className="council-origin__project">{projectTitle(thread)}</span></>
+        : <span className="council-origin__title">{t`No open thread on this computer`}</span>}
+      {threads.length > 1 ? <button ref={change} type="button" className="council-origin__change tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
+        onClick={() => open ? close() : setOpen(true)}>{open ? t({ message: 'Done', comment: 'Closes the list of threads a Council question can come from' }) : t({ message: 'Change', comment: 'Opens the list of threads a Council question can come from' })}</button> : null}
+    </div>
+    {open && threads.length > 1 ? <div id={listId} className="council-origin__list" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
+      <input className="tt-input tt-focusable council-origin__search" autoFocus value={query} aria-label={t`Find a thread`} placeholder={t`Find a thread`}
+        onChange={event => setQuery(event.currentTarget.value)}
+        onKeyDown={event => { if (event.key === 'Enter' && hits[0]) { event.preventDefault(); choose(hits[0].id) } }} />
+      <div className="council-origin__rows">
+        {hits.length === 0 ? <p className="council-origin__empty tt-paragraph">{t`No thread matches.`}</p> : groups.map(group => { const items = hits.filter(item => item.projectId === group), title = projectTitle(items[0]!); return <div key={group} role="group" aria-label={title || undefined}>
+          {title ? <p className="council-origin__group">{title}</p> : null}
+          {items.map(item => <button key={item.id} type="button" className="council-origin__row tt-focusable"
+            aria-current={item.id === chosen || undefined} onClick={() => choose(item.id)}>
+            <ProviderMark provider={item.providerId} name={item.title} size={14} /><span className="council-origin__title">{item.title}</span></button>)}
+        </div> })}
+      </div>
+    </div> : null}
+  </div>
+}
+
 function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly origin: string | undefined; readonly panel: CouncilPanel
   readonly onPanel: (panel: CouncilPanel | null) => void; readonly question: string; readonly onQuestion: (question: string) => void }): ReactNode {
   const { t, i18n } = useLingui()
@@ -94,7 +140,7 @@ function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: se
   const agents = useOptionalAgents()
   const state = agents?.state
   const settings = app?.settings
-  const questionId = useId(), originId = useId(), estimateId = useId()
+  const questionId = useId(), estimateId = useId()
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   const local = state?.connections?.find(connection => connection.kind === 'local')?.hostId
   const threads = useMemo(() => (state?.host.threads ?? []).filter(thread => councilAskable(thread, local))
@@ -103,7 +149,7 @@ function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: se
   const [estimate, setEstimate] = useState<CouncilEstimate | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const shownOrigin = (origin && threads.some(thread => thread.id === origin) ? origin : '') || (threads.some(thread => thread.id === state?.activeThreadId) ? state!.activeThreadId! : threads[0]?.id ?? '')
+  const shownOrigin = threads.some(thread => thread.id === origin) ? origin : (threads.some(thread => thread.id === state?.activeThreadId) ? state!.activeThreadId! : threads[0]?.id ?? '')
   useEffect(() => {
     setEstimate(null)
     if (!shownOrigin) return
@@ -111,7 +157,7 @@ function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: se
     void bridge.estimate({ originThread: shownOrigin }).then(read => { if (live) setEstimate(read) }, () => undefined)
     return () => { live = false }
   }, [bridge, shownOrigin])
-  if (!state || !settings) return <p className="council-notice tt-paragraph">{t`Preparing the Council…`}</p>
+  if (!state || !settings) return <p className="council-notice tt-paragraph" role={agents?.error ? 'alert' : 'status'}>{agents?.error ?? t`Preparing the Council…`}</p>
   const seats = councilSeatsInForce(seatsPanel.panelists, seatsPanel.chair, catalog)
   const ready = councilSeatsReady(seats)
   const providers = [...new Set([...seats.panelists, seats.chair].flatMap(seat => seat?.provider ? [PROVIDER_LABELS[seat.provider]] : []))]
@@ -140,13 +186,7 @@ function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: se
   }
   return <section className="council-ask" aria-labelledby={questionId}>
     <h2 id={questionId} className="tt-visually-hidden">{t`Ask the Council`}</h2>
-    <div className="council-ask__row">
-      <label className="council-field" htmlFor={originId}><span>{t({ message: 'Thread', comment: 'The thread a Council question comes from' })}</span>
-        <select id={originId} className="tt-input tt-focusable" value={shownOrigin} onChange={event => setOrigin(event.currentTarget.value)} disabled={threads.length === 0}>
-          {threads.length === 0 ? <option value="">{t`No open thread on this computer`}</option> : threads.map(thread => <option key={thread.id} value={thread.id}>{thread.title}</option>)}
-        </select>
-      </label>
-    </div>
+    <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={setOrigin} />
     <label className="council-field"><span>{t({ message: 'Question', comment: 'The question put to the Council' })}</span>
       <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={3} aria-describedby={estimateId}
         onChange={event => setQuestion(event.currentTarget.value)}

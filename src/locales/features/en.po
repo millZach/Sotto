@@ -1399,6 +1399,8 @@ msgstr "Carried {carried}."
 msgid "Chair"
 msgstr "Chair"
 
+#. Opens the list of threads a Council question can come from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Change"
 msgstr "Change"
@@ -1881,6 +1883,10 @@ msgstr "Could not download update"
 msgid "Could not install update"
 msgstr "Could not install update"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+msgstr "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Could not reach OpenRouter."
 msgstr "Could not reach OpenRouter."
@@ -2122,6 +2128,7 @@ msgid "done"
 msgstr "done"
 
 #. An Omarchy setup piece that is set up
+#. Closes the list of threads a Council question can come from
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
@@ -2311,6 +2318,10 @@ msgid "Filter threads"
 msgstr "Filter threads"
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Find a thread"
+msgstr "Find a thread"
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Findings: {found}."
 msgstr "Findings: {found}."
 
@@ -2384,6 +2395,8 @@ msgstr "freezes over 100 ms"
 msgid "French"
 msgstr "French"
 
+#. The thread a Council question comes from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "From"
 msgstr "From"
@@ -3594,6 +3607,10 @@ msgstr "No thread can move to {named} now"
 msgid "No thread matches “{typed}”."
 msgstr "No thread matches “{typed}”."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No thread matches."
+msgstr "No thread matches."
+
 #: src/renderer/src/features/usage/UsageCharts.tsx
 msgid "No token counts in this range"
 msgstr "No token counts in this range"
@@ -4528,6 +4545,10 @@ msgstr "reading the conversation"
 msgid "Reading the conversation"
 msgstr "Reading the conversation"
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Reading the Councils…"
+msgstr "Reading the Councils…"
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "reading the other answers"
 msgstr "reading the other answers"
@@ -5367,6 +5388,10 @@ msgstr "Sotto could not read the saved OpenRouter key. Nothing was deleted. Quit
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 msgstr "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read the threads. Reopen the popup and try again."
+msgstr "Sotto could not read the threads. Reopen the popup and try again."
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
 msgstr "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
@@ -5374,6 +5399,10 @@ msgstr "Sotto could not read this computer’s load just now. Watcher treats it 
 #: src/renderer/src/watcher/watcherRoom.tsx
 msgid "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
 msgstr "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read Watcher’s room. Reopen the popup and try again."
+msgstr "Sotto could not read Watcher’s room. Reopen the popup and try again."
 
 #: src/renderer/src/features/onboarding/ComputersStep.tsx
 msgid "Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones."
@@ -6321,8 +6350,6 @@ msgstr "This Watcher is new, so there is nothing to hand over yet."
 msgid "This work wasn't matched to a model."
 msgstr "This work wasn't matched to a model."
 
-#. The thread a Council question comes from
-#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr "Thread"
