@@ -20,7 +20,7 @@ A full reply box is a card about 88 points tall, and on a phone it covers what t
 
 **5. Nothing else moves.** The two sizes are the same views, with nothing laid out again: the card keeps its full room, the words are offset into the row, and the top edge comes down. So the dock's height stays what it was, and with it the conversation's inset and scroll position, the page's following and whatever stands over the box. At the very end of a thread that leaves about 38 points of open room above the small box. The foot of the box and the row's buttons stay where they stood, so a press never lands on something that moved (the user's rule on the desktop, October 24, 2026: "no movement other than the shrink of the composer").
 
-**6. Motion.** 0.2 seconds, as ADR-0125. The pill leaves before the words reach it and comes back after they have gone. With Reduce Motion it changes at once.
+**6. Motion.** 0.2 seconds, as ADR-0125, on the box's own animation rather than the keyboard's: tied to the change in size, the words and the top edge jumped on the way up and kept the keyboard's curve on the way down (recordings, November 2, 2026). The pill leaves before the words reach it and comes back after they have gone. With Reduce Motion it changes at once.
 
 **7. The light.** No edge in any state, as the box has always had. At the top effort the same light goes round the small box: line and glow, one lap every nine seconds (ADR-0019). It follows the top edge as it moves.
 

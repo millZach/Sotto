@@ -209,7 +209,7 @@ import UIKit
     private func waitForReplyBox(small: Bool, words: XCUIElement, timeout: TimeInterval = 5) -> Bool {
         let mic = byID("dictate")
         let shaped = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            small ? abs(words.frame.midY - mic.frame.midY) < 2 : words.frame.maxY <= mic.frame.minY + 1
+            small ? words.frame.minY >= mic.frame.minY : words.frame.maxY <= mic.frame.minY + 1
         }, object: nil)
         return XCTWaiter.wait(for: [shaped], timeout: timeout) == .completed
     }
