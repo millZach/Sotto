@@ -32,7 +32,6 @@
   font-size: var(--tt-type-caption);
   text-decoration: underline;
   text-underline-offset: 2px;
-  cursor: pointer;
 }
 .product-events-link:hover { color: var(--tt-text); }
 
