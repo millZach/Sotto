@@ -29,6 +29,7 @@ import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
+import type { TellWatcherAnswer, TellWatcherAsk } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -72,6 +73,8 @@ export interface ClientIdentity {
   readonly user: string
   readonly transport: 'ipc' | 'socket'
   readonly selectedThreadId?: string | null
+  /** A client whose threads are its own business, such as the popup (ADR-0181): a thread it starts is not opened in the window. */
+  readonly keepsSelection?: true
 }
 
 /**
@@ -182,6 +185,11 @@ export interface HostService {
   nextPrompts?(): readonly NextPromptEntry[]
   subscribeNextPrompts?(listener: (entry: NextPromptEntry) => void): () => void
   setNextPromptsWanted?(wanted: boolean): void
+  /** The host's threads reach this desktop's Watcher (`watcher-tell`): each message they send it, and the answer that says it got through. */
+  subscribeWatcherTell?(listener: (askId: string, ask: TellWatcherAsk) => void): () => void
+  answerWatcherTell?(askId: string, answer: TellWatcherAnswer): Promise<void>
+  /** Tells a remote host this desktop's latest answer for its product events (ADR-0179), and keeps trying until it has it. */
+  tellProductEventAnswer?(): void
   /**
    * The host's threads delegate to other machines through this desktop (`delegation-relay`, #1316), on a desktop's
    * connection to a host whose hello it accepted: `subscribeDelegationRelay` hears each ask the host pushes,
@@ -338,6 +346,13 @@ export function localUser(): string {
 
 export function desktopWindowClient(user: string = localUser()): ClientIdentity {
   return { clientId: DESKTOP_WINDOW_CLIENT_ID, user, transport: 'ipc' }
+}
+
+/** The popup's window (ADR-0181): this computer's user over IPC like the main window, with threads it observes of its own. */
+export const DESKTOP_POPUP_CLIENT_ID = 'desktop-popup'
+
+export function desktopPopupClient(user: string = localUser()): ClientIdentity {
+  return { clientId: DESKTOP_POPUP_CLIENT_ID, user, transport: 'ipc', keepsSelection: true }
 }
 
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */

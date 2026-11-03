@@ -1,12 +1,12 @@
 import { msg } from '@lingui/core/macro'
 
 import { hostEntityKey, parseHostEntityKey, projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
-import { defaultNewThreadModelId, hostForThread, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { defaultNewThreadModelId, hostForThread, type AgentCommand, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import type { AppSettings } from '../../../shared/settings'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { modelInForce } from '../../../shared/modelLineup'
 import { hostNewThreadPermission, nearestReasoningEffort } from '../../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
-import type { AgentConnection } from './AgentContext'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
 import type { LaterWords } from './interfaceWords'
 import { pendingSettingsStore, threadSpeed, unconfirmedKinds } from './pendingSettings'
@@ -42,9 +42,10 @@ export const WORKING_COPY_READ_ERROR = msg`Could not read your working-copy defa
  * A project's saved working-copy default, read fresh for each creation; rejects when Settings cannot say,
  * so a thread is never opened in a working copy the user did not choose.
  */
-export async function projectWorkingCopy(state: AgentState, project: AgentProject): Promise<'independent' | 'shared'> {
-  if (!window.sotto?.getSettings) return 'shared'
-  const settings = await window.sotto.getSettings()
+export async function projectWorkingCopy(state: AgentState, project: AgentProject,
+  readSettings: (() => Promise<AppSettings>) | undefined = window.sotto?.getSettings): Promise<'independent' | 'shared'> {
+  if (!readSettings) return 'shared'
+  const settings = await readSettings()
   return settings.projectThreadWorkingCopyDefaults[projectWorkingCopyDefaultKey(state, project.id)] || settings.threadWorkingCopyDefault
 }
 
@@ -136,11 +137,13 @@ function newThreadOptions(state: AgentState, project: AgentProject) { return new
  * mints the thread's ID here so the caller can show it before main answers; a refusal resolves `created`
  * with the reason. The draft uses the same option helpers as main, so its chips show the defaults immediately.
  */
-export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject): Promise<ThreadCreationStart | { readonly error: LaterWords }> {
+export async function beginNewThread(state: AgentState, command: (command: AgentCommand) => Promise<{ readonly error: string | null } | null>, project: AgentProject,
+  /** Settings for the working-copy default; the popup, which has no `window.sotto`, passes its own reader (ADR-0181). */
+  readSettings?: () => Promise<AppSettings>): Promise<ThreadCreationStart | { readonly error: LaterWords }> {
   const { modelId, selectedModel, sentEffort, reasoningEffort, permission } = newThreadOptions(state, project)
   if (!modelId) return { error: msg`No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.` }
   let workingCopy: 'independent' | 'shared'
-  try { workingCopy = await projectWorkingCopy(state, project) }
+  try { workingCopy = await projectWorkingCopy(state, project, readSettings ?? window.sotto?.getSettings) }
   catch { return { error: WORKING_COPY_READ_ERROR } }
   const worktreeChoices = workingCopy === 'independent' ? { startFromOrigin: true } : {}
   const threadId = hostEntityKey(projectHostId(state, project), crypto.randomUUID())

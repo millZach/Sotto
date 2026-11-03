@@ -474,8 +474,8 @@ extension AppModel {
                 switch reply {
                 case .ok(let state):
                     applyWatcher(state, from: hostID)
-                    // Only this answer's own receipt says it reached the thread.
-                    await checkDelivery(hostID)
+                    // Only this answer's own receipt says it reached the thread, and reading it costs a few bytes.
+                    await readReceipts(hostID)
                 case .refused(let refusal):
                     try rejectOperation(operation)
                     feedback = refusal.message
@@ -519,7 +519,7 @@ extension AppModel {
         } catch let refusal as HostRefusal {
             feedback = refusal.localizedDescription
         } catch {
-            feedback = String(localized: "Stop all couldn’t be checked on \(name(hostID)). Nothing was stopped. Try again.", comment: "Stop all is the name of a button. %@ is the computer's name")
+            feedback = String(localized: "\(name(hostID)) couldn’t say which threads Watcher started. Nothing was stopped. Try again.", comment: "%@ is the computer's name")
         }
         return nil
     }
@@ -558,7 +558,7 @@ extension AppModel {
             await recoverWatcherStop(hostID)
         }
     }
-    static let watcherStopUnconfirmed = String(localized: "Stop all isn’t confirmed. Check Watched before you stop anything again.", comment: "Stop all is the name of a button; Watched is the name of a section of the Watcher tab")
+    static let watcherStopUnconfirmed = String(localized: "Stopping Watcher’s threads isn’t confirmed. Check Threads before you stop anything again.", comment: "Threads is the name of the tab that lists the user's threads")
     /// Reads what a Stop all whose acknowledgement was lost did, from the receipt its computer keeps under the request's
     /// ID, then reads Watcher's page again. Still being carried out, or not read, it is kept and read again once the
     /// computer is reached again. Nothing is stopped again.
@@ -693,14 +693,6 @@ extension AppModel {
               let summary = watcherSummary(host) else { return nil }
         guard offersWatcherManage(host), summary.standing.contains(ref.id) else { return WatchedWords.takeover }
         return summary.paused.contains(ref.id) ? WatchedWords.paused : nil
-    }
-    /// The threads this iPhone lists that Watcher could be given to watch, in the order Threads shows them: not settled,
-    /// not watched, on computers reached now, and never a Watcher's own thread.
-    var watchableThreads: [HostedThread] {
-        let groups = focusThreads()
-        return (groups.questions + groups.working + groups.recent).filter { row in
-            row.reachable && !watchedByWatcher(row.ref) && watchHost(for: row.ref) != nil
-        }
     }
     /// Watches the thread, or stops watching it, through the computer that runs Watcher. It asks nothing first; what it
     /// did is said with Undo for a few seconds. Watching lasts until the user stops it, with no limit on how many. A
@@ -1729,31 +1721,8 @@ struct RailAsk: Equatable {
             if arguments.contains("--ui-watcher-turn"), var current = page["current"] as? [String: Any] {
                 current["status"] = "running"; page["current"] = current; page["newWatcher"] = "busy"
             }
-            // With --ui-watcher-nothing-waits, no card waits on the user, so the bar slides as the user reads (#1288).
+            // With --ui-watcher-nothing-waits, no card waits on the user, so the page ends on Watcher's working line.
             if arguments.contains("--ui-watcher-nothing-waits") { page["needsYou"] = [[String: Any]]() }
-            // With --ui-watcher-queued-below, ten of the user's follow-ups wait in Watcher's queue at the page's end, so
-            // the conversation has page enough to read down on the largest iPhone with no card waiting, or once one is
-            // answered, and the bar has a page to slide away from (#1278).
-            if arguments.contains("--ui-watcher-queued-below") {
-                page["followups"] = (1...10).map { n -> [String: Any] in
-                    ["itemId": "queued-\(n)", "draftId": "queued-draft-\(n)", "text": "Look at #845’s checks again, \(n) of 10",
-                     "status": "queued"]
-                }
-            }
-            // With --ui-watcher-many-watched, Watcher watches six more of the fixture's threads, so Watched is taller than
-            // the largest iPhone's screen and the bar has a page to slide away from there too (#1278).
-            if arguments.contains("--ui-watcher-many-watched") {
-                let more: [(String, String, String, String)] = [
-                    (laptop, "release", "Choose the release target", "claude"), (laptop, "iphone", "Refine the iPhone thread view", "codex"),
-                    (laptop, "wiring", "Clean up the wiring schedule", "claude"), (laptop, "drives", "Compare motor drive options", "codex"),
-                    (studio, "lighting", "Update the lighting plan", "codex"), (laptop, "settings", "Simplify the settings screen", "codex")
-                ]
-                let rows = more.map { host, id, title, provider -> [String: Any] in
-                    ["target": ["hostId": host, "threadId": id], "title": title, "provider": provider, "status": "running",
-                     "connected": true, "watched": true, "takenOver": false, "backgroundWorkCount": 0]
-                }
-                page["watchedThreads"] = (page["watchedThreads"] as? [[String: Any]] ?? []) + rows
-            }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
             if keepsWriting { keepFixtureWatcherWriting(on: laptop, then: waiting) }
@@ -3781,7 +3750,8 @@ struct RailAsk: Equatable {
             guard generations[hostID] == current else { return nil }
             let next = result.value
             try applyShell(next, from: hostID, sequence: result.sequence, reconcileAnswers: false)
-            await checkDelivery(hostID)
+            // This reply is the shell after the command, so the receipt is all that is left to read.
+            await readReceipts(hostID)
             guard generations[hostID] == current else { return nil }
             if let error = next.error {
                 if operation.kind.hasPrefix("create-") { creationFeedback = error }
@@ -3838,16 +3808,23 @@ struct RailAsk: Equatable {
         receiptFollowers[id] = ReceiptFollower(token: token, generation: generation)
         return token
     }
-    func checkDelivery(_ hostID: String) async {
+    /// Reads the computer's state, then the receipt of everything still on its way there: after a reconnect, or when
+    /// the user asks to check again.
+    func checkDelivery(_ hostID: String) async { await readDelivery(hostID, readingShell: true) }
+    /// Reads receipts only, right after an answer. A shell read would send this iPhone the whole shell again on the one
+    /// socket every other message waits behind, for what the answer just told it or the next push will.
+    private func readReceipts(_ hostID: String) async { await readDelivery(hostID, readingShell: false) }
+    private func readDelivery(_ hostID: String, readingShell: Bool) async {
         guard online(hostID), !scoped(hostID).isEmpty, let connection = connections[hostID] else { return }
         let current = generations[hostID]
         deliveryChecks[hostID, default: 0] += 1
         defer { deliveryChecks[hostID, default: 0] -= 1 }
         do {
-            let fresh = try await connection.callReceived(["op": .string("shell")], as: Shell.self)
-            guard generations[hostID] == current else { return }
-            let next = fresh.value
-            try applyShell(next, from: hostID, sequence: fresh.sequence, reconcileAnswers: false)
+            if readingShell {
+                let fresh = try await connection.callReceived(["op": .string("shell")], as: Shell.self)
+                guard generations[hostID] == current else { return }
+                try applyShell(fresh.value, from: hostID, sequence: fresh.sequence, reconcileAnswers: false)
+            }
             for item in scoped(hostID) {
                 let receipt = try await connection.call(["op": .string("receipt"), "commandId": .string(item.id)], as: Receipt.self)
                 guard generations[hostID] == current else { return }

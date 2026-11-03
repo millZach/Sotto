@@ -137,6 +137,48 @@ describe('one question per repository', () => {
   })
 })
 
+describe('a merge another read saw (#2019)', () => {
+  const folder = 'C:/fixture/worktrees/thread-1'
+  const url = (number: number) => `https://github.com/sotto-fixture/owned/pull/${number}`
+
+  it('reads merged from then on with no question to GitHub, and another pull request stays as it was', async () => {
+    const h = harness({ ...worktrees(2) }, args => headsAnswer(args, [{ head: 'feature/thread-1', number: 1 }, { head: 'feature/thread-2', number: 2 }]))
+    expect((await h.round(folder)).pullRequest?.state).toBe('open')
+    await h.round('C:/fixture/worktrees/thread-2')
+    const asked = h.graphql()
+    h.reader.notePullRequestEnded(url(1), 'merged')
+    expect((await h.reader.read(folder, { remote: false, fresh: true })).pullRequest?.state).toBe('merged')
+    expect((await h.reader.read('C:/fixture/worktrees/thread-2', { remote: false, fresh: true })).pullRequest?.state).toBe('open')
+    expect(h.graphql()).toBe(asked)
+  })
+
+  it('keeps the merge when an answer asked before it lands after it', async () => {
+    const late = deferred()
+    let held = false
+    const h = harness({ ...worktrees(1) }, args => {
+      const open = headsAnswer(args, [{ head: 'feature/thread-1', number: 1 }])
+      return held ? late.promise.then(() => open) : open
+    })
+    await h.round(folder)
+    held = true
+    h.advance(60_000)
+    const asking = h.reader.readRemote(folder)
+    await vi.waitFor(() => expect(h.graphql()).toBe(2))
+    h.reader.notePullRequestEnded(url(1), 'merged')
+    late.resolve()
+    await asking
+    expect((await h.reader.read(folder, { remote: false, fresh: true })).pullRequest?.state).toBe('merged')
+  })
+
+  it('never moves a merged answer to closed', async () => {
+    const h = harness({ ...worktrees(1) }, args => headsAnswer(args, [{ head: 'feature/thread-1', number: 1 }]))
+    await h.round(folder)
+    h.reader.notePullRequestEnded(url(1), 'merged')
+    h.reader.notePullRequestEnded(url(1), 'closed')
+    expect((await h.reader.read(folder, { remote: false, fresh: true })).pullRequest?.state).toBe('merged')
+  })
+})
+
 describe('the head repository matches', () => {
   it('does not take a fork\'s pull request with the same head name for the branch\'s own', async () => {
     const f = harness({

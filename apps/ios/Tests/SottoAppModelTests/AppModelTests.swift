@@ -634,6 +634,24 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(connection.operations.filter { $0 == "command" }.count, 1)
         XCTAssertEqual(connection.operations.filter { $0 == "receipt" }.count, 1)
     }
+    /// The reply to a command is the shell after it. A second read sent the whole shell again, megabytes on a computer
+    /// with many threads, on the one socket every other message waits behind (November 2, 2026).
+    @MainActor func testAnAnswerReadsItsReceiptWithoutTheWholeShellAgain() async throws {
+        let (model, ref) = try fixture()
+        HostConnection.mayAnswer = true
+        _ = try changeShell(requests: [["id": "request", "kind": "permission", "text": "Read files?", "options": []]])
+        model.phase(.active); await model.waitForActivation()
+        let request = try XCTUnwrap(model.thread(ref)?.requests.first)
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        HostConnection.receipt = .object(["status": .string("completed"), "answerDelivered": .bool(true)])
+        await model.answer(request, in: ref, choice: "allow")
+        XCTAssertEqual(connection.operations.filter { $0 == "command" }.count, 1)
+        XCTAssertEqual(connection.operations.filter { $0 == "receipt" }.count, 1, "Its own receipt still confirms the answer")
+        XCTAssertEqual(connection.operations.filter { $0 == "shell" }.count, 0, "The reply already was the shell")
+        XCTAssertTrue(model.pending.isEmpty)
+        XCTAssertEqual(model.feedback, "Answer sent.")
+        model.phase(.background)
+    }
     @MainActor func testReconnectReceiptCheckSurvivesANewerDisappearancePush() async throws {
         let (_, ref) = try fixture()
         let marker = PendingOperation(hostID: ref.hostID, clientID: "phone", threadID: ref.threadID, requestID: "request", kind: "answer")

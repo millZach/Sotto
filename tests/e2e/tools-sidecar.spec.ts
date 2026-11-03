@@ -229,8 +229,8 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await openThreads(page)
     await page.evaluate(() => document.fonts.ready)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    // Tools is a row of the pane's ··· menu (ADR-0163); the ··· button is where the panel hands focus back.
-    const toggle = page.locator('[data-opens="tools"]')
+    // Tools is a symbol in the pane's header (ADR-0182), where the panel hands focus back.
+    const toggle = page.locator('.thread-pane[data-focused] .tools-toggle')
     await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const sheet = panel.locator('.tools-panel__sheet')

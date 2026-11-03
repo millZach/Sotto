@@ -411,6 +411,8 @@ export interface SottoBridge {
   readonly nextPrompt?: import('./nextPrompt').NextPromptBridge
   /** The Council (ADR-0177), present only while the `council` Owl feature is on and this computer runs threads. */
   readonly council?: import('./council').CouncilBridge
+  /** The popup's shortcut for Settings, and what `/open` asks the window to show (ADR-0181): only while the `popup` Owl feature is on. */
+  readonly popup?: import('./popup').PopupShortcutBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
   /** Signing Cursor in and out on this computer (ADR-0128), present only while Cursor's Owl feature is on. */
@@ -434,6 +436,8 @@ export interface SottoBridge {
   readonly watcher?: import('./watcherRoom').WatcherBridge
   readonly hosts?: import('./hosts').HostsBridge
   readonly phones?: import('./phones').PhonesBridge
+  /** Let apps on this computer connect (ADR-0180); main answers it only while the `local-apps` Owl feature is on. */
+  readonly localApps?: import('./localApps').LocalAppsBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
   readonly terminal?: import('./terminal').TerminalBridge
   readonly browser?: import('./browser').BrowserBridge
@@ -572,6 +576,8 @@ declare global {
   interface Window {
     sotto?: SottoBridge
     sottoWidget?: SottoWidgetBridge
+    /** The popup's window alone (ADR-0181). */
+    sottoPopup?: import('./popup').PopupBridge
     /** Present only when the non-packaged main process admits SOTTO_E2E. */
     sottoE2E?: SottoE2EBridge
     /**

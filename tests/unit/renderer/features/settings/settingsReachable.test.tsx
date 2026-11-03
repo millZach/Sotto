@@ -15,6 +15,7 @@ import {
 import type { NotificationsBridge } from '../../../../../src/shared/desktopNotifications'
 import type { MainActivityBridge, MainActivityState } from '../../../../../src/shared/mainActivity'
 import type { OwnServersBridge } from '../../../../../src/shared/ownModelServers'
+import type { PopupShortcutBridge } from '../../../../../src/shared/popup'
 import type { SottoPlatform } from '../../../../../src/shared/platform'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 
@@ -34,7 +35,10 @@ function withMain(): void {
   const notifications: NotificationsBridge = { test: vi.fn(async () => 'shown' as const), onOpened: () => () => undefined }
   // Your own model servers, with none saved: the group shows only with its bridge (ADR-0124).
   const ownServers: OwnServersBridge = { list: vi.fn(async () => []), check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
-  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers })
+  // The popup's shortcut row (ADR-0181) shows only with its bridge.
+  const popup: PopupShortcutBridge = { state: vi.fn(async () => ({ status: 'on' as const, chord: 'Alt+Shift+Space' })), onState: () => () => undefined,
+    replace: vi.fn(async () => ({ ok: true as const })), onOpened: () => () => undefined }
+  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers, popup })
 }
 
 function withAgents(): void {

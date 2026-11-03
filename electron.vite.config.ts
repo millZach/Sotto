@@ -156,6 +156,8 @@ export default defineConfig({
         input: {
           main: resolve(__dirname, 'src/renderer/index.html'),
           widget: resolve(__dirname, 'src/renderer/widget.html'),
+          // The popup (ADR-0181): its own window and page, made only while the Owl feature is on.
+          popup: resolve(__dirname, 'src/renderer/popup.html'),
         },
       },
     },
