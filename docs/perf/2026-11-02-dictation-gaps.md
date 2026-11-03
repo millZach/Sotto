@@ -292,6 +292,90 @@ Before C, five additional warm recordings in the unchanged B app temporarily dis
 
 This small comparison supports the inference that fresh start-cue setup blocks receipt of capture chunks in the renderer: removing cues reduces the source-to-first-chunk interval by roughly 35 ms at both percentiles, without a corresponding Listening improvement. It does not prove a particular Chromium output-cache mechanism or late hardware capture. C will retain the cue and measure its implementation with a full cold/warm batch.
 
+## C: prepare cues and play alongside capture
+
+Source: `1b3a3a50d2c5ddec7ae78b1c490fffb3c7b57f8a`, local Owl `0.1.43-owl.20261103.8004`. The enabled controller prepares a separate suspended cue AudioContext alongside capture and model preparation. A press starts the recorder and cue without awaiting cue playback. The widget publication already runs independently of capture. Cue completion follows both oscillators ending, replacing the fixed 80 ms timer. The cue context suspends after the last overlapping play; failed or closed contexts are retired and rebuilt on the next play. Turning dictation off prepares none of it. No microphone stays open between recordings.
+
+The same ten cold and twenty warm recordings completed with Sound cues on, cleanup off and paste delay 150 ms. Independent TextEdit accessibility readback found 126 matches of each expected clause: the previous 96 plus all 30 C deliveries. No target text was saved. All required marks were present, with no permission-waiting mark. [Cold evidence](2026-11-02-dictation-gaps/c-cold.jsonl), [warm evidence](2026-11-02-dictation-gaps/c-warm.jsonl).
+
+| Measured interval | Cold (10), p50 / p95 ms | Warm (20), p50 / p95 ms |
+| --- | ---: | ---: |
+| `hotkeyToListeningCommittedMs` | 102.905 / 127.057 | 96.975 / 116.739 |
+| `hotkeyToListeningShownMs` | 111.805 / 142.057 | 108.016 / 128.339 |
+| `hotkeyToFirstAudioChunkMs` | 109.756 / 122.530 | 107.862 / 121.789 |
+| `microphoneRequestMs` | 82.700 / 97.601 | 64.200 / 82.400 |
+| `stopToRecorderStoppedMs` | 22.677 / 81.833 | 12.492 / 15.482 |
+| `stopToLastSegmentMs` | 143.383 / 195.050 | 89.731 / 97.744 |
+| `stopToPasteKeystrokeMs` | 433.928 / 742.877 | 376.046 / 406.755 |
+| `stopToDeliveryReturnedMs` | 583.783 / 892.591 | 527.448 / 556.876 |
+| `deliveryMs` | 443.000 / 718.800 | 436.800 / 463.300 |
+| `historyMs` | 11.300 / 14.800 | 10.800 / 13.400 |
+| `speechDurationMs` | 3623.000 / 3944.000 | 3485.000 / 3508.000 |
+| `captureDurationMs` | 5074.000 / 5107.000 | 5071.000 / 5105.000 |
+
+### C stage work
+
+| Measured interval | Cold (10), p50 / p95 ms | Warm (20), p50 / p95 ms |
+| --- | ---: | ---: |
+| `commandDeliveryMs` | 0.280 / 0.418 | 0.229 / 0.530 |
+| `widgetShowMs` | 0.076 / 1.886 | 0.078 / 5.681 |
+| `audioContextMs` | 14.100 / 20.200 | 28.900 / 42.300 |
+| `workletLoadMs` | 0.000 / 0.200 | 0.000 / 0.100 |
+| `microphoneRequestMs` | 82.700 / 97.601 | 64.200 / 82.400 |
+| `sourceConnectMs` | 0.000 / 0.200 | 0.000 / 0.100 |
+| `startCueMs` | 113.300 / 130.900 | 125.500 / 146.500 |
+| `recorderStopMs` | 22.100 / 81.300 | 12.099 / 14.900 |
+| `transcriptionRequestMs` | 94.100 / 150.200 | 77.400 / 84.600 |
+| `deliveryMs` | 443.000 / 718.800 | 436.800 / 463.300 |
+| `focusedAppMs` | 12.091 / 14.226 | 10.825 / 11.866 |
+| `clipboardWriteMs` | 0.999 / 1.385 | 0.300 / 0.349 |
+| `widgetHideMs` | 0.330 / 0.382 | 0.665 / 2.764 |
+| `pasteDelayMs` | 149.497 / 150.438 | 150.663 / 151.570 |
+| `pasteKeystrokeMs` | 125.286 / 402.512 | 120.280 / 146.624 |
+| `pasteSettleMs` | 149.596 / 150.075 | 151.058 / 151.885 |
+| `historyMs` | 11.300 / 14.800 | 10.800 / 13.400 |
+
+### C handoffs
+
+| Measured interval | Cold (10), p50 / p95 ms | Warm (20), p50 / p95 ms |
+| --- | ---: | ---: |
+| `hotkeyToCommandMs` | 0.118 / 0.130 | 0.048 / 0.086 |
+| `commandToRecorderMs` | 0.600 / 0.801 | 0.300 / 0.600 |
+| `recorderToAudioContextMs` | 0.000 / 0.000 | 0.000 / 0.100 |
+| `audioContextToWorkletMs` | 0.100 / 0.101 | 0.000 / 0.100 |
+| `workletToMicrophoneMs` | 0.100 / 0.800 | 0.100 / 0.100 |
+| `microphoneToSourceMs` | 0.300 / 0.400 | 0.200 / 0.300 |
+| `microphoneToListeningDispatchMs` | 0.200 / 0.300 | 0.100 / 0.200 |
+| `listeningDispatchToSourceMs` | 0.100 / 0.200 | 0.000 / 0.100 |
+| `listeningDispatchToCommitMs` | 2.500 / 21.701 | 1.000 / 1.200 |
+| `listeningCommitToShownMs` | 11.100 / 15.601 | 12.100 / 14.700 |
+| `sourceToFirstChunkMs` | 4.200 / 24.000 | 4.300 / 21.100 |
+| `stopToCommandMs` | 0.023 / 0.026 | 0.022 / 0.031 |
+| `stopCommandToControllerMs` | 0.100 / 0.200 | 0.000 / 0.100 |
+| `controllerToRecorderStopMs` | 0.200 / 0.300 | 0.100 / 0.200 |
+| `recorderStopToTranscriptionMs` | 0.199 / 0.300 | 0.000 / 0.100 |
+| `transcriptionToLastSegmentMs` | 0.100 / 0.200 | 0.000 / 0.100 |
+| `lastSegmentToDeliveryMs` | 0.800 / 0.900 | 0.200 / 0.300 |
+| `deliveryToFocusedAppMs` | 2.682 / 5.283 | 2.182 / 4.402 |
+| `deliveryToClipboardMs` | 4.601 / 7.161 | 3.142 / 5.439 |
+| `clipboardToWidgetHideMs` | 9.242 / 11.116 | 9.510 / 10.671 |
+| `focusedAppToWidgetHideMs` | 0.022 / 0.025 | 0.026 / 0.031 |
+| `widgetHideToPasteDelayMs` | 0.002 / 0.005 | 0.003 / 0.006 |
+| `pasteDelayToKeystrokeMs` | 0.006 / 0.010 | 0.009 / 0.014 |
+| `pasteKeystrokeToSettleMs` | 0.006 / 0.019 | 0.007 / 0.008 |
+| `pasteSettleToDeliveryReturnMs` | 0.262 / 0.449 | 0.247 / 0.620 |
+| `deliveryToHistoryMs` | 0.000 / 0.100 | 0.000 / 0.100 |
+| `historyToReadyDispatchMs` | 1401.000 / 1401.700 | 1401.100 / 1401.800 |
+| `readyDispatchToWidgetMs` | 2.701 / 8.500 | 8.400 / 11.900 |
+
+Cold Listening p95 is 142.057 ms, 74.2% below the 550.796 ms baseline and within 150 ms in this batch. Warm Listening is 128.339 ms p95, above the 50 ms target and the 117.419 ms baseline. Its warm context resume is 42.300 ms p95 and microphone request 82.400 ms p95; these distributions overlap and their percentiles must not be added. Dispatch follows microphone readiness within 0.200 ms p95 and connects the source within another 0.100 ms. Warm first chunk is 121.789 ms p95, just above 120 ms; source-to-chunk p95 falls from B's 56.599 to 21.100 ms. The warm first-chunk regression from A and B is largely recovered, but this batch does not prove the target.
+
+Every outlier is retained: cold stop-to-paste reaches 742.877 ms (402.512 ms in the paste helper), and warm reaches 697.142 ms (442.566 ms in the helper). The warm nearest-rank p95 is 406.755 ms; the maximum is still in the evidence. Stop-to-paste p50 remains 376.046 ms, above 350 ms. D has not been applied.
+
+The 30.108-second idle observation used 11.625% of one core over nine app processes, RSS 1126.703 → 1080.016 MiB ([evidence](2026-11-02-dictation-gaps/c-idle.json)). Against the first baseline endpoint this is 0.744 CPU percentage points lower and 24.532 MiB higher. Earlier unchanged-baseline intervals varied by hundreds of MiB, so this single endpoint does not establish compliance with the 15 MB memory budget. Matched resource comparisons remain required.
+
+C typecheck, lint, build and packaging passed. A code review found cached failed cue contexts and preparation while dictation was disabled; both were fixed before this build. Unit and perf sources await GitHub CI. No local test, e2e journey or design capture ran.
+
 ## Acceptance and limitations
 
 | Measure | Required |
@@ -304,4 +388,4 @@ This small comparison supports the inference that fresh start-cue setup blocks r
 | App-owned idle gap at each handoff | ≤16 ms |
 | Idle CPU increase / memory increase | ≤0.5 percentage points / ≤15 MB |
 
-Baseline, A and B measurements are complete. C–E, execution of the scripted 150 ms speech and lifecycle test sources in GitHub CI, final resource comparisons and the PR remain. Typecheck and lint passed for B; later code must pass them again. The warm first-chunk regression and the B cold shown-mark outlier remain unresolved.
+Baseline and A–C measurements are complete. D–E, execution of the scripted 150 ms speech and lifecycle test sources in GitHub CI, final resource comparisons and the PR remain. Typecheck and lint passed for C; later code must pass them again. C meets cold Listening in its batch. Warm Listening and first chunk, stop-to-paste p50 and the final resource budgets remain unmet or unproven; the B cold shown-mark outlier is retained.
