@@ -1,3 +1,4 @@
+import { markDictationTiming } from '../../../shared/dictationTiming'
 import { MAX_TRANSCRIPTION_SAMPLES, TRANSCRIPTION_SAMPLE_RATE } from '../../../shared/audio'
 import { calculateRms, resampleMono } from './audioMath'
 import { ensureMicrophoneAccess } from './ensureMicrophoneAccess'
@@ -236,14 +237,19 @@ export class AudioRecorder {
     this.lastError = null
 
     try {
+      markDictationTiming('recorder-started')
       // The audio graph is built BEFORE the microphone opens: every await
       // after the stream goes live discards real speech (worklet compilation
       // alone can cost seconds on a cold start, silently dropping the
       // speaker's first words). None of this setup needs the stream.
+      markDictationTiming('audio-context-started')
       session.context = this.dependencies.createAudioContext()
       // A context opened before the permission dialog can be left suspended once that dialog closes.
       if (session.context.state === 'suspended') await session.context.resume?.()
+      markDictationTiming('audio-context-ready')
+      markDictationTiming('worklet-load-started')
       await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
+      markDictationTiming('worklet-loaded')
       this.assertSessionLive(session)
 
       session.worklet = this.dependencies.createAudioWorkletNode(
@@ -257,6 +263,7 @@ export class AudioRecorder {
       session.worklet.port.onmessage = (event) => this.receiveChunk(session, event.data)
 
       const selected = this.options.selectedDeviceId
+      markDictationTiming('microphone-request-started')
       try {
         session.stream = await this.dependencies.mediaDevices.getUserMedia(microphoneConstraints(selected))
       } catch (error: unknown) {
@@ -265,6 +272,7 @@ export class AudioRecorder {
           selected ? { audio: { deviceId: { exact: selected } } } : { audio: true },
         )
       }
+      markDictationTiming('microphone-resolved')
       this.assertSessionLive(session)
       if (session.context.state === 'suspended') await session.context.resume?.()
       this.assertSessionLive(session)
@@ -272,8 +280,10 @@ export class AudioRecorder {
 
       // Synchronous connects only from here: capture is live the moment the
       // microphone is.
+      markDictationTiming('source-connect-started')
       session.source = session.context.createMediaStreamSource(session.stream)
       session.source.connect(session.worklet)
+      markDictationTiming('source-connected')
 
       if (this.options.maxRecordingSeconds !== undefined) {
         session.timer = this.dependencies.setTimer(() => {
@@ -336,6 +346,7 @@ export class AudioRecorder {
     const levelsOnly = this.options.levelsOnly === true
     const chunk = levelsOnly ? data : new Float32Array(data)
     if (!levelsOnly) {
+      if (session.totalFrames === 0) markDictationTiming('first-audio-chunk')
       const rms = calculateRms(chunk)
       session.chunks.push(chunk)
       session.sourceFrames += chunk.length

@@ -1,3 +1,4 @@
+import { markDictationTiming } from '../../../../shared/dictationTiming'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 
@@ -416,6 +417,7 @@ export class DictationController {
   }
 
   stop(): Promise<void> {
+    markDictationTiming('controller-stop-received')
     const session = this.session
     if (session !== null && this.state.status === 'requesting-permission') {
       // Remember Stop without finalizing audio or starting transcription.
@@ -433,7 +435,9 @@ export class DictationController {
       this.playCue(session, 'stop')
       let result: AudioRecordingResult | null
       try {
+        markDictationTiming('recorder-stop-started')
         result = await recorder.stop()
+        markDictationTiming('recorder-stop-resolved')
       } catch {
         if (this.isCurrent(session)) this.fail(session, 'RECORDING_FAILED')
         return
@@ -601,6 +605,7 @@ export class DictationController {
       { type: 'STARTED', sessionId: session.id, startedAt: session.startedAt },
       session,
     )
+    markDictationTiming('started-dispatched')
     this.playCue(session, 'start')
   }
 
@@ -713,6 +718,7 @@ export class DictationController {
       return
     }
 
+    markDictationTiming('last-segment-transcribed')
     const results = parts.map((part) => part.transcript!)
     const segmentWords = results.map((partial) => countWords(partial.text))
     const segmentRms = parts.map((part) => part.rms)
@@ -743,6 +749,7 @@ export class DictationController {
     if (session.settings.llmFormatting && this.dependencies.polishTranscript !== undefined) {
       // A cleanup call cannot be stopped, so one left running by a cancelled
       // Try again is reused by the next rather than paid for twice.
+      markDictationTiming('cleanup-started')
       if (session.cleanup?.text !== rawText) {
         const pending = this.dependencies.polishTranscript(rawText, {
           segmentWords,
@@ -775,6 +782,7 @@ export class DictationController {
         // The raw transcript is always deliverable without the cleanup pass.
         delete session.abandonWait
       }
+      markDictationTiming('cleanup-returned')
       // A Try again cancelled during cleanup has already returned to its kept recording.
       if (!this.isCurrent(session) || session.attempt !== attempt) return
     }
@@ -799,12 +807,14 @@ export class DictationController {
     let output: DictationOutputResult = 'empty'
     let outputFailure: 'OUTPUT_FAILED' | 'OUTPUT_UNAVAILABLE' | 'DESKTOP_CLIPBOARD_UNAVAILABLE' | undefined
     try {
+      markDictationTiming('delivery-started')
       output = await session.deliverOutput({
         text,
         autoPaste: session.settings.autoPaste,
         pasteDelayMs: session.settings.pasteDelayMs,
         dictationId: session.id,
       })
+      markDictationTiming('delivery-returned')
     } catch {
       outputFailure = 'OUTPUT_FAILED'
     }
@@ -817,7 +827,9 @@ export class DictationController {
     // Every finished dictation is reported: main keeps its numbers always and its text only while history is on.
     // With history off there is no transcript to lose, so a record that could not be kept does not fail the dictation.
     try {
+      markDictationTiming('history-started')
       await this.dependencies.addHistory(entry)
+      markDictationTiming('history-returned')
     } catch {
       if (session.settings.historyEnabled) {
         if (this.isCurrent(session)) this.fail(session, outputFailure ?? 'HISTORY_FAILED')
@@ -1019,6 +1031,7 @@ export class DictationController {
       }
       this.resetTimer = undefined
       this.state = reduceDictation(this.state, { type: 'RESET' })
+      markDictationTiming('ready-dispatched')
       this.publish(session)
       this.session = null
     }, session.settings.successDisplayMs)
@@ -1037,11 +1050,14 @@ export class DictationController {
   private playCue(session: ActiveSession, kind: 'start' | 'stop'): void {
     if (!session.settings.soundCues || this.dependencies.cuePlayer === undefined) return
     try {
+      if (kind === 'start') markDictationTiming('start-cue-started')
       const playback =
         kind === 'start'
           ? this.dependencies.cuePlayer.playStart()
           : this.dependencies.cuePlayer.playStop()
-      void Promise.resolve(playback).catch(() => undefined)
+      void Promise.resolve(playback).then(() => {
+        if (kind === 'start') markDictationTiming('start-cue-returned')
+      }, () => undefined)
     } catch {
       // Optional cue failures never change dictation state.
     }

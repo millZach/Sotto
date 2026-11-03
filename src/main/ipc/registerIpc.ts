@@ -1,3 +1,4 @@
+import { DICTATION_TIMING, dictationTimingMarkSchema, type DictationTimingMark } from '../../shared/dictationTiming'
 import { z } from 'zod'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MACHINES, watcherContinueHandoverRequestSchema,
@@ -426,6 +427,7 @@ export interface RecoveryNoticeIpcService {
 }
 
 export interface RegisterIpcDependencies {
+  readonly dictationTiming?: { mark(mark: DictationTimingMark): void }
   /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
   readonly watcher?: Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
   readonly settings: SettingsIpcService
@@ -610,6 +612,9 @@ export function registerIpc(
   }
 
   try {
+    if (dependencies.dictationTiming) {
+      register(DICTATION_TIMING, dictationTimingMarkSchema, 1, mark => { dependencies.dictationTiming!.mark(mark) }, ['main', 'widget'])
+    }
     if (dependencies.watcher) {
       const watcher = dependencies.watcher
       // The popup reads the room for its current Watcher's thread (ADR-0181).

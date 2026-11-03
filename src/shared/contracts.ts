@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { DictationTimingBridge } from './dictationTiming'
 
 import { MAX_TRANSCRIPTION_SAMPLES } from './audio'
 import { WIDGET_ERROR_CODES, type WidgetSnapshot } from './dictation'
@@ -490,6 +491,9 @@ export interface SottoBridge {
   requestKeyListenerPermission?(): Promise<KeyListenerPermission>
   onKeyListenerPermission?(listener: (permission: KeyListenerPermission) => void): Unsubscribe
 
+  /** Local numeric handoff marks, present only for an explicitly timed run. */
+  readonly dictationTiming?: DictationTimingBridge
+
   requestDictation(command: DictationCommand): Promise<CommandResult>
   onDictationCommand(listener: (command: DictationCommand) => void): Unsubscribe
 
@@ -556,6 +560,7 @@ export const LIVING_OWL_RENDERER_ARGUMENT = '--sotto-living-owl'
 
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
+  readonly dictationTiming?: DictationTimingBridge
   readonly platform: SottoPlatform
   /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */
   readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge

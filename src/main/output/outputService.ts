@@ -1,3 +1,4 @@
+import { markDictationTiming } from '../../shared/dictationTiming'
 import type { OutputOutcome } from '../../shared/contracts'
 import type { PasteInvocation } from './pasteCommand'
 import { deliveredAppName } from '../../shared/dictationRecord'
@@ -161,7 +162,10 @@ export class OutputService {
     const read = this.dependencies.readFocusedApp
     if (read === undefined) return null
     try {
-      return deliveredAppName(await read())
+      markDictationTiming('focused-app-started')
+      const app = deliveredAppName(await read())
+      markDictationTiming('focused-app-returned')
+      return app
     } catch {
       this.dependencies.log?.('delivered-app-unreadable')
       return null
@@ -182,7 +186,9 @@ export class OutputService {
     beforeHide?: Promise<unknown>,
   ): Promise<OutputOutcome> {
     try {
+      markDictationTiming('clipboard-write-started')
       await this.dependencies.clipboard.writeText(text)
+      markDictationTiming('clipboard-written')
     } catch {
       // Wayland availability still matters if Electron's own fallback also fails.
       if (options.autoPaste && this.dependencies.clipboard.canPaste?.() === false) return 'clipboard-unavailable'
@@ -205,16 +211,24 @@ export class OutputService {
       if (invocation === null) return 'copied'
       if (!this.dependencies.keepWidgetVisibleDuringPaste) {
         await beforeHide
+        markDictationTiming('widget-hide-started')
         await this.dependencies.widget.hideWidget()
+        markDictationTiming('widget-hidden')
         hidForPaste = true
       }
+      markDictationTiming('paste-delay-started')
       await this.dependencies.delay(options.pasteDelayMs)
+      markDictationTiming('paste-delay-ended')
       let pasted: boolean
       try {
+        markDictationTiming('paste-keystroke-started')
         pasted = await this.dependencies.process.run(invocation)
+        markDictationTiming('paste-keystroke-sent')
       } finally {
         // A failed or lost acknowledgement can still follow dispatched input.
+        markDictationTiming('paste-settle-started')
         await this.dependencies.delay(PASTE_SETTLE_MS)
+        markDictationTiming('paste-settle-ended')
       }
       if (pasted) this.dependencies.onPasted?.()
       return pasted ? 'pasted' : 'copied'

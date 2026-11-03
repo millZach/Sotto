@@ -1,3 +1,4 @@
+import { dictationTimingNow } from '../../../shared/dictationTiming'
 import {
   AlertCircle,
   Check,
@@ -681,6 +682,25 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
       if (!visibility.visible) setDragCancellationVersion((version) => version + 1)
     })
   }, [bridge, preview])
+
+  useLayoutEffect(() => {
+    const timing = bridge?.dictationTiming
+    if (preview !== null || timing === undefined) return undefined
+    const status = snapshot?.status
+    if (status !== 'listening' && status !== 'idle') return undefined
+    if (status === 'listening') timing.mark({ event: 'widget-listening-committed', atMs: dictationTimingNow() })
+    // The second animation frame follows the first opportunity to paint the committed state.
+    let nextFrame: number | undefined
+    const frame = requestAnimationFrame(() => {
+      nextFrame = requestAnimationFrame(() => {
+        timing.mark({ event: status === 'listening' ? 'widget-listening-shown' : 'widget-ready', atMs: dictationTimingNow() })
+      })
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      if (nextFrame !== undefined) cancelAnimationFrame(nextFrame)
+    }
+  }, [bridge, preview, snapshot?.status])
 
   const systemDark = useWidgetSystemDark()
   const scheme = snapshot === null ? null : resolveWidgetScheme(snapshot.theme, systemDark)

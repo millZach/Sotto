@@ -1,3 +1,5 @@
+import { createDictationTiming } from './performance/dictationTiming'
+import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
 import { mediaThumbnailMaker } from './agents/mediaThumbnail'
 import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
@@ -756,6 +758,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Dock and Finder launch with the system PATH. Provider CLIs live in the user's login PATH.
   await installGuiPath()
   const userDataPath = app.getPath('userData')
+  const dictationTiming = process.env.SOTTO_DICTATION_TIMING === '1' || process.argv.includes('--dictation-timing')
+    ? createDictationTiming(userDataPath) : undefined
   const memoryStore = openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
   const memoryProfile = memoryStore === undefined ? undefined : new MemoryProfile(memoryStore)
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
@@ -948,7 +952,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
-      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
+      const featureArguments = [...(dictationTiming && (mainRenderer || widgetRenderer) ? [DICTATION_TIMING_ARGUMENT] : []), ...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
         ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
@@ -1823,8 +1827,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
 
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
-  const dispatchDictation = (command: DictationCommand): void => {
+  let dictationTimingStartPending = false
+  const dispatchDictation = (command: DictationCommand, receivedAt?: number): void => {
     if (!dictationActive) return
+    if (dictationTiming) {
+      // A second press can arrive before the renderer publishes REQUESTED.
+      const status = dictationTimingStartPending ? 'requesting-permission' : widgetState.status
+      if ((command.type === 'start' || command.type === 'toggle') && !['listening', 'requesting-permission', 'processing'].includes(status)) {
+        dictationTimingStartPending = true
+        dictationTiming.begin(receivedAt)
+      } else if (command.type === 'stop' || (command.type === 'toggle' && ['listening', 'requesting-permission'].includes(status))) {
+        dictationTiming.mark({ event: 'stop-pressed', atMs: receivedAt ?? dictationTimingNow() })
+      }
+    }
+    markDictationTiming('dictation-command-sent')
     void messageDelivery.sendToMain(DICTATION_COMMAND, command).then((delivered) => {
       if (!delivered) {
         logOperational('native-main-send-failed')
@@ -1835,8 +1851,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     if (!dictationActive) return
     void windows.showWidget().catch(() => logOperational('native-widget-show-failed'))
   }
-  const toggleDictation = (): void => {
-    dispatchDictation({ type: 'toggle' })
+  const toggleDictation = (receivedAt?: number): void => {
+    dispatchDictation({ type: 'toggle' }, receivedAt)
     showWidget()
   }
 
@@ -1848,9 +1864,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const hotkeys = new HotkeyManager(
     dictationGate.shortcuts,
     () => {
+      const receivedAt = dictationTiming ? dictationTimingNow() : undefined
       // A hold in progress no longer owns the session the primary shortcut toggled.
       dictationShortcuts?.pressToggled()
-      toggleDictation()
+      toggleDictation(receivedAt)
     },
     () => {
     hotkeys.cancelListening()
@@ -2156,6 +2173,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     syncEscape: (state) => {
       widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
+      // Starting from a terminal state publishes RESET/idle before REQUESTED.
+      if (state.status !== 'idle') dictationTimingStartPending = false
       return syncEscapeForWidgetSnapshot(hotkeys, state)
     },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
@@ -2534,6 +2553,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           return await shell.openPath(real) === '' ? opened({ ok: true }) : { ok: false, reason: 'unavailable' }
         },
         ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
+        ...(dictationTiming ? { dictationTiming } : {}),
         dictation: {
           request(command): void {
             dispatchDictation(command)

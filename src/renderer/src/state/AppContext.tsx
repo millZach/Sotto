@@ -1,3 +1,4 @@
+import { markDictationTiming, setDictationTimingSink } from '../../../shared/dictationTiming'
 import {
   createContext,
   createElement,
@@ -602,6 +603,7 @@ export function AppProvider({
         // returning user came back for, and dictation is one tab away.
         setNavigation(loadedSettings.onboardingComplete ? 'threads' : 'onboarding')
 
+        setDictationTimingSink(bridge.dictationTiming ? mark => bridge.dictationTiming!.mark(mark) : undefined)
         let controller!: AppController
         const bindings: AppControllerFactoryBindings = {
           platform,
@@ -675,6 +677,7 @@ export function AppProvider({
             commitSettings(authoritativeSettings)
           })
           unsubscribeCommands = bridge.onDictationCommand((command) => {
+            markDictationTiming('dictation-command-received')
             if (!isCurrentGeneration(generation) || localController !== controller) return
             switch (command.type) {
               case 'toggle': void invokeController(controller, (value) => value.toggle()); break
