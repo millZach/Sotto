@@ -716,7 +716,8 @@ struct SheetPage<Content: View>: View {
     var washTone: Wash.Tone = .normal
     var washHeight: CGFloat = 520
     let content: Content
-    @State private var fade: CGFloat = 0
+    /// How far the ground fades in under the status bar, held here without watching it: only the fade redraws.
+    @State private var topFade = TopFade()
     @Environment(\.pageTop) private var topRequest
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.duoLayout) private var duo
@@ -727,6 +728,7 @@ struct SheetPage<Content: View>: View {
         self.content = content()
     }
     var body: some View {
+        let _ = BenchProbe.body("SheetPage")
         VStack(spacing: 0) {
             ScrollViewReader { reader in
                 ScrollView {
@@ -747,7 +749,7 @@ struct SheetPage<Content: View>: View {
                     .background(alignment: .top) {
                         // How far the content has moved up from rest, read against the page's own top.
                         GeometryReader { proxy in
-                            Color.clear.onChange(of: proxy.frame(in: .named("sheet-page")).minY) { _, top in travelled(top) }
+                            Color.clear.onChange(of: proxy.frame(in: .named("sheet-page")).minY) { _, top in topFade.moved(-top) }
                         }
                         .frame(height: 0)
                     }
@@ -766,13 +768,26 @@ struct SheetPage<Content: View>: View {
         }
         .coordinateSpace(.named("sheet-page"))
         .pageGround()
-        .overlay(alignment: .top) { StatusBarFade().opacity(fade) }
+        .overlay(alignment: .top) { TopFadeView(fade: topFade) }
     }
-    /// The fade comes in over the first 24 points of travel and is clear at rest.
-    private func travelled(_ top: CGFloat) {
-        let next = min(1, max(0, -top / 24))
-        if next != fade { fade = next }
+}
+
+/// How far a page's ground fades in under the status bar: clear at the page's top and whole once the page has moved 24
+/// points. Published to the fade alone, so the page under it never redraws for it: a change here costs one small view,
+/// where a `SheetPage` that read it ran again and could draw its whole list again, at a scroll's start and end (#2100).
+final class TopFade: ObservableObject {
+    @Published private(set) var amount: CGFloat = 0
+    /// `travelled` is how far the page has moved up from its top.
+    func moved(_ travelled: CGFloat) {
+        let next = min(1, max(0, travelled / 24))
+        if next != amount { amount = next }
     }
+}
+
+/// The page's ground under the status bar, as much of it as the page's travel calls for.
+struct TopFadeView: View {
+    @ObservedObject var fade: TopFade
+    var body: some View { StatusBarFade().opacity(fade.amount) }
 }
 
 /// A rectangle reaching past its frame on either side by these widths, and no further up or down.
