@@ -3813,14 +3813,18 @@ msgstr "Download {to}"
 msgid "Draft not saved. <0>Save again</0>"
 msgstr "Draft not saved. <0>Save again</0>"
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Drag a mark to move it, or a handle to resize it. On the picture, Enter steps through the marks, the arrow keys move the selected one, and Alt with them resizes it. Delete takes it off, minus and equals size text, and Escape lets go."
+msgstr "Drag a mark to move it, or a handle to resize it. On the picture, Enter steps through the marks, the arrow keys move the selected one, and Alt with them resizes it. Delete takes it off, minus and equals size text, and Escape lets go."
+
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit"
 msgstr "Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit"
 
 #: src/renderer/src/agents/MarkupEditor.tsx
-msgid "Drag to draw. Press where a note goes, then type. A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Escape cancels."
-msgstr "Drag to draw. Press where a note goes, then type. A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Escape cancels."
+msgid "Drag to draw. Press where a note goes, then type. V, A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Minus and equals size a note. Escape cancels."
+msgstr "Drag to draw. Press where a note goes, then type. V, A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Minus and equals size a note. Escape cancels."
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
 msgid "Drag to move · Scroll or +/− to zoom · 0 to fit · ← → for the next image"
@@ -5009,6 +5013,22 @@ msgstr "Make a merge commit on {target}?"
 msgid "Make merge commit"
 msgstr "Make merge commit"
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text larger"
+msgstr "Make the text larger"
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text larger (=)"
+msgstr "Make the text larger (=)"
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text smaller"
+msgstr "Make the text smaller"
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text smaller (-)"
+msgstr "Make the text smaller (-)"
+
 #. A back control in the model menu that returns to the list of the companies that made Cursor’s models.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Makers"
@@ -5194,6 +5214,10 @@ msgstr "More time for difficult problems."
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Morning. What’s first?"
 msgstr "Morning. What’s first?"
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Move"
+msgstr "Move"
 
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Move here"
@@ -5662,6 +5686,30 @@ msgstr "Not signed in"
 msgid "Note"
 msgstr "Note"
 
+#. A note the user wrote on an arrow drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the arrow: {0}"
+msgstr "Note on the arrow: {0}"
+
+#. A note the user wrote on a box drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the box: {0}"
+msgstr "Note on the box: {0}"
+
+#. A note the user wrote on a circle drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the circle: {0}"
+msgstr "Note on the circle: {0}"
+
+#. A note the user wrote on a pen line drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the pen line: {0}"
+msgstr "Note on the pen line: {0}"
+
 #. A note the user wrote on a picture, with its words.
 #. placeholder {0}: mark.text
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -5692,6 +5740,10 @@ msgstr "Nothing matches \"{query}\"."
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "Nothing to bring back."
 msgstr "Nothing to bring back."
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Nothing to select yet. Draw on the picture first."
+msgstr "Nothing to select yet. Draw on the picture first."
 
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Nothing was attached."
@@ -7263,6 +7315,11 @@ msgstr "Search worktrees"
 msgid "Select"
 msgstr "Select"
 
+#. {words} names a mark, such as "Arrow" or "Note: the button".
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Select {words}"
+msgstr "Select {words}"
+
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Select a thread to read its messages and continue working."
 msgstr "Select a thread to read its messages and continue working."
@@ -7275,6 +7332,11 @@ msgstr "Select ref"
 #: src/renderer/src/agents/tips.tsx
 msgid "Select words in a reply and press {keys} to quote them in your prompt."
 msgstr "Select words in a reply and press {keys} to quote them in your prompt."
+
+#. {words} names a mark on a picture, such as "Arrow" or "Note: the button".
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Selected {words}."
+msgstr "Selected {words}."
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -8340,6 +8402,10 @@ msgstr "tapped in the page"
 msgid "tapped the screen"
 msgstr "tapped the screen"
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Text size"
+msgstr "Text size"
+
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "That is all of its reply."
 msgstr "That is all of its reply."
@@ -8590,6 +8656,26 @@ msgstr "The models {clientName} offers you now."
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "The Muse guide could not be opened. Try again."
 msgstr "The Muse guide could not be opened. Try again."
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note is free now. It stays where you put it."
+msgstr "The note is free now. It stays where you put it."
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the arrow."
+msgstr "The note now moves with the arrow."
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the box."
+msgstr "The note now moves with the box."
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the circle."
+msgstr "The note now moves with the circle."
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the pen line."
+msgstr "The note now moves with the pen line."
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "The OpenCode guide could not be opened. Try again."
