@@ -32,4 +32,14 @@ These tiles are from the folded Duo, every frame from the recording. A simulator
 ## Not shown here
 
 - **VoiceOver.** The simulator can't run it. The pill is `accessibilityHidden` while small, but XCUITest still finds it, so hiding it from VoiceOver rests on SwiftUI's documented behaviour.
-- **Cost of the moves.** The `reply-box` and `reply-box-stream` benchmark phases hold this; the numbers come from the pull request's `ios-perf` run.
+- **Cost of the moves.** Run 41597641875 measured `main` and this change on one runner, at 9eea27d16. Twenty moves of the box drew no conversation, no messages and no text views (`reply-box`: 0, 0 and 0, with 40 draws of the reply dock). The numbers that `main` also has came out no worse, and the better ones aren't a gain: launch, which this change doesn't touch, came out 1.48 times faster too, so the runner was slower while it measured `main`.
+
+  | | `main` | This change | Unit |
+  | --- | ---: | ---: | --- |
+  | Opening a thread, press to drawn | 3,318 | 2,873 | ms |
+  | Opening a thread, CPU | 4,547 | 4,080 | ms |
+  | Streaming, CPU for each chunk | 86.64 | 68.31 | ms |
+  | Streaming, hitches | 95 | 61 | count |
+  | Streaming, longest frame | 441 | 387 | ms |
+
+  Moving the box while a reply streams does cost something. In one run of this change, `stream` took 68.31 ms of CPU for each chunk and `reply-box-stream` took 82.79 ms, with 61 and 108 hitches and longest frames of 387 and 419 ms. That phase moves the box 29 times in 200 chunks, far more often than anyone would. What each chunk draws stays the same but for the reply dock itself, 0.49 draws against 0.20. Opening a thread drew `MessageView` 26 to 47 times on `main` and 27 to 73 on this change over five runs each: the ranges overlap, and the 73 is one run.

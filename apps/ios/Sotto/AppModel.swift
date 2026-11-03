@@ -753,7 +753,7 @@ extension AppModel {
         watchNoticeDismissal?.cancel()
         watchNoticeDismissal = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !DebugFlags.watchNoticeStays else { return }
             self?.dismissWatchNotice(notice.id)
         }
     }

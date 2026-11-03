@@ -179,9 +179,9 @@ import UIKit
     }
     private func back() {
         let button = app.navigationBars.buttons.element(boundBy: 0)
-        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        XCTAssertTrue(button.waitForExistence(timeout: 30))
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in button.isHittable }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed,
                        "Back must be hittable after a request sheet closes")
         button.tap()
     }
@@ -1857,26 +1857,35 @@ import UIKit
 
     /// Watch on a thread's page watches it at once, with Undo, and the owl follows its logo (watch B). Threads shows the
     /// thread watched, and its own Watch stops watching it.
+    ///
+    /// What a press did is said for eight seconds, and on a loaded CI simulator one look on this page has taken 25, so the
+    /// toast could go before the journey saw it (#1308). So the toast waits here until the journey has read it, and only the
+    /// second launch lets it go on its own, where nothing has to catch it.
     func testWatchAThreadFromItsPageAndStopWatchingFromItsPage() {
-        launch(Self.watcher)
+        launch(Self.watcher + ["--ui-watch-notice-stays"])
         let thread = row("shortcuts")
-        reveal(thread)
-        thread.tap()
         let title = byID("thread-title")
-        XCTAssertTrue(title.waitForExistence(timeout: 10))
-        XCTAssertEqual(title.label, "Add keyboard shortcuts")
         let watch = app.buttons["thread-watch"]
-        XCTAssertTrue(watch.waitForExistence(timeout: 5), "A thread's page offers Watch where a computer runs Watcher")
-        XCTAssertEqual(watch.label, "Watch")
-        XCTAssertEqual(watch.value as? String, "Off")
+        func openThread() {
+            reveal(thread)
+            thread.tap()
+            XCTAssertTrue(title.waitForExistence(timeout: 30))
+            XCTAssertTrue(watch.waitForExistence(timeout: 30), "A thread's page offers Watch where a computer runs Watcher")
+        }
         // XCTest lets an expectation be waited on only once, so each wait for Watch's value makes its own.
         func watchReads(_ value: String) -> XCTWaiter.Result {
             let reads = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: watch)
-            return XCTWaiter.wait(for: [reads], timeout: 5)
+            return XCTWaiter.wait(for: [reads], timeout: 30)
         }
+        let watchOn = NSPredicate { _, _ in watch.value as? String == "On" }
+        let watchOff = NSPredicate { _, _ in watch.value as? String == "Off" }
+        openThread()
+        XCTAssertEqual(title.label, "Add keyboard shortcuts")
+        XCTAssertEqual(watch.label, "Watch")
+        XCTAssertEqual(watch.value as? String, "Off")
         watch.tap()
         let toast = byID("watch-toast")
-        XCTAssertTrue(toast.waitForExistence(timeout: 5), "What the press did is said at once")
+        XCTAssertTrue(toast.waitForExistence(timeout: 30), "What the press did is said at once")
         XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
         XCTAssertEqual(watchReads("On"), .completed, "Watch is on")
         XCTAssertTrue(text("Codex · Sotto · Laptop, watched by Watcher").exists, "The owl follows the provider's logo")
@@ -1886,35 +1895,34 @@ import UIKit
         XCTAssertEqual(undo.label, "Undo: stop watching Add keyboard shortcuts")
         undo.tap()
         XCTAssertEqual(watchReads("Off"), .completed, "Undo stops watching it")
-        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
-        let watchOn = NSPredicate { _, _ in watch.value as? String == "On" }
+        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 30))
         XCTAssertEqual(press(watch, until: watchOn, untouched: { watch.value as? String == "Off" }), .completed, "Watch watches it again")
-        // Once the toast goes, nothing over the reply box takes its place: the lit owl says the thread is watched.
+        // Its own Watch stops watching it, with Undo.
+        XCTAssertEqual(press(watch, until: watchOff, untouched: { watch.value as? String == "On" }), .completed, "Watch stops watching it")
+        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 30))
+        XCTAssertTrue(undo.waitForExistence(timeout: 30), "With Undo")
+        capture("watch-thread-page-stopped-dark")
+        back()
+        let unwatchedRow = XCTNSPredicateExpectation(predicate: NSPredicate(format: "NOT (label CONTAINS %@)", "watched by Watcher"), object: thread)
+        XCTAssertEqual(XCTWaiter.wait(for: [unwatchedRow], timeout: 30), .completed, "Threads no longer says Watcher watches it (\(thread.label))")
+
+        // With nothing holding it, the toast goes, and nothing over the reply box takes its place: the lit owl says the
+        // thread is watched.
+        launch(Self.watcher)
+        openThread()
+        XCTAssertEqual(press(watch, until: watchOn, untouched: { watch.value as? String == "Off" }), .completed, "Watch watches it")
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: toast)
-        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 20), .completed, "The toast goes")
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 30), .completed, "The toast goes")
         XCTAssertFalse(watchedLineShows(), "No line says what watching means")
         capture("watch-thread-page-watched-dark")
         back()
         // Threads shows it watched, with the owl after its logo, where Watched used to list it (November 1, 2026).
         let watchedRow = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "watched by Watcher"), object: thread)
-        XCTAssertEqual(XCTWaiter.wait(for: [watchedRow], timeout: 10), .completed, "Threads says Watcher watches it (\(thread.label))")
+        XCTAssertEqual(XCTWaiter.wait(for: [watchedRow], timeout: 30), .completed, "Threads says Watcher watches it (\(thread.label))")
         capture("threads-watched-row-dark")
-        // Its own Watch stops watching it, with Undo.
-        reveal(thread)
-        thread.tap()
-        XCTAssertTrue(title.waitForExistence(timeout: 10))
-        XCTAssertTrue(watch.waitForExistence(timeout: 5))
+        // Opened again, Watch still reads on.
+        openThread()
         XCTAssertEqual(watchReads("On"), .completed, "Watch is on")
-        watch.tap()
-        // What a press did is said for eight seconds, so it is read straight after the press: on a loaded simulator the
-        // waits that follow it have outlasted it.
-        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["watch-undo"].waitForExistence(timeout: 8), "With Undo")
-        XCTAssertEqual(watchReads("Off"), .completed, "Watch is off")
-        capture("watch-thread-page-stopped-dark")
-        back()
-        let unwatchedRow = XCTNSPredicateExpectation(predicate: NSPredicate(format: "NOT (label CONTAINS %@)", "watched by Watcher"), object: thread)
-        XCTAssertEqual(XCTWaiter.wait(for: [unwatchedRow], timeout: 10), .completed, "Threads no longer says Watcher watches it (\(thread.label))")
     }
 
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
