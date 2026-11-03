@@ -21,6 +21,7 @@ import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
 import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
+import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles } from './ThreadActivity'
@@ -370,7 +371,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
       <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div> : null}
     {writing && !streamText
       ? <p className="thread-message__writing tt-paragraph" role="status">{t`Writing a reply…`}</p>
-      : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} />}
+      : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
@@ -684,7 +685,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   }
   return <article className="thread-message thread-message--pending" data-role="user" data-status={status} aria-label={t`Pending message`}>
     <header><span className="thread-message__who">{t({ message: 'You', comment: 'Who wrote a message: the user.' })}</span>{label}</header>
-    <MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} />
+    <MessageContent text={submission.text} skills /><AttachmentPreviews attachments={submission.attachments} />
     {delivery}
   </article>
 }
@@ -744,6 +745,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const quoting = useOwlFeature('reply-quote')
   // A tip under the working words (ADR-0159; Owl only).
   const tipLine = useTipLine({ row, state, store, watcher, onFocusPrompt: onQuoted })
+  const sentSkills = useSentSkills(row, state, command)
   const streamText = useResponseStreaming() !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
@@ -1128,7 +1130,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     <div className="thread-transcript__viewport" data-room-backdrop=""><div className="thread-workspace__transcript" data-room-backdrop="" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label={t`Thread transcript`} aria-busy={thread.historyStatus === 'loading'}>
-      <div className="thread-transcript__content" data-room-backdrop="" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}>
+      <div className="thread-transcript__content" data-room-backdrop="" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}><SentSkillsContext.Provider value={sentSkills}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">{t`Loading messages…`}</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || t`Could not load this thread’s messages.`}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>{t`Retry loading messages`}</Button></div>}
         {hidden > 0
@@ -1157,7 +1159,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         </ActivityBodyContext.Provider>
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
-      </BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
+      </SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
     </div></div>
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}

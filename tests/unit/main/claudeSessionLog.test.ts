@@ -284,6 +284,17 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     expect(claudeReadBack([{ type: 'text', text: typed }], undefined, { delivered: lookup(origin).find })).toEqual({ text: typed, origin: undefined })
   })
 
+  it('reads a slash command back as it was typed, which is what Sotto sent, and leaves a quoted envelope whole', () => {
+    // Claude Code files a skill under the prompt's own ID as its envelope, and a native command with the tags the other way round.
+    const skill = { uuid: 'skill', digest: claudeDigest('/ask-drake'), attachments: undefined }
+    expect(claudeReadBack('<command-message>ask-drake</command-message>\n<command-name>/ask-drake</command-name>', skill)).toEqual({ text: '/ask-drake', origin: skill })
+    expect(claudeReadBack('<command-message>track-package</command-message>\n<command-name>/track-package</command-name>\n<command-args>879325785771, WWB</command-args>', undefined).text)
+      .toBe('/track-package 879325785771, WWB')
+    expect(claudeReadBack('<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args>opus</command-args>', undefined).text).toBe('/model opus')
+    const quoted = 'It shows <command-message>ask-drake</command-message> <command-name>/ask-drake</command-name> instead.'
+    expect(claudeReadBack(quoted, undefined).text).toBe(quoted)
+  })
+
   it('looks the origin up once per frame, whatever blocks the text ends with (review item 3)', () => {
     const note = browserFeedbackNote([picture])
     const blocks = Array.from({ length: 6 }, () => handwritten).join('\n\n')
