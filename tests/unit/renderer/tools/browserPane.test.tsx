@@ -85,16 +85,33 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReset(); vi.mocked(useOptionalAgents).mockReset() })
 
-function mount(browser: ReturnType<typeof fakeBrowser>, options: { surface?: 'browser' | 'files'; open?: boolean } = {}) {
+function mount(browser: ReturnType<typeof fakeBrowser>, options: { surface?: 'browser' | 'files'; open?: boolean; onRender?: React.ProfilerOnRenderCallback } = {}) {
   const store = new ToolsPanelStore(), playerStore = new BrowserPlayerStore()
   act(() => { store.setSurface(options.surface ?? 'browser'); store.setOpen(options.open ?? true) })
   const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: { 'a.txt': { kind: 'file', content: text('a') } } } })
-  const view = render(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} browser={browser.bridge} store={store} playerStore={playerStore} />)
+  const tools = <ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} browser={browser.bridge} store={store} playerStore={playerStore} />
+  const view = render(options.onRender ? <React.Profiler id="tools" onRender={options.onRender}>{tools}</React.Profiler> : tools)
   return { store, playerStore, view }
 }
 const panel = () => screen.getByRole('complementary', { name: 'Tools', hidden: false })
 
 describe('the quiet browser pane on Owl', () => {
+  it.each([true, false])('does not redraw Tools for another thread\'s browser task (quiet browser: %s)', async quiet => {
+    owl(quiet)
+    const browser = fakeBrowser()
+    const commits = vi.fn<React.ProfilerOnRenderCallback>()
+    mount(browser, { onRender: commits })
+    await within(panel()).findByRole('button', { name: quiet ? 'Screenshot to message' : 'Comment on page' })
+    commits.mockClear()
+
+    act(() => browser.emit({ type: 'task', task: task({ id: 'other-task', threadId: 'other-thread' }) }))
+    expect(commits).not.toHaveBeenCalled()
+
+    act(() => browser.emit({ type: 'task', task: task() }))
+    expect(commits).toHaveBeenCalled()
+    expect(panel()).toHaveTextContent(quiet ? 'Agent is browsing' : 'Checking the form')
+  })
+
   it('draws one row above the page, with no tab line for one page and no grant, task or steps lines', async () => {
     owl(true)
     const browser = fakeBrowser([page(PAGE_1)], { grant: true, tasks: [task({ steps: [{ id: 's1', action: 'click', status: 'completed', at: 1, detail: '' }] })] })
