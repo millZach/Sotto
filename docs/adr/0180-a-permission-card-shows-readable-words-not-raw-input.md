@@ -14,7 +14,7 @@ The raw box was doing two other jobs. It was the only place some settings showed
 
 ## Decision
 
-**A command summary is the model's words, marked as its own.** `context.summary` carries what the provider sent, on one line and bounded. The card shows it under a line such as **Claude Code says**, then the command. It is never the headline, and the command stays what the user answers.
+**A command summary is the model's words, marked as its own.** `context.summary` carries what the provider sent, on one line and bounded. The card shows it under a line such as **Claude Code says**, then the command. It is never the headline, and the command stays what the user answers. The iPhone's sheet leads with the request (#1855), so a command's headline there is Sotto's own **Claude Code wants to run a command** and never the first line of the request's text, which can hold the summary. Any other request leads with its action.
 
 **Sotto generates nothing.** A command that came with no summary says so and shows the command. No command goes to another model for this.
 
