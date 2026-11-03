@@ -7,22 +7,30 @@ import { createHarness, deferred, recorderOptions, snapshots } from '../../../..
 
 // Readiness is a recorder contract: these fakes report it explicitly, before start settles.
 describe('dictation startup', () => {
-  it('publishes Listening at recorder readiness and keeps the cue after start completes', async () => {
+  it('publishes the widget and starts the cue while the recorder start is pending', async () => {
     const starting = deferred<void>()
+    const cue = deferred<void>()
     let ready!: () => void
-    const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }
+    const cuePlayer = { playStart: vi.fn(() => cue.promise), playStop: vi.fn() }
     const harness = createHarness({ cuePlayer, recorder: {
-      start: vi.fn((onReady: () => void) => { ready = onReady; return starting.promise }),
+      start: vi.fn((onReady: () => void) => {
+        ready = onReady
+        return starting.promise
+      }),
     } })
     const start = harness.controller.start()
     expect(harness.controller.getState()).toEqual({ status: 'requesting-permission', sessionId: 'session' })
     expect(snapshots(harness).some(snapshot => snapshot.status === 'requesting-permission' && snapshot.permissionPending)).toBe(false)
+    expect(cuePlayer.playStart).toHaveBeenCalledOnce()
+    const recorderCall = vi.mocked(harness.recorder.start).mock.invocationCallOrder[0]!
+    expect(harness.publishWidgetState.mock.invocationCallOrder[0]!).toBeLessThan(recorderCall)
+    expect(recorderCall).toBeLessThan(cuePlayer.playStart.mock.invocationCallOrder[0]!)
     ready()
     expect(harness.controller.getState().status).toBe('listening')
-    expect(cuePlayer.playStart).not.toHaveBeenCalled()
     starting.resolve()
     await start
     expect(cuePlayer.playStart).toHaveBeenCalledOnce()
+    cue.resolve()
     await harness.controller.cancel()
   })
 
@@ -45,7 +53,7 @@ describe('dictation startup', () => {
     await start
     expect(harness.controller.getState().status).toBe('cancelled')
     expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
-    expect(cuePlayer.playStart).not.toHaveBeenCalled()
+    expect(cuePlayer.playStart).toHaveBeenCalledOnce()
     expect(cuePlayer.playStop).not.toHaveBeenCalled()
   })
 

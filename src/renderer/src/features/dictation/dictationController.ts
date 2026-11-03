@@ -63,8 +63,10 @@ export interface DictationTranscriber {
 }
 
 export interface DictationCuePlayer {
+  prepare?(): void | Promise<void>
   playStart(): void | Promise<void>
   playStop(): void | Promise<void>
+  dispose?(): void | Promise<void>
 }
 
 export type DictationOutputResult =
@@ -334,11 +336,16 @@ export class DictationController {
     this.dependencies.audioCapture?.setEnabled(enabled)
     if (!enabled || this.isActive()) return Promise.resolve()
 
-    // Each preparation is independent: a failed audio graph must not prevent
-    // loading the transcriber, or make a background warm-up report an error.
+    // Each preparation is independent: a failed audio graph or cue must not
+    // prevent loading the transcriber, or make a background warm-up report an error.
     return Promise.allSettled([
       Promise.resolve().then(() => this.disposed ? undefined : this.dependencies.audioCapture?.prewarm()),
       Promise.resolve().then(() => this.disposed ? undefined : this.dependencies.transcriber.load?.({})),
+      Promise.resolve().then(() => {
+        if (!this.disposed && this.dependencies.getSettings().soundCues) {
+          return this.dependencies.cuePlayer?.prepare?.()
+        }
+      }),
     ]).then(() => undefined)
   }
 
@@ -594,19 +601,23 @@ export class DictationController {
     } catch {
       // Dispose remains synchronous and best effort.
     }
+    try {
+      void Promise.resolve(this.dependencies.cuePlayer?.dispose?.()).catch(() => undefined)
+    } catch {
+      // Optional cue cleanup cannot prevent capture disposal.
+    }
     this.dependencies.audioCapture?.dispose()
   }
 
   private async startRecorder(session: ActiveSession): Promise<void> {
     try {
-      await session.recorder?.start(() => this.recorderReady(session))
+      const starting = session.recorder?.start(() => this.recorderReady(session))
+      if (this.isCurrent(session) && !session.stopClaimed) this.playCue(session, 'start')
+      await starting
       session.startFinished = true
     } catch (error: unknown) {
       if (this.isCurrent(session)) this.fail(session, classifyStartFailure(error))
       return
-    }
-    if (this.isCurrent(session) && this.state.status === 'listening' && !session.stopClaimed) {
-      this.playCue(session, 'start')
     }
   }
 

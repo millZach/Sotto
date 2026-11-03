@@ -148,7 +148,7 @@ describe('DictationController', () => {
     expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.addHistory).not.toHaveBeenCalled()
-    expect(cuePlayer.playStart).not.toHaveBeenCalled()
+    expect(cuePlayer.playStart).toHaveBeenCalledOnce()
     expect(cuePlayer.playStop).not.toHaveBeenCalled()
     expect(snapshots(harness).some((snapshot) => snapshot.status === 'listening')).toBe(false)
 
@@ -390,6 +390,31 @@ describe('DictationController', () => {
 
     expect(harness.publishWidgetState).toHaveBeenCalledTimes(publicationsBeforeDispose)
     expect(harness.deliverOutput).not.toHaveBeenCalled()
+  })
+
+  it.each(['resolve', 'reject', 'throw'] as const)('disposes optional cues once when cleanup will %s', async outcome => {
+    const cleanup = deferred<void>()
+    const cuePlayer = {
+      playStart: vi.fn(), playStop: vi.fn(),
+      dispose: vi.fn(() => {
+        if (outcome === 'throw') throw new Error('cue cleanup failed')
+        return cleanup.promise
+      }),
+    }
+    const harness = createHarness({ cuePlayer })
+    await harness.controller.start()
+
+    harness.controller.dispose()
+    harness.controller.dispose()
+    if (outcome === 'reject') cleanup.reject(new Error('cue cleanup failed'))
+    else cleanup.resolve()
+    await Promise.resolve()
+
+    expect(cuePlayer.dispose).toHaveBeenCalledOnce()
+    expect(harness.recorder.cancel).toHaveBeenCalledOnce()
+    expect(harness.transcriber.dispose).toHaveBeenCalledOnce()
+    await harness.controller.start()
+    expect(cuePlayer.playStart).toHaveBeenCalledOnce()
   })
 
   it('suppresses history and success when disposed during output delivery', async () => {
