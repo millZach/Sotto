@@ -209,7 +209,8 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     public let delegatedBy: String?
     /// A thread row's brief, or an agent row's description.
     public let preview: String?
-    /// Provider · kind of work · model, before the start time.
+    /// Where a delegated thread runs, provider · project · computer, as every thread's line reads, then its kind of work and
+    /// model; an agent's model. Before the start time.
     public let facts: [String]
     public let startedAt: Date?
     public let elapsed: AgentsElapsed
@@ -224,7 +225,7 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     /// are read again.
     public var detailsKey: String? = nil
 
-    /// Provider · kind of work · model · start time, each only where it is known.
+    /// Provider · project · computer · kind of work · model · start time, each only where it is known.
     public func meta(clock: (Date) -> String) -> String {
         (facts + (startedAt.map { [clock($0)] } ?? [])).joined(separator: " · ")
     }
@@ -390,11 +391,13 @@ public enum AgentsRoster {
 
     /// The sheet's rows: the delegated threads and the sub-agents in one list, newest start first. Each delegated thread
     /// is followed by its own, newest first, and each sub-agent by the agents reported under it. `delegations` is the
-    /// computer's answer, nil until it comes; a row it says nothing of shows what the thread list says.
+    /// computer's answer, nil until it comes; a row it says nothing of shows what the thread list says. `projects` are the
+    /// computer's and `computer` its name, for where each delegated thread runs.
     public static func rows(owner: ThreadSummary, threads: [ThreadSummary], delegations: [DelegatedThreadRecord]?, agents: [SubagentRow],
-                            models: [ThreadModel] = [], failuresSeen: Bool = true) -> [AgentsRow] {
+                            models: [ThreadModel] = [], failuresSeen: Bool = true, projects: [Project] = [], computer: String? = nil) -> [AgentsRow] {
         let quiet = ThreadGroups.isSettled(owner)
         let records = Dictionary((delegations ?? []).map { ($0.thread, $0) }, uniquingKeysWith: { first, _ in first })
+        let projectTitles = Dictionary(projects.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
         // Each block is a delegated thread with its own, or a sub-agent with the agents under it, and keeps its order.
         var blocks: [Block] = []
         var family: [AgentsRow] = []
@@ -407,7 +410,7 @@ public enum AgentsRoster {
         for item in delegated(below: owner.id, in: threads) {
             if item.level == 1 { closeFamily() }
             family.append(threadRow(item.thread, level: item.level, by: item.by, record: records[item.thread.id], read: delegations != nil, quiet: quiet,
-                                    models: models, failuresSeen: failuresSeen))
+                                    models: models, failuresSeen: failuresSeen, project: projectTitles[item.thread.projectId], computer: computer))
         }
         closeFamily()
         var agentBlock: [AgentsRow] = []
@@ -483,7 +486,7 @@ public enum AgentsRoster {
     }
 
     static func threadRow(_ thread: ThreadSummary, level: Int, by: ThreadSummary?, record: DelegatedThreadRecord?, read: Bool, quiet: Bool,
-                          models: [ThreadModel], failuresSeen: Bool = true) -> AgentsRow {
+                          models: [ThreadModel], failuresSeen: Bool = true, project: String? = nil, computer: String? = nil) -> AgentsRow {
         let waiting = waitingFor(thread)
         // An unseen failure needs the user too, but asks nothing: it says Needs attention and has no Open to answer.
         let attention = waiting == nil && failureUnseen(thread, failuresSeen: failuresSeen)
@@ -519,7 +522,8 @@ public enum AgentsRoster {
         else if let start, let end { elapsed = .took(max(0, end.timeIntervalSince(start))) }
         else { elapsed = .unknown }
         let model = models.first { $0.id == thread.modelId }?.name
-        let facts = [AgentNames.known(thread.providerId), workTitle(record?.work), model].compactMap { $0 }.filter { !$0.isEmpty }
+        // Provider · project · computer, as every thread's line reads (#1861), then what this one was delegated for.
+        let facts = [AgentNames.known(thread.providerId), project, computer, workTitle(record?.work), model].compactMap { $0 }.filter { !$0.isEmpty }
         return AgentsRow(id: "thread:" + thread.id, kind: .thread, level: level, title: thread.title, threadID: thread.id, agentID: nil,
                          providerID: thread.providerId, delegatedBy: by?.title, preview: record?.brief, facts: facts, startedAt: start,
                          elapsed: elapsed, status: status, tone: tone, waitingFor: waiting)

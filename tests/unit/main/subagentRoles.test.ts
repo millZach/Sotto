@@ -85,6 +85,15 @@ describe('Codex role files', () => {
     expect(await readdir(join(root, 'codex-roles', 'auto'))).toEqual(['sotto_code_review.toml', 'sotto_computer_use.toml'])
   })
 
+  it('tells only the Computer use worker what its helper does on Windows (#2062)', async () => {
+    const { store } = await files()
+    const written = (await store.write(TABLE, 'auto', codex))!
+    const computerUse = await readFile(written.agents.sotto_computer_use!.config_file, 'utf8')
+    expect(computerUse).toMatch(/take a screenshot of a window before you click one of its elements by index/u)
+    expect(computerUse).toMatch(/could not determine the current browser URL, stop as it says/u)
+    expect(await readFile(written.agents.sotto_code_review!.config_file, 'utf8')).not.toContain('screenshot')
+  })
+
   it('leaves out a role whose model is not ready, or whose effort the model does not offer', async () => {
     const { store } = await files()
     const written = (await store.write(TABLE, 'full-access', [native('gpt-6.1-sol', ['high']), native('gpt-6-astra', ['medium'], false)]))

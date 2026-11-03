@@ -28,8 +28,12 @@ struct MainTabs: View {
     @State private var keyboard = false
     /// Each tab's count of presses asking its first page to scroll to the top.
     @State private var tops: [Tab: Int] = [:]
-    /// The sidebar brought over an upright unfolded Duo's thread by a swipe in from the left edge.
+    /// The sidebar brought over an upright unfolded Duo's page, by a thumb's drag or the rail's sidebar button.
     @State private var drawer = false
+    /// Where a thumb has the upright sidebar while it drags it, read by the drawer alone so a drag redraws nothing else.
+    @State private var pull = SidebarPull()
+    /// Held sideways, the sidebar beside a page that isn't a thread: hidden until the rail's button or a drag brings it.
+    @State private var sidebarElse = false
     /// New thread, opened from the Duo's rail.
     @State private var creating = false
     /// The Duo was last folded, on the Threads list, so unfolding it opens the list's top row (`openTopRow`).
@@ -61,12 +65,14 @@ struct MainTabs: View {
         if abs(side) >= 60 { return .sideways(strip: max(insets.leading, insets.trailing), stripTrailing: side > 0) }
         return height == .regular ? .upright : .none
     }
-    /// Where the tabs stand: along the bottom; as a rail in the Duo's strip, where the pages get the whole height; or,
-    /// on the unfolded Duo held sideways with the rail on the side away from the clock, in a column of the strip's width.
+    /// Where the tabs stand: along the bottom; as a rail in the Duo's strip, where the pages get the whole height; or, in
+    /// a column of the strip's width: down the right edge of the unfolded Duo held upright, where the right thumb rests
+    /// (Zach's pick, November 1, 2026), or held sideways with the rail on the side away from the clock.
     private enum RailPlace: Equatable { case bottom, strip(trailing: Bool, width: CGFloat), column(leading: Bool, width: CGFloat) }
     private func railPlace(_ duo: DuoLayout) -> RailPlace {
         switch duo {
-        case .none, .upright: return .bottom
+        case .none: return .bottom
+        case .upright: return .column(leading: false, width: DuoLayout.uprightRail)
         case .folded(let strip): return .strip(trailing: true, width: strip)
         case .sideways(let strip, let stripTrailing):
             let right = DuoTabsSide(rawValue: railSide) != .left
@@ -83,15 +89,18 @@ struct MainTabs: View {
     }
     private func tabs(duo: DuoLayout) -> some View {
         let place = railPlace(duo)
-        // A thread and the keyboard cover the tabs, except on the unfolded Duo held sideways, where the rail stays in its
-        // place beside the thread and its sidebar (Zach's pick A on October 30, 2026): with no Back there, it is the way
-        // out of a thread, so the keyboard draws over its foot rather than taking it away.
-        let shown = duo.sideways || threadRail(duo) || (!keyboard && covered.isEmpty)
-        let sidebar = duo.sideways && threadOpen && !sidebarHidden
+        let opened = duo.sideways || duo == .upright
+        let upright = duo == .upright
+        // A thread and the keyboard cover the tabs, except on the unfolded Duo, where the rail stays in its place beside
+        // the page (Zach's picks of October 30 and November 1, 2026): sideways it is the way out of a thread, and upright
+        // it holds the sidebar and the tabs where the right thumb rests, so the keyboard draws over its foot rather than
+        // taking it away.
+        let shown = opened || threadRail(duo) || (!keyboard && covered.isEmpty)
+        let sidebar = duo.sideways && sidebarShown
         // The bar sits under the pages rather than in their safe area, which a NavigationStack doesn't pass on to its
         // pages: they end above it, as they did above the system's.
         return HStack(spacing: 0) {
-            if case .column(leading: true, width: let strip) = place { rail(shown, clear: Space.s4, grounded: true).frame(width: strip) }
+            if case .column(leading: true, width: let strip) = place { rail(shown, top: Space.s4, duo: duo).frame(width: strip) }
             if sidebar {
                 ThreadSidebar(open: openFromSidebar).equatable()
                     // With Reduce Motion it fades in on its own, so nothing of the page beside it moves.
@@ -103,12 +112,28 @@ struct MainTabs: View {
                 pages.opacity(pageShown).background { if glass == nil { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
                 if place == .bottom && covered.isEmpty && !keyboard {
                     TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
-                            style: duo == .upright ? .row : .bar, reselect: reselect)
-                        // Upright, New thread ends the row, away from the reply box's + at its start (Zach's pick).
-                        .overlay(alignment: .trailing) { if duo == .upright { newThread.padding(.trailing, Space.s5) } }
+                            style: .bar, reselect: reselect)
                 }
             }
-            if case .column(leading: false, width: let strip) = place { rail(shown, clear: Space.s4, grounded: true).frame(width: strip) }
+            // Upright, the sidebar comes over the page from its left edge and stops at the rail, which stays in reach.
+            .overlay {
+                if upright && sidebarAvailable {
+                    SidebarDrawer(shown: $drawer, pull: pull, open: openFromSidebar).equatable()
+                }
+            }
+            if case .column(leading: false, width: let strip) = place {
+                // Upright it starts just under the status bar; sideways, in a column of its own, a step down from the top.
+                rail(shown, top: upright ? Space.s3 : Space.s4, duo: duo).frame(width: strip)
+            }
+        }
+        // A thumb's drag moves the sidebar: upright it follows the thumb in and out from anywhere on a page; sideways a
+        // drag right brings it beside the page and a drag left puts it away (Zach's picks, November 1, 2026).
+        .background {
+            if opened {
+                SidebarSwipe(enabled: sidebarAvailable, follows: upright, shown: upright ? drawer : sidebarShown,
+                             pull: pull, settle: { settleSidebar($0, upright: upright) })
+                    .accessibilityHidden(true)
+            }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: sidebar)
         // Folding or unfolding the Duo reshapes the page into its new place rather than jumping there; with Reduce
@@ -120,16 +145,15 @@ struct MainTabs: View {
                     // Folded, an open thread's controls take the strip in place of its bar and the tabs (Zach's pick A),
                     // crossfading with them as the thread comes and goes.
                     if threadRail(duo) { FoldedThreadRail(ref: model.selected, clear: duo.clockClearance, back: popThread).equatable().transition(.opacity) }
-                    else { rail(shown, clear: duo.clockClearance, grounded: false).transition(.opacity) }
+                    else { rail(shown, top: duo.clockClearance, duo: duo).transition(.opacity) }
                 }
                 .animation(.easeInOut(duration: reduceMotion ? 0.2 : 0.25), value: threadRail(duo))
                 .frame(width: strip).offset(x: strip)
             }
         }
         .overlay(alignment: .leading) {
-            if case .strip(trailing: false, width: let strip) = place { rail(shown, clear: duo.clockClearance, grounded: false).frame(width: strip).offset(x: -strip) }
+            if case .strip(trailing: false, width: let strip) = place { rail(shown, top: duo.clockClearance, duo: duo).frame(width: strip).offset(x: -strip) }
         }
-        .overlay { if duo == .upright && threadOpen { ThreadDrawer(shown: $drawer, open: openFromSidebar).equatable() } }
         .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
             NewThreadSheet(opened: { ref in
                 model.newThreadOpened(ref)
@@ -137,7 +161,7 @@ struct MainTabs: View {
                 threadPath = NavigationPath([ThreadRoute(ref: ref)])
             })
         }
-        .onChange(of: threadOpen) { _, open in if !open { drawer = false } }
+        .onChange(of: sidebarAvailable) { _, available in if !available { drawer = false } }
         .onChange(of: duo, initial: true) { before, now in
             drawer = false
             if reduceMotion, before != now { fadeIn() }
@@ -145,8 +169,10 @@ struct MainTabs: View {
         }
         .onChange(of: threadPath) { _, path in if case .folded = duo { foldedOnList = path.isEmpty && tab == .threads } }
         .onChange(of: tab) { _, chosen in if case .folded = duo { foldedOnList = threadPath.isEmpty && chosen == .threads } }
-        // Under Glass the backdrop reaches the Duo's strip too, so the rail stands on the same ground.
-        .background { if glass != nil { PageGround().ignoresSafeArea() } }
+        // The page's ground runs on under the Duo's strip and rail, so the rail stands on the page's own ground and the
+        // page reaches every edge of the screen, with no band at the top (Zach, November 1, 2026). Under Glass the
+        // backdrop reaches every edge on any iPhone. Any other iPhone has its pages' own ground and no second one.
+        .background { if glass != nil || duo != .none { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
         .environment(\.tabsCovered, $covered)
         // The bar goes under the keyboard, as the system's did; a hardware keyboard's slim bar leaves it.
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
@@ -174,23 +200,53 @@ struct MainTabs: View {
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
         }
     }
-    /// The tabs stood in a column: in the Duo's strip, or down the edge of the unfolded Duo held sideways. New thread
-    /// tops it, just under the clock and battery and apart from the tabs, on every tab (Zach's picks, October 30, 2026),
-    /// and the tabs are centred in the height under it.
-    /// In the Duo's strip the rail is `grounded: false`, so the page beside it, wash and all, shows under it and the
-    /// strip reads as the page's own (ADR-0151, amended); in a column of its own it stands on the page's ground.
-    @ViewBuilder private func rail(_ shown: Bool, clear: CGFloat, grounded: Bool) -> some View {
+    /// The sidebar has a page to stand beside: every page but the Threads list, which is the same list.
+    private var sidebarAvailable: Bool { !(tab == .threads && threadPath.isEmpty) }
+    /// Whether the sidebar shows held sideways: beside a thread unless the user hid it there, beside another page only
+    /// once they bring it.
+    private var sidebarShown: Bool {
+        guard sidebarAvailable else { return false }
+        return threadOpen ? !sidebarHidden : sidebarElse
+    }
+    /// The rail's sidebar button and a drag both land here: upright the sidebar comes over the page or goes, sideways it
+    /// stands beside the page or goes.
+    private func settleSidebar(_ show: Bool, upright: Bool) {
+        guard sidebarAvailable || !show else { return }
+        let motion: Animation = reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.9)
+        withAnimation(motion) {
+            if upright { drawer = show } else if threadOpen { sidebarHidden = !show } else { sidebarElse = show }
+        }
+    }
+    /// The rail: on the unfolded Duo the sidebar's button, then New thread, under the clock and battery and apart from
+    /// the tabs, on every tab; and the tabs in one pill at the foot, where the thumb rests (Zach's picks, October 30 and
+    /// November 1, 2026). In the Duo's strip the page beside it, wash and all, shows under it and the strip reads as the
+    /// page's own (ADR-0151, amended).
+    @ViewBuilder private func rail(_ shown: Bool, top: CGFloat, duo: DuoLayout) -> some View {
         if shown {
-            VStack(spacing: 0) {
-                newThread.padding(.top, clear)
+            VStack(spacing: Space.s3) {
+                if duo.sideways || duo == .upright { sidebarButton(upright: duo == .upright) }
+                newThread
+                Spacer(minLength: Space.s3)
                 TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
-                        style: .rail, grounded: grounded, reselect: reselect)
-                    .frame(maxHeight: .infinity)
+                        style: .rail, reselect: reselect)
             }
+            .padding(.top, top)
+            .padding(.bottom, Space.s5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea(.keyboard)
         } else {
             Color.clear
         }
+    }
+    /// Shows or hides the threads' sidebar, as a drag does. On the Threads list the list is the page, so it rests there.
+    private func sidebarButton(upright: Bool) -> some View {
+        let showing = upright ? drawer : sidebarShown
+        return Button { settleSidebar(!showing, upright: upright) } label: { Image(systemName: "sidebar.left") }
+            .buttonStyle(GlassCircleStyle())
+            .disabled(!sidebarAvailable)
+            .accessibilityLabel(showing ? String(localized: "Hide the threads", comment: "Hides the list of threads beside the open thread on the iPhone Duo unfolded")
+                                : String(localized: "Show the threads", comment: "Shows the list of threads beside the open thread on the iPhone Duo unfolded"))
+            .accessibilityIdentifier("duo-sidebar")
     }
     /// Unfolding the Duo from the Threads list and holding it sideways opens the list's top row beside the sidebar, marked
     /// there, as if it were tapped: Needs you first, then Working now, then Recent, so a question waiting rises as its
@@ -246,6 +302,7 @@ struct MainTabs: View {
             // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
             if let hostID = model.watcherHostID {
                 NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() }
+                    .environment(\.pageTop, tops[.watcher, default: 0])
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.watcher)
             }
@@ -360,70 +417,94 @@ struct MainTabs: View {
 }
 
 /// The tabs' bar: icons and names straight on the canvas, the chosen tab in the accent, with no shape behind them. Under
-/// Glass they float on a capsule of Liquid Glass instead. On the iPhone Duo they are icons alone, in a rail down its strip
-/// or along the bottom unfolded and upright, the chosen one filled on a soft chip of the accent, with no glass under any
-/// theme (Zach's pick A at 28 points, October 30, 2026). Watcher's owl carries a dot while Watcher works, and its badge
-/// counts what needs the user that only Watcher's page shows; VoiceOver reads both after its name ("Working, 1 needs you").
+/// Glass they float on a capsule of Liquid Glass instead. On the iPhone Duo they are a rail of icons alone in one rounded
+/// pill, the chosen one filled on a round tile of the accent (Zach's picks of October 30 and November 1, 2026): every
+/// icon one optical size and weight in the same 50-point tile, the owl drawn a little smaller since it is solid where
+/// the system's symbols are lines. Watcher's owl carries a dot while Watcher works, and its badge counts what needs the
+/// user that only Watcher's page shows; VoiceOver reads both after its name ("Working, 1 needs you").
 struct TabsBar: View {
     @Binding var tab: MainTabs.Tab
     let threadsBadge: Int
     let watcher: WatcherTabState?
-    /// The bar along the bottom of every other iPhone, or the Duo's icons: a rail stacked down a strip, or a row.
-    enum Style { case bar, rail, row }
+    /// The bar along the bottom of every other iPhone, or the Duo's pill of icons down its rail.
+    enum Style { case bar, rail }
     var style = Style.bar
-    /// Whether it stands on the page's ground. A rail in the Duo's strip doesn't: the page under the strip shows through.
-    var grounded = true
     /// A press on the tab already chosen.
     var reselect: (MainTabs.Tab) -> Void = { _ in }
-    private var duo: Bool { style != .bar }
-    var body: some View {
-        let layout = style == .rail ? AnyLayout(VStackLayout(spacing: Space.s2))
-            : style == .row ? AnyLayout(HStackLayout(spacing: Space.s7)) : AnyLayout(HStackLayout(spacing: 0))
-        layout {
-            item(.threads, Image(systemName: "bubble.left"), Text("Threads"), badge: threadsBadge, spoken: threadsBadge > 0 ? "\(threadsBadge)" : "")
-            if let watcher {
-                item(.watcher, Image(watcher.working ? "WatcherTabWorking" : "WatcherTab"), Text("Watcher"), badge: watcher.needs, spoken: watcher.spoken)
+    /// A tab's icon: one of the system's symbols, or an image of Sotto's own, the owl.
+    enum Icon {
+        case symbol(String), asset(String)
+        var image: Image {
+            switch self {
+            case .symbol(let name): return Image(systemName: name)
+            case .asset(let name): return Image(name)
             }
-            item(.computers, Image(systemName: "desktopcomputer"), Text("Computers"), badge: 0, spoken: "")
-            item(.settings, Image(systemName: "slider.horizontal.3"), Text("Settings"), badge: 0, spoken: "")
         }
-        .padding(style == .rail ? .vertical : .horizontal, Space.s2)
-        .padding(.top, style == .bar ? Space.s1 : 0)
-        .padding(.bottom, style == .row ? Space.s1 : 0)
-        .frame(maxWidth: style == .row ? .infinity : nil)
+        var isSymbol: Bool { if case .symbol = self { return true } else { return false } }
+    }
+    private var rail: Bool { style == .rail }
+    var body: some View {
+        let layout = rail ? AnyLayout(VStackLayout(spacing: DuoRailMetrics.tileGap)) : AnyLayout(HStackLayout(spacing: 0))
+        layout {
+            item(.threads, .symbol("bubble.left"), Text("Threads"), badge: threadsBadge, spoken: threadsBadge > 0 ? "\(threadsBadge)" : "")
+            if let watcher {
+                item(.watcher, .asset(watcher.working ? "WatcherTabWorking" : "WatcherTab"), Text("Watcher"), badge: watcher.needs, spoken: watcher.spoken)
+            }
+            item(.computers, .symbol("desktopcomputer"), Text("Computers"), badge: 0, spoken: "")
+            item(.settings, .symbol("slider.horizontal.3"), Text("Settings"), badge: 0, spoken: "")
+        }
+        .padding(rail ? .all : .horizontal, rail ? DuoRailMetrics.pillInset : Space.s2)
+        .padding(.top, rail ? 0 : Space.s1)
+        .background {
+            if rail {
+                Capsule().fill(Palette.surface)
+                    .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                    .accessibilityHidden(true)
+            }
+        }
         // The names stay at the size the system's tab bar keeps; at the accessibility sizes a long press shows the
         // large content viewer instead. Grown with the text, four names ran together on a small iPhone.
         .dynamicTypeSize(...DynamicTypeSize.large)
-        .modifier(TabsGlass(shown: style == .bar))
-        .background { if grounded { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
+        .modifier(TabsGlass(shown: !rail))
+        // The bar stands on the page's ground; the rail's pill has its own.
+        .background { if !rail { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
         .accessibilityIdentifier("tabs")
     }
-    private func item(_ id: MainTabs.Tab, _ icon: Image, _ title: Text, badge: Int, spoken: String) -> some View {
+    @ViewBuilder private func glyph(_ icon: Icon, chosen: Bool) -> some View {
+        if rail && icon.isSymbol {
+            // Drawn as type rather than stretched to a box, so every symbol keeps the system's own margins and weight.
+            icon.image.font(.system(size: DuoRailMetrics.symbol, weight: .medium))
+                .symbolVariant(chosen ? .fill : .none)
+                .frame(width: DuoRailMetrics.icon, height: DuoRailMetrics.icon)
+        } else {
+            let size: CGFloat = rail ? DuoRailMetrics.owl : 24
+            icon.image.renderingMode(.template).resizable().scaledToFit()
+                .frame(width: size, height: size)
+                .frame(width: rail ? DuoRailMetrics.icon : 24, height: rail ? DuoRailMetrics.icon : 24)
+        }
+    }
+    private func item(_ id: MainTabs.Tab, _ icon: Icon, _ title: Text, badge: Int, spoken: String) -> some View {
         let chosen = tab == id
-        let size: CGFloat = duo ? 28 : 24
         return Button { if chosen { reselect(id) } else { tab = id } } label: {
             VStack(spacing: 3) {
-                icon.renderingMode(.template).resizable().scaledToFit()
-                    .symbolVariant(duo && chosen ? .fill : .none)
-                    .frame(width: size, height: size)
+                glyph(icon, chosen: chosen)
                     .overlay(alignment: .topTrailing) {
                         if badge > 0 {
                             Text(verbatim: "\(badge)").font(.sotto(.caption, .semibold)).monospacedDigit()
                                 .foregroundStyle(Palette.canvas).environment(\.colorScheme, .dark)
                                 .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
                                 .background(Palette.warning, in: Capsule())
-                                .offset(x: duo ? 14 : 12, y: -6)
+                                .offset(x: 12, y: -6)
                         }
                     }
-                if !duo { title.font(.sotto(.caption, .medium)).lineLimit(1).minimumScaleFactor(0.8) }
+                if !rail { title.font(.sotto(.caption, .medium)).lineLimit(1).minimumScaleFactor(0.8) }
             }
             .foregroundStyle(chosen ? Palette.accentText : Palette.muted)
-            .frame(width: duo ? 60 : nil, height: duo ? 50 : nil)
-            .background { if duo && chosen { RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(ThemeRole(.accentSurface)) } }
-            .frame(maxWidth: style == .row ? nil : .infinity, minHeight: duo ? 62 : 44)
-            .frame(width: style == .row ? 72 : nil)
+            .frame(width: rail ? DuoRailMetrics.tile : nil, height: rail ? DuoRailMetrics.tile : nil)
+            .background { if rail && chosen { Circle().fill(ThemeRole(.accentSurface)) } }
+            .frame(maxWidth: rail ? nil : .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -431,12 +512,23 @@ struct TabsBar: View {
         .accessibilityLabel(title)
         .accessibilityValue(Text(verbatim: spoken))
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
-        .accessibilityShowsLargeContentViewer { Label { title } icon: { icon.renderingMode(.template) } }
+        .accessibilityShowsLargeContentViewer { Label { title } icon: { icon.image.renderingMode(.template) } }
         .accessibilityIdentifier("tab-\(id)")
     }
 }
 
-/// The capsule of Liquid Glass the bottom bar floats on under Glass, on iOS 26 and later. The Duo's icons have none.
+/// The Duo rail's measures (Zach's pick, November 1, 2026): a pill of 50-point tiles, each icon in a 28-point frame, the
+/// system's symbols drawn as 21-point type and the solid owl at 23 points so its ink matches theirs.
+enum DuoRailMetrics {
+    static let tile: CGFloat = 50
+    static let tileGap: CGFloat = 2
+    static let pillInset: CGFloat = 5
+    static let icon: CGFloat = 28
+    static let symbol: CGFloat = 21
+    static let owl: CGFloat = 23
+}
+
+// The capsule of Liquid Glass the bottom bar floats on under Glass, on iOS 26 and later. The Duo's icons have none.
 private struct TabsGlass: ViewModifier {
     let shown: Bool
     @Environment(\.sottoGlass) private var glass
@@ -518,9 +610,11 @@ enum DuoLayout: Equatable {
     case folded(strip: CGFloat)
     /// Unfolded and held sideways: the clock's strip runs down one edge, the right one when `stripTrailing`.
     case sideways(strip: CGFloat, stripTrailing: Bool)
-    /// Unfolded and held upright: the tabs run along the bottom.
+    /// Unfolded and held upright: the rail stands in a column down the right edge, `uprightRail` wide.
     case upright
     var sideways: Bool { if case .sideways = self { return true } else { return false } }
+    /// How wide the upright rail's column is: room for the tabs' pill and the round buttons, with a margin each side.
+    static let uprightRail: CGFloat = 80
     /// How far down the strip New thread, or a thread's Back, sits: under the clock, battery and page dots, lower on the
     /// cover screen than unfolded. On Zach's Duo the + overlapped the battery at 156 and 108 points (TestFlight build 45),
     /// so both moved down a step and a half.
@@ -530,7 +624,9 @@ enum DuoLayout: Equatable {
         switch self {
         case .folded(let strip): return (0, strip)
         case .sideways(let strip, let trailing): return trailing ? (0, strip) : (strip, 0)
-        case .none, .upright: return (0, 0)
+        // Upright the rail's column is the app's own, not the system's, but the page's ground runs on under it the same.
+        case .upright: return (0, Self.uprightRail)
+        case .none: return (0, 0)
         }
     }
 }
@@ -542,29 +638,20 @@ extension EnvironmentValues {
     }
 }
 
-/// A thread's bar on the unfolded Duo (Zach's picks, October 30, 2026). Sideways, Back gives way to the button that hides
-/// or shows the sidebar: the rail stays beside the thread, and its Threads tab goes back to the list. Upright, Back is
-/// the thread's own button, which leaves the swipe in from the left edge to bring the sidebar. A nested thread keeps
-/// iOS's Back both ways and, sideways, gets the sidebar button beside it.
+/// A thread's bar on the unfolded Duo (Zach's picks, October 30 and November 1, 2026). Sideways it has no Back: the rail
+/// stays beside the thread, its Threads tab goes back to the list, and the sidebar's button stands on the rail. Upright,
+/// Back is the thread's own button, since a thumb's drag right anywhere on the page brings the sidebar rather than going
+/// back. A nested thread keeps iOS's Back both ways.
 private struct DuoThreadBar: ViewModifier {
     let nested: Bool
     @Environment(\.duoLayout) private var duo
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(PhonePreferenceKey.duoSidebarHidden) private var sidebarHidden = false
     func body(content: Content) -> some View {
         // One subtree whatever the screen, so folding or turning the Duo never resets the thread's own state.
         let sideways = duo.sideways, upright = duo == .upright && !nested
         return content
             .navigationBarBackButtonHidden((sideways && !nested) || upright)
             .toolbar {
-                if sideways {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { sidebarHidden.toggle() } label: { Image(systemName: "sidebar.left") }
-                            .accessibilityLabel(sidebarHidden ? String(localized: "Show the threads", comment: "Shows the list of threads beside the open thread on the iPhone Duo unfolded") : String(localized: "Hide the threads", comment: "Hides the list of threads beside the open thread on the iPhone Duo unfolded"))
-                            .accessibilityIdentifier("duo-sidebar")
-                    }
-                    .horizontalOnly()
-                }
                 if upright {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { dismiss() } label: { Image(systemName: "chevron.backward") }
@@ -817,24 +904,36 @@ struct ThreadListRow: View, Equatable {
     }
 }
 
-/// Upright, the unfolded Duo's thread has the screen, and a swipe in from its left edge brings the sidebar over it (Zach's
-/// pick, October 30, 2026). The swipe takes the place of the system's swipe back there, which is why the thread's bar
-/// keeps a Back button of its own. A swipe back, a press beside the sidebar, Escape or a chosen thread puts it away.
-/// VoiceOver finds the edge as a button.
-private struct ThreadDrawer: View, Equatable {
+/// Where a thumb has the upright sidebar while it drags it: 0 out of sight, 1 all the way in, nil while nothing holds it.
+/// Only the drawer reads it, so a drag redraws the drawer and nothing else.
+@Observable final class SidebarPull {
+    var progress: CGFloat?
+}
+
+/// Upright, the unfolded Duo's page has the screen, and the sidebar comes over it from the left edge (Zach's picks,
+/// October 30 and November 1, 2026): a thumb's drag right anywhere on the page pulls it in, following the thumb, and a
+/// drag left pushes it out the same way (`SidebarSwipe`); the rail's sidebar button does both too. A press beside it,
+/// Escape or a chosen thread puts it away. The handle at the left edge is a button for VoiceOver and a press.
+private struct SidebarDrawer: View, Equatable {
     @Binding var shown: Bool
+    let pull: SidebarPull
     let open: (ThreadRef) -> Void
+    static let width: CGFloat = 320
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    static func == (lhs: ThreadDrawer, rhs: ThreadDrawer) -> Bool { lhs.shown == rhs.shown }
+    static func == (lhs: SidebarDrawer, rhs: SidebarDrawer) -> Bool { lhs.shown == rhs.shown && lhs.pull === rhs.pull }
     var body: some View {
+        let held = pull.progress
+        let fraction = held ?? (shown ? 1 : 0)
         ZStack(alignment: .leading) {
-            if shown {
-                Color.black.opacity(0.35)
+            if shown || held != nil {
+                Color.black.opacity(0.35 * fraction)
                     .ignoresSafeArea()
+                    .contentShape(Rectangle())
                     .onTapGesture { shown = false }
+                    .allowsHitTesting(shown && held == nil)
                     .accessibilityHidden(true)
                     .transition(.opacity)
-                ThreadSidebar(open: open, width: 320, newThread: true)
+                ThreadSidebar(open: open, width: Self.width, newThread: true).equatable()
                     .background { PageGround().ignoresSafeArea() }
                     // Escape on a hardware keyboard puts it away, as VoiceOver's escape gesture does.
                     .background {
@@ -843,34 +942,161 @@ private struct ThreadDrawer: View, Equatable {
                             .opacity(0)
                             .accessibilityHidden(true)
                     }
-                    .gesture(DragGesture(minimumDistance: 20).onEnded { if $0.translation.width < -40 { shown = false } })
+                    .offset(x: (fraction - 1) * (Self.width + Space.s6))
                     .accessibilityAction(.escape) { shown = false }
-                    // VoiceOver stays in the sidebar while it is over the thread.
+                    // VoiceOver stays in the sidebar while it is over the page.
                     .accessibilityAddTraits(.isModal)
                     .transition(reduceMotion ? .opacity : .move(edge: .leading))
             } else {
-                // A swipe in anywhere down the edge, clear of the bar's Back above and the reply box's + below so a press on
-                // either still lands, and a handle in the middle that a press opens too.
-                Color.clear
-                    .frame(width: 16)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .padding(.vertical, 72)
-                    .gesture(DragGesture(minimumDistance: 10).onEnded { if $0.translation.width > 40 { shown = true } })
-                    .accessibilityHidden(true)
                 Button { shown = true } label: {
                     Capsule().fill(Palette.muted.opacity(0.45)).frame(width: 4, height: 44)
                         .frame(width: 32, height: 88)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .simultaneousGesture(DragGesture(minimumDistance: 10).onEnded { if $0.translation.width > 40 { shown = true } })
                 .accessibilityLabel(String(localized: "Show the threads", comment: "Shows the list of threads beside the open thread on the iPhone Duo unfolded"))
                 .accessibilityIdentifier("duo-sidebar-edge")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.9), value: shown)
+    }
+}
+
+/// A thumb's sideways drag anywhere over the unfolded Duo's pages moves the threads' sidebar (Zach's picks, November 1,
+/// 2026). Upright, it `follows` the thumb in and out through `SidebarPull` and settles where the thumb lets go, or where
+/// a flick sends it; sideways, a drag right brings the sidebar beside the page and a drag left puts it away. The drag is
+/// UIKit's, on the window, so it starts anywhere and never takes a press: it begins only for a drag that is mostly
+/// sideways and towards where the sidebar would go, leaves a row or a block of code that scrolls sideways to scroll
+/// while it can still scroll that way, and stays out of sheets. Once it begins, the page under it stops scrolling.
+private struct SidebarSwipe: UIViewRepresentable {
+    let enabled: Bool
+    let follows: Bool
+    let shown: Bool
+    let pull: SidebarPull
+    let settle: (Bool) -> Void
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> Anchor {
+        let anchor = Anchor()
+        anchor.isUserInteractionEnabled = false
+        anchor.coordinator = context.coordinator
+        context.coordinator.anchor = anchor
+        return anchor
+    }
+    func updateUIView(_ anchor: Anchor, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.enabled = enabled
+        coordinator.follows = follows
+        coordinator.shown = shown
+        coordinator.pull = pull
+        coordinator.settle = settle
+    }
+    static func dismantleUIView(_ anchor: Anchor, coordinator: Coordinator) { coordinator.detach() }
+
+    /// Where the drag may start, the size of the pages; it puts the drag on its window.
+    final class Anchor: UIView {
+        weak var coordinator: Coordinator?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            coordinator?.attach(to: window)
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var enabled = false
+        var follows = false
+        var shown = false
+        var pull: SidebarPull?
+        var settle: (Bool) -> Void = { _ in }
+        weak var anchor: UIView?
+        private weak var host: UIView?
+        private var from = false
+        private lazy var pan: UIPanGestureRecognizer = {
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(moved(_:)))
+            pan.delegate = self
+            return pan
+        }()
+
+        func attach(to window: UIWindow?) {
+            detach()
+            guard let window else { return }
+            window.addGestureRecognizer(pan)
+            host = window
+        }
+        func detach() {
+            host?.removeGestureRecognizer(pan)
+            host = nil
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === pan, enabled, let anchor, let window = anchor.window else { return false }
+            // Nothing presented over the page, such as a sheet, moves the sidebar under it.
+            if window.rootViewController?.presentedViewController != nil { return false }
+            guard anchor.bounds.contains(pan.location(in: anchor)) else { return false }
+            let velocity = pan.velocity(in: anchor)
+            guard abs(velocity.x) > abs(velocity.y) * 1.2, shown ? velocity.x < 0 : velocity.x > 0 else { return false }
+            guard let touched = window.hitTest(pan.location(in: window), with: nil) else { return true }
+            if (touched as? UITextInput) != nil, touched.isFirstResponder { return false }
+            return !scrolls(touched, right: velocity.x > 0)
+        }
+        /// Whether a row or block under the thumb that scrolls sideways can still scroll the way the thumb goes, so it
+        /// keeps the drag: a drag right on one away from its start, a drag left on one short of its end.
+        private func scrolls(_ view: UIView, right: Bool) -> Bool {
+            var next: UIView? = view
+            while let current = next {
+                if let scroll = current as? UIScrollView, scroll.contentSize.width > scroll.bounds.width + 1 {
+                    let start = -scroll.adjustedContentInset.left
+                    let end = scroll.contentSize.width - scroll.bounds.width + scroll.adjustedContentInset.right
+                    if right ? scroll.contentOffset.x > start + 1 : scroll.contentOffset.x < end - 1 { return true }
+                }
+                next = current.superview
+            }
+            return false
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+        @objc private func moved(_ recognizer: UIPanGestureRecognizer) {
+            guard let anchor else { return }
+            let dx = recognizer.translation(in: anchor).x
+            switch recognizer.state {
+            case .began:
+                from = shown
+                stopScrolling(under: recognizer)
+                if follows { pull?.progress = progress(dx) }
+            case .changed:
+                if follows { pull?.progress = progress(dx) }
+            case .ended, .cancelled, .failed:
+                let speed = recognizer.velocity(in: anchor).x
+                var show: Bool
+                if follows {
+                    show = abs(speed) > 400 ? speed > 0 : progress(dx) > 0.5
+                } else {
+                    show = from ? !(dx < -60 || speed < -400) : (dx > 60 || speed > 400)
+                }
+                if recognizer.state != .ended { show = from }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { pull?.progress = nil }
+                settle(show)
+            default:
+                break
+            }
+        }
+        private func progress(_ dx: CGFloat) -> CGFloat {
+            min(1, max(0, (from ? 1 : 0) + dx / SidebarDrawer.width))
+        }
+        /// The page under the thumb stops scrolling once the drag is the sidebar's: its pan is turned off and on, which
+        /// ends it.
+        private func stopScrolling(under recognizer: UIPanGestureRecognizer) {
+            guard let window = anchor?.window, let touched = window.hitTest(recognizer.location(in: window), with: nil) else { return }
+            var next: UIView? = touched
+            while let current = next {
+                if let scroll = current as? UIScrollView, scroll.panGestureRecognizer.isEnabled {
+                    scroll.panGestureRecognizer.isEnabled = false
+                    scroll.panGestureRecognizer.isEnabled = true
+                }
+                next = current.superview
+            }
+        }
     }
 }
 

@@ -49,6 +49,43 @@ describe('Codex Computer Use calls', () => {
     }
   })
 
+  describe('when the helper cannot read the browser\'s address (#2062)', () => {
+    const refusal = 'Computer Use has been stopped for this turn because it could not determine the current browser URL on Windows with enough confidence to enforce policy. Stop your work and send a final message noting why Computer Use ended.'
+    const guidance = 'Computer Use stopped because it could not read this page\'s address from the browser. This can happen while a dialog is open or a large page is loading. Its last step may already have worked, so check the page, close any dialog and try again.'
+
+    it('says what happened and what to do, above Codex\'s own words, on either route', () => {
+      for (const server of ['cua_repl', 'node_repl']) {
+        const stopped = project(call(server, 'await sky.get_window_state()', { status: 'failed', result: { content: [{ type: 'text', text: refusal }], isError: true } }), 'full-access')
+        expect(stopped.error).toBe(`${guidance}\n${refusal}`)
+        expect(stopped.output).toBeUndefined()
+      }
+      expect(project(call('cua_repl', 'anything', { status: 'failed', error: { message: refusal } }), 'full-access').error).toBe(`${guidance}\n${refusal}`)
+    })
+
+    it('finds the stop after what the script had already written, and keeps that output', () => {
+      const written = `{"read":"ok"}\n${refusal}`
+      expect(computerUseNeeds(written, false)).toBe(guidance)
+      const stopped = project(call('cua_repl', 'anything', { status: 'failed', result: { content: [{ type: 'text', text: written }], isError: true } }), 'full-access')
+      expect(stopped.error).toBe(guidance)
+      expect(stopped.output).toBe(written)
+    })
+
+    it('does not take a page that quotes the sentence for a stop', () => {
+      const tree = `Window: "Issue", App: chrome.exe.\n\t\t55 document Issue Value: https://example.com/ ID: RootWebArea\n\t\t\t56 text ${refusal}`
+      const read = project(call('cua_repl', 'await app.getAXState()', { status: 'completed', result: { content: [{ type: 'text', text: tree }] } }), 'full-access')
+      expect(read.error).toBeUndefined()
+      expect(computerUseNeeds(`The worker said: ${refusal}`, false)).toBeUndefined()
+    })
+
+    it('leaves the helper\'s other stops and the geometry error in its own words', () => {
+      for (const text of [
+        'Computer Use has been stopped for this turn because it is not allowed on the current browser URL.',
+        'Computer Use has been stopped for this turn because it could not verify whether the current browser URL is allowed.',
+        'coordinate input geometry is unavailable',
+      ]) expect(computerUseNeeds(text, false)).toBeUndefined()
+    })
+  })
+
   it('does not interpret authorization and unrelated failures as a connection or sandbox problem', () => {
     for (const text of ['Computer Use permission denied', 'Authorization required', 'Window not found', 'trusted Node process exited unexpectedly']) {
       expect(computerUseNeeds(text, false)).toBeUndefined()

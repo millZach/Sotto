@@ -304,6 +304,11 @@ export interface AppSettings {
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
   holdShortcuts: string[]
   /**
+   * The global shortcut that shows or hides the popup (Owl `popup`, ADR-0181), as an Electron accelerator; null has
+   * none, and the popup opens only from the tray. Kept whole while the feature is off.
+   */
+  popupShortcut: string | null
+  /**
    * The keyboard shortcuts for working in threads the user changed under Settings › Keyboard (ADR-0133), by
    * shortcut. A row left out follows its default (`threadShortcuts.ts`); a row set to null has no shortcut.
    * Read live, so a change in Settings reaches every button and listener at once.
@@ -425,6 +430,11 @@ export interface AppSettings {
   /** This computer's name as phones show it. Empty uses the Tailscale machine name, or the computer's own. */
   phoneAccessName: string
   /**
+   * Let apps on this computer connect (Owl `local-apps`, ADR-0180): a loopback-only host protocol listener and a token
+   * file only this user can read, so an app such as Agent Popup connects without a pairing code. Needs the local host.
+   */
+  localApps: boolean
+  /**
    * Host-local, read only by a headless host (ADR-0053): Tailscale Serve carries the host's tailnet listener for paired
    * desktops' tailnet connections while this or `phoneAccess` is on. The host's administrative route sets it; nothing on
    * a desktop does, so it is not on the settings allow-list.
@@ -500,6 +510,7 @@ const fieldSchemas = {
   hotkeyStandby: z.boolean(),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  popupShortcut: z.string().min(1).max(64).nullable(),
   threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
@@ -567,6 +578,7 @@ const fieldSchemas = {
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
+  localApps: z.boolean(),
   tailnetConnections: z.boolean(),
   memoryEnabled: z.boolean(),
   cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
@@ -623,6 +635,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hotkeyStandby: false,
   pressShortcuts: [],
   holdShortcuts: [],
+  // Option-Shift-Space on a Mac, the chord Sotto Popup used before the popup was built in (ADR-0181).
+  popupShortcut: 'Alt+Shift+Space',
   // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
   threadShortcuts: {},
   terminalFontSize: 13,
@@ -705,6 +719,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Off by default: nothing listens beyond this computer until the owner turns it on (ADR-0033).
   phoneAccess: false,
   phoneAccessName: '',
+  // Off by default: no token is written and nothing else listens until the owner turns it on (ADR-0180).
+  localApps: false,
   // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
   tailnetConnections: false,
   // Off for the beta: memory does not ship in the first one.
@@ -819,6 +835,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
+    popupShortcut: parseField(persisted, 'popupShortcut', defaults),
     // Row by row, so one damaged shortcut falls back to its own default and no other.
     threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
@@ -881,6 +898,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
+    localApps: parseField(persisted, 'localApps', defaults),
     tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
