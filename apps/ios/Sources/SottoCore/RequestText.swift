@@ -19,7 +19,7 @@ public enum RequestText {
     }
 
     /// The line over a summary, saying whose words they are: the model's own, or what Sotto got by asking its provider about
-    /// the command alone. Sotto checks neither, so they never read as Sotto's account (ADR-0180).
+    /// the command alone. Sotto checks neither, so they never read as Sotto's account (ADR-0185).
     public static func summaryHeading(_ context: RequestContext, provider: String) -> String {
         context.summaryAsk == "answered"
             ? String(localized: "Sotto asked \(provider) what this does", bundle: .module, comment: "Over a summary of a command that Sotto asked the coding agent's provider for. %@ is its name, such as Codex.")
@@ -46,7 +46,7 @@ public enum RequestText {
     }
 
     /// What a permission's sheet leads with, and the rest of its words (#1855). A command's words never lead: they can hold
-    /// the model's summary, which reads as the model's under the headline (ADR-0180), so the sheet says a command is asked.
+    /// the model's summary, which reads as the model's under the headline (ADR-0185), so the sheet says a command is asked.
     /// Any other request leads with what it does, or with the first line of its words when it says nothing more exact.
     public static func permissionLead(_ request: AgentRequest) -> (headline: String?, rest: String?) {
         guard request.context?.command == nil else { return (nil, nil) }

@@ -515,7 +515,7 @@ public struct Question: Decodable, Equatable, Identifiable, Sendable {
 public struct PermissionChoice: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let kind: String; public let description: String? }
 public struct RequestContext: Decodable, Equatable, Sendable {
     public let toolName: String?; public let command: String?; public let cwd: String?; public let details: String?
-    /// The asking model's own words for what it asks (ADR-0180). Sotto writes none, and a computer from before it sends none.
+    /// The asking model's own words for what it asks (ADR-0185). Sotto writes none, and a computer from before it sends none.
     public let summary: String?
     /// Set when Sotto asked the thread's own provider for the summary: `waiting`, `answered` or `failed`. Absent when the
     /// summary is the model's own or none was asked for, and from a computer that predates it.

@@ -390,7 +390,7 @@ export interface AppSettings {
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
    */
   threadTitles: boolean
-  /** Ask a thread's own provider for a command summary when the model sent none (ADR-0180). */
+  /** Ask a thread's own provider for a command summary when the model sent none (ADR-0185). */
   commandSummaries: boolean
   /**
    * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side

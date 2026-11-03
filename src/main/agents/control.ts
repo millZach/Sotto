@@ -1349,7 +1349,7 @@ export class AgentControl {
      * that writes nothing and every failure resolve to. Absent here means no thread is ever named by Sotto.
      */
     writeThreadTitle?: (threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>
-    /** Asks a thread's own provider for a command summary when the model sent none (ADR-0180). */
+    /** Asks a thread's own provider for a command summary when the model sent none (ADR-0185). */
     writeCommandSummary?: CommandSummaryWrite
     /**
      * The first-message title for a thread's first message: its opening words, given the moment it is sent so

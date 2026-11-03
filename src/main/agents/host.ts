@@ -196,7 +196,7 @@ export interface ThreadReadPurpose {
 /** Where a rename came from: by hand, written by the thread's own provider, or a first-message title. */
 export type ThreadRenameSource = 'user' | 'generated' | 'first-message'
 export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt' | 'command-summary'
-/** The side calls Watcher's own thread may make: neither runs a tool or joins its conversation (ADR-0173, ADR-0180). */
+/** The side calls Watcher's own thread may make: neither runs a tool or joins its conversation (ADR-0173, ADR-0185). */
 export const watcherMayWrite = (purpose: ShortTextPurpose | undefined): boolean => purpose === 'next-prompt' || purpose === 'command-summary'
 export interface ShortTextPrompt {
   readonly instruction: string

@@ -37,7 +37,7 @@ describe('a summary reaching the card through the coordinator', () => {
   })
 })
 
-describe('the command summaries Sotto asks for (ADR-0180)', () => {
+describe('the command summaries Sotto asks for (ADR-0185)', () => {
   it('shows the card at once as waiting, then the answer, and tells the coordinator', async () => {
     const pending = deferred<string | null | undefined>()
     const write = vi.fn<CommandSummaryWrite>(() => pending.promise)

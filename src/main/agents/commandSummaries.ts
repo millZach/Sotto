@@ -16,7 +16,7 @@ interface Ask {
 }
 
 /**
- * The summaries Sotto asks for when a command's model sent none (ADR-0180, November 2 amendment). The coordinator hands
+ * The summaries Sotto asks for when a command's model sent none (ADR-0185, November 2 amendment). The coordinator hands
  * it each shown list as it does `RequestWaits`, and it puts each ask's state on the request: the card never waits for one, a
  * request answered or gone stops its call, and all of it lives in memory, so nothing about a command is kept.
  */
