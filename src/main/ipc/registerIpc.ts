@@ -196,6 +196,7 @@ const settingKeys = [
   'showBrowserPreviews',
   'browserWithoutAsking',
   'visualsInThreads',
+  'showEveryAgentPicture',
   'babysitPullRequests',
   'resumeThreadsAfterRestart',
   'restartStoppedThreads',

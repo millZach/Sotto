@@ -30,6 +30,23 @@ function fixture(hostId: string, kind: 'local' | 'remote') {
     service: { shell: () => state, subscribe: () => () => undefined, command }, detail, observe, preview: () => null }
   return { state, command, detail, observe, connection }
 }
+describe('where a paired host\'s thread opens its terminal (ADR-0183)', () => {
+  it('answers from what the host last published, and asks it nothing', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads = [{ ...remote.state.host.threads[0]!, workingDirectory: '/worktrees/thread' }]
+    router.add(remote.connection)
+    expect(router.hostedThreadFolders(hostEntityKey(REMOTE, 'thread'))).toEqual({ hostId: REMOTE, projectId: hostEntityKey(REMOTE, 'project'), workingDirectory: '/worktrees/thread', projectFolder: '/repo' })
+    expect(remote.command).not.toHaveBeenCalled()
+  })
+  it('has no answer for a thread it does not hold, a host it does not know, or this computer', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote'), local = fixture(LOCAL, 'local')
+    router.add(remote.connection); router.add(local.connection)
+    expect(router.hostedThreadFolders(hostEntityKey(REMOTE, 'gone'))).toBeUndefined()
+    expect(router.hostedThreadFolders(hostEntityKey('33333333-3333-4333-8333-333333333333', 'thread'))).toBeUndefined()
+    expect(router.hostedThreadFolders(hostEntityKey(LOCAL, 'thread'))).toBeUndefined()
+    expect(router.hostedThreadFolders('thread')).toBeUndefined()
+  })
+})
 function unsupportedComposer() {
   const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
   remote.state.activeThreadId = 'thread'; remote.state.draftThreadId = 'thread'

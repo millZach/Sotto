@@ -65,7 +65,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'thread-tips' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
+export type SettingGate = 'inline-media' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'thread-tips' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -160,6 +160,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'browser-previews', label: msg`Show the browser when an agent opens a page`, section: 'settings-browser', words: 'test iphone' },
     { id: 'browser-without-asking', label: msg`Let agents use the browser without asking`, section: 'settings-browser', words: 'permission' },
     { id: 'visuals-in-threads', label: msg`Let agents draw visuals in threads`, section: 'settings-browser', words: 'diagrams' },
+    { id: 'every-agent-picture', label: msg`Show every picture and video an agent makes`, section: 'settings-browser', words: 'images screenshots tiles embed media inline', gate: 'inline-media' },
     { id: 'clear-settled-threads-after', label: msg`Clear settled threads after`, section: 'settings-agents', words: 'delete old threads history automatically', gate: 'clear-threads' },
     { id: 'clear-threads-now', label: msg`Clear now`, section: 'settings-agents', words: 'delete old settled threads history', gate: 'clear-threads' },
 

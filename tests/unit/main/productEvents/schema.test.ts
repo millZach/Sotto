@@ -59,6 +59,7 @@ describe('product event schemas', () => {
     expect(parseProductEventInstall(install)).toEqual(install)
     expect(parseProductEventInstall({ ...install, appVersion: '0.1.43-owl.20261102' })).not.toBeNull()
     expect(parseProductEventInstall({ ...install, appVersion: '/home/someone' })).toBeNull()
+    expect(parseProductEventInstall({ ...install, appVersion: `0.1.${'4'.repeat(10)}` })).toBeNull()
     expect(parseProductEventInstall({ ...install, hostname: 'forge' })).toBeNull()
   })
 })

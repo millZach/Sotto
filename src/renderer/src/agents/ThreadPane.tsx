@@ -39,6 +39,7 @@ import { ThreadTranscript } from './ThreadTranscript'
 import { ReplyAttachContext, useReplyAttachSlot } from './replyAttach'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { RunCommands } from '../tools/runCommand'
+import { threadMachineName } from '../tools/TerminalSurface'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { ornamentPose } from './threadActivityView'
 import { LardoTurns } from './Lardo'
@@ -490,7 +491,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
         {thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
         {tools ? <ToolsToggle threadId={thread.id} focused={focused} state={state} /> : null}
-        {terminal ? <PaneTerminalToggle threadId={thread.id} /> : tools && thread.remoteHost ? <PaneTerminalOnHost host={state.connections?.find(item => item.hostId === thread.hostId)?.name ?? thread.hostLabel} /> : null}
+        {terminal ? <PaneTerminalToggle threadId={thread.id} /> : tools && thread.remoteHost ? <PaneTerminalOnHost host={threadMachineName(state, thread)} /> : null}
         {actions}
         <PaneMenu groups={[[...(beside ? [beside] : []), ...paneChrome.layout], initialize, naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
         {close ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={close.label}

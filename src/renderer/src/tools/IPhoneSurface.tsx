@@ -8,7 +8,7 @@ import { threadTakesSottoTools } from '../../../shared/agents'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useOptionalApp } from '../state/AppContext'
 import { BrowserTaskDetails } from './BrowserTaskDetails'
-import { normalizeAddress, phonePage, useBrowserTasks, useThreadBrowser, type BrowserStore } from './browserStore'
+import { normalizeAddress, phonePage, useThreadBrowserTasks, useThreadBrowser, type BrowserStore } from './browserStore'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, useCloudStatus, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { phonePlayerStore, usePhonePlayerOpen, type PhonePlayerStore } from './phonePlayerStore'
 import { ToolsChrome } from './ToolsChrome'
@@ -76,7 +76,7 @@ function CloudIphoneCard({ threadId, bridge, store }: { readonly threadId: strin
 export function IPhoneSurface({ threadId, store, bridge, phoneStore = phonePlayerStore, cloudStore = cloudIphoneStore, cloudBridge = bridgeCloudIphone() }: IPhoneSurfaceProps): ReactNode {
   const { t } = useLingui()
   const browser = useThreadBrowser(store, threadId)
-  const tasks = useBrowserTasks(store)
+  const tasks = useThreadBrowserTasks(store, threadId)
   // A running cloud iPhone is what the thread is testing on; the test iPhone's empty state would only contradict it.
   const cloudSession = useCloudSession(threadId, cloudStore)
   const cloudLive = cloudSession?.status === 'active' || cloudSession?.status === 'starting'

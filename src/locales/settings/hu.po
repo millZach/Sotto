@@ -4649,6 +4649,10 @@ msgstr ""
 msgid "Saving…"
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Search community themes"
 msgstr ""
@@ -4838,6 +4842,11 @@ msgstr ""
 #. placeholder {0}: models.length
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Show all {0} models"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Show every picture and video an agent makes"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts

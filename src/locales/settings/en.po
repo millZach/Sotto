@@ -4649,6 +4649,10 @@ msgstr "Saving the connection."
 msgid "Saving…"
 msgstr "Saving…"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
+msgstr "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Search community themes"
 msgstr "Search community themes"
@@ -4839,6 +4843,11 @@ msgstr "Show a pairing code"
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Show all {0} models"
 msgstr "Show all {0} models"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Show every picture and video an agent makes"
+msgstr "Show every picture and video an agent makes"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx

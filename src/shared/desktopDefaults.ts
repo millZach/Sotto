@@ -19,17 +19,21 @@ export const desktopDefaultsSchema = z.object({
   workerRoles: z.record(z.string().max(64), z.unknown()).refine(rows => Object.keys(rows).length <= WORKER_ROLE_IDS.length * 4).optional(),
   /** Sent only when both sides have worker-swarms, after resolving this host's override. */
   workerCeiling: workerCeilingSchema.optional(),
+  /** **Show every picture and video an agent makes** (ADR-0170, part 7), sent only to a host that lists `every-agent-picture`. */
+  showEveryAgentPicture: z.boolean().optional(),
 }).strict()
 export type DesktopDefaultsInput = z.infer<typeof desktopDefaultsSchema>
 export interface DesktopDefaults {
   readonly newThreadRuntimeMode: AgentRuntimeMode | null
   readonly workerRoles?: WorkerRoleChoices
   readonly workerCeiling?: number
+  readonly showEveryAgentPicture?: boolean
 }
 /** The defaults as a host keeps them: lenient roles, and only what it knows. */
 export function readDesktopDefaults(input: DesktopDefaultsInput): DesktopDefaults {
   return { newThreadRuntimeMode: input.newThreadRuntimeMode, ...(input.workerRoles ? { workerRoles: parseWorkerRoleChoices(input.workerRoles) } : {}),
-    ...input.workerCeiling === undefined ? {} : { workerCeiling: input.workerCeiling } }
+    ...input.workerCeiling === undefined ? {} : { workerCeiling: input.workerCeiling },
+    ...input.showEveryAgentPicture === undefined ? {} : { showEveryAgentPicture: input.showEveryAgentPicture } }
 }
 /** What a host answers when it has kept a desktop's defaults: when it took them. */
 export const desktopDefaultsReceiptSchema = z.object({ receivedAt: z.iso.datetime() })

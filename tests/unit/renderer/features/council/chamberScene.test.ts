@@ -180,13 +180,19 @@ describe('scrolls fly between seats when the stage changes', () => {
 
 describe('how often the chamber draws', () => {
   it('draws about 30 frames a second while a figure is busy or something is on its way, 8 while only the fire flickers', () => {
-    expect(chamberPace(false, false, true)).toBe(33)
-    expect(chamberPace(false, true, false)).toBe(33)
-    expect(chamberPace(false, false, false)).toBe(125)
+    expect(chamberPace(false, false, true, 'answers')).toBe(33)
+    expect(chamberPace(false, true, false, 'verdict')).toBe(33)
+    expect(chamberPace(false, false, false, null)).toBe(125)
   })
 
-  it('draws nothing with motion reduced once everything has arrived', () => {
-    expect(chamberPace(true, false, true)).toBeNull()
-    expect(chamberPace(true, true, false)).toBe(33)
+  it('keeps the fairness check at 8 frames a second even while nods settle or a panelist works', () => {
+    for (const moving of [false, true]) for (const busy of [false, true]) {
+      expect(chamberPace(false, moving, busy, 'fairness')).toBe(125)
+    }
+  })
+
+  it('draws nothing with motion reduced, even if the snapped pose reported movement', () => {
+    expect(chamberPace(true, false, true, 'answers')).toBeNull()
+    expect(chamberPace(true, true, false, 'fairness')).toBeNull()
   })
 })

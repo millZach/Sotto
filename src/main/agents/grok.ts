@@ -163,10 +163,13 @@ const HISTORY_PAGE_SIZE = 100
 // One poll reads at most this much of a session's durable history. A longer backlog keeps its place
 // and continues on the next poll, so the cost of a poll never grows with the length of the thread.
 const HISTORY_PAGES_PER_POLL = 4
+// A full read also yields if Grok keeps rewriting its history; the next read starts from a fresh cursor.
+const HISTORY_RESTARTS_PER_READ = 2
 /** What Sotto has already read of one session's durable history, and where to read on from. */
 interface HistoryRead {
   offset: number
   total: number
+  tailDigest?: string
   messages: AgentMessage[]
   activities: AgentActivity[]
   events: Set<string>
@@ -179,7 +182,7 @@ function freshHistory(history?: HistoryRead): HistoryRead {
   const read = history ?? { offset: 0, total: 0, messages: [], activities: [], events: new Set<string>(), statusEvents: new Set<string>(), status: 'idle' as AgentThread['status'] }
   read.offset = 0; read.total = 0; read.messages = []; read.activities = []
   read.events.clear(); read.statusEvents.clear(); read.status = 'idle'
-  delete read.lastTurn; delete read.assistant
+  delete read.lastTurn; delete read.assistant; delete read.tailDigest
   return read
 }
 
@@ -1083,8 +1086,8 @@ export class GrokAcpHost implements AgentHost {
    * Native history query includes CLI-authored input and filters rewound branches. ACP offers no push for
    * durable history (its session/update notifications are live only, and a CLI takeover can be written
    * without one), so Sotto polls; each poll reads on from a cursor rather than the whole session. The
-   * cursor is not persisted: native history is rewritten behind it by rewinds and coalesced chunks, and
-   * Sotto keeps no durable copy of the messages, so a fresh process reads the session once from its start.
+   * cursor overlaps its last two entries to detect rewrites, even when appends hide a shortened history. It is
+   * not persisted, so a fresh process reads the session once from its start.
    */
   pollHistory(): Promise<void> {
     if (this.polling) return this.polling
@@ -1114,20 +1117,26 @@ export class GrokAcpHost implements AgentHost {
     const history = this.histories.get(id) ?? freshHistory()
     this.histories.set(id, history)
     // `changed` is an origin learning its history entry, which is saved; `sawNew` is any history entry not seen before.
-    let more = true; let changed = false; let pages = 0; let restarted = false; let sawNew = false
+    let more = true; let changed = false; let pages = 0; let restarts = 0; let sawNew = false
     while (more && pages < maxPages) {
       pages++
-      await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset: history.offset, limit: HISTORY_PAGE_SIZE }, value => {
+      const overlap = Math.min(2, history.offset); const offset = history.offset - overlap
+      await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset, limit: HISTORY_PAGE_SIZE }, value => {
         if (!current()) { more = false; return }
         const page = historySchema.parse(value)
         if (page.hasMore && !page.updates.length) throw new Error('Invalid Grok history page.')
         // Grok rewrites history behind the cursor when a turn is rewound or streamed chunks are coalesced.
-        // A history shorter than the one already read is read again from its start, once per read. That
-        // shortening is the one signal that words were taken back, so it is the one place the log resets.
-        if (page.totalCount < history.total && !restarted) { restarted = true; freshHistory(history); this.log.reset(id); more = true; return }
+        // A coalesce followed by an append can leave totalCount unchanged while moving entries behind
+        // the cursor. Check both trailing entries on every page, even after restarting: a shifted
+        // entry can be identical to the last one. Repeated rewrites yield with a fresh cursor.
+        if (page.totalCount < history.total || (overlap > 0 && digest(JSON.stringify(page.updates.slice(0, overlap))) !== history.tailDigest)) {
+          freshHistory(history); this.log.reset(id); more = ++restarts <= HISTORY_RESTARTS_PER_READ; return
+        }
         history.total = page.totalCount
         more = page.hasMore
-        for (const entry of page.updates) {
+        if (page.updates.length) history.tailDigest = digest(JSON.stringify(page.updates.slice(-2)))
+        for (let index = history.offset - offset; index < page.updates.length; index++) {
+          const entry = page.updates[index]!
           const ordinal = history.offset++
           const parsed = updateSchema.safeParse(entry.params); if (!parsed.success || parsed.data.sessionId !== alias.grokSessionId) continue
           const key = eventKey(parsed.data, `${entry.timestamp}-${ordinal}`)
@@ -1187,7 +1196,7 @@ export class GrokAcpHost implements AgentHost {
     this.changed(id)
     // A read that found nothing new and moved no status publishes nothing (#765): every send reads its thread,
     // and a publish is a copy of every thread for each subscriber.
-    if (sawNew || restarted || thread.status !== before.status || !sameSnapshot(thread.lastTurn, before.lastTurn)) this.emit()
+    if (sawNew || restarts > 0 || thread.status !== before.status || !sameSnapshot(thread.lastTurn, before.lastTurn)) this.emit()
   }
   /**
    * Grok's append path. The durable rail stays as Sotto read it; the live tail is merged into a copy of
