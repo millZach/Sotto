@@ -11,12 +11,24 @@ import SottoCore
 /// and floats over the conversation (#1946) on `ComposerSurface`. At the accessibility text sizes the pill takes a line of
 /// its own above the buttons.
 struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trailing: View>: View {
-    @ViewBuilder let attachments: Attachments
-    @ViewBuilder let words: Words
-    @ViewBuilder let plus: Plus
-    @ViewBuilder let pill: Pill
-    @ViewBuilder let trailing: Trailing
+    /// Puts the caret in the words, for a press beside them or in the gap under them.
+    let focus: () -> Void
+    let attachments: Attachments
+    let words: Words
+    let plus: Plus
+    let pill: Pill
+    let trailing: Trailing
     @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(focus: @escaping () -> Void, @ViewBuilder attachments: () -> Attachments, @ViewBuilder words: () -> Words,
+         @ViewBuilder plus: () -> Plus, @ViewBuilder pill: () -> Pill, @ViewBuilder trailing: () -> Trailing) {
+        self.focus = focus
+        self.attachments = attachments()
+        self.words = words()
+        self.plus = plus()
+        self.pill = pill()
+        self.trailing = trailing()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -24,7 +36,18 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
             words
                 .padding(.horizontal, ComposerMetrics.wordsInset)
                 .padding(.top, ComposerMetrics.wordsTop)
-                .padding(.bottom, 2)
+                .padding(.bottom, ComposerMetrics.wordsGap)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // Everything above the row's buttons is the words': a press beside them, in the gap under them or in the
+                // row's own margin over its buttons types there. Left to nothing, a press in that margin went to the
+                // nearest control, the model pill, as a press near a small target does (Duo captures, November 1, 2026).
+                .background {
+                    // The clear area is offered the margin too and takes it, so its press area reaches the buttons' top.
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture(perform: focus)
+                        .padding(.bottom, -ComposerMetrics.rowInset)
+                        .accessibilityHidden(true)
+                }
             Group {
                 if typeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: ComposerMetrics.gap) {
@@ -84,9 +107,8 @@ struct ComposerPill: View {
         .padding(.horizontal, Space.s3)
         .frame(minHeight: ComposerMetrics.button)
         .background(Palette.fillSoft, in: Capsule())
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .padding(.vertical, -(44 - ComposerMetrics.button) / 2)
+        // Pressed across 44 points, reaching down from the row's top and never up into the words (`rowPressArea`).
+        .rowPressArea()
     }
 }
 

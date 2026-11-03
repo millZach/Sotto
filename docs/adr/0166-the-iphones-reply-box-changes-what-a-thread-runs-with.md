@@ -67,3 +67,7 @@ A thread's sheet still offers only the thread's own provider, so its list is one
 What the pill holds and when stands as the November 1 section says. Where the models are held, their rows wait in the sheet with the reason over them, and the providers still open and the stars still work.
 
 The Focus journey `testTheSettingsSheetOpensAtTheTopWithEveryProviderClosed` checks the sheet's top, every provider closed, one open at a time, Legacy inside a provider, a star leading under Favorites, and the sheet opening closed and at its top again. `testAThreadsSettingsChangeFromItsReplyBox` and `testWatchersBoxChangesItsModelAndStartsANewWatcher` open a provider before choosing its model. SottoCore's `ModelSheetTests` cover the stars and the folds.
+
+## November 1, 2026: Watcher's sheet carries Stop Watcher's threads
+
+With the iPhone Watcher tab's Watched view gone ([ADR-0073](0073-watcher-coordinates-threads-with-its-providers-own-tools.md)'s amendment of the same day), its Stop all moved into Watcher's settings sheet as **Stop Watcher’s threads**: a row in the danger ink just above **New Watcher**, with a line under it saying it asks first, shown while Watcher watches threads on a computer that takes a stop from this iPhone, and waiting while the computer can't be reached or a stop is on its way. A press puts the sheet away, and once it has gone Watcher's page asks its question, unchanged. A thread's sheet has no such row.
