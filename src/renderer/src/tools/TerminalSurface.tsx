@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { CircleStop, Plus, RotateCcw, X } from 'lucide-react'
+import { CircleStop, Plus, RotateCcw, Server, X } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { TerminalBridge, TerminalSession } from '../../../shared/terminal'
 import { TERMINAL_LIMIT_MESSAGE, TERMINAL_SESSIONS_MAX } from '../../../shared/terminal'
 import { TerminalViewProblem } from './TerminalViewProblem'
@@ -40,6 +41,25 @@ export interface TerminalSurfaceProps {
   readonly startSize?: () => { readonly cols: number; readonly rows: number } | undefined
   /** An external ref the drawer sets before opening by keyboard, so the terminal takes focus once its first shell is ready. */
   readonly focusNextRef?: React.MutableRefObject<boolean>
+  /** The paired host these shells run on, over SSH (ADR-0183); absent for a thread on this computer. */
+  readonly machine?: string | undefined
+}
+
+/** The name a thread on a paired host goes by: its host's as this computer saved it, or as the thread last carried it. */
+export function threadMachineName(state: Pick<AgentState, 'connections'>, thread: Pick<AgentThread, 'hostId' | 'hostLabel'>): string | undefined {
+  return state.connections?.find(item => item.hostId === thread.hostId)?.name ?? thread.hostLabel
+}
+
+/** `ssh` exits 255 when its connection ends or never started; a shell that exits on its own passes on its own code. */
+const SSH_CONNECTION_ENDED = 255
+
+/** Says on a terminal's bar which machine its shell is on, since a shell over SSH otherwise looks just like one here. */
+export function TerminalMachine({ machine }: { readonly machine: string | undefined }): ReactNode {
+  const { t } = useLingui()
+  if (machine === undefined) return null
+  return <span className="terminal-machine" title={t({ message: `This shell runs on ${machine}`, comment: '{machine} is the name of a paired host, as in forge.' })}>
+    <Server size={13} aria-hidden="true" /><bdi>{t({ message: `on ${machine}`, comment: '{machine} is the name of a paired host, as in forge. Says which machine a terminal\'s shell runs on.' })}</bdi>
+  </span>
 }
 
 function listProblem(error: ToolsError, bridge: boolean): string {
@@ -79,7 +99,7 @@ export function middleCut(name: string, limit = 20): string {
  * The thread's shells, running in its working folder. Main keeps each session alive while the panel is hidden,
  * another thread is focused or the page changes; closing a tab here is the only thing that ends one.
  */
-export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFailed, idSuffix = '', chromeTitle: chromeTitleProp, newLabel: newLabelProp, barEnd, autoStart = false, startSize, focusNextRef }: TerminalSurfaceProps): ReactNode {
+export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFailed, idSuffix = '', chromeTitle: chromeTitleProp, newLabel: newLabelProp, barEnd, autoStart = false, startSize, focusNextRef, machine }: TerminalSurfaceProps): ReactNode {
   const { t, i18n } = useLingui()
   const chromeTitle = chromeTitleProp === undefined ? i18n._(TERMINAL) : chromeTitleProp
   const newLabel = newLabelProp ?? t`New terminal`
@@ -164,14 +184,14 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
           </span>
         })}
       </div>
-      {barEnd ? <>{newShell}{barEnd(interrupt)}</> : <div className="terminal-bar__actions tools-chrome__actions">{interrupt}{newShell}</div>}
+      {barEnd ? <>{newShell}{barEnd(interrupt)}</> : <div className="terminal-bar__actions tools-chrome__actions"><TerminalMachine machine={machine} />{interrupt}{newShell}</div>}
     </div>
     {confirming !== null && confirming === active?.id ? <CloseConfirm name={names.get(active.id) ?? t({ message: 'this terminal', comment: 'Stands in for a terminal\'s name, as in "End this terminal?".' })}
       onEnd={() => { setConfirming(null); void store.close(bridge, threadId, active.id).then(() => { const next = store.thread(threadId)?.activeSessionId; if (next) focusTab(next) }) }}
       onKeep={() => { setConfirming(null); focusTab(active.id) }} /> : null}
     {terminals.notice || full ? <p className={`terminal-notice${terminals.notice ? ' tt-paragraph' : ''}`} role={terminals.notice ? 'alert' : 'status'}>{shownNotice(terminals.notice) ?? limitHint}</p> : null}
     {active ? <TerminalScreen key={active.id} session={active} name={names.get(active.id) ?? i18n._(TERMINAL)} threadId={threadId} store={store} bridge={bridge}
-      viewFactory={viewFactory} viewFailed={viewFailed} focusNext={focusNext} busy={terminals.busy} screenId={screenId} /> : null}
+      viewFactory={viewFactory} viewFailed={viewFailed} focusNext={focusNext} busy={terminals.busy} screenId={screenId} machine={machine} /> : null}
   </div>
 }
 
@@ -195,9 +215,9 @@ function CloseConfirm({ name, onEnd, onKeep }: { readonly name: string; readonly
   </div>
 }
 
-function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, viewFailed, focusNext, busy, screenId }: {
+function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, viewFailed, focusNext, busy, screenId, machine }: {
   readonly session: TerminalSession; readonly name: string; readonly threadId: string; readonly store: TerminalStore; readonly bridge: TerminalBridge | undefined
-  readonly viewFactory: TerminalViewFactory | null; readonly viewFailed: boolean; readonly focusNext: React.MutableRefObject<boolean>; readonly busy: boolean; readonly screenId: string
+  readonly viewFactory: TerminalViewFactory | null; readonly viewFailed: boolean; readonly focusNext: React.MutableRefObject<boolean>; readonly busy: boolean; readonly screenId: string; readonly machine: string | undefined
 }): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
@@ -223,10 +243,11 @@ function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, v
   }, [store, bridge, threadId, sessionId, viewFactory, focusNext])
 
   const ended = session.status !== 'running'
+  const connectionEnded = machine !== undefined && session.status === 'exited' && session.exitCode === SSH_CONNECTION_ENDED
   return <div className="terminal-screen" id={screenId} role="tabpanel" aria-labelledby={`terminal-tab-${sessionId}`} data-ended={ended || undefined}>
     {ended ? <div className="terminal-ended" role="status">
-      <p className="tt-paragraph"><strong>{sessionStatusText(session)}.</strong> {session.status === 'interrupted' ? t`Nothing it showed was kept.`
-        : session.status === 'unavailable' ? t`The shell could not start in this folder.` : t`Its output stays here until you close it.`}</p>
+      <p className="tt-paragraph">{connectionEnded ? <><strong>{t({ message: `The connection to ${machine} ended.`, comment: '{machine} is the name of a paired host, as in forge.' })}</strong> {t`Anything running in this shell stopped. Its output stays here until you close it.`}</> : <><strong>{sessionStatusText(session)}.</strong> {session.status === 'interrupted' ? t`Nothing it showed was kept.`
+        : session.status === 'unavailable' ? t`The shell could not start in this folder.` : t`Its output stays here until you close it.`}</>}</p>
       <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => { focusNext.current = true; void store.reopen(bridge, threadId, sessionId) }}>
         <RotateCcw size={14} aria-hidden="true" />{t({ message: 'Reopen', context: 'terminal', comment: 'Starts an ended terminal again.' })}</button>
     </div> : null}

@@ -329,8 +329,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     return () => { covered.current.forEach((element, index) => { element.inert = previous[index] ?? false }); covered.current = [] }
   }, [open, chrome.expanded])
 
-  // Files, Changes and Agents read a paired host's thread on that host. Its terminal, browser and test iPhone stay on
-  // that machine, so nothing here starts them for it.
+  // Files, Changes and Agents read a paired host's thread on that host. Its browser and test iPhone stay on that machine,
+  // so nothing here starts them for it; its terminal runs over SSH where that is on (ADR-0183; Owl only).
+  const hostedTerminal = useOwlFeature('paired-host-terminal')
   const threadId = thread?.id
   const localThreadId = thread?.remoteHost ? undefined : thread?.id
   // Files lists the working folder on every surface, since the footer's path and its actions read it,
@@ -350,8 +351,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   }, [open, threadId, chrome.surface, changesFor, store, diffSettingsKnown])
   // Terminal sessions live in main; showing the surface only lists them again.
   useEffect(() => {
-    if (open && localThreadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, localThreadId)
-  }, [open, localThreadId, chrome.surface, terminalBridge, store])
+    const terminalThread = hostedTerminal ? threadId : localThreadId
+    if (open && terminalThread !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, terminalThread)
+  }, [open, localThreadId, threadId, hostedTerminal, chrome.surface, terminalBridge, store])
   useEffect(() => {
     if (open && localThreadId !== undefined && (chrome.surface === 'browser' || chrome.surface === 'iphone')) void store.browser.activate(browserBridge, localThreadId)
   }, [open, localThreadId, chrome.surface, browserBridge, store])
@@ -463,14 +465,14 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
     babysit={babysitShown && offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
       ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
-  // Files, Changes and Agents are read from a paired host; its terminal, browser and test iPhone are on that machine.
-  else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
+  // Files, Changes and Agents are read from a paired host; its browser and test iPhone are on that machine, and so is its terminal off Owl.
+  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
     rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation} />
   else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
-  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
+  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} machine={hostName} />
   // A paired host pushes no change events: the Changes bridge for its thread asks it on a timer while Changes shows it.
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesFor} platform={platform} onStatus={showStatus}
     onOpenFile={path => { store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />

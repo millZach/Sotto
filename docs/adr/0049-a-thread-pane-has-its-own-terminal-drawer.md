@@ -4,7 +4,7 @@
 
 Accepted October 3, 2026. The owner asked for T3 Code's terminal, which "starts a terminal in the project you are in, in the bottom 1/3 of the thread". From `docs/prototypes/frosted-terminal-prototype.html` they chose variant A, a drawer below the composer with its shells as tabs. They also chose one drawer inside each pane over one across the workspace, shells separate from the Tools panel's terminal over sharing them, Ctrl+J as the shortcut, and a see-through drawer under a Frosted window (ADR-0048).
 
-Amended by [ADR-0182](0182-tools-and-the-terminal-drawer-return-to-a-panes-header.md): a thread on a paired host still has no drawer, but its pane now shows the drawer's button, greyed, naming the machine its terminal is on.
+Amended by [ADR-0182](0182-tools-and-the-terminal-drawer-return-to-a-panes-header.md): a thread on a paired host still has no drawer, but its pane now shows the drawer's button, greyed, naming the machine its terminal is on. Amended by [ADR-0183](0183-a-paired-hosts-thread-opens-its-terminal-over-ssh.md): on Owl, that thread has a drawer, whose shells run over the user's own SSH.
 
 ## Context
 

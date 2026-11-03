@@ -32,6 +32,8 @@ export function hostClientBridge<T extends object>(bridge: T): T {
     files: new Set(['list', 'preview', 'copyPath']), gitChanges: new Set(['list', 'review', 'copyPath']), subagents: new Set(['page', 'assignments']),
     // An interactive visual's page is asked of main, which says itself that a paired host's page is on another computer.
     visuals: new Set(['open']),
+    // A thread on a paired host opens its terminal over SSH from this computer (ADR-0183): main knows the key names a host.
+    terminal: new Set(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']),
   }
   const elsewhere = (id: string): boolean => { const key = parseHostEntityKey(id); return key !== null && key.hostId !== hostId }
   const wrap = (object: object, domain?: string): object => Object.freeze(Object.fromEntries(Object.entries(object).map(([name, member]) => {

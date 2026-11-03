@@ -430,6 +430,10 @@ msgstr "An agent sets a host up from a thread on this computer, which needs the 
 msgid "An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again."
 msgstr "An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again."
 
+#: src/main/tools/terminal.ts
+msgid "An image can’t be pasted into a terminal on another machine. Nothing was pasted."
+msgstr "An image can’t be pasted into a terminal on another machine. Nothing was pasted."
+
 #: src/main/omarchy/setup.ts
 msgid "An Omarchy palette was installed by hand. Sotto leaves it alone."
 msgstr "An Omarchy palette was installed by hand. Sotto leaves it alone."
@@ -1277,6 +1281,10 @@ msgstr "Sotto follows the Omarchy theme."
 #: src/main/omarchy/files.ts
 msgid "Sotto found a linked or special configuration file. It was left alone. Use a regular file, then try again."
 msgstr "Sotto found a linked or special configuration file. It was left alone. Use a regular file, then try again."
+
+#: src/main/hosts/hostedTerminals.ts
+msgid "Sotto has no SSH connection saved for this host, so nothing was started. Add the host in Settings > Hosts & phones, then try again."
+msgstr "Sotto has no SSH connection saved for this host, so nothing was started. Add the host in Settings > Hosts & phones, then try again."
 
 #: src/main/hosts/hostBootStart.ts
 msgid "Sotto is already changing whether the host on {host} starts at boot. Wait for it to finish."
@@ -2732,6 +2740,18 @@ msgstr "This terminal is already reopening."
 #: src/main/tools/terminal.ts
 msgid "This terminal is still running; select it instead."
 msgstr "This terminal is still running; select it instead."
+
+#: src/main/hosts/hostedTerminals.ts
+msgid "This thread moved to another project. Open its terminal again."
+msgstr "This thread moved to another project. Open its terminal again."
+
+#: src/main/hosts/hostedTerminals.ts
+msgid "This thread’s host is not connected, so Sotto cannot tell where its terminal starts. Connect it in Settings > Hosts & phones, then try again."
+msgstr "This thread’s host is not connected, so Sotto cannot tell where its terminal starts. Connect it in Settings > Hosts & phones, then try again."
+
+#: src/main/tools/terminal.ts
+msgid "This thread’s terminal is on its host machine. Open it there."
+msgstr "This thread’s terminal is on its host machine. Open it there."
 
 #: src/main/tools/checkpointCapture.ts
 msgid "This tool request is invalid. Refresh the tools panel."
