@@ -2,10 +2,11 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { AgentActivity } from '../../src/shared/agentActivity'
+import type { GrokRpc } from '../../src/main/agents/grokRpc'
 
 // Sotto records the turns Claude and Grok do not report. Those records are live observation: a replay
 // restores the work rows, not Sotto's watching, so the lifecycle, the order number it occupies and a start
@@ -33,11 +34,18 @@ it('Claude live tool-only message anchors survive log reload with no duplicate e
     expect((await f.driver.requests()).filter(r => r.method === 'user')).toHaveLength(1)
   } finally { await f.cleanup() }
 })
-it.each([false, true])('Grok restores tool snapshots, failures and exact output once across replay/reconnect (coalesce between reads: %s)', async betweenReads => {
-  // Only the awaited snapshots read history, so both sides of the coalesce/read race are reproducible.
+it.each(['before read', 'between reads', 'during restarted read'])('Grok restores tool snapshots, failures and exact output once across replay/reconnect (coalesce %s)', async order => {
+  // Only awaited reads fetch history, so each side of the coalesce/read race is reproducible.
   let f = await grokFixture(undefined, undefined, 600_000); const id = randomUUID()
-  let live = tools(undefined)
-  const unsubscribe = f.host.subscribe(snapshot => { live = tools(snapshot.threads[0]) })
+  let live = tools(undefined); let liveText: string | undefined
+  const unsubscribe = f.host.subscribe(snapshot => { live = tools(snapshot.threads[0]); liveText = snapshot.threads[0]?.messages.at(-1)?.text })
+  const coalesce = async (streamStartMs: number) => {
+    await f.action(id, { type: 'coalesce', streamStartMs })
+    await expect.poll(async () => {
+      const sessions = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8'))
+      return sessions[await f.realId(id)].updates.filter((entry: { params: { _meta: { streamStartMs?: number }; update: { sessionUpdate: string } } }) => entry.params.update.sessionUpdate === 'agent_message_chunk' && entry.params._meta.streamStartMs === streamStartMs).length
+    }).toBe(1)
+  }
   try {
     await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
@@ -48,25 +56,88 @@ it.each([false, true])('Grok restores tool snapshots, failures and exact output 
     await expect.poll(async () => (await f.host.snapshot()).threads[0]?.messages.some(message => message.text === 'Checking now.')).toBe(true)
     // The live chunk may have arrived after that snapshot's read. Read it durably before coalescing.
     await f.host.snapshot()
-    await f.action(id, { type: 'coalesce', streamStartMs: 10 })
-    await expect.poll(async () => {
-      const sessions = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8'))
-      return sessions[await f.realId(id)].updates.filter((entry: { params: { update: { sessionUpdate: string } } }) => entry.params.update.sessionUpdate === 'agent_message_chunk').length
-    }).toBe(1)
-    if (!betweenReads) await f.host.snapshot()
+    await coalesce(10)
+    if (order === 'before read') await f.host.snapshot()
+    if (order === 'during restarted read') {
+      await f.action(id, { type: 'chunk', text: 'Still ', meta: { promptId: 'prompt', streamStartMs: 20 } })
+      await expect.poll(() => liveText).toBe('Still ')
+      await f.action(id, { type: 'chunk', text: 'checking.', meta: { promptId: 'prompt', streamStartMs: 20 } })
+      await expect.poll(() => liveText).toBe('Still checking.')
+    }
     // Let both tool notifications arrive before reading history. In the racing order the tool start
     // fills the position removed by the coalesce, so totalCount never falls below the prior read's.
     await f.action(id, { type: 'activity', update: { sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Run', kind: 'execute', status: 'in_progress', rawInput: { command: 'echo bad' } } })
     await expect.poll(() => live.length).toBe(1)
     await f.action(id, { type: 'activity', update: { sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'failure' } }] } })
     await expect.poll(() => live[0]?.status).toBe('failed')
-    const before = tools((await f.host.snapshot()).threads[0])
+    let pages = 0
+    if (order === 'during restarted read') {
+      const native = f.adapter as unknown as { processes: Map<string, { rpc: GrokRpc }> }
+      const rpc = native.processes.get(id)!.rpc; const request = rpc.request.bind(rpc)
+      vi.spyOn(rpc, 'request').mockImplementation((method, params, accept) => {
+        if (method !== '_x.ai/session/updates') return request(method, params, accept)
+        // Short pages put the second stream at the restarted page's boundary. Coalesce it only
+        // after that page was applied, moving the tool start into the following overlap slot.
+        return request(method, { ...params as Record<string, unknown>, limit: 4 }, async value => {
+          await accept?.(value)
+          if (++pages === 2) await coalesce(20)
+        })
+      })
+    }
+    const before = tools((await f.host.refreshThread(id)).threads[0])
     await f.action(id, { type: 'replay' }); await f.host.snapshot()
     f = await f.driver.restart(); f.host.observeThreads?.([id]); await f.host.connect()
     expect(tools((await f.host.snapshot()).threads[0])).toEqual(before)
     expect(before).toEqual([expect.objectContaining({ kind: 'command', title: 'Run', command: 'echo bad', status: 'failed', output: 'failure' })])
+    if (order === 'during restarted read') expect(pages).toBeGreaterThan(3)
     expect((await f.driver.requests()).filter(r => r.method === 'session/prompt')).toHaveLength(1)
-  } finally { unsubscribe(); await f.cleanup() }
+  } finally { vi.restoreAllMocks(); unsubscribe(); await f.cleanup() }
+})
+
+it('Grok bounds repeated coalesces even when the sliding overlap entry is byte-identical', async () => {
+  const f = await grokFixture(undefined, undefined, 600_000); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    const sessionId = await f.realId(id)
+    const entry = (update: Record<string, unknown>, timestamp: number) => ({ timestamp, method: 'session/update', params: { sessionId, update, _meta: { promptId: 'prompt', streamStartMs: 10 } } })
+    const chunk = (text: string, timestamp: number) => entry({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } }, timestamp)
+    const user = entry({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Use a tool' } }, 1_700_000_000)
+    const marker = entry({ sessionUpdate: 'available_commands_update', availableCommands: [] }, 1_700_000_001)
+    const start = entry({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Run', kind: 'execute', status: 'in_progress', rawInput: { command: 'echo bad' } }, 1_700_000_002)
+    const failure = entry({ sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'failure' } }] }, 1_700_000_003)
+    let updates = [user, chunk('Checking ', 1_700_000_004), chunk('now.', 1_700_000_005), marker]
+    let rewriting = false; const offsets: number[] = []
+    const native = f.adapter as unknown as { processes: Map<string, { rpc: GrokRpc }> }
+    const rpc = native.processes.get(id)!.rpc; const request = rpc.request.bind(rpc)
+    vi.spyOn(rpc, 'request').mockImplementation(async (method, params, accept) => {
+      if (method !== '_x.ai/session/updates') return request(method, params, accept)
+      const { offset } = params as { offset: number }; offsets.push(offset)
+      // A missing restart bound fails on a request count, without waiting for a test deadline.
+      if (offsets.length > 10) throw new Error('History kept restarting without yielding.')
+      if (rewriting && offset === 0) updates = [user, chunk('Checking ', 1_700_000_004), chunk('again.', 1_700_000_005), marker, marker, start, failure]
+      const page = updates.slice(offset, offset + 4)
+      await accept?.({ updates: page, totalCount: updates.length, hasMore: offset + page.length < updates.length })
+      if (rewriting && offset === 0) {
+        // Coalescing removes an entry before two identical markers (timestamp included). One
+        // overlap would still match after the shift. Keep doing this at every restarted page.
+        updates = [user, chunk('Checking again.', 1_700_000_005), marker, marker, start, failure]
+      }
+    })
+    await f.host.refreshThread(id)
+    offsets.length = 0; rewriting = true
+    updates = [user, chunk('Checking ', 1_700_000_004), chunk('again.', 1_700_000_005), marker, marker, start, failure]
+    await f.host.refreshThread(id)
+    expect(offsets.filter(offset => offset === 0)).toHaveLength(2)
+    expect(offsets.length).toBeLessThanOrEqual(5)
+    // The bound leaves a fresh cursor. Once history settles, the next read restores every row.
+    offsets.length = 0; rewriting = false
+    const restored = await f.host.refreshThread(id)
+    expect(offsets[0]).toBe(0)
+    expect(tools(restored.threads[0])).toEqual([expect.objectContaining({ kind: 'command', title: 'Run', command: 'echo bad', status: 'failed', output: 'failure' })])
+    expect(restored.threads[0]?.messages.filter(message => message.role === 'assistant').map(message => message.text)).toEqual(['Checking again.'])
+  } finally { vi.restoreAllMocks(); await f.cleanup() }
 })
 
 it.each(['Done.', 'Done. Another result.'])('Grok retains a distinct live stream containing %s while history lags', async repeated => {
