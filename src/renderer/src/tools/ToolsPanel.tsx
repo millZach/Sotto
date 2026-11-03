@@ -36,7 +36,7 @@ import { useOwlFeature } from '../state/owlFeature'
 import { IPhoneSurface } from './IPhoneSurface'
 import { PhonePlayer } from './PhonePlayer'
 import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
-import { useBrowserTasks, useThreadBrowser } from './browserStore'
+import { useThreadBrowserTasks, useThreadBrowser } from './browserStore'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { ChangesSurface } from './ChangesSurface'
 import { PullRequestSurface } from './PullRequestSurface'
@@ -189,7 +189,7 @@ function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined
   /** The delegated threads below the Agents thread (ADR-0081; Owl only). */
   delegated?: { readonly needs: number; readonly working: number }): Partial<Record<ToolSurfaceId, string>> {
   const { t } = useLingui()
-  const tasks = useBrowserTasks(store.browser)
+  const tasks = useThreadBrowserTasks(store.browser, thread?.id ?? null)
   const cloudSession = useCloudSession(thread?.id ?? null, cloudStore)
   const live: Partial<Record<ToolSurfaceId, string>> = {}
   if (thread) {
@@ -385,7 +385,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     [delegationOn, command, state, focusedThreadId, openFromRoster])
   // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
   // the "Float the browser over the thread" control's own condition, computed once for the surface below.
-  const browserTasks = useBrowserTasks(store.browser)
+  const browserTasks = useThreadBrowserTasks(store.browser, thread?.id ?? null)
   const focusedBrowser = useThreadBrowser(store.browser, focusedThreadId)
 
   const player = <>
