@@ -166,6 +166,7 @@ const HISTORY_PAGES_PER_POLL = 4
 interface HistoryRead {
   offset: number
   total: number
+  lastEntryDigest?: string
   messages: AgentMessage[]
   activities: AgentActivity[]
   events: Set<string>
@@ -178,7 +179,7 @@ function freshHistory(history?: HistoryRead): HistoryRead {
   const read = history ?? { offset: 0, total: 0, messages: [], activities: [], events: new Set<string>(), statusEvents: new Set<string>(), status: 'idle' as AgentThread['status'] }
   read.offset = 0; read.total = 0; read.messages = []; read.activities = []
   read.events.clear(); read.statusEvents.clear(); read.status = 'idle'
-  delete read.lastTurn; delete read.assistant
+  delete read.lastTurn; delete read.assistant; delete read.lastEntryDigest
   return read
 }
 
@@ -1082,8 +1083,8 @@ export class GrokAcpHost implements AgentHost {
    * Native history query includes CLI-authored input and filters rewound branches. ACP offers no push for
    * durable history (its session/update notifications are live only, and a CLI takeover can be written
    * without one), so Sotto polls; each poll reads on from a cursor rather than the whole session. The
-   * cursor is not persisted: native history is rewritten behind it by rewinds and coalesced chunks, and
-   * Sotto keeps no durable copy of the messages, so a fresh process reads the session once from its start.
+   * cursor overlaps its last entry to detect rewrites, even when appends hide a shortened history. It is
+   * not persisted, so a fresh process reads the session once from its start.
    */
   pollHistory(): Promise<void> {
     if (this.polling) return this.polling
@@ -1116,17 +1117,24 @@ export class GrokAcpHost implements AgentHost {
     let more = true; let changed = false; let pages = 0; let restarted = false; let sawNew = false
     while (more && pages < maxPages) {
       pages++
-      await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset: history.offset, limit: HISTORY_PAGE_SIZE }, value => {
+      const offset = Math.max(0, history.offset - 1)
+      await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset, limit: HISTORY_PAGE_SIZE }, value => {
         if (!current()) { more = false; return }
         const page = historySchema.parse(value)
         if (page.hasMore && !page.updates.length) throw new Error('Invalid Grok history page.')
         // Grok rewrites history behind the cursor when a turn is rewound or streamed chunks are coalesced.
-        // A history shorter than the one already read is read again from its start, once per read. That
-        // shortening is the one signal that words were taken back, so it is the one place the log resets.
-        if (page.totalCount < history.total && !restarted) { restarted = true; freshHistory(history); this.log.reset(id); more = true; return }
+        // A coalesce followed by an append can leave totalCount unchanged while moving entries behind
+        // the cursor. Check the last entry too, then read a rewritten history from its start once.
+        const first = page.updates[0]
+        if (!restarted && (page.totalCount < history.total || (history.offset > 0 && (!first || digest(JSON.stringify(first)) !== history.lastEntryDigest)))) {
+          restarted = true; freshHistory(history); this.log.reset(id); more = true; return
+        }
         history.total = page.totalCount
         more = page.hasMore
-        for (const entry of page.updates) {
+        const last = page.updates.at(-1)
+        if (last) history.lastEntryDigest = digest(JSON.stringify(last))
+        for (let index = history.offset - offset; index < page.updates.length; index++) {
+          const entry = page.updates[index]!
           const ordinal = history.offset++
           const parsed = updateSchema.safeParse(entry.params); if (!parsed.success || parsed.data.sessionId !== alias.grokSessionId) continue
           const key = eventKey(parsed.data, `${entry.timestamp}-${ordinal}`)

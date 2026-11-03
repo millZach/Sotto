@@ -33,8 +33,11 @@ it('Claude live tool-only message anchors survive log reload with no duplicate e
     expect((await f.driver.requests()).filter(r => r.method === 'user')).toHaveLength(1)
   } finally { await f.cleanup() }
 })
-it('Grok restores tool snapshots, failures and exact output once across replay/reconnect', async () => {
-  let f = await grokFixture(); const id = randomUUID()
+it.each([false, true])('Grok restores tool snapshots, failures and exact output once across replay/reconnect (coalesce between reads: %s)', async betweenReads => {
+  // Only the awaited snapshots read history, so both sides of the coalesce/read race are reproducible.
+  let f = await grokFixture(undefined, undefined, 600_000); const id = randomUUID()
+  let live = tools(undefined)
+  const unsubscribe = f.host.subscribe(snapshot => { live = tools(snapshot.threads[0]) })
   try {
     await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
@@ -43,21 +46,27 @@ it('Grok restores tool snapshots, failures and exact output once across replay/r
     await expect.poll(async () => (await f.host.snapshot()).threads[0]?.messages.some(message => message.text === 'Checking ')).toBe(true)
     await f.action(id, { type: 'chunk', text: 'now.', meta: { promptId: 'prompt', streamStartMs: 10 } })
     await expect.poll(async () => (await f.host.snapshot()).threads[0]?.messages.some(message => message.text === 'Checking now.')).toBe(true)
+    // The live chunk may have arrived after that snapshot's read. Read it durably before coalescing.
+    await f.host.snapshot()
     await f.action(id, { type: 'coalesce', streamStartMs: 10 })
     await expect.poll(async () => {
       const sessions = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8'))
       return sessions[await f.realId(id)].updates.filter((entry: { params: { update: { sessionUpdate: string } } }) => entry.params.update.sessionUpdate === 'agent_message_chunk').length
     }).toBe(1)
+    if (!betweenReads) await f.host.snapshot()
+    // Let both tool notifications arrive before reading history. In the racing order the tool start
+    // fills the position removed by the coalesce, so totalCount never falls below the prior read's.
     await f.action(id, { type: 'activity', update: { sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Run', kind: 'execute', status: 'in_progress', rawInput: { command: 'echo bad' } } })
-    await expect.poll(async () => tools((await f.host.snapshot()).threads[0]).length).toBe(1)
+    await expect.poll(() => live.length).toBe(1)
     await f.action(id, { type: 'activity', update: { sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'failure' } }] } })
-    await expect.poll(async () => tools((await f.host.snapshot()).threads[0])[0]?.status).toBe('failed')
+    await expect.poll(() => live[0]?.status).toBe('failed')
     const before = tools((await f.host.snapshot()).threads[0])
     await f.action(id, { type: 'replay' }); await f.host.snapshot()
     f = await f.driver.restart(); f.host.observeThreads?.([id]); await f.host.connect()
     expect(tools((await f.host.snapshot()).threads[0])).toEqual(before)
+    expect(before).toEqual([expect.objectContaining({ kind: 'command', title: 'Run', command: 'echo bad', status: 'failed', output: 'failure' })])
     expect((await f.driver.requests()).filter(r => r.method === 'session/prompt')).toHaveLength(1)
-  } finally { await f.cleanup() }
+  } finally { unsubscribe(); await f.cleanup() }
 })
 
 it.each(['Done.', 'Done. Another result.'])('Grok retains a distinct live stream containing %s while history lags', async repeated => {
