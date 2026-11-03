@@ -328,6 +328,12 @@ export function usePageOpener(owner: PageOwner | undefined): { readonly open: (p
     const press = ++latest.current
     setFailure(null)
     const settle = (said: LaterWords | null): void => { if (press === latest.current) setFailure(said) }
+    // The popup has no browser pane or page channel. Its existing Open path takes the user to the owning thread,
+    // where this same card can open the page through main, without giving the popup any further authority.
+    if (window.sottoPopup && !window.sotto?.openQuestionPage) {
+      void window.sottoPopup.open({ threadId: owner.threadId, watcher: false }).catch(() => settle(PAGE_OPEN_FAILURES.unavailable))
+      return
+    }
     const input = owner.requestId === undefined ? { threadId: owner.threadId, token: page.token } : { threadId: owner.threadId, requestId: owner.requestId, token: page.token }
     void (window.sotto?.openQuestionPage?.(input) ?? Promise.resolve({ ok: false as const, reason: 'unavailable' as const }))
       .then(result => {
@@ -373,7 +379,7 @@ export function MessageLinks({ links, pages = [], owner, linkMissing = false, la
     {links.map(url => {
       const place = linkPlace(url)
       return <a key={url} className="agent-request__link-row tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={url} aria-label={t`Open the link, ${place}`}
-        onClick={event => { event.preventDefault(); event.stopPropagation(); void window.sotto?.openExternalLink?.(url) }}
+        onClick={event => { event.preventDefault(); event.stopPropagation(); void (window.sotto?.openExternalLink ?? window.sottoPopup?.openExternalLink)?.(url) }}
         onAuxClick={event => event.preventDefault()}>
         <Link2 size={16} aria-hidden="true" />
         <span><strong><Trans>Open the link</Trans></strong><small>{place}</small></span>

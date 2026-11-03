@@ -87,30 +87,43 @@ export class PopupWindow {
   private height = POPUP_MIN_HEIGHT
   private moving = false
   private disposed = false
+  private opening = false
+  private showVersion = 0
 
   constructor(private readonly dependencies: PopupWindowDependencies) {}
 
   /** Shows the popup, or hides it when it is showing and has the keyboard; a popup behind another window comes forward. */
   async toggle(): Promise<void> {
     const window = this.window
-    if (window !== null && !window.isDestroyed() && window.isVisible() && window.isFocused()) { this.hide(); return }
+    if (this.opening || (window !== null && !window.isDestroyed() && window.isVisible() && window.isFocused())) { this.hide(); return }
     await this.show()
   }
 
   async show(): Promise<void> {
-    const window = await this.load()
-    if (this.disposed || window.isDestroyed()) return
-    this.placeOnScreen(window)
-    // macOS: a panel shown without activating Sotto and then focused takes the keyboard while the app in front stays in
-    // front, so the main window is not brought forward with it. Elsewhere showing the window focuses it.
-    if (this.dependencies.platform === 'darwin') window.showInactive()
-    else window.show()
-    window.focus()
-    this.dependencies.onVisible?.(true)
-    if (!window.webContents.isDestroyed()) window.webContents.send(POPUP_SHOWN, null)
+    if (this.disposed) return
+    const version = ++this.showVersion
+    this.opening = true
+    try {
+      const window = await this.load()
+      // Loading the first renderer can outlive Escape, a second shortcut press, or Open in Sotto. A cancelled show
+      // must never bring the popup back and take the keyboard after the user has left it.
+      if (version !== this.showVersion || this.disposed || window.isDestroyed()) return
+      this.placeOnScreen(window)
+      // macOS: a panel shown without activating Sotto and then focused takes the keyboard while the app in front stays in
+      // front, so the main window is not brought forward with it. Elsewhere showing the window focuses it.
+      if (this.dependencies.platform === 'darwin') window.showInactive()
+      else window.show()
+      window.focus()
+      this.dependencies.onVisible?.(true)
+      if (!window.webContents.isDestroyed()) window.webContents.send(POPUP_SHOWN, null)
+    } finally {
+      if (version === this.showVersion) this.opening = false
+    }
   }
 
   hide(): void {
+    this.showVersion++
+    this.opening = false
     const window = this.window
     if (window === null || window.isDestroyed() || !window.isVisible()) return
     window.hide()
