@@ -138,6 +138,11 @@ describe('reclaiming a thread worktree', () => {
     expect(screen.queryByRole('button', { name: 'Remove worktree folder, keeping its branch' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open folder' })).toBeNull()
     expect(screen.getByRole('group')).toHaveTextContent('Folder removed. Sending to this thread puts it back on feat/finished.')
+    cleanup()
+    // A folder a rule removed on a detached HEAD comes back on its commit.
+    render(<ThreadWorkingCopy thread={{ ...thread, worktree: { ...own, branch: undefined, reclaimedAt: '2026-11-02T00:00:00.000Z', detachedCommit: '0123456789abcdef0123456789abcdef01234567' } }} project={project} command={command} />)
+    fireEvent.click(screen.getByRole('button', { name: /Working copy/ }))
+    expect(screen.getByRole('group')).toHaveTextContent('Folder removed. Sending to this thread puts it back on commit 0123456.')
   })
 
   it('settles first, then asks whether the worktree goes too; Keep folder and Escape leave it', async () => {

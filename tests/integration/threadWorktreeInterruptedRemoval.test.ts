@@ -89,6 +89,47 @@ describe('a worktree removal cut off partway (#1297)', () => {
     expect((await registrations(f.project))[1]).not.toMatch(/locked/u)
   })
 
+  it('finishes a cut-off removal of a detached folder on its commit, only while a branch has it, and a send puts it back there', async () => {
+    const f = await installedWorktree()
+    // The record still names the thread's branch; the folder has since moved to a commit only the branch keep has.
+    await git(f.a.path!, ['checkout', '--detach'])
+    await git(f.a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-m', 'Detached work'])
+    const head = (await git(f.a.path!, ['rev-parse', 'HEAD'])).trim()
+    await git(f.project, ['branch', 'keep', head])
+    await expect(new ThreadWorktrees(f.root, git, undefined, stopped).reclaim(f.a, { automatic: true })).rejects.toThrow()
+    // With keep gone, finishing would lose the commit: the removal waits, locked, and Git's registration keeps it.
+    await git(f.project, ['branch', '-D', 'keep'])
+    await expect(f.service.resumeRemoval(f.a)).rejects.toThrow(`its commit ${head.slice(0, 7)} any more. Nothing more was removed. Create a branch at that commit`)
+    expect((await registrations(f.project))[1]).toContain(`locked ${REMOVING_LOCK_REASON}`)
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    await git(f.project, ['branch', 'keep-again', head])
+    const reclaimed = await f.service.resumeRemoval(f.a)
+    expect(reclaimed).toMatchObject({ branch: undefined, detachedCommit: head })
+    expect(reclaimed.reclaimedAt).toBeTruthy()
+    await expect(lstat(join(f.a.path!, 'a.txt'))).rejects.toThrow()
+
+    const restored = await f.service.inspect(await f.service.restore(reclaimed))
+    expect(restored).toMatchObject({ status: 'ready', branch: undefined, reclaimedAt: undefined, detachedCommit: undefined, dirty: false })
+    expect((await git(f.a.path!, ['rev-parse', 'HEAD'])).trim()).toBe(head)
+    await expect(git(f.a.path!, ['symbolic-ref', '-q', 'HEAD'])).rejects.toThrow()
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+  })
+
+  it('says a send cannot put a detached folder back once the repository has lost its commit', async () => {
+    const f = await installedWorktree()
+    await git(f.a.path!, ['checkout', '--detach'])
+    await git(f.a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-m', 'Detached work'])
+    const head = (await git(f.a.path!, ['rev-parse', 'HEAD'])).trim()
+    await git(f.project, ['branch', 'keep', head])
+    const reclaimed = await f.service.reclaim(f.a, { automatic: true })
+    expect(reclaimed).toMatchObject({ branch: undefined, detachedCommit: head })
+    await git(f.project, ['branch', '-D', 'keep'])
+    await git(f.project, ['reflog', 'expire', '--expire=now', '--all'])
+    await git(f.project, ['gc', '--prune=now', '--quiet'])
+    await expect(f.service.restore(reclaimed)).rejects.toThrow(`removed on commit ${head.slice(0, 7)}, which this repository no longer has, so Sotto cannot put it back. Nothing was changed. Continue the thread in a new worktree.`)
+    await expect(lstat(f.a.path!)).rejects.toThrow()
+  })
+
   it('lets one removal of a folder run at a time, so a send never puts it back for a second remover to take', async () => {
     const f = await installedWorktree()
     // The folder moved branch after the record the send holds was made; it comes back on the branch the removal found.

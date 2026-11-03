@@ -26,7 +26,7 @@
 .hosts-list:not(.hosts-card) > .hosts-row:first-child { border-top: 1px solid var(--tt-hairline); }
 .hosts-row__icon { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-accent-text); }
 .hosts-row__icon--local { color: var(--tt-text-muted); }
-.hosts-row__info { flex: 1 1 220px; min-width: 0; }
+.hosts-row__info { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
 .hosts-settings .hosts-row__meta { margin-top: 2px; font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .hosts-row__meta [data-phase='connected'] { color: var(--tt-text); }
 /* How the host is connected: the tailnet reads as the text does, SSH as quietly as the rest of the line. */
@@ -48,6 +48,7 @@
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .hosts-menu__list { animation: tt-pop-down 120ms ease-out; } }
 .hosts-menu__list [role='menuitem'] { min-height: 32px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; padding: 6px 10px; color: var(--tt-text); font-size: var(--tt-type-small); text-align: left; }
 .hosts-menu__list [role='menuitem']:hover, .hosts-menu__list [role='menuitem']:focus-visible { background: var(--tt-hover); }
+.hosts-menu__list [role='menuitem']:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .hosts-menu__list [data-danger] { color: var(--tt-error-text); }
 
 /* Add host, Edit connection and Rename. */

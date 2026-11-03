@@ -318,6 +318,12 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ browserWithoutAsking: false })
     })
 
+  it('persists turning off showing every agent picture through settings IPC (ADR-0170, part 7)', async () => {
+      const { ipc, settings } = createIpcHarness()
+      await expect(ipc.invoke(SETTINGS_UPDATE, { showEveryAgentPicture: false })).resolves.toMatchObject({ showEveryAgentPicture: false })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ showEveryAgentPicture: false })
+    })
+
   it('persists turning visuals in threads off through settings IPC (ADR-0056)', async () => {
       const { ipc, settings } = createIpcHarness()
       await expect(ipc.invoke(SETTINGS_UPDATE, { visualsInThreads: false })).resolves.toMatchObject({ visualsInThreads: false })

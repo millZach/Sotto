@@ -77,7 +77,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const bounds = range === '7' || range === '30' || range === '90' ? rangeBounds(Number(range), now(), timeZone) : range === 'custom'
     ? { ...(customFrom === '' ? {} : { from: customFrom }), ...(customTo === '' ? {} : { to: customTo }) } : {}
   const invalidRange = bounds.from !== undefined && bounds.to !== undefined && bounds.from > bounds.to
-  const sources: UsageSource[] | undefined = activityFilters && where !== 'all' ? [where] : undefined
+  const sources = useMemo<UsageSource[] | undefined>(() => activityFilters && where !== 'all' ? [where] : undefined, [activityFilters, where])
   const queryKey = JSON.stringify([bounds, activityFilters ? provider : 'all', sources, timeZone, today])
   const query = useMemo<UsageQuery | null>(() => invalidRange ? null : {
     timeZone, includeDaily: true, ...bounds,

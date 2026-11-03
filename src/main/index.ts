@@ -1,5 +1,5 @@
 import { mediaThumbnailMaker } from './agents/mediaThumbnail'
-import { requestedCaptures, ThreadMediaStore } from './agents/threadMedia'
+import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
@@ -1055,8 +1055,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   // Pictures in threads (ADR-0170): one store, which the runtime's providers and the native e2e fixtures' capture into.
   const threadMedia = owlFeatures['inline-media'] ? new ThreadMediaStore(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
-  // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, request-only).
-  const fixtureCaptures = threadMedia ? requestedCaptures(threadMedia) : {}
+  // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
+  const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
+  const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
@@ -1064,7 +1065,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
     answerImages: owlFeatures['answer-images'],
-    inlineMedia: owlFeatures['inline-media'],
+    inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     ...threadMedia ? { threadMedia } : {},
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
@@ -1192,7 +1193,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // computer's while its host runs, the selected host's while it is off (ADR-0074). The roles are compared by identity.
   const desktopDefaultsFollow = desktopDefaultsPush
     ? followDesktopDefaults(desktopDefaultsPush, hostRouter, () => workerRolesEnabled ? workingCopySettings.workerRoles : undefined,
-      () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined) : undefined
+      () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined,
+      () => owlFeatures['inline-media'] ? workingCopySettings.showEveryAgentPicture : undefined) : undefined
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
@@ -2011,7 +2013,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       // Hosts whose own threads delegate are told the new worker roles (#1310).
-      if (workerRolesChanged || settings.workerCeiling !== previous.workerCeiling || settings.workerMachineCeilings !== previous.workerMachineCeilings) desktopDefaultsFollow?.rolesChanged()
+      if (workerRolesChanged || settings.workerCeiling !== previous.workerCeiling || settings.workerMachineCeilings !== previous.workerMachineCeilings || settings.showEveryAgentPicture !== previous.showEveryAgentPicture) desktopDefaultsFollow?.defaultsChanged()
       worktreeCleanup?.settingsChanged()
       if (settings.keepMainCurrent !== previous.keepMainCurrent || JSON.stringify(settings.projectKeepMainCurrent) !== JSON.stringify(previous.projectKeepMainCurrent)) localRuntime.mainCheckout?.settingsChanged()
       localRuntime.watcher?.settingsChanged()

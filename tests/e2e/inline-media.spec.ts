@@ -76,7 +76,7 @@ for (const on of [true, false]) {
       launched = await launchSotto('success', profile)
       const { page } = launched
       await page.evaluate(async () => {
-        await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+        await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', showEveryAgentPicture: false })
         const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabled: true, enabledProviders: ['claude'] } })
         if (configured.error) throw new Error(configured.error)
         const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
@@ -90,7 +90,7 @@ for (const on of [true, false]) {
       await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Fix the checkout layout', exact: true }).click()
       const pane = page.locator('section.thread-pane:not([data-hidden])')
       await expect(pane.getByText('The Pay button sits on top of the total.')).toBeVisible({ timeout: 30_000 })
-      // Request-only (ADR-0170): the screenshot the agent took shows no tile of its own, with the feature on or off.
+      // With the switch off (ADR-0170, part 7), the screenshot the agent took shows no tile of its own, with the feature on or off.
       await expect(pane.locator('.thread-media')).toHaveCount(0)
       if (!on) return
       // Asked to show it, the agent names the file to show_in_thread, and it shows as a tile under the title it gave.

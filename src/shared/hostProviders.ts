@@ -115,7 +115,9 @@ export const hostSignInSchema = z.object({
 }).strict()
 export type HostSignIn = z.infer<typeof hostSignInSchema>
 /** What the window is given: the host's view without the page's address, which only main holds, and only to open it. */
-export type ProviderSignInView = Omit<HostSignIn, 'url'>
+export const providerSignInViewSchema = hostSignInSchema.omit({ url: true })
+export type ProviderSignInView = z.infer<typeof providerSignInViewSchema>
+export const providerSignInResultSchema = providerSignInViewSchema.nullable()
 
 /** The longest code Sotto hands a client. Claude Code's is a code and a state joined by `#`, well under this. */
 export const PASTED_CODE_MAX = 2048
@@ -126,7 +128,8 @@ export const hostProviderActionSchema = z.object({
 }).strict()
 export type HostProviderAction = z.infer<typeof hostProviderActionSchema>
 /** How a provider action went: nothing when the host took it, else the host's own sentence, naming the host. */
-export interface HostProviderActionResult { readonly error?: string }
+export const hostProviderActionResultSchema = z.object({ error: z.string().optional() }).strict()
+export type HostProviderActionResult = z.infer<typeof hostProviderActionResultSchema>
 
 export const hostSignInRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start'), id: z.uuid(), provider: hostProviderIdSchema }).strict(),
@@ -224,3 +227,10 @@ export type HostOpenCodeSignInRequest = z.infer<typeof hostOpenCodeSignInRequest
 /** What each of those calls is answered with: the desktop's own dialog's answers, and `reopen` as Open the page again's. */
 export const HOST_OPENCODE_ANSWERS = { ...OPENCODE_SIGN_IN_ANSWERS, reopen: signInDoneSchema } as const satisfies Record<HostOpenCodeCall['action'], z.ZodType>
 export type HostOpenCodeAnswer<A extends HostOpenCodeCall['action']> = z.infer<(typeof HOST_OPENCODE_ANSWERS)[A]>
+
+const hostOpenCodeAnswerSchemas: { readonly [A in HostOpenCodeCall['action']]: z.ZodType<HostOpenCodeAnswer<A>> } = HOST_OPENCODE_ANSWERS
+
+/** Keep the call and its answer paired when the action is generic at the preload boundary. */
+export function parseHostOpenCodeAnswer<A extends HostOpenCodeCall['action']>(action: A, value: unknown): HostOpenCodeAnswer<A> {
+  return hostOpenCodeAnswerSchemas[action].parse(value)
+}
