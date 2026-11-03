@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, isAbsolute, join, win32 as win32Path } from 'node:path'
 import { z } from 'zod'
 import type { IPty, IPtyForkOptions } from 'node-pty'
@@ -10,10 +11,23 @@ import { terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, termi
 import { saveTerminalImage, terminalImageInput } from '../terminals/clipboard'
 import type { FilesService } from '../files/service'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { INVALID_REQUEST, ToolOperations, fail, parse, workspace } from './common'
+import { INVALID_REQUEST, ToolFailure, ToolOperations, fail, parse, workspace } from './common'
 import { terminalInputFor } from '../../shared/runnableCommand'
 import { TerminalShell } from '../terminals/shell'
 import { CheckoutSendRefusal } from '../agents/checkoutMutations'
+import { parseHostEntityKey } from '../../shared/clientIdentity'
+
+/**
+ * The terminals of threads on paired hosts, which run over the user's own SSH (ADR-0183). The window's bridge hands this
+ * computer's threads to main by their own IDs, so a client key here names a thread on a paired host. Absent, as on stable,
+ * those threads have no terminal.
+ */
+export interface HostedTerminals {
+  /** The thread as a terminal sees it, or a refusal. Answers from what the host last published. */
+  workspace(threadId: string, expected?: string): FileWorkspace
+  /** What to run for a new shell in this place. */
+  launch(owner: FileWorkspace, place: TerminalPlace): { readonly file: string; readonly args: readonly string[] }
+}
 
 export interface TerminalDependencies {
   files: FilesService
@@ -29,9 +43,12 @@ export interface TerminalDependencies {
   acquireStart?: (workspace: FileWorkspace) => Promise<() => void>
   /** Whether a drawer shell may start with a command from a reply (ADR-0139, an Owl feature), read once at start. */
   runCommandEnabled?: boolean
+  hosted?: HostedTerminals | undefined
 }
 interface PendingRun { output(): void; arm(): void; cancel(): void }
 interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[]; pendingRun?: PendingRun | undefined }
+
+const isHostedThread = (threadId: string): boolean => parseHostEntityKey(threadId) !== null
 
 /** A reply's command waits for the new shell to go quiet this long after it last printed, so its prompt is drawn. */
 export const RUN_QUIET_MS = 150
@@ -74,25 +91,31 @@ export class TerminalService extends ToolOperations {
     await this.ready
     const record = this.sessions.get(request.sessionId)
     if (!record || record.session.workspace.threadId !== request.threadId || record.session.workspace.workspaceId !== request.workspaceId) return fail('session-unavailable', t`This terminal belongs to a different workspace or was closed.`)
-    if (validateDirectory) await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    // A shell over SSH isn't bound to a folder here, and it keeps working while its host's socket is down.
+    if (validateDirectory && !isHostedThread(request.threadId)) await workspace(this.dependencies.files, request.threadId, request.workspaceId)
     if (this.disposed || this.sessions.get(request.sessionId) !== record) return fail('session-unavailable', t`This terminal has closed.`)
     return record
   }
   list(payload: unknown) { return this.run(async () => {
     const request = parse(terminalListRequestSchema, payload)
     await this.ready
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    const owner = await this.resolveOwner(request.threadId, request.workspaceId)
     const place = request.place ?? 'tools'
     return { workspace: owner, sessions: [...this.sessions.values()].filter(record => record.session.workspace.workspaceId === owner.workspaceId && record.session.place === place).map(record => ({ ...record.session })), capacity: this.capacity() }
   }) }
   create(payload: unknown) { return this.run(async () => {
     const request = parse(terminalCreateSchema, payload)
     // A command runs only in a new drawer shell, and only while the feature is on; the command itself is never logged.
-    if (request.run !== undefined && (request.place !== 'drawer' || !this.dependencies.runCommandEnabled)) return fail('invalid-request', INVALID_REQUEST)
+    // A command typed into a shell over SSH could land in its passphrase prompt, so it never takes one (ADR-0183).
+    if (request.run !== undefined && (request.place !== 'drawer' || !this.dependencies.runCommandEnabled || isHostedThread(request.threadId))) return fail('invalid-request', INVALID_REQUEST)
     await this.ready
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    const owner = await this.resolveOwner(request.threadId, request.workspaceId)
     return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools', undefined, request.run))
   }) }
+  private async resolveOwner(threadId: string, expected?: string): Promise<FileWorkspace> {
+    if (!isHostedThread(threadId)) return workspace(this.dependencies.files, threadId, expected)
+    return this.dependencies.hosted?.workspace(threadId, expected) ?? fail('thread-unavailable', t`This thread’s terminal is on its host machine. Open it there.`)
+  }
   private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace, replacing?: LiveTerminal, run?: string): Promise<LiveTerminal> {
     // Reserve synchronously before importing/spawning so concurrent create calls respect limits.
     if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
@@ -116,19 +139,15 @@ export class TerminalService extends ToolOperations {
     this.publishCapacity()
     const releases: (() => void)[] = []
     try {
-      const shell = await this.shell.resolve()
-      record.session.shell = shell
-      record.session.title = platform === 'win32' ? win32Path.basename(shell) : basename(shell)
+      const launch = isHostedThread(owner.threadId) ? await this.hostedLaunch(owner, place) : await this.localLaunch(owner, place, platform, releases)
+      record.session.shell = launch.shell
+      record.session.title = launch.title
       const spawn = this.dependencies.spawn ?? (await import('node-pty')).spawn
-      await workspace(this.dependencies.files, owner.threadId, owner.workspaceId)
-      const cwd = place === 'drawer' ? await this.projectFolder(owner) : owner.workingDirectory
-      // Keep the binding alive as before, and also reserve the drawer's actual launch folder.
-      if (this.dependencies.acquireStart) {
-        releases.push(await this.dependencies.acquireStart(owner))
-        if (cwd !== owner.workingDirectory) releases.push(await this.dependencies.acquireStart({ ...owner, workingDirectory: cwd }))
-      }
       if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
-      const pty = spawn(shell, platform === 'win32' ? ['-NoLogo'] : ['-l'], { cwd, cols, rows, env, name: 'xterm-256color' })
+      // A host sent away while this shell was starting took its reservation (ADR-0183): start nothing nobody could end.
+      if (this.sessions.get(record.session.id) !== record) return fail('session-unavailable', t`This terminal was closed while it was starting.`)
+      const cwd = launch.cwd
+      const pty = spawn(launch.file, [...launch.args], { cwd, cols, rows, env, name: 'xterm-256color' })
       record.cwd = cwd
       record.pty = pty
       record.subscriptions.push(pty.onData(data => {
@@ -161,17 +180,39 @@ export class TerminalService extends ToolOperations {
       }
       await this.save()
       if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
+      if (this.sessions.get(record.session.id) !== record) return fail('session-unavailable', t`This terminal was closed while it was starting.`)
       record.pendingRun?.arm()
       this.publish(record)
       return record
     } catch (error) {
+      // A host sent away meanwhile took this reservation and the shell it replaces with it, so neither comes back.
+      const reserved = this.sessions.get(record.session.id) === record
       this.stop(record)
       this.sessions.delete(record.session.id)
-      if (replacing) this.sessions.set(replacing.session.id, replacing)
+      if (replacing && reserved) this.sessions.set(replacing.session.id, replacing)
       this.publishCapacity()
       if (error instanceof CheckoutSendRefusal) return fail('busy', error.terminalMessage())
+      // A hosted thread's refusals say what to do about its host. A local shell keeps its one sentence.
+      if (error instanceof ToolFailure && isHostedThread(owner.threadId)) throw error
       return fail('unavailable', t`The terminal could not start or save its session. Check that the shell is available and app storage is writable.`)
     } finally { for (const release of releases.reverse()) release() }
+  }
+  private async localLaunch(owner: FileWorkspace, place: TerminalPlace, platform: NodeJS.Platform, releases: (() => void)[]) {
+    const shell = await this.shell.resolve()
+    await workspace(this.dependencies.files, owner.threadId, owner.workspaceId)
+    const cwd = place === 'drawer' ? await this.projectFolder(owner) : owner.workingDirectory
+    // Keep the binding alive as before, and also reserve the drawer's actual launch folder.
+    if (this.dependencies.acquireStart) {
+      releases.push(await this.dependencies.acquireStart(owner))
+      if (cwd !== owner.workingDirectory) releases.push(await this.dependencies.acquireStart({ ...owner, workingDirectory: cwd }))
+    }
+    return { file: shell, args: platform === 'win32' ? ['-NoLogo'] : ['-l'], cwd, shell, title: platform === 'win32' ? win32Path.basename(shell) : basename(shell) }
+  }
+  /** Over SSH nothing on this computer holds the thread's folder, so ssh starts from the home folder here. The account's shell is named on the host, so the tab says `shell`. */
+  private async hostedLaunch(owner: FileWorkspace, place: TerminalPlace) {
+    const fresh = await this.resolveOwner(owner.threadId, owner.workspaceId)
+    const { file, args } = this.dependencies.hosted!.launch(fresh, place)
+    return { file, args, cwd: homedir(), shell: 'ssh', title: 'shell' }
   }
   /**
    * Types a reply's command into a new shell once it is ready to read it: after its first output and then RUN_QUIET_MS
@@ -242,6 +283,7 @@ export class TerminalService extends ToolOperations {
     return this.input(request.sessionId, async () => {
     const record = await this.owned(request)
     if (!record.pty) return fail('not-running', t`This terminal has exited. Reopen it before pasting an image.`)
+    if (isHostedThread(request.threadId)) return fail('unavailable', t`An image can’t be pasted into a terminal on another machine. Nothing was pasted.`)
     const path = await saveTerminalImage(record.session.workspace.workingDirectory, request.dataUrl)
     // A save yields; do not write to a shell closed or replaced while it was on disk.
     await this.owned(request)
@@ -280,6 +322,16 @@ export class TerminalService extends ToolOperations {
     this.dependencies.emit({ type: 'closed', threadId: record.session.workspace.threadId, workspaceId: record.session.workspace.workspaceId, sessionId: record.session.id })
     return this.snapshot(replacement)
   }) }
+  /** Ends every shell of a paired host that has left this computer: disconnected or forgotten, its threads go with it (ADR-0183). */
+  async endHost(hostId: string): Promise<void> {
+    await this.ready
+    const leaving = [...this.sessions.values()].filter(record => parseHostEntityKey(record.session.workspace.threadId)?.hostId === hostId)
+    if (leaving.length === 0) return
+    for (const record of leaving) { this.stop(record); this.sessions.delete(record.session.id) }
+    this.publishCapacity()
+    await this.save()
+    for (const { session } of leaving) this.dependencies.emit({ type: 'closed', threadId: session.workspace.threadId, workspaceId: session.workspace.workspaceId, sessionId: session.id })
+  }
   private stop(record: LiveTerminal): void {
     record.pendingRun?.cancel()
     const pty = record.pty; record.pty = undefined

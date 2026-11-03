@@ -129,6 +129,8 @@ export interface HostService {
   readonly supportsHostFacts?: boolean
   /** This host enforces its own worker ceiling and supports queued swarm starts. */
   readonly supportsWorkerSwarms?: boolean
+  /** This host keeps its agents' pictures and takes **Show every picture and video an agent makes** in the desktop defaults (ADR-0170, part 7). */
+  readonly supportsEveryAgentPicture?: boolean
   hostFacts?(): Promise<HostMachineReport>
   /**
    * The host reports the GitHub repository of each of its projects (#1032), present only when its Owl answer turns on Work
@@ -456,6 +458,8 @@ export class LocalHostService implements HostService {
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
     workerSwarms?: boolean
+    /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
+    everyAgentPicture?: boolean
     /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
     delegationViews?: DelegationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
@@ -475,6 +479,7 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsWorkerSwarms(): boolean { return this.options.workerSwarms === true }
+  get supportsEveryAgentPicture(): boolean { return this.options.everyAgentPicture === true }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
   get supportsProjectSetup(): boolean { return this.options.setUpProject !== undefined }

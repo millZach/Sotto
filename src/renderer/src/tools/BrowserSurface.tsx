@@ -7,7 +7,7 @@ import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { BrowserTaskDetails } from './BrowserTaskDetails'
 import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
-import { browserPages, useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
+import { browserPages, useThreadBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { BrowserPane } from './BrowserPane'
 import { useOwlFeature } from '../state/owlFeature'
@@ -39,7 +39,7 @@ function ClassicBrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const { t } = useLingui()
   const browserTitle = t({ message: 'Browser', comment: 'The Tools surface that shows a thread\'s browser pages.' })
   const browser = useThreadBrowser(store, threadId)
-  const tasks = useBrowserTasks(store)
+  const tasks = useThreadBrowserTasks(store, threadId)
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const agentToolsUnavailable = !threadTakesSottoTools(owningThread)

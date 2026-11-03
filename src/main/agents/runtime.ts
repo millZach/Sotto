@@ -1,4 +1,4 @@
-import { requestedCaptures, ThreadMediaStore } from './threadMedia'
+import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
@@ -171,6 +171,11 @@ export interface AgentRuntimeOptions {
    * closed: nothing is captured.
    */
   inlineMedia?: boolean
+  /**
+   * Whether **Show every picture and video an agent makes** is on (ADR-0170, part 7), read at each picture and each turn: this computer's
+   * Settings on the desktop. A headless host reads what its desktop last told it instead. Absent counts as on, its default.
+   */
+  showEveryAgentPicture?: () => boolean
   /** The store itself, when the process owner built it for providers of its own as well (the desktop's native fixtures). */
   threadMedia?: ThreadMediaStore
   /**
@@ -281,8 +286,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
   // Pictures in threads (ADR-0170): one store for this runtime, built only with the Owl feature on.
   const threadMedia = options.host ? undefined : options.threadMedia ?? (options.inlineMedia === true ? new ThreadMediaStore(directory, { historyEnabled: options.historyEnabled }) : undefined)
-  // Only images the user asked an agent to generate are captured on their own; anything else is shown through `sotto_media`.
-  const captureMedia = threadMedia ? requestedCaptures(threadMedia) : {}
+  // An image the user asked an agent to generate is always captured; anything else only while the switch is on. A headless
+  // host answers from what its desktop told it, kept further down, so this reads it when a picture comes.
+  let showEveryAgentPicture: () => boolean = options.showEveryAgentPicture ?? (() => true)
+  const showEvery = (): boolean => showEveryAgentPicture()
+  const captureMedia = threadMedia ? agentCaptures(threadMedia, showEvery) : {}
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
     claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
@@ -323,6 +331,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (options.threadStartsEnabled === true) agentHost.allowThreadStarts()
   // The pictures and videos an agent shows when the user asks (ADR-0170, request-only), only with `inline-media` on.
   if (threadMedia) agentHost.keepShownMedia(threadMedia)
+  // And what each turn writes in its folder, found when it ends, only while the switch is on (ADR-0170, part 7).
+  if (threadMedia) agentHost.keepWrittenMedia(threadMedia, showEvery)
   if (options.crossMachineEnabled === true) agentHost.allowBringBack()
   // A check takes the machine's one check worktree for its repository and installs packages first when they changed (#1312).
   if (options.crossMachineEnabled === true) agentHost.allowCheckWorktrees(options.checkInstaller)
@@ -434,6 +444,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The desktop defaults a desktop sent this host: the only new-thread default and roles its delegations use.
   const desktopDefaults = hostDelegation ? new DesktopDefaultsStore(directory) : undefined
   if (desktopDefaults) await desktopDefaults.load()
+  // What a desktop said of **Show every picture and video an agent makes**: it reaches this host's captures as a setting, grants nothing.
+  if (desktopDefaults && hostDelegation) {
+    const eligible = hostDelegation.capacityEligible ?? hostDelegation.counts
+    showEveryAgentPicture = () => desktopDefaults.showEveryAgentPicture(eligible)
+  }
   // Worker roles (#1041): Settings are read only when a start or a delegation asks for its role.
   const roles = options.workerRolesEnabled === true ? { roles: () => options.settings().workerRoles } : {}
   // Each provider's own sub-agents follow them too (#1042): the table is read when a thread on this computer launches,
@@ -806,6 +821,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       return () => { nextPromptListeners.delete(listener) }
     } } } : {}),
     ...workerAdmission ? { workerSwarms: true } : {},
+    ...threadMedia && desktopDefaults ? { everyAgentPicture: true } : {},
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     ...(projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).

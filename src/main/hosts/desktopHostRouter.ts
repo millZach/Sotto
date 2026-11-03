@@ -37,6 +37,7 @@ import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } fr
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
+import type { HostThreadFolders } from './hostedTerminals'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
@@ -1352,6 +1353,20 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     if (!connection.service.threadPrompts || connection.available?.() === false) return null
     return connection.service.threadPrompts(id!, request.beforeMessageId)
+  }
+  /**
+   * Where a thread on a paired host's terminal would start, from what its host last published (ADR-0183). It asks the host
+   * nothing and copies nothing, so it answers while the socket is down. Only a remote host's thread has an answer.
+   */
+  hostedThreadFolders(threadId: string): HostThreadFolders | undefined {
+    const key = parseHostEntityKey(threadId)
+    const connection = key ? this.hosts.get(key.hostId)?.connection : undefined
+    if (!key || connection?.kind !== 'remote') return undefined
+    const { host } = readView(connection.service)
+    const thread = host.threads.find(item => item.id === key.id)
+    if (!thread) return undefined
+    return { hostId: connection.hostId, projectId: hostEntityKey(connection.hostId, thread.projectId), workingDirectory: thread.workingDirectory,
+      projectFolder: host.projects.find(project => project.id === thread.projectId)?.path }
   }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {

@@ -691,7 +691,10 @@ struct ThreadSidebar: View, Equatable {
                 .frame(minHeight: 44)
                 .padding(.horizontal, Space.s2)
                 .padding(.top, Space.s3)
-                ThreadListSections(groups: groups, chosen: model.selected, identifier: "sidebar-thread-", open: open).equatable()
+                ThreadListSections(groups: groups, watch: model.listWatch(groups), shelfOffers: model.shelfOffers(groups), chosen: model.selected, identifier: "sidebar-thread-", open: open,
+                                   setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
+                                   shelve: { row, action in Task { await model.shelve(row.ref, action) } })
+                    .equatable()
             }
             .padding(.horizontal, Space.s2)
             .padding(.bottom, Space.s6)
@@ -713,52 +716,68 @@ struct ThreadSidebar: View, Equatable {
 /// unfolded Duo's sidebar shows it beside a thread. A Needs you row is a row like the others: its thread opens on its
 /// question.
 struct ThreadListSections: View, Equatable {
-    @EnvironmentObject var model: AppModel
     let groups: FocusThreads
+    /// What it reads from Watcher for its rows. Its caller reads it from the model, so the list watches nothing itself and
+    /// draws again only when what it shows has changed, not with every update to any thread.
+    let watch: ListWatch
+    /// What its rows' long presses offer for the shelf, by row ID, read by its caller for the same reason.
+    let shelfOffers: [String: AppModel.ShelfOffer]
     /// The thread showing beside the list, on the accent's soft chip.
     var chosen: ThreadRef? = nil
     /// Each row's identifier starts with this: `thread-` on the Threads page, `sidebar-thread-` beside a thread.
     var identifier = "thread-"
+    /// Set while the Threads page holds the list it drew as it went out of sight (`ThreadsView`): one hold is one list.
+    var held: UUID? = nil
     let open: (ThreadRef) -> Void
+    /// Watch or Stop watching, pressed on a row.
+    let setWatched: (HostedThread, Bool) -> Void
+    /// Settle or Restore, pressed on a row.
+    let shelve: (HostedThread, AppModel.ShelfAction) -> Void
     var body: some View {
         let _ = BenchProbe.body("ThreadListSections")
-        let watched = model.watchedThreadIDs
         VStack(alignment: .leading, spacing: 0) {
             section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
-                rowView(row, .needs, watched, asking: groups.asking(row))
+                rowView(row, .needs, asking: groups.asking(row))
             }
-            section(String(localized: "Working now"), "working", groups.working) { row in rowView(row, .working, watched) }
+            section(String(localized: "Working now"), "working", groups.working) { row in rowView(row, .working) }
             section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
-                rowView(row, .recent(unread: groups.isUnreadFinish(row)), watched)
+                rowView(row, .recent(unread: groups.isUnreadFinish(row)))
             }
         }
+        .benchEnvironment("EnvironmentUnderList")
     }
     /// A Needs you row can stand for a delegated thread that asks (ADR-0081): a press opens the row's thread and then
     /// the one that asks, so its question opens there and Back returns to the thread that delegated it.
-    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, _ watched: Set<String>, asking: HostedThread? = nil) -> some View {
-        let isWatched = watched.contains(row.id)
+    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, asking: HostedThread? = nil) -> some View {
+        let isWatched = watch.watched.contains(row.id)
         let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
         // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
         let marked = chosen.map { groups.rowID(for: $0) == row.id } ?? false
         return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: marked,
-                             canWatch: model.canChangeWatch(row.ref), shelf: kind == .needs ? nil : model.shelfOffer(row), identifier: identifier,
+                             canWatch: watch.changeable.contains(row.id), shelf: shelfOffers[row.id], identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
-                             setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
-                             shelve: { action in Task { await model.shelve(row.ref, action) } })
+                             setWatched: { on in setWatched(row, on) },
+                             shelve: { action in shelve(row, action) })
             .equatable()
     }
-    /// It draws from the model it watches and these: the rows' threads, which section each is in, who asks, the chosen
-    /// one and its identifiers. The closure never changes what it draws.
+    /// It draws from these alone: the rows' threads, which section each is in, who asks and what they wait on, what
+    /// Watcher and the shelf offer for each, the chosen one and its identifiers. It watches no model, so `drawn` must name everything
+    /// a row shows, or a row keeps old words. The closures never change what it draws. A list held from one moment is
+    /// the same list, so two of the same hold are equal without reading their rows.
     static func == (lhs: ThreadListSections, rhs: ThreadListSections) -> Bool {
-        lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && drawn(lhs.groups) == drawn(rhs.groups)
+        if let held = lhs.held, held == rhs.held { return true }
+        return lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && lhs.shelfOffers == rhs.shelfOffers && drawn(lhs.groups) == drawn(rhs.groups)
     }
     private static func drawn(_ groups: FocusThreads) -> [String] {
         func rows(_ section: String, _ rows: [HostedThread]) -> [String] {
             rows.map { row in
                 let thread = row.thread
-                return [section, row.id, thread.title, thread.status, "\(thread.requests.count)", thread.providerId ?? "", row.project ?? "",
-                        row.computer, "\(row.status)", thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "",
-                        groups.asking(row).id, "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
+                let asking = groups.asking(row)
+                return [section, row.id, thread.title, thread.status, ThreadState(thread).rawValue, "\(thread.requests.count)",
+                        thread.providerId ?? "", row.project ?? "", row.computer, "\(row.status)",
+                        thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "",
+                        asking.id, asking.thread.title, ThreadState(asking.thread).rawValue,
+                        "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
             }
         }
         return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent)
@@ -782,6 +801,27 @@ struct ThreadListSections: View, Equatable {
     }
     .disabled(held)
     .accessibilityIdentifier(action == .settle ? "row-settle" : "row-restore")
+}
+
+/// What the thread list reads from Watcher for its rows (ADR-0073): the threads it watches, and the rows whose Watch or
+/// Stop watching can be pressed now, by row ID.
+struct ListWatch: Equatable {
+    let watched: Set<String>
+    let changeable: Set<String>
+}
+extension AppModel {
+    /// What the thread list reads from Watcher for these groups' Needs you, Working now and Recent rows.
+    func listWatch(_ groups: FocusThreads) -> ListWatch {
+        let rows = groups.questions + groups.working + groups.recent
+        return ListWatch(watched: watchedThreadIDs, changeable: Set(rows.filter { canChangeWatch($0.ref) }.map(\.id)))
+    }
+    /// What these groups' Working now and Recent rows offer for the shelf, by row ID. A Needs you row offers neither, as
+    /// its card never did: settling leaves its question waiting, and the row where it stands.
+    func shelfOffers(_ groups: FocusThreads) -> [String: ShelfOffer] {
+        var offers: [String: ShelfOffer] = [:]
+        for row in groups.working + groups.recent { offers[row.id] = shelfOffer(row) }
+        return offers
+    }
 }
 
 /// A section's quiet heading in the thread list: its name and how many threads it holds.

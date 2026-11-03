@@ -5,7 +5,7 @@ import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserTask } from '../../../shared/browser'
 import { useOwlFeature } from '../state/owlFeature'
-import { pageLabel, useThreadBrowser, useBrowserTasks, type ThreadBrowser } from './browserStore'
+import { pageLabel, useThreadBrowser, useThreadBrowserTasks, type ThreadBrowser } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
 import { toolsTarget, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
@@ -79,7 +79,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   const { t } = useLingui()
   const chrome = useToolsPanelChrome(store)
   const quietBrowser = useOwlFeature('quiet-browser')
-  const tasks = useBrowserTasks(store.browser)
+  const tasks = useThreadBrowserTasks(store.browser, focusedThreadId)
   // Sotto's browser is this computer's, so a remote host's threads have no tasks here to watch.
   const ids = state.host.threads.filter(thread => !thread.remoteHost).map(thread => thread.id).join('\n')
   useEffect(() => { store.browser.watchTasks(bridge, ids.split('\n').filter(Boolean)) }, [bridge, store, ids])
