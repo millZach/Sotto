@@ -184,6 +184,8 @@ export interface HostService {
   nextPrompts?(): readonly NextPromptEntry[]
   subscribeNextPrompts?(listener: (entry: NextPromptEntry) => void): () => void
   setNextPromptsWanted?(wanted: boolean): void
+  /** Tells a remote host this desktop's latest answer for its product events (ADR-0179), and keeps trying until it has it. */
+  tellProductEventAnswer?(): void
   /**
    * The host's threads delegate to other machines through this desktop (`delegation-relay`, #1316), on a desktop's
    * connection to a host whose hello it accepted: `subscribeDelegationRelay` hears each ask the host pushes,

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { deleteInstallId, ensureInstallId, productEventHomes, readProductEventOwners, type ProductEventOwner } from './identity'
 import { parseProductEvent, parseProductEventInstall, productEventArch, productEventPlatform, type ProductEventInstall, type ProductEventName, type ProductEventProperties } from './schema'
 
@@ -13,7 +14,7 @@ import { parseProductEvent, parseProductEventInstall, productEventArch, productE
  * `off` drops what waits and leaves no install ID. `waiting` is a question not yet answered: the desktop keeps nothing
  * before the notice is answered, and a host holds events in memory until a desktop tells it. `on` sends.
  */
-export type ProductEventPermission = 'off' | 'waiting' | 'on'
+export type { ProductEventPermission }
 
 const SEND_EVERY_MS = 30_000
 const BATCH_SIZE = 20
@@ -254,8 +255,15 @@ export class ProductEvents {
 }
 
 /** The answer the desktop's two settings give. Sending waits for a press on the notice (ADR-0179). */
-export function productEventsPermission(settings: { readonly productEventsEnabled: boolean; readonly productEventsNoticeAnswered: boolean }): ProductEventPermission {
+export function productEventsPermission(settings: { readonly productEventsEnabled: boolean; readonly productEventsNoticeAnswered: boolean }, environment: NodeJS.ProcessEnv = process.env): ProductEventPermission {
+  // A desktop off by its environment says off to its hosts too, not only to itself.
+  if (productEventsOffByEnvironment(environment)) return 'off'
   return !settings.productEventsEnabled ? 'off' : settings.productEventsNoticeAnswered ? 'on' : 'waiting'
+}
+
+/** What a host does with what its connected desktops answered (ADR-0179): any off wins, then any on, otherwise it waits. */
+export function productEventsFromDesktops(answers: readonly ProductEventPermission[]): ProductEventPermission {
+  return answers.includes('off') ? 'off' : answers.includes('on') ? 'on' : 'waiting'
 }
 
 /** The sender for this process, which has no endpoint and does nothing until a build or the environment names one. */

@@ -474,8 +474,8 @@ extension AppModel {
                 switch reply {
                 case .ok(let state):
                     applyWatcher(state, from: hostID)
-                    // Only this answer's own receipt says it reached the thread.
-                    await checkDelivery(hostID)
+                    // Only this answer's own receipt says it reached the thread, and reading it costs a few bytes.
+                    await readReceipts(hostID)
                 case .refused(let refusal):
                     try rejectOperation(operation)
                     feedback = refusal.message
@@ -3738,7 +3738,8 @@ struct RailAsk: Equatable {
             guard generations[hostID] == current else { return nil }
             let next = result.value
             try applyShell(next, from: hostID, sequence: result.sequence, reconcileAnswers: false)
-            await checkDelivery(hostID)
+            // This reply is the shell after the command, so the receipt is all that is left to read.
+            await readReceipts(hostID)
             guard generations[hostID] == current else { return nil }
             if let error = next.error {
                 if operation.kind.hasPrefix("create-") { creationFeedback = error }
@@ -3795,16 +3796,23 @@ struct RailAsk: Equatable {
         receiptFollowers[id] = ReceiptFollower(token: token, generation: generation)
         return token
     }
-    func checkDelivery(_ hostID: String) async {
+    /// Reads the computer's state, then the receipt of everything still on its way there: after a reconnect, or when
+    /// the user asks to check again.
+    func checkDelivery(_ hostID: String) async { await readDelivery(hostID, readingShell: true) }
+    /// Reads receipts only, right after an answer. A shell read would send this iPhone the whole shell again on the one
+    /// socket every other message waits behind, for what the answer just told it or the next push will.
+    private func readReceipts(_ hostID: String) async { await readDelivery(hostID, readingShell: false) }
+    private func readDelivery(_ hostID: String, readingShell: Bool) async {
         guard online(hostID), !scoped(hostID).isEmpty, let connection = connections[hostID] else { return }
         let current = generations[hostID]
         deliveryChecks[hostID, default: 0] += 1
         defer { deliveryChecks[hostID, default: 0] -= 1 }
         do {
-            let fresh = try await connection.callReceived(["op": .string("shell")], as: Shell.self)
-            guard generations[hostID] == current else { return }
-            let next = fresh.value
-            try applyShell(next, from: hostID, sequence: fresh.sequence, reconcileAnswers: false)
+            if readingShell {
+                let fresh = try await connection.callReceived(["op": .string("shell")], as: Shell.self)
+                guard generations[hostID] == current else { return }
+                try applyShell(fresh.value, from: hostID, sequence: fresh.sequence, reconcileAnswers: false)
+            }
             for item in scoped(hostID) {
                 let receipt = try await connection.call(["op": .string("receipt"), "commandId": .string(item.id)], as: Receipt.self)
                 guard generations[hostID] == current else { return }
