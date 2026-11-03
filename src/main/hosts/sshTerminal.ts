@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import { CONTROL_OPTIONS } from './sshProcess'
 
 /** A saved host, as a shell over SSH reaches it. */
