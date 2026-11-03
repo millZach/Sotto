@@ -7,6 +7,8 @@ import { CouncilChamber } from '../../../../../src/renderer/src/features/council
 import { ChamberPainter } from '../../../../../src/renderer/src/features/council/chamberPainter'
 import { chamberCouncil, CouncilView, useSeatsInForce } from '../../../../../src/renderer/src/features/council/CouncilView'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
+import * as canvasColor from '../../../../../src/renderer/src/watcher/canvasColor'
+import * as watcherScene from '../../../../../src/renderer/src/watcher/WatcherNightScene'
 import type { AgentCommand, AgentModel, AgentState, AgentThread } from '../../../../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
@@ -42,18 +44,19 @@ const noSeats = { panelists: [], chair: undefined }
  * A chamber `width` by `height` pixels, with the canvas, observer and frames jsdom lacks, so it lays itself out as in the
  * window. Frames are held until `flush`; `asked` counts the frames the chamber asked for, one per wake while none waits.
  */
-function withLayout(width = 1020, height = 380): { readonly asked: () => number; readonly flush: () => void } {
+function withLayout(width = 1020, height = 380): { readonly asked: () => number; readonly flush: () => void; readonly resize: () => void } {
   const frames = new Map<number, FrameRequestCallback>()
   let asked = 0
+  let resize = (): void => undefined
   const context = new Proxy({}, { get: (_, key) => key === 'getImageData' ? () => ({ data: new Uint8ClampedArray(4) }) : () => undefined, set: () => true })
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
-  vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resize = callback } observe(): void {} disconnect(): void {} })
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { asked++; frames.set(asked, callback); return asked })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
   const size = (pixels: number) => function (this: HTMLElement): number { return this.classList.contains('council-chamber') ? pixels : 0 }
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(size(width))
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(size(height))
-  return { asked: () => asked, flush: () => { const pending = [...frames.values()]; frames.clear(); for (const frame of pending) frame(performance.now()) } }
+  return { asked: () => asked, resize: () => resize(), flush: () => { const pending = [...frames.values()]; frames.clear(); for (const frame of pending) frame(performance.now()) } }
 }
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
@@ -77,6 +80,43 @@ describe('the chamber’s motion', () => {
       layout.flush()
     }
     expect(draw).toHaveBeenCalledTimes(8)
+  })
+
+  it.each(['resize', 'layout', 'theme', 'visibility'].flatMap(source => [false, true].map(reduced => ({ source, reduced }))))('redraws fairness promptly after $source with reduced motion $reduced', async ({ source, reduced }) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+    if (reduced) document.documentElement.dataset.reducedMotion = 'on'
+    const layout = withLayout()
+    const ink = vi.spyOn(canvasColor, 'toRgb').mockReturnValue({ r: 220, g: 220, b: 220 })
+    vi.spyOn(watcherScene, 'surfaceOf').mockReturnValue({ r: 0, g: 0, b: 0 })
+    vi.spyOn(ChamberPainter.prototype, 'ready', 'get').mockReturnValue(true)
+    const draw = vi.spyOn(ChamberPainter.prototype, 'draw').mockReturnValue(true)
+    const { publish } = provide([{ id: 'thread-a', ...running }])
+    const council = councilFixture({ stage: 'fairness', rows: [row('A', 'fairness', 'working')] })
+    const { rerender } = render(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(20)
+    if (source === 'resize') act(() => layout.resize())
+    else if (source === 'layout') rerender(<CouncilChamber council={council} askSeats={noSeats} layout="half-circle" />)
+    else if (source === 'theme') await act(async () => {
+      ink.mockReturnValue({ r: 20, g: 20, b: 20 })
+      // Notify the theme observer without leaving a changed style behind.
+      document.documentElement.setAttribute('style', document.documentElement.getAttribute('style') ?? '')
+    })
+    else document.dispatchEvent(new Event('visibilitychange'))
+    // A streaming update before the queued frame must not postpone the forced redraw either.
+    publish('thread-a', thread => ({ ...thread, messages: [{ id: 'm', role: 'assistant', text: 'Fair.', createdAt: '2026-11-02T10:00:01.000Z' }] }))
+    const chosen = source === 'layout' ? 'half-circle' : 'long-table'
+    rerender(<CouncilChamber council={council} askSeats={noSeats} layout={chosen} />)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(2)
+    expect(draw.mock.calls.at(-1)![0].still).toBe(reduced)
+    vi.advanceTimersByTime(100)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(2)
+    vi.advanceTimersByTime(25)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(reduced ? 2 : 3)
   })
 
   it.each(['system', 'setting'])('stops animation when reduced motion is turned on by the %s, and redraws state changes still', async source => {

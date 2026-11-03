@@ -211,10 +211,11 @@ export function CouncilChamber({ council, askSeats, layout }: {
       delay = chamberPace(still, moving, busy, shown.stage)
       schedule()
     }
-    const wake = (): void => {
+    const wake = (force = false): void => {
       if (disposed) return
       if (timer !== null) { window.clearTimeout(timer); timer = null }
-      const slow = latest.current.scene.stage === 'fairness' && !latest.current.reduced
+      // Streaming keeps its deadline; a cleared or newly visible canvas needs its ink on the next frame.
+      const slow = !force && latest.current.scene.stage === 'fairness' && !latest.current.reduced
       delay = slow ? IDLE_CHECK_MS : 0
       if (!slow) last = Number.NEGATIVE_INFINITY
       if (request === null) schedule()
@@ -229,7 +230,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
       if (key === inked) return
       inked = key
       painter.setInk(chamberInk(surface, text, accent), style.fontFamily)
-      wake()
+      wake(true)
     }
     const relayout = (): void => {
       if (disposed) return
@@ -248,7 +249,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
       const key = JSON.stringify([...next])
       if (key !== boxKey) { boxKey = key; setBoxes(next) }
       halt()
-      wake()
+      wake(true)
     }
     relayoutRef.current = relayout
 
@@ -256,7 +257,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
     sizes.observe(element)
     const theme = new MutationObserver(readInk)
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
-    const visibility = (): void => { if (document.visibilityState !== 'hidden') wake() }
+    const visibility = (): void => { if (document.visibilityState !== 'hidden') wake(true) }
     document.addEventListener('visibilitychange', visibility)
     const unwatchResolution = watchResolution(relayout)
     void document.fonts?.load(`10.5px ${getComputedStyle(ink).fontFamily}`).then(() => { if (!disposed) { inked = ''; readInk() } }, () => undefined)
