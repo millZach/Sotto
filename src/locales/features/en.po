@@ -3549,6 +3549,10 @@ msgstr "No other threads yet. Threads you or Watcher start show here."
 msgid "No outside research: the panelists work from the snapshot and the conversation."
 msgstr "No outside research: the panelists work from the snapshot and the conversation."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No outside research: the panelists work from the thread's folder and the conversation."
+msgstr "No outside research: the panelists work from the thread's folder and the conversation."
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "No preference"
 msgstr "No preference"
@@ -4777,6 +4781,10 @@ msgstr "Research"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Research outside the snapshot"
 msgstr "Research outside the snapshot"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Research outside the thread's folder"
+msgstr "Research outside the thread's folder"
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Reset safely"
@@ -6232,6 +6240,14 @@ msgstr "The panelists research outside the snapshot with their own tools: {reaso
 msgid "The panelists research outside the snapshot with their own tools."
 msgstr "The panelists research outside the snapshot with their own tools."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools: {reason}"
+msgstr "The panelists research outside the thread's folder with their own tools: {reason}"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools."
+msgstr "The panelists research outside the thread's folder with their own tools."
+
 #: src/renderer/src/features/council/CouncilSeats.tsx
 msgid "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
 msgstr "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
@@ -7193,6 +7209,10 @@ msgstr "Working in a snapshot of {branch} at {commit}, with its uncommitted chan
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Working in a snapshot of {branch} at {commit}."
 msgstr "Working in a snapshot of {branch} at {commit}."
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
+msgstr "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx

@@ -265,7 +265,8 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
   const open = council.status !== 'settled'
   const running = council.status === 'working' || council.status === 'waiting'
   const seatNames = council.seats.map(seat => `${words.seat(seat.seat)}: ${seat.modelName}${seat.provider ? ` (${PROVIDER_LABELS[seat.provider]})` : ''}`).join(' · ')
-  const branch = council.snapshot.branch, commit = council.snapshot.commit.slice(0, 8), untracked = council.snapshot.untracked, parts = council.history.parts
+  const snapshot = council.snapshot, parts = council.history.parts
+  const branch = snapshot?.branch, commit = snapshot?.commit.slice(0, 8), untracked = snapshot?.untracked ?? 0
   return <article className="council-entry" aria-labelledby={headingId} data-status={council.status}>
     <header className="council-entry__head">
       <div className="council-entry__title">
@@ -279,7 +280,8 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
     </header>
     <p className="council-entry__seats tt-paragraph">{seatNames}</p>
     <p className="council-entry__meta tt-paragraph">
-      {council.snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : !council.snapshot.dirty ? t`Working in a snapshot of ${branch} at ${commit}.`
+      {!snapshot ? t`Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite.`
+        : snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : !snapshot.dirty ? t`Working in a snapshot of ${branch} at ${commit}.`
         : untracked > 0 ? t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes and ${untracked} untracked files.`
         : t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes.`}
       {council.history.parts > 1 ? ` ${t`The conversation is too long for one prompt, so each thread reads all of it in ${parts} parts first.`}` : ''}
@@ -308,8 +310,8 @@ function RoundRecord({ council, round, run }: { readonly council: CouncilRecord;
 
 /**
  * The framing as the record shows it: the kind, the criteria by source, and whether the panelists research outside the
- * snapshot. Once framing is in and before the verdict, the user can change the kind or the research, and every panelist
- * answers again (ADR-0177 decision 4).
+ * snapshot, or the thread's folder when it has none. Once framing is in and before the verdict, the user can change the
+ * kind or the research, and every panelist answers again (ADR-0177 decision 4).
  */
 function Framing({ framing, council, round, run }: { readonly framing: NonNullable<CouncilRoundView['framing']>; readonly council: CouncilRecord; readonly round: CouncilRoundView
   readonly run: (command: CouncilCommand) => Promise<void> }): ReactNode {
@@ -320,9 +322,14 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
   const names: Record<CouncilKind, string> = { decision: t`a decision`, fact: t`a fact to check`, review: t`a review`, ideas: t`ideas` }
   const kinds = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(framing.kinds.map(kind => names[kind]))
   const reason = framing.research.reason
-  const research = framing.research.needed
-    ? reason ? t`The panelists research outside the snapshot with their own tools: ${reason}` : t`The panelists research outside the snapshot with their own tools.`
-    : t`No outside research: the panelists work from the snapshot and the conversation.`
+  // Without a snapshot, outside Git, the panelists work in the thread's own folder.
+  const research = council.snapshot
+    ? framing.research.needed
+      ? reason ? t`The panelists research outside the snapshot with their own tools: ${reason}` : t`The panelists research outside the snapshot with their own tools.`
+      : t`No outside research: the panelists work from the snapshot and the conversation.`
+    : framing.research.needed
+      ? reason ? t`The panelists research outside the thread's folder with their own tools: ${reason}` : t`The panelists research outside the thread's folder with their own tools.`
+      : t`No outside research: the panelists work from the thread's folder and the conversation.`
   return <div className="council-framing">
     <p className="tt-paragraph">{framing.fallback ? t`The chair’s framing could not be read, so the panel answers the question alone, as ${kinds}.` : t`Framed as ${kinds}.`}</p>
     {framing.criteria.length ? <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question`
@@ -343,7 +350,7 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
         </select>
       </label>
       <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'reframe', council: council.id, research: !framing.research.needed })}>
-        {framing.research.needed ? t`Answer without outside research` : t`Research outside the snapshot`}</button>
+        {framing.research.needed ? t`Answer without outside research` : council.snapshot ? t`Research outside the snapshot` : t`Research outside the thread's folder`}</button>
       <CriteriaEditor key={framing.criteria.map(criterion => criterion.text).join('\n')} criteria={framing.criteria.map(criterion => criterion.text)}
         onChange={criteria => void run({ type: 'reframe', council: council.id, criteria })} />
       <p className="council-muted tt-paragraph">{t`Changing the kind, the research or the criteria asks every panelist to answer again.`}</p>
