@@ -9,7 +9,7 @@ import { describeWorkingCopy, type WorkingCopyThread } from '../agents/ThreadWor
 import { isDrawerShortcut, setDrawerShortcut } from './paneTerminalShortcut'
 import { usePaneTerminalShortcut } from './PaneTerminalToggle'
 import { paneTerminalChromeStore, paneTerminalStore, usePaneTerminalChrome, type PaneTerminalChromeStore } from './paneTerminalStore'
-import { TerminalSurface } from './TerminalSurface'
+import { TerminalMachine, TerminalSurface } from './TerminalSurface'
 import { useThreadTerminals, windowTerminalBridge, type TerminalStore, type TerminalViewFactory } from './terminalStore'
 import { useTerminalViewFactory } from './terminalViewLoader'
 import './paneTerminal.css'
@@ -70,6 +70,8 @@ export interface PaneTerminalDrawerProps {
   readonly threadId: string
   readonly thread: WorkingCopyThread
   readonly project: Pick<AgentProject, 'path'> | undefined
+  /** The paired host this thread's shells run on, over SSH (ADR-0183); absent for a thread on this computer. */
+  readonly machine?: string | undefined
   readonly bridge?: TerminalBridge | undefined
   /** Test seam: a light stand-in for xterm. Left out, the real view loads the first time a drawer opens. */
   readonly viewFactory?: TerminalViewFactory | undefined
@@ -82,7 +84,7 @@ export interface PaneTerminalDrawerProps {
  * from Tools' Terminal surface (`paneTerminalStore` is its own `TerminalStore` `place`); hiding the drawer only
  * takes the view off the page, the way Tools does, so a shell keeps running while the drawer is closed.
  */
-export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFactory, store = paneTerminalStore, chromeStore = paneTerminalChromeStore }: PaneTerminalDrawerProps): ReactNode {
+export function PaneTerminalDrawer({ threadId, thread, project, machine, bridge, viewFactory, store = paneTerminalStore, chromeStore = paneTerminalChromeStore }: PaneTerminalDrawerProps): ReactNode {
   const chrome = usePaneTerminalChrome(threadId, chromeStore)
   const { factory: baseFactory, failed } = useTerminalViewFactory(viewFactory, chrome.open)
   const { t } = useLingui()
@@ -195,8 +197,9 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
       onDoubleClick={() => chromeStore.resetHeight(threadId)} onKeyDown={onKeyDown} />
     <div className="pane-terminal__body">
       <TerminalSurface threadId={threadId} store={store} bridge={terminalBridge} viewFactory={factory} viewFailed={failed}
-        idSuffix={`-drawer-${threadId}`} chromeTitle={null} newLabel={t`New shell`} autoStart startSize={startSize} focusNextRef={focusNext}
+        idSuffix={`-drawer-${threadId}`} chromeTitle={null} newLabel={t`New shell`} autoStart startSize={startSize} focusNextRef={focusNext} machine={machine}
         barEnd={interrupt => <div className="terminal-bar__end">
+          <TerminalMachine machine={machine} />
           {branch ? <span className="pane-terminal__branch" title={t({ message: `Branch ${branch}`, comment: '{branch} is a Git branch name.' })}><GitBranch size={13} aria-hidden="true" /><bdi>{branch}</bdi></span> : null}
           {interrupt}
           <button type="button" className="files-icon tt-focusable" aria-label={t`Hide terminal drawer`} title={keys ? t`Hide terminal drawer (${keys})` : t`Hide terminal drawer`}

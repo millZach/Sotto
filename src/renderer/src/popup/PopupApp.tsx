@@ -280,7 +280,7 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
               </div>)}
             {echo !== null ? <div className="popup-entry popup-entry--user is-sending"><ChevronRight size={12} aria-hidden="true" /><p>{echo.text}</p></div> : null}
             {current?.requests.map(request => (
-              <AgentRequestCard key={request.id} ownerId={current.id} ownerTitle={current.title} request={request} blocked={null}
+              <AgentRequestCard key={request.id} ownerId={current.id} ownerTitle={current.title} watcher={target === 'watcher'} request={request} blocked={null}
                 onSubmit={answer(request)} onWriteAnswer={open} />
             ))}
             {running || waiting ? (

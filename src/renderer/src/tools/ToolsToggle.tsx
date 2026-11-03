@@ -4,7 +4,7 @@ import { PanelRight, Pin } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { delegatedThreadsBelow } from '../../../shared/delegation'
 import { useDelegationsEnabled } from '../agents/delegations'
-import { useBrowserTasks } from './browserStore'
+import { useThreadBrowserTasks } from './browserStore'
 import { delegatedBelow } from './delegatedRoster'
 import { toolsPanelStore, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
 
@@ -39,7 +39,7 @@ export function ToolsToggle({ threadId, focused, store = toolsPanelStore, state 
     else store.clearToggleFocus()
   }, [chrome.open, store, focused])
   const delegation = useDelegationsEnabled()
-  const browserTasks = useBrowserTasks(store.browser)
+  const browserTasks = useThreadBrowserTasks(store.browser, threadId)
   const pinned = chrome.pinnedThreadId
   // The threads this pane's thread delegated (ADR-0081; Owl only) count as its agents: working, or waiting on you.
   const below = delegation ? delegatedBelow(state.host.threads, threadId) : { needs: 0, working: 0 }

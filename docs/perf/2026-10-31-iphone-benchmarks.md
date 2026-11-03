@@ -54,10 +54,14 @@ Then:
    - `reply-box`: the reply box out to full and back to small twenty times, by a draft put in and taken out, so no
      keyboard moves the page. Its budgets hold that this draws no part of the conversation (ADR-0184).
    - `reply-box-stream`: the same for as long as another 200 words stream in, to set against `stream`.
+   - `back`: back to the Threads list, as a press on Back goes, until the list is drawn as it stands.
 
    Each phase lasts until half a second passes without a late frame. The scroll sets the offset from the clock every
    frame, so a late frame jumps as a fling would.
-3. **Where the main thread goes**, on the change's side only: one more journey with `--bench-sample`, in which a
+3. **The long thread's look**, twice from a cold launch: the app photographs the long thread at fixed distances above
+   its end. `bench-summary.py look` fails the run when the change's photos differ from the base's at a distance where
+   the base's two launches agree.
+4. **Where the main thread goes**, on the change's side only: one more journey with `--bench-sample`, in which a
    background thread in the app suspends the main thread about once a millisecond, walks its frame pointers and resumes
    it (`BenchSampler`). `Scripts/bench-sample.py` names the addresses with `atos` and writes `trace.md`: for the open,
    the thread's scroll and the stream, the functions and images the main thread was in, and the app's own functions,
@@ -66,7 +70,7 @@ Then:
    ignored its time limit, and recording the whole Mac never finished saving (#1976, six runs). Each phase's frames
    longer than 50 ms get the same tables for the samples taken while they lasted. The sampler slows the app, so the
    traced journey's numbers are not summarized; read its shares, not its times.
-4. **SottoCore's share.** `SOTTO_IOS_BENCH=1 swift test -c release --filter PhoneBenchTests` times reading, merging and
+5. **SottoCore's share.** `SOTTO_IOS_BENCH=1 swift test -c release --filter PhoneBenchTests` times reading, merging and
    laying out the same frames on the runner's Mac, without the simulator.
 
 The journey is not driven by XCUITest. XCUITest turns on and reads the whole accessibility tree for every gesture, and
@@ -97,6 +101,8 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.wall_per_chunk` | Time per streamed word, including the 50 ms wait after each: 50 ms is the floor. |
 | `stream.cpu_per_chunk` | CPU time per streamed word. |
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
+| `stream.worst_per_chunk.<count>` | The Threads list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
+| `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
 | `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
 
@@ -191,3 +197,42 @@ next item. While words in a reply are selected, a new turn leaves the split wher
 turn into the lazy stack never drops the selection. The open's text views, message bodies and measures, and the
 measures per streamed word, now have budgets.
 
+## The Threads list held under an open thread
+
+The second change. The Threads page stays alive under a thread opened over it, and every update to any thread made its
+list again for nobody to see: each streamed word drew the list's sections and rows again, and building its groups was
+6% of the stream's slow frames. Leaving the page out altogether while a thread covered it halved the CPU of a streamed
+word in one experiment (161 to 81 ms), which is what holding it is after. Now the page holds the list it drew as it goes
+out of sight, under a thread or on another tab, and lets go in `onAppear`. A swipe back or a press on Back reaches
+that at its start, and it completes before the first frame that shows the page again, so no old row is drawn. The list
+no longer watches the model itself: its caller hands it which threads Watcher watches and which rows can change that,
+so it draws again only when what it shows has changed. The unfolded Duo's sidebar reads the model as before and keeps
+updating beside the thread.
+
+The journey's `back` phase and the page counts came first, on their own (`dc5e61f19`), so the base goes back to the list
+too. [Run 41400299960](https://github.com/millZach/Sotto/actions/runs/41400299960) and
+[run 41400303458](https://github.com/millZach/Sotto/actions/runs/41400303458) measured the hold against that base,
+the same commits on two runners:
+
+| Metric | Before | After | Unit |
+| --- | ---: | ---: | --- |
+| `stream.per_chunk.body.ThreadListSections` | 0.27, 0.27 | 0, 0 | count |
+| `stream.per_chunk.body.ThreadListRow` | 0.2, 0.2 | 0, 0 | count |
+| `stream.cpu_per_chunk` | 126, 133 | 116, 104 | ms |
+| `stream.wall_per_chunk` | 130, 136 | 117, 111 | ms |
+| `stream.app.longest_frame` | 568, 650 | 504, 524 | ms |
+| `back.app.cpu` | 1,450, 1,573 | 1,556, 1,576 | ms |
+| `back.app.longest_frame` | 772, 638 | 707, 731 | ms |
+| `journey.app.peak_footprint` | 158, 157 | 156, 158 | MB |
+| `journey.page.stale_frames` | 0, 0 | 0, 0 | count |
+| `journey.page.held_in_window` | 0, 0 | 0, 0 | count |
+
+The streamed word's CPU fell by 8% and 22% rather than by half: the list's share went, and what remains is the thread
+itself, its text and its view graph. The back phase and the peak memory moved within the runners' noise in both
+directions. Catching the list up is about a tenth of the back phase's slow frames, and the rest is the page's text and
+the transition, which the base pays too. The benchmark goes back with `popViewController`, the transition Back and the
+swipe use, not with a finger. The list's bodies per streamed word in the worst journey, and the stale frames, have budgets of zero; the base is over
+the first two. The two-axis review found that the list's equality, now the only thing that decides when it draws, left
+out a thread's state and the delegated thread a Needs you row waits in, and that the look and back checks could pass
+without proving anything; all are fixed. The fixes were not measured again: they add words to an equality check and
+make the checks stricter.

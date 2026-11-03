@@ -73,6 +73,12 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ browserWithoutAsking: false })
   })
 
+  it('has no picture switch on a build without inline media (ADR-0170, part 7)', async () => {
+    render(<SettingsView {...baseProps()} />)
+    await selectCategory('Threads')
+    expect(screen.queryByRole('switch', { name: 'Show every picture and video an agent makes' })).toBeNull()
+  })
+
   it('turns letting agents draw visuals in threads off through the ordinary patch flow (ADR-0056)', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)

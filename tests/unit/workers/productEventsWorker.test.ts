@@ -252,6 +252,66 @@ describe('the product event Worker', () => {
     expect(rows()[0]!.forward_due).toBe(0)
   })
 
+  const stubPostHogAnswers = (...statuses: number[]): ReturnType<typeof vi.fn<typeof fetch>> => {
+    const posted = vi.fn<typeof fetch>(async () => new Response(null, { status: statuses.shift() ?? 200 }))
+    vi.stubGlobal('fetch', posted)
+    return posted
+  }
+  const dueRow = (receivedAt: string): string => {
+    const row = event()
+    database.prepare('INSERT INTO product_events (uuid, received_at, event, body, forward_due) VALUES (?, ?, ?, ?, 1)').run(String(row.uuid), receivedAt, 'app.started', JSON.stringify(row))
+    return String(row.uuid)
+  }
+
+  it.each([400, 413, 422])('a %i passes over that batch, so a newer event still goes, and the batch goes once the refusal ends', async status => {
+    dueRows(500, new Date(NOW - 3 * 3_600_000).toISOString())
+    const newer = dueRow(new Date(NOW - 3_600_000).toISOString())
+    let posted = stubPostHogAnswers(status)
+    await retryForwards({ EVENTS: store, ...withKey }, NOW)
+    expect(posted.mock.calls.map((_, call) => postedBody(posted, call).batch.length)).toEqual([500, 1])
+    expect(postedBody(posted, 1).batch[0]!.uuid).toBe(newer)
+    expect(rows().filter(row => row.forward_due === 1)).toHaveLength(500)
+    expect(rows().find(row => row.uuid === newer)!.forward_due).toBe(0)
+    posted = stubPostHogAnswers()
+    await retryForwards({ EVENTS: store, ...withKey }, NOW + 3_600_000)
+    expect(posted.mock.calls.map((_, call) => postedBody(posted, call).batch.length)).toEqual([500])
+    expect(rows().every(row => row.forward_due === 0)).toBe(true)
+  })
+
+  it('while PostHog refuses everything it asks at most ten times an hour, marks nothing done, and the sweep still removes the rows', async () => {
+    dueRows(6_000, new Date(NOW - 3_600_000).toISOString())
+    const posted = vi.fn<typeof fetch>(async () => new Response(null, { status: 400 }))
+    vi.stubGlobal('fetch', posted)
+    await runHourlyWork({ EVENTS: store, ...withKey }, NOW)
+    expect(posted).toHaveBeenCalledTimes(10)
+    expect(rows().every(row => row.forward_due === 1)).toBe(true)
+    await forgetOldEvents(store, NOW + 90 * 86_400_000)
+    expect(rows()).toEqual([])
+  })
+
+  it('answers the sender 204 when PostHog refuses a first try, and the sweep tries it again', async () => {
+    let posted = stubPostHogAnswers(400)
+    expect((await post({ batch: [event()] }, withKey)).status).toBe(204); await Promise.all(waited)
+    expect(posted).toHaveBeenCalledOnce()
+    expect(rows()[0]!.forward_due).toBe(1)
+    posted = stubPostHogAnswers()
+    await retryForwards({ EVENTS: store, ...withKey }, NOW + 6 * 60_000)
+    expect(posted).toHaveBeenCalledOnce()
+    expect(rows()[0]!.forward_due).toBe(0)
+  })
+
+  it.each([401, 403, 404, 408, 429, 500, 503])('a %i stops the hour\'s tries, since newer events would fail too, and they go once it is put right', async status => {
+    dueRows(2, new Date(NOW - 3_600_000).toISOString())
+    let posted = stubPostHogAnswers(status)
+    await expect(retryForwards({ EVENTS: store, ...withKey }, NOW)).rejects.toThrow()
+    expect(posted).toHaveBeenCalledOnce()
+    expect(rows().every(row => row.forward_due === 1)).toBe(true)
+    posted = stubPostHogAnswers()
+    await retryForwards({ EVENTS: store, ...withKey }, NOW + 3_600_000)
+    expect(postedBody(posted).batch).toHaveLength(2)
+    expect(rows().every(row => row.forward_due === 0)).toBe(true)
+  })
+
   it('removes old rows on time however PostHog fails, and gives each forward a timeout', async () => {
     const posted = stubPostHog(false)
     dueRows(3, new Date(NOW - 90 * 86_400_000).toISOString())

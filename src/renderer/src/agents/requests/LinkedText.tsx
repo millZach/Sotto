@@ -46,7 +46,7 @@ export function textLinks(text: string): Array<{ readonly text: string; readonly
 export function LinkedText({ text }: { readonly text: string }): ReactNode {
   return <>{textLinks(text).map((part, index) => part.url
     ? <a key={index} className="agent-request__link tt-focusable" href={part.url} rel="noopener noreferrer" target="_blank" title={part.url}
-      onClick={event => { event.preventDefault(); event.stopPropagation(); void window.sotto?.openExternalLink?.(part.url!) }}
+      onClick={event => { event.preventDefault(); event.stopPropagation(); void (window.sotto?.openExternalLink ?? window.sottoPopup?.openExternalLink)?.(part.url!) }}
       onAuxClick={event => event.preventDefault()}>{part.text}</a>
     : part.text)}</>
 }

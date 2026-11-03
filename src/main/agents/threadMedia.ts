@@ -19,14 +19,15 @@ export type MediaCapture = (pictures: readonly CapturedPicture[], source: AgentA
 export type MediaFileCapture = (path: string, source: AgentActivityMedia['source']) => Promise<AgentActivityMedia[]>
 
 /**
- * The captures a provider's projection is given (ADR-0170, request-only amendment of November 1, 2026): only an image the
- * agent generated, which the user asked for. A tool result's picture, a picture Codex viewed and a file the agent wrote
- * are not kept or shown; an agent shows a picture or video through `sotto_media` when the user asks to see one.
+ * The captures a provider's projection is given (ADR-0170, part 7): an image the agent generated always, which the user
+ * asked for; a tool result's picture and a picture Codex viewed only while `showEvery` says **Show every picture and
+ * video** is on. Read at each picture, so the switch counts from the next one. With it off, an agent shows a picture or
+ * video through `sotto_media` when the user asks to see one, and nothing else is hashed, read or kept.
  */
-export function requestedCaptures(store: Pick<ThreadMediaStore, 'capture' | 'captureFile'>): { captureMedia: MediaCapture; captureMediaFile: MediaFileCapture } {
+export function agentCaptures(store: Pick<ThreadMediaStore, 'capture' | 'captureFile'>, showEvery: () => boolean): { captureMedia: MediaCapture; captureMediaFile: MediaFileCapture } {
   return {
-    captureMedia: (pictures, source) => source === 'generated' ? store.capture(pictures, source) : [],
-    captureMediaFile: async (path, source) => source === 'generated' ? store.captureFile(path, source) : [],
+    captureMedia: (pictures, source) => pictures.length && (source === 'generated' || showEvery()) ? store.capture(pictures, source) : [],
+    captureMediaFile: async (path, source) => source === 'generated' || showEvery() ? store.captureFile(path, source) : [],
   }
 }
 

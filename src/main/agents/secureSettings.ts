@@ -33,15 +33,17 @@ export class SecureSettings implements NativeSettingsRepository {
   async get(): Promise<AppSettings> { await this.mutation; return this.redact(await this.repository.get()) }
   async forFormatting(): Promise<AppSettings> {
     const settings = await this.repository.get()
-    let llmApiKey: string
+    return { ...settings, llmApiKey: this.formattingKey() }
+  }
+  /** Read the saved key without reading settings for callers that need only the credential. */
+  formattingKey(): string {
     try {
-      llmApiKey = this.credentials.get('formatting')
+      return this.credentials.get('formatting')
     } catch (error) {
       // The ciphertext stays where it is: allowing access later reads it again.
       try { this.onKeyUnreadable() } catch { /* the notice is best effort */ }
       throw error
     }
-    return { ...settings, llmApiKey }
   }
   update(patch: Partial<AppSettings>): Promise<AppSettings> {
     const copy = { ...patch }
