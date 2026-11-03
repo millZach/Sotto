@@ -1241,13 +1241,9 @@ enum DebugFlags {
     /// The journeys that read the settings pill over and over keep the reply box full (`--ui-reply-box-stays-full`), so
     /// they stay about the pill. `testTheReplyBoxGoesSmall...` and its Watcher twin read the small box itself.
     static let replyBoxStaysFull = ProcessInfo.processInfo.arguments.contains("--ui-reply-box-stays-full")
-    /// The journey that reads what a Watch press said holds it up (`--ui-watch-notice-stays`): a look at the page can take
-    /// longer on a loaded simulator than the eight seconds it lasts.
-    static let watchNoticeStays = ProcessInfo.processInfo.arguments.contains("--ui-watch-notice-stays")
     #else
     static let still = false
     static let replyBoxStaysFull = false
-    static let watchNoticeStays = false
     #endif
 }
 

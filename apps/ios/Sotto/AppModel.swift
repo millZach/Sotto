@@ -753,7 +753,7 @@ extension AppModel {
         watchNoticeDismissal?.cancel()
         watchNoticeDismissal = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
-            guard !Task.isCancelled, !DebugFlags.watchNoticeStays else { return }
+            guard !Task.isCancelled, !Self.watchNoticeStays else { return }
             self?.dismissWatchNotice(notice.id)
         }
     }
@@ -1337,11 +1337,15 @@ struct RailAsk: Equatable {
     /// so a revision sets it only when it holds something, and an unchanged nil publishes nothing.
     @Published private(set) var detailProblem: String?
     #if DEBUG && os(iOS)
+    /// The journey that reads what a Watch press said holds it up (`--ui-watch-notice-stays`): a look at the page can take
+    /// longer on a loaded simulator than the eight seconds it lasts.
+    private static let watchNoticeStays = ProcessInfo.processInfo.arguments.contains("--ui-watch-notice-stays")
     /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
     /// app did before the draft and detail stores, and before a computer's unchanged state was left unpublished.
     private static let publishesEverything = ProcessInfo.processInfo.arguments.contains("--ui-publish-everything")
     #else
     private static let publishesEverything = false
+    private static let watchNoticeStays = false
     #endif
     /// Called after a store publishes a change. Only the comparison publishes it on the model too.
     private func publishOnModelIfComparing() {
