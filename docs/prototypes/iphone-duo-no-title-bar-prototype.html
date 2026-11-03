@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PROTOTYPE · Duo thread with no title bar</title>
+<!--
+  PROTOTYPE, throwaway. Zach's two small Duo items, November 3, 2026:
+    1. the side icons on a folded thread;
+    2. no title bar over a thread, folded or unfolded.
+  One live phone, drawn at the real points: cover screen 466x678 with an 84-point strip; unfolded upright 635x867 with
+  the 80-point rail; unfolded sideways 867x635 with the 84-point strip. Measures come from Views.swift (DuoRailMetrics,
+  clockClearance) and ThreadViews.swift (ThreadStatePill, WatchToggle, ThreadMenu).
+  URL params keep the choice: ?s=folded|upright|sideways&f=now|a|b|c&u=now|a|b|c&h=keep|small|gone&st=working|needs|lost
+  &agents=0|1&kb=0|1&theme=dark|light&menu=1. Left and right arrow keys change the look showing.
+  Zach's picks, November 3, 2026: the shapes and sizes were what looked wrong; side icons A (one pill); unfolded controls
+  A (into the rail); the heading goes too, with the name, where it runs and the chips at the top of the ••• menu; the clock
+  and battery stay; Duo only.
+-->
+<style>
+@font-face{font-family:Figtree;src:url('Figtree.ttf') format('truetype'),url('../../apps/ios/Sotto/Resources/Figtree.ttf') format('truetype');font-weight:400}
+@font-face{font-family:Figtree;src:url('Figtree-SemiBold.ttf') format('truetype'),url('../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf') format('truetype');font-weight:600}
+@font-face{font-family:Figtree;src:url('Figtree-Bold.ttf') format('truetype'),url('../../apps/ios/Sotto/Resources/Figtree-Bold.ttf') format('truetype');font-weight:700}
+[data-theme=dark]{
+  --canvas:#111418;--ground1:#0c1015;--ground2:#151b22;--surface:#1b1e23;--raised:#21252a;--ink:#f9fafc;--muted:#b9c0ca;
+  --hair:#2f3339;--accent:#69caff;--accentsurface:#1a3b51;--accenttext:#84d2ff;--warning:#fe9a00;--accentpill:rgba(105,202,255,.16);
+  --warnsoft:rgba(254,154,0,.14);--warntext:#ffc183;--message:#202e3e;--fillsoft:rgba(255,255,255,.07);--glass:rgba(27,30,35,.78);--ringtint:rgba(105,202,255,.28)}
+[data-theme=light]{
+  --canvas:#f0f2f6;--ground1:#f4f7fb;--ground2:#e6ecf4;--surface:#f9fafc;--raised:#fff;--ink:#101419;--muted:#4a5058;
+  --hair:#ccd1d9;--accent:#0064b5;--accentsurface:#d4e7fc;--accenttext:#0f518f;--warning:#fe9a00;--accentpill:rgba(0,100,181,.12);
+  --warnsoft:rgba(254,154,0,.16);--warntext:#785128;--message:#dae6f3;--fillsoft:rgba(16,20,25,.06);--glass:rgba(249,250,252,.82);--ringtint:rgba(0,100,181,.28)}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:Figtree,system-ui,sans-serif;background:#07080a;color:#e9ebef;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+#stage{flex:1;min-height:0;position:relative;overflow:hidden}
+#fit{position:absolute;left:50%;top:50%}
+.screen{position:relative;transform-origin:0 0;overflow:hidden;border-radius:22px;box-shadow:0 0 0 1px #2a2e35;color:var(--ink);
+  background:radial-gradient(120% 80% at 20% 0%,var(--ground2),var(--ground1) 60%,var(--canvas));font-size:15px;line-height:1.35}
+/* panel */
+#panel{flex:none;background:#101317;border-top:1px solid #23272d;padding:8px 10px calc(8px + env(safe-area-inset-bottom));font-size:14px}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:6px;overflow-x:auto;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+.row>span{flex:none;width:62px;font-size:12.5px;color:#aab1bb;font-weight:600}
+.chip{flex:none;min-height:40px;padding:0 13px;border-radius:10px;background:#1d2128;font-weight:600;font-size:14px;white-space:nowrap}
+.chip.on{background:#2f6b99;color:#fff}
+#say{font-size:13.5px;line-height:1.4;color:#d7dbe1;min-height:38px;margin-bottom:6px}
+#say b{color:#fff}
+#hide{flex:none;min-height:32px;background:#101317;border-top:1px solid #23272d;font-weight:600;font-size:13px;color:#aab1bb}
+.proto{position:absolute;left:8px;top:8px;z-index:9;font-size:11px;font-weight:700;letter-spacing:.05em;color:#7d8590}
+/* page */
+.page{position:absolute;top:0;bottom:0;left:0;overflow:hidden;display:flex;flex-direction:column}
+.scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none;padding:0 16px 16px}
+.scroll::-webkit-scrollbar{display:none}
+.fade{position:absolute;left:0;right:0;top:0;z-index:3;pointer-events:none;background:linear-gradient(var(--ground1) 62%,transparent)}
+.hero h1{font-size:30px;font-weight:700;letter-spacing:-.6px;line-height:1.14}
+.hero.slim h1{font-size:17px;font-weight:600;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place{font-size:13px;color:var(--muted);margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gits{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.git{font-size:12px;font-weight:600;padding:5px 9px;border-radius:999px;background:var(--fillsoft);color:var(--muted)}
+.msg{margin:16px 0}.me{margin:16px 0 16px auto;background:var(--message);padding:10px 14px;border-radius:16px;width:fit-content;max-width:82%}
+.who{font-size:13px;color:var(--muted);margin-top:16px}
+.steps{font-size:13.5px;font-weight:600;color:var(--muted);margin:14px 0}
+.work{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:14px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);flex:none}
+.dot.warn{background:var(--warning);box-shadow:0 0 8px var(--warning)}.dot.off{background:var(--muted);box-shadow:none}
+.box{flex:none;margin:0 12px 12px;border:1px solid var(--hair);background:var(--surface);border-radius:26px;padding:10px 14px;color:var(--muted);display:flex;align-items:center;gap:10px;min-height:52px}
+.kb{flex:none;background:var(--raised);border-top:1px solid var(--hair);display:grid;place-items:center;color:var(--muted);font-size:13px}
+/* the old bar */
+.bar{flex:none;position:relative;z-index:4;display:flex;align-items:center;gap:8px;padding:0 10px;height:52px}
+.bar.stuck{background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.bar .t{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .25s}
+.bar.titled .t{opacity:1}
+.cap{display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:999px;border:1px solid var(--hair);background:var(--glass);flex:none}
+.pill{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 10px 0 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.st-work{color:var(--accenttext);background:var(--accentpill)}.st-needs{color:var(--warntext);background:var(--warnsoft)}.st-lost{color:var(--muted);background:var(--fillsoft)}
+.small{width:32px;height:32px;display:grid;place-items:center;border-radius:50%;background:var(--fillsoft);border:1px solid var(--hair);flex:none}
+.watch{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:999px;background:var(--fillsoft);border:1px solid var(--hair);font-size:13px;font-weight:600;flex:none}
+.watch.on,.small.on{background:var(--accentpill);color:var(--accenttext);border-color:var(--accent)}
+.agents{height:32px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border-radius:999px;background:var(--fillsoft);border:1px solid var(--hair);font-size:13px;font-weight:600;flex:none}
+.hit44{width:44px;height:44px;display:grid;place-items:center;flex:none}
+.glassc{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;background:var(--surface);border:1px solid var(--ringtint);color:var(--accenttext);box-shadow:0 6px 12px -2px var(--ringtint);flex:none}
+.glassc:disabled{opacity:.42}
+.float{position:absolute;right:10px;z-index:5}
+.headrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:12px}
+/* rail */
+.rail{position:absolute;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;z-index:6;pointer-events:none}
+.rail>*{pointer-events:auto}
+.tabs,.tpill{display:flex;flex-direction:column;gap:2px;padding:5px;background:var(--surface);border:1px solid var(--hair);border-radius:999px;flex:none}
+.tile{width:50px;height:50px;display:grid;place-items:center;border-radius:50%;color:var(--muted);position:relative;flex:none}
+.tile.chosen{background:var(--accentsurface);color:var(--accenttext)}
+.tile.watchon{background:var(--accentpill);color:var(--accenttext)}
+.badge{position:absolute;right:0;top:2px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:#111;font-size:11px;font-weight:600;display:grid;place-items:center}
+.stile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;font-weight:600;line-height:1.1;text-align:center;font-variant-numeric:tabular-nums}
+.st-tile-work{color:var(--accenttext)}.st-tile-needs{color:var(--warntext)}.st-tile-lost{color:var(--muted)}
+.chipv{width:66px;padding:7px 2px;display:flex;flex-direction:column;align-items:center;gap:4px;border-radius:14px;font-size:12px;font-weight:600;text-align:center;line-height:1.15;flex:none}
+.round44{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;background:var(--fillsoft);border:1px solid var(--hair);position:relative;flex:none}
+.round44.on{background:var(--accentpill);color:var(--accenttext);border-color:var(--accent)}
+.round44 .badge{right:-4px;top:-3px}
+.under{font-size:11px;font-weight:600;text-align:center;line-height:1.15;width:76px;font-variant-numeric:tabular-nums}
+.bare{width:50px;height:44px;display:grid;place-items:center;color:var(--muted);position:relative;flex:none}
+.bare.on{color:var(--accenttext)}
+.bare .badge{right:4px;top:-2px}
+/* clock */
+.clock{position:absolute;z-index:7;display:flex;flex-direction:column;align-items:center;font-weight:600;font-size:16px;pointer-events:none}
+.clock.flat{flex-direction:row;gap:8px;font-size:15px}
+.ring{width:32px;height:32px;margin-top:6px;border-radius:50%;border:3px solid var(--ink);display:grid;place-items:center;font-size:10px}
+.flat .ring{margin:0;width:26px;height:26px;border-width:2.5px;font-size:9px}
+.dots{display:flex;gap:3px;margin-top:4px}.dots i{width:4px;height:4px;border-radius:50%;background:var(--muted)}
+/* sidebar */
+.side{position:absolute;top:0;bottom:0;left:0;width:280px;background:var(--surface);border-right:1px solid var(--hair);padding:18px 14px;z-index:2;overflow:hidden}
+.side.over{z-index:8;box-shadow:12px 0 30px rgba(0,0,0,.35)}
+.side h2{font-size:21px;font-weight:700;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;min-height:44px}
+.side h3{font-size:13.5px;font-weight:600;color:var(--muted);margin:14px 0 6px}
+.srow{padding:9px 10px;border-radius:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px;font-size:14px}
+.srow.on{background:var(--accentsurface);color:var(--accenttext)}
+#toast{position:absolute;left:50%;top:30%;transform:translateX(-50%);background:rgba(16,19,23,.94);color:#fff;font-size:14px;font-weight:600;padding:9px 14px;border-radius:10px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.menu{position:absolute;z-index:12;width:304px;background:var(--raised);border:1px solid var(--hair);border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.45);overflow:hidden;font-size:15px}
+.menu .info{padding:12px 14px;border-bottom:1px solid var(--hair)}
+.menu .info b{display:block;font-weight:600;margin-bottom:3px}
+.menu .info span{display:block;font-size:13px;color:var(--muted);margin-top:2px}
+.menu button{display:flex;justify-content:space-between;width:100%;text-align:left;padding:12px 14px;border-bottom:1px solid var(--hair)}
+.menu button:last-child{border-bottom:0}
+</style>
+</head>
+<body>
+<div id="stage"><div class="proto">PROTOTYPE</div><div id="fit"></div><div id="toast"></div></div>
+<button id="hide">Hide controls</button>
+<div id="panel"></div>
+<script>
+const P=new URLSearchParams(location.search);
+const S={s:P.get('s')||'folded',f:P.get('f')||'a',u:P.get('u')||'a',h:P.get('h')||'gone',menu:P.get('menu')==='1',st:P.get('st')||'working',agents:P.get('agents')==='1',kb:P.get('kb')==='1',theme:P.get('theme')||'dark',watch:false,side:P.get('s')==='sideways',scrollTop:0};
+const I={
+ back:'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 3.5 6 10l6.5 6.5"/></svg>',
+ side:'<svg width="24" height="20" viewBox="0 0 24 20" fill="none" stroke="currentColor" stroke-width="2"><rect x="1.5" y="2" width="21" height="16" rx="3.5"/><path d="M9 2v16"/><path d="M4.5 6h1.5M4.5 9.5h1.5" stroke-linecap="round"/></svg>',
+ plus:'<svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M11 3v16M3 11h16"/></svg>',
+ chat:'<svg width="23" height="23" viewBox="0 0 23 23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h12A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 3 13.5z"/></svg>',
+ chatf:'<svg width="23" height="23" viewBox="0 0 23 23" fill="currentColor"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h12A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 3 13.5z"/></svg>',
+ owl:'<svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor"><path d="M4 3l3.4 2.6A10 10 0 0 1 12 4.6c1.7 0 3.3.4 4.6 1L20 3l1 8.5c0 5.2-4 9-9 9s-9-3.8-9-9zM8.4 9.2a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm7.2 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/><circle cx="8.4" cy="12.2" r="1.3"/><circle cx="15.6" cy="12.2" r="1.3"/></svg>',
+ pc:'<svg width="24" height="22" viewBox="0 0 24 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="2" y="2.5" width="20" height="13" rx="2"/><path d="M9 20h6M12 15.5V20" stroke-linecap="round"/></svg>',
+ set:'<svg width="23" height="20" viewBox="0 0 23 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 4h19M2 10h19M2 16h19"/><circle cx="14" cy="4" r="2.3" fill="var(--surface)"/><circle cx="7" cy="10" r="2.3" fill="var(--surface)"/><circle cx="15" cy="16" r="2.3" fill="var(--surface)"/></svg>',
+ dots:'<svg width="18" height="6" viewBox="0 0 18 6" fill="currentColor"><circle cx="3" cy="3" r="2"/><circle cx="9" cy="3" r="2"/><circle cx="15" cy="3" r="2"/></svg>',
+ bot:'<svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="6" width="14" height="10.5" rx="3"/><path d="M10 6V3" stroke-linecap="round"/><circle cx="7.3" cy="11" r="1" fill="currentColor"/><circle cx="12.7" cy="11" r="1" fill="currentColor"/></svg>'
+};
+const SIZES={folded:{w:466,h:678},upright:{w:635,h:867},sideways:{w:867,h:635}};
+const FOLD_LOOKS={now:'Now',a:'A',b:'B',c:'C'},UN_LOOKS={now:'Now',a:'A',b:'B',c:'C'};
+const SAY={
+ f:{now:'<b>Folded, as it is today.</b> Back is a 44-point round button, the state a 66-wide block, Watch and ••• 32-point circles, spread in the height under Back.',
+    a:'<b>Folded A, one pill.</b> Back stays put. The state, Agents, Watch and ••• stand low in the same pill and 50-point tiles as the tabs, so the tabs’ pill turns into the thread’s when a thread opens. The keyboard covers the pill while you type.',
+    b:'<b>Folded B, all circles.</b> Everything is a 44-point circle in today’s place. The state is a circle holding its light, with its word under it and no block.',
+    c:'<b>Folded C, icons only.</b> No circles or block round the state, Agents, Watch and •••: bare icons, as an unchosen tab draws, standing low.'},
+ u:{now:'<b>Unfolded, as it is today.</b> The bar over the thread: Back, the title once scrolled, and the capsule.',
+    a:'<b>Unfolded A, into the rail.</b> Nothing over the thread. Upright: Back joins the top of the rail, and the state with its time, Agents, Watch and ••• stand between that and the tabs, in the folded look you pick. Sideways there’s no room for New thread as well, so while a thread is open + moves to the sidebar’s heading. The keyboard covers the lower controls while you type.',
+    b:'<b>Unfolded B, in the heading.</b> Back joins the rail upright. The state with its time, Agents, Watch and ••• sit in a row under the thread’s heading and scroll away with it, so a long read has none of them until you scroll to the top. The reply box still has Stop.',
+    c:'<b>Unfolded C, a small float.</b> Back joins the rail upright. The capsule stays at the top right with no bar, name or band behind it, and the thread scrolls under it. Smallest change, but something still stands at the top.'}
+};
+function stateData(){return {working:{w:'Working',time:'4h 54m',dot:'',cls:'work'},needs:{w:'Needs you',time:null,dot:'warn',cls:'needs'},lost:{w:'Can’t reach it',time:null,dot:'off',cls:'lost'}}[S.st]}
+const wired={};
+function act(id,fn){wired[id]=fn;return `data-a="${id}"`}
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.opacity=0,1100)}
+const A_BACK=()=>act('back',()=>toast('Back to the list'));
+const A_MORE=()=>act('more',()=>{S.menu=!S.menu;draw()});
+const A_AG=()=>act('ag',()=>toast('Opens the Agents sheet'));
+const A_WATCH=()=>act('watch',()=>{S.watch=!S.watch;draw()});
+const A_NEW=()=>act('new',()=>toast('New thread'));
+const A_SIDE=()=>act('side',()=>{S.side=!S.side;draw()});
+function tabs(){return `<div class="tabs"><button class="tile chosen">${I.chatf}<span class="badge">6</span></button><button class="tile">${I.owl}</button><button class="tile">${I.pc}</button><button class="tile">${I.set}</button></div>`}
+/* the thread's own controls, in the rail's look */
+function group(look,withTime){
+ const d=stateData(),t=withTime&&d.time;
+ if(look==='a'||look==='now'){
+  return `<div class="tpill"><div class="tile stile st-tile-${d.cls}"><i class="dot ${d.dot}"></i><span>${d.w}</span>${t?`<span>${d.time}</span>`:''}</div>${S.agents?`<button class="tile" ${A_AG()}>${I.bot}<span class="badge">3</span></button>`:''}<button class="tile ${S.watch?'watchon':''}" ${A_WATCH()}>${I.owl}</button><button class="tile" ${A_MORE()}>${I.dots}</button></div>`;
+ }
+ if(look==='b'){
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div class="round44 st-${d.cls}"><i class="dot ${d.dot}"></i></div><div class="under st-tile-${d.cls}">${d.w}${t?`<br>${d.time}`:''}</div>${S.agents?`<button class="round44" ${A_AG()}>${I.bot}<span class="badge">3</span></button>`:''}<button class="round44 ${S.watch?'on':''}" ${A_WATCH()}>${I.owl}</button><button class="round44" ${A_MORE()}>${I.dots}</button></div>`;
+ }
+ return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div class="under st-tile-${d.cls}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0"><i class="dot ${d.dot}"></i><span>${d.w}${t?`<br>${d.time}`:''}</span></div>${S.agents?`<button class="bare" ${A_AG()}>${I.bot}<span class="badge">3</span></button>`:''}<button class="bare ${S.watch?'on':''}" ${A_WATCH()}>${I.owl}</button><button class="bare" ${A_MORE()}>${I.dots}</button></div>`;
+}
+function nowFolded(){const d=stateData();
+ return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px"><div class="chipv st-${d.cls}"><i class="dot ${d.dot}"></i>${d.w}</div>${S.agents?`<button class="agents" ${A_AG()}>${I.bot}3</button>`:''}<button class="hit44" ${A_WATCH()}><span class="small ${S.watch?'on':''}">${I.owl}</span></button><button class="hit44" ${A_MORE()}><span class="small">${I.dots}</span></button></div>`}
+function capsule(){const d=stateData(),t=d.time;
+ return `<div class="cap"><span class="pill st-${d.cls}"><i class="dot ${d.dot}"></i>${d.w}${t?` <span>${t}</span>`:''}</span>${S.agents?`<button class="agents" ${A_AG()}>${I.bot}Agents 3</button>`:''}<button class="watch ${S.watch?'on':''}" ${A_WATCH()}>${I.owl}Watch</button><button class="hit44" style="width:36px;height:36px" ${A_MORE()}><span class="small">${I.dots}</span></button></div>`}
+function hero(extra){
+ if(S.h==='gone') return extra?`<div class="headrow" style="margin-top:0">${extra}</div>`:'';
+ return `<div class="hero ${S.h==='small'?'slim':''}"><h1>iOS composer shrinks while idle</h1><div class="place">Claude Code · Sotto · forge</div>${S.h==='small'?'':`<div class="gits"><span class="git">feat/iphone-small-reply-box</span><span class="git">+312 −84</span><span class="git">#2083 open</span></div>`}${extra?`<div class="headrow">${extra}</div>`:''}</div>`;
+}
+const BODY=`<div class="me">Make the reply box go small while nothing is being written.</div><div class="steps">8 steps · 12m 40s ›</div><div class="who">Claude Code</div><div class="msg">The box now goes down to one line when it holds no words and no attachments. It grows back on a press, on a paste, and while dictation runs.</div><div class="msg">I kept the model pill on its own row so the words don’t jump when the row comes back. Three things are left:</div><div class="msg">The small box needs its own capture on the folded Duo, since its strip sits closer to the words than on any other screen. The journey that holds a thread’s end also needs another run.</div><div class="me">Check the folded Duo first, then the journey.</div><div class="steps">3 steps · 3m 38s ›</div><div class="who">Claude Code</div><div class="msg">The folded capture looks right. The box clears the strip by the same 12 points as on every other screen, and the words don’t move when it grows.</div><div class="msg">Running the journey again now. It takes about nine minutes on the runner, so I’ll say when it’s done. Nothing else changes while it runs.</div><div class="work"><i class="dot"></i>Combing the desert ›</div>`;
+function sidebar(over,withNew){return `<div class="side ${over?'over':''}"><h2>Threads${withNew?`<button class="glassc" ${A_NEW()}>${I.plus}</button>`:''}</h2><h3>Needs you 1</h3><div class="srow"><i class="dot warn"></i>Choose the release date</div><h3>Working now 3</h3><div class="srow on"><i class="dot"></i>iOS composer shrinks whi…</div><div class="srow"><i class="dot"></i>Babysit #845 release</div><div class="srow"><i class="dot"></i>Clean up the wiring</div><h3>Recent 2</h3><div class="srow"><i class="dot off"></i>Compare motor drives</div><div class="srow"><i class="dot off"></i>Update the lighting</div></div>`}
+function kb(h){return S.kb?`<div class="kb" style="height:${h}px">Keyboard</div>`:''}
+function folded(){const Z=SIZES.folded,STRIP=84,look=S.f;
+ const page=`<div class="page" style="right:${STRIP}px;left:0;padding-top:0"><div class="fade" style="height:20px"></div><div class="scroll" id="sc" style="padding-top:28px">${hero()}${BODY}</div><div class="box">+ &nbsp;Reply while it works</div>${kb(250)}</div>`;
+ const clock=`<div class="clock" style="right:0;width:${STRIP}px;top:88px">08:15<div class="ring">100</div><div class="dots"><i></i><i></i><i></i></div></div>`;
+ let inner;
+ if(look==='now') inner=nowFolded();
+ else inner=`<div style="flex:1;min-height:12px"></div>${group(look,false)}<div style="height:20px"></div>`;
+ const rail=`<div class="rail" style="right:0;width:${STRIP}px;padding-top:176px"><button class="glassc" aria-label="Back" ${A_BACK()}>${I.back}</button>${inner}</div>`;
+ const keyb=S.kb?`<div class="kb" style="position:absolute;left:0;right:0;bottom:0;height:250px;z-index:7">Keyboard</div>`:'';
+ return {Z,html:page.replace(kb(250),'')+rail+clock+keyb.replace('height:250px','height:250px')};
+}
+function upright(){const Z=SIZES.upright,RAIL=80,u=S.u,top=54;
+ const hasBar=u==='now';
+ const d=stateData();
+ const bar=hasBar?`<div class="bar ${S.scrollTop>4?'stuck':''} ${S.scrollTop>70?'titled':''}" style="margin-top:0"><button class="hit44" aria-label="Back" ${A_BACK()}>${I.back}</button><div class="t">iOS composer shrinks while idle</div>${capsule()}</div>`:'';
+ const float=u==='c'?`<div class="float" style="top:${top-44}px">${capsule()}</div>`:'';
+ const heroExtra=u==='b'?`<span class="pill st-${d.cls}"><i class="dot ${d.dot}"></i>${d.w}${d.time?` ${d.time}`:''}</span>${S.agents?`<button class="agents" ${A_AG()}>${I.bot}Agents 3</button>`:''}<button class="watch ${S.watch?'on':''}" ${A_WATCH()}>${I.owl}Watch</button><button class="hit44" style="width:36px;height:36px" ${A_MORE()}><span class="small">${I.dots}</span></button>`:null;
+ const page=`<div class="page" style="right:${RAIL}px;left:0;padding-top:${hasBar?2:0}px"><div class="fade" style="height:${hasBar?0:top}px"></div>${bar}${float}<div class="scroll" id="sc" style="padding-top:${hasBar?6:top}px">${hero(heroExtra)}${BODY}</div><div class="box">+ &nbsp;Reply while it works</div></div>`;
+ const clock=`<div class="clock flat" style="right:10px;top:12px">08:13<div class="ring">100</div></div>`;
+ const backBtn=hasBar?'':`<button class="glassc" aria-label="Back" ${A_BACK()}>${I.back}</button>`;
+ const mid=u==='a'?`<div style="flex:1;min-height:12px"></div>${group(S.f,true)}<div style="height:12px"></div>`:`<div style="flex:1;min-height:12px"></div>`;
+ const rail=`<div class="rail" style="right:0;width:${RAIL}px;padding-top:${top+12}px;padding-bottom:20px;gap:12px">${backBtn}<button class="glassc" aria-label="Show the threads" ${A_SIDE()}>${I.side}</button><button class="glassc" aria-label="New thread" ${A_NEW()}>${I.plus}</button>${mid.replace('<div style="height:12px"></div>','')}${tabs()}</div>`;
+ const keyb=S.kb?`<div class="kb" style="position:absolute;left:0;right:0;bottom:0;height:300px;z-index:7">Keyboard</div>`:'';
+ const side=S.side?sidebar(true,true):'';
+ return {Z,html:page+rail+clock+side+keyb};
+}
+function sideways(){const Z=SIZES.sideways,STRIP=84,u=S.u,sw=S.side?280:0,top=20;
+ const hasBar=u==='now';const d=stateData();
+ const bar=hasBar?`<div class="bar ${S.scrollTop>4?'stuck':''} ${S.scrollTop>70?'titled':''}"><div class="t">iOS composer shrinks while idle</div>${capsule()}</div>`:'';
+ const float=u==='c'?`<div class="float" style="top:10px">${capsule()}</div>`:'';
+ const heroExtra=u==='b'?`<span class="pill st-${d.cls}"><i class="dot ${d.dot}"></i>${d.w}${d.time?` ${d.time}`:''}</span>${S.agents?`<button class="agents" ${A_AG()}>${I.bot}Agents 3</button>`:''}<button class="watch ${S.watch?'on':''}" ${A_WATCH()}>${I.owl}Watch</button><button class="hit44" style="width:36px;height:36px" ${A_MORE()}><span class="small">${I.dots}</span></button>`:null;
+ const page=`<div class="page" style="left:${sw}px;right:${STRIP}px">${bar}${float}<div class="scroll" id="sc" style="padding-top:${hasBar?6:(u==='c'?56:top)}px">${hero(heroExtra)}${BODY}</div><div class="box">+ &nbsp;Reply while it works</div></div>`;
+ const clock=`<div class="clock" style="right:0;width:${STRIP}px;top:18px">08:13<div class="ring">100</div><div class="dots"><i></i><i></i><i></i></div></div>`;
+ const inRail=u==='a';
+ const rail=`<div class="rail" style="right:0;width:${STRIP}px;padding-top:124px;padding-bottom:20px;gap:${inRail?4:12}px"><button class="glassc" aria-label="Show the threads" ${A_SIDE()}>${I.side}</button>${inRail?'':`<button class="glassc" aria-label="New thread" ${A_NEW()}>${I.plus}</button>`}${inRail?`<div style="flex:1;min-height:0"></div>${group(S.f,true)}<div style="height:4px"></div>`:'<div style="flex:1"></div>'}${tabs()}</div>`;
+ const keyb=S.kb?`<div class="kb" style="position:absolute;left:0;right:0;bottom:0;height:270px;z-index:7">Keyboard</div>`:'';
+ return {Z,html:(S.side?sidebar(false,inRail):'')+page+rail+clock+keyb};
+}
+function menu(){if(!S.menu)return '';return `<div class="menu" style="right:92px;bottom:40px"><div class="info"><b>iOS composer shrinks while idle</b><span>Claude Code · Sotto · forge</span><span>feat/iphone-small-reply-box · +312 −84</span></div><button>Pull request #2083 open<span>›</span></button><button>Compact context</button><button>Settle</button></div>`}
+function chips(key,items){return Object.entries(items).map(([k,v])=>`<button class="chip ${String(S[key])===k?'on':''}" data-k="${key}" data-v="${k}">${v}</button>`).join('')}
+function panel(){
+ const look=S.s==='folded'?'f':'u',looks=S.s==='folded'?FOLD_LOOKS:UN_LOOKS;
+ const say=SAY[look][S[look]];
+ return `<div id="say">${say}</div>
+ <div class="row"><span>Screen</span>${chips('s',{folded:'Folded',upright:'Unfolded upright',sideways:'Unfolded sideways'})}</div>
+ <div class="row"><span>${S.s==='folded'?'Side icons':'Controls'}</span>${chips(look,looks)}${S.s!=='folded'?`<span style="width:auto;padding-left:8px">Side icons</span>${chips('f',{a:'A',b:'B',c:'C'})}`:''}</div>
+ <div class="row"><span>Heading</span>${chips('h',{keep:'Keep',small:'Smaller',gone:'Remove'})}</div>
+ <div class="row"><span>Show</span>${chips('st',{working:'Working',needs:'Needs you',lost:'Can’t reach it'})}${chips('agents',{false:'No agents',true:'3 agents'})}${chips('kb',{false:'No keyboard',true:'Keyboard'})}${chips('theme',{dark:'Dark',light:'Light'})}</div>`;
+}
+function fit(Z){const st=document.getElementById('stage'),sw=st.clientWidth-12,sh=st.clientHeight-12,k=Math.min(sw/Z.w,sh/Z.h,1.2);
+ const f=document.getElementById('fit');f.style.width=Z.w*k+'px';f.style.height=Z.h*k+'px';f.style.marginLeft=-(Z.w*k)/2+'px';f.style.marginTop=-(Z.h*k)/2+'px';
+ const sc=f.querySelector('.screen');if(sc){sc.style.width=Z.w+'px';sc.style.height=Z.h+'px';sc.style.transform=`scale(${k})`}}
+function draw(){
+ document.documentElement.dataset.theme=S.theme;
+ const v=S.s==='folded'?folded():S.s==='upright'?upright():sideways();
+ document.getElementById('fit').innerHTML=`<div class="screen" data-theme="${S.theme}">${v.html}${menu()}</div>`;
+ document.getElementById('panel').innerHTML=panel();
+ fit(v.Z);
+ const sc=document.getElementById('sc');if(sc){sc.scrollTop=S.scrollTop;sc.addEventListener('scroll',()=>{const was=S.scrollTop;S.scrollTop=sc.scrollTop;if(S.u==='now'&&S.s!=='folded'&&((was>4)!==(S.scrollTop>4)||(was>70)!==(S.scrollTop>70)))draw()},{passive:true})}
+ const q=new URLSearchParams({s:S.s,f:S.f,u:S.u,h:S.h,st:S.st,agents:S.agents?'1':'0',kb:S.kb?'1':'0',theme:S.theme});history.replaceState(null,'','?'+q);
+}
+document.addEventListener('click',e=>{const a=e.target.closest('[data-a]');if(a&&wired[a.dataset.a]){wired[a.dataset.a]();return}
+ const c=e.target.closest('[data-k]');if(c){const k=c.dataset.k;let v=c.dataset.v;if(v==='true')v=true;if(v==='false')v=false;S[k]=v;if(k==='s'){S.side=v==='sideways';S.scrollTop=0}draw()}});
+document.getElementById('hide').onclick=e=>{const p=document.getElementById('panel');const h=p.style.display==='none';p.style.display=h?'':'none';e.target.textContent=h?'Hide controls':'Show controls';draw()};
+addEventListener('keydown',e=>{if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;const key=S.s==='folded'?'f':'u',o=['now','a','b','c'],i=o.indexOf(S[key]);S[key]=o[(i+(e.key==='ArrowRight'?1:3))%4];draw()});
+addEventListener('resize',draw);
+draw();document.fonts&&document.fonts.ready.then(draw);
+</script>
+</body>
+</html>
