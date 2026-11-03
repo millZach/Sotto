@@ -528,6 +528,10 @@ msgstr "An agent opens your app here when it tests it. You can also load a web b
 msgid "another thread"
 msgstr "another thread"
 
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "Anything running in this shell stopped. Its output stays here until you close it."
+msgstr "Anything running in this shell stopped. Its output stays here until you close it."
+
 #. A pull request's review approved it.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Approved"
@@ -2103,6 +2107,11 @@ msgstr "Nothing to merge yet"
 msgid "on {host}"
 msgstr "on {host}"
 
+#. {machine} is the name of a paired host, as in forge. Says which machine a terminal's shell runs on.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "on {machine}"
+msgstr "on {machine}"
+
 #. {base} is the default Git branch, as in main.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Once it has one, this lists what stands between it and <0>{base}</0>."
@@ -3146,6 +3155,11 @@ msgstr "The command did not run."
 msgid "The command did not run. Sotto could not reach this thread’s terminals. Try again."
 msgstr "The command did not run. Sotto could not reach this thread’s terminals. Try again."
 
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "The connection to {machine} ended."
+msgstr "The connection to {machine} ended."
+
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The draft for this thread is not available."
@@ -3400,6 +3414,11 @@ msgstr "This screenshot does not fit in the draft. Remove an attachment or captu
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "This session"
 msgstr "This session"
+
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "This shell runs on {machine}"
+msgstr "This shell runs on {machine}"
 
 #. Stands in for a terminal's name, as in "End this terminal?".
 #: src/renderer/src/tools/TerminalSurface.tsx

@@ -58,6 +58,8 @@ import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
 import { e2eTailscale } from './e2e/tailscale'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
+import { hostedTerminals } from './hosts/hostedTerminals'
+import { sshExecutable } from './hosts/sshProcess'
 import { e2eTailnetMap } from './e2e/tailnetStandIn'
 import { SshHostLauncher } from './hosts/sshLauncher'
 import { HostPhones } from './hosts/hostPhones'
@@ -369,6 +371,7 @@ type NativeDiagnostic =
   | NativeRuntimeDiagnostic
   | RendererDiagnostic
   | 'bootstrap-terminal-failed'
+  | 'host-terminals-end-failed'
   | 'native-main-send-failed'
   | 'native-widget-state-delivery-failed'
   | 'native-widget-show-failed'
@@ -1217,6 +1220,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+    // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
+    ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
@@ -1348,6 +1353,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   // A pane drawer starts in the project folder, even for a thread with its own worktree.
   const terminalService = new TerminalService({ files, directory: userDataPath,
+    // A thread on a paired host opens its terminal over the user's own SSH (ADR-0183; Owl only).
+    hosted: owlFeatures['paired-host-terminal'] ? hostedTerminals({ folders: threadId => hostRouter.hostedThreadFolders(threadId), host: hostId => desktopHosts.terminalHost(hostId),
+      ssh: sshStandInScript && sshStandInExecutable ? { file: sshStandInExecutable, args: [sshStandInScript] } : { file: sshExecutable(process.platform, process.env) } }) : undefined,
     projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],

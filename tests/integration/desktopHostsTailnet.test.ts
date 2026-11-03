@@ -65,6 +65,9 @@ async function admin(route: string, body: unknown): Promise<Record<string, unkno
   return await response.json() as Record<string, unknown>
 }
 
+/** Each host sent away, as the terminal service hears of it (ADR-0183). */
+const hostsLeft: string[] = []
+
 /** SSH as the launch script answers it, on this machine: the host's own listener as the forward, and its descriptor read. */
 class FixtureSsh extends SshHostLauncher {
   disconnected = false
@@ -111,7 +114,7 @@ afterEach(async () => {
   if (root && dirname(root) === tmpdir() && root.includes('sotto-desktop-tailnet-')) await rm(root, { recursive: true, force: true })
 })
 function newManager(): DesktopHosts {
-  return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: () => retryMs, now: () => clock,
+  return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: () => retryMs, now: () => clock, onHostLeft: hostId => hostsLeft.push(hostId),
     launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher }, tailnetReturnMs: returnMs,
     // MagicDNS and Serve's certificate cannot run here: the forge name goes to the stand-in on loopback.
     resolveTailnet: address => new URL(address).hostname === DNS ? stand.url : address })
@@ -355,6 +358,13 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect(launchers).toEqual([])
     await manager.command({ type: 'stop-host', id: remote.id })
     expect(operations).toEqual(['admin desktop-answers', 'admin stop-host'])
+  })
+
+  it('tells the terminal service when a host is sent away, so its shells over SSH end (ADR-0183)', async () => {
+    const remote = await add()
+    hostsLeft.length = 0
+    await manager.command({ type: 'disconnect', id: remote.id })
+    expect(hostsLeft).toEqual([(await descriptor()).hostId])
   })
 
   it('forgets what it kept about the tailnet with the host', async () => {

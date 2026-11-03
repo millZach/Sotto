@@ -528,6 +528,10 @@ msgstr ""
 msgid "another thread"
 msgstr ""
 
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "Anything running in this shell stopped. Its output stays here until you close it."
+msgstr ""
+
 #. A pull request's review approved it.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Approved"
@@ -2103,6 +2107,11 @@ msgstr ""
 msgid "on {host}"
 msgstr ""
 
+#. {machine} is the name of a paired host, as in forge. Says which machine a terminal's shell runs on.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "on {machine}"
+msgstr ""
+
 #. {base} is the default Git branch, as in main.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Once it has one, this lists what stands between it and <0>{base}</0>."
@@ -3146,6 +3155,11 @@ msgstr ""
 msgid "The command did not run. Sotto could not reach this thread’s terminals. Try again."
 msgstr ""
 
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "The connection to {machine} ended."
+msgstr ""
+
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The draft for this thread is not available."
@@ -3399,6 +3413,11 @@ msgstr ""
 
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "This session"
+msgstr ""
+
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "This shell runs on {machine}"
 msgstr ""
 
 #. Stands in for a terminal's name, as in "End this terminal?".
