@@ -128,7 +128,8 @@ export const SETTINGS_VERSION = 1 as const
  */
 export const STORED_CREDENTIAL_PLACEHOLDER = 'Saved in your operating system credential store'
 
-type MaxRecordingSeconds = 30 | 60 | 120 | 300
+/** How long one dictation may run, in seconds, or null for no limit. */
+export type MaxRecordingSeconds = 30 | 60 | 120 | 180 | 300 | 600 | 900 | 1800 | null
 
 export interface AppSettings {
   version: typeof SETTINGS_VERSION
@@ -521,7 +522,7 @@ const fieldSchemas = {
   popupShortcut: z.string().min(1).max(64).nullable(),
   threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
-  maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
+  maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(180), z.literal(300), z.literal(600), z.literal(900), z.literal(1800)]).nullable(),
   soundCues: z.boolean(),
   typingSpeedWpm: z.number().int().min(TYPING_SPEED_MIN_WPM).max(TYPING_SPEED_MAX_WPM),
   speechModel: z.string().min(1).max(128).nullable(),

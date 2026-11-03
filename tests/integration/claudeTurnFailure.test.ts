@@ -45,7 +45,7 @@ describe('the error a failed Claude turn leaves', () => {
   })
   it.each([
     ['a usage limit with its reset time', failed({ result: 'You’ve hit your limit · resets 3pm (America/Chicago)' }), undefined, `${USAGE} Send again after it resets at 3pm (America/Chicago).`],
-    ['a usage limit with no reset time', failed({ result: 'API Error: 429 {"type":"rate_limit_error"}' }), 'rate_limit', `${USAGE} Send again once it resets; Claude Code shows when.`],
+    ['a usage limit with no reset time', failed({ result: 'API Error: 429 {"type":"rate_limit_error"}' }), 'rate_limit', `${USAGE} Claude Code didn’t say when its limit resets. Send again once it has.`],
     ['an overloaded API', failed({ result: 'API Error: 529 {"type":"overloaded_error","message":"Overloaded"}', api_error_status: 529 }), undefined, BUSY],
     ['a server error', failed({ result: 'API Error: 500 Internal server error' }), 'server_error', BUSY],
     ['no connection', failed({ result: 'API Error: Connection error. (getaddrinfo ENOTFOUND api.anthropic.com)', api_error_status: null }), 'unknown', OFFLINE],
@@ -111,11 +111,11 @@ describe('the error a failed Claude turn leaves', () => {
     const f = await fixture()
     await f.action('thread', { type: 'raw', frame: { type: 'assistant', error: 'rate_limit', message: { id: 'failure', role: 'assistant', content: [{ type: 'text', text: 'API Error: 429' }] } } })
     await f.action('thread', { type: 'raw', frame: failed({ result: 'API Error: 429 rate limited' }) })
-    await expect.poll(async () => error(f)).toBe(`${USAGE} Send again once it resets; Claude Code shows when.`)
+    await expect.poll(async () => error(f)).toBe(`${USAGE} Claude Code didn’t say when its limit resets. Send again once it has.`)
     // Another thread finishing says nothing about this one.
     await f.driver.completeTurn('other', 'Finished elsewhere.')
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === 'other')?.messages.at(-1)?.text).toBe('Finished elsewhere.')
-    expect(await error(f)).toBe(`${USAGE} Send again once it resets; Claude Code shows when.`)
+    expect(await error(f)).toBe(`${USAGE} Claude Code didn’t say when its limit resets. Send again once it has.`)
     await f.driver.completeTurn('thread', 'Finished after all.')
     await expect.poll(async () => error(f)).toBeUndefined()
   })

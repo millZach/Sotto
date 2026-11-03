@@ -397,6 +397,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
       // The notice and its focused button go away, so focus goes to the control above the list.
       onDismiss={() => { addButton.current?.focus(); void run({ type: 'dismiss-forgotten', id: forgotten.id }) }} />)}
     <div className="hosts-list hosts-card">
+      {bridge && state === null && !error ? <p className="hosts-empty tt-paragraph" role="status"><Trans>Reading hosts…</Trans></p> : null}
       {state?.hosts.map(host => <HostRow key={host.id} host={host} onCommand={run} onAction={act} bridge={bridge} job={state.providerJob} choice={state.setupChoice}
         phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)} boot={state.boot?.find(item => item.id === host.id)}
         bootShownElsewhere={bootId === host.id || dialog?.kind === 'add'}

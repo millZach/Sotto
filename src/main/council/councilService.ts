@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { isThreadProviderConnected, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
   type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
@@ -27,9 +27,9 @@ import { activePanelists, addRound, advanceRound, answeredLetters, criteriaOf, c
 
 /**
  * The Council coordinator in main (ADR-0177). It starts each seat's thread on its own provider, in the Council's
- * snapshot, as an ordinary Sotto thread linked to the origin thread the way a delegated thread is linked to the thread
- * that started it (ADR-0081), so the sidebar lists it under that thread, which says when one waits on the user, and it
- * settles with it. It sends each stage's prompt once the thread is free, follows the turn the prompt began, reads the
+ * snapshot, or in the thread's own folder when that is not a Git repository, as an ordinary Sotto thread linked to the
+ * origin thread the way a delegated thread is linked to the thread that started it (ADR-0081), so the sidebar lists it
+ * under that thread, which says when one waits on the user, and it settles with it. It sends each stage's prompt once the thread is free, follows the turn the prompt began, reads the
  * result block where the reply arrives, and moves the stages on. Nothing it sends answers a question or a permission:
  * a thread waiting on the user is sent nothing until the user has answered. A prompt not confirmed before a restart is
  * unknown and is never sent again. It logs nothing.
@@ -43,6 +43,8 @@ export interface CouncilControlHooks {
   observe(snapshot: AgentHostSnapshot, threads?: Pick<HostThreadsView, 'thread'>): void
   /** The threads whose turns the Council follows, kept in the observed set so their messages are read. */
   observedThreadIds(): readonly string[]
+  /** Whether a Council made this thread, whether or not it still follows it. */
+  madeThread(threadId: string): boolean
   /** The message ID a stage's prompt carries, so its turn is known by it from the first echo. */
   messageIdFor(draftId: string): string | undefined
   /** The guard a prompt carries to the provider's writer, asked again after the thread's preparation. */
@@ -90,8 +92,8 @@ const MODEL_NAME_MAX = 512
 const VERDICT_MAX = 390_000
 const STAGE_ORDER = ['history', 'framing', 'answer', 'review', 'crux', 'verdict', 'fairness', 'amend'] as const
 const isOpen = (record: CouncilRecord): boolean => !record.settledAt
-/** A Council that may leave the record to make room: settled, with its snapshot gone. */
-const evictable = (record: CouncilRecord): boolean => record.settledAt !== undefined && record.snapshot.removedAt !== undefined
+/** A Council that may leave the record to make room: settled, with its snapshot gone or never taken. */
+const evictable = (record: CouncilRecord): boolean => record.settledAt !== undefined && (!record.snapshot || record.snapshot.removedAt !== undefined)
 const clip = (text: string, max: number): string => text.length <= max ? text : `${text.slice(0, max - 1)}…`
 
 export class CouncilService {
@@ -137,12 +139,13 @@ export class CouncilService {
       for (const turn of record.turns) if (turn.delivery === 'dispatching') { turn.delivery = 'unconfirmed'; turn.outcome = 'unknown' }
       const round = currentRound(record)
       if (isOpen(record) && !record.stoppedAt && round.stage !== 'done' && round.question === undefined) { record.stoppedAt = at; record.stoppedBecause = 'words-lost' }
-      if (record.settledAt && !record.snapshot.removedAt) void this.removeSnapshot(record)
+      if (record.settledAt && record.snapshot && !record.snapshot.removedAt) void this.removeSnapshot(record)
     }
     this.reindex()
     this.unhook = this.options.control.useCouncil({
       observe: (snapshot, threads) => this.observe(snapshot, threads),
       observedThreadIds: () => this.watched,
+      madeThread: threadId => this.records.some(record => record.seats.some(seat => seat.thread === threadId || seat.formerThreads.includes(threadId))),
       messageIdFor: draftId => this.byDraft.get(draftId)?.turn.messageId,
       guardFor: draftId => { const held = this.byDraft.get(draftId); return held ? () => this.guard(held.record, held.turn) : undefined },
       ownsMessage: messageId => this.messages.has(messageId),
@@ -223,11 +226,16 @@ export class CouncilService {
     const ready = seats.map(entry => ({ ...entry, model: this.readyModel(snapshot.models, entry.choice) }))
     if (ready.some(entry => !entry.model)) return { ok: false, message: t`A seat's model is not ready: its provider is not connected. Choose another model for it, then ask again. Nothing was started.` }
     const folder = origin.workingDirectory ?? project?.path
-    if (!folder) return { ok: false, message: t`That thread has no folder Sotto can take a snapshot of. Nothing was started.` }
+    if (!folder) return { ok: false, message: t`That thread has no folder for the Council to work in. Nothing was started.` }
     if (this.records.length >= RECORDS_MAX && !this.records.some(evictable)) return { ok: false, message: t`Sotto keeps ${RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started.` }
     const id = this.newId()
     const made = await makeCouncilSnapshot({ bundles: this.options.bundles, run: this.run, folder, path: join(this.options.directory, COUNCIL_WORKTREE_FOLDER, id) })
-    if ('refused' in made) return { ok: false, message: made.refused }
+    if (typeof made === 'object' && 'refused' in made) return { ok: false, message: made.refused }
+    // Without a snapshot the seats share the project's folder, so the folder checked must be that one.
+    const key = (path: string) => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
+    if (made === 'none' && (!project || key(folder) !== key(project.path))) {
+      return { ok: false, message: t`That thread's folder is not a Git repository and is not its project's folder, so the Council cannot work in it. Nothing was started.` }
+    }
     const quoted = this.quote(origin)
     // The whole conversation goes to every thread, inline and written nowhere (Drake, November 2, 2026): in its first prompt
     // when it fits, otherwise in parts before it.
@@ -236,7 +244,7 @@ export class CouncilService {
     const now = new Date(this.clock()).toISOString()
     const record: CouncilRecord = {
       id, createdAt: now, originThread: origin.id, originTitle: clip(origin.title, 512), projectId: origin.projectId,
-      snapshot: { path: made.path, repositoryRoot: made.repositoryRoot, commit: made.commit, branch: made.branch, untracked: made.untracked, dirty: made.dirty },
+      ...made === 'none' ? {} : { snapshot: { path: made.path, repositoryRoot: made.repositoryRoot, commit: made.commit, branch: made.branch, untracked: made.untracked, dirty: made.dirty } },
       history: { messages: quoted.messages, words: quoted.words, tools: quoted.tools, parts: parts.length, ...quoted.lastMessageId ? { lastMessageId: quoted.lastMessageId } : {} },
       seats: ready.map(entry => this.seatOf(entry.seat, entry.role, entry.model!, entry.choice, this.newId())),
       rounds: [{ index: 0, askedAt: now, stage: 'framing', leftOut: [], objections: [], question: command.question }],
@@ -307,7 +315,7 @@ export class CouncilService {
   }
   /** Removes a settled Council's snapshot, and records it removed only once Git and the disk both show it gone; recover() tries again. */
   private async removeSnapshot(record: CouncilRecord): Promise<void> {
-    if (!await removeCouncilSnapshot(this.run, record.snapshot)) return
+    if (!record.snapshot || !await removeCouncilSnapshot(this.run, record.snapshot)) return
     record.snapshot.removedAt = new Date(this.clock()).toISOString()
     await this.persist()
     this.changed([record])
@@ -429,6 +437,12 @@ export class CouncilService {
       await this.persist()
       this.changed([record])
       this.options.control.refreshCouncilObservation()
+      // A reply may have arrived while this send held the thread; releasing it must let the next queued prompt go.
+      if (!this.closed) {
+        const snapshot = this.options.control.watcherSnapshot()
+        let list: Map<string, AgentThread> | undefined
+        this.dispatchFree(snapshot, id => (list ??= new Map(snapshot.threads.map(item => [item.id, item]))).get(id))
+      }
     }
   }
 
@@ -454,7 +468,10 @@ export class CouncilService {
     await this.options.control.commandFromCouncil({ type: 'configure-thread', threadId: turn.thread, reasoningEffort: effort }, () => this.guard(record, turn))
       .catch(() => undefined)
   }
-  /** Makes a seat's thread in the snapshot, at the narrowest permission its provider offers, linked to the origin thread. */
+  /**
+   * Makes a seat's thread in the snapshot, or in the thread's own folder when it has none, at the narrowest permission its
+   * provider offers, linked to the origin thread.
+   */
   private async createThread(record: CouncilRecord, seat: CouncilSeat): Promise<boolean> {
     const models = this.options.control.watcherSnapshot().models
     const model = resolveModel(models, seat.modelId)
@@ -462,7 +479,8 @@ export class CouncilService {
     const name = seat.seat === COUNCIL_CHAIR ? 'Council chair' : `Council ${seat.seat}`
     try {
       const created = await this.options.control.commandFromCouncil({ type: 'create-thread', threadId: seat.thread, projectId: record.projectId, title: clip(`${name}: ${record.originTitle}`, 120),
-        titleSource: 'user', modelId: seat.modelId, workingCopy: 'independent', existingWorktreePath: record.snapshot.path, ...seat.effort ? { reasoningEffort: seat.effort } : {},
+        titleSource: 'user', modelId: seat.modelId, ...record.snapshot ? { workingCopy: 'independent' as const, existingWorktreePath: record.snapshot.path } : { workingCopy: 'shared' as const },
+        ...seat.effort ? { reasoningEffort: seat.effort } : {},
         ...narrowestPermission(model) }, () => { if (record.stoppedAt || record.settledAt) throw new Error('This Council has stopped.') })
       if (created.error || !created.host.threads.some(thread => thread.id === seat.thread)) return false
       await this.options.host.setDelegatedBy(seat.thread, record.originThread)
@@ -593,17 +611,18 @@ export class CouncilService {
 
   /**
    * Checks each cited `path:lines` against the snapshot as it was recorded, its commit, never the files in the shared
-   * checkout a panelist may have changed since (decision 4), and the reply's quotes. A seat that cannot read the snapshot
-   * is unchecked. Evidence Sotto cannot check is unchecked and says so: a command, whose output Sotto never runs, and a
-   * source cited when the question needs no outside research.
+   * checkout a panelist may have changed since (decision 4), and the reply's quotes. A seat that cannot read the snapshot,
+   * or a Council without one, is unchecked. Evidence Sotto cannot check is unchecked and says so: a command, whose output
+   * Sotto never runs, and a source cited when the question needs no outside research.
    */
   private async checkCitations(record: CouncilRecord, turn: CouncilTurn, cited: readonly { readonly finding: string; readonly evidence: string }[], research: boolean): Promise<void> {
     if (!cited.length) return
     const seat = record.seats.find(item => item.seat === turn.seat)
     const remote = seat?.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider)
     const reply = [this.replyText(turn) ?? '', ...record.turns.filter(item => item.repairOf === turn.id).map(item => this.replyText(item) ?? '')].join('\n')
-    const git = (args: readonly string[]): Promise<string> => this.run(record.snapshot.repositoryRoot, 'git', args, { timeoutMs: 30_000 })
-    const commit = record.snapshot.commit
+    const snapshot = record.snapshot
+    const git = (args: readonly string[]): Promise<string> => this.run(snapshot!.repositoryRoot, 'git', args, { timeoutMs: 30_000 })
+    const commit = snapshot?.commit
     let readable: boolean | undefined
     const citations: CouncilCitation[] = []
     for (const { finding, evidence } of cited.slice(0, 40)) {
@@ -613,7 +632,7 @@ export class CouncilService {
       if (!place) continue
       const lines = place.start === place.end ? String(place.start) : `${place.start}-${place.end}`
       let check: CouncilCitation['check'] = 'unchecked'
-      readable ??= !remote && await git(['cat-file', '-e', `${commit}^{commit}`]).then(() => true, () => false)
+      readable ??= !remote && snapshot !== undefined && await git(['cat-file', '-e', `${commit}^{commit}`]).then(() => true, () => false)
       if (readable) {
         const object = `${commit}:${place.path.replaceAll('\\', '/')}`
         const size = await git(['cat-file', '-s', object]).then(Number, () => -1)
@@ -724,7 +743,8 @@ export class CouncilService {
       id: record.id, createdAt: record.createdAt,
       origin: { thread: record.originThread, title: threads.get(record.originThread)?.title ?? record.originTitle },
       status, ...record.stoppedBecause && record.stoppedAt ? { stoppedBecause: record.stoppedBecause } : {},
-      snapshot: { commit: record.snapshot.commit.slice(0, 12), branch: record.snapshot.branch, untracked: record.snapshot.untracked, dirty: record.snapshot.dirty === true, removed: record.snapshot.removedAt !== undefined },
+      ...record.snapshot ? { snapshot: { commit: record.snapshot.commit.slice(0, 12), branch: record.snapshot.branch, untracked: record.snapshot.untracked, dirty: record.snapshot.dirty === true,
+        removed: record.snapshot.removedAt !== undefined } } : {},
       history: { messages: record.history.messages, words: record.history.words, parts: record.history.parts },
       seats: record.seats.map(seat => ({ seat: seat.seat, role: seat.role, modelId: seat.modelId, modelName: seat.modelName, ...seat.provider ? { provider: seat.provider } : {}, effort: seat.effort,
         thread: seat.thread, remote: seat.provider !== undefined && COUNCIL_REMOTE_PROVIDERS.has(seat.provider) })),
@@ -853,8 +873,10 @@ export function narrowestPermission(model: AgentModel): { readonly runtimeMode?:
 function held<Block>(turn: CouncilTurn | undefined): Block | undefined {
   return turn?.result === 'valid' && turn.block !== undefined ? turn.block as Block : undefined
 }
-function snapshotWords(record: CouncilRecord): string {
-  return `commit ${record.snapshot.commit.slice(0, 12)} on ${record.snapshot.branch}${record.snapshot.dirty ? ', with the uncommitted changes it had' : ''}`
+/** The snapshot as prompts name it; undefined when the Council works in the thread's own folder, outside Git. */
+function snapshotWords(record: CouncilRecord): string | undefined {
+  const snapshot = record.snapshot
+  return snapshot && `commit ${snapshot.commit.slice(0, 12)} on ${snapshot.branch}${snapshot.dirty ? ', with the uncommitted changes it had' : ''}`
 }
 function blockName(stage: CouncilTurn['stage']): string {
   switch (stage) {

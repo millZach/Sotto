@@ -11,6 +11,7 @@ import { useWatcherProviderWords } from '../../watcher/watcherProviders'
 import { linuxKeyWords } from '../omarchy/linuxKeys'
 import { dismissDisclosure } from '../usage/UsageCharts'
 import type { HelpRequest, HelpTopicId } from './helpTopics'
+import { useProductEventsState } from '../productEvents/useProductEventsState'
 
 export interface HelpViewProps {
   readonly shortcut: string
@@ -23,6 +24,8 @@ export interface HelpViewProps {
   readonly releaseTrack?: ReleaseTrack | undefined
   /** A topic another page asked Help to open at, such as Watcher's room's How Watcher works. */
   readonly openTopic?: HelpRequest | null | undefined
+  /** The switch's answer, so About never says product events are on while they are off. */
+  readonly productEventsEnabled?: boolean | undefined
 }
 
 interface Topic {
@@ -45,7 +48,8 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
   ))
 }
 
-export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable', openTopic = null }: HelpViewProps): ReactNode {
+export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable', openTopic = null, productEventsEnabled = true }: HelpViewProps): ReactNode {
+  const productEventsOff = useProductEventsState()?.offBy != null || !productEventsEnabled
   const { t } = useLingui()
   const watcher = useWatcherEnabled()
   const providers = useWatcherProviderWords()
@@ -94,7 +98,7 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
     </> },
   ]
   const privacy: Topic[] = [
-    { title: t`Privacy`, body: <p className="tt-paragraph"><Trans>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer.</Trans></p> },
+    { title: t`Privacy`, body: <p className="tt-paragraph"><Trans>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application.</Trans></p> },
   ]
   const troubleshooting: Topic[] = [
     { title: t`Microphone access`, body: <p className="tt-paragraph">{copy.helpMicrophoneAccess}</p> },
@@ -131,11 +135,15 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
           <section className="tt-panel">
             <div className="tt-panel__header"><h2><Trans comment="Heading over the running version and what Sotto sends where">About</Trans></h2></div>
             <p className="help-about tt-paragraph">
-              <Trans>
-                {about}, {system}. No account with Sotto and no telemetry.
+              {productEventsOff ? <Trans>
+                {about}, {system}. No account with Sotto. Product events are off.
                 <br />
                 Transcription runs on this computer; AI cleanup uses your OpenRouter account.
-              </Trans>
+              </Trans> : <Trans>
+                {about}, {system}. No account with Sotto. Product events are on until you turn them off.
+                <br />
+                Transcription runs on this computer; AI cleanup uses your OpenRouter account.
+              </Trans>}
             </p>
           </section>
         </div>

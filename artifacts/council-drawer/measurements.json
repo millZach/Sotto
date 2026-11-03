@@ -1,0 +1,387 @@
+{
+ "defaultSplit": {
+  "paneClientHeight": 1000,
+  "drawer": {
+   "x": 280,
+   "y": 500,
+   "w": 1320,
+   "h": 500
+  },
+  "view": "council",
+  "chamber": {
+   "x": 280,
+   "y": 538,
+   "w": 726,
+   "h": 380
+  },
+  "seatsBar": {
+   "x": 280,
+   "y": 918,
+   "w": 1320,
+   "h": 82
+  },
+  "ask": {
+   "x": 1006,
+   "y": 538,
+   "w": 594,
+   "h": 380
+  },
+  "bar": {
+   "x": 280,
+   "y": 501,
+   "w": 1320,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "terminalTab": {
+  "paneClientHeight": 1000,
+  "drawer": {
+   "x": 280,
+   "y": 667,
+   "w": 1320,
+   "h": 333
+  },
+  "view": "terminal",
+  "chamber": null,
+  "seatsBar": null,
+  "ask": null,
+  "bar": {
+   "x": 280,
+   "y": 668,
+   "w": 1320,
+   "h": 36
+  },
+  "tabs": [
+   "Council",
+   "zsh 1*",
+   "zsh 2"
+  ],
+  "councilPressed": "false",
+  "terminalPressed": "true",
+  "question": null,
+  "from": null,
+  "overflowing": []
+ },
+ "backToCouncil": {
+  "paneClientHeight": 1000,
+  "drawer": {
+   "x": 280,
+   "y": 500,
+   "w": 1320,
+   "h": 500
+  },
+  "view": "council",
+  "chamber": {
+   "x": 280,
+   "y": 538,
+   "w": 726,
+   "h": 380
+  },
+  "seatsBar": {
+   "x": 280,
+   "y": 918,
+   "w": 1320,
+   "h": 82
+  },
+  "ask": {
+   "x": 1006,
+   "y": 538,
+   "w": 594,
+   "h": 380
+  },
+  "bar": {
+   "x": 280,
+   "y": 501,
+   "w": 1320,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "taller": {
+  "paneClientHeight": 1000,
+  "drawer": {
+   "x": 280,
+   "y": 320,
+   "w": 1320,
+   "h": 680
+  },
+  "view": "council",
+  "chamber": {
+   "x": 280,
+   "y": 358,
+   "w": 726,
+   "h": 560
+  },
+  "seatsBar": {
+   "x": 280,
+   "y": 918,
+   "w": 1320,
+   "h": 82
+  },
+  "ask": {
+   "x": 1006,
+   "y": 358,
+   "w": 594,
+   "h": 560
+  },
+  "bar": {
+   "x": 280,
+   "y": 321,
+   "w": 1320,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "shorter": {
+  "paneClientHeight": 1000,
+  "drawer": {
+   "x": 280,
+   "y": 760,
+   "w": 1320,
+   "h": 240
+  },
+  "view": "council",
+  "chamber": {
+   "x": 280,
+   "y": 798,
+   "w": 1320,
+   "h": 120
+  },
+  "seatsBar": {
+   "x": 280,
+   "y": 918,
+   "w": 1320,
+   "h": 82
+  },
+  "ask": {
+   "x": 280,
+   "y": 1000,
+   "w": 1320,
+   "h": 274
+  },
+  "bar": {
+   "x": 280,
+   "y": 761,
+   "w": 1320,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "reset": {
+  "paneClientHeight": 1000,
+  "drawer": {
+   "x": 280,
+   "y": 500,
+   "w": 1320,
+   "h": 500
+  },
+  "view": "council",
+  "chamber": {
+   "x": 280,
+   "y": 538,
+   "w": 726,
+   "h": 380
+  },
+  "seatsBar": {
+   "x": 280,
+   "y": 918,
+   "w": 1320,
+   "h": 82
+  },
+  "ask": {
+   "x": 1006,
+   "y": 538,
+   "w": 594,
+   "h": 380
+  },
+  "bar": {
+   "x": 280,
+   "y": 501,
+   "w": 1320,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "afterReplyPress": {
+  "paneClientHeight": 1000,
+  "drawer": {
+   "x": 280,
+   "y": 500,
+   "w": 1320,
+   "h": 500
+  },
+  "view": "council",
+  "chamber": {
+   "x": 280,
+   "y": 538,
+   "w": 726,
+   "h": 380
+  },
+  "seatsBar": {
+   "x": 280,
+   "y": 918,
+   "w": 1320,
+   "h": 82
+  },
+  "ask": {
+   "x": 1006,
+   "y": 538,
+   "w": 594,
+   "h": 380
+  },
+  "bar": {
+   "x": 280,
+   "y": 501,
+   "w": 1320,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "> Done. The preview plays a two-second sample through the selected voice, and the key never touches settings.json.",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "10-council-1280": {
+  "paneClientHeight": 800,
+  "drawer": {
+   "x": 280,
+   "y": 400,
+   "w": 1000,
+   "h": 400
+  },
+  "view": "council",
+  "chamber": {
+   "x": 280,
+   "y": 438,
+   "w": 550,
+   "h": 280
+  },
+  "seatsBar": {
+   "x": 280,
+   "y": 718,
+   "w": 1000,
+   "h": 82
+  },
+  "ask": {
+   "x": 830,
+   "y": 438,
+   "w": 450,
+   "h": 280
+  },
+  "bar": {
+   "x": 280,
+   "y": 401,
+   "w": 1000,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "11-council-820-min": {
+  "paneClientHeight": 560,
+  "drawer": {
+   "x": 260,
+   "y": 320,
+   "w": 560,
+   "h": 240
+  },
+  "view": "council",
+  "chamber": {
+   "x": 260,
+   "y": 358,
+   "w": 560,
+   "h": 120
+  },
+  "seatsBar": {
+   "x": 260,
+   "y": 478,
+   "w": 560,
+   "h": 145
+  },
+  "ask": {
+   "x": 260,
+   "y": 623,
+   "w": 560,
+   "h": 313
+  },
+  "bar": {
+   "x": 260,
+   "y": 321,
+   "w": 560,
+   "h": 37
+  },
+  "tabs": [
+   "Council*",
+   "zsh 1",
+   "zsh 2"
+  ],
+  "councilPressed": "true",
+  "terminalPressed": "false",
+  "question": "",
+  "from": "Grok voice previews",
+  "overflowing": []
+ },
+ "hidden": {
+  "drawer": null,
+  "councilPressed": "false"
+ }
+}

@@ -4,7 +4,7 @@
 
 Accepted November 2, 2026, at Zach's ask: "add anonymous analytics like T3 code has. Use their source code as reference and make it on my default in application tab of settings". He was told that hashed logins can still identify a person, and chose them. **Number provisional until merge** (docs/agents/domain.md).
 
-This amends the promise in `AGENTS.md`, the README and ADR-0017 that Sotto adds no analytics. Crash upload stays out. Until a release carries the notice and the built-in endpoint, the README's words stay true, because no build can send: the part of this decision that names the endpoint, the notice, the README, the guide, setup's and Help's lines ships in one pull request and one release.
+This amends the promise in `AGENTS.md`, the README and ADR-0017 that Sotto adds no analytics. Crash upload stays out. No build could send until the part of this decision that names the endpoint, the notice, the README, the guide, setup's and Help's lines, which shipped in one pull request and so in one release.
 
 ## Context
 
@@ -22,9 +22,9 @@ Sotto cannot tell which providers, models and features get used, or how often a 
    |---|---|---|
    | `install.owner_observed` | Once per start, per signed-in account | `ownerSource`, `ownerId` |
    | `app.started` | Once per start | `pairedHosts` |
-   | `thread.started` | A new thread starts | `provider`, `model`, `effort`, `permissionMode`, `inWorktree`, `startedBy` |
-   | `turn.completed` | A turn ends | `provider`, `model`, `effort`, `speed`, `permissionMode`, `startedBy`, `result`, `durationMs`, token counts, child-agent token counts |
-   | `feature.used` | A feature starts, from a fixed list | `feature` |
+   | `thread.started` | A thread Sotto made begins its first turn. A draft nobody sent and a session found in a provider's history are not counted | `provider`, `model`, `effort`, `permissionMode`, `inWorktree`, `startedBy` |
+   | `turn.completed` | A turn Sotto saw start ends. History read back, a turn already running when Sotto started and a turn whose outcome was lost are not counted, so it errs toward counting too few | `provider`, `model`, `effort`, `speed`, `permissionMode`, `startedBy`, `result`, `durationMs`, token counts, child-agent token counts |
+   | `feature.used` | A feature starts, from a fixed list, at most once a day per feature while Sotto runs, and once more after a start, since keeping the day on disk is not worth a write. It says whether this install used it, not how often; `thread.started` counts Watcher's, delegated, Council and swarm threads | `feature` |
 
    Every event also carries `uuid`, `timestamp`, `distinct_id`, `appVersion`, `channel`, `surface`, `platform`, `arch`, `$process_person_profile: false` and `$geoip_disable: true`.
 
@@ -38,8 +38,10 @@ Sotto cannot tell which providers, models and features get used, or how often a 
 
 ## Consequences
 
-- `README.md`, `docs/guide.md`, setup's "No Sotto account, no telemetry", Help's "No account with Sotto and no telemetry", and ADR-0017's "Sotto remains telemetry-free" all change in the pull request that ships the notice.
-- The new host goes into the README's "Privacy and cost" section with it.
-- A new event or field is a change to this ADR, the schema and the docs page together.
-- A development or test build has no endpoint, so it counts as no install. `SOTTO_PRODUCT_EVENTS_ENDPOINT` names one for a test run, over HTTPS or to this computer only.
+- `README.md`, `docs/guide.md`, setup's and Help's lines and ADR-0017 say what is sent, in the pull request that ships the notice. The new host is in the README's "Privacy and cost" section. saysotto.com's description dropped "no analytics", published with the same release. The iPhone app sends none, so its store text does not change for this.
+- A new event or field is a change to this ADR, the schema and `docs/product-events.md` together. `tests/unit/main/productEvents/productEventsWords.test.ts` holds the page and the dialog to the schema, and every promise that could be wrong to what is true.
+- Only a released build has the endpoint: `app.isPackaged` on the desktop, and on a host the define that `scripts/package-host.mjs` turns on. A development or test build has none, shows no notice and counts as no install. `SOTTO_PRODUCT_EVENTS_ENDPOINT` names one for a test run, over HTTPS or to this computer only.
+- The notice takes the corner from the update cards until it is answered or put off, and waits for the Threads tour to end. It takes no focus when it appears, so a press meant for the composer cannot answer it, and Escape puts it off from anywhere unless an open dialog or something else claimed the press. Turning the switch off in Settings takes an unanswered notice down without answering it, and turning the switch back on asks again. Once it has been answered, even by Turn off, the switch alone decides: turning it on sends. Help's About line follows the answer, on or off, by Zach's pick on November 3.
+- `app.started` goes when the answer turns to on, since nothing was kept before it: at start for an install that already answered, otherwise on the press. Turning the switch off and on makes a new install ID, which gets its own, on a host as on the desktop, and its own day of `feature.used`: the limit is per ID, since what it says is whether that install used the feature.
+- A host cannot tell "my desktop was reset" from a desktop that has simply not answered yet, except by having been on: a connected desktop saying it waits, on a host that was on, drops what the host holds and its ID. A second desktop that has never answered, left connected as the one that answered leaves, costs the same, which errs toward keeping less.
 - The prototype Zach chose from is kept as the tag `prototype/product-events`: notice variant A, switch variant A.

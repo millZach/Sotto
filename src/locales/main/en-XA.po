@@ -1520,11 +1520,15 @@ msgid "That theme could not be exported."
 msgstr ""
 
 #: src/main/council/councilService.ts
-msgid "That thread has no folder Sotto can take a snapshot of. Nothing was started."
+msgid "That thread has no folder for the Council to work in. Nothing was started."
 msgstr ""
 
 #: src/main/council/councilService.ts
 msgid "That thread is not on this computer."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "That thread's folder is not a Git repository and is not its project's folder, so the Council cannot work in it. Nothing was started."
 msgstr ""
 
 #: src/main/notifications/desktopNotifier.ts
@@ -2263,10 +2267,6 @@ msgstr ""
 
 #: src/main/council/councilSnapshot.ts
 msgid "The thread's branch has characters in its name a snapshot cannot carry. Rename the branch, then ask again. Nothing was started."
-msgstr ""
-
-#: src/main/council/councilSnapshot.ts
-msgid "The thread's folder is not a Git repository, so the Council has no snapshot to work in. Nothing was started."
 msgstr ""
 
 #: src/main/council/councilSnapshot.ts

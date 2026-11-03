@@ -60,6 +60,8 @@ struct HostRefusal: Error, LocalizedError {
     /// The photo load limit the photo tests give the model: never passing, unless a test says otherwise.
     static var photoLoadLimit: @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 3_600_000_000_000) }
     static var receipts: [String: JSONValue] = [:]
+    /// The computer's answer to `settled-threads`.
+    static var settledPage: JSONValue = .null
     /// The computer's answer to Watcher's operations, given the operation and its request ID. Without one, a read
     /// returns the `watcher` page in the computer's shell, as a computer that runs Watcher does.
     static var watcherHandler: ((String, [String: JSONValue], String) async throws -> JSONValue)?
@@ -132,6 +134,7 @@ struct HostRefusal: Error, LocalizedError {
             return Self.shells[hostID] ?? Self.shell
         }
         if op == "shell" { return Self.shells[hostID] ?? Self.shell }
+        if op == "settled-threads" { return Self.settledPage }
         if op == "receipt" { return Self.receipts[operation["commandId"]?.string ?? ""] ?? Self.receipt }
         if op == "host-folders", let handler = Self.folderHandler { return try await handler(hostID, operation["request"] ?? .null) }
         if op == "stage-attachment", let handler = Self.stageHandler { return try await handler(operation["image"] ?? .null) }

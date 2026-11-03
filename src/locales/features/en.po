@@ -110,8 +110,12 @@ msgid "{0}, asked again"
 msgstr "{0}, asked again"
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
-msgstr "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgid "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgstr "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "{about}, {system}. No account with Sotto. Product events are on until you turn them off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgstr "{about}, {system}. No account with Sotto. Product events are on until you turn them off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{activeThreads, plural, one {{detail} · {sessions} provider session} other {{detail} · {sessions} provider sessions}}"
@@ -952,6 +956,10 @@ msgstr "A speech model transcribes your speech on this computer. Choose it in Se
 msgid "A thread"
 msgstr "A thread"
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "A thread begins its first turn. It shows which providers and ways of starting get used."
+msgstr "A thread begins its first turn. It shows which providers and ways of starting get used."
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "a thread no longer here"
@@ -970,6 +978,10 @@ msgstr "A thread shows the agent's work, and the questions and permissions it as
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A thread’s"
 msgstr "A thread’s"
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "A turn ends. It shows reliability, speed and token use by provider and model."
+msgstr "A turn ends. It shows reliability, speed and token use by provider and model."
 
 #. Heading over the running version and what Sotto sends where
 #: src/renderer/src/features/help/HelpView.tsx
@@ -1260,8 +1272,8 @@ msgid "Attach to a thread"
 msgstr "Attach to a thread"
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer."
-msgstr "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer."
+msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
+msgstr "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Authority"
@@ -1399,6 +1411,8 @@ msgstr "Carried {carried}."
 msgid "Chair"
 msgstr "Chair"
 
+#. Opens the list of threads a Council question can come from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Change"
 msgstr "Change"
@@ -1612,6 +1626,7 @@ msgid "Clear usage…"
 msgstr "Clear usage…"
 
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Close"
@@ -1881,6 +1896,10 @@ msgstr "Could not download update"
 msgid "Could not install update"
 msgstr "Could not install update"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+msgstr "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Could not reach OpenRouter."
 msgstr "Could not reach OpenRouter."
@@ -1916,13 +1935,6 @@ msgstr "Could not start"
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Could not stop"
 msgstr "Could not stop"
-
-#. The Council page: one question put to several models, which answer, review each other and get a verdict.
-#. The room switch: the Council page, one question put to several models (ADR-0177).
-#: src/renderer/src/components/AppShell.tsx
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Council"
-msgstr "Council"
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Counted, so the next start sees it"
@@ -2122,6 +2134,7 @@ msgid "done"
 msgstr "done"
 
 #. An Omarchy setup piece that is set up
+#. Closes the list of threads a Council question can come from
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
@@ -2184,6 +2197,10 @@ msgstr "Draw the days as"
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "Each bar is one second of the last minute; taller means main was blocked longer."
 msgstr "Each bar is one second of the last minute; taller means main was blocked longer."
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person."
+msgstr "Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person."
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Each model, {valuesWhen}"
@@ -2250,6 +2267,10 @@ msgstr "Enter your OpenRouter API key first."
 msgid "Esc stops it"
 msgstr "Esc stops it"
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Every product event"
+msgstr "Every product event"
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Every step after this one can be skipped and finished later in Settings."
 msgstr "Every step after this one can be skipped and finished later in Settings."
@@ -2302,6 +2323,10 @@ msgstr "Fastest: thinking off, {time} s."
 msgid "Favourites: {liked}."
 msgstr "Favourites: {liked}."
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
+msgstr "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Files Watcher changed"
 msgstr "Files Watcher changed"
@@ -2309,6 +2334,10 @@ msgstr "Files Watcher changed"
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Filter threads"
 msgstr "Filter threads"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Find a thread"
+msgstr "Find a thread"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Findings: {found}."
@@ -2384,6 +2413,8 @@ msgstr "freezes over 100 ms"
 msgid "French"
 msgstr "French"
 
+#. The thread a Council question comes from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "From"
 msgstr "From"
@@ -2453,6 +2484,11 @@ msgstr "Go to the permission from {title} in this conversation"
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "Go to the question from {title} in this conversation"
 msgstr "Go to the question from {title} in this conversation"
+
+#. On the product events notice: keeps them on and closes the notice.
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Got it"
+msgstr "Got it"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Grok subscription"
@@ -2759,6 +2795,10 @@ msgstr "It is in the box below, not sent."
 #: src/renderer/src/watcher/MoveSuggestion.tsx
 msgid "It last worked {0} and is between turns."
 msgstr "It last worked {0} and is between turns."
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys."
+msgstr "It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys."
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions."
@@ -3509,6 +3549,10 @@ msgstr "No other threads yet. Threads you or Watcher start show here."
 msgid "No outside research: the panelists work from the snapshot and the conversation."
 msgstr "No outside research: the panelists work from the snapshot and the conversation."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No outside research: the panelists work from the thread's folder and the conversation."
+msgstr "No outside research: the panelists work from the thread's folder and the conversation."
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "No preference"
 msgstr "No preference"
@@ -3554,8 +3598,8 @@ msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans 
 msgstr "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "No Sotto account, no telemetry"
-msgstr "No Sotto account, no telemetry"
+msgid "No Sotto account. Product events are on until you turn them off in Settings"
+msgstr "No Sotto account. Product events are on until you turn them off in Settings"
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "No speech model chosen"
@@ -3593,6 +3637,10 @@ msgstr "No thread can move to {named} now"
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "No thread matches “{typed}”."
 msgstr "No thread matches “{typed}”."
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No thread matches."
+msgstr "No thread matches."
 
 #: src/renderer/src/features/usage/UsageCharts.tsx
 msgid "No token counts in this range"
@@ -3866,6 +3914,14 @@ msgstr "On {modelName}, with your own {accountProvider} account."
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "On {where}: <0>{left}%</0> left, {windowName} · {age}"
 msgstr "On {where}: <0>{left}%</0> left, {windowName} · {age}"
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Once per start, for each account signed in. It links one person’s computers."
+msgstr "Once per start, for each account signed in. It links one person’s computers."
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Once per start. It counts active installs by version and system."
+msgstr "Once per start. It counts active installs by version and system."
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "One line at the end of ~/.config/hypr/bindings.lua, after a backup copy."
@@ -4293,6 +4349,10 @@ msgstr "Previous microphone (unavailable)"
 msgid "Privacy"
 msgstr "Privacy"
 
+#: src/renderer/src/App.tsx
+msgid "Product events are off. Sotto sends nothing."
+msgstr "Product events are off. Sotto sends nothing."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Project: {scope}"
 msgstr "Project: {scope}"
@@ -4462,6 +4522,10 @@ msgstr "Read {name} limits again"
 msgid "Read again"
 msgstr "Read again"
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Read every field on the docs page"
+msgstr "Read every field on the docs page"
+
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Read it"
 msgstr "Read it"
@@ -4527,6 +4591,10 @@ msgstr "reading the conversation"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Reading the conversation"
 msgstr "Reading the conversation"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Reading the Councils…"
+msgstr "Reading the Councils…"
 
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "reading the other answers"
@@ -4713,6 +4781,10 @@ msgstr "Research"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Research outside the snapshot"
 msgstr "Research outside the snapshot"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Research outside the thread's folder"
+msgstr "Research outside the thread's folder"
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Reset safely"
@@ -4901,6 +4973,10 @@ msgstr "Search transcripts"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Second kind"
 msgstr "Second kind"
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "See every event"
+msgstr "See every event"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Send"
@@ -5344,8 +5420,8 @@ msgid "Sotto could not read phone access. Nothing was changed. You can turn it o
 msgstr "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Sotto could not read the Councils. Nothing was changed. Open the page again."
-msgstr "Sotto could not read the Councils. Nothing was changed. Open the page again."
+msgid "Sotto could not read the Councils. Nothing was changed. Open the Council again."
+msgstr "Sotto could not read the Councils. Nothing was changed. Open the Council again."
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them."
@@ -5367,6 +5443,10 @@ msgstr "Sotto could not read the saved OpenRouter key. Nothing was deleted. Quit
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 msgstr "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read the threads. Reopen the popup and try again."
+msgstr "Sotto could not read the threads. Reopen the popup and try again."
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
 msgstr "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
@@ -5374,6 +5454,10 @@ msgstr "Sotto could not read this computer’s load just now. Watcher treats it 
 #: src/renderer/src/watcher/watcherRoom.tsx
 msgid "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
 msgstr "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read Watcher’s room. Reopen the popup and try again."
+msgstr "Sotto could not read Watcher’s room. Reopen the popup and try again."
 
 #: src/renderer/src/features/onboarding/ComputersStep.tsx
 msgid "Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones."
@@ -5482,6 +5566,10 @@ msgstr "Sotto lost the answer, so the stop may or may not have reached these thr
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto never updates itself on Linux. New versions come through pacman."
 msgstr "Sotto never updates itself on Linux. New versions come through pacman."
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Sotto now sends product events"
+msgstr "Sotto now sends product events"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Sotto opens the microphone only while you dictate or run this test."
@@ -6152,6 +6240,14 @@ msgstr "The panelists research outside the snapshot with their own tools: {reaso
 msgid "The panelists research outside the snapshot with their own tools."
 msgstr "The panelists research outside the snapshot with their own tools."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools: {reason}"
+msgstr "The panelists research outside the thread's folder with their own tools: {reason}"
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools."
+msgstr "The panelists research outside the thread's folder with their own tools."
+
 #: src/renderer/src/features/council/CouncilSeats.tsx
 msgid "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
 msgstr "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
@@ -6321,8 +6417,6 @@ msgstr "This Watcher is new, so there is nothing to hand over yet."
 msgid "This work wasn't matched to a model."
 msgstr "This work wasn't matched to a model."
 
-#. The thread a Council question comes from
-#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr "Thread"
@@ -6366,6 +6460,10 @@ msgstr "to"
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "to do"
 msgstr "to do"
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
+msgstr "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
 
 #: src/renderer/src/features/dictate/journalFacts.ts
 #: src/renderer/src/features/dictate/JournalStats.tsx
@@ -6538,6 +6636,11 @@ msgstr "Try microphone again"
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Trying again…"
 msgstr "Trying again…"
+
+#. On the product events notice: turns them off.
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Turn off"
+msgstr "Turn off"
 
 #: src/renderer/src/platformCopy.ts
 msgid "Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again."
@@ -7107,6 +7210,10 @@ msgstr "Working in a snapshot of {branch} at {commit}, with its uncommitted chan
 msgid "Working in a snapshot of {branch} at {commit}."
 msgstr "Working in a snapshot of {branch} at {commit}."
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
+msgstr "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Working preferences"
@@ -7205,6 +7312,10 @@ msgstr "You set this."
 msgid "You skipped {title}’s question."
 msgstr "You skipped {title}’s question."
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."
+msgstr "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You told Sotto"
 msgstr "You told Sotto"
@@ -7220,6 +7331,10 @@ msgstr "You turned it off on this computer. Connect it to use it here."
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
 msgstr "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Your answer could not be saved, and nothing was sent. Try again."
+msgstr "Your answer could not be saved, and nothing was sent. Try again."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Your audio never leaves this computer"

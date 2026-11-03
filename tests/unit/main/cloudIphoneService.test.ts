@@ -76,7 +76,7 @@ function fakeProvider(): FakeProvider {
 const cleanup: (() => Promise<void> | void)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 
-async function setup(options: { capMinutes?: number; idleMinutes?: number; onProvider?: (provider: FakeProvider) => void; onEvent?: (event: CloudEvent) => void } = {}) {
+async function setup(options: { featureUsed?: (feature: 'test-iphone') => void; capMinutes?: number; idleMinutes?: number; onProvider?: (provider: FakeProvider) => void; onEvent?: (event: CloudEvent) => void } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'cloud-iphone-service-'))
   cleanup.push(() => rm(root, { recursive: true, force: true }))
   const credentials = await testCredentials(root, { mode: 'plain' })
@@ -91,6 +91,7 @@ async function setup(options: { capMinutes?: number; idleMinutes?: number; onPro
   const providers: FakeProvider[] = []
   const dependencies: CloudIphoneDependencies = {
     files, credentials, ledger,
+    ...(options.featureUsed ? { featureUsed: options.featureUsed } : {}),
     settings: () => settingsState,
     threadTitle: () => 'Test thread',
     getWindow: () => null,
@@ -209,6 +210,25 @@ describe('CloudIphoneService', () => {
     const answered = await service.answer({ threadId, workspaceId, sessionId: session.id, allow: false })
     expect(answered.ok && answered.value.status).toBe('denied')
     expect(providers).toHaveLength(0)
+  })
+
+  it('counts the test iPhone as used once a cloud one passes its checks, not when the user is asked or it is refused', async () => {
+    const featureUsed = vi.fn()
+    const first = await setup({ featureUsed })
+    await first.credentials.set('runcloud', 'rc_live_key')
+    const asked = await openSession(first.service, first.files, first.root)
+    expect(featureUsed).not.toHaveBeenCalled()
+    await first.service.answer({ threadId: asked.threadId, workspaceId: asked.workspaceId, sessionId: asked.session.id, allow: true })
+    await vi.waitFor(() => expect(featureUsed).toHaveBeenCalledExactlyOnceWith('test-iphone'))
+
+    const refused = vi.fn()
+    const second = await setup({ featureUsed: refused, capMinutes: 750 })
+    await second.credentials.set('runcloud', 'rc_live_key')
+    const capped = await openSession(second.service, second.files, second.root)
+    second.setCap(0)
+    await second.service.answer({ threadId: capped.threadId, workspaceId: capped.workspaceId, sessionId: capped.session.id, allow: true })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(refused).not.toHaveBeenCalled()
   })
 
   it('answering allow goes starting then active, uploads once, starts once, and records the ledger', async () => {

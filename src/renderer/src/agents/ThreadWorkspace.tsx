@@ -4,7 +4,8 @@ import { ToolsPanel } from '../tools/ToolsPanel'
 import { hideDrawerFromInside, PaneTerminalDrawer } from '../tools/PaneTerminalDrawer'
 import { usePaneTerminalShortcut } from '../tools/PaneTerminalToggle'
 import { paneTerminalTarget } from '../tools/paneTerminalShortcut'
-import { paneTerminalChromeStore } from '../tools/paneTerminalStore'
+import { paneTerminalChromeStore, shownView } from '../tools/paneTerminalStore'
+import { useCouncilEnabled } from '../features/council/useCouncils'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from './AgentContext'
 import { ThreadsView, type ThreadPaneSlot, type ThreadPaneSlotProps, type ThreadToolsSlot, type ThreadsViewProps } from './ThreadsView'
@@ -55,8 +56,10 @@ export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateCon
 
   // Ctrl+J (Cmd+J on a Mac) toggles the drawer of the pane it lands in, or the selected thread's pane when that
   // is on screen, including from inside the drawer's own terminal, which passes the chord to the page. Opened by
-  // keyboard, focus moves into the terminal once it is ready; hidden from inside it, focus returns to the pane.
+  // keyboard, focus moves into the terminal once it is ready; hidden from inside it, focus returns to the pane. It presses
+  // the Terminal drawer button, so a drawer showing the Council shows its shells instead (ADR-0177).
   const shortcut = usePaneTerminalShortcut()
+  const council = useCouncilEnabled()
   const selectedThreadId = state?.activeThreadId
   useEffect(() => {
     if (shortcut === null) return
@@ -64,17 +67,18 @@ export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateCon
       const threadId = paneTerminalTarget(event, shortcut, selectedThreadId)
       if (threadId === null) return
       event.preventDefault()
-      if (paneTerminalChromeStore.get(threadId).open) {
+      const drawer = paneTerminalChromeStore.get(threadId)
+      if (drawer.open && shownView(drawer, council) === 'terminal') {
         if (document.activeElement?.closest('.pane-terminal') != null) hideDrawerFromInside(threadId)
         else paneTerminalChromeStore.setOpen(threadId, false)
       } else {
         paneTerminalChromeStore.requestFocus(threadId)
-        paneTerminalChromeStore.setOpen(threadId, true)
+        paneTerminalChromeStore.show(threadId, 'terminal')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shortcut, selectedThreadId])
+  }, [shortcut, selectedThreadId, council])
 
   // Tools and each pane's Terminal drawer are rows of the pane's ··· menu (ADR-0163).
   return <ThreadsView {...props} tools={tools} paneTools paneTerminal={paneTerminal}

@@ -589,6 +589,7 @@ private struct WatcherConversationPane: View {
                 .padding(.bottom, WatcherReaderPlace.endGap)
                 .readingWidth()
                 .frame(maxWidth: .infinity, minHeight: visible, alignment: .topLeading)
+                .tapPutsAwayKeyboard { [model, hostID] in !model.watcherBoxHoldsAnything(hostID) }
                 .background(reader { frame in
                     // A change of the page's height (new words, a card or a follow-up arriving or leaving, anywhere on
                     // the page) puts the card the reader is on back where they left it. Only a frame the page scrolled
@@ -1443,6 +1444,7 @@ private struct WatcherDock: View {
     @State private var sent = 0
     @State private var stopped = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// Watched for which box listens, which changes only as dictation starts and stops.
     @ObservedObject private var dictation = Dictation.shared
 
@@ -1524,7 +1526,6 @@ private struct WatcherDock: View {
 
     private var field: some View {
         let box = PhotoBox.watcher(hostID: hostID)
-        let photos = model.photos(box), files = model.files(box)
         // Locked from the press of a message with photos or files until Watcher answers, so nothing typed meanwhile joins it.
         let preparing = model.preparingSends.contains(box.id)
         let working = model.watcherPage(hostID)?.working == true
@@ -1532,14 +1533,19 @@ private struct WatcherDock: View {
         let key = model.watcherDraftKey(hostID)
         let listening = dictation.key == key
         // Send is always there, as in a thread's reply box, and lights once the box holds something.
-        let written = !(model.drafts[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !photos.isEmpty || !files.isEmpty
+        let written = model.watcherBoxHoldsAnything(hostID)
+        // Small by a thread's box's rule (ADR-0184): Watcher has a conversation or is working, nothing is being written,
+        // and no line over the box speaks of the settings.
+        let page = model.watcherPage(hostID)
+        let small = (page?.conversation.messages.isEmpty == false || working) && !DebugFlags.replyBoxStaysFull && !typeSize.isAccessibilitySize && !focused && !written
+            && !listening && !preparing && model.watcherPermissionInForce(hostID) == nil && page?.nextTurnOptions == nil
         // The card a thread's reply box is (Zach's pick A, November 1, 2026): photos and files above the words, and the
-        // row under them with the +, Watcher's settings as one pill, the mic and Send.
-        return ComposerCard(focus: { focused = true }) {
+        // row under them with the +, Watcher's settings as one pill, the mic and Send. The trace round it at the top level
+        // Watcher's model offers: Max on Claude, where Ultracode is never Watcher's.
+        return ComposerCard(small: small, lit: model.offersWatcherManage(hostID) && model.watcherAtTopEffort(hostID), focus: { focused = true }) {
             DraftAttachments(box: box)
         } words: {
-            words(box: box, working: working, preparing: preparing)
+            words(box: box, working: working, preparing: preparing, small: small)
         } plus: {
             if listening { ListeningLine() } else { AttachPhotosButton(box: box) }
         } pill: {
@@ -1547,18 +1553,16 @@ private struct WatcherDock: View {
         } trailing: {
             trailing(key: key, stops: stops, ready: written || preparing, preparing: preparing)
         }
-        // The trace round the card at the top level Watcher's model offers: Max on Claude, where Ultracode is never Watcher's.
-        .effortTrace(model.offersWatcherManage(hostID) && model.watcherAtTopEffort(hostID), radius: ComposerMetrics.radius)
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: stops)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
     }
 
-    private func words(box: PhotoBox, working: Bool, preparing: Bool) -> some View {
+    private func words(box: PhotoBox, working: Bool, preparing: Bool, small: Bool) -> some View {
         TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
             .font(.sotto(.body))
             .foregroundStyle(Palette.ink)
-            .lineLimit(1...6)
+            .lineLimit(small ? 1...1 : 1...6)
             .focused($focused)
             // Words added from a reply put the caret after them, here (ADR-0129).
             .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }

@@ -1950,6 +1950,14 @@ msgstr ""
 msgid "Ask for approval"
 msgstr ""
 
+#: src/renderer/src/agents/CouncilPress.tsx
+msgid "Ask the Council"
+msgstr ""
+
+#: src/renderer/src/agents/CouncilPress.tsx
+msgid "Ask the Council about this reply"
+msgstr ""
+
 #. A tip under Watcher's working line.
 #: src/renderer/src/agents/tips.tsx
 msgid "Ask Watcher to start a thread for a job. It follows the thread and tells you when it needs you."
@@ -4232,6 +4240,11 @@ msgstr ""
 #. {branch} is a Git branch name.
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Folder removed. Sending to this thread puts it back on {branch}."
+msgstr ""
+
+#. {commit} is the start of a Git commit ID.
+#: src/renderer/src/agents/ThreadWorkingCopy.tsx
+msgid "Folder removed. Sending to this thread puts it back on commit {commit}."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx

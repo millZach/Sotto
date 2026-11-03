@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CouncilBridge, CouncilView } from '../../../../shared/council'
+import { useOwlFeature } from '../../state/owlFeature'
 
 /**
- * The Councils as main keeps them (ADR-0177), read when the page opens and again whenever main says one changed. Main
+ * Whether the Council exists in this window: its Owl feature is on and main gave the window its bridge, which needs
+ * this computer's threads. It then has a button in each pane's header and a tab on the pane's drawer (ADR-0177).
+ */
+export function useCouncilEnabled(): boolean {
+  return useOwlFeature('council') && window.sotto?.council !== undefined
+}
+
+/**
+ * The Councils as main keeps them (ADR-0177), read when the Council's tab opens and again whenever main says one changed. Main
  * tells only identities, so a burst of changes is read once.
  */
 export function useCouncils(bridge: CouncilBridge | undefined): { readonly councils: readonly CouncilView[] | null; readonly failed: boolean; readonly read: () => void } {

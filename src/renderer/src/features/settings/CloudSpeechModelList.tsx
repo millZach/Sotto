@@ -93,6 +93,11 @@ export function CloudSpeechModelList({ choice, onChoose, onList }: {
       <p className="tt-paragraph">{t`OpenRouter’s speech models could not be read. Nothing was changed.`}</p>
       <Button variant="secondary" onClick={read}>{t`Try again`}</Button>
     </div>
+  } else if (models.length === 0) {
+    body = <div className="cloud-models__note" role="status">
+      <p className="tt-paragraph">{t`No speech models were returned.`}</p>
+      <Button variant="secondary" onClick={read}>{t`Try again`}</Button>
+    </div>
   } else {
     const gone = choice !== null && chosenAt < 0
     body = <>

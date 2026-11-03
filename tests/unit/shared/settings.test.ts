@@ -722,8 +722,8 @@ describe('settings', () => {
     },
   )
 
-  it.each([30, 60, 120, 300] as const)(
-    'accepts the supported %i-second recording limit',
+  it.each([30, 60, 120, 180, 300, 600, 900, 1800, null] as const)(
+    'accepts the supported %s-second recording limit',
     (maxRecordingSeconds) => {
       expect(parseSettings({ maxRecordingSeconds }).maxRecordingSeconds).toBe(maxRecordingSeconds)
     },

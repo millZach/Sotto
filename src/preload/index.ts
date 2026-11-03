@@ -1,6 +1,6 @@
 import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type HostsState } from '../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD, type HostDeviceList, type TailscaleConnectOutcome, type TailscaleSummary } from '../shared/hostDevices'
-import { HOST_OPENCODE_ANSWERS, HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostSignInRequestSchema, type HostProviderActionResult, type ProviderSignInView } from '../shared/hostProviders'
+import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
@@ -49,6 +49,7 @@ import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationOpeningSchema, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
+import { PRODUCT_EVENT_STATE, PRODUCT_EVENT_TOOL_OPENED, type ProductEventsBridge, type ProductEventsState } from '../shared/productEvents'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -467,6 +468,7 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) }, state: () => renderer.invoke(PRODUCT_EVENT_STATE) as Promise<ProductEventsState | null> }),
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
       refresh: query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),
@@ -595,13 +597,14 @@ export function createSottoBridge(
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
       devices: () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,
       connectTailscale: () => renderer.invoke(HOSTS_TAILSCALE_CONNECT) as Promise<TailscaleConnectOutcome>, openTailscaleDownload: () => renderer.invoke(HOSTS_TAILSCALE_DOWNLOAD) as Promise<void>,
-      providerAction: action => renderer.invoke(HOSTS_PROVIDER_ACTION, hostProviderActionSchema.parse(action)) as Promise<HostProviderActionResult>,
-      updateClients: request => renderer.invoke(HOSTS_UPDATE_CLIENTS, hostClientUpdateRequestSchema.parse(request)) as Promise<HostProviderActionResult>,
-      signIn: request => renderer.invoke(HOSTS_SIGN_IN, hostSignInRequestSchema.parse(request)) as Promise<ProviderSignInView | null>,
+      providerAction: action => invokeParsed(renderer, HOSTS_PROVIDER_ACTION, hostProviderActionResultSchema, hostProviderActionSchema.parse(action)),
+      updateClients: request => invokeParsed(renderer, HOSTS_UPDATE_CLIENTS, hostProviderActionResultSchema, hostClientUpdateRequestSchema.parse(request)),
+      signIn: request => invokeParsed(renderer, HOSTS_SIGN_IN, providerSignInResultSchema, hostSignInRequestSchema.parse(request)),
       // A host's OpenCode signed in to model sources from this computer (#1107): only while OpenCode's Owl feature is on.
       ...(opencodeHostsEnabled ? { opencodeSignIn: request => {
         const parsed = hostOpenCodeSignInRequestSchema.parse(request)
-        return invokeParsed(renderer, HOSTS_OPENCODE_SIGN_IN, HOST_OPENCODE_ANSWERS[parsed.call.action] as z.ZodType<unknown>, parsed) as never
+        const action = request.call.action
+        return renderer.invoke(HOSTS_OPENCODE_SIGN_IN, parsed).then(answer => parseHostOpenCodeAnswer(action, answer))
       } } : {}) }),
     phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
     localApps: Object.freeze<import('../shared/localApps').LocalAppsBridge>({ get: () => renderer.invoke(LOCAL_APPS_GET) as Promise<LocalAppsState>, onChanged: listener => subscribe(renderer, LOCAL_APPS_CHANGED, trustedState<LocalAppsState>('phase'), listener) }),

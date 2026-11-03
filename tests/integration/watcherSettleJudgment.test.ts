@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { toldAtStart } from '../../src/main/agents/babysitNews'
+import { GitHubRateLimited } from '../../src/main/agents/github'
 import type { AgentThread } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -88,8 +89,8 @@ it('never settles a finished watched thread by itself, whatever the setting says
 
 it('settles without asking while the setting is on, and stops watching what it settled', async () => {
   const f = await fixture(), target = await f.watched()
-  await f.endTurn(target.threadId)
   const requestId = await f.request()
+  await f.endTurn(target.threadId)
   // The look that ends a settled thread's watch runs at once here, and waits for this settle to finish first.
   expect(await f.settle(requestId, target)).toMatchObject({ status: 'ok' })
   expect(f.settled(target.threadId)).toBe(true)
@@ -98,8 +99,8 @@ it('settles without asking while the setting is on, and stops watching what it s
 
 it('refuses a settle the user has not agreed to while the setting is off, and takes one they agreed to', async () => {
   const f = await fixture(false), target = await f.watched()
-  await f.endTurn(target.threadId)
   const requestId = await f.request()
+  await f.endTurn(target.threadId)
   const refused = await f.settle(requestId, target)
   expect(refused).toMatchObject({ status: 'refused', code: 'ASK_USER_FIRST' })
   expect(refused.message).toContain('question card')
@@ -123,42 +124,46 @@ it('says in read_state whether Watcher may settle without asking, and lists no p
   expect(off).not.toHaveProperty('pendingSettles')
 })
 
-it('refuses to settle a thread whose linked pull request is open, and settles it once that pull request merges', async () => {
+it.each(['merged', 'closed'] as const)('without a GitHub reader, refuses recorded open and settles recorded %s without a stale-read retry loop', async state => {
   const f = await fixture(), target = await f.watched()
   const pullRequest = { url: 'https://github.com/example/synthetic/pull/7', number: 7, title: 'Synthetic change', state: 'open' }
   f.links.linkPullRequestRecord(target.threadId, pullRequest, 'agent')
-  await f.endTurn(target.threadId)
   const requestId = await f.request()
+  await f.endTurn(target.threadId)
   // Agreeing does not lift what Sotto can see: an open pull request holds the settle either way.
   const refused = await f.settle(requestId, target, { userAgreed: true })
-  expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', retryable: false })
   expect(refused.message).toContain(pullRequest.url)
-  f.links.linkPullRequestRecord(target.threadId, { ...pullRequest, state: 'merged' }, 'agent')
+  expect(refused.message).toContain(target.threadId)
+  expect(refused.message).toContain('Wait for it to merge or close')
+  expect(refused.message).not.toMatch(/stale-open|Read it again|Try again/)
+  expect(await f.settle(requestId, target)).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', retryable: false })
+  expect(f.settled(target.threadId)).toBe(false)
+  f.links.linkPullRequestRecord(target.threadId, { ...pullRequest, state }, 'agent')
   await f.emit()
   expect(await f.settle(requestId, target)).toMatchObject({ status: 'ok' })
 })
 
 it('refuses to settle a thread that babysits a pull request it never linked, until Restart stopped threads retires babysitting', async () => {
   for (const retired of [false, true]) {
-    const f = await fixture(true, retired), target = await f.watched()
+    const f = await fixture(true, retired), target = await f.watched(), requestId = await f.request()
     // Babysitting is Sotto's own record on the thread; one started on a pull request another agent opened is no link.
     const startedAt = new Date().toISOString()
     await f.workspace.host.changeBabysitting(target.threadId, () => [{ url: 'https://github.com/example/synthetic/pull/9', number: 9,
       startedBy: 'agent', startedAt, told: toldAtStart(startedAt) }])
     await f.endTurn(target.threadId)
-    expect(await f.settle(await f.request(), target)).toMatchObject(retired ? { status: 'ok' } : { status: 'refused', code: 'THREAD_BUSY' })
+    expect(await f.settle(requestId, target)).toMatchObject(retired ? { status: 'ok' } : { status: 'refused', code: 'THREAD_BUSY' })
   }
 })
 
 it('refuses to settle a thread while a thread it delegated to has an open pull request', async () => {
-  const f = await fixture(), parent = await f.watched(), child = await f.watched()
+  const f = await fixture(), parent = await f.watched(), child = await f.watched(), requestId = await f.request()
   await f.workspace.host.setDelegatedBy(child.threadId, parent.threadId)
   expect(await f.service.unwatchThread({ target: child }, undefined, 'watcher')).toMatchObject({ status: 'ok' })
   const pullRequest = { url: 'https://github.com/example/synthetic/pull/11', number: 11, title: 'Synthetic delegated change', state: 'open' }
   f.links.linkPullRequestRecord(child.threadId, pullRequest, 'agent')
   await f.endTurn(child.threadId); await f.endTurn(parent.threadId)
   await vi.waitFor(() => expect(f.thread(child.threadId).delegatedBy).toBe(parent.threadId))
-  const requestId = await f.request()
   expect(await f.settle(requestId, parent)).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
   f.links.linkPullRequestRecord(child.threadId, { ...pullRequest, state: 'closed' }, 'agent')
   await f.emit()
@@ -182,14 +187,16 @@ describe('a settle asks GitHub before an open pull request holds it (#2019)', ()
     await vi.waitFor(() => expect(f.thread(target.threadId).worktree?.git?.pullRequest?.state).toBe('merged'))
   })
 
-  it('still refuses a pull request GitHub says is open, and says so in the same words', async () => {
+  it('names a pull request GitHub confirms open distinctly from an unread or stale record', async () => {
     const ask = vi.fn(async () => answer('open'))
     const f = await fixture(true, false, ask), target = await f.watched(), requestId = await f.request()
     await f.branchRead(target.threadId, pullRequest)
     await f.endTurn(target.threadId)
     const refused = await f.settle(requestId, target)
     expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
-    expect(refused.message).toBe(`This thread has an open pull request, ${url}. Wait for it to merge or close before settling. Nothing was settled.`)
+    expect(refused.message).toContain('confirmed-open')
+    expect(refused.message).toContain(url)
+    expect(refused.message).toContain(target.threadId)
     expect(f.settled(target.threadId)).toBe(false)
   })
 
@@ -200,8 +207,24 @@ describe('a settle asks GitHub before an open pull request holds it (#2019)', ()
     await f.endTurn(target.threadId)
     const refused = await f.settle(requestId, target) as { status: string; code?: string; message?: string; retryable?: boolean }
     expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', retryable: true })
-    expect(refused.message).toBe(`Sotto could not read this thread’s pull request from GitHub, ${url}, and last saw it open. Nothing was settled. Try again in a minute.`)
+    expect(refused.message).toContain('unread pull request')
+    expect(refused.message).toContain(url)
+    expect(refused.message).not.toContain('confirmed-open')
+    expect(refused.message).not.toContain('in a minute')
     expect(await f.settle(requestId, target)).toMatchObject({ status: 'ok' })
+  })
+
+  it('keeps GitHub’s one-hour rate-limit retry time in an unread refusal', async () => {
+    const ask = vi.fn(async () => { throw new GitHubRateLimited(Date.now() + 60 * 60_000) })
+    const f = await fixture(true, false, ask), target = await f.watched(), requestId = await f.request()
+    f.links.linkPullRequestRecord(target.threadId, { ...pullRequest }, 'agent')
+    await f.endTurn(target.threadId)
+    const refused = await f.settle(requestId, target)
+    expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', retryable: true })
+    expect(refused.message).toContain('unread pull request')
+    expect(refused.message).toContain('Try again in about an hour.')
+    expect(refused.message).not.toContain('in a minute')
+    expect(f.settled(target.threadId)).toBe(false)
   })
 
   it('asks once about a pull request that is both linked and the branch’s own, and lets one GitHub says closed through', async () => {
@@ -242,9 +265,32 @@ describe('a settle asks GitHub before an open pull request holds it (#2019)', ()
     const refused = await f.settle(requestId, parent)
     expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
     expect(refused.message).toContain(childUrl)
+    expect(refused.message).toContain(`Delegated thread “Synthetic worker” (${child.threadId})`)
     ask.mockImplementation(async () => answer('merged'))
     expect(await f.settle(requestId, parent)).toMatchObject({ status: 'ok' })
   })
+})
+
+it.each(['request', 'background', 'unknown', 'monitor'] as const)('names the blocking descendant and exact %s field', async field => {
+  const f = await fixture(), parent = await f.watched(), child = await f.watched(), requestId = await f.request()
+  await f.workspace.host.setDelegatedBy(child.threadId, parent.threadId)
+  await f.endTurn(child.threadId); await f.endTurn(parent.threadId)
+  const current = f.thread(child.threadId)
+  const snapshot = f.control.watcherSnapshot.bind(f.control)
+  const fields: Partial<AgentThread> = field === 'request' ? { requests: [{ id: 'synthetic-card', kind: 'question', text: 'Synthetic question', options: [] }] }
+    : field === 'background' ? { backgroundWork: [{ id: 'synthetic-task', type: 'command', label: 'Synthetic task', startedAt: new Date().toISOString() }] }
+      : field === 'unknown' ? { subagentSummary: { total: 1, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 1 } }
+        : { monitoring: [{ id: 'synthetic-monitor', label: 'Synthetic monitor' }] }
+  // Keep the fixture's provider read real; put the field on the coordinator view at the check, as live adapters do.
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const read = snapshot()
+    return { ...read, threads: read.threads.map(thread => thread.id === child.threadId ? { ...current, ...fields } : thread) }
+  })
+  const refused = await f.settle(requestId, parent)
+  expect(refused).toMatchObject({ status: 'refused', code: 'BACKGROUND_WORK_RUNNING' })
+  expect(refused.message).toContain(child.threadId)
+  expect(refused.message).toContain(field === 'request' ? 'requests[synthetic-card].kind=question' : field === 'background' ? 'backgroundWork[synthetic-task]'
+    : field === 'unknown' ? 'subagentSummary.unknown=1' : 'monitoring[synthetic-monitor]')
 })
 
 it('stops watching a thread the user settles, and restoring it does not watch it again (October 28, 2026)', async () => {

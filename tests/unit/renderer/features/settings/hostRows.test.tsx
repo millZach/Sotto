@@ -1,6 +1,6 @@
 import { REMOTE, host, fixture, openAddHost, rowMeta, settings } from '../../../../fixtures/renderer/hostsSettingsHarness'
 import React from 'react'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 import { HostsSettings } from '../../../../../src/renderer/src/features/settings/HostsSettings'
@@ -8,6 +8,20 @@ import { HostQuestionDialog } from '../../../../../src/renderer/src/features/set
 import { ThreadWorkingCopy } from '../../../../../src/renderer/src/agents/ThreadWorkingCopy'
 import type { HostStatus } from '../../../../../src/shared/hosts'
 import { hostVersionMismatch } from '../../../../../src/shared/hostProtocol'
+import { deferred } from '../../../../fixtures/deferred'
+import type { HostsState } from '../../../../../src/shared/hosts'
+
+it('shows the host read before the empty list and replaces it on failure', async () => {
+  const pending = deferred<HostsState>()
+  const { bridge } = fixture([])
+  settings({ ...bridge, get: () => pending.promise })
+  expect(screen.getByText('Reading hosts…')).toHaveAttribute('role', 'status')
+  expect(screen.queryByText('No remote hosts yet.')).toBeNull()
+  await act(async () => { pending.reject(new Error('ENOENT /private/hosts.json')) })
+  expect(screen.queryByText('Reading hosts…')).toBeNull()
+  expect(document.body).not.toHaveTextContent('/private/')
+  expect(screen.getByText('Hosts could not be read. Reopen Settings and try again.')).toBeInTheDocument()
+})
 
 it('shows a failed local host save beside the switch and clears it on retry', async () => {
   const change = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
