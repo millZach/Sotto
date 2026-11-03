@@ -19,7 +19,7 @@ import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, type CheckQueue } fr
 import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
-  DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
+  DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
   delegationAskedSchema, delegationHostHoldSchema, CHECK_REPLY_EXCERPT_MAX, type CheckReplyExcerpt, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
@@ -656,7 +656,7 @@ export class DelegationService {
       newsText: (threadId, news) => this.newsText(threadId, news),
       newsReady: (threadId, news) => {
         const swarm = this.swarmByLead.get(threadId)
-        if (!this.options.swarms || !swarm || !news.some(item => item.items.some(part => part.delegationId === swarm.id
+        if (!this.options.swarms || !swarm || !news.some(item => item.swarmId === swarm.id || item.items.some(part => part.delegationId === swarm.id
           || this.swarmByDelegation.get(part.delegationId)?.swarm === swarm))) return true
         if (swarm.stopped || !swarmReady(swarm)) return false
         return this.options.swarms.admission.join(`swarm-synthesis:${swarm.id}`, THIS_COMPUTER,
@@ -935,9 +935,12 @@ export class DelegationService {
         ...(lead.reasoningEffort ? { effort: lead.reasoningEffort } : {}),
         brief: prompts![member.index], retry_key: member.key, wait_seconds: 0, working_copy: 'independent',
         title: `${input.title ?? DELEGATION_WORK_TITLES[input.work]} · angle ${member.index + 1}`.slice(0, 120) }, { waitMs: 0 }) as
-        { readonly status: string; readonly delegation?: DelegationRead }
-      if (answer.status !== 'ok' || !answer.delegation?.thread) member.state = 'refused'
-      else {
+        DelegationRefusal | { readonly status: 'ok'; readonly delegation: DelegationRead }
+      if (answer.status === 'refused') {
+        member.state = 'refused'; member.delegationId = answer.delegation; member.refusal = answer.message.slice(0, REFUSAL_MESSAGE_MAX)
+      } else if (!answer.delegation.thread) {
+        member.state = 'refused'; member.delegationId = answer.delegation.id; member.refusal = answer.delegation.note.slice(0, REFUSAL_MESSAGE_MAX)
+      } else {
         member.threadId = answer.delegation.thread; member.delegationId = answer.delegation.id
         this.indexSwarm(swarm)
         this.syncSwarmMember(member.delegationId)
@@ -972,7 +975,7 @@ export class DelegationService {
       if (!lead) return
       if (this.swarmOutcome(lead.id, lead)?.messageId) {
         swarm.completionSent = true; this.recoveringSwarmCompletions.delete(swarm.id)
-      } else if (this.options.control.hasQueuedDelegationNews?.(lead.id, new Set(swarm.members.flatMap(member => member.delegationId ? [member.delegationId] : [swarm.id])))) {
+      } else if (this.options.control.hasQueuedDelegationNews?.(lead.id, new Set([swarm.id, ...swarm.members.flatMap(member => member.delegationId ? [member.delegationId] : [])]))) {
         swarm.completionSent = true; swarm.synthesisStarted = true
         return
       } else if (this.options.control.hasPendingThreadWork(lead.id) || isThreadTurnRunning(lead)) return
@@ -993,11 +996,11 @@ export class DelegationService {
       await this.save()
       if (this.closed || swarm.stopped) return
       const records = swarm.members.flatMap(member => { const record = member.delegationId ? this.byId.get(member.delegationId) : undefined; return record ? [record] : [] })
-      const items = records.slice(0, 50).map(record => ({ delegationId: record.id, threadId: record.delegatedThreadId, outcome: this.outcomeOf(record) }))
-      await this.options.control.deliverWakeUp(swarm.leadThreadId!, { source: 'delegation', items: items.length ? items
-        : [{ delegationId: swarm.id, threadId: swarm.leadThreadId!, outcome: 'answered' }] }, { tool: this.options.tool?.(swarm.leadThreadId!) ?? false })
+      const delivered = records.slice(0, DELEGATION_NEWS_MAX)
+      const items = delivered.map(record => ({ delegationId: record.id, threadId: record.delegatedThreadId, outcome: this.outcomeOf(record) }))
+      await this.options.control.deliverWakeUp(swarm.leadThreadId!, { source: 'delegation', swarmId: swarm.id, items }, { tool: this.options.tool?.(swarm.leadThreadId!) ?? false })
       swarm.completionSent = true
-      for (const record of records) record.told = this.outcomeOf(record)
+      for (const record of delivered) record.told = this.outcomeOf(record)
       await this.persist()
     })().catch(() => {
       swarm.completionSent = false; this.recoveringSwarmCompletions.add(swarm.id)
@@ -2300,7 +2303,8 @@ export class DelegationService {
         if (!progress?.messageId) continue
         const synthesis = watcherTurnOutcome({ messageId: progress.messageId, delivery: 'now' }, lead, messageId => isWakeUpOf(lead, messageId))
         if (synthesis && swarmMemberTerminal(synthesis.outcome)) {
-          swarm.synthesisDone = true; this.activeSwarms.delete(swarm.id)
+          if (synthesis.outcome === 'answered') swarm.synthesisDone = true
+          this.activeSwarms.delete(swarm.id)
           this.options.swarms.admission.leave(`swarm-synthesis:${swarm.id}`)
           this.options.swarms.changed?.(swarm)
           void this.persist()
@@ -2420,7 +2424,7 @@ export class DelegationService {
     const swarm = this.swarmByDelegation.get(delegationId)?.swarm
     if (swarm) return
     const lead = this.swarmByLead.get(record.delegatedThreadId)
-    if (lead && !lead.synthesisDone && !lead.stopped) return
+    if (lead && !lead.synthesisDone && !lead.stopped && outcome !== 'failed' && outcome !== 'stopped') return
     const pending = this.untold.get(record.delegatingThreadId) ?? { ids: new Set<string>(), attempts: 0 }
     pending.ids.add(record.id); this.untold.set(record.delegatingThreadId, pending)
     this.scheduleNews()
@@ -2578,7 +2582,11 @@ export class DelegationService {
     }
     const group = this.options.swarms ? this.swarmByLead.get(threadId) : undefined
     const summary = group ? swarmReceipt(group) : undefined
+    const included = new Set(folded.items.map(item => item.delegationId))
+    const omitted = group && swarmReady(group)
+      ? group.members.filter(member => member.delegationId && this.byId.has(member.delegationId) && !included.has(member.delegationId)).length : 0
     return [summary ? `Swarm ${summary.swarmId}: ${summary.note} Read the swarm receipt with read_delegation for every angle, including missing and refused ones. Write the synthesis only after reading their results.` : '',
+      omitted ? `${omitted} angle results omitted from this news. Call read_delegation with delegation: "${group!.id}" for the full receipt, then read those delegations for their results.` : '',
       delegationNewsText(folded, details)].filter(Boolean).join('\n\n')
   }
   private listing(caller: AgentThread, snapshot: AgentHostSnapshot) {

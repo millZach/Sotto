@@ -20,7 +20,7 @@ export function swarmReceipt(swarm: WorkerSwarm): SwarmReceipt | undefined {
   const planned = swarm.members.filter(member => member.state === 'planned').length
   return { swarmId: swarm.id, lead: { thread: swarm.leadThreadId, ...swarm.leadDelegationId ? { delegation: swarm.leadDelegationId } : {} },
     receipts: swarm.members.map(member => ({ index: member.index, state: member.state, ...member.threadId ? { thread: member.threadId } : {},
-      ...member.delegationId ? { delegation: member.delegationId } : {} })), queued, done, failed,
+      ...member.delegationId ? { delegation: member.delegationId } : {}, ...member.refusal ? { refusal: member.refusal } : {} })), queued, done, failed,
     role: { usual: swarm.usual, upTo: swarm.upTo }, costShape: { angles: swarm.count, lead: 1, effort: swarm.effort },
     note: `${done} of ${swarm.count} angles done, ${failed} failed, ${queued} waiting${planned ? `, ${planned} awaiting the lead's angle plan` : ''}. Cost shape: ${swarm.count} × ${swarm.effort ?? 'the role’s'} effort, plus one lead for planning and synthesis. This is not a price quote.`,
   }

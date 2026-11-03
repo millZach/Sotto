@@ -4,11 +4,14 @@ import { WORKER_COUNT_MAX, workerKindSchema } from './workerRoles'
 /** Counts are angle workers. The lead is separate, and never consumes an angle's place. */
 export const SWARM_ANGLES_MAX = WORKER_COUNT_MAX
 export const swarmCountSchema = z.number().int().min(1).max(SWARM_ANGLES_MAX)
+export const distinctSwarmBriefs = (briefs: readonly string[]): boolean => new Set(briefs.map(brief => brief.trim())).size === briefs.length
 export const swarmMemberStateSchema = z.enum(['planned', 'queued', 'working', 'background', 'answered', 'failed', 'stopped', 'paused', 'unknown', 'refused'])
 export type SwarmMemberState = z.infer<typeof swarmMemberStateSchema>
 const id = z.string().min(1).max(512)
 export const swarmMemberSchema = z.object({ index: z.number().int().nonnegative(), key: z.uuid(),
-  threadId: id.optional(), delegationId: z.uuid().optional(), state: swarmMemberStateSchema }).strict()
+  threadId: id.optional(), delegationId: z.uuid().optional(), state: swarmMemberStateSchema,
+  /** Sotto's reason for refusing the angle, never a copy of its brief or a worker's reply. */
+  refusal: z.string().min(1).max(4_000).optional() }).strict()
 export const workerSwarmSchema = z.object({
   id: z.uuid(), ownerThreadId: id, rootUserMessageId: id, retryKey: z.uuid(), digest: z.string().length(64),
   work: workerKindSchema, count: swarmCountSchema, usual: swarmCountSchema, upTo: swarmCountSchema,
@@ -22,7 +25,7 @@ export type WorkerSwarm = z.infer<typeof workerSwarmSchema>
 export const swarmReceiptSchema = z.object({
   swarmId: z.uuid(), lead: z.object({ thread: id, delegation: z.uuid().optional() }).strict(),
   receipts: z.array(z.object({ index: z.number().int().nonnegative(), state: swarmMemberStateSchema,
-    thread: id.optional(), delegation: z.uuid().optional() }).strict()).max(SWARM_ANGLES_MAX),
+    thread: id.optional(), delegation: z.uuid().optional(), refusal: swarmMemberSchema.shape.refusal }).strict()).max(SWARM_ANGLES_MAX),
   queued: z.number().int().nonnegative(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(),
   role: z.object({ usual: swarmCountSchema, upTo: swarmCountSchema }).strict(),
   costShape: z.object({ angles: swarmCountSchema, lead: z.literal(1), effort: z.string().nullable() }).strict(),

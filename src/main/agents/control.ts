@@ -3486,7 +3486,8 @@ export class AgentControl {
   }
   hasQueuedDelegationNews(threadId: string, delegationIds: ReadonlySet<string>): boolean {
     return this.followupStore.peek().items.some(item => item.threadId === threadId
-      && item.news?.some(news => isDelegationNews(news) && news.items.some(part => delegationIds.has(part.delegationId))))
+      && item.news?.some(news => isDelegationNews(news) && (news.swarmId !== undefined && delegationIds.has(news.swarmId)
+        || news.items.some(part => delegationIds.has(part.delegationId)))))
   }
 
   resumeDelegationNews(): void { this.pumpFollowups() }

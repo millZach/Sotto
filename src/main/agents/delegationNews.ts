@@ -10,7 +10,8 @@ import type { WatcherOutcome } from '../../shared/watcher'
 export function foldDelegationNews(earlier: DelegationNews | undefined, later: DelegationNews): DelegationNews {
   const items = new Map((earlier?.items ?? []).map(item => [item.delegationId, item]))
   for (const item of later.items) items.set(item.delegationId, item)
-  return { source: 'delegation', items: [...items.values()].slice(-DELEGATION_NEWS_MAX) }
+  const swarmId = later.swarmId ?? earlier?.swarmId
+  return { source: 'delegation', ...swarmId ? { swarmId } : {}, items: [...items.values()].slice(-DELEGATION_NEWS_MAX) }
 }
 
 const SAYS: Record<WatcherOutcome, string> = {
@@ -78,7 +79,9 @@ export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<s
     return SAYS[item.outcome]
   }
   const lines = news.items.map(item => `${head(item)} ${says(item)}`)
-  let used = [DELEGATION_NEWS_OPENING, ...lines].join('\n').length
+  const opening = [DELEGATION_NEWS_OPENING, ...news.swarmId
+    ? [`Swarm ${news.swarmId} has finished its angles. Call ${READ_DELEGATION_TOOL} with this swarm ID for every angle, including refused starts, before writing the synthesis.`] : []]
+  let used = [...opening, ...lines].join('\n').length
   for (const [index, item] of news.items.entries()) {
     const reply = item.outcome === 'answered' ? details?.get(item.delegationId)?.reply : undefined
     if (!reply) continue
@@ -87,5 +90,5 @@ export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<s
     used += line.length - lines[index]!.length
     lines[index] = line
   }
-  return [DELEGATION_NEWS_OPENING, ...lines].join('\n').slice(0, maxChars)
+  return [...opening, ...lines].join('\n').slice(0, maxChars)
 }
