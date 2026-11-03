@@ -919,13 +919,25 @@ export class AgentControl {
   }
   /**
    * Whether a paired iPhone may still give Watcher instructions on this computer: still paired, and phones still admitted.
-   * The phone listener answers it while it runs; with none, a phone's queued follow-up waits rather than go (#1229).
+   * Each listener that serves Watcher's phone page answers it while it runs: the phone listener for every client, and the
+   * local apps' listener (ADR-0180) only for the client it paired, leaving any other unanswered. While none answers, a
+   * phone's queued follow-up waits rather than go (#1229).
    */
-  private phoneAdmission: ((clientId: string) => boolean) | undefined
-  useWatcherPhoneAdmission(admits: (clientId: string) => boolean): () => void {
-    this.phoneAdmission = admits
+  private readonly phoneAdmissions = new Set<(clientId: string) => boolean | undefined>()
+  useWatcherPhoneAdmission(admits: (clientId: string) => boolean | undefined): () => void {
+    this.phoneAdmissions.add(admits)
     this.pumpFollowups()
-    return () => { if (this.phoneAdmission === admits) this.phoneAdmission = undefined }
+    return () => { this.phoneAdmissions.delete(admits) }
+  }
+  /** Yes when a listener admits the client, no when one refuses it and none admits it, and unknown while none answers. */
+  private phoneAdmitted(clientId: string): boolean | undefined {
+    let answer: boolean | undefined
+    for (const admits of this.phoneAdmissions) {
+      const said = admits(clientId)
+      if (said === true) return true
+      if (said === false) answer = false
+    }
+    return answer
   }
   /**
    * The live guard of a phone's follow-up for Watcher, rebuilt from its saved origin wherever it is asked: the phone is
@@ -934,7 +946,7 @@ export class AgentControl {
    */
   private phoneFollowupGuard(origin: NonNullable<QueuedFollowup['phoneOrigin']>): () => void {
     return () => {
-      if (origin.hostId !== this.hostId() || this.phoneAdmission?.(origin.clientId) !== true) {
+      if (origin.hostId !== this.hostId() || this.phoneAdmitted(origin.clientId) !== true) {
         throw new Error('The iPhone that queued this message for Watcher is no longer paired with this computer. Nothing was sent.')
       }
     }
@@ -4729,8 +4741,8 @@ export class AgentControl {
       // A machine Stop holds saved user prompts and Sotto's news even when native completion arrives before its interrupt.
       // Watcher's own prompt answers to its request's guard instead: a later request's goes once the turn is free (#1203).
       && (followup.watcherOperationId !== undefined || !this.watcherHooks?.preserveUserQueue(threadId))
-      // A phone's follow-up waits until the phone listener can say whether that phone is still paired (#1229).
-      && (followup.phoneOrigin === undefined || this.phoneAdmission !== undefined)
+      // A phone's follow-up waits until a listener can say whether that phone is still paired (#1229).
+      && (followup.phoneOrigin === undefined || this.phoneAdmitted(followup.phoneOrigin.clientId) !== undefined)
       && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !this.waitsOnRequest(thread)
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))

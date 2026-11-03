@@ -1131,6 +1131,18 @@ msgstr ""
 msgid "Approved in Tailscale"
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Apps on this computer"
+msgstr ""
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Apps on this computer can read and send to your threads and Watcher, and answer questions and permissions, without a pairing code."
+msgstr ""
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Apps on this computer can’t connect. Sotto couldn’t open their listener or save their files in its data folder. Turn this off and on again, or restart Sotto."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "as {user}, port {port}"
 msgstr ""
@@ -3024,6 +3036,11 @@ msgstr ""
 msgid "Let agents use the browser without asking"
 msgstr ""
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Let apps on this computer connect"
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Let go to save. Esc cancels."
@@ -3297,6 +3314,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Needs attention"
+msgstr ""
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Needs the local host. Turn on Run the local host above, then restart Sotto."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -5878,6 +5899,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "The sea, a ship at the quay and a lighthouse."
+msgstr ""
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "The setting could not be saved. Nothing was changed. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
