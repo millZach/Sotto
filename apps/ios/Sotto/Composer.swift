@@ -34,8 +34,12 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
     /// One line of words at any height it takes: a field held to one line lays out a little shorter (19.3 points to 20),
     /// which would move the dock, and the conversation over it, every time the box changes shape.
     @ScaledMetric(relativeTo: .body) private var oneLine: CGFloat = 20
+    /// The shape on screen, which follows `small` on its own animation. The keyboard starts or ends with the change to
+    /// `small`, and in the recordings the words and the top edge jumped or kept the keyboard's curve instead of this one.
+    @State private var shownSmall: Bool?
 
     var body: some View {
+        let shaped = shownSmall ?? small
         // From the words' place at the card's top to the row beside the +.
         let slide = ComposerMetrics.smallWordsLeading - ComposerMetrics.wordsInset
         let drop = wordsHeight / 2 + ComposerMetrics.wordsGap + ComposerMetrics.rowInset + ComposerMetrics.button / 2
@@ -47,11 +51,11 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
                 .frame(minHeight: oneLine, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
                 .padding(.leading, ComposerMetrics.wordsInset)
-                .padding(.trailing, small ? ComposerMetrics.smallWordsTrailing + slide : ComposerMetrics.wordsInset)
+                .padding(.trailing, shaped ? ComposerMetrics.smallWordsTrailing + slide : ComposerMetrics.wordsInset)
                 .padding(.top, ComposerMetrics.wordsTop)
                 .padding(.bottom, ComposerMetrics.wordsGap)
                 // An offset doesn't follow the writing direction as padding does.
-                .offset(x: !small ? 0 : direction == .rightToLeft ? -slide : slide, y: small ? drop : 0)
+                .offset(x: !shaped ? 0 : direction == .rightToLeft ? -slide : slide, y: shaped ? drop : 0)
             Group {
                 if typeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: ComposerMetrics.gap) {
@@ -74,10 +78,13 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
                     .accessibilityHidden(true)
             }
         }
-        .composerSurface(in: ComposerShape(top: small ? lowered : 0))
-        .effortTrace(lit, radius: ComposerMetrics.radius, top: small ? lowered : 0)
-        // Going small, the words set off once the pill has mostly gone, so they never cross it.
-        .animation(reduceMotion ? nil : small ? .easeInOut(duration: ComposerMetrics.smallMotion).delay(0.06) : .easeInOut(duration: ComposerMetrics.smallMotion), value: small)
+        .composerSurface(in: ComposerShape(top: shaped ? lowered : 0))
+        .effortTrace(lit, radius: ComposerMetrics.radius, top: shaped ? lowered : 0)
+        .onChange(of: small) { _, nowSmall in
+            // Going small, the words set off once the pill has mostly gone, so they never cross it.
+            let move = Animation.easeInOut(duration: ComposerMetrics.smallMotion)
+            withAnimation(reduceMotion ? nil : nowSmall ? move.delay(0.06) : move) { shownSmall = nowSmall }
+        }
     }
 
     /// The pill keeps its place in the row, so its sheet stays up and nothing beside it moves. It leaves before the words
