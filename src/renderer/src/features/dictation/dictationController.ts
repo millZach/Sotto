@@ -400,7 +400,7 @@ export class DictationController {
     try {
       session.recorder = this.dependencies.createRecorder({
         ...(settings.microphoneId === null ? {} : { selectedDeviceId: settings.microphoneId }),
-        maxRecordingSeconds: settings.maxRecordingSeconds,
+        ...(settings.maxRecordingSeconds === null ? {} : { maxRecordingSeconds: settings.maxRecordingSeconds }),
         onLevel: (level) => this.handleLevel(session, level),
         onDurationLimit: (result) => this.handleDurationLimit(session, result),
         onDeviceUnavailable: () => this.handleDeviceUnavailable(session),

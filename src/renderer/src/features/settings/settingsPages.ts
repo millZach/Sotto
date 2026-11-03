@@ -126,7 +126,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     ...platform === 'linux'
       ? [{ id: 'omarchy-setup', label: msg`Omarchy setup`, section: 'settings-capture', words: 'shortcut keys bar theme', gate: 'dictation' } as const]
       : [{ id: 'dictation-shortcuts', label: msg`Dictation shortcuts`, section: 'settings-capture', words: 'hotkey keyboard hold', gate: 'dictation' } as const],
-    { id: 'recording-limit', label: msg`Recording limit`, section: 'settings-capture', words: 'length seconds minutes', gate: 'dictation' },
+    { id: 'recording-limit', label: msg`Recording limit`, section: 'settings-capture', words: 'length seconds minutes unlimited no limit', gate: 'dictation' },
     { id: 'sound-cues', label: msg`Sound cues`, section: 'settings-capture', words: 'audio beep', gate: 'dictation' },
     { id: 'typing-speed', label: msg`Typing speed`, section: 'settings-capture', words: 'words per minute time saved', gate: 'dictation' },
     { id: 'widget-when-idle', label: msg`Show floating widget when idle`, section: 'settings-capture', words: 'sliver', gate: 'dictation' },
