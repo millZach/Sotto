@@ -309,6 +309,17 @@ import UIKit
         return result
     }
 
+    private var stamps = 0
+    /// Diagnostic only: when a body ran, and for the list its stack, beside the report.
+    static func stamp(_ name: String, stack: Bool) { running?.stamped(name, stack: stack) }
+    private func stamped(_ name: String, stack: Bool) {
+        stamps += 1
+        marks["stamp-\(stamps)-\(phase)-\(name)"] = (Date().timeIntervalSince1970 - launched) * 1000
+        guard stack, phase == "list-scroll" else { return }
+        let file = report.deletingPathExtension().path + ".stack-\(stamps).txt"
+        try? Thread.callStackSymbols.joined(separator: "\n").write(toFile: file, atomically: true, encoding: .utf8)
+    }
+
     private func mark(_ name: String) {
         guard marks[name] == nil else { return }
         marks[name] = (Date().timeIntervalSince1970 - launched) * 1000
@@ -318,6 +329,7 @@ import UIKit
         let previous = frames.last
         frames.tick(link)
         if link.timestamp - previous > BenchSampler.longFrame { sampler?.longFrame(from: previous, to: link.timestamp) }
+        if link.timestamp - previous > 0.12 { marks["long-\(phase)-\(Int((link.timestamp - previous) * 1000))"] = (Date().timeIntervalSince1970 - launched) * 1000 }
         if !drawing.isEmpty {
             drawing.forEach(mark)
             drawing = []
@@ -589,12 +601,35 @@ extension View {
 }
 
 #if DEBUG && os(iOS)
+/// Diagnostic only: counts which of the environment's keys changed between two runs of a probe.
+@MainActor private enum EnvironmentDiff {
+    static var last: [String: [String: String]] = [:]
+    static func note(_ probe: String, _ text: String) {
+        var values: [String: String] = [:]
+        for piece in text.components(separatedBy: "EnvironmentPropertyKey<").dropFirst() {
+            guard let end = piece.range(of: "> = ") else { continue }
+            values[String(piece[..<end.lowerBound])] = String(piece[end.upperBound...])
+        }
+        if values.isEmpty { BenchProbe.count("why.env.undescribed") }
+        if let before = last[probe] {
+            var changed = 0
+            for key in Set(values.keys).union(before.keys) where values[key] != before[key] {
+                BenchProbe.count("why.env.\(probe).\(key)")
+                changed += 1
+            }
+            if changed == 0 { BenchProbe.count("why.env.\(probe).none") }
+        }
+        last[probe] = values
+    }
+}
+
 /// Reads the whole environment, so SwiftUI runs its body again whenever any value in it changes, and counts each run.
 private struct EnvironmentProbe: View {
     let name: StaticString
     @Environment(\.self) private var environment
     var body: some View {
         let _ = BenchProbe.body(name)
+        let _ = EnvironmentDiff.note(name.description, String(describing: environment))
         Color.clear.accessibilityHidden(true)
     }
 }

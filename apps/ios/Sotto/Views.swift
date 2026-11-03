@@ -730,6 +730,7 @@ struct ThreadListSections: View, Equatable {
     let setWatched: (HostedThread, Bool) -> Void
     var body: some View {
         let _ = BenchProbe.body("ThreadListSections")
+        let _ = BenchDriver.stamp("sections", stack: true)
         VStack(alignment: .leading, spacing: 0) {
             section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
                 rowView(row, .needs, asking: groups.asking(row))
@@ -759,8 +760,19 @@ struct ThreadListSections: View, Equatable {
     /// a row shows, or a row keeps old words. The closures never change what it draws. A list held from one moment is
     /// the same list, so two of the same hold are equal without reading their rows.
     static func == (lhs: ThreadListSections, rhs: ThreadListSections) -> Bool {
+        BenchProbe.count("why.sections.compare")
         if let held = lhs.held, held == rhs.held { return true }
-        return lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && drawn(lhs.groups) == drawn(rhs.groups)
+        if lhs.identifier != rhs.identifier { BenchProbe.count("why.sections.identifier") }
+        if lhs.chosen != rhs.chosen { BenchProbe.count("why.sections.chosen") }
+        if lhs.watch.watched != rhs.watch.watched { BenchProbe.count("why.sections.watched") }
+        if lhs.watch.changeable != rhs.watch.changeable { BenchProbe.count("why.sections.changeable") }
+        let left = drawn(lhs.groups), right = drawn(rhs.groups)
+        if left.count != right.count { BenchProbe.count("why.sections.rowCount") }
+        for (a, b) in zip(left, right) where a != b {
+            let x = a.split(separator: "|", omittingEmptySubsequences: false), y = b.split(separator: "|", omittingEmptySubsequences: false)
+            for (index, pair) in zip(x, y).enumerated() where pair.0 != pair.1 { BenchProbe.count("why.sections.field\(index)") }
+        }
+        return lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && left == right
     }
     private static func drawn(_ groups: FocusThreads) -> [String] {
         func rows(_ section: String, _ rows: [HostedThread]) -> [String] {
@@ -836,6 +848,24 @@ struct ThreadListRow: View, Equatable {
     @Environment(\.dynamicTypeSize) private var typeSize
     /// What the row draws: the thread's title, state, place and times, its section, light and chip.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
+        BenchProbe.count("why.row.compare")
+        if lhs.row.id != rhs.row.id { BenchProbe.count("why.row.id") }
+        if lhs.kind != rhs.kind { BenchProbe.count("why.row.kind") }
+        if lhs.asking?.id != rhs.asking?.id { BenchProbe.count("why.row.asking") }
+        if lhs.watched != rhs.watched { BenchProbe.count("why.row.watched") }
+        if lhs.chosen != rhs.chosen { BenchProbe.count("why.row.chosen") }
+        if lhs.canWatch != rhs.canWatch { BenchProbe.count("why.row.canWatch") }
+        if lhs.identifier != rhs.identifier { BenchProbe.count("why.row.identifier") }
+        if lhs.line != rhs.line { BenchProbe.count("why.row.line") }
+        if lhs.label != rhs.label { BenchProbe.count("why.row.label") }
+        if lhs.row.thread.summary?.runningTurnStartedAt != rhs.row.thread.summary?.runningTurnStartedAt { BenchProbe.count("why.row.running") }
+        if lhs.row.thread.summary?.lastMessageAt != rhs.row.thread.summary?.lastMessageAt { BenchProbe.count("why.row.last") }
+        return lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
+            && lhs.canWatch == rhs.canWatch && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
+            && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
+            && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
+    }
+    private static func unused(lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
         lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
             && lhs.canWatch == rhs.canWatch && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
