@@ -533,6 +533,7 @@ private struct Conversation: View {
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
+                    .tapPutsAwayKeyboard { [model, ref] in !model.replyHoldsAnything(ref) }
                     .benchEnvironment("EnvironmentUnderThread")
             }
             .defaultScrollAnchor(.bottom)
@@ -553,7 +554,10 @@ private struct Conversation: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
-                ReplyDock(ref: ref, openRequest: openRequest)
+                // Only a new empty thread keeps the box full. One still opening goes by whether it has had a message.
+                ReplyDock(ref: ref, goesSmall: !rows.isEmpty || !pending.isEmpty || detail?.earlierAvailable == true
+                            || model.thread(ref)?.status == "running" || (detail == nil && model.thread(ref)?.summary?.lastMessageAt != nil),
+                          openRequest: openRequest)
                     .equatable()
                     .readingWidth()
                     .background(dockReader(proxy))
@@ -2291,12 +2295,15 @@ private struct ReplyDock: View, Equatable {
     /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
+    /// Whether the thread has content or is running, so the box goes small while nothing is being written (ADR-0184).
+    let goesSmall: Bool
     let openRequest: (AgentRequest) -> Void
     /// Drawn again for what it watches itself, not for each new revision of the conversation above it; a request it
     /// offers opens the same way every time.
-    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref }
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.goesSmall == b.goesSmall }
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var sent = 0
     @State private var stopped = 0
     /// Watched for which box listens, which changes only as dictation starts and stops.
@@ -2375,15 +2382,21 @@ private struct ReplyDock: View, Equatable {
         let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
         let settings = model.threadSettings(ref)
         let listening = dictation.key == ref.id
+        // Small unless the user is writing here, or the settings have something to say over the box. The accessibility
+        // text sizes stay full: one row can't hold the prompt at those sizes.
+        let small = goesSmall && !DebugFlags.replyBoxStaysFull && !typeSize.isAccessibilitySize && !focused && !written && !listening
+            && !model.preparingSends.contains(ref.id) && settings?.caption == nil && settings?.notices.isEmpty != false
         // As in Claude's iPhone app (Zach's pick A, November 1, 2026): photos and files wait inside the card above the
         // words, and the row under them holds the +, the thread's settings as one pill (ADR-0166), the mic and Send.
         // What the settings still wait on sits above the card.
         return VStack(alignment: .leading, spacing: Space.s2) {
             if let settings { ThreadSettingsLines(ref: ref, panel: settings) }
-            ComposerCard(focus: { focused = true }) {
+            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
+            // (ADR-0019).
+            ComposerCard(small: small, lit: settings?.atTopEffort == true, focus: { focused = true }) {
                 DraftAttachments(box: .thread(ref))
             } words: {
-                words(placeholder)
+                words(placeholder, small: small)
             } plus: {
                 if listening { ListeningLine() } else { AttachPhotosButton(box: .thread(ref)) }
             } pill: {
@@ -2391,20 +2404,17 @@ private struct ReplyDock: View, Equatable {
             } trailing: {
                 trailingButtons()
             }
-            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
-            // (ADR-0019).
-            .effortTrace(settings?.atTopEffort == true, radius: ComposerMetrics.radius)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
     }
 
-    private func words(_ placeholder: String) -> some View {
+    private func words(_ placeholder: String, small: Bool) -> some View {
         TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
             .font(.sotto(.body))
             .foregroundStyle(Palette.ink)
-            .lineLimit(1...6)
+            .lineLimit(small ? 1...1 : 1...6)
             .focused($focused)
             // Words added from a reply put the caret after them, here (ADR-0129).
             .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
@@ -2417,10 +2427,7 @@ private struct ReplyDock: View, Equatable {
     }
 
     /// Whether the box holds something to send: words, photos or files.
-    private var written: Bool {
-        !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
-            || !model.files(ref).isEmpty
-    }
+    private var written: Bool { model.replyHoldsAnything(ref) }
 
     /// The mic, then Send, which is always there: the accent once the box holds something, dim while it's empty. While
     /// the turn can be stopped, Stop takes Send's place until something is written; then Stop and Send sit side by side,

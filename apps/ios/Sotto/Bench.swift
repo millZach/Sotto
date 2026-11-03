@@ -10,11 +10,13 @@ import UIKit
 /// With `--bench-journey all` the app walks the journey itself, so nothing outside it touches the screen: XCUITest
 /// turns on and reads the whole accessibility tree, which on a long thread cost more than the thread did. The phases:
 /// `launch` to the first frame showing every thread, `list-scroll` down the list and back, `open` the long thread as a
-/// notification opens it, `thread-scroll` up through it and back, `stream` a reply into it, then `finished`. Each phase
-/// lasts until the screen is quiet, and records its frames, hitches, CPU time, memory and what the probes counted.
-/// With `--bench-journey launch` it stops after the first. With `--bench-journey look` it opens the long thread and
-/// photographs the page at fixed distances above its end (`look`), so two builds can be held to the same look. It
-/// reads and changes nothing the app shows.
+/// notification opens it, `thread-scroll` up through it and back, `stream` a reply into it, `reply-box` the reply box
+/// going small and back with nothing else happening, `reply-box-stream` the same while a reply streams, `back` to the
+/// Threads list, then `finished`. Each phase lasts until the screen is quiet, and records its frames, hitches, CPU time,
+/// memory and what the probes counted. With `--bench-journey launch` it stops after the first. With `--bench-journey look`
+/// it opens the long thread and photographs the page at fixed distances above its end (`look`), so two builds can be held
+/// to the same look. It reads and changes nothing the app shows, but for the draft that moves the reply box, which it
+/// takes out again.
 @MainActor final class BenchDriver {
     private static var running: BenchDriver?
 
@@ -99,6 +101,20 @@ import UIKit
         phaseNotes["wallMs"] = (CACurrentMediaTime() - started) * 1000
         await quiet()
 
+        // A draft moves the box with no keyboard, whose own room moves the page on purpose.
+        next("reply-box")
+        await moveReplyBox(times: Self.replyBoxMoves) { false }
+        await quiet()
+
+        next("reply-box-stream")
+        var streaming = true
+        let streamed = CACurrentMediaTime()
+        model?.benchStream(chunks: chunks) { streaming = false }
+        await moveReplyBox(times: nil) { !streaming }
+        mark("reply-box-stream-done")
+        phaseNotes["wallMs"] = (CACurrentMediaTime() - streamed) * 1000
+        await quiet()
+
         // Back to the list, as Back and a swipe back go: the Threads page comes into sight again under the thread and lets
         // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back, or whose page
         // never comes back drawn as it stands, fails: its stale-frame count would say nothing.
@@ -147,6 +163,21 @@ import UIKit
 
     /// Extra numbers for the phase now running, kept in its summary.
     private var phaseNotes: [String: Any] = [:]
+
+    private static let replyBoxMoves = 20
+
+    /// The reply box out to full and back to small, at a pace that lets each move finish, `times` times or until `done`.
+    private func moveReplyBox(times: Int?, until done: () -> Bool) async {
+        var moves = 0
+        while !done(), times.map({ moves < $0 }) ?? true {
+            model?.drafts[long.id] = "A"
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            model?.drafts[long.id] = ""
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            moves += 1
+        }
+        phaseNotes["replyBoxMoves"] = moves
+    }
 
     private func next(_ name: String) {
         phases[phase] = summary()

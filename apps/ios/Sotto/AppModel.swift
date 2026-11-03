@@ -753,7 +753,7 @@ extension AppModel {
         watchNoticeDismissal?.cancel()
         watchNoticeDismissal = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !Self.watchNoticeStays else { return }
             self?.dismissWatchNotice(notice.id)
         }
     }
@@ -1340,11 +1340,15 @@ struct RailAsk: Equatable {
     /// so a revision sets it only when it holds something, and an unchanged nil publishes nothing.
     @Published private(set) var detailProblem: String?
     #if DEBUG && os(iOS)
+    /// The journey that reads what a Watch press said holds it up (`--ui-watch-notice-stays`): a look at the page can take
+    /// longer on a loaded simulator than the eight seconds it lasts.
+    private static let watchNoticeStays = ProcessInfo.processInfo.arguments.contains("--ui-watch-notice-stays")
     /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
     /// app did before the draft and detail stores, and before a computer's unchanged state was left unpublished.
     private static let publishesEverything = ProcessInfo.processInfo.arguments.contains("--ui-publish-everything")
     #else
     private static let publishesEverything = false
+    private static let watchNoticeStays = false
     #endif
     /// Called after a store publishes a change. Only the comparison publishes it on the model too.
     private func publishOnModelIfComparing() {
@@ -1562,6 +1566,8 @@ struct RailAsk: Equatable {
         var caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
         var answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
         if settingThreads { caps["configureThread"] = true; answeringCaps["configureThread"] = true }
+        // The small reply box's journey: this computer can stop a running turn, so the box offers Stop (ADR-0184).
+        if arguments.contains("--ui-can-stop") { caps["interrupt"] = true; answeringCaps["interrupt"] = true }
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
@@ -1598,7 +1604,8 @@ struct RailAsk: Equatable {
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
             if id == "iphone" && settingThreads { row["modelId"] = "fixture-model"; row["runtimeMode"] = "approval-required" }
             if id == "shortcuts" && settingThreads {
-                row["modelId"] = "fixture-model"; row["reasoningEffort"] = "high"; row["runtimeMode"] = "approval-required"
+                // `--ui-top-effort` puts it at its model's top level, where the reply box's trace lights.
+                row["modelId"] = "fixture-model"; row["reasoningEffort"] = arguments.contains("--ui-top-effort") ? "xhigh" : "high"; row["runtimeMode"] = "approval-required"
             }
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
@@ -1610,6 +1617,10 @@ struct RailAsk: Equatable {
                 "messages": [["id": "prompt", "role": "user", "text": title + ". Keep the changes focused."],
                     ["id": "reply", "role": "assistant", "text": "I have the context and am checking the details. The next update will summarize the changes and anything that needs your attention."]],
                 "activities": [["id": "read", "sequence": 1, "kind": "command", "status": "completed", "title": "Read project notes"]]])
+            // A new thread with nothing in it yet, whose reply box stays full.
+            if id == "shortcuts" && arguments.contains("--ui-empty-thread") {
+                fixtureDetails[host + "/" + id] = decode(ThreadDetail.self, ["threadId": id, "revision": 1, "messages": [[String: Any]](), "activities": [[String: Any]]()])
+            }
         }
         if watching {
             // Watcher's two workers on the laptop: one it started, which asks which account to use, and one it sent a note.
@@ -2459,6 +2470,12 @@ struct RailAsk: Equatable {
         return canSend(ref) && !preparingSends.contains(ref.id) && (written || !photos.isEmpty || !files.isEmpty)
             && !photos.contains(where: \.preparing) && (photos.isEmpty || photoSupport(ref) == .available)
             && !files.contains(where: \.reading) && (files.isEmpty || fileSupport(ref) == .available)
+    }
+    /// Whether a thread's reply box holds something to send: words, photos or files.
+    func replyHoldsAnything(_ ref: ThreadRef) -> Bool { boxHoldsAnything(.thread(ref), draftKey: ref.id) }
+    func watcherBoxHoldsAnything(_ hostID: String) -> Bool { boxHoldsAnything(.watcher(hostID: hostID), draftKey: watcherDraftKey(hostID)) }
+    private func boxHoldsAnything(_ box: PhotoBox, draftKey: String) -> Bool {
+        !(drafts[draftKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos(box).isEmpty || !files(box).isEmpty
     }
     func photos(_ ref: ThreadRef) -> [DraftPhoto] { photos(.thread(ref)) }
     func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }
