@@ -25,9 +25,10 @@ public struct ChangedThreadRecords: Decodable, Equatable, Sendable {
 /// phone only the records that changed since its last push, beside a state whose own list is empty, so the connection
 /// puts the whole list back before anything reads the shell, as the desktop's client of a paired host does
 /// (`src/shared/threadReassembly.ts`). It is kept in socket order, and a reconnect starts with an empty one, just as the
-/// host starts the new connection with nothing pushed. A command's answer carries every record and changes nothing held;
-/// so do a hello and a shell read, unless the host named the revision of the records they list (`reply-thread-records`),
-/// which the connection then holds (`hold(_:)`).
+/// host starts the new connection with nothing pushed. A hello and a shell read carry every record and change nothing held,
+/// unless the host named the revision of the records they list (`reply-thread-records`), which the connection then holds
+/// (`hold(_:)`). A command's answer changes nothing held either: it carries every record, or only the ones that changed
+/// (`command-changed-thread-records`), which `reply(_:)` puts back.
 public struct ThreadRecordsCache: Sendable {
     private struct Held: Sendable {
         let revision: Int; let records: [String: ThreadSummary]; let order: [String]; let list: [ThreadSummary]
@@ -56,6 +57,13 @@ public struct ThreadRecordsCache: Sendable {
         restored.host.threads = next.list
         restored.threadRecords = nil
         return restored
+    }
+    /// A command's answer with its whole thread list, put back from a copy of this cache taken as the answer arrived, since
+    /// its caller reads it after later pushes have been handled. Nothing held moves, because nothing moves on the host:
+    /// the next push is measured from the same records. Nil when it cannot be put back, for the same reasons as a push.
+    public func reply(_ shell: Shell) -> Shell? {
+        var copy = self
+        return copy.whole(shell)
     }
     private static func resolve(_ held: Held?, _ wire: ChangedThreadRecords) -> Held? {
         guard let base = wire.base else {
