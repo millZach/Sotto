@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. A thread on forge viewed from the laptop, with its Terminal drawer open. Nothing here runs a shell. -->
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A real terminal for a thread on forge</title>
+<style>
+@font-face{font-family:Figtree;src:url(figtree-latin.woff2) format('woff2');font-weight:300 900}
+:root[data-theme=dark]{--canvas:#0a0b0b;--chrome:#141616;--surface:#1a1c1c;--text:#f1f3f2;--text2:#c9cdcb;--muted:#9a9f9d;--line:#2a2e2d;--field:#3a3f3d;--accent:#7fd1b9;--on:#0a0b0b;--term:#000;--termtext:#d6e6df;--warn:#e6b566}
+:root[data-theme=light]{--canvas:#fff;--chrome:#f4f5f4;--surface:#fff;--text:#141716;--text2:#3b403e;--muted:#5c6163;--line:#e2e4e3;--field:#c9cdcb;--accent:#0f6f58;--on:#fff;--term:#fafbfa;--termtext:#1c2421;--warn:#8a5a00}
+*{box-sizing:border-box}body{margin:0;background:var(--chrome);color:var(--text);font:15px/1.45 Figtree,system-ui,sans-serif}button{font:inherit;color:inherit}
+.page{max-width:1100px;margin:auto;padding:14px}h1{font-size:19px;font-weight:600;margin:0 0 4px}.lede{margin:0 0 12px;color:var(--text2);max-width:72ch}
+.group{margin:0 0 10px}.group>b{display:block;font-weight:600;font-size:13px;color:var(--muted);margin-bottom:5px}.row{display:flex;flex-wrap:wrap;gap:6px}
+.chip{min-height:40px;padding:6px 12px;border:1px solid var(--field);border-radius:8px;background:transparent;color:var(--text2);cursor:pointer;text-align:left}.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.win{border:1px solid var(--line);border-radius:10px;background:var(--canvas);overflow:hidden;display:flex;flex-direction:column;height:500px}
+.head{display:flex;align-items:center;gap:8px;height:44px;flex:none;padding:0 6px 0 16px;border-bottom:1px solid var(--line)}.head h2{margin:0;font-size:15px;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.crumb{color:var(--muted);font-size:13px;white-space:nowrap}
+@media(max-width:560px){.crumb{display:none}}
+.act{display:grid;place-items:center;width:34px;height:34px;flex:none;padding:0;border:0;border-radius:8px;background:transparent;color:var(--text2);cursor:pointer}.act[aria-pressed=true]{background:var(--line);color:var(--text)}.act[aria-disabled=true]{opacity:.45;cursor:default}
+.body{flex:1;min-height:0;padding:12px 18px;color:var(--muted);overflow:hidden}.body b{display:block;color:var(--text2);font-weight:500}.compose{margin:0 12px 10px;padding:10px 12px;border:1px solid var(--field);border-radius:12px;color:var(--muted);flex:none}
+.drawer{flex:none;height:46%;display:flex;flex-direction:column;border-top:1px solid var(--line);background:var(--term)}
+.bar{display:flex;align-items:center;gap:6px;height:36px;flex:none;padding:0 6px 0 10px;border-bottom:1px solid var(--line);font-size:13px;color:var(--text2);background:var(--chrome)}.tab{padding:3px 9px;border-radius:6px;background:var(--line);color:var(--text);white-space:nowrap}.machine{display:inline-flex;align-items:center;gap:5px;margin-left:auto;color:var(--muted);white-space:nowrap}.end{margin-left:auto}.machine+.end{margin-left:0}
+.line{flex:none;padding:6px 12px;font-size:13.5px;color:var(--warn);background:var(--chrome);border-bottom:1px solid var(--line)}.line button{margin-left:8px;padding:4px 10px;border:1px solid var(--field);border-radius:7px;background:transparent;cursor:pointer}
+pre{flex:1;min-height:0;margin:0;padding:8px 12px;overflow:hidden;color:var(--termtext);font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word}pre[data-off=true]{opacity:.6}.cur{display:inline-block;width:8px;height:15px;background:var(--termtext);vertical-align:-2px}
+.say{margin:10px 0 0;padding:10px 12px;background:var(--canvas);border:1px solid var(--line);border-radius:10px;color:var(--text2);font-size:14px}.say b{color:var(--text);font-weight:600}
+</style></head><body><div class="page" id="app"></div>
+<script>
+const I=(p,s=16)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`
+const ic={tools:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',term:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/>',hide:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/><path d="m9 10 3-3 3 3"/>',server:'<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',plus:'<path d="M5 12h14M12 5v14"/>',stop:'<circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/>'}
+const s={route:'host',look:'named',state:'working',theme:'dark'}
+const LIVE=`zach@forge ~/Projects/Sotto (feat/paired-host-terminal)\n$ npm run build\n> electron-vite build\nbuilding main…  1,204 modules\n`
+const MORE=`building renderer…  3,881 modules\nbuilt in 48s\n$ `
+const states={
+ working:{label:'Working'},
+ drop:{label:'The connection drops'},
+ back:{label:'The connection comes back'},
+ hoststop:{label:'forge restarts'},
+ old:{label:'forge’s Sotto is older'},
+ refused:{label:'forge refuses this computer'},
+}
+function view(){
+ const route=s.route, st=s.state
+ const grey=st==='old'||st==='refused'
+ const canOpen=!grey
+ let line='', text=LIVE+'<span class="cur"></span>', off=false, say=''
+ if(st==='working') say='<b>What you see.</b> Terminal drawer in the header opens this, and Ctrl+J does too. It starts in the project folder on forge. Tabs, New shell, Send Ctrl+C, search, text size and Hide are the same as on this computer.'
+ if(st==='drop'&&route==='host'){line='Reconnecting to forge. This shell keeps running there.';off=true;text=LIVE;say='<b>On forge.</b> You can’t type until it’s back. The build keeps running. The same goes for closing the laptop or quitting Sotto.'}
+ if(st==='drop'&&route==='ssh'){line='The connection to forge dropped, so this shell ended and anything running in it stopped.';off=true;text=LIVE+'Connection to forge closed.\n';say='<b>Over SSH.</b> The build stops when the connection does, as in any plain SSH window. Closing the laptop or quitting Sotto does the same, unless you ran it in tmux yourself.'}
+ if(st==='back'&&route==='host'){text=LIVE+MORE+'<span class="cur"></span>';say='<b>On forge.</b> The output it printed while you were away is there, up to the last 512 KiB. You type on.'}
+ if(st==='back'&&route==='ssh'){line='The connection to forge dropped, so this shell ended.';off=true;text=LIVE+'Connection to forge closed.\n';say='<b>Over SSH.</b> Reopen starts a new shell. The old output stays on screen until you press it, and the build has to be run again.'}
+ if(st==='hoststop'&&route==='host'){line='Ended when forge’s Sotto stopped.';off=true;text=LIVE;say='<b>On forge.</b> An update or a reboot ends its shells, and Reopen starts a new one. The host never promises to bring a process back.'}
+ if(st==='hoststop'&&route==='ssh'){text=LIVE+MORE+'<span class="cur"></span>';say='<b>Over SSH.</b> A restart of Sotto on forge doesn’t touch this shell. A reboot of forge ends it.'}
+ if(st==='old'){say=route==='host'?'<b>Greyed.</b> The button reads: “This thread’s terminal is on forge. Update Sotto on forge in Settings &gt; Hosts &amp; phones to open it here.” It opens nothing.':'<b>Doesn’t happen over SSH.</b> The route needs nothing new on forge, so this button works with the Sotto forge has now.'}
+ if(st==='refused'){say=route==='host'?'<b>Greyed.</b> The button reads: “forge hasn’t let this computer open a terminal. Connect it again over SSH in Settings &gt; Hosts &amp; phones.” It opens nothing. A phone sees no button at all.':'<b>Over SSH.</b> SSH refuses in the drawer itself, with its own words, and the shell ends. Sotto adds no check of its own.'}
+ const showDrawer=!(grey&&route==='host')
+ const named=s.look==='named'
+ const termTitle=grey&&route==='host'?(st==='old'?'This thread’s terminal is on forge. Update Sotto on forge in Settings > Hosts & phones to open it here.':'forge hasn’t let this computer open a terminal. Connect it again over SSH in Settings > Hosts & phones.'):'Hide terminal drawer (Ctrl+J)'
+ const groups=[
+  ['Where the shell runs',[['host','On forge, run by its Sotto'],['ssh','Over SSH from this computer']],'route'],
+  ['What happens',Object.entries(states).map(([k,v])=>[k,v.label]),'state'],
+  ['The drawer’s bar',[['named','A. Says “on forge”'],['plain','B. Looks as it does here']],'look'],
+  ['Theme',[['dark','Dark'],['light','Light']],'theme'],
+ ]
+ document.documentElement.dataset.theme=s.theme
+ document.getElementById('app').innerHTML=`<h1>A real terminal for a thread on forge</h1>
+ <p class="lede">A forge thread seen from the laptop. Press through what happens; nothing here runs a shell.</p>
+ ${groups.map(([t,opts,key])=>`<div class="group"><b>${t}</b><div class="row">${opts.map(([v,l])=>`<button class="chip" data-k="${key}" data-v="${v}" aria-pressed="${s[key]===v}">${l}</button>`).join('')}</div></div>`).join('')}
+ <div class="win">
+  <div class="head"><h2>Fix the release notes wording</h2><span class="crumb">Sotto on forge</span>
+   <button class="act" aria-label="Tools" title="Tools">${I(ic.tools)}</button>
+   <button class="act" aria-label="Terminal drawer" title="${termTitle}" ${grey&&route==='host'?'aria-disabled="true"':`aria-pressed="${canOpen}"`}>${I(ic.term)}</button></div>
+  <div class="body"><b>Done. The notes now say “Update all”.</b>I changed one line in docs/release/notes.md.</div>
+  <div class="compose">Reply…</div>
+  ${showDrawer?`<div class="drawer">
+   <div class="bar"><span class="tab">bash</span><button class="act" style="width:26px;height:26px" aria-label="New shell" title="New shell">${I(ic.plus,14)}</button>
+   ${named?`<span class="machine" title="This shell runs on forge">${I(ic.server,13)}on forge</span>`:''}
+   <span class="end"></span><button class="act" style="width:26px;height:26px" aria-label="Send Ctrl+C" title="Send Ctrl+C">${I(ic.stop,14)}</button><button class="act" style="width:26px;height:26px" aria-label="Hide terminal drawer" title="Hide terminal drawer (Ctrl+J)">${I(ic.hide,14)}</button></div>
+   ${line?`<div class="line" role="status">${line}${off&&st!=='drop'||(st==='drop'&&route==='ssh')?'<button>Reopen</button>':''}</div>`:''}
+   <pre data-off="${off}">${text}</pre></div>`:''}
+ </div><p class="say">${say}</p>`
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;s[b.dataset.k]=b.dataset.v;view()})
+view()
+</script></body></html>
