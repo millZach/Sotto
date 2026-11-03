@@ -5,7 +5,7 @@
 ## Changes
 
 - Request-card web links, including permission descriptions, message-link rows and Markdown plans, use the popup's existing `openExternalLink` bridge when the main-window bridge is absent. Both bridges reach `EXTERNAL_LINK_OPEN`; main still validates the URL and owns opening it. Main-window links keep their existing path.
-- A request's prototype link uses the popup's existing Open path to show its owning thread in Sotto. The user opens the prototype from the same card there. This follows the existing thread navigation rather than admitting the popup to another channel. Link presses never answer a question or permission.
+- A request's prototype link uses the popup's existing Open path to show its owning thread or Watcher's room in Sotto, matching the popup's current target. The user opens the prototype from the same card there. This follows the existing navigation rather than admitting the popup to another channel. Link presses never answer a question or permission.
 - Hiding or toggling off a popup while its first renderer loads now cancels that pending show. It cannot reappear and take the keyboard after dismissal. A later show during that same load wins once.
 
 ## PR #2061 hand-test checklist
@@ -43,7 +43,7 @@ The environment option disables this machine's Node experimental Web Storage glo
 | File | Passed |
 | --- | ---: |
 | `tests/unit/main/popup/popupWindow.test.ts` (new) | 8 |
-| `tests/unit/renderer/popup/popupApp.test.tsx` (new) | 13 |
+| `tests/unit/renderer/popup/popupApp.test.tsx` (new) | 15 |
 | `tests/unit/renderer/requests/agentRequestCard.test.tsx` | 49 |
 | `tests/unit/main/popup/popupThreadSelection.test.ts` | 1 |
 | `tests/unit/main/popup/popupFeed.test.ts` | 3 |
@@ -53,6 +53,12 @@ The environment option disables this machine's Node experimental Web Storage glo
 | `tests/unit/shared/popup.test.ts` | 4 |
 | `tests/unit/renderer/themeTokens.test.ts` | 113 |
 | `tests/unit/renderer/scaleTokens.test.ts` | 4 |
-| Total | 221 |
+| Total | 223 |
 
-No full suite, Playwright, build, design capture/verification, or app launch ran. No baselines changed. The fallback to the owning thread and leaving native focus restoration to the existing window path are the assumptions used for this scoped polish.
+No full suite, Playwright, build, design capture/verification, or app launch ran. No baselines changed. The fallback to the owning thread or Watcher's room and leaving native focus restoration to the existing window path are the assumptions used for this scoped polish.
+
+## Review follow-up
+
+Bug Bot found that prototype navigation hardcoded the thread target for Watcher's own requests. `PopupApp` now passes its current target through the request card and page owner. Both plain and structured Watcher question tests failed before the fix with `watcher: false`; after the fix, mouse and Enter navigation send `watcher: true`, without answering the request. Existing thread cases still send `watcher: false`. The popup renderer file (15 tests), main-window request-card regression file (49 tests), typecheck and lint pass after the fix.
+
+The first shared-card regression run reached three 15-second test deadlines while checks ran in several worktrees. The unchanged rerun passed all 49 with the original deadlines. The first lint process ended with exit 143 and no diagnostic output; the retry passed.

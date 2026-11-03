@@ -53,6 +53,12 @@ const liveTurns: Partial<AgentThread>[] = [
   { status: 'idle', lastTurn: { id: 'turn', status: 'running' } },
 ]
 
+const watcherRoom: WatcherRoomResult = { status: 'ok', state: {
+  current: { target: { hostId: '6c0f8f0e-7b1e-4d5a-9a43-1f4f0f3b2a10', threadId: 'thread' }, projectId: 'project', provider: 'codex',
+    creationOperationId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', createdAt: '2026-11-03T00:00:00.000Z' },
+  currentOptions: null, history: [], requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: '2026-11-03T00:00:00.000Z',
+} }
+
 describe('the popup running-turn affordances', () => {
   it.each(liveTurns)('uses the same running state for Stop, Escape, the owl and queueing: %j', async patch => {
     const f = mount(patch)
@@ -146,6 +152,22 @@ describe('links in popup request cards', () => {
     expect(f.command.mock.calls.some(([command]) => command.type === 'answer')).toBe(false)
   })
 
+  it.each([false, true])('routes a Watcher prototype to its room (structured question: %s)', async structured => {
+    const f = mount({ requests: [{ id: 'prototype', kind: 'question', text: 'Review the prototype', options: [],
+      ...(structured ? { questions: [{ id: 'review', question: 'Review the prototype', options: [], multiSelect: false, allowFreeText: true }] } : {}),
+      pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'prototype.html', start: '' }] }] }, watcherRoom)
+    fireEvent.click(await screen.findByRole('button', { name: 'Talking to the thread. Switch to Watcher' }))
+    const link = await screen.findByRole('link', { name: 'Open the prototype, prototype.html' })
+    for (const action of ['click', 'Enter']) {
+      vi.mocked(f.bridge.open).mockClear()
+      if (action === 'click') fireEvent.click(link)
+      else fireEvent.keyDown(link, { key: 'Enter' })
+      expect(f.bridge.open).toHaveBeenCalledExactlyOnceWith({ threadId: 'thread', watcher: true })
+    }
+    expect(f.bridge.openExternalLink).not.toHaveBeenCalled()
+    expect(f.command.mock.calls.some(([command]) => command.type === 'answer')).toBe(false)
+  })
+
   it('shows the existing page failure if routing to the thread fails', async () => {
     const f = mount({ requests: [{ id: 'prototype', kind: 'question', text: 'Review', options: [],
       pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'prototype.html', start: '' }] }] })
@@ -170,12 +192,7 @@ it('focuses the prompt on show, keeps card focus during updates, and opens the t
 })
 
 it('switches to Watcher, queues its running turn, and opens its room', async () => {
-  const hostId = '6c0f8f0e-7b1e-4d5a-9a43-1f4f0f3b2a10'
-  const f = mount({ status: 'idle', lastTurn: { id: 'watcher-turn', status: 'running' } }, { status: 'ok', state: {
-    current: { target: { hostId, threadId: 'thread' }, projectId: 'project', provider: 'codex',
-      creationOperationId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', createdAt: '2026-11-03T00:00:00.000Z' },
-    currentOptions: null, history: [], requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: '2026-11-03T00:00:00.000Z',
-  } })
+  const f = mount({ status: 'idle', lastTurn: { id: 'watcher-turn', status: 'running' } }, watcherRoom)
   fireEvent.click(await screen.findByRole('button', { name: 'Talking to the thread. Switch to Watcher' }))
   const prompt = screen.getByRole('textbox', { name: 'Message Watcher' })
   expect(screen.queryByRole('button', { name: 'Stop the running turn' })).toBeNull()
