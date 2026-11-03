@@ -7,10 +7,13 @@ import SottoCore
 /// title once the big one has scrolled off). The big title, where the thread runs and its branch chips scroll away with
 /// the conversation, and the agent's steps sit between the messages in time order, each run folded into one line that
 /// opens in place. A waiting question or permission opens as a sheet; dismissed, the reply box offers it again.
-/// Everything here goes to the thread's own computer.
+/// Everything here goes to the thread's own computer. The iPhone Duo has neither the bar nor the big title: the thread's
+/// controls stand on its rail, and its name and chips behind ••• (Zach's picks, November 3, 2026).
 struct ThreadView: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
+    /// A delegated thread opened from Agents, on the page of the thread that delegated it: Back goes to that thread.
+    var nested = false
     @State private var open: AgentRequest?
     @State private var setAside: Set<String> = []
     /// The request the sheet was opened for, set aside when the sheet closes without an answer.
@@ -26,9 +29,11 @@ struct ThreadView: View {
     @Environment(\.duoLayout) private var duo
     @Environment(\.dismiss) private var dismiss
     private var thread: ThreadSummary? { model.thread(ref) }
-    /// The folded Duo's cover screen, where the thread has no bar: its controls stand in the strip (`FoldedThreadRail`)
-    /// and its title only in the page (Zach, TestFlight build 45, reversing #1724).
+    /// The folded Duo's cover screen, where the rail's thread controls take the tabs' place (`FoldedThreadRail`).
     private var folded: Bool { if case .folded = duo { return true } else { return false } }
+    /// The iPhone Duo, folded or unfolded, where a thread has no bar (ADR-0151, November 3 amendment): its controls stand
+    /// on the rail. Every other iPhone keeps its bar.
+    private var barless: Bool { duo != .none }
 
     var body: some View {
         let _ = BenchProbe.body("ThreadView")
@@ -37,6 +42,8 @@ struct ThreadView: View {
             open = request
         }
         .pageGround()
+        // With no bar over it, the page's own ground keeps its words from the clock and battery.
+        .overlay(alignment: .top) { if barless { StatusBarFade() } }
         .navigationTitle(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -56,9 +63,10 @@ struct ThreadView: View {
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
-        .toolbar(folded ? .hidden : .automatic, for: .navigationBar)
-        // With no bar, iOS's own swipe back is kept, so a swipe in from the left edge goes back to the list.
-        .background { InteractivePop(enabled: folded).frame(width: 0, height: 0).accessibilityHidden(true) }
+        .toolbar(barless ? .hidden : .automatic, for: .navigationBar)
+        // With no bar, iOS's own swipe back is kept where nothing else takes the drag: on the cover screen, and for a
+        // delegated thread, which goes back to its thread. Unfolded, a drag on any other thread moves the sidebar.
+        .background { InteractivePop(enabled: folded || (barless && nested)).frame(width: 0, height: 0).accessibilityHidden(true) }
         .toolbar(.hidden, for: .tabBar)
         .coversTabs()
         .onChange(of: model.railAsked) { _, asked in
@@ -73,7 +81,11 @@ struct ThreadView: View {
         // size and its place.
         .ignoresSafeArea(open != nil ? SafeAreaRegions.keyboard : [], edges: .bottom)
         .task(id: ref) { await model.select(ref); offer() }
-        .onDisappear { Task { if model.selected == ref { await model.select(nil) } } }
+        .onAppear { if nested { model.railNested = ref } }
+        .onDisappear {
+            if nested, model.railNested == ref { model.railNested = nil }
+            Task { if model.selected == ref { await model.select(nil) } }
+        }
         .onChange(of: thread?.requests.map(\.id)) { _, _ in offer() }
         .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
             RequestSheet(ref: ref, request: request).requestSheetDetents()
@@ -106,41 +118,68 @@ struct ThreadView: View {
     }
 }
 
-/// A thread's controls in the folded Duo's strip, in place of its bar (Zach's pick A on the build 45 prototype): Back
-/// where New thread stands on the other pages, under the clock and battery, then the thread's state, Agents, Watch and
-/// its actions, centred in the height under it. The tabs come back with the list, and a swipe in from the left edge goes
-/// back too.
+/// A thread's controls in the folded Duo's strip, in place of the tabs (ADR-0151, amended): Back where New thread stands
+/// on the other pages, under the clock and battery, and low down the thread's pill where the tabs' pill stands. The tabs
+/// come back with the list, and a swipe in from the left edge goes back too.
 struct FoldedThreadRail: View, Equatable {
-    @EnvironmentObject var model: AppModel
     /// The thread showing, once its page has read it.
     let ref: ThreadRef?
     let clear: CGFloat
     let back: () -> Void
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: back) { Image(systemName: "chevron.backward") }
-                .buttonStyle(GlassCircleStyle())
-                .accessibilityLabel(String(localized: "Back"))
-                .accessibilityIdentifier("duo-rail-back")
-                .padding(.top, clear)
-            VStack(spacing: Space.s3) {
-                if let ref {
-                    let thread = model.thread(ref)
-                    ThreadStatePill(state: thread.map { ThreadState($0) } ?? .done, since: Words.date(thread?.summary?.runningTurnStartedAt),
-                                    reachable: model.status(ref.hostID) != .unreachable, vertical: true)
-                    if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { model.railAsked = RailAsk(ref: ref, action: .agents) } }
-                    if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
-                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
-                }
-            }
-            .frame(maxHeight: .infinity)
+            RailBackButton(back: back)
+            Spacer(minLength: Space.s3)
+            if let ref { ThreadRailPill(ref: ref) }
         }
+        .padding(.top, clear)
+        .padding(.bottom, Space.s5)
+        // No lower limit on the height: with the keyboard up, a rail taller than the page would rise past the clock.
+        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .ignoresSafeArea(.keyboard)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("duo-thread-rail")
     }
-    /// It draws from the model it watches, the thread and its place under the clock; Back never changes what it draws.
+    /// It draws the thread and its place under the clock; Back never changes what it draws.
     static func == (lhs: FoldedThreadRail, rhs: FoldedThreadRail) -> Bool { lhs.ref == rhs.ref && lhs.clear == rhs.clear }
+}
+
+/// Back on the Duo's rail, the same round button as New thread. The thread showing goes back itself (`popThread`).
+struct RailBackButton: View {
+    let back: () -> Void
+    var body: some View {
+        Button(action: back) { Image(systemName: "chevron.backward") }
+            .buttonStyle(GlassCircleStyle())
+            .accessibilityLabel(String(localized: "Back"))
+            .accessibilityIdentifier("duo-rail-back")
+    }
+}
+
+/// A thread's state, Agents, Watch and ••• in one pill on the Duo's rail, the same pill and tiles as the tabs (Zach's pick
+/// A, November 3, 2026). Folded it stands in the tabs' place; unfolded it stands over them, and its state says how long
+/// the thread has been at it.
+struct ThreadRailPill: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    var body: some View {
+        let thread = model.thread(ref)
+        VStack(spacing: DuoRailMetrics.tileGap) {
+            Group {
+                ThreadStatePill(state: thread.map { ThreadState($0) } ?? .done, since: Words.date(thread?.summary?.runningTurnStartedAt),
+                                reachable: model.status(ref.hostID) != .unreachable, vertical: true)
+                if let agents = model.agentsCount(ref) { AgentsButton(count: agents, tile: true) { model.railAsked = RailAsk(ref: ref, action: .agents) } }
+                if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title, tile: true) }
+            }
+            // As the tabs' names do, they stay at this size; a tile has no room to grow. ••• is left out, since its icon
+            // doesn't grow and the pull request's sheet it opens takes the user's own text size.
+            .dynamicTypeSize(...DynamicTypeSize.large)
+            ThreadMenu(ref: ref, onRail: true)
+        }
+        .padding(DuoRailMetrics.pillInset)
+        .background { DuoRailPillGround().accessibilityHidden(true) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("duo-thread-pill")
+    }
 }
 
 /// Keeps iOS's swipe back on a page whose navigation bar is hidden, which otherwise loses it, while `enabled`. It answers
@@ -191,20 +230,20 @@ struct ThreadStatePill: View {
     let state: ThreadState
     let since: Date?
     let reachable: Bool
-    /// Stacked, the light over the word, for the folded Duo's strip.
+    /// Stacked in one tile of the Duo's rail: the light, the word and, unfolded, how long it has been at it.
     var vertical = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
         Group {
             if vertical {
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     light
-                    Text(word).lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+                    // One word stays on one line, shrinking rather than breaking, in every language.
+                    Text(word).lineLimit(word.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                    if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since).lineLimit(1).minimumScaleFactor(0.6) }
                 }
-                .padding(.vertical, 7)
-                .frame(width: 66)
+                .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
                 .foregroundStyle(foreground)
-                .background(background, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             } else {
                 HStack(spacing: 6) {
                     light
@@ -264,6 +303,8 @@ struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
+    /// Drawn as a tile of the Duo's rail: the owl alone, on the accent's soft tile while Watcher watches.
+    var tile = false
     @State private var presses = 0
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -272,18 +313,28 @@ struct WatchToggle: View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
-            HStack(spacing: 6) {
-                if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
-                if !compact { Text("Watch").lineLimit(1) }
+            if tile {
+                Group {
+                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: DuoRailMetrics.owl).accessibilityHidden(true) }
+                }
+                .foregroundStyle(watched ? Palette.accentText : Palette.muted)
+                .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                .background { if watched { Circle().fill(Palette.accent.opacity(Tint.accentPill)) } }
+                .contentShape(Circle())
+            } else {
+                HStack(spacing: 6) {
+                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
+                    if !compact { Text("Watch").lineLimit(1) }
+                }
+                .font(.sotto(.small, .semibold))
+                .foregroundStyle(watched ? Palette.accentText : Palette.ink)
+                .padding(.horizontal, compact ? 0 : Space.s3)
+                .frame(minWidth: 32, minHeight: 32)
+                .background(watched ? Palette.accent.opacity(Tint.accentPill) : Palette.fillSoft, in: Capsule())
+                .overlay(Capsule().strokeBorder(watched ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .font(.sotto(.small, .semibold))
-            .foregroundStyle(watched ? Palette.accentText : Palette.ink)
-            .padding(.horizontal, compact ? 0 : Space.s3)
-            .frame(minWidth: 32, minHeight: 32)
-            .background(watched ? Palette.accent.opacity(Tint.accentPill) : Palette.fillSoft, in: Capsule())
-            .overlay(Capsule().strokeBorder(watched ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: watched)
@@ -300,46 +351,119 @@ struct WatchToggle: View {
 
 /// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it, and Settle
 /// or Restore, as on the desktop. A press asks the thread's computer; one that can't go now says why under its name.
-/// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner.
+/// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner. On the Duo's rail,
+/// where a thread has no bar or big title, it also holds what they said: the thread's name, where it runs, its branch and
+/// changes, and its pull request, which opens as the chip does elsewhere (Zach's pick, November 3, 2026).
 struct ThreadMenu: View {
     @EnvironmentObject var model: AppModel
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
+    /// On the Duo's rail: a tile, with the thread's name and chips at the top of the menu.
+    var onRail = false
     @State private var acted = 0
+    @State private var showingPullRequest = false
     var body: some View {
+        let chips = GitChips(model.thread(ref)?.worktree)
         Menu {
-            if model.compactionOffered(ref) {
-                let held = model.compactionHeld(ref)
-                Button { acted += 1; Task { await model.compact(ref) } } label: {
-                    Text("Compact context")
-                    Text(held ?? String(localized: "Summarize earlier messages to free room"))
-                }
-                .disabled(held != nil)
-            }
-            if let action = model.shelfAction(ref) {
-                let held = model.actionHeld(ref)
-                Button { acted += 1; Task { await model.shelve(ref, action) } } label: {
-                    Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
-                         : String(localized: "Restore", comment: "Restore a settled thread to open work."))
-                    if let held { Text(held) }
-                }
-                .disabled(held != nil)
-                .accessibilityIdentifier(action == .settle ? "thread-settle" : "thread-restore")
-            }
+            if onRail { railItems(chips) } else { actions }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Palette.ink)
-                .frame(width: 32, height: 32)
-                .background(Palette.fillSoft, in: Circle())
-                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            if onRail {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: DuoRailMetrics.symbol, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                    .contentShape(Circle())
+            } else {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 32, height: 32)
+                    .background(Palette.fillSoft, in: Circle())
+                    .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
         }
+        // Opened from the foot of the rail, iOS would turn the list over and put the name under the actions.
+        .menuOrder(onRail ? .fixed : .automatic)
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
         .sensoryFeedback(.impact(weight: .medium), trigger: acted)
+        .sheet(isPresented: $showingPullRequest) {
+            if let url = chips.pullRequestURL, let number = chips.pullRequest?.number {
+                PullRequestSheet(ref: ref, url: url, number: number)
+            }
+        }
+    }
+
+    /// What the thread can do: compact its context, and settle or restore it.
+    @ViewBuilder private var actions: some View {
+        if model.compactionOffered(ref) {
+            let held = model.compactionHeld(ref)
+            Button { acted += 1; Task { await model.compact(ref) } } label: {
+                Text("Compact context")
+                Text(held ?? String(localized: "Summarize earlier messages to free room"))
+            }
+            .disabled(held != nil)
+        }
+        if let action = model.shelfAction(ref) {
+            let held = model.actionHeld(ref)
+            Button { acted += 1; Task { await model.shelve(ref, action) } } label: {
+                Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+                     : String(localized: "Restore", comment: "Restore a settled thread to open work."))
+                if let held { Text(held) }
+            }
+            .disabled(held != nil)
+            .accessibilityIdentifier(action == .settle ? "thread-settle" : "thread-restore")
+        }
+    }
+
+    /// On the rail: the name, where it runs and its branch and changes head the menu as its section's heading, because iOS
+    /// dims a row that can't be pressed too far to read, and this is the only place they show. Under them the pull request,
+    /// where this computer offers its sheet (where it doesn't, it reads with the rest, as its chip does), and the actions.
+    @ViewBuilder private func railItems(_ chips: GitChips) -> some View {
+        let thread = model.thread(ref)
+        let opens = model.offersPullRequestSheet(ref.hostID) && chips.pullRequestURL != nil
+        let name = thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet")
+        let about = facts(chips, thread: thread, pullRequestOpens: opens)
+        if !opens && !model.compactionOffered(ref) && model.shelfAction(ref) == nil {
+            // A heading needs rows under it, so with nothing to do the name and the facts are the row.
+            Button {} label: {
+                Text(name)
+                Text(verbatim: about)
+            }
+            .disabled(true)
+        } else {
+            Section {
+                if opens, let pullRequest = chips.pullRequest, let url = chips.pullRequestURL {
+                    let checks = model.lastPullRequest(ref, url: url).map { PullRequests.rollup($0.checks) }
+                    Button { showingPullRequest = true } label: {
+                        Label(caption(pullRequest), systemImage: "arrow.triangle.pull")
+                        if let checks { Text(verbatim: checks) }
+                    }
+                    .accessibilityLabel(GitChipRow.spokenPullRequest(pullRequest, rollup: checks))
+                    .accessibilityIdentifier("thread-menu-pull-request")
+                }
+                actions
+            } header: {
+                Text(verbatim: name + "\n" + about)
+            }
+        }
+    }
+
+    /// Where the thread runs on one line, then what the chips say on the next.
+    private func facts(_ chips: GitChips, thread: ThreadSummary?, pullRequestOpens: Bool) -> String {
+        let place = model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
+        var git: [String] = []
+        if let branch = chips.branch { git.append(branch) }
+        if let changes = chips.changes { git.append("+\(changes.insertions) −\(changes.deletions)") }
+        if !pullRequestOpens, let pullRequest = chips.pullRequest { git.append(caption(pullRequest)) }
+        return git.isEmpty ? place : place + "\n" + git.joined(separator: " · ")
+    }
+
+    private func caption(_ pullRequest: GitChips.PullRequest) -> String {
+        String(localized: "#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
     }
 }
 
@@ -515,6 +639,7 @@ private struct Conversation: View {
     @State private var openRuns: Set<String> = []
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     private static let end = "thread-end"
     private static let pageSpace = "thread-page"
     #if DEBUG
@@ -584,10 +709,20 @@ private struct Conversation: View {
         let thread = model.thread(ref)
         let state = thread.map { ThreadState($0) } ?? .done
         return VStack(alignment: .leading, spacing: 0) {
-            ThreadHero(ref: ref, thread: thread, watched: model.watchedByWatcher(ref), pullRequest: pullRequestChip(thread),
-                       topMoved: { top in follow.heroTop = top; refreshBar() },
-                       titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
-                .equatable()
+            if duo == .none {
+                ThreadHero(ref: ref, thread: thread, watched: model.watchedByWatcher(ref), pullRequest: pullRequestChip(thread),
+                           topMoved: { top in follow.heroTop = top; refreshBar() },
+                           titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
+                    .equatable()
+            } else {
+                // The Duo draws no title (`ThreadMenu` holds it), but VoiceOver still reads the page's name first.
+                Color.clear
+                    .frame(height: Space.s3)
+                    .accessibilityElement()
+                    .accessibilityLabel(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("thread-title")
+            }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
         }
@@ -981,7 +1116,7 @@ private struct GitChipRow: View {
     }
 
     /// The pull request chip as VoiceOver reads it, with the checks' roll-up once its sheet has read them.
-    private static func spokenPullRequest(_ pullRequest: GitChips.PullRequest, rollup: String?) -> String {
+    static func spokenPullRequest(_ pullRequest: GitChips.PullRequest, rollup: String?) -> String {
         let number: String = String(pullRequest.number)
         let state: String = pullRequest.stateWord
         guard let rollup else {

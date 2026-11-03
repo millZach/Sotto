@@ -95,13 +95,30 @@ import UIKit
         checkRail(in: window, "Watcher")
     }
 
+    /// A thread has no bar or title over its page, its controls stand in one pill on the rail, whole, and clear of the tabs.
+    private func checkThreadRail(in window: CGRect) {
+        XCTAssertFalse(app.navigationBars.firstMatch.exists, "A thread has no bar on the Duo")
+        XCTAssertLessThan(byID("thread-title").frame.height, 20, "and no big title, only its name for VoiceOver")
+        let pill = byID("duo-thread-pill")
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "The thread's controls stand on the rail")
+        XCTAssertLessThanOrEqual(pill.frame.maxY, app.buttons["tab-threads"].frame.minY, "The thread's pill ends above the tabs")
+        XCTAssertGreaterThanOrEqual(pill.frame.minY, app.buttons["duo-sidebar"].exists ? app.buttons["duo-sidebar"].frame.maxY : window.minY, "and starts under the sidebar's button")
+        XCTAssertEqual(pill.frame.midX, app.buttons["tab-threads"].frame.midX, accuracy: 1, "It stands in line with the tabs")
+        XCTAssertTrue(app.buttons["thread-actions"].isHittable, "••• stays in reach")
+    }
+
     func testUprightSidebarFollowsTheThumb() throws {
         launch(["--ui-open-thread", "iphone"])
         try hold(upright: true)
         XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 20), "The thread opens")
         let window = app.windows.firstMatch.frame
         checkRail(in: window, "A thread")
+        checkThreadRail(in: window)
+        XCTAssertTrue(app.buttons["duo-rail-back"].isHittable, "Upright, Back stands on the rail")
         capture("duo-upright-thread")
+        app.buttons["thread-actions"].tap()
+        capture("duo-upright-thread-menu")
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.2)).tap()
         let list = byID("duo-sidebar-list")
         XCTAssertFalse(list.exists)
         // A drag right from the middle of the page, not the edge, pulls the sidebar in.
@@ -131,6 +148,10 @@ import UIKit
         let window = app.windows.firstMatch.frame
         let list = byID("duo-sidebar-list")
         XCTAssertTrue(list.waitForExistence(timeout: 5), "Sideways, the sidebar stands beside a thread")
+        checkThreadRail(in: window)
+        XCTAssertFalse(app.buttons["duo-rail-back"].exists, "Sideways, the Threads tab goes back to the list")
+        XCTAssertFalse(app.buttons["new-thread"].exists, "Sideways, a thread's rail has no room for New thread")
+        XCTAssertTrue(app.buttons["sidebar-new-thread"].isHittable, "It moves to the sidebar's heading")
         capture("duo-sideways-thread-light")
         let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tab-'")).allElementsBoundByIndex.filter { $0.isHittable }
         XCTAssertEqual(tabs.count, 4)
@@ -150,5 +171,12 @@ import UIKit
         capture("duo-sideways-thread-hidden")
         middle.press(forDuration: 0.05, thenDragTo: middle.withOffset(CGVector(dx: 200, dy: 0)), withVelocity: .default, thenHoldForDuration: 0.1)
         XCTAssertTrue(list.waitForExistence(timeout: 5), "A drag right brings it back")
+        // The keyboard draws over the rail's foot and leaves its head clear of the clock.
+        let sidebar = byID("duo-sidebar")
+        let head = sidebar.frame.minY
+        byID("thread-reply").tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The reply box brings the keyboard")
+        sleep(1)
+        XCTAssertEqual(sidebar.frame.minY, head, accuracy: 0.5, "The keyboard leaves the rail's head where it stands")
     }
 }
