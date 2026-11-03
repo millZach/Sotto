@@ -5,6 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { AgentCommand, AgentRequest, AgentState, AgentThread } from '../../../shared/agents'
 import type { PopupBridge } from '../../../shared/popup'
+import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import { AgentRequestCard } from '../agents/requests/AgentRequestCard'
 import type { RequestAnswer, SubmitOutcome } from '../agents/requests/requestAnswers'
 import { MessageContent } from '../agents/MessageContent'
@@ -69,7 +70,7 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
   const menu = slashMatches(input, commands)
   // What is held for another thread is not this one's: nothing shows until this one's arrives.
   const current = thread?.id === threadId ? thread : null
-  const running = current?.status === 'running'
+  const running = current !== null && isThreadTurnRunning(current)
   const waiting = (current?.requests.length ?? 0) > 0
   const project = shell === null ? null : popupProject(shell, memory.projectId)
 
@@ -94,7 +95,8 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
         writePopupMemory(storage(), next)
         return next
       })
-      if (memory.target === 'watcher' && watcherThread === undefined) setNotice(msg`Watcher isn’t running, so the popup is on your thread.`)
+      // Said once: the popup stays on the thread from then on, until the user asks for Watcher again.
+      if (memory.target === 'watcher' && watcherThread === undefined) { setNotice(msg`Watcher isn’t running, so the popup is on your thread.`); remember({ target: 'thread' }) }
     })()
     prompt.current?.focus()
     return () => { live = false }
