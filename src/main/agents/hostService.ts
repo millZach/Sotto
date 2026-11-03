@@ -29,6 +29,7 @@ import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
+import type { TellWatcherAnswer, TellWatcherAsk } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -184,6 +185,9 @@ export interface HostService {
   nextPrompts?(): readonly NextPromptEntry[]
   subscribeNextPrompts?(listener: (entry: NextPromptEntry) => void): () => void
   setNextPromptsWanted?(wanted: boolean): void
+  /** The host's threads reach this desktop's Watcher (`watcher-tell`): each message they send it, and the answer that says it got through. */
+  subscribeWatcherTell?(listener: (askId: string, ask: TellWatcherAsk) => void): () => void
+  answerWatcherTell?(askId: string, answer: TellWatcherAnswer): Promise<void>
   /** Tells a remote host this desktop's latest answer for its product events (ADR-0179), and keeps trying until it has it. */
   tellProductEventAnswer?(): void
   /**

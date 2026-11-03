@@ -16,6 +16,8 @@ import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { MediaToolServer, SHOW_IN_THREAD_TOOL } from './agents/mediaTools'
+import { tellWatcherTools } from './agents/tellWatcherTools'
+import { DesktopTellWatcherRelay } from './agents/tellWatcherRelay'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
@@ -1168,6 +1170,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Moving threads to a paired host (#1178) reaches the machines through Watcher's view of them, and its placement.
   const threadMoves = 'threadMoves' in localRuntime ? localRuntime.threadMoves : undefined
   if (threadMoves && localRuntime.watcher) threadMoves.useTargets(moveTargetsOf(hostRouter.watcherHosts(), localRuntime.watcher, listener => hostRouter.subscribeChanges(listener)))
+  // A thread on a paired host reaches this computer's Watcher over its connection here (ADR-0073, November 2, 2026).
+  const localWatcher = localRuntime.watcher
+  const watcherTells = localWatcher ? new DesktopTellWatcherRelay((target, ask) => localWatcher.threadTold(target, ask)) : undefined
+  watcherTells?.useHosts(hostRouter)
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
@@ -1274,7 +1280,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : [])])
+  // Lets a thread on this computer send Watcher a message when the user tells it to (ADR-0073, November 2, 2026).
+  const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
+    const hostId = agentControl.hostId()
+    return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
+  }) : undefined
+  if (tellTools) quitHandles.tellWatcherTools = tellTools
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({

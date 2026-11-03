@@ -1480,6 +1480,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private shownMediaStore: ShownMediaStore | undefined
   keepShownMedia(store: ShownMediaStore): void { this.shownMediaStore = store }
   /** Whether an agent in this thread is offered `sotto_media`: a thread this host holds, on a provider that takes Sotto's tools. */
+  /** Whether an agent in this thread is offered `sotto_watcher`: an ordinary thread this host holds, on a provider that takes Sotto's tools. */
+  admitsTellWatcher(threadId: string): boolean {
+    const thread = this.threadById(threadId)
+    return thread !== undefined && this.visible(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && threadTakesSottoTools(thread)
+  }
   admitsShownMedia(threadId: string): boolean {
     if (!this.shownMediaStore) return false
     const thread = this.threadById(threadId)
