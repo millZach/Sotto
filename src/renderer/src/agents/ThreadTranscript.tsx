@@ -890,7 +890,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   [forkModels, thread.id, thread.title, thread.providerId, thread.projectId, thread.remoteHost, thread.hostLabel, thread.modelId, thread.kind, command, forkRepository, forkBranch, forkAt, forkAfter, forkBusy, t])
   // Ask the Council on a reply (ADR-0177; Owl only): from a thread the Council can start from, kept the same while it can.
   const councilRoom = useCouncilRoom()
-  const navigate = useOptionalApp()?.actions.navigate
+  const navigate = useOptionalApp()?.actions?.navigate
   const councilHere = councilRoom && navigate !== undefined && councilAskable(thread, state.connections?.find(connection => connection.kind === 'local')?.hostId)
   const councilAsk = useMemo(() => !councilHere ? null : (text: string) => {
     offerCouncilDraft({ originThread: thread.id, question: quotedReply(text) })
