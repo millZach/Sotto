@@ -1528,6 +1528,10 @@ msgstr "That thread has no folder for the Council to work in. Nothing was starte
 msgid "That thread is not on this computer."
 msgstr "That thread is not on this computer."
 
+#: src/main/council/councilService.ts
+msgid "That thread's folder is not a Git repository and is not its project's folder, so the Council cannot work in it. Nothing was started."
+msgstr "That thread's folder is not a Git repository and is not its project's folder, so the Council cannot work in it. Nothing was started."
+
 #: src/main/notifications/desktopNotifier.ts
 msgid "The agent finished on {computer}."
 msgstr "The agent finished on {computer}."

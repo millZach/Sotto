@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { isThreadProviderConnected, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
   type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
@@ -231,6 +231,11 @@ export class CouncilService {
     const id = this.newId()
     const made = await makeCouncilSnapshot({ bundles: this.options.bundles, run: this.run, folder, path: join(this.options.directory, COUNCIL_WORKTREE_FOLDER, id) })
     if (typeof made === 'object' && 'refused' in made) return { ok: false, message: made.refused }
+    // Without a snapshot the seats share the project's folder, so the folder checked must be that one.
+    const key = (path: string) => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
+    if (made === 'none' && (!project || key(folder) !== key(project.path))) {
+      return { ok: false, message: t`That thread's folder is not a Git repository and is not its project's folder, so the Council cannot work in it. Nothing was started.` }
+    }
     const quoted = this.quote(origin)
     // The whole conversation goes to every thread, inline and written nowhere (Drake, November 2, 2026): in its first prompt
     // when it fits, otherwise in parts before it.
