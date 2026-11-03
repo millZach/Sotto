@@ -198,6 +198,87 @@ Additional unchanged-build baseline observations, all retained, were 17.517% CPU
 
 An earlier installation attempt produced zero accepted samples: the delayed installer overlapped a measurement launch and rolled back. The successful run first closed the existing measurement app, waited for the installer's version-specific successful receipt and verified the installed version before starting. A direct system-speech preflight matched the baseline pilot's warmed speech output. Typecheck, lint and the measurement build passed. Recorder, controller, ownership, device-change and worklet-retirement test sources are added; they await GitHub CI and were not run locally.
 
+## B: Listening at microphone readiness
+
+Source: `778563e4a6b784a04612ad2071e652c93e0e6b4a`, local Owl `0.1.43-owl.20261103.8003`. The recorder calls the controller synchronously when microphone access resolves. Listening is dispatched before source connection, with no intervening await. Only a pending native permission request publishes Waiting for microphone; ordinary startup offers Cancel. A stop during unfinished startup cancels the session and rejects late readiness.
+
+Ten cold and twenty warm recordings retain the baseline settings and five-second utterance. No accepted recording committed Waiting for microphone. Independent TextEdit accessibility readback found 91 matches of each expected clause: the pilot, baseline, A and all 30 B recordings. Only numeric counts were returned. Raw evidence: [cold](2026-11-02-dictation-gaps/b-cold.jsonl), [warm](2026-11-02-dictation-gaps/b-warm.jsonl). Every table entry is p50 / p95 in milliseconds.
+
+| Measured interval | Cold p50 / p95 | Warm p50 / p95 |
+| --- | ---: | ---: |
+| `hotkeyToListeningCommittedMs` | 112.843 / 241.685 | 94.262 / 112.508 |
+| `hotkeyToListeningShownMs` | 121.697 / 2083.377 | 105.444 / 127.735 |
+| `hotkeyToFirstAudioChunkMs` | 159.490 / 287.785 | 142.812 / 162.008 |
+| `stopToRecorderStoppedMs` | 24.973 / 87.817 | 17.029 / 18.440 |
+| `stopToLastSegmentMs` | 140.319 / 227.117 | 92.549 / 102.047 |
+| `stopToPasteKeystrokeMs` | 452.303 / 869.098 | 383.099 / 408.155 |
+| `stopToDeliveryReturnedMs` | 602.420 / 1019.117 | 533.951 / 560.001 |
+| `captureDurationMs` | 5072.000 / 5109.000 | 5078.000 / 5100.000 |
+
+### B stage work
+
+| Measured interval | Cold p50 / p95 | Warm p50 / p95 |
+| --- | ---: | ---: |
+| `commandDeliveryMs` | 0.217 / 4.115 | 0.226 / 0.495 |
+| `widgetShowMs` | 0.079 / 2.709 | 0.079 / 7.282 |
+| `audioContextMs` | 12.400 / 74.500 | 27.500 / 44.399 |
+| `workletLoadMs` | 0.000 / 0.000 | 0.000 / 0.000 |
+| `microphoneRequestMs` | 98.500 / 160.900 | 63.400 / 78.400 |
+| `sourceConnectMs` | 0.100 / 0.400 | 0.100 / 0.100 |
+| `startCueMs` | 131.200 / 143.400 | 126.400 / 130.000 |
+| `recorderStopMs` | 22.600 / 84.800 | 13.400 / 14.200 |
+| `transcriptionRequestMs` | 90.000 / 157.200 | 75.400 / 83.400 |
+| `deliveryMs` | 449.400 / 791.300 | 440.400 / 462.400 |
+| `focusedAppMs` | 11.858 / 27.614 | 10.960 / 13.067 |
+| `clipboardWriteMs` | 0.472 / 2.633 | 0.286 / 0.415 |
+| `widgetHideMs` | 0.363 / 0.440 | 0.608 / 4.877 |
+| `pasteDelayMs` | 149.474 / 150.043 | 150.928 / 151.498 |
+| `pasteKeystrokeMs` | 135.076 / 461.181 | 121.420 / 143.362 |
+| `pasteSettleMs` | 149.746 / 151.197 | 150.863 / 151.973 |
+| `historyMs` | 10.300 / 21.800 | 11.200 / 16.099 |
+
+### B handoffs
+
+| Measured interval | Cold p50 / p95 | Warm p50 / p95 |
+| --- | ---: | ---: |
+| `hotkeyToCommandMs` | 0.118 / 0.164 | 0.054 / 0.121 |
+| `commandToRecorderMs` | 0.700 / 1.000 | 0.400 / 0.500 |
+| `recorderToAudioContextMs` | 0.000 / 0.100 | 0.000 / 0.100 |
+| `audioContextToWorkletMs` | 0.000 / 0.100 | 0.000 / 0.100 |
+| `workletToMicrophoneMs` | 0.200 / 1.800 | 0.100 / 0.101 |
+| `microphoneToSourceMs` | 0.300 / 0.401 | 0.200 / 0.200 |
+| `microphoneToListeningDispatchMs` | 0.200 / 0.301 | 0.100 / 0.200 |
+| `listeningDispatchToSourceMs` | 0.100 / 0.200 | 0.000 / 0.100 |
+| `listeningDispatchToCommitMs` | 2.900 / 10.700 | 1.200 / 1.600 |
+| `listeningCommitToShownMs` | 10.400 / 1899.300 | 13.599 / 15.700 |
+| `sourceToFirstChunkMs` | 52.100 / 67.900 | 48.300 / 56.599 |
+| `stopToCommandMs` | 0.023 / 0.026 | 0.031 / 0.057 |
+| `stopCommandToControllerMs` | 0.200 / 0.201 | 0.099 / 0.100 |
+| `controllerToRecorderStopMs` | 2.300 / 3.200 | 3.300 / 4.200 |
+| `recorderStopToTranscriptionMs` | 0.200 / 0.200 | 0.000 / 0.100 |
+| `transcriptionToLastSegmentMs` | 0.100 / 0.100 | 0.000 / 0.100 |
+| `lastSegmentToDeliveryMs` | 0.900 / 1.200 | 0.200 / 0.300 |
+| `deliveryToFocusedAppMs` | 2.526 / 2.955 | 2.259 / 5.163 |
+| `deliveryToClipboardMs` | 4.151 / 5.286 | 3.252 / 6.280 |
+| `clipboardToWidgetHideMs` | 9.751 / 22.319 | 9.690 / 11.726 |
+| `focusedAppToWidgetHideMs` | 0.024 / 0.027 | 0.027 / 0.031 |
+| `widgetHideToPasteDelayMs` | 0.002 / 0.006 | 0.003 / 0.005 |
+| `pasteDelayToKeystrokeMs` | 0.007 / 0.019 | 0.009 / 0.013 |
+| `pasteKeystrokeToSettleMs` | 0.006 / 0.007 | 0.007 / 0.009 |
+| `pasteSettleToDeliveryReturnMs` | 0.249 / 0.463 | 0.198 / 0.291 |
+| `deliveryToHistoryMs` | 0.000 / 0.101 | 0.000 / 0.100 |
+| `historyToReadyDispatchMs` | 1401.400 / 1401.700 | 1401.200 / 1401.800 |
+| `readyDispatchToWidgetMs` | 4.600 / 9.200 | 8.300 / 9.700 |
+| `sourceToListeningDispatchMs` | — | 0.000 / 0.000 |
+
+Microphone readiness to Listening dispatch is now 0.200 / 0.301 ms cold and 0.100 / 0.200 ms warm. Dispatch to source connection is 0.100 / 0.200 ms cold and 0.000 / 0.100 ms warm. These synchronous handoffs meet 16 ms; microphone opening and context resume still dominate the press. Warm Listening p95 is 127.735 ms and first-chunk p95 is 162.008 ms, both above target and worse than A. B does not yet improve the headline startup budgets.
+
+The second cold press committed Listening at 184.077 ms, but its second-animation-frame shown mark arrived at 2083.377 ms: 1899.300 ms after commit. Its first chunk arrived at 242.677 ms. This sample remains in the cold p95. The numeric trace proves a delayed animation-frame observation, not whether the user saw an equally long display delay; its cause is unverified. Cold stop-to-paste p95 also retains the first sample's 869.098 ms, including a 461.181 ms native helper call. No sample was removed or retried.
+
+The 30.107-second idle interval measured 11.160% of one core across nine installed-app processes, RSS 1074.500 → 1008.547 MiB ([evidence](2026-11-02-dictation-gaps/b-idle.json)). Resource variation in the unchanged baseline still prevents a budget claim from this single endpoint.
+
+Cold-launch preparation initially failed before any hotkey. The final collector (`703926082`) waits for the exact main window, invokes Sotto's native Settings menu to show it and publish visibility, then waits for enabled Start dictation before activating TextEdit. Native unminimize/focus alone did not consistently expose the ready renderer. Preparation failures yielded zero accepted recordings; all 30 completed measurements are retained. B typecheck, lint, catalog extraction and the measurement build passed. Unit and perf test sources await GitHub CI; no local test, e2e or design capture was run.
+
 ## Acceptance and limitations
 
 | Measure | Required |
@@ -210,4 +291,4 @@ An earlier installation attempt produced zero accepted samples: the delayed inst
 | App-owned idle gap at each handoff | ≤16 ms |
 | Idle CPU increase / memory increase | ≤0.5 percentage points / ≤15 MB |
 
-Baseline and A measurements are complete. B–E, the scripted 150 ms speech proof, permission-dialog and stop-during-start coverage, final resource comparisons and GitHub CI remain. Typecheck and lint passed for A; later code must pass them again. A's warm first-chunk regression remains unresolved.
+Baseline, A and B measurements are complete. C–E, execution of the scripted 150 ms speech and lifecycle test sources in GitHub CI, final resource comparisons and the PR remain. Typecheck and lint passed for B; later code must pass them again. The warm first-chunk regression and the B cold shown-mark outlier remain unresolved.
