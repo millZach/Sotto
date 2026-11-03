@@ -6,6 +6,10 @@
 .pane-terminal__divider:focus-visible { outline: none; }
 .pane-terminal__divider:focus-visible::before { inset: 2px 0; background: var(--tt-focus-ring); }
 .pane-terminal__body { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+/* A tab on the drawer's bar that is not a shell, the Council (ADR-0177): it fills what the shell's screen would, and
+   lays itself out by the room the drawer gives it. */
+.pane-terminal .terminal-lead { display: flex; flex: 1; min-width: 0; min-height: 0; container: drawer-tab / size; }
+.pane-terminal .terminal-tabs__tab > svg { flex: none; }
 /* The terminal fits the drawer, never the other way round: without a zero minimum width a wide grid widens its own
    box, the fit then measures that, and typing scrolls the whole pane sideways. Clipping, not scrolling, keeps
    focus from dragging the pane along while the grid catches up with a resize. */

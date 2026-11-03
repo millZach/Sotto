@@ -13,7 +13,7 @@ import { ChoiceMenu } from '../usage/UsageMenu'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
-import { clearCouncilDraft, councilAskable, readCouncilDraft } from './councilDraft'
+import { clearCouncilDraft, councilAskable, onCouncilDraft, readCouncilDraft, type CouncilDraft } from './councilDraft'
 import './council.css'
 
 /**
@@ -31,13 +31,28 @@ export function chamberCouncil(councils: readonly CouncilRecord[] | null, drafti
   return live ?? (!drafting && newest?.status === 'done' ? newest : null)
 }
 
+/** The Layout menu, on the bar of the drawer's Council tab: the same setting as Settings → Council. */
+export function CouncilLayoutMenu(): ReactNode {
+  const { t } = useLingui()
+  const app = useOptionalApp()
+  if (!app) return null
+  const layouts: { value: CouncilLayout; label: string }[] = [
+    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
+    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
+    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
+  ]
+  return <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={app.settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT} options={layouts}
+    onChoose={value => void app.actions.updateSettings({ councilLayout: value })} />
+}
+
 /**
- * The Council page (ADR-0177): the chamber (`CouncilChamber`, decision 6), then beside or under it the Ask form and each
- * Council as a text record of its stages, its threads' states and the actions their rows offer, the verdict with
- * Sotto's counts, and Send to the thread. The record is the accessible form of the deliberation. The header's Layout
- * menu changes the same setting as Settings → Council.
+ * The Council (ADR-0177), the Council tab of a thread pane's drawer: the chamber (`CouncilChamber`, decision 6), the
+ * seats across the drawer's whole width under it, and beside the chamber the Ask form and each Council as a text record
+ * of its stages, its threads' states and the actions their rows offer, the verdict with Sotto's counts, and Send to the
+ * thread. The record is the accessible form of the deliberation. `thread` is the pane's thread, where a question starts
+ * from unless the user changes it.
  */
-export function CouncilView({ bridge = window.sotto?.council }: { readonly bridge?: CouncilBridge | undefined }): ReactNode {
+export function CouncilView({ thread, bridge = window.sotto?.council }: { readonly thread?: string | undefined; readonly bridge?: CouncilBridge | undefined }): ReactNode {
   const { t } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
@@ -47,34 +62,43 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
   const [panel, setPanel] = useState<CouncilPanel | null>(null)
-  // Ask the Council on a reply opens the page with that thread and reply filled in.
-  const [draft] = useState(readCouncilDraft)
-  useEffect(clearCouncilDraft, [])
+  // Ask the Council on a reply opens this tab with that thread and reply filled in, or fills it in when it is open.
+  const [taken, setTaken] = useState(() => ({ draft: ownDraft(thread), revision: 0 }))
+  const draft = taken.draft
   const [question, setQuestion] = useState(draft?.question ?? '')
+  useEffect(() => {
+    const take = (): void => {
+      const next = ownDraft(thread)
+      if (!next) return
+      clearCouncilDraft()
+      setTaken(held => held.draft === next ? held : { draft: next, revision: held.revision + 1 })
+      setQuestion(next.question)
+    }
+    take()
+    return onCouncilDraft(take)
+  }, [thread])
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
-  const layouts: { value: CouncilLayout; label: string }[] = [
-    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
-    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
-    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
-  ]
   return <div className="council-view" data-layout={layout}>
-    <header className="council-head">
-      <h1>{t({ message: 'Council', comment: 'The Council page: one question put to several models, which answer, review each other and get a verdict.' })}</h1>
-      {app ? <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={layout} options={layouts}
-        onChoose={value => void app.actions.updateSettings({ councilLayout: value })} /> : null}
-    </header>
-    <div className="council-body">
-      <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
-      <div className="council-scroll"><div className="council-page">
-        {bridge ? <AskForm bridge={bridge} origin={draft?.originThread} panel={seatsPanel} onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
-        {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
-        {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
-        <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
-      </div></div>
-    </div>
+    <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
+    {/* The seats, under the figures they seat and as wide as the drawer, before the question in the Tab order. */}
+    {bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
+    <div className="council-scroll"><div className="council-page">
+      {/* A new draft is a new question from its thread: the form starts again from it. */}
+      {bridge ? <AskForm key={taken.revision} bridge={bridge} origin={draft?.originThread ?? thread} panel={seatsPanel} onPanel={setPanel}
+        question={question} onQuestion={setQuestion} /> : null}
+      {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
+      {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the Council again.`}</p> : null}
+      <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+    </div></div>
   </div>
+}
+
+/** The draft waiting for this tab: one asked from its thread, or any while the tab stands for no thread. */
+function ownDraft(thread: string | undefined): CouncilDraft | null {
+  const draft = readCouncilDraft()
+  return draft && (thread === undefined || draft.originThread === thread) ? draft : null
 }
 
 /**
@@ -107,7 +131,7 @@ function OriginPicker({ threads, projects, chosen, onChoose }: { readonly thread
   const hits = threads.filter(item => !words || `${item.title} ${projectTitle(item)}`.toLocaleLowerCase().includes(words))
   const groups = [...new Set(hits.map(item => item.projectId))]
   const choose = (id: string): void => { onChoose(id); close() }
-  return <div className="council-field">
+  return <div className="council-field council-field--from">
     <span id={labelId}>{t({ message: 'From', comment: 'The thread a Council question comes from' })}</span>
     <div className="council-origin">
       {thread ? <><ProviderMark provider={thread.providerId} name={thread.title} size={14} />
@@ -188,11 +212,10 @@ function AskForm({ bridge, origin: offeredOrigin, panel: seatsPanel, onPanel: se
     <h2 id={questionId} className="tt-visually-hidden">{t`Ask the Council`}</h2>
     <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={setOrigin} />
     <label className="council-field"><span>{t({ message: 'Question', comment: 'The question put to the Council' })}</span>
-      <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={3} aria-describedby={estimateId}
+      <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={2} aria-describedby={estimateId}
         onChange={event => setQuestion(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void ask() } }} />
     </label>
-    <CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} />
     <p id={estimateId} className="council-ask__estimate tt-paragraph">
       {reads && providers.length ? parts > 1
         ? t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words, in ${parts} parts before the question. A stage waits up to ${minutes} minutes for a thread.`

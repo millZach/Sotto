@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
 import { ChamberPainter } from '../../../../../src/renderer/src/features/council/chamberPainter'
-import { chamberCouncil, CouncilView, useSeatsInForce } from '../../../../../src/renderer/src/features/council/CouncilView'
+import { chamberCouncil, CouncilLayoutMenu, CouncilView, useSeatsInForce } from '../../../../../src/renderer/src/features/council/CouncilView'
+import { clearCouncilDraft, offerCouncilDraft, readCouncilDraft } from '../../../../../src/renderer/src/features/council/councilDraft'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
 import * as canvasColor from '../../../../../src/renderer/src/watcher/canvasColor'
 import * as watcherScene from '../../../../../src/renderer/src/watcher/WatcherNightScene'
@@ -32,7 +33,7 @@ function provide(threads: readonly Partial<AgentThread>[] = []) {
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   const navigate = vi.fn(), updateSettings = vi.fn(async () => true)
-  vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'council', platform: 'win32', settings: DEFAULT_SETTINGS, actions: { navigate, updateSettings } } as unknown as AppContextValue)
+  vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', settings: DEFAULT_SETTINGS, actions: { navigate, updateSettings } } as unknown as AppContextValue)
   /** The next state as main publishes it: one thread changed, every other the same object. */
   const publish = (id: string, change: (thread: AgentThread) => AgentThread): void => {
     const current = vi.mocked(useOptionalAgents).mock.results.at(-1)!.value as ReturnType<typeof agentContextFixture>
@@ -63,7 +64,7 @@ function withLayout(width = 1020, height = 380): { readonly asked: () => number;
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
 
-describe('the Council page’s reads', () => {
+describe('the Council tab’s reads', () => {
   it('shows the pending list read, then a safe failure instead of keeping it pending', async () => {
     withLayout()
     provide()
@@ -76,9 +77,24 @@ describe('the Council page’s reads', () => {
     render(<CouncilView bridge={bridge} />)
     expect(screen.getByText('Reading the Councils…')).toHaveAttribute('role', 'status')
     await act(async () => { pending.reject(new Error('ENOENT /private/councils.json')) })
-    expect(screen.getByText('Sotto could not read the Councils. Nothing was changed. Open the page again.')).toBeInTheDocument()
+    expect(screen.getByText('Sotto could not read the Councils. Nothing was changed. Open the Council again.')).toBeInTheDocument()
     expect(screen.queryByText('Reading the Councils…')).toBeNull()
     expect(document.body).not.toHaveTextContent('/private/')
+  })
+
+  it('takes a reply put to the Council from its own thread, open already or opening, and leaves another thread’s', async () => {
+    withLayout()
+    provide([{ id: 'thread-a', title: 'Thread A' }, { id: 'thread-b', title: 'Thread B' }])
+    const bridge: CouncilBridge = { read: async () => [], estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }), command: vi.fn(), onChanged: () => () => undefined }
+    offerCouncilDraft({ originThread: 'thread-a', question: '> First' })
+    render(<CouncilView thread="thread-a" bridge={bridge} />)
+    expect(await screen.findByRole('textbox', { name: 'Question' })).toHaveValue('> First')
+    expect(readCouncilDraft()).toBeNull()
+    act(() => offerCouncilDraft({ originThread: 'thread-b', question: '> Elsewhere' }))
+    expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('> First')
+    act(() => offerCouncilDraft({ originThread: 'thread-a', question: '> Second' }))
+    expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('> Second')
+    clearCouncilDraft()
   })
 
   it('replaces Council preparation with the agent read failure', async () => {
@@ -327,11 +343,11 @@ describe('the chamber’s figures', () => {
   })
 })
 
-describe('the Council page’s Layout menu', () => {
+describe('the Council tab’s Layout menu', () => {
   it('names the layout, changes the setting, and closes on Escape with focus back on its button', async () => {
     const user = userEvent.setup()
     const { updateSettings } = provide()
-    render(<CouncilView bridge={undefined} />)
+    render(<CouncilLayoutMenu />)
     const button = screen.getByRole('button', { name: 'Layout: Long table' })
     await user.click(button)
     const menu = screen.getByRole('listbox', { name: 'Layout' })
