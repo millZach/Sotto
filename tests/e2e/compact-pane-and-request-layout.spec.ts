@@ -254,7 +254,7 @@ test('threaded structured forms show the native explanation and tool context onc
 
 const claudeTool = (id: string, tool: string, input: Record<string, unknown>): AgentRequest => claudePending({ type: 'control_request', request_id: id, request: { subtype: 'can_use_tool', tool_name: tool, tool_use_id: `toolu_${id}`, input } })!.request
 
-test('a permission card shows the model’s summary and the command, or a readable request, and never raw input (ADR-0180)', async () => {
+test('a permission card shows the model’s summary and the command, or a readable request, and never raw input (ADR-0185)', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
   const launched = await launchSotto()

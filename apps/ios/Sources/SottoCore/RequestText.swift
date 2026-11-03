@@ -18,7 +18,7 @@ public enum RequestText {
         return rest.range(of: #"^(?:\s|[0-9]+\.|[()/;,])*$"#, options: .regularExpression) != nil ? nil : request.text
     }
 
-    /// The line over the words a model wrote about what it asks, so they read as its own and not as Sotto's account (ADR-0180).
+    /// The line over the words a model wrote about what it asks, so they read as its own and not as Sotto's account (ADR-0185).
     public static func says(provider: String) -> String {
         String(localized: "\(provider) says", bundle: .module, comment: "Over the words a coding agent wrote about what it asks to do. %@ is its name, such as Claude Code.")
     }
@@ -37,7 +37,7 @@ public enum RequestText {
     }
 
     /// What a permission's sheet leads with, and the rest of its words (#1855). A command's words never lead: they can hold
-    /// the model's summary, which reads as the model's under the headline (ADR-0180), so the sheet says a command is asked.
+    /// the model's summary, which reads as the model's under the headline (ADR-0185), so the sheet says a command is asked.
     /// Any other request leads with what it does, or with the first line of its words when it says nothing more exact.
     public static func permissionLead(_ request: AgentRequest) -> (headline: String?, rest: String?) {
         guard request.context?.command == nil else { return (nil, nil) }

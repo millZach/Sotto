@@ -515,7 +515,7 @@ public struct Question: Decodable, Equatable, Identifiable, Sendable {
 public struct PermissionChoice: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let kind: String; public let description: String? }
 public struct RequestContext: Decodable, Equatable, Sendable {
     public let toolName: String?; public let command: String?; public let cwd: String?; public let details: String?
-    /// The asking model's own words for what it asks (ADR-0180). Sotto writes none, and a computer from before it sends none.
+    /// The asking model's own words for what it asks (ADR-0185). Sotto writes none, and a computer from before it sends none.
     public let summary: String?
     /// What a request that is not a command does, and the path or address it acts on.
     public let action: String?; public let target: String?

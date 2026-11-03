@@ -13,7 +13,7 @@ import { commandCard, readableFields, toolInputCard } from '../../../src/main/ag
 const SUMMARY = 'Download recent benchmark artifacts and tabulate key scenarios'
 const claude = (tool: string, input: Record<string, unknown>, extra: Record<string, unknown> = {}) => claudePending({ request_id: 'r', request: { subtype: 'can_use_tool', tool_name: tool, input, ...extra } })!.request
 
-describe('a command on its permission card (ADR-0180)', () => {
+describe('a command on its permission card (ADR-0185)', () => {
   it('shows Claude’s own description as the summary and no raw input', () => {
     const request = claude('Bash', { command: 'cd /x; gh run download', timeout: 300000, description: SUMMARY })
     expect(request.context).toEqual({ toolName: 'Bash', command: 'cd /x; gh run download', summary: SUMMARY })
@@ -78,7 +78,7 @@ describe('a command on its permission card (ADR-0180)', () => {
   })
 })
 
-describe('any other request on its permission card (ADR-0180)', () => {
+describe('any other request on its permission card (ADR-0185)', () => {
   it('shows an edit as its path and its changed lines', () => {
     const request = claude('Edit', { file_path: '/a/b.ts', old_string: 'one\ntwo', new_string: 'three', replace_all: true })
     expect(request.text).toBe('Edit a file: /a/b.ts')

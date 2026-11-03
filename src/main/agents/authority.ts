@@ -57,7 +57,7 @@ export function classifyRiskyAction(
   request: { kind: 'question' | 'permission'; text: string; context?: { command?: string | undefined; summary?: string | undefined; target?: string | undefined; details?: string | undefined } | undefined },
 ): RiskyAction[] {
   if (request.kind !== 'permission') return []
-  // A card's words are short, so what it asks is read from all of them (ADR-0180).
+  // A card's words are short, so what it asks is read from all of them (ADR-0185).
   const { command, summary, target, details } = request.context ?? {}
   const said = [request.text, command, summary, target, details].filter(Boolean).join('\n')
   return riskyKeywords.filter(([, keywords]) => keywords.test(said)).map(([action]) => action)

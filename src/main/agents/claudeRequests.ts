@@ -34,7 +34,7 @@ export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
         context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}) } } }
   }
   const browser = browserRequestText(data.tool_name, input)
-  // `data.description` is no summary: Claude fills it with a stock line when the model wrote none (ADR-0180).
+  // `data.description` is no summary: Claude fills it with a stock line when the model wrote none (ADR-0185).
   const card = toolInputCard(input, data.tool_name)
   return { id: frame.request_id, tool: data.tool_name, input,
     request: { id: frame.request_id, kind: 'permission', text: browser ?? card.text, options: [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }],

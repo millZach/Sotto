@@ -49,7 +49,7 @@ export interface AgentRequestCardProps {
   /** The web links in the agent's message just before a question, which the card covers once it docks. Those the card
    *  already shows as links in the request's own words are left out. */
   readonly messageLinks?: readonly string[]
-  /** The asking thread's provider, whose words a command summary is (ADR-0180). */
+  /** The asking thread's provider, whose words a command summary is (ADR-0185). */
   readonly providerId?: ProviderId | undefined
   /** Whether the thread's model reads images. Present, and with `answer-images` on, a form that takes written words
    *  takes dropped or pasted images too, which go with the answer (ADR-0176). */
@@ -463,7 +463,7 @@ function FormContext({ request }: { readonly request: AgentRequest }): ReactNode
 
 /**
  * The asking model's own words for what it asks, marked as its own: Sotto wrote and checked none of them, and the
- * command under them is what the user answers (ADR-0180). A command that came with none says so.
+ * command under them is what the user answers (ADR-0185). A command that came with none says so.
  */
 function ModelSummary({ summary, isCommand, providerId }: { readonly summary: string | undefined; readonly isCommand: boolean; readonly providerId: ProviderId | undefined }): ReactNode {
   const { t } = useLingui()

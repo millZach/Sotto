@@ -2916,7 +2916,7 @@ struct RequestSheet: View {
     }
 
     /// What a permission asks: a command under the model's summary of it, or what another request does, on what, with
-    /// every other field in readable lines. The summary is the model's own words, so it is marked as theirs (ADR-0180).
+    /// every other field in readable lines. The summary is the model's own words, so it is marked as theirs (ADR-0185).
     @ViewBuilder private func permissionBody(_ current: AgentRequest, provider: String) -> some View {
         let context = current.context
         if let command = context?.command {

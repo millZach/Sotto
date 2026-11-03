@@ -213,7 +213,7 @@ describe('AgentRequestCard', () => {
     expect(onSubmit).toHaveBeenCalledWith({ answer: 'Reject', approved: false, permissionChoice: 'no' })
   })
 
-  it('leads a command with the model’s summary as its own words, then the command, and no raw input (ADR-0180)', () => {
+  it('leads a command with the model’s summary as its own words, then the command, and no raw input (ADR-0185)', () => {
     const request: AgentRequest = { id: 'perm-s', kind: 'permission', text: 'Run a command: Download the runs\ngh run download', options: [],
       context: { toolName: 'Bash', command: 'gh run download', summary: 'Download the runs', details: 'It also asks to run outside the sandbox.' } }
     const { container } = render(<AgentRequestCard ownerId="thread" ownerTitle="Compare runs" request={request} blocked={null} onSubmit={vi.fn(async () => ({ error: null }))} providerId="claude" store={new RequestAnswerStore()} />)

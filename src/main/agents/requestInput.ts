@@ -3,7 +3,7 @@ import { AGENT_TEXT_MAX, type AgentRequest } from '../../shared/agents'
 type Input = Readonly<Record<string, unknown>>
 type CardContext = Pick<NonNullable<AgentRequest['context']>, 'command' | 'summary' | 'action' | 'target' | 'cwd' | 'details'>
 /**
- * A tool's input as a permission card shows it (ADR-0180). `text` is the request's own words for what reads only those.
+ * A tool's input as a permission card shows it (ADR-0185). `text` is the request's own words for what reads only those.
  * These words stay English, as every adapter's do: an adapter also runs in the headless host, which sets no language, so a
  * translation function here would throw and lose the request.
  */
