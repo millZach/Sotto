@@ -300,7 +300,7 @@ describe('WidgetApp', () => {
           status: 'listening', sessionId: 'listening', startedAt: 0, speaking: true,
           cancellable: true,
         })}
-        platform="win32" now={1_000}
+        platform="linux" now={1_000}
         onStop={onStop}
         onCancel={onCancel}
       />,
@@ -335,7 +335,7 @@ describe('WidgetApp', () => {
     const { rerender } = render(
       <WidgetApp
         snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: false })}
-        platform="win32" now={0}
+        platform="linux" now={0}
         onCancel={onCancel}
       />,
     )
@@ -343,7 +343,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: true })}
-        platform="win32" now={0}
+        platform="linux" now={0}
         onCancel={onCancel}
       />,
     )
@@ -357,12 +357,33 @@ describe('WidgetApp', () => {
           status: 'processing', sessionId: 'processing', startedAt: 0,
           stage: 'loading-model', progress: 0.2, cancellable: true,
         })}
-        platform="win32" now={0}
+        platform="linux" now={0}
         onCancel={onCancel}
       />,
     )
     expect(screen.getByRole('button', { name: 'Cancel dictation' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Stop dictation' })).not.toBeInTheDocument()
+
+    // While main holds Escape, Escape cancels and the pill shows no cancel button.
+    // When it could not take the key (another app holds it), the × stays, so a
+    // stuck model load can always be cancelled from the pill.
+    for (const platform of ['win32', 'darwin'] as const) {
+      for (const escapeClaimed of [true, undefined] as const) {
+        rerender(
+          <WidgetApp
+            snapshot={snapshot({
+              status: 'processing', sessionId: 'processing', startedAt: 0,
+              stage: 'loading-model', progress: 0.2, cancellable: true, escapeClaimed,
+            })}
+            platform={platform} now={0}
+            onCancel={onCancel}
+          />,
+        )
+        const cancel = screen.queryByRole('button', { name: 'Cancel dictation' })
+        if (escapeClaimed) expect(cancel).not.toBeInTheDocument()
+        else expect(cancel).toBeVisible()
+      }
+    }
   })
 
   it('formats elapsed time deterministically and caps it to a two-digit minute display', () => {

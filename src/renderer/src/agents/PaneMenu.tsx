@@ -1,4 +1,4 @@
-import React, { useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, MoreHorizontal } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 
@@ -19,11 +19,11 @@ export interface PaneMenuItem {
   readonly tone?: 'danger'
   /** Set on one of a group of choices, such as a size: the row is a radio item, checked when true. */
   readonly checked?: boolean
-  /** Set on a row that shows or hides something, such as Tools: the row is a checkbox item, ticked while it shows. */
+  /** Set on a row that shows or hides something, such as a sidebar row's Watch: the row is a checkbox item, ticked while it holds. */
   readonly shown?: boolean
   /** Keys that do the same from where the menu is, at the row's end in a title's words and read as its shortcut. */
   readonly shortcut?: { readonly plain: string; readonly keys: string } | undefined
-  /** Read after the row's name: a state it carries, such as agents working in Tools. */
+  /** Read after the row's name: a state it carries. */
   readonly description?: string | undefined
   readonly run: () => void
 }
@@ -73,7 +73,7 @@ export function PaneMenuRows({ groups, onChoose }: { readonly groups: readonly (
  * the pane's own focus bookkeeping keeps working. Escape or Tab closes it and returns focus to the button,
  * as a pointer outside it does.
  */
-export function PaneMenu({ groups, label: givenLabel, icon, text, className, buttonClassName, mark, description, opens, buttonRef }: {
+export function PaneMenu({ groups, label: givenLabel, icon, text, className, buttonClassName }: {
   readonly groups: readonly (readonly PaneMenuItem[])[]
   readonly label?: string
   /** The button's glyph; the ellipsis unless a control says otherwise. */
@@ -83,21 +83,11 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className, but
   readonly className?: string
   /** The icon button's own class where the menu sits on another surface's line, such as Tools' `files-icon`. */
   readonly buttonClassName?: string
-  /** Drawn on the button while the menu is closed: what one of its rows has to say, such as Tools' dot. */
-  readonly mark?: ReactNode
-  /** Read after the button's name: what the mark says, in words. */
-  readonly description?: string | undefined
-  /** What the rows open, for a surface that hands focus back to the button it was opened from (`tools`). */
-  readonly opens?: string | undefined
-  /** The button, for a surface that hands focus back to it after the layout re-mounted it. */
-  readonly buttonRef?: React.Ref<HTMLButtonElement> | undefined
 }): ReactNode {
   const { t } = useLingui()
   const label = givenLabel ?? t`More actions`
   const [open, setOpen] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
-  // Null only while the menu has no rows and draws no button.
-  useImperativeHandle(buttonRef, () => button.current as HTMLButtonElement, [])
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -119,11 +109,10 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className, but
   }
   return <div className={className ? `pane-menu ${className}` : 'pane-menu'}>
     <button ref={button} type="button" className={text === undefined ? `${buttonClassName ?? 'pane-action'} tt-focusable` : 'pane-menu__trigger tt-focusable'} aria-label={label} title={label}
-      aria-description={description} data-opens={opens}
       aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}
       // A menu whose every row is disabled leaves focus on the button; Escape still puts it away.
       onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false) } }}>
-      {icon ?? <MoreHorizontal size={16} aria-hidden="true" />}{text}{mark}
+      {icon ?? <MoreHorizontal size={16} aria-hidden="true" />}{text}
     </button>
     {open ? <div ref={list} className="pane-menu__list" role="menu" aria-label={label}
       onKeyDown={event => menuKeyDown(list.current, event, close)}>

@@ -84,7 +84,7 @@ export interface WindowConstructorOptions {
   readonly alwaysOnTop?: true
   readonly skipTaskbar?: true
   readonly focusable?: boolean
-  readonly hasShadow?: true
+  readonly hasShadow?: false
   /** macOS only: a nonactivating panel that can join other apps' full-screen desktops. */
   readonly type?: 'panel'
   /** Absolute path to a window icon file; omitted where the platform ignores it. */
@@ -266,7 +266,7 @@ export interface WindowManagerDependencies {
   readonly brandIconPath: string | null
   readonly isPackaged: boolean
   readonly log: (code: RendererDiagnostic) => void
-  readonly onRendererProcessGone?: (kind: RendererRole) => void
+  readonly onRendererProcessGone?: (kind: WindowKind) => void
   readonly getWidgetPlacement: () => StoredWidgetPlacement | null
   readonly onWidgetMoved: (placement: WidgetPlacement) => void
   /** The main window's title: the running build's name ("Sotto Owl" on that track). Defaults to Sotto. */
@@ -284,7 +284,8 @@ export interface WindowManagerDependencies {
   }
 }
 
-type WindowKind = RendererRole
+/** The windows this manager makes; the popup has its own (`popupWindow.ts`). */
+type WindowKind = Exclude<RendererRole, 'popup'>
 
 export type RendererDiagnostic =
   | 'renderer-load-failed:main:development'
@@ -301,7 +302,7 @@ export interface DevelopmentRendererSources {
 }
 
 export interface WindowRendererIdentity {
-  readonly role: WindowKind
+  readonly role: RendererRole
   readonly webContents: WebContentsLike
   readonly url: string
 }
@@ -593,7 +594,10 @@ export class WindowManager {
       alwaysOnTop: true,
       skipTaskbar: true,
       focusable: this.dependencies.chrome.widgetFocusable,
-      hasShadow: true,
+      // The capsule paints its own shadow. A native one on a transparent window
+      // is traced from stale pixels on macOS, so it drew a dark frame with a
+      // light rim round the pill, bigger than it, after some size changes.
+      hasShadow: false,
       autoHideMenuBar: true,
       ...(this.dependencies.chrome.widgetIsPanel ? { type: 'panel' as const } : {}),
       ...windowIconOptions(this.dependencies),

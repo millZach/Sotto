@@ -7,8 +7,9 @@ import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAl
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
-import type { PaneMenuItem } from './PaneMenu'
-import { ThreadPaneMenu } from './ThreadPaneMenu'
+import { PaneMenu, type PaneMenuItem } from './PaneMenu'
+import { PaneTerminalOnHost, PaneTerminalToggle } from '../tools/PaneTerminalToggle'
+import { ToolsToggle } from '../tools/ToolsToggle'
 import type { PaneChrome, PaneClose } from './ThreadPanes'
 import { GitActionButton, type GitActionHandle } from './GitActionButton'
 import { quickAction } from './gitActionButton.logic'
@@ -229,9 +230,9 @@ export interface ThreadPaneProps {
    * ··· menu, the close in a split, and the title as the handle that moves the pane. Absent beside Watcher.
    */
   readonly chrome?: PaneChrome | undefined
-  /** The ··· menu lists Tools: the focused pane in the Threads workspace. */
+  /** The header carries the Tools symbol, and a thread on a paired host says where its terminal is: the Threads workspace. */
   readonly tools?: boolean | undefined
-  /** The ··· menu lists the pane's own Terminal drawer. */
+  /** The pane has its own Terminal drawer, and its header the symbol that shows and hides it. */
   readonly terminal?: boolean | undefined
   /** The working-copy control, placed after the project title in the header. */
   readonly workingCopy?: ReactNode
@@ -390,7 +391,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const naming: PaneMenuItem[] = [
     ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
   ]
-  // Open beside leads the layout rows; Tools, the drawer and the pane area's rows follow it in ThreadPaneMenu.
+  // Open beside leads the layout rows; the pane area's rows follow it.
   const beside: PaneMenuItem | undefined = onOpenBeside ? { id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside } : undefined
   // Initialize Git, for a folder the host read as no repository: the ··· menu's row, pressed on the Git action so its
   // notice is the Git action's (ADR-0163). It was the Git action's button, and the only one-time control in the header.
@@ -480,16 +481,18 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         </span>
         <span className="thread-workspace__branches" ref={setBranchSlot} />
       </div>
-      {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows: the Git action (once the host
-          has read a repository's status), Watch, the ··· menu and, in a split, close (ADR-0163). */}
+      {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows or takes focus: the Git action (once
+          the host has read a repository's status), Watch, Tools, the Terminal drawer, the ··· menu and, in a split, close
+          (ADR-0163, ADR-0182). */}
       <div className="thread-workspace__actions">
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
         {thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
+        {tools ? <ToolsToggle threadId={thread.id} focused={focused} state={state} /> : null}
+        {terminal ? <PaneTerminalToggle threadId={thread.id} /> : tools && thread.remoteHost ? <PaneTerminalOnHost host={state.connections?.find(item => item.hostId === thread.hostId)?.name ?? thread.hostLabel} /> : null}
         {actions}
-        <ThreadPaneMenu threadId={thread.id} state={state} beside={beside} layout={paneChrome.layout} tools={tools} terminal={terminal}
-          groups={[initialize, naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
+        <PaneMenu groups={[[...(beside ? [beside] : []), ...paneChrome.layout], initialize, naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
         {close ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={close.label}
           aria-keyshortcuts={close.keys} title={close.title} onClick={close.run}><X size={16} aria-hidden="true" /></button> : null}
       </div>

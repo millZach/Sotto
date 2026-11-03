@@ -61,7 +61,7 @@ export class FakeIpcMain implements IpcMainAdapter {
 }
 
 /** Fresh identity and top-level frame. Tests can navigate or destroy it without changing another sender. */
-export function trustedIpcSender(role: 'main' | 'widget', url = `file:///${role}.html`): TrustedIpcSender {
+export function trustedIpcSender(role: 'main' | 'widget' | 'popup', url = `file:///${role}.html`): TrustedIpcSender {
   return { role, url, webContents: { mainFrame: { parent: null, url }, getURL: () => url, isDestroyed: () => false } }
 }
 

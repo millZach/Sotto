@@ -117,11 +117,17 @@ export interface CodexPolicy { readonly approvalPolicy: string; readonly approva
 export interface CodexRoleEntry { readonly description: string; readonly config_file: string }
 export type CodexRoleFilesEvent = 'codex-role-file-failed'
 const toml = (value: string): string => JSON.stringify(value)
+/**
+ * What a Computer use worker on Codex would otherwise learn by losing the job (#2062). A click by element fails until a
+ * screenshot has been taken, every time. The URL stop is the helper's safety check, so the worker obeys it and hands back
+ * what it left unchecked; a later request is checked again like any other.
+ */
+const CODEX_COMPUTER_USE_RULE = 'On Windows, take a screenshot of a window before you click one of its elements by index: until then Computer Use answers that coordinate input geometry is unavailable. If Computer Use stops because it could not determine the current browser URL, stop as it says. Report what you had already done and which results you could not check, and say a new request can try again once any dialog is closed and the page has loaded.'
 /** A role file's text: a config layer Codex applies to the sub-agent (codex-roles check, October 14). */
 export function codexRoleFile(role: SubagentRole, effort: string | null, policy: CodexPolicy, hasSpeeds = false): string {
   return [`model = ${toml(role.model)}`, ...(role.speed || hasSpeeds ? [`service_tier = ${toml(role.speed === 'fast' ? 'priority' : role.speed ?? 'default')}`] : []), ...(effort ? [`model_reasoning_effort = ${toml(effort)}`] : []),
     `sandbox_mode = ${toml(policy.sandbox)}`, `approval_policy = ${toml(policy.approvalPolicy)}`, `approvals_reviewer = ${toml(policy.approvalsReviewer)}`,
-    `developer_instructions = ${toml(roleBrief(role))}`, ''].join('\n')
+    `developer_instructions = ${toml(role.kind === 'computer-use' ? `${roleBrief(role)} ${CODEX_COMPUTER_USE_RULE}` : roleBrief(role))}`, ''].join('\n')
 }
 
 /**

@@ -348,8 +348,8 @@ test('a thread uses the browser without asking by default, the user can stop or 
     await waitingOn('workshop')
     await expect(workshopPlayer).toBeHidden()
     // With the player not opening on its own, the Tools icon of the thread's pane is what says a request waits.
-    // The Tools dot is the ··· button's now (ADR-0163), and so are its words.
-    await expect(page.locator('[data-opens="tools"]')).toHaveAccessibleDescription(/A browser request is waiting for your answer/)
+    // The Tools symbol wears the dot, and says why (ADR-0182).
+    await expect(page.locator('.thread-pane[data-focused] .tools-toggle')).toHaveAccessibleDescription(/A browser request is waiting for your answer/)
     await toggleTools(page)
     await panel.getByRole('tab', { name: /waiting for your answer/ }).click()
     await expect(panel.getByText(`Open and share this page with the thread: ${url}quiet`, { exact: true })).toBeVisible()

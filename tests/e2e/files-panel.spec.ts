@@ -102,8 +102,8 @@ test('browses real working folders in the shared tools panel, following focus or
     await page.getByRole('button', { name: 'Workshop files', exact: true }).first().click()
     await expect(page.getByRole('heading', { name: 'Workshop files', exact: true })).toBeVisible()
 
-    // Tools is a row of the pane's ··· menu (ADR-0163); the ··· button is where the panel hands focus back.
-    const toggle = page.locator('[data-opens="tools"]')
+    // Tools is a symbol in the pane's header (ADR-0182), where the panel hands focus back.
+    const toggle = page.locator('.thread-pane[data-focused] .tools-toggle')
     await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')

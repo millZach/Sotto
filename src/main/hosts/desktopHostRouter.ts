@@ -23,7 +23,7 @@ import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, default
 import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
-import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
+import { DESKTOP_WINDOW_CLIENT_ID, desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
 import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget, type HostClientShell } from '../../shared/hostProtocol'
@@ -363,8 +363,11 @@ export class DesktopHostRouter {
    * remote host as on this one: each remote host is told with the threads it observes for the window (ADR-0092).
    */
   private windowFocused = true
-  /** The threads the window last observed on each host, by the host's own IDs, to send again when the focus moves. */
-  private readonly observedOn = new Map<string, string[]>()
+  /**
+   * The threads each of this computer's clients last observed on each host, by the host's own IDs and by client: the
+   * window's, and the popup's (ADR-0181). A remote host is sent them all at once, again when the focus moves.
+   */
+  private readonly observedOn = new Map<string, Map<string, string[]>>()
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
   private notice: RouterNotice | undefined
@@ -769,7 +772,7 @@ export class DesktopHostRouter {
     this.windowFocused = focused
     for (const { connection } of this.hosts.values()) {
       if (connection.kind !== 'remote' || connection.available?.() === false || connection.service.supportsFailureSeen !== true || !connection.observe) continue
-      const ids = this.observedOn.get(connection.hostId) ?? []
+      const ids = this.observedIds(connection.hostId)
       void (focused ? connection.observe(ids) : connection.observe(ids, false)).catch(() => undefined)
     }
   }
@@ -782,7 +785,12 @@ export class DesktopHostRouter {
     if (!this.windowFocused) return false
     const key = parseHostEntityKey(threadId)
     const hostId = key?.hostId ?? this.selectedHostId
-    return hostId !== undefined && (this.observedOn.get(hostId)?.includes(key?.id ?? threadId) ?? false)
+    return hostId !== undefined && (this.observedOn.get(hostId)?.get(DESKTOP_WINDOW_CLIENT_ID)?.includes(key?.id ?? threadId) ?? false)
+  }
+  /** Every client's observed threads on one host, each once. */
+  private observedIds(hostId: string): string[] {
+    const clients = this.observedOn.get(hostId)
+    return clients === undefined ? [] : [...new Set([...clients.values()].flat())]
   }
   select(hostId: string): void {
     if (!this.hosts.has(hostId)) throw new Error(t`Connect this host before selecting it.`)
@@ -1401,7 +1409,10 @@ export class DesktopHostRouter {
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
     if (input && typeof input === 'object' && 'type' in input && input.type === 'start-thread-session') return this.startThreadSession(input, client)
     const priorNotice = this.notice
-    this.notice = undefined
+    // The popup's commands answer with their own refusal alone, and leave the window's notice as it was (ADR-0181).
+    const own = client.keepsSelection === true
+    let ownRefusal: string | undefined
+    if (!own) this.notice = undefined
     const type = input && typeof input === 'object' && 'type' in input ? input.type : undefined
     // Showing threads and Dismiss all both name threads on every host: each host hears only its own (ADR-0046, ADR-0092).
     if (type === 'observe-threads' || type === 'dismiss-failures') {
@@ -1426,9 +1437,17 @@ export class DesktopHostRouter {
           return
         }
         if (connection.available?.() === false) return
-        this.observedOn.set(connection.hostId, visibleIds)
+        const clients = this.observedOn.get(connection.hostId) ?? new Map<string, string[]>()
+        const before = clients.get(client.clientId) ?? []
+        // Another client with no thread on this host before or now has nothing to tell it; the window always tells, as it did.
+        if (client.clientId !== DESKTOP_WINDOW_CLIENT_ID && before.length === 0 && visibleIds.length === 0) return
+        if (visibleIds.length) clients.set(client.clientId, visibleIds)
+        else clients.delete(client.clientId)
+        this.observedOn.set(connection.hostId, clients)
         try {
-          if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(visibleIds, false) : connection.observe(visibleIds))
+          // A remote host hears every client's threads as one list; this computer's own host keeps each client's apart.
+          const ids = connection.observe ? this.observedIds(connection.hostId) : visibleIds
+          if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(ids, false) : connection.observe(ids))
           else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
         } catch (error) {
           // A connection that drops while the open panes are read is no one's action to report: the host reads the
@@ -1437,7 +1456,7 @@ export class DesktopHostRouter {
         }
       }))
       if (left.length) this.notice = { message: dismissLeft(left) }
-      return this.reply()
+      return own ? { ...this.reply(), error: null } : this.reply()
     }
     // Clear now acts on this computer's own threads, whichever host is selected (ADR-0140 decision 7).
     if (type === 'preview-clear-threads' || type === 'clear-threads') return this.clearLocalThreads(input, client)
@@ -1571,7 +1590,8 @@ export class DesktopHostRouter {
         // Compare what is visible now, after the reply. An intervening error or connection change wins.
         repeatedUnsupportedCompose = unsupportedCompose && this.publishedNotice?.unsupportedCompose === connection
           && this.hosts.get(connection.hostId)?.connection === connection && this.publishedNotice.message === message
-        this.notice = repeatedUnsupportedCompose ? this.publishedNotice : { message, ...(unsupportedCompose ? { unsupportedCompose: connection } : {}), ...(decisionId && answerTarget
+        if (own) ownRefusal = message
+        else this.notice = repeatedUnsupportedCompose ? this.publishedNotice : { message, ...(unsupportedCompose ? { unsupportedCompose: connection } : {}), ...(decisionId && answerTarget
           ? { answer: { hostId: connection.hostId, decisionId, target: answerTarget } } : {}) }
       }
     } catch (error) {
@@ -1583,14 +1603,21 @@ export class DesktopHostRouter {
       if (connection.kind !== 'remote' || !(error instanceof HostConnectionError) || error.code !== 'forbidden') throw error
       refused = true
       if (startsThread(command)) inPlace = this.refusal(connection, error.message)
+      else if (own) ownRefusal = this.refusal(connection, error.message)
       else this.notice = { message: this.refusal(connection, error.message) }
     } finally {
-      if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
+      if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) {
+        if (!own) this.follow(connection, { activeThreadId, activeProjectId })
+        // A remote host moves its own selection for the popup's command too, as for any of this computer's. A window that
+        // follows that host's selection keeps what it showed (ADR-0181).
+        else if (connection.kind === 'remote' && connection.hostId === this.selectedHostId && this.selectedThreadId === undefined) this.moveTo(connection.hostId, activeThreadId, activeProjectId)
+      }
     }
     if (refused) for (const undo of unmark) undo()
     if (across && !refused && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')) await this.cascadeAcross(command.type, across, connection, command.threadId, client)
     // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
-    const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
+    // A client that keeps its own threads, such as the popup, opens nothing in the window (ADR-0181).
+    const unmoved = client.keepsSelection !== true && selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
       await this.openCreated(connection, command.threadId, client)
     }
@@ -1605,8 +1632,9 @@ export class DesktopHostRouter {
     const shell = repeatedUnsupportedCompose ? this.reply() : this.emitted()
     // A settings save, or a command that named its host, may go to a host other than the selected one, so it answers with
     // its own outcome, never with the selected host's last error, which belongs to some other command (ADR-0074). Continue
-    // as a thread answers in the agent's row with its own refusal alone (#1028).
-    const answered = command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null }
+    // as a thread answers in the agent's row with its own refusal alone (#1028), and so does the popup.
+    const answered = own ? { ...shell, error: ownRefusal ?? inPlace ?? null }
+      : command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null }
       : startsThread(command) ? { ...shell, error: inPlace ?? null } : shell
     return checkoutHold === undefined ? answered : { ...answered, checkoutHold }
   }
