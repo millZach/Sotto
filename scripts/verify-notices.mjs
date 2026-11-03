@@ -206,6 +206,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   Object.freeze({ name: 'Spline Sans Mono', nameSuffix: ' (font, latin woff2 subset)', version: 'v13 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Spline Sans Mono Project Authors' }),
   Object.freeze({ name: 'Figtree', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v9 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Figtree Project Authors' }),
   Object.freeze({ name: 'T3 Code', nameSuffix: ' (provider icon paths adapted in ProviderMark.tsx)', version: 'd1d15c67 (apps/web/src/components/Icons.tsx)', license: 'MIT', attribution: 'T3 Tools Inc.' }),
+  Object.freeze({ name: 'T3 Code', nameSuffix: ' (product events: delivery limits and account reads adapted in src/main/productEvents)', version: '6f413648 (apps/server/src/telemetry/AnalyticsService.ts, apps/server/src/telemetry/Identify.ts)', license: 'MIT', attribution: 'T3 Tools Inc.' }),
   Object.freeze({ name: 'T3 Code', nameSuffix: ' (theme palettes, file format, editor, inspector and Open VSX client adapted in src/shared/themes, src/main/themes and settings/themes)', version: 'd1d15c67 (packages/shared/src/themePalettes.ts, apps/web/src/themePalette.ts, apps/web/src/components/settings/Theme*.tsx, themeInspector.ts, apps/web/src/openVsxThemes.ts, apps/web/src/vscodeThemeImport.ts)', license: 'MIT', attribution: 'T3 Tools Inc.' }),
 ])
 

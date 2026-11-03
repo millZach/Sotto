@@ -812,6 +812,11 @@ msgstr ""
 msgid "{when}, in {away}"
 msgstr ""
 
+#. A Council figure's button: its letter or Chair, its model, what it is doing, then what a press does
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "{who}, {model}, {now}. Open its thread"
+msgstr ""
+
 #. placeholder {0}: window.toLocaleString(i18n.locale)
 #. placeholder {1}: tokens.toLocaleString(i18n.locale)
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -1160,6 +1165,10 @@ msgstr ""
 msgid "answering permissions from a paired client"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "answering the fairness check"
+msgstr ""
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
 msgstr ""
@@ -1188,8 +1197,20 @@ msgstr ""
 msgid "Ask a follow-up"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Sotto…"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask the Council"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Watcher instead"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Watcher…"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -1371,6 +1392,8 @@ msgid "Carried {carried}."
 msgstr ""
 
 #. The Council's chair, as a seat's label
+#. The Council's chair, on its plate in the chamber
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilSeats.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Chair"
@@ -1648,6 +1671,10 @@ msgstr ""
 msgid "comes last"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Commands"
+msgstr ""
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Commit timing, pull requests, reviews, and when to ask about merging."
 msgstr ""
@@ -1791,6 +1818,10 @@ msgstr ""
 msgid "Continued on {machine}"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Conversation with {where}"
+msgstr ""
+
 #. A transcript copy button, after it copied
 #: src/renderer/src/features/dictate/Journal.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -1887,6 +1918,8 @@ msgid "Could not stop"
 msgstr ""
 
 #. The Council page: one question put to several models, which answer, review each other and get a verdict.
+#. The room switch: the Council page, one question put to several models (ADR-0177).
+#: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Council"
 msgstr ""
@@ -2049,6 +2082,7 @@ msgstr ""
 #: src/renderer/src/components/ToastRegion.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Dismiss"
 msgstr ""
@@ -2082,6 +2116,7 @@ msgid "Don’t hand over: start the new Watcher without it"
 msgstr ""
 
 #. Read after an update step's title: the step has finished
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "done"
 msgstr ""
@@ -2211,6 +2246,10 @@ msgstr ""
 msgid "Enter your OpenRouter API key first."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Esc stops it"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Every step after this one can be skipped and finished later in Settings."
 msgstr ""
@@ -2229,6 +2268,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Expires"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "failed"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -2321,6 +2364,14 @@ msgstr ""
 msgid "Framing"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "framing the question"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Framing the question"
+msgstr ""
+
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "Free up about 700 MB, then try again."
 msgstr ""
@@ -2379,8 +2430,16 @@ msgstr ""
 msgid "Give F9 to Sotto"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "giving its review"
+msgstr ""
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Global shortcut"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Go back to the thread"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -2397,6 +2456,11 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Grok subscription"
+msgstr ""
+
+#. A Council chamber layout: tiered seats round an altar, the chair at the back.
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Half circle"
 msgstr ""
 
 #. The tag on a message that carries a handover
@@ -2484,6 +2548,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Holding sends"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "holding up the verdict"
 msgstr ""
 
 #: src/renderer/src/features/memory/questions.ts
@@ -2891,6 +2959,11 @@ msgstr ""
 msgid "Launch when your Mac starts"
 msgstr ""
 
+#. The Council chamber's layout menu
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Layout"
+msgstr ""
+
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Leave my keys alone"
 msgstr ""
@@ -2941,6 +3014,10 @@ msgstr ""
 msgid "Lines"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "listening"
+msgstr ""
+
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Listening."
 msgstr ""
@@ -2963,6 +3040,11 @@ msgstr ""
 
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Loading your threads"
+msgstr ""
+
+#. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Long table"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
@@ -3070,6 +3152,14 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Memory is unavailable. Restart Sotto and try again."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Message {where}"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Message Watcher"
 msgstr ""
 
 #. The macOS Privacy & Security pane, as System Settings names it
@@ -3296,12 +3386,30 @@ msgstr ""
 msgid "Needs you"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "needs your answer"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Needs your answer"
+msgstr ""
+
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Needs your choice"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "New thread (/new)"
+msgstr ""
+
+#. placeholder {0}: project.title
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "New thread in {0}"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ProjectStep.tsx
@@ -3692,6 +3800,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Nothing recorded yet"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Nothing to show in Sotto yet. Send a prompt first."
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -4375,12 +4487,24 @@ msgstr ""
 msgid "Reading {name} limits"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading answers {letters}"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Reading each model's days…"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Reading each provider's days…"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading every answer and review"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading every answer and review"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
@@ -4395,8 +4519,29 @@ msgstr ""
 msgid "Reading memory…"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading the conversation"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Reading the conversation"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading the other answers"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading the other answers"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reading the verdict"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Reading the verdict"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
@@ -4555,6 +4700,10 @@ msgstr ""
 msgid "Replacement memory"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "reporting the crux check"
+msgstr ""
+
 #. The kind of work a delegated thread or check was asked for.
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgctxt "kind of work"
@@ -4663,6 +4812,11 @@ msgstr ""
 msgid "Room left on each subscription"
 msgstr ""
 
+#. A Council chamber layout: seen from a little above, the chair at the far side.
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Round table"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Run agents on another computer"
 msgstr ""
@@ -4746,6 +4900,14 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Second kind"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Send"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Send (Return)"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -4908,6 +5070,18 @@ msgstr ""
 msgid "Show in folder"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show in Sotto (⌘O)"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show in Sotto (Ctrl+O)"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show it in Sotto"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Show on the chart"
 msgstr ""
@@ -4924,8 +5098,16 @@ msgstr ""
 msgid "Show the files it changes"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show this thread in Sotto"
+msgstr ""
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Show transcripts from"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Show Watcher’s room in Sotto"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
@@ -5209,6 +5391,10 @@ msgstr ""
 msgid "Sotto could not save the verdict in the thread’s message box. Nothing was sent. Try again."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not show it. Open Sotto and choose it there."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again."
 msgstr ""
@@ -5231,6 +5417,10 @@ msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Sotto did not start the host on {name}, so it cannot restart it. Update it there with these commands."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto didn’t confirm the prompt. It is back in the box; check the thread before you send it again."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
@@ -5408,6 +5598,10 @@ msgstr ""
 msgid "Start"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Start a new thread"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Start a new Watcher with a handover of this one"
 msgstr ""
@@ -5515,6 +5709,10 @@ msgstr ""
 msgid "State"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "state unknown"
+msgstr ""
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Stayed here"
 msgstr ""
@@ -5567,6 +5765,10 @@ msgstr ""
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Stop"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Stop (Esc)"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -5636,6 +5838,10 @@ msgstr ""
 msgid "Stop the new thread on {0} if it made one, and keep this one on {1}?"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Stop the running turn"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop the threads Watcher started?"
 msgstr ""
@@ -5647,6 +5853,10 @@ msgstr ""
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 #: src/renderer/src/features/performance/PerformanceSettings.tsx
 msgid "Stop without saving"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "stopped"
 msgstr ""
 
 #. Before a thread’s name on a receipt card
@@ -5724,6 +5934,18 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Talk to your computer and your coding agents"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "talking"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Talking to the thread. Switch to Watcher"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Talking to Watcher. Switch to the thread"
 msgstr ""
 
 #: src/renderer/src/features/performance/PerformanceSettings.tsx
@@ -5999,8 +6221,21 @@ msgstr ""
 msgid "Theme"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "There is no project to start a thread in. Add one in Sotto, then send again."
+msgstr ""
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "These choices become explicit policies. Leaving a box unchecked grants no permission."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "thinking"
+msgstr ""
+
+#. A Council figure's thought bubble while its thread works
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "Thinking"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -6088,6 +6323,7 @@ msgstr ""
 
 #. The thread a Council question comes from
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr ""
 
@@ -6542,6 +6778,8 @@ msgstr ""
 msgid "Valid until"
 msgstr ""
 
+#. The title on the chair's verdict scroll when its words are not kept
+#: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Verdict"
 msgstr ""
@@ -6581,6 +6819,10 @@ msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Waiting for the update before it."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Waiting for your answer"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -6645,12 +6887,24 @@ msgstr ""
 msgid "Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Watcher is offering the last Watcher’s handover. Open Watcher’s room to continue with it or put it away, then send again."
+msgstr ""
+
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watcher is watching <0>{title}</0>."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Watcher is working. Stop its turn to start a new one."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Watcher isn’t running, so the popup is on your thread."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Watcher isn’t running. Start it in Sotto, then switch again."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -6858,6 +7112,14 @@ msgstr ""
 msgid "Working preferences"
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "working: {what}"
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Working…"
+msgstr ""
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "wpm today"
 msgstr ""
@@ -6872,6 +7134,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Write what Watcher should do first"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "writing its answer"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilChamber.tsx
+msgid "writing the verdict"
 msgstr ""
 
 #: src/renderer/src/features/dictate/journalFacts.ts

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, Landmark, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
+import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
@@ -7,7 +7,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
+import { appRooms, roomFor, RoomTabFace, useCouncilRoom, useRoomSwitch } from '../components/AppShell'
 import { pageShortcutFor, usePageShortcutLabels } from '../components/pageShortcuts'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
@@ -30,10 +30,9 @@ import { shownCount } from '../state/interfaceNumbers'
  * The page links in the foot, in the order the app footer listed them. Threads and Dictate are the room switch's own
  * tabs, and transcripts live in the Dictate room's Journal; Memory joins only while memory is switched on.
  */
-type FootPage = Extract<AppNavigation, 'usage' | 'council' | 'memory' | 'settings' | 'help'>
+type FootPage = Extract<AppNavigation, 'usage' | 'memory' | 'settings' | 'help'>
 const PAGES: ReadonlyArray<{ readonly id: FootPage; readonly label: MessageDescriptor; readonly Icon: LucideIcon }> = [
   { id: 'usage', label: msg({ message: 'Usage', comment: 'The Usage page.' }), Icon: BarChart3 },
-  { id: 'council', label: msg({ message: 'Council', comment: 'The Council page: one question put to several models (ADR-0177).' }), Icon: Landmark },
   { id: 'memory', label: msg({ message: 'Memory', comment: 'The Memory page.' }), Icon: Brain },
   { id: 'settings', label: msg({ message: 'Settings', comment: 'The Settings page.' }), Icon: Settings },
   { id: 'help', label: msg({ message: 'Help', comment: 'The Help page.' }), Icon: CircleHelp },
@@ -75,7 +74,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
 
 /**
  * The room switch, drawn from the one room definition (`appRooms`): Dictate | Threads, with Watcher's owl between
- * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
+ * them while its gate is on and the Council left of the owl while its Owl feature is and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
  * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
@@ -84,7 +83,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
-  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
+  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn(), council: useCouncilRoom() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   const { t } = useLingui()
   if (rooms.length < 2) return null
@@ -104,11 +103,9 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
   const app = useOptionalApp()
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
-  // The Council (ADR-0177): only while its Owl feature is on and main gave the window its bridge, which needs this computer's threads.
-  const council = useOwlFeature('council') && window.sotto?.council !== undefined
   const { t } = useLingui()
   const keys = usePageShortcutLabels()
-  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage) && (page.id !== 'council' || council)).map(page => ({ ...page, label: t(page.label) }))
+  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage)).map(page => ({ ...page, label: t(page.label) }))
   return <nav className={className} aria-label={t`Pages`}>
     {pages.map(({ id, label, Icon }) => {
       const page = pageShortcutFor(id)

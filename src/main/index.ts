@@ -11,10 +11,13 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
+import { createProductEvents, productEventsPermission } from './productEvents/productEvents'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { MediaToolServer, SHOW_IN_THREAD_TOOL } from './agents/mediaTools'
+import { tellWatcherTools } from './agents/tellWatcherTools'
+import { DesktopTellWatcherRelay } from './agents/tellWatcherRelay'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
@@ -48,9 +51,10 @@ import { coordinatorSetupThreads } from './hosts/hostSetupThreads'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
 import { registerHostsIpc } from './hosts/ipc'
 import { PhoneAccess, type PhoneAccessEvent } from './phones/phoneAccess'
+import { LocalApps, type LocalAppsEvent } from './phones/localApps'
 import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
-import { registerPhonesIpc } from './phones/ipc'
+import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
 import { e2eTailscale } from './e2e/tailscale'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
@@ -58,6 +62,7 @@ import { e2eTailnetMap } from './e2e/tailnetStandIn'
 import { SshHostLauncher } from './hosts/sshLauncher'
 import { HostPhones } from './hosts/hostPhones'
 import { PHONES_CHANGED } from '../shared/phones'
+import { LOCAL_APPS_CHANGED } from '../shared/localApps'
 import { discoverSshHosts } from './hosts/sshSuggestions'
 import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
@@ -203,6 +208,7 @@ import {
   type RendererDiagnostic,
   type WebContentsLike,
   type WindowEventName,
+  type WindowRendererIdentity,
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
@@ -222,7 +228,7 @@ import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleas
 import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
-import type { DictationCommand, TranscriptionRequest, TranscriptionResult } from '../shared/contracts'
+import { LIVING_OWL_RENDERER_ARGUMENT, type DictationCommand, type TranscriptionRequest, type TranscriptionResult } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { dockPainter, readDockCoverage } from './dock/dockIcon'
@@ -263,6 +269,9 @@ import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
+import { POPUP_RENDERER_ARGUMENT } from '../shared/popup'
+import { createPopup, type Popup } from './popup/popup'
+import { registerPopupIpc } from './popup/popupIpc'
 import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
 import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
 import { INTERFACE_LANGUAGE_SHOWN } from '../shared/interfaceLanguages'
@@ -347,6 +356,8 @@ const platformDefaults = defaultSettings(profile.defaultHotkey, profile.defaultH
 
 type NativeDiagnostic =
   | 'omarchy-theme-missing'
+  | 'popup-load-failed'
+  | 'popup-renderer-gone'
   | 'omarchy-theme-invalid'
   | 'omarchy-theme-watch-failed'
   | 'omarchy-theme-refresh-failed'
@@ -376,6 +387,7 @@ type NativeDiagnostic =
   | ClaudeAdapterEvent
   | CodexAdapterEvent
   | PhoneAccessEvent
+  | LocalAppsEvent
   | 'host-phones-read-failed'
   | 'host-phones-command-failed'
   | OsascriptPasteEvent
@@ -756,6 +768,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Glass (ADR-0150) is an Owl feature: read once here, it decides whether the window may be see-through, whether the
   // window is told of Glass at all, and whether a half saved on Glass dresses the Dock and the widget in Glass or Sotto.
   const glassThemeEnabled = owlFeatures['glass-theme']
+  // The widget's living owl (ADR-0178): stable gives the widget no argument, so it shows the still owl.
+  const livingOwlEnabled = owlFeatures['living-widget-owl']
+  // The popup (ADR-0181): read once here. Made below once settings and shortcuts are; stable makes none.
+  const popupEnabled = owlFeatures.popup
+  let popup: Popup | null = null
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
@@ -764,6 +781,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const delegationEnabled = owlFeatures['thread-delegation']
   // The Council (ADR-0177): stable builds no service, registers no bridge and shows no page. It runs on this computer's threads.
   const councilEnabled = owlFeatures.council
+  // Let apps on this computer connect (ADR-0180): stable builds no listener and registers no bridge.
+  const localAppsEnabled = owlFeatures['local-apps']
   const workerRolesEnabled = owlFeatures['worker-roles']
   // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
   const interfaceLanguageEnabled = owlFeatures['interface-language'] && INTERFACE_LANGUAGE_SHOWN
@@ -893,6 +912,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const releaseTrack = getReleaseTrack(appRunningVersion)
+  // Product events (ADR-0179): nothing is sent, and no ID is made, unless a build or the environment names an endpoint and the notice was answered.
+  const productEvents = createProductEvents({ dataDirectory: userDataPath, holdWhileWaiting: false, version: appRunningVersion, channel: releaseTrack, surface: 'desktop', log: event => console.warn(event) })
+  productEvents.setPermission(productEventsPermission(workingCopySettings))
+  app.on('will-quit', () => productEvents.stop())
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
   const buildName = releaseTrackName(releaseTrack)
   // Windows updates itself on both tracks and a Mac on Owl only, the one signed with Sotto's Developer ID (ADR-0093).
@@ -917,13 +940,16 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     } } : {}),
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
-      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
+      const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
+      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
+        ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
+        ...(popupEnabled ? [POPUP_RENDERER_ARGUMENT] : []),
         ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
@@ -964,6 +990,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       linuxDictationShell?.place(placement.edge)
     },
   })
+  // The windows main trusts: its own, and the popup's while it has one (ADR-0181), which only its channels admit.
+  const trustedRenderers = (): readonly WindowRendererIdentity[] => {
+    const own = windows.getTrustedRenderers()
+    const shown = popup?.window.trustedRenderers() ?? []
+    return shown.length === 0 ? own : [...own, ...shown]
+  }
   if (readWindowsTransparency !== null) {
     windows.setGlassMaterialAvailable(transparencyAtStart)
     // Windows announces a change to its colour settings, Transparency effects among them, as a theme update.
@@ -1139,6 +1171,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Moving threads to a paired host (#1178) reaches the machines through Watcher's view of them, and its placement.
   const threadMoves = 'threadMoves' in localRuntime ? localRuntime.threadMoves : undefined
   if (threadMoves && localRuntime.watcher) threadMoves.useTargets(moveTargetsOf(hostRouter.watcherHosts(), localRuntime.watcher, listener => hostRouter.subscribeChanges(listener)))
+  // A thread on a paired host reaches this computer's Watcher over its connection here (ADR-0073, November 2, 2026).
+  const localWatcher = localRuntime.watcher
+  const watcherTells = localWatcher ? new DesktopTellWatcherRelay((target, ask) => localWatcher.threadTold(target, ask)) : undefined
+  watcherTells?.useHosts(hostRouter)
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
@@ -1183,7 +1219,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
-    ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
+    ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
@@ -1193,6 +1229,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   quitHandles.desktopHosts = desktopHosts
   await desktopHosts.start()
+  productEvents.record('app.started', { pairedHosts: desktopHosts.get().hosts.length })
   // Saved host identities filter recovery before disk drafts load. Unread originals stay untouched.
   await retainedDrafts.load()
   // Have my agent set this up (ADR-0035): a host setup thread on this computer, with the host setup tools while it
@@ -1245,7 +1282,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : [])])
+  // Lets a thread on this computer send Watcher a message when the user tells it to (ADR-0073, November 2, 2026).
+  const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
+    const hostId = agentControl.hostId()
+    return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
+  }) : undefined
+  if (tellTools) quitHandles.tellWatcherTools = tellTools
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
@@ -1320,6 +1363,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   })
   quitHandles.phoneAccess = phoneAccess
   void phoneAccess.start().catch(() => logOperational('phone-access-start-failed'))
+  // Apps on this computer reach the same threads on a loopback listener of their own, with no pairing code (ADR-0180).
+  const localApps = localAppsEnabled ? new LocalApps({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
+    service: startupSettings.localHostEnabled ? hostService : undefined, settings: () => workingCopySettings, policy: authority, log: logOperational }) : undefined
+  if (localApps) { quitHandles.localApps = localApps; void localApps.start().catch(() => logOperational('local-apps-failed')) }
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => requestDraftOwnerState(owner, agentControl, hostRouter), async (target, decisionId) => {
     if (target.kind !== 'thread') throw new Error(t`Standalone chats are no longer available.`)
     const key = parseHostEntityKey(target.ownerId)
@@ -1389,13 +1436,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // A window's model catalog rarely changes and most thread records do not change between broadcasts; each goes out
     // again only when it changed since the window's last broadcast (issues #286 and #1330).
     agentStateBroadcaster.send(state, payload => windows.sendToMain(AGENT_STATE, payload))
+    // The popup is sent the records of the threads it observes, never the broadcast (ADR-0181).
+    popup?.feed.published(state)
   })
   // A detail that opens a message goes out at once; the shell waiting in its window goes just ahead of it, so the
   // window paints the two in one commit (issue #771).
   const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail),
     { beforeOpening: () => agentStatePublisher.flush() })
   const unsubscribeAgents = hostRouter.subscribe(state => agentStatePublisher.publish(state))
-  const unsubscribeAgentDetail = hostRouter.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
+  const unsubscribeAgentDetail = hostRouter.subscribeThreadDetail(detail => { agentDetailPublisher.publish(detail); popup?.feed.detail(detail) })
   // Quitting drops the held state with its timer: the windows it would reach are going away.
   quitHandles.stopPublishing = () => {
     unsubscribeRequestDrafts(); unsubscribeAgents(); unsubscribeAgentDetail()
@@ -1933,15 +1982,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const previous = workingCopySettings
       workingCopySettings = settings
       syncHotkeyStandby()
+      const productEventAnswer = productEventsPermission(settings)
+      productEvents.setPermission(productEventAnswer)
+      if (productEventAnswer !== productEventsPermission(previous)) hostRouter.tellProductEventAnswer()
       // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
       menuBarOwl?.applySettings(settings)
+      popup?.settingsChanged(settings)
       // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
       if (await applyInterfaceLanguage(settings)) {
         trayController.update(currentTrayState)
         installApplicationMenu()
         windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
         windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        popup?.window.send(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
         // Main's long-lived words follow at once: a host's connect failure, a host update's failure and Add host's question.
         desktopHosts.languageChanged()
         hostUpdates.languageChanged()
@@ -1957,6 +2011,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       localRuntime.watcher?.settingsChanged()
       localRuntime.workerAdmission?.refresh()
       phoneAccess.settingsChanged()
+      if (settings.localApps !== previous.localApps) localApps?.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
       if (babysittingChanged) void pullRequestTools?.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
@@ -2020,8 +2075,33 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     app.on('will-quit', () => { stopAlerts(); alerts.dispose(); desktopNotifier.dispose() })
   }
   if (dictationActive && !cloudChosen) void speechModelManager?.start()
+  // The popup (ADR-0181): its window, its global shortcut and what it is sent, only while the Owl feature is on.
+  if (popupEnabled) {
+    popup = createPopup({
+      window: {
+        create: options => new BrowserWindow(options),
+        workArea: () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea,
+        workAreas: () => screen.getAllDisplays().map(display => display.workArea),
+        platform, chrome: profile,
+        preloadPath: join(__dirname, '../preload/index.js'),
+        htmlPath: join(__dirname, '../renderer/popup.html'),
+        developmentUrl: app.isPackaged || process.env.ELECTRON_RENDERER_URL === undefined ? undefined : new URL('/popup.html', process.env.ELECTRON_RENDERER_URL),
+        isPackaged: app.isPackaged,
+        extraArguments: () => [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : [])],
+        log: logOperational,
+      },
+      shortcuts: e2eShortcuts ?? globalShortcut,
+      platform,
+      settings: settingsCoordinator,
+      command: (command, client) => hostRouter.command(command, client),
+      showMain: () => windows.showMain(),
+      sendToMain: (channel, payload) => { windows.sendToMain(channel, payload) },
+    }, startupSettings)
+    app.on('will-quit', () => popup?.dispose())
+  }
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
+    ...(popup !== null ? { showPopup: () => popup?.show() } : {}),
     toggleDictation,
     dictationOn: () => dictationActive,
     setAutoPaste(enabled): void {
@@ -2060,7 +2140,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     syncEscape: (state) => {
       widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
-      syncEscapeForWidgetSnapshot(hotkeys, state)
+      return syncEscapeForWidgetSnapshot(hotkeys, state)
     },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
     presentation: () => widgetPresentation,
@@ -2069,7 +2149,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   handleRendererProcessGone = (kind) => {
     dictationLifecycle.rendererProcessGone(kind)
     // A crashed Settings can no longer end its recording, so the shortcuts come back now.
-    if (kind === 'main') shortcutLifecycle.rendererGone()
+    if (kind === 'main') { shortcutLifecycle.rendererGone(); popup?.suspendShortcut(false) }
   }
   // Set when dictation goes off mid-transcription: the model is let go once that dictation ends.
   let unloadWhenDone = false
@@ -2241,6 +2321,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // What the connected hosts push goes to the window as this computer's own does (ADR-0173).
       const unsubscribeHostNextPrompts = nextPromptEnabled ? hostRouter.subscribeNextPrompts(entry => windows.sendToMain(NEXT_PROMPT_CHANGED, entry)) : undefined
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
+      const cleanupPopup = popup === null ? () => undefined : registerPopupIpc(ipcMain, popup.ipc, () => trustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
@@ -2349,9 +2430,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale, { opencode: !heldProviders.has('opencode') })
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
+      const cleanupLocalApps = localApps ? registerLocalAppsIpc(ipcMain, localApps, () => windows.getTrustedRenderers(), state => windows.sendToMain(LOCAL_APPS_CHANGED, state)) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
-      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => trustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead,
+        popupObserves: threadIds => popup?.feed.observe(threadIds), popupShown: () => popup?.window.isVisible() ?? false, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], machinesEnabled: crossMachineEnabled,
@@ -2371,12 +2454,18 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         },
         hotkeys: {
           current: () => settingsCoordinator.getHotkey(),
-          replace: (accelerator) => settingsCoordinator.replaceHotkey(accelerator),
+          // The popup lets go of keys dictation is taking (ADR-0181), so dictation is not told another app holds them.
+          replace: (accelerator) => popup ? popup.besideDictation([accelerator], () => settingsCoordinator.replaceHotkey(accelerator)) : settingsCoordinator.replaceHotkey(accelerator),
         },
         dictationShortcuts: {
-          replace: change => settingsCoordinator.replaceDictationShortcuts(change),
-          suspend: shortcutLifecycle.suspend,
-          record: shortcutLifecycle.record,
+          replace: change => popup ? popup.besideDictation([...change.press, ...change.hold], () => settingsCoordinator.replaceDictationShortcuts(change))
+            : settingsCoordinator.replaceDictationShortcuts(change),
+          // Recording keys in Settings stands the popup's shortcut aside too, so its keys are recorded rather than show it.
+          suspend: suspended => { popup?.suspendShortcut(suspended); shortcutLifecycle.suspend(suspended) },
+          record: async () => {
+            popup?.suspendShortcut(true)
+            try { return await shortcutLifecycle.record() } finally { popup?.suspendShortcut(false) }
+          },
           cancelRecord: () => dictationShortcuts?.cancelRecord(),
           permission: () => dictationShortcuts?.permission() ?? (platform === 'darwin' ? 'not-needed' : 'unsupported'),
           requestPermission: async () => dictationShortcuts === null
@@ -2394,13 +2483,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
             dictationLifecycle.rendererProcessGone('main')
             // A reloaded Settings can no longer end its recording, so the shortcuts come back now.
             shortcutLifecycle.rendererGone()
+            popup?.suspendShortcut(false)
             return windows.reloadMain()
           },
           toggleMaximize: () => windows.toggleMaximizeMain(),
           isMaximized: () => windows.isMainMaximized(),
           quit: () => app.quit(),
         },
-        trustedSenders: () => windows.getTrustedRenderers(),
+        trustedSenders: () => trustedRenderers(),
         openExternalLink: url => shell.openExternal(url),
         openQuestionPage: async input => {
           const opening = hostRouter.questionPageOpening(input)
@@ -2488,6 +2578,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupAgents()
         cleanupHosts()
         cleanupPhones()
+        cleanupLocalApps?.()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
@@ -2505,6 +2596,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupMainCheckout()
         unsubscribeMainCheckout?.()
         cleanupNotifications()
+        cleanupPopup()
         cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
         cleanupOwnServers()

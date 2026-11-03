@@ -151,6 +151,46 @@ describe("durable project/thread organization", () => {
     expect(thread().pullRequests).toEqual([expect.objectContaining({ number: 9, state: 'merged' })])
   })
 
+  it('brings the branch’s own pull request to the merge another read saw, on a thread with no link to it, and never moves it back (#2019)', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'feat/x', baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: 'feat/x' }))
+    const url = 'https://github.com/o/r/pull/9'
+    const status = { isRepository: true, branch: 'feat/x', upstream: 'origin/feat/x', hasRemote: true, defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles: 0,
+      insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: 1, pullRequest: { number: 9, title: 'Branch PR', url, state: 'open' as const, draft: false }, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
+    const notePullRequestEnded = vi.fn()
+    f.host.setGitStatus({ read: vi.fn(async () => status), invalidate: vi.fn(), notePullRequestEnded }, { pollIntervalMs: () => 0 })
+    const merged = vi.fn()
+    f.host.onPullRequestMerged(merged)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    const session = f.adapters.codex.state.threads.at(-1)!
+    session.status = 'idle'; f.adapters.codex.emit()
+    const thread = () => f.host.workspaceSnapshot().threads.find(item => item.id === 'local')!
+    await vi.waitFor(() => expect(thread().status).toBe('idle'))
+    await f.host.gitActionFinished('local')
+    await vi.waitFor(() => expect(thread().worktree?.git?.pullRequest?.state).toBe('open'))
+    expect(thread().pullRequests ?? []).toEqual([])
+    // An open read says nothing new, and asks nothing of the status reader's memory.
+    f.host.notePullRequestState({ url, head: 'head', observedAt: new Date().toISOString(), availability: 'available', state: 'open' })
+    expect(notePullRequestEnded).not.toHaveBeenCalled()
+    // Watcher's or babysitting's read sees the merge: only the branch's record holds this pull request.
+    f.host.notePullRequestState({ url, head: 'head', observedAt: new Date().toISOString(), availability: 'available', state: 'merged' })
+    await vi.waitFor(() => expect(thread().worktree?.git?.pullRequest?.state).toBe('merged'))
+    expect(notePullRequestEnded).toHaveBeenCalledWith(url, 'merged')
+    expect(f.host.openPullRequestUrls('local')).toEqual([])
+    expect(merged).toHaveBeenCalledWith(url)
+    // A late read that says open never moves it back.
+    f.host.notePullRequestState({ url, head: 'head', observedAt: new Date().toISOString(), availability: 'available', state: 'open' })
+    await (f.host as unknown as { onLane(threadId: string, work: () => Promise<void>): Promise<void> }).onLane('local', async () => undefined)
+    expect(thread().worktree?.git?.pullRequest?.state).toBe('merged')
+  })
+
   it('runs a Git action on the thread lane, reports it on the record as it goes, and refuses one while the thread works', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()

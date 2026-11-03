@@ -243,13 +243,13 @@ export class HotkeyManager {
   }
 }
 
+/** Claims or releases Escape for the snapshot, and answers whether Escape is held to cancel it now. */
 export function syncEscapeForWidgetSnapshot(
   hotkeys: HotkeyManager,
   snapshot: Pick<WidgetSnapshot, 'status' | 'cancellable'>,
-): void {
+): boolean {
   if (snapshot.cancellable) {
-    hotkeys.beginListening()
-    return
+    return hotkeys.beginListening()
   }
   if (snapshot.status === 'cancelled') {
     hotkeys.cancelListening()
@@ -258,4 +258,5 @@ export function syncEscapeForWidgetSnapshot(
   } else {
     hotkeys.stopListening()
   }
+  return false
 }

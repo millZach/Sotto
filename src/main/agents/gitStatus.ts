@@ -1,5 +1,6 @@
 import { open, stat } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
+import { pullRequestKey } from '../../shared/gitPullRequests'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
@@ -183,6 +184,8 @@ export interface GitStatusSource {
    * folder, or for one not read yet, every repository is treated so.
    */
   invalidate(folder?: string): void
+  /** A pull request another read saw merge or close (#2019), so a local read stops bringing back the open it kept; absent on a source that keeps none. */
+  notePullRequestEnded?(url: string, state: 'merged' | 'closed'): void
   /** The working copy's branches, the way T3's `listRefs` answers them; absent on a source that has none to give. */
   listRefs?(cwd: string, request: Omit<GitRefsRequest, 'threadId'>): Promise<GitRefsPage>
   /** The working copy's changed files with their line counts, for the commit dialog; absent on a source that has none to give. */
@@ -258,6 +261,8 @@ export class GitStatusReader implements GitStatusSource {
   private readonly now: () => number
   private readonly fetches = new Map<string, FetchRecord>()
   private readonly pullRequests = new Map<string, PullRequestRecord>()
+  /** Which branches' kept answers have named a pull request, by its key, so an ending touches those alone (#2019). */
+  private readonly pullRequestBranches = new Map<string, Set<string>>()
   private readonly defaults = new Map<string, { at: number; value: string | null }>()
   /** Reads under way, each with the `invalidate` count it began under and the repository it found, once it has. */
   private readonly reads = new Map<string, ReadRecord>()
@@ -704,6 +709,20 @@ export class GitStatusReader implements GitStatusSource {
     return entry.done
   }
 
+  /**
+   * A pull request another read saw merge or close (#2019): a branch's kept answer that names it says so from now on, as if
+   * GitHub had just said it to this reader. A local read asks GitHub nothing, so it would otherwise bring back the open it
+   * kept. Merged is final. It reads only the branches that named this pull request, however many this reader has kept.
+   */
+  notePullRequestEnded(url: string, state: 'merged' | 'closed'): void {
+    const key = pullRequestKey(url)
+    for (const branch of key ? this.pullRequestBranches.get(key) ?? [] : []) {
+      const record = this.pullRequests.get(branch)
+      if (!record?.value || record.value.state === state || record.value.state === 'merged' || pullRequestKey(record.value.url) !== key) continue
+      this.pullRequests.set(branch, { ...record, value: { ...record.value, state }, nextAt: this.now() + PULL_REQUEST_SETTLED_FRESH_MS })
+    }
+  }
+
   /** Whether a kept answer is due to be asked again: a Git action in its repository since, its time is up, or a merged or closed one whose branch has moved. */
   private pullRequestStale(common: string, record: PullRequestRecord, tip: string | null): boolean {
     return record.epoch < this.epochOf(common) || this.now() >= record.nextAt || (record.value !== null && record.value.state !== 'open' && record.tip !== tip)
@@ -719,7 +738,14 @@ export class GitStatusReader implements GitStatusSource {
     const keep = (next: PullRequestRecord): GitPullRequestSummary | null => {
       const latest = this.pullRequests.get(key)
       if (latest && latest.epoch > next.epoch) return latest.value
+      // An answer asked before another read saw the merge lands after it (`notePullRequestEnded`): GitHub never unmerges (#2019).
+      if (latest?.value?.state === 'merged' && next.value?.url === latest.value.url && next.value.state !== 'merged') return latest.value
       this.pullRequests.set(key, next)
+      const named = next.value && pullRequestKey(next.value.url)
+      if (named) {
+        const branches = this.pullRequestBranches.get(named)
+        if (branches) branches.add(key); else this.pullRequestBranches.set(named, new Set([key]))
+      }
       return next.value
     }
     const target = await this.headTarget(cwd, lookup.branch, lookup.upstream)

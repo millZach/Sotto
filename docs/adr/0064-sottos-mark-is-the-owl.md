@@ -16,6 +16,8 @@ Amended October 24, 2026, by the owner's choice: on macOS the app draws no mark 
 
 Amended October 30, 2026: the runtime macOS Dock mark has the native icon inset: a 412-pixel tile centred in the 512-pixel coverage canvas, with 50 transparent pixels on each side. The master artwork stays full size for its other uses. The Dock receives the image as drawn, so without this inset the running icon is larger than its neighbours.
 
+Amended November 2, 2026, by the owner's pick from `docs/prototypes/widget-polish-prototype.html`: the floating widget's capsule leads with the owl without its tile, painted in the tile's colour (the theme's accent, or the icon's teal on the default theme), the way decision 5 already draws the Omarchy dictation pill. The capsule is a shape of its own, and a rounded square inside a rounded pill fought it. The eyes and beak stay holes, so they show the capsule. Everywhere else in decision 1 the mark keeps its tile.
+
 ## Context
 
 The mark was a bar and a wave on a teal tile: a caret and a sound, from the months when Sotto was a dictation tool. Sotto now spends most of its time running coding agents' threads, and the owner wanted a mark with a character rather than a symbol. The sheet shows the owl as an app icon (a black owl on a teal tile, its eyes and beak cut through to the tile), a lockup with a lowercase wordmark, and a small inverted variant on a black tile. It is a raster image, so it cannot be the master for a 16-pixel menu-bar icon or a mark that a theme repaints.

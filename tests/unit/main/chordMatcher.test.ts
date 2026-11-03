@@ -158,6 +158,11 @@ describe('createChordMatcher', () => {
     const { matcher } = setup([holdFn, holdSpace, pressFnD])
     expect(matcher.watchedTokens()).toEqual(['Fn', 'Control', 'Shift', 'Space', 'D'])
   })
+
+  it('names the chords that have a key besides modifiers', () => {
+    const { matcher } = setup([holdFn, holdSpace, pressFnD])
+    expect(matcher.keyChords()).toEqual(['Control+Shift+Space', 'Fn+D'])
+  })
 })
 
 describe('ChordMatcher releaseHolds', () => {

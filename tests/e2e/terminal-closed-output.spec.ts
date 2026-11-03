@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
-import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow, toggleTools, paneMenuToggle } from './support/sottoLaunch'
+import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow, toggleTools, toggleTerminalDrawer } from './support/sottoLaunch'
 import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { TERMINAL_CHANNEL, TERMINAL_LIMIT_MESSAGE, terminalSessionSchema } from '../../src/shared/terminal'
 
@@ -30,7 +30,7 @@ for (const place of ['tools', 'drawer'] as const) {
         await toggleTools(page)
         await page.getByRole('complementary', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
         await page.getByRole('button', { name: 'Start terminal', exact: true }).press('Enter')
-      } else await paneMenuToggle(page, 'Terminal drawer')
+      } else await toggleTerminalDrawer(page)
       const notice = page.getByRole('alert').filter({ hasText: 'Sotto is removing this folder.' })
       await expect(notice).toContainText('The terminal did not start. Try again when it finishes.')
       await expect(notice).not.toContainText('storage')

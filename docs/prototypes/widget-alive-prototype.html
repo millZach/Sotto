@@ -1,0 +1,402 @@
+<!doctype html>
+<!--
+  Throwaway mock-up for the dictation widget's third polish round.
+  Question: how should the widget move between its states, and how alive
+  should the owl be? The owl reacts to the dictation: it blinks and glances
+  while it waits, perks up with lit eyes while it hears you, tilts its head
+  while it transcribes, hops with happy eyes when the text lands, and droops
+  on an error. Stop is calm (a square in the text colour) and the edge stays
+  neutral, so the owl and the bars say "live".
+  Variants: owl Smooth or Pixel (drawn at 1x and shown pixel-doubled, like the
+  menu bar owl of ADR-0114); life Subtle or Lively.
+  Picked: Smooth, Lively, November 2, 2026 (Drake), held behind the Owl preview first (ADR-0178).
+-->
+<html lang="en" data-mode="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto · Dictation widget, alive</title>
+<style>
+:root {
+  --canvas: #121211; --desk: #262624; --surface: #1a1a19; --raised: #262624;
+  --text: #ededea; --muted: #a3a39e; --accent: #a9b8ff; --error: #ff8a7a; --success: #8fd18f;
+  --top: color-mix(in oklab, var(--raised) 55%, var(--surface));
+  --bottom: color-mix(in oklab, var(--surface) 70%, var(--canvas));
+  --edge: rgb(255 255 255 / 11%); --sheen: rgb(255 255 255 / 7%);
+  --shadow: 0 8px 20px -6px rgb(0 0 0 / 60%), 0 1px 3px rgb(0 0 0 / 40%);
+  --shadow-soft: 0 2px 6px rgb(0 0 0 / 50%);
+}
+:root[data-mode='light'] {
+  --canvas: #fafaf8; --desk: #ecece8; --surface: #ffffff; --raised: #f1f1ee;
+  --text: #1a1a19; --muted: #5f5f5a; --accent: #4057d6; --error: #c0352a; --success: #2b7a2b;
+  --top: var(--surface);
+  --bottom: color-mix(in oklab, var(--surface) 55%, var(--raised));
+  --edge: color-mix(in srgb, var(--text) 16%, transparent); --sheen: rgb(255 255 255 / 60%);
+  --shadow: 0 8px 20px -6px color-mix(in srgb, var(--text) 26%, transparent), 0 1px 3px color-mix(in srgb, var(--text) 14%, transparent);
+  --shadow-soft: 0 2px 6px color-mix(in srgb, var(--text) 20%, transparent);
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--canvas); color: var(--text); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 20px; border-bottom: 1px solid var(--edge); }
+header strong { font-weight: 600; margin-right: 6px; }
+.group { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: 7px; background: var(--raised); }
+.group span { color: var(--muted); font-size: 12px; padding: 0 6px 0 4px; }
+header button { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 0; border-radius: 5px; padding: 4px 10px; cursor: pointer; }
+header button[aria-pressed='true'] { background: var(--canvas); color: var(--text); }
+header button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.steps { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 0; }
+.steps button { font: inherit; font-size: 13px; color: var(--muted); background: var(--raised); border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.steps button[aria-current='true'] { color: var(--text); outline: 1.5px solid var(--accent); }
+main { display: grid; grid-template-columns: 1fr 300px; gap: 20px; padding: 16px 20px 20px; }
+.stage { position: relative; height: 380px; border-radius: 12px; background: var(--desk); display: grid; place-items: center; overflow: hidden; }
+.stage .tag { position: absolute; left: 14px; top: 10px; font-size: 12px; color: var(--muted); }
+.side { display: flex; flex-direction: column; gap: 20px; }
+.side .stage { height: 180px; }
+.notes { font-size: 13px; color: var(--muted); }
+.notes b { color: var(--text); font-weight: 600; }
+.notes p { margin: 0 0 8px; }
+
+/* ---------- the widget ---------- */
+.wbox { width: 248px; height: 88px; display: grid; place-items: center; }
+.cap {
+  position: relative; display: flex; align-items: center; overflow: hidden;
+  width: 88px; height: 6px; border-radius: 3px; padding: 0;
+  border: 1px solid var(--edge); background: linear-gradient(180deg, var(--top), var(--bottom));
+  box-shadow: var(--shadow-soft); opacity: .72;
+  font-family: Manrope, system-ui, sans-serif;
+  /* closing: quick and plain */
+  transition: width .22s cubic-bezier(.4,0,.6,1), height .22s cubic-bezier(.4,0,.6,1), border-radius .22s ease, opacity .2s ease, box-shadow .25s ease;
+}
+/* opening: a spring with a touch of overshoot, so the pill arrives rather than appears */
+.w[data-open] .cap { transition: width .42s cubic-bezier(.3,1.45,.55,1), height .36s cubic-bezier(.3,1.5,.55,1), border-radius .3s ease, opacity .15s ease, box-shadow .3s ease; }
+.w[data-state='hover'] .cap { width: 212px; height: 28px; border-radius: 14px; opacity: 1; }
+.w[data-state='listening'] .cap, .w[data-state='processing'] .cap, .w[data-state='pasted'] .cap, .w[data-state='error'] .cap {
+  width: 212px; height: 40px; border-radius: 20px; opacity: 1; box-shadow: var(--shadow), inset 0 1px 0 var(--sheen);
+}
+.prompt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px; white-space: nowrap; opacity: 0; transition: opacity .15s ease; pointer-events: none; }
+.prompt b { font-weight: 600; } .prompt span { color: var(--muted); }
+.w[data-state='hover'] .prompt { opacity: 1; transition-delay: .12s; }
+.row { display: flex; align-items: center; width: 100%; height: 100%; padding: 0 10px 0 9px; }
+/* every part collapses to nothing when its state does not show it, so the row re-flows instead of jumping */
+.part { flex: none; display: inline-flex; align-items: center; max-width: 0; margin-left: 0; opacity: 0; transform: translateY(4px) scale(.9);
+  transition: max-width .3s cubic-bezier(.3,1.2,.5,1), margin-left .3s ease, opacity .16s ease, transform .3s cubic-bezier(.3,1.4,.5,1); }
+.part.on { max-width: 120px; margin-left: 7px; opacity: 1; transform: none; transition-delay: var(--d, 0s); }
+.part.owl.on { margin-left: 0; }
+.owl canvas { display: block; width: 30px; height: 28px; margin: -4px; }
+.w[data-owl='pixel'] .owl canvas { image-rendering: pixelated; }
+.bars { flex: 1 1 auto; justify-content: center; gap: 3px; height: 18px; }
+.bars.on { max-width: 100px; }
+.bars i { width: 3px; height: 5px; border-radius: 2px; background: var(--accent); }
+.label { font-size: 11.5px; white-space: nowrap; }
+.label.grow { flex: 1 1 auto; }
+.w[data-state='pasted'] .label { color: var(--success); }
+.w[data-state='error'] .label { color: var(--error); }
+time { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.spacer { flex: 1 1 auto; }
+.stop { width: 20px; height: 20px; justify-content: center; border-radius: 50%; border: 0; padding: 0;
+  background: color-mix(in srgb, var(--text) 10%, transparent); }
+.stop.on { max-width: 20px; }
+.stop i { width: 8px; height: 8px; border-radius: 1.5px; background: color-mix(in srgb, var(--text) 82%, transparent); }
+.progress { position: absolute; left: 15px; right: 15px; bottom: 5px; height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--text) 12%, transparent); opacity: 0; transform: scaleX(.6); transition: opacity .2s ease, transform .35s cubic-bezier(.3,1.3,.5,1); }
+.progress span { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--accent); }
+.w[data-state='processing'] .progress { opacity: 1; transform: none; }
+.w[data-reduced] .cap, .w[data-reduced] .part, .w[data-reduced] .prompt, .w[data-reduced] .progress { transition: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Dictation widget, alive</strong>
+  <div class="group" role="group" aria-label="Playback"><button type="button" id="play" aria-pressed="true">Playing</button><button type="button" id="restart">Restart</button></div>
+  <div class="group" role="group" aria-label="Owl"><span>Owl</span><button type="button" data-set="owl:smooth" aria-pressed="true">Smooth</button><button type="button" data-set="owl:pixel">Pixel</button></div>
+  <div class="group" role="group" aria-label="Life"><span>Life</span><button type="button" data-set="life:subtle">Subtle</button><button type="button" data-set="life:lively" aria-pressed="true">Lively</button></div>
+  <div class="group" role="group" aria-label="Speed"><span>Speed</span><button type="button" data-set="speed:1" aria-pressed="true">1×</button><button type="button" data-set="speed:0.25">¼×</button></div>
+  <div class="group" role="group" aria-label="Look"><button type="button" data-set="mode:dark" aria-pressed="true">Dark</button><button type="button" data-set="mode:light">Light</button></div>
+  <div class="group" role="group" aria-label="Motion"><button type="button" data-set="motion:full" aria-pressed="true">Full motion</button><button type="button" data-set="motion:reduced">Reduced</button></div>
+</header>
+<nav class="steps" aria-label="Jump to a state" id="steps"></nav>
+<main>
+  <div class="stage"><span class="tag">3× size</span><div id="big" style="zoom:3"></div></div>
+  <div class="side">
+    <div class="stage"><span class="tag">Actual size</span><div id="small"></div></div>
+    <div class="notes">
+      <p><b>Waiting:</b> breathes, blinks, glances about.</p>
+      <p><b>Hearing you:</b> ears up, eyes lit, head bobs with your voice.</p>
+      <p><b>Transcribing:</b> head tilted, eyes up, thinking.</p>
+      <p><b>Pasted:</b> a hop and happy eyes.</p>
+      <p><b>Error:</b> droops, eyes dim.</p>
+      <p>Opening springs open with a little overshoot; closing is quick and plain. Reduced motion holds the owl still and swaps states without moving.</p>
+    </div>
+  </div>
+</main>
+<script>
+/* ---------- the owl's parts, from SottoMark (build/icon.svg's 96-unit tile) ---------- */
+const BODY = new Path2D('M18.24 33.84C16.32 30 15.84 22.8 19.2 18C19.8 16.8 21.12 15.6 21.72 18C21.96 21.6 24.6 25.44 30 25.44C38.4 22.32 57.6 20.4 69.84 27.36C73.2 27.12 76.32 24.6 76.56 20.64C76.8 19.56 77.76 19.56 78.24 21.36C80.4 24 81.36 31.44 78.72 37.2C80.64 39.6 82.08 45.6 82.08 55.2C82.32 66.24 80.28 71.76 74.4 75.6C69 79.8 57.6 80.04 48 80.04C38.28 80.04 26.88 79.8 21.48 75.6C15.6 71.76 13.56 66.24 13.8 55.2C13.68 44.4 14.88 38.4 18.24 33.84Z')
+const EYES = [
+  { path: new Path2D('M20.76 52.2C20.64 43.8 22.56 39.48 28.8 39.48C36.24 39.24 42.48 40.08 42.36 50.4C42.36 58.8 39.6 62.64 31.8 62.64C24 62.76 20.64 59.4 20.76 52.2Z'), pupil: [36, 48.96], top: 39.2, bottom: 62.8 },
+  { path: new Path2D('M53.88 53.4C53.88 48.6 55.2 46.56 58.8 45.6L70.56 43.2C73.68 42.6 75.12 45.6 75.12 51.6C75.24 60 73.2 62.76 64.2 62.76C57.6 62.76 53.88 60 53.88 53.4Z'), pupil: [60.36, 51.84], top: 43, bottom: 62.8 },
+]
+const BEAK = new Path2D('M45.6 59.88C47.04 59.52 48.96 59.52 50.4 59.88C51.6 60.12 51.72 61.08 51.12 61.8L48.6 65.64C48.24 66.24 47.76 66.24 47.4 65.64L44.88 61.8C44.28 61.08 44.4 60.12 45.6 59.88Z')
+const BOX = { w: 30, h: 28, pad: 4, owlW: 22 }            // css px: the canvas is the 22px owl plus 4px all round for hops, tilts and glow
+
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+const rgbOf = c => { const x = document.createElement('canvas').getContext('2d'); x.fillStyle = c; const h = x.fillStyle; const n = parseInt(h.slice(1), 16); return [n >> 16, n >> 8 & 255, n & 255] }
+const mixRgb = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t))
+const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`
+
+/* Draw one pose. ctx is scaled so 1 unit = 1 css px of the 30x28 box. */
+function drawOwl(ctx, p, pal, glowSpill) {
+  const k = BOX.owlW / 80                                    // the glyph's viewBox is 80 units wide (x 8..88, y 12..84)
+  ctx.save()
+  ctx.translate(BOX.pad + BOX.owlW / 2, BOX.pad + 72 * k - p.hop)
+  ctx.rotate(p.tilt * Math.PI / 180)
+  ctx.scale(k * p.sx, k * p.sy)
+  ctx.translate(-48, -80)
+  if (glowSpill && p.glow > 0.05) {                          // the lit eyes light the pill a little round them
+    for (const e of EYES) {
+      const [x, y] = e.pupil, g = ctx.createRadialGradient(x, y, 2, x, y, 26)
+      g.addColorStop(0, rgba(pal.accent, 0.22 * p.glow)); g.addColorStop(1, rgba(pal.accent, 0))
+      ctx.fillStyle = g; ctx.fillRect(x - 28, y - 28, 56, 56)
+    }
+  }
+  ctx.restore()
+}
+function drawLayer(ctx, p, pal) {
+  const k = BOX.owlW / 80
+  ctx.save()
+  ctx.translate(BOX.pad + BOX.owlW / 2, BOX.pad + 72 * k - p.hop)
+  ctx.rotate(p.tilt * Math.PI / 180)
+  ctx.scale(k * p.sx, k * p.sy)
+  ctx.translate(-48, -80)
+  ctx.fillStyle = rgba(pal.accent); ctx.fill(BODY)
+  const closed = Math.min(1, p.squint * 1.4)                // happy eyes close, so their holes fill in
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.globalAlpha = 1 - closed
+  for (const e of EYES) ctx.fill(e.path)
+  ctx.globalAlpha = 1
+  ctx.fill(BEAK)
+  ctx.globalCompositeOperation = 'source-over'
+  EYES.forEach((e, i) => {
+    if (closed > 0.01) {                                     // happy: an upturned arch cut through the closed eye, like ^ ^
+      const [px] = e.pupil, cy = (e.top + e.bottom) / 2
+      ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = closed
+      ctx.lineWidth = 3.8; ctx.lineCap = 'round'; ctx.beginPath()
+      ctx.moveTo(px - 9, cy + 4); ctx.quadraticCurveTo(px - 4 + (i ? 4 : 0), cy - 8, px + 9, cy + 4); ctx.stroke()
+      ctx.restore()
+      if (closed > 0.99) return
+    }
+    ctx.save(); ctx.clip(e.path); ctx.globalAlpha = 1 - closed
+    const [px, py] = e.pupil, x = px + p.lookX * 3.6, y = py + p.lookY * 2.6
+    if (p.glow > 0.02) {                                     // lit: the socket glows round the pupil
+      const g = ctx.createRadialGradient(x, y, 1, x, y, 13)
+      g.addColorStop(0, rgba(pal.lit, 0.85 * p.glow)); g.addColorStop(1, rgba(pal.accent, 0.12 * p.glow))
+      ctx.fillStyle = g; ctx.fillRect(px - 20, py - 20, 40, 40)
+    }
+    const r = 3.12 * (1 + 0.35 * p.glow) * (i ? 1 : 1)
+    ctx.fillStyle = rgba(p.glow > 0.02 ? mixRgb(pal.accent, pal.pupilLit, Math.min(1, p.glow * 1.2)) : pal.accent)
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill()
+    const h = e.bottom - e.top + 2, cy = (e.top + e.bottom) / 2
+    if (p.lid > 0.01) {                                                     // upper lid: a blink, or a sad droop whose inner end sits higher
+      ctx.save(); ctx.translate(px, cy); ctx.rotate((i ? 1 : -1) * p.slant * 0.32); ctx.translate(-px, -cy)
+      ctx.fillStyle = rgba(pal.accent); ctx.fillRect(px - 30, e.top - 8, 60, 7 + h * p.lid); ctx.restore()
+    }
+    ctx.restore()
+  })
+  ctx.restore()
+}
+
+/* ---------- one widget on the page ---------- */
+class Widget {
+  constructor(host, zoom) {
+    this.zoom = zoom
+    host.innerHTML = `<div class="wbox"><div class="w" data-state="sliver"><div class="cap">
+      <div class="prompt"><b>Click to dictate</b><span>⌃⇧Space</span></div>
+      <div class="row">
+        <span class="part owl" style="--d:.06s"><canvas></canvas></span>
+        <span class="part bars" style="--d:.12s">${'<i></i>'.repeat(7)}</span>
+        <span class="part label" style="--d:.1s"></span>
+        <span class="spacer"></span>
+        <time class="part" style="--d:.16s">00:00</time>
+        <span class="part stop" style="--d:.2s" role="img" aria-label="Stop dictation"><i></i></span>
+      </div>
+      <span class="progress"><span></span></span>
+    </div></div></div>`
+    this.w = host.querySelector('.w')
+    this.canvas = host.querySelector('canvas')
+    this.ctx = this.canvas.getContext('2d')
+    this.layer = document.createElement('canvas')
+    this.parts = Object.fromEntries(['owl', 'bars', 'label', 'stop'].map(n => [n, host.querySelector('.' + n)]))
+    this.parts.time = host.querySelector('time')
+    this.bars = [...host.querySelectorAll('.bars i')]
+    this.progress = host.querySelector('.progress span')
+  }
+  setState(state, label) {
+    const open = !['sliver'].includes(state)
+    this.w.toggleAttribute('data-open', open)
+    this.w.dataset.state = state
+    const show = {
+      owl: ['listening', 'processing', 'pasted', 'error'].includes(state),
+      bars: state === 'listening', time: state === 'listening', stop: state === 'listening',
+      label: ['processing', 'pasted', 'error'].includes(state),
+    }
+    for (const [name, on] of Object.entries(show)) this.parts[name].classList.toggle('on', on)
+    this.parts.label.classList.toggle('grow', show.label)
+    if (label) this.parts.label.textContent = label
+  }
+  paint(p, ui, opts) {
+    this.w.dataset.owl = opts.owl
+    this.w.toggleAttribute('data-reduced', opts.reduced)
+    this.parts.time.textContent = ui.time
+    this.progress.style.width = `${Math.round(ui.progress * 100)}%`
+    this.bars.forEach((bar, i) => { bar.style.height = `${ui.bars[i].toFixed(2)}px` })
+    const dpr = window.devicePixelRatio || 1
+    const pal = opts.pal
+    if (opts.owl === 'pixel') {
+      // Drawn at 1x, every pixel snapped to the palette, then shown pixel-doubled.
+      if (this.canvas.width !== BOX.w) { this.canvas.width = BOX.w; this.canvas.height = BOX.h }
+      if (this.layer.width !== BOX.w) { this.layer.width = BOX.w; this.layer.height = BOX.h }
+      const L = this.layer.getContext('2d', { willReadFrequently: true })
+      L.setTransform(1, 0, 0, 1, 0, 0); L.clearRect(0, 0, BOX.w, BOX.h)
+      drawLayer(L, p, pal)
+      const img = L.getImageData(0, 0, BOX.w, BOX.h), d = img.data
+      const palette = [pal.accent, pal.pupilLit, mixRgb(pal.accent, pal.pupilLit, 0.5)]
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 120) { d[i + 3] = 0; continue }
+        let best = palette[0], bd = 1e9
+        for (const q of palette) { const dd = (q[0] - d[i]) ** 2 + (q[1] - d[i + 1]) ** 2 + (q[2] - d[i + 2]) ** 2; if (dd < bd) { bd = dd; best = q } }
+        d[i] = best[0]; d[i + 1] = best[1]; d[i + 2] = best[2]; d[i + 3] = 255
+      }
+      this.ctx.putImageData(img, 0, 0)
+    } else {
+      const s = dpr * this.zoom
+      const W = Math.round(BOX.w * s), H = Math.round(BOX.h * s)
+      if (this.canvas.width !== W) { this.canvas.width = W; this.canvas.height = H }
+      if (this.layer.width !== W) { this.layer.width = W; this.layer.height = H }
+      const L = this.layer.getContext('2d')
+      L.setTransform(s, 0, 0, s, 0, 0); L.clearRect(0, 0, BOX.w, BOX.h)
+      drawLayer(L, p, pal)
+      const c = this.ctx
+      c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, W, H)
+      c.setTransform(s, 0, 0, s, 0, 0); drawOwl(c, p, pal, true)
+      c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(this.layer, 0, 0)
+    }
+  }
+}
+
+/* ---------- the script: one dictation, on a loop ---------- */
+const SCRIPT = [
+  ['sliver', 1.6], ['hover', 1.3], ['listening', 1.1, { speaking: false }], ['listening', 2.6, { speaking: true }],
+  ['listening', 0.9, { speaking: false }], ['listening', 1.9, { speaking: true }], ['processing', 2.6], ['pasted', 1.9],
+]
+const STEPS = [
+  ['Idle', 'sliver'], ['Hover', 'hover'], ['Listening', 'listening', false], ['Hearing you', 'listening', true],
+  ['Transcribing', 'processing'], ['Pasted', 'pasted'], ['Error', 'error'],
+]
+const LABELS = { processing: 'Transcribing', pasted: 'Pasted', error: 'No speech heard' }
+const opts = { owl: 'smooth', life: 'lively', speed: 1, mode: 'dark', reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }
+const widgets = [new Widget(document.getElementById('big'), 3), new Widget(document.getElementById('small'), 1)]
+
+let playing = true, step = 0, stepT = 0, sim = 0, recT = 0
+let cur = { state: 'sliver', speaking: false }, enteredAt = 0
+function enter(state, speaking) {
+  if (state !== cur.state) { enteredAt = sim; if (state === 'listening' && cur.state !== 'listening') recT = 0 }
+  cur = { state, speaking: !!speaking }
+  for (const w of widgets) w.setState(state, LABELS[state])
+  document.querySelectorAll('#steps button').forEach(b => b.setAttribute('aria-current', String(b.dataset.state === state && (state !== 'listening' || String(cur.speaking) === b.dataset.speaking))))
+}
+
+/* the owl's mind: targets per state, eased toward with springs, plus blinks and glances on their own clocks */
+const pose = { lookX: 0, lookY: 0, glow: 0, tilt: 0, lid: 0, squint: 0, slant: 0, hop: 0, sx: 1, sy: 1, perk: 0 }
+const vel = { hop: 0 }
+let nextBlink = 1.2, blinkAt = -1, nextGlance = 2, glance = [0, 0], level = 0, hopKick = -1
+const rand = (a, b) => a + Math.random() * (b - a)
+function think(dt) {
+  const lively = opts.life === 'lively', L = lively ? 1 : 0.5, st = cur.state, inState = sim - enteredAt
+  // voice: a rough syllable rhythm while speaking
+  const targetLevel = cur.speaking && st === 'listening' ? 0.35 + 0.65 * Math.abs(Math.sin(sim * 7.3) * Math.sin(sim * 3.1 + 1)) : 0
+  level += (targetLevel - level) * Math.min(1, dt * 18)
+  // blinks
+  if (sim >= nextBlink && blinkAt < 0 && st !== 'pasted') { blinkAt = sim; nextBlink = sim + (lively ? rand(2.2, 4.5) : rand(3.5, 6.5)) * (Math.random() < 0.18 ? 0.12 : 1) }
+  let blink = 0
+  if (blinkAt >= 0) { const b = (sim - blinkAt) / 0.16; blink = b < 0.4 ? b / 0.4 : b < 0.6 ? 1 : 1 - (b - 0.6) / 0.4; if (b >= 1) { blinkAt = -1; blink = 0 } }
+  // glances while waiting
+  if (sim >= nextGlance) { nextGlance = sim + rand(1.6, 3.8); glance = [Math.random() < 0.35 ? 0 : rand(-1, 1), rand(-0.6, 0.4)] }
+  let t = { lookX: 0, lookY: 0, glow: 0, tilt: 0, lid: 0, squint: 0, slant: 0, perk: 0 }
+  if (st === 'listening' && !cur.speaking) t = { ...t, lookX: glance[0], lookY: glance[1], glow: 0.25 }
+  if (st === 'listening' && cur.speaking) t = { ...t, lookX: 0, lookY: -0.15, glow: 0.55 + 0.45 * level, perk: 1 }
+  if (st === 'processing') t = { ...t, lookX: 0.85, lookY: -0.9, glow: 0.3 + 0.2 * Math.sin(sim * 4), tilt: 11 * L }
+  if (st === 'pasted') t = { ...t, squint: inState < 1.2 ? 1 : 0, glow: 0.4 }
+  if (st === 'error') t = { ...t, lookY: 0.8, tilt: -7 * L, lid: 0.3, slant: 1, glow: 0 }
+  const ease = (k, rate) => { pose[k] += (t[k] - pose[k]) * Math.min(1, dt * rate) }
+  ease('lookX', 9); ease('lookY', 9); ease('glow', 10); ease('tilt', 7); ease('squint', 12); ease('perk', 10); ease('slant', 8)
+  pose.lid += (Math.max(t.lid, blink) - pose.lid) * Math.min(1, dt * 40)
+  if (blinkAt >= 0) pose.lid = Math.max(t.lid, blink)
+  // the hop: a kick on arrival at pasted, a spring back, a squash on landing
+  if (st === 'pasted' && hopKick < enteredAt) { hopKick = sim; vel.hop = 34 * L }
+  vel.hop += (-pose.hop * 260 - vel.hop * 16) * dt; pose.hop += vel.hop * dt
+  if (st !== 'pasted' && Math.abs(pose.hop) < 0.01) pose.hop = 0
+  // breathing, ears up, and a nod with the voice
+  const breath = Math.sin(sim * 2 * Math.PI / 3.2) * 0.018 * L
+  const bob = st === 'listening' && cur.speaking ? level * 1.1 * L : 0
+  const squash = Math.max(0, -vel.hop) * 0.004 * (pose.hop < 0.6 ? 1 : 0)
+  pose.sy = 1 + breath + 0.05 * pose.perk * L - squash
+  pose.sx = 1 / Math.sqrt(pose.sy)
+  pose.hopDraw = pose.hop + bob
+}
+function frozenPose() {
+  const st = cur.state
+  return { lookX: 0, lookY: st === 'processing' ? -0.9 : 0, glow: st === 'listening' ? (cur.speaking ? 0.8 : 0.25) : st === 'processing' ? 0.35 : 0, tilt: 0, lid: st === 'error' ? 0.3 : 0, slant: st === 'error' ? 1 : 0, squint: st === 'pasted' ? 1 : 0, hop: 0, sx: 1, sy: 1 }
+}
+const barH = [0, 0, 0, 0, 0, 0, 0]
+function bars(dt) {
+  const speaking = cur.state === 'listening' && cur.speaking
+  for (let i = 0; i < 7; i++) {
+    const wave = 0.5 + 0.5 * Math.sin(sim * 7 - i * 0.84)
+    const target = speaking && !opts.reduced ? 5 + 12 * wave * (0.55 + 0.45 * level) : speaking ? 11 : 5
+    barH[i] += (target - barH[i]) * Math.min(1, dt * 14)
+  }
+  return barH
+}
+
+let last = performance.now()
+function frame(now) {
+  const real = Math.min(0.05, (now - last) / 1000); last = now
+  const dt = real * opts.speed
+  if (playing) {
+    stepT += dt
+    if (stepT >= SCRIPT[step][1]) { stepT = 0; step = (step + 1) % SCRIPT.length; const [s, , o] = SCRIPT[step]; enter(s, o?.speaking) }
+  }
+  sim += dt
+  if (cur.state === 'listening') recT += dt
+  think(dt)
+  const pal = { accent: rgbOf(css('--accent')), pupilLit: opts.mode === 'dark' ? [255, 255, 255] : mixRgb(rgbOf(css('--accent')), [255, 255, 255], 0.75), lit: mixRgb(rgbOf(css('--accent')), [255, 255, 255], 0.55) }
+  const p = opts.reduced ? frozenPose() : { ...pose, hop: pose.hopDraw || 0 }
+  const ui = { time: `00:${String(Math.floor(recT)).padStart(2, '0')}`, progress: cur.state === 'processing' ? Math.min(1, (sim - enteredAt) / 2.4) : cur.state === 'pasted' ? 1 : 0, bars: bars(dt) }
+  for (const w of widgets) w.paint(p, ui, { ...opts, pal })
+  requestAnimationFrame(frame)
+}
+
+/* ---------- controls ---------- */
+const stepsNav = document.getElementById('steps')
+stepsNav.innerHTML = STEPS.map(([label, state, speaking]) => `<button type="button" data-state="${state}" data-speaking="${speaking ?? false}">${label}</button>`).join('')
+stepsNav.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  setPlaying(false); enter(b.dataset.state, b.dataset.speaking === 'true')
+})
+const playButton = document.getElementById('play')
+function setPlaying(on) { playing = on; playButton.setAttribute('aria-pressed', String(on)); playButton.textContent = on ? 'Playing' : 'Play' }
+playButton.addEventListener('click', () => setPlaying(!playing))
+document.getElementById('restart').addEventListener('click', () => { step = 0; stepT = 0; recT = 0; enter('sliver'); setPlaying(true) })
+document.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => {
+  const [key, value] = b.dataset.set.split(':')
+  b.parentElement.querySelectorAll('[data-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
+  if (key === 'owl') opts.owl = value
+  if (key === 'life') opts.life = value
+  if (key === 'speed') opts.speed = Number(value)
+  if (key === 'mode') { opts.mode = value; document.documentElement.dataset.mode = value }
+  if (key === 'motion') opts.reduced = value === 'reduced'
+}))
+if (opts.reduced) document.querySelectorAll('[data-set^="motion:"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.set === 'motion:reduced')))
+enter('sliver')
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

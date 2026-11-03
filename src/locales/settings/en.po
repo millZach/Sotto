@@ -262,6 +262,18 @@ msgstr "{hostName} stopped answering while {name} was signing in. If its tile st
 msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
 msgstr "{hours, plural, one {# hour ago} other {# hours ago}}"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "{kept} still works."
+msgstr "{kept} still works."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "{keys} on its own would show the popup while you type. Add ⌥ Option, ⌃ Control or ⌘ Command."
+msgstr "{keys} on its own would show the popup while you type. Add ⌥ Option, ⌃ Control or ⌘ Command."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "{keys} on its own would show the popup while you type. Add Alt or Ctrl."
+msgstr "{keys} on its own would show the popup while you type. Add Alt or Ctrl."
+
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "{label} hue"
 msgstr "{label} hue"
@@ -778,6 +790,10 @@ msgstr "A code works once, for five minutes."
 msgid "A community color theme for your editor."
 msgstr "A community color theme for your editor."
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "A dictation shortcut already uses {keys}. Pick other keys."
+msgstr "A dictation shortcut already uses {keys}. Pick other keys."
+
 #. A switch on Settings > Appearance: on, the light and the dark color schemes each get their own theme
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "A different theme when dark"
@@ -1063,6 +1079,15 @@ msgstr "An example. The thread's own model picks the type and scope from the cha
 msgid "An older Sotto host: load unknown. Update it in Hosts & phones."
 msgstr "An older Sotto host: load unknown. Update it in Hosts & phones."
 
+#. placeholder {0}: inline(chord)
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Another app already uses {0}, so the popup has no shortcut. Pick other keys, or free them in that app."
+msgstr "Another app already uses {0}, so the popup has no shortcut. Pick other keys, or free them in that app."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Another app already uses {keys}. Pick other keys, or free them in that app."
+msgstr "Another app already uses {keys}. Pick other keys, or free them in that app."
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Another app already uses {refused}. {kept} still works. Pick other keys, or free that shortcut in the other app."
 msgstr "Another app already uses {refused}. {kept} still works. Pick other keys, or free that shortcut in the other app."
@@ -1130,6 +1155,18 @@ msgstr "Approve the connection to {name} in Tailscale"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Approved in Tailscale"
 msgstr "Approved in Tailscale"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Apps on this computer"
+msgstr "Apps on this computer"
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Apps on this computer can read and send to your threads and Watcher, and answer questions and permissions, without a pairing code."
+msgstr "Apps on this computer can read and send to your threads and Watcher, and answer questions and permissions, without a pairing code."
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Apps on this computer can’t connect. Sotto couldn’t open their listener or save their files in its data folder. Turn this off and on again, or restart Sotto."
+msgstr "Apps on this computer can’t connect. Sotto couldn’t open their listener or save their files in its data folder. Turn this off and on again, or restart Sotto."
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "as {user}, port {port}"
@@ -1200,6 +1237,8 @@ msgid "Back"
 msgstr "Back"
 
 #. placeholder {0}: inline(DEFAULT_THREAD_SHORTCUTS[row])
+#. placeholder {0}: inline(next)
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Back to the default, {0}."
 msgstr "Back to the default, {0}."
@@ -1321,6 +1360,7 @@ msgid "Cancel inspecting app colors"
 msgstr "Cancel inspecting app colors"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Cancel recording"
 msgstr "Cancel recording"
@@ -1347,6 +1387,7 @@ msgid "Change"
 msgstr "Change"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Change shortcut, {words}"
 msgstr "Change shortcut, {words}"
@@ -1359,6 +1400,7 @@ msgstr "Change the host to add"
 msgid "Change the host to add, and stop connecting"
 msgstr "Change the host to add, and stop connecting"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Changed from the default"
 msgstr "Changed from the default"
@@ -1366,6 +1408,10 @@ msgstr "Changed from the default"
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "changed from their defaults."
 msgstr "changed from their defaults."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Changed in Settings › Dictation."
+msgstr "Changed in Settings › Dictation."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Changes"
@@ -2028,6 +2074,7 @@ msgstr "Default"
 msgid "Default diff file state"
 msgstr "Default diff file state"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Default is"
 msgstr "Default is"
@@ -2116,6 +2163,11 @@ msgstr "Dictation is off. The hotkey is free for other apps and the Dictate room
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Dictation shortcuts"
 msgstr "Dictation shortcuts"
+
+#. placeholder {0}: inline(chord)
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Dictation uses {0}, so the popup has no shortcut. Pick other keys."
+msgstr "Dictation uses {0}, so the popup has no shortcut. Pick other keys."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Dictionary saved."
@@ -2329,6 +2381,10 @@ msgstr "Error background"
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "Error text"
 msgstr "Error text"
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Esc hides the popup, so it can’t show it. Pick other keys."
+msgstr "Esc hides the popup, so it can’t show it. Pick other keys."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Every {keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
@@ -2548,8 +2604,8 @@ msgid "Global — the one set that works outside Sotto."
 msgstr "Global — the one set that works outside Sotto."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
-msgstr "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
+msgid "Global — works outside Sotto, as the popup’s does."
+msgstr "Global — works outside Sotto, as the popup’s does."
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
 #: src/renderer/src/features/settings/CouncilSettings.tsx
@@ -2622,6 +2678,7 @@ msgid "Hold any of these, speak, then let go."
 msgstr "Hold any of these, speak, then let go."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Hold the keys you want, then let go. Esc cancels."
 msgstr "Hold the keys you want, then let go. Esc cancels."
@@ -3024,7 +3081,13 @@ msgstr "Let agents draw visuals in threads"
 msgid "Let agents use the browser without asking"
 msgstr "Let agents use the browser without asking"
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Let apps on this computer connect"
+msgstr "Let apps on this computer connect"
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Let go to save. Esc cancels."
 msgstr "Let go to save. Esc cancels."
@@ -3299,6 +3362,10 @@ msgstr "Native iOS builds on a run.cloud simulator"
 msgid "Needs attention"
 msgstr "Needs attention"
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Needs the local host. Turn on Run the local host above, then restart Sotto."
+msgstr "Needs the local host. Turn on Run the local host above, then restart Sotto."
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Needs you"
 msgstr "Needs you"
@@ -3435,6 +3502,7 @@ msgstr "No setting matches “{search}”."
 msgid "No settled thread on this computer has been quiet that long."
 msgstr "No settled thread on this computer has been quiet that long."
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "No shortcut"
 msgstr "No shortcut"
@@ -3634,6 +3702,10 @@ msgstr "On a row in the thread list."
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
 msgstr "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "On Linux the desktop decides whether Sotto may take these keys; the tray’s Show popup always opens it."
+msgstr "On Linux the desktop decides whether Sotto may take these keys; the tray’s Show popup always opens it."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back."
@@ -4028,6 +4100,14 @@ msgstr "Pick a machine Sotto can reach over SSH, then add it yourself or have an
 msgid "Popular"
 msgstr "Popular"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Popup"
+msgstr "Popup"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Popup shortcut"
+msgstr "Popup shortcut"
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "port {port}, user from your SSH configuration"
 msgstr "port {port}, user from your SSH configuration"
@@ -4065,6 +4145,7 @@ msgid "Press Esc in any app to cancel a recording. Nothing is transcribed."
 msgstr "Press Esc in any app to cancel a recording. Nothing is transcribed."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Press the new keys…"
 msgstr "Press the new keys…"
@@ -4309,11 +4390,13 @@ msgstr "Remove saved text without changing settings or models."
 msgid "Remove selected"
 msgstr "Remove selected"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut"
 msgstr "Remove shortcut"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut, {words}"
 msgstr "Remove shortcut, {words}"
@@ -4371,6 +4454,7 @@ msgstr "Replies in threads"
 msgid "Repository conventions"
 msgstr "Repository conventions"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Reset {label} to its default"
 msgstr "Reset {label} to its default"
@@ -4436,7 +4520,9 @@ msgstr "Reset settings"
 msgid "Reset settings?"
 msgstr "Reset settings?"
 
+#. placeholder {0}: inline(DEFAULT_CHORD)
 #. placeholder {0}: inline(DEFAULT_THREAD_SHORTCUTS[row.id])
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Reset to {0}"
 msgstr "Reset to {0}"
@@ -4729,6 +4815,7 @@ msgid "Shift+F6 goes back. In a split it goes round every pane. A terminal keeps
 msgstr "Shift+F6 goes back. In a split it goes round every pane. A terminal keeps F6; Ctrl+Tab leaves it."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Shortcut saved."
 msgstr "Shortcut saved."
@@ -4808,6 +4895,10 @@ msgstr "Show the client updates on {host}. {summary}"
 msgid "Show the creature"
 msgstr "Show the creature"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Show the popup"
+msgstr "Show the popup"
+
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Show the top five"
 msgstr "Show the top five"
@@ -4840,6 +4931,10 @@ msgstr "Shown on this row and beside the host's projects and threads. How Sotto 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Shows a code from {name} to type on your iPhone. It works once, for five minutes. A paired phone reads threads and replies; answering is its own switch."
 msgstr "Shows a code from {name} to type on your iPhone. It works once, for five minutes. A paired phone reads threads and replies; answering is its own switch."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "Shows the popup over any app, or hides it. It works outside Sotto, like dictation’s keys."
+msgstr "Shows the popup over any app, or hides it. It works outside Sotto, like dictation’s keys."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Shows when the default branch is behind and leaves the pull to you."
@@ -5119,10 +5214,12 @@ msgstr "Sotto turns on Tailscale Serve on {hostName} for this, on your tailnet o
 msgid "Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH."
 msgstr "Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH."
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s hold-to-talk dictation shortcut already uses {keys}. Pick other keys."
 msgstr "Sotto’s hold-to-talk dictation shortcut already uses {keys}. Pick other keys."
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s hold-to-talk dictation shortcut already uses those keys. Pick other keys."
 msgstr "Sotto’s hold-to-talk dictation shortcut already uses those keys. Pick other keys."
@@ -5135,10 +5232,12 @@ msgstr "Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys
 msgid "Sotto’s menu"
 msgstr "Sotto’s menu"
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s start-and-stop dictation shortcut already uses {keys}. Pick other keys."
 msgstr "Sotto’s start-and-stop dictation shortcut already uses {keys}. Pick other keys."
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s start-and-stop dictation shortcut already uses those keys. Pick other keys."
 msgstr "Sotto’s start-and-stop dictation shortcut already uses those keys. Pick other keys."
@@ -5650,6 +5749,7 @@ msgid "That key can’t be part of a shortcut here. Try a letter, a number, an F
 msgstr "That key can’t be part of a shortcut here. Try a letter, a number, an F key, Space, Enter or an arrow key."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key."
 msgstr "That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key."
 
@@ -5864,6 +5964,18 @@ msgstr "The owl's eyes in the dark side of a crescent moon, in your menu bar. Ow
 msgid "The pasted text was cut to fit the 4,000-character limit."
 msgstr "The pasted text was cut to fit the 4,000-character limit."
 
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The popup has no shortcut. Show it from the tray."
+msgstr "The popup has no shortcut. Show it from the tray."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The popup still has no shortcut."
+msgstr "The popup still has no shortcut."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The popup’s shortcut needs a key besides the modifiers, such as Space or a letter."
+msgstr "The popup’s shortcut needs a key besides the modifiers, such as Space or a letter."
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "The provider"
 msgstr "The provider"
@@ -5889,6 +6001,10 @@ msgstr "The pull request checklist starts on the method you used last, or Merge 
 msgid "The sea, a ship at the quay and a lighthouse."
 msgstr "The sea, a ship at the quay and a lighthouse."
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "The setting could not be saved. Nothing was changed. Try again."
+msgstr "The setting could not be saved. Nothing was changed. Try again."
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "The setup could not be stopped. Try again."
 msgstr "The setup could not be stopped. Try again."
@@ -5908,6 +6024,10 @@ msgstr "The setup of {name} could not carry on. Nothing was saved as a host."
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "The setup of {name} stopped."
 msgstr "The setup of {name} stopped."
+
+#: src/renderer/src/features/settings/PopupShortcutSetting.tsx
+msgid "The shortcut could not be changed."
+msgstr "The shortcut could not be changed."
 
 #. placeholder {0}: inline(previous)
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx

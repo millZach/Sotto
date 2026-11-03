@@ -65,6 +65,11 @@ interface PullRequestAttention { conflicting?: boolean; changesRequested?: boole
 export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks'
 /** `returns` counts how often the fact came back after it was gone, so checks that fail again on a commit are a new fact. */
 export interface WatcherAttentionFact { readonly pr: string; readonly kind: WatcherAttentionKind; readonly key: string; readonly returns: number }
+/**
+ * Whether an attention fact's key says a pull request merged. A merge never counts a return (`recount`), so its key is always
+ * the plain one `heldFacts` makes; a key with returns has a number where the kind would be.
+ */
+export const isMergeFact = (key: string): boolean => (JSON.parse(key) as unknown[])[1] === 'merged'
 /** The kinds evidence does not hold, which an evidence event compares beside its facts. */
 const BESIDE_EVIDENCE: ReadonlySet<WatcherAttentionKind> = new Set(['required-passed', 'changes-requested', 'conflicting', 'remarks'])
 export interface CheckpointObservation {

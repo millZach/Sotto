@@ -2,6 +2,8 @@
 
 Accepted October 5, 2026.
 
+Amended November 2, 2026: the widget's esc key is gone. On Windows and macOS the system-wide Escape is the only way to cancel; where Sotto holds no Escape (always on Linux, and on Windows or macOS when another app already holds the key), the widget keeps a × that cancels (ADR-0178's polish round, `docs/prototypes/widget-polish-prototype.html`).
+
 ## Context
 
 Long dictations were being lost. Every failure in the user's `transcription-diagnostics.jsonl` that day was HTTP 429. A probe that sent Sotto's own request with synthetic audio showed why: Azure, the only provider behind `microsoft/mai-transcribe-2` on OpenRouter, turns requests away in bursts, answering `Provider returned 429` with `Retry-After: 1`. The bursts have nothing to do with the key's usage. The same requests, three at once, went through a few minutes later, and the key has no limit of its own.
@@ -13,12 +15,12 @@ The retry is fixed in the same change: a rate-limited request now waits at least
 ## Decision
 
 - **A failed transcription keeps its recording in memory.** The parts that came back keep their text and let go of their audio. The others keep their audio. This is a **kept recording**.
-- **Try again sends only the parts without text**, then finishes the dictation the normal way: cleanup, paste, history. Turned away again, the recording stays kept. Cancelling a Try again while it runs, with Escape or the widget's esc, stops it and returns to the kept recording.
+- **Try again sends only the parts without text**, then finishes the dictation the normal way: cleanup, paste, history. Turned away again, the recording stays kept. Cancelling a Try again while it runs, with Escape (or, on Linux, the widget's ×), stops it and returns to the kept recording.
 - **A kept recording is let go** when the user discards it, starts another dictation or closes Sotto. It is never written to disk and never sent anywhere without a press of Try again.
 - **Every dictation error stays on screen until it is dismissed**, rather than for the success-message duration.
 - **The widget's pill is the button** (prototype variant C, the user's pick from `docs/prototypes/dictation-retry-prototype.html`). For a kept recording the pill reads **Click to try again**, with the failure's title and sentence in its tooltip and the screen-reader alert. A **×** beside it discards. For an error that keeps nothing, clicking the pill or the × dismisses it.
 - **The Dictate room offers Try again and Discard recording** for a kept recording, and **Dismiss** for other errors, so the whole path works from the keyboard.
-- **Escape dismisses an error inside Sotto's window, and nowhere else.** Sotto claims Escape across every app only while a session is active. Claiming it for an error that waits until dismissed would take the key from every other app for as long as the error stays, so the widget, which never takes focus, has its × instead. Cancelling and dismissing are separate commands: the system-wide Escape and the widget's esc only cancel work in progress, so one pressed just as the work fails cannot discard what was kept. For the same reason, Escape in Sotto's window is ignored for the first half second an error shows.
+- **Escape dismisses an error inside Sotto's window, and nowhere else.** Sotto claims Escape across every app only while a session is active. Claiming it for an error that waits until dismissed would take the key from every other app for as long as the error stays, so the widget, which never takes focus, has its × instead. Cancelling and dismissing are separate commands: the system-wide Escape and the widget's cancel button only cancel work in progress, so one pressed just as the work fails cannot discard what was kept. For the same reason, Escape in Sotto's window is ignored for the first half second an error shows.
 - **A Try again that fails too says so.** The pill reads **Still busy · retry** for a rate limit and **Failed again · retry** otherwise, and the Dictate room's sentence starts "Try again did not get through."
 
 ## Consequences

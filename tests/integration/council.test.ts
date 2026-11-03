@@ -105,7 +105,11 @@ it('runs a Council end to end in a snapshot, keeps the user\'s checkout as it wa
   // Reviews under letters, each reader the others in its own order; then the verdict, then the fairness check.
   await f.answer('A', 'Here are answers B, C', reviewReply('B > C'))
   await f.answer('B', 'Here are answers C, A', reviewReply('A > C'))
-  await f.answer('C', 'Here are answers A, B', reviewReply('A > B'))
+  // C changes its answer in review: its row says so, which the chamber marks on its plate.
+  await f.answer('C', 'Here are answers A, B', fence('council-review', 'ranking: A > B', 'findings: A1 confirmed, B1 confirmed', 'answer: changed', 'new_answer: Synthetic answer C, changed',
+    'evidence: store.ts:1'))
+  await vi.waitFor(() => expect(f.view().rounds[0]!.rows.find(row => row.stage === 'review' && row.seat === 'C')).toMatchObject({ result: 'valid', changed: true }), { timeout: 20_000 })
+  expect(f.view().rounds[0]!.rows.find(row => row.stage === 'review' && row.seat === 'A')!.changed).toBeUndefined()
   await f.answer('chair', 'Weigh evidence, not headcount', 'Synthetic verdict: keep the store read once. A observed it.')
   await vi.waitFor(() => expect(f.view().rounds[0]!.stage).toBe('fairness'), { timeout: 20_000 })
   expect(f.view().rounds[0]!.draft).toBeNull()

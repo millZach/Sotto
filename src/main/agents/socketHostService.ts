@@ -1,3 +1,4 @@
+import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
@@ -48,6 +49,7 @@ import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, ty
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
+import type { TellWatcherAnswer, TellWatcherAsk } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
@@ -121,6 +123,10 @@ export interface SocketHostServiceOptions {
    * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
    */
   nextPromptsWanted?: () => boolean
+  /** This desktop's answer for a host's product events (ADR-0179): read on each connection, and `setProductEventAnswer` tells a change. */
+  productEventAnswer?: () => ProductEventPermission
+  /** How long after a failed telling it is tried again; each failure in a row doubles it, up to a minute. */
+  productEventAnswerRetryMs?: number
   /**
    * This desktop relays a host's delegations to other machines (#1316): only then, and only with Work across machines on,
    * does its hello accept `delegation-relay`. Stable relays nothing and is asked nothing.
@@ -238,6 +244,8 @@ export class SocketHostService implements HostService {
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
   private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
+  private readonly tellListeners = new Set<(askId: string, ask: TellWatcherAsk) => void>()
+  private readonly heldTells: { readonly askId: string; readonly ask: TellWatcherAsk }[] = []
   /** Who hears the host say a delegation it holds for one of this desktop's callers moved (#1316 part 2). */
   private readonly remoteNewsListeners = new Set<(caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
@@ -398,7 +406,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -411,6 +419,8 @@ export class SocketHostService implements HostService {
       }
       // Told before the threads this window shows, which is when the host first looks at them for a next prompt (ADR-0173).
       if (this.supportsNextPrompts) await this.call({ op: 'next-prompts-wanted', wanted: this.options.nextPromptsWanted!() }).catch(() => undefined)
+      // Not waited for: a lost acknowledgement must not hold up the connection.
+      this.tellProductEventAnswer()
       await this.observe(this.observed, this.shown)
       const pickedThreadId = this.options.getSelectedThreadId ? this.options.getSelectedThreadId() : selectedThreadId
       if (this.threadAvailable(pickedThreadId) && pickedThreadId && hello.shell.host.threads.some(thread => thread.id === pickedThreadId)) {
@@ -437,6 +447,7 @@ export class SocketHostService implements HostService {
       item.reject(new HostRequestUnanswered(item.command ? CONNECT_FAILURES.closedCommand() : CONNECT_FAILURES.closedRefresh(), 'closed', item.command ? id : undefined))
     }
     this.heldAsks.length = 0
+    this.heldTells.length = 0
     this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
@@ -514,6 +525,13 @@ export class SocketHostService implements HostService {
           if (this.relays) {
             if (!this.relayListeners.size) { if (this.heldAsks.length < 64) this.heldAsks.push({ askId: message.askId, ask: message.ask }) }
             else for (const listener of [...this.relayListeners]) { try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ } }
+          }
+        }
+        else if (message.event === 'watcher-tell-ask') {
+          // Pushed only to a desktop whose hello accepted `watcher-tell`, so one may come before that hello's answer.
+          if (this.options.watcherEnabled === true) {
+            if (!this.tellListeners.size) { if (this.heldTells.length < 64) this.heldTells.push({ askId: message.askId, ask: message.ask }) }
+            else for (const listener of [...this.tellListeners]) { try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ } }
           }
         }
         else if (message.event === 'delegation-remote-news') {
@@ -1530,6 +1548,16 @@ export class SocketHostService implements HostService {
     this.offers('delegation-relay')
     await this.call({ op: 'delegation-relay-answer', askId, result: answer }, undefined, undefined, 10000)
   }
+  /** The host's threads reach this desktop's Watcher: each message they send it comes here (`watcher-tell`). */
+  subscribeWatcherTell(listener: (askId: string, ask: TellWatcherAsk) => void): () => void {
+    this.tellListeners.add(listener)
+    for (const held of this.heldTells.splice(0)) { try { listener(held.askId, held.ask) } catch { /* A listener's failure is its own. */ } }
+    return () => { this.tellListeners.delete(listener) }
+  }
+  async answerWatcherTell(askId: string, answer: TellWatcherAnswer): Promise<void> {
+    this.offers('watcher-tell')
+    await this.call({ op: 'watcher-tell-answer', askId, answer }, undefined, undefined, 10000)
+  }
   /** Tells the host the name this desktop saved for it, which its refusal says while no desktop is connected. */
   async delegationRelayName(name: string): Promise<void> {
     if (!this.relays) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
@@ -1574,6 +1602,10 @@ export class SocketHostService implements HostService {
     this.checkListeners.add(listener)
     return () => { this.checkListeners.delete(listener) }
   }
+  private productEventAnswerTelling = false
+  private productEventAnswerAgain = false
+  private productEventAnswerFailures = 0
+  private productEventAnswerRetry: NodeJS.Timeout | null = null
   /** The host lists `next-prompts` and this desktop accepted it (ADR-0173): it pushes its threads' next prompts. */
   get supportsNextPrompts(): boolean { return this.options.nextPromptsWanted !== undefined && this.features.includes('next-prompts') }
   /** The host's next prompts as it last pushed them, by its own thread IDs, read in place. */
@@ -1587,6 +1619,31 @@ export class SocketHostService implements HostService {
   setNextPromptsWanted(wanted: boolean): void {
     if (!this.supportsNextPrompts || !this.frames) return
     void this.call({ op: 'next-prompts-wanted', wanted }).catch(() => undefined)
+  }
+  private get followsProductEventAnswer(): boolean { return this.options.productEventAnswer !== undefined && this.features.includes('product-events') }
+  /**
+   * Tells the host this desktop's answer for its product events as it stands when the telling goes (ADR-0179). One goes at a
+   * time, and a change during one or a failure tells it again, so an off is never lost while the connection lasts: the
+   * request queue can be full, and nothing else would say it again until the next connection.
+   */
+  tellProductEventAnswer(): void {
+    if (!this.followsProductEventAnswer || !this.frames) return
+    if (this.productEventAnswerTelling) { this.productEventAnswerAgain = true; return }
+    if (this.productEventAnswerRetry) { clearTimeout(this.productEventAnswerRetry); this.productEventAnswerRetry = null }
+    this.productEventAnswerTelling = true
+    this.productEventAnswerAgain = false
+    const frames = this.frames
+    void this.call({ op: 'product-events-answer', permission: this.options.productEventAnswer!() }).then(() => { this.productEventAnswerFailures = 0; return true }, () => false).then(told => {
+      this.productEventAnswerTelling = false
+      // Its connection ended. A newer one told the answer it read, which a change since may have overtaken.
+      if (this.frames !== frames) { if (this.productEventAnswerAgain) this.tellProductEventAnswer(); return }
+      if (this.productEventAnswerAgain) { this.tellProductEventAnswer(); return }
+      if (told) return
+      const wait = Math.min(60_000, (this.options.productEventAnswerRetryMs ?? 2_000) * 2 ** this.productEventAnswerFailures)
+      this.productEventAnswerFailures += 1
+      this.productEventAnswerRetry = setTimeout(() => { this.productEventAnswerRetry = null; this.tellProductEventAnswer() }, wait)
+      this.productEventAnswerRetry.unref?.()
+    })
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }

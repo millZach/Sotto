@@ -7,7 +7,7 @@ import { speechModelSummary } from './components/SpeechModelStatus'
 import { PARAKEET_V3, sottoSpeechModel, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { startShortcut } from '../../shared/dictationShortcuts'
-import { AppShell, layoutFor } from './components/AppShell'
+import { AppShell, layoutFor, useCouncilRoom } from './components/AppShell'
 import { usePageShortcuts } from './components/pageShortcuts'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
@@ -158,7 +158,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
   // The Council page (ADR-0177): only while its Owl feature is on and main gave the window its bridge.
-  const councilEnabled = useOwlFeature('council') && window.sotto?.council !== undefined
+  const councilEnabled = useCouncilRoom()
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   // Set when main refused the last choice, so the picker can say why nothing changed.
@@ -286,6 +286,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     app.actions.navigate(opening.page)
   }, [app.actions])
   useOpenNotification(openNotification)
+  // The popup's Show in Sotto (ADR-0181): main selected the thread; the window opens its room the same way.
+  const popupOn = useOwlFeature('popup')
+  useEffect(() => popupOn ? window.sotto?.popup?.onOpened(openNotification) : undefined, [popupOn, openNotification])
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()

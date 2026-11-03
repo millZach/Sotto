@@ -11,7 +11,7 @@ import { BrowserStore } from '../../../../src/renderer/src/tools/browserStore'
 import { BROWSER_PLAYER_MIN_WIDTH, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE, BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer/src/tools/BrowserFeedback'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
-import { ThreadPaneMenu } from '../../../../src/renderer/src/agents/ThreadPaneMenu'
+import { ToolsToggle } from '../../../../src/renderer/src/tools/ToolsToggle'
 import { ThreadDraftStore } from '../../../../src/renderer/src/agents/threadDraftStore'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { handleOf } from '../../../fixtures/stagedImages'
@@ -166,13 +166,13 @@ describe('the browser player', () => {
   it('never lights the pane dot for a thread it is only pinned to (#331)', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore(); const state = threadsStateFixture()
     render(<>
-      <section className="thread-pane" data-thread-id="visual-gate"><ThreadPaneMenu threadId="visual-gate" tools terminal={false} layout={[]} groups={[]} toolsStore={store} state={state} /></section>
-      <section className="thread-pane" data-thread-id="grok-previews"><ThreadPaneMenu threadId="grok-previews" tools terminal={false} layout={[]} groups={[]} toolsStore={store} state={state} /></section>
+      <section className="thread-pane" data-thread-id="visual-gate"><ToolsToggle threadId="visual-gate" focused store={store} state={state} /></section>
+      <section className="thread-pane" data-thread-id="grok-previews"><ToolsToggle threadId="grok-previews" focused={false} store={store} state={state} /></section>
       <BrowserPlayer state={state} focusedThreadId="grok-previews" bridge={browser.bridge} store={store} autoShow={false} playerStore={playerStore} />
     </>)
     await waitFor(() => expect(store.browser.taskSnapshot()).toHaveLength(1))
-    // The dot and its words are the ··· button's, where Tools is a row (ADR-0163).
-    const [waitingPane, otherPane] = screen.getAllByRole('button', { name: 'More actions' })
+    // The dot and its words are on each pane's own Tools symbol (ADR-0182).
+    const [waitingPane, otherPane] = screen.getAllByRole('button', { name: 'Tools' })
     expect(waitingPane).not.toHaveAccessibleDescription(/browser request/)
     act(() => browser.emit({ type: 'task', task: task({ updatedAt: 3, pendingAction: { id: '44444444-4444-4444-8444-444444444444', action: { type: 'navigate', url: 'http://localhost:5173/about' }, description: 'Go to /about', expiresAt: Date.now() + 1000 } }) }))
     expect(waitingPane).toHaveAccessibleDescription('A browser request is waiting for your answer')

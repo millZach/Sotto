@@ -92,7 +92,7 @@ describe('WindowManager construction', () => {
         alwaysOnTop: true,
         skipTaskbar: true,
         focusable: false,
-        hasShadow: true,
+        hasShadow: false,
         autoHideMenuBar: true,
         webPreferences: {
           preload: 'C:/Sotto/out/preload/index.js',

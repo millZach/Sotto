@@ -1,5 +1,6 @@
 import { startsThread } from '../shared/threadStarts'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
+import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -18,7 +19,7 @@ import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
-import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
+import { type ProductEventPermission, shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
@@ -123,7 +124,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -174,6 +175,11 @@ export interface SocketServerOptions {
    */
   observationKey?: string
   /**
+   * Set on a listener whose pairing store sits beside the phones' over one service, as the local apps' does (ADR-0180).
+   * Whether a client it never paired may still give Watcher instructions is then left to the listener that paired it.
+   */
+  ownClientsOnly?: true
+  /**
    * Who a headless host's tailnet listener admits (ADR-0053). Absent, every client counts as a desktop and is always
    * admitted: the listener with the administrative routes is reached only on the host machine and through SSH, and the
    * desktop's own phone listener offers no desktop-only feature and stops whenever phone access is off.
@@ -185,6 +191,8 @@ export interface SocketServerOptions {
   phoneAccess?: () => HostPhoneAccessSummary | undefined
   /** Told once a client was revoked here, by the administrative route or by itself, after its sockets close. */
   onRevoked?: (clientId: string) => void
+  /** Told when a desktop's answer for product events changes or it leaves (ADR-0179). Without it the feature is not listed. */
+  onProductEventAnswer?: () => void
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
   sottoVersion?: string
   /** Tests set the monotonic clock a phone's Watcher window is timed on (`WATCHER_WRITING_WINDOW_MS`), to tell held from sent. */
@@ -247,6 +255,8 @@ export interface SocketServerOptions {
    * desktop, and to no other: such a desktop relays a thread here's delegations to other machines once its hello accepts it.
    */
   delegationRelay?: Pick<HostDelegationRelay, 'desktopConnected' | 'desktopGone' | 'answered' | 'news' | 'named'>
+  /** A thread here reaches the desktop's Watcher (`watcher-tell`), present where the host runs threads for a Watcher elsewhere. */
+  tellWatcher?: Pick<HostTellWatcherRelay, 'desktopConnected' | 'desktopGone' | 'answered'>
   /**
    * Delegations a desktop asks this host for, for a thread on another machine (`delegation-remote`, #1316 part 2), present
    * only where the host runs delegation for its own threads and its Owl answer turns on Work across machines. Offered on
@@ -336,6 +346,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-check-stop' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'next-prompts' || service.supportsNextPrompts === true)
+    && (feature !== 'product-events' || options.onProductEventAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
@@ -391,6 +402,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-move-keep' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Its own threads as a move's source (#1178 part 3) on the same terms, where it holds them.
     && (feature !== 'thread-move-source' || options.threadMoves?.holdsSources === true && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-tell' || options.tellWatcher !== undefined)
     // The desktop relay (#1316) only where delegation runs here and the Owl answer turns on cross-machine work, for recorded desktops.
     && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same terms.
@@ -1380,8 +1392,19 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
         peer.delegationViews = (request.accepts?.includes('delegation-views') ?? false) && offers(peer, 'delegation-views')
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
+        const answeredBefore = peer.productEvents?.answer
+        peer.productEvents = (request.accepts?.includes('product-events') ?? false) && offers(peer, 'product-events') ? { answer: answeredBefore ?? null } : undefined
+        // A second hello that no longer accepts it takes this desktop's answer back, so the host looks again.
+        if (answeredBefore && !peer.productEvents) options.onProductEventAnswer?.()
         // Accepted here; pushed only once the desktop says it wants them, so a desktop with its switch off costs no side call.
         peer.nextPrompts = (request.accepts?.includes('next-prompts') ?? false) && offers(peer, 'next-prompts') ? { wanted: peer.nextPrompts?.wanted ?? false } : undefined
+        // A desktop that takes this host's threads' messages for its Watcher.
+        if ((request.accepts?.includes('watcher-tell') ?? false) && offers(peer, 'watcher-tell') && options.tellWatcher) {
+          const tellPeer = peer
+          peer.tellWatcher ??= { clientId: peer.client.clientId,
+            push: (askId, ask) => !tellPeer.frames.isClosed && authenticated(tellPeer) && push(tellPeer, { v: 1, event: 'watcher-tell-ask', askId, ask }) }
+          options.tellWatcher.desktopConnected(peer.tellWatcher)
+        }
         // A desktop that relays this host's delegations to other machines (#1316): asks go to it from now on.
         if ((request.accepts?.includes('delegation-relay') ?? false) && offers(peer, 'delegation-relay') && options.delegationRelay) {
           const relayPeer = peer
@@ -1585,6 +1608,13 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.nextPrompts.wanted = request.wanted
         return { wanted: request.wanted }
       }
+      case 'product-events-answer': {
+        // The desktop's own answer (ADR-0179): this host's product events follow it. Settings, never a grant of anything else.
+        if (!peer.productEvents) throw new Refusal('invalid_request')
+        peer.productEvents.answer = request.permission
+        options.onProductEventAnswer?.()
+        return { permission: request.permission }
+      }
       case 'desktop-defaults': {
         // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
         // as sent is this host's `remote-answer` policy for that desktop, read at every delegated start.
@@ -1592,6 +1622,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.defaults.workerCeiling !== undefined && !offers(peer, 'worker-swarms')) throw new Refusal('invalid_request')
         if (request.defaults.showEveryAgentPicture !== undefined && !offers(peer, 'every-agent-picture')) throw new Refusal('invalid_request')
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'watcher-tell-answer': {
+        // The desktop's answer to a thread's message for Watcher. An answer nobody waits for is dropped.
+        if (!options.tellWatcher || !peer.tellWatcher) throw new Refusal('invalid_request')
+        return { taken: options.tellWatcher.answered(peer.tellWatcher, request.askId, request.answer) }
       }
       case 'delegation-relay-answer': {
         // The relaying desktop's answer to an ask this host pushed it (#1316). An answer nobody waits for is dropped.
@@ -1942,7 +1977,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }
@@ -1969,7 +2004,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   // While this listener serves Watcher's phone page, it says whether a phone that queued a follow-up for Watcher is still
   // paired and admitted, so the follow-up goes under that phone's guard as its own send would (#1229).
   const releasePhoneAdmission = features.includes('watcher-phone')
-    ? service.watcherPhone?.useAdmission(clientId => pairing.isPaired(clientId) && admits(clientId)) : undefined
+    ? service.watcherPhone?.useAdmission(clientId => options.ownClientsOnly && !pairing.isPaired(clientId) ? undefined : pairing.isPaired(clientId) && admits(clientId))
+    : undefined
   /** Closes every socket whose session ended, and every phone's while phones are not admitted. */
   const dropRefused = (): void => { for (const peer of peers) if (!authenticated(peer) || !admits(peer.client.clientId)) peer.frames.close() }
   const expiry = setInterval(dropRefused, 1000)
@@ -1999,6 +2035,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     peers: (): number => peers.size,
     /** Whether a connected desktop wants this host's next prompts now (ADR-0173): until one does, no provider is asked for them. */
     nextPromptsWanted: (): boolean => [...peers].some(peer => peer.ready && peer.nextPrompts?.wanted === true && !peer.frames.isClosed),
+    /** What each connected desktop has answered for this host's product events (ADR-0179). */
+    productEventAnswers: (): ProductEventPermission[] => [...peers].flatMap(peer => peer.ready && peer.productEvents?.answer && !peer.frames.isClosed && options.pairing.isPaired(peer.client.clientId) ? [peer.productEvents.answer] : []),
     /** The paired clients holding an open socket now, each once. */
     connectedClients: (): string[] => [...new Set([...peers].map(peer => peer.client.clientId))],
     /**

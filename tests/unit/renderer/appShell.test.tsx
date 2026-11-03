@@ -230,6 +230,7 @@ describe('AppShell', () => {
 
   it('maps pages to the room they light', () => {
     expect(roomFor('home')).toBe('dictate')
+    expect(roomFor('council')).toBe('council')
     expect(roomFor('threads')).toBe('threads')
     expect(roomFor('memory')).toBe('threads')
     expect(roomFor('help')).toBeNull()
@@ -347,6 +348,13 @@ describe('appRooms', () => {
     expect(ids(false, true)).toEqual(['dictate', 'threads'])
     expect(ids(true, false)).toEqual(['watcher', 'threads'])
     expect(ids(false, false)).toEqual(['threads'])
+  })
+
+  it('seats the Council just left of the owl while its room exists', () => {
+    const with_ = (watcher: boolean, dictation: boolean): string[] => appRooms({ watcher, dictation, council: true }).map(({ id }) => id)
+    expect(with_(true, true)).toEqual(['dictate', 'council', 'watcher', 'threads'])
+    expect(with_(true, false)).toEqual(['council', 'watcher', 'threads'])
+    expect(with_(false, true)).toEqual(['dictate', 'council', 'threads'])
   })
 
   it('keeps the strip switch to owl and Threads while dictation is off', () => {
