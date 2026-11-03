@@ -109,9 +109,10 @@ function lastActivity(thread: AgentThread, now: number): number {
 /**
  * Reclaims worktrees under the rules the user turned on (ADR-0041): every hour, when the rules change,
  * and when a thread is settled. It only ever asks WorkspaceHost, whose own checks and the folder's own
- * state decide; a folder with uncommitted work or anything but dependencies in its ignored files is left
- * alone, and the branch is always kept. The same sweep settles threads whose pull request merged, when the
- * user turned Auto-settle merged threads on.
+ * state decide; a folder with uncommitted work, anything but dependencies in its ignored files, or a
+ * detached HEAD whose commit no branch or remote branch has is left alone, and the branch is always kept.
+ * The same sweep settles threads whose pull request merged, when the user turned Auto-settle merged
+ * threads on.
  */
 export class WorktreeCleanup {
   private timer: ReturnType<typeof setInterval> | undefined
@@ -365,7 +366,8 @@ export class WorktreeCleanup {
     for (const thread of snapshot.threads) {
       if (this.disposed) return
       const worktree = thread.worktree
-      if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || !worktree.repositoryRoot || !worktree.branch || worktree.reused || worktree.reclaimedAt) continue
+      // A folder on a detached HEAD is looked at too: the reclaim keeps it unless a branch or remote branch has its commit.
+      if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || !worktree.repositoryRoot || worktree.reused || worktree.reclaimedAt) continue
       if (busy(thread) || this.dependencies.keeps?.(thread.id) === true) continue
       try {
         const eligibility = await this.eligible(thread, rules, defaults)
@@ -392,8 +394,9 @@ export class WorktreeCleanup {
         if (integrated) return {}
       }
     }
-    if (rules.merged && this.dependencies.pullRequestMerged) {
-      const tip = await this.merged(worktree.repositoryRoot!, worktree.branch!)
+    // A detached HEAD has no branch to ask GitHub about.
+    if (rules.merged && this.dependencies.pullRequestMerged && worktree.branch) {
+      const tip = await this.merged(worktree.repositoryRoot!, worktree.branch)
       if (tip) return { expectedMergedTip: tip }
     }
     return null
