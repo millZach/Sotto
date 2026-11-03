@@ -1,9 +1,10 @@
 import React from 'react'
-import { cleanup, render, renderHook, screen, within } from '@testing-library/react'
+import { act, cleanup, render, renderHook, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
+import { ChamberPainter } from '../../../../../src/renderer/src/features/council/chamberPainter'
 import { chamberCouncil, CouncilView, useSeatsInForce } from '../../../../../src/renderer/src/features/council/CouncilView'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
 import type { AgentCommand, AgentModel, AgentState, AgentThread } from '../../../../../src/shared/agents'
@@ -42,20 +43,81 @@ const noSeats = { panelists: [], chair: undefined }
  * window. Frames are held until `flush`; `asked` counts the frames the chamber asked for, one per wake while none waits.
  */
 function withLayout(width = 1020, height = 380): { readonly asked: () => number; readonly flush: () => void } {
-  const frames: FrameRequestCallback[] = []
+  const frames = new Map<number, FrameRequestCallback>()
   let asked = 0
   const context = new Proxy({}, { get: (_, key) => key === 'getImageData' ? () => ({ data: new Uint8ClampedArray(4) }) : () => undefined, set: () => true })
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
-  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { asked++; frames.push(callback); return asked })
-  vi.stubGlobal('cancelAnimationFrame', () => undefined)
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { asked++; frames.set(asked, callback); return asked })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
   const size = (pixels: number) => function (this: HTMLElement): number { return this.classList.contains('council-chamber') ? pixels : 0 }
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(size(width))
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(size(height))
-  return { asked: () => asked, flush: () => { for (const frame of frames.splice(0)) frame(performance.now()) } }
+  return { asked: () => asked, flush: () => { const pending = [...frames.values()]; frames.clear(); for (const frame of pending) frame(performance.now()) } }
 }
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
+
+describe('the chamber’s motion', () => {
+  it('keeps fairness nods at 8 frames per second when poses lag and thread words keep arriving', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+    const layout = withLayout()
+    vi.spyOn(ChamberPainter.prototype, 'ready', 'get').mockReturnValue(true)
+    const draw = vi.spyOn(ChamberPainter.prototype, 'draw').mockReturnValue(true)
+    const { publish } = provide([{ id: 'thread-a', ...running }])
+    const council = councilFixture({ stage: 'fairness', rows: [row('A', 'fairness', 'working')] })
+    const { rerender } = render(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+    layout.flush()
+    for (let elapsed = 5; elapsed < 1000; elapsed += 5) {
+      vi.advanceTimersByTime(5)
+      if (elapsed % 20 === 0) {
+        publish('thread-a', thread => ({ ...thread, messages: [{ id: 'm', role: 'assistant', text: `Fair. ${elapsed}`, createdAt: '2026-11-02T10:00:01.000Z' }] }))
+        rerender(<CouncilChamber council={council} askSeats={noSeats} layout="long-table" />)
+      }
+      layout.flush()
+    }
+    expect(draw).toHaveBeenCalledTimes(8)
+  })
+
+  it.each(['system', 'setting'])('stops animation when reduced motion is turned on by the %s, and redraws state changes still', async source => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+    const media = Object.assign(new EventTarget(), { matches: false })
+    vi.stubGlobal('matchMedia', () => media)
+    const layout = withLayout()
+    vi.spyOn(ChamberPainter.prototype, 'ready', 'get').mockReturnValue(true)
+    const draw = vi.spyOn(ChamberPainter.prototype, 'draw').mockReturnValue(true)
+    provide()
+    const { rerender } = render(<CouncilChamber council={councilFixture({ stage: 'reviews' })} askSeats={noSeats} layout="half-circle" />)
+    layout.flush()
+    await act(async () => {
+      if (source === 'system') { media.matches = true; media.dispatchEvent(new Event('change')) }
+      else document.documentElement.dataset.reducedMotion = 'on'
+    })
+    layout.flush()
+    expect(draw.mock.calls.at(-1)![0].still).toBe(true)
+    const stopped = draw.mock.calls.length
+    vi.advanceTimersByTime(1000)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(stopped)
+    rerender(<CouncilChamber council={councilFixture({ stage: 'fairness', rows: [row('A', 'fairness', 'working')] })} askSeats={noSeats} layout="half-circle" />)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(stopped + 1)
+    expect(draw.mock.calls.at(-1)![0]).toMatchObject({ still: true, flights: [] })
+    vi.advanceTimersByTime(1000)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(stopped + 1)
+    await act(async () => {
+      if (source === 'system') { media.matches = false; media.dispatchEvent(new Event('change')) }
+      else delete document.documentElement.dataset.reducedMotion
+    })
+    layout.flush()
+    expect(draw.mock.calls.at(-1)![0].still).toBe(false)
+    const resumed = draw.mock.calls.length
+    vi.advanceTimersByTime(125)
+    layout.flush()
+    expect(draw).toHaveBeenCalledTimes(resumed + 1)
+  })
+})
 
 describe('the chamber’s figures', () => {
   it('puts a button over each figure, left to right, that names its model, what it does and what a press does, and keeps the canvas from assistive technology', () => {
@@ -139,6 +201,20 @@ describe('the chamber’s figures', () => {
     render(<CouncilChamber council={councilFixture({ stage: 'answers', rows: [row('A', 'answer', 'done')] })} askSeats={noSeats} layout="half-circle" />)
     await userEvent.click(screen.getByRole('button', { name: 'A, Opus 5.5, done. Open its thread' }))
     expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'thread-a' })
+    expect(navigate).toHaveBeenCalledWith('threads')
+  })
+
+  it('reaches the figures from the keyboard and opens the focused thread with Enter', async () => {
+    withLayout()
+    const { command, navigate } = provide()
+    render(<CouncilChamber council={councilFixture({})} askSeats={noSeats} layout="long-table" />)
+    const user = userEvent.setup()
+    await user.keyboard('{Tab}')
+    const first = screen.getAllByRole('button')[0]!
+    expect(first).toHaveFocus()
+    expect(first).toHaveClass('council-chamber__figure', 'tt-focusable')
+    await user.keyboard('{Enter}')
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'thread-c' })
     expect(navigate).toHaveBeenCalledWith('threads')
   })
 
