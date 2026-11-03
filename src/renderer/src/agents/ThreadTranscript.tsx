@@ -49,8 +49,8 @@ import { ReplyQuoteButton } from './ReplyQuoteButton'
 import { useTipLine } from './tips'
 import { ForkCard, ForkContext, ForkPress, useForkOptions, type ForkOptions } from './ForkFromHere'
 import { CouncilPress } from './CouncilPress'
-import { CouncilAskContext, councilAskable, offerCouncilDraft, quotedReply, useCouncilAsk } from '../features/council/councilDraft'
-import { useCouncilRoom } from '../components/AppShell'
+import { CouncilAskContext, councilAskable, openCouncilDraft, quotedReply, useCouncilAsk } from '../features/council/councilDraft'
+import { useCouncilEnabled } from '../features/council/useCouncils'
 import { useOptionalApp } from '../state/AppContext'
 import { isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import type { AgentBackgroundWork } from '../../../shared/agentMonitoring'
@@ -889,13 +889,16 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     openAt: forkAt, open: setForkAt, after: forkAfter, busy: forkBusy },
   [forkModels, thread.id, thread.title, thread.providerId, thread.projectId, thread.remoteHost, thread.hostLabel, thread.modelId, thread.kind, command, forkRepository, forkBranch, forkAt, forkAfter, forkBusy, t])
   // Ask the Council on a reply (ADR-0177; Owl only): from a thread the Council can start from, kept the same while it can.
-  const councilRoom = useCouncilRoom()
-  const navigate = useOptionalApp()?.actions?.navigate
-  const councilHere = councilRoom && navigate !== undefined && councilAskable(thread, state.connections?.find(connection => connection.kind === 'local')?.hostId)
+  const councilOn = useCouncilEnabled()
+  const app = useOptionalApp()
+  const navigate = app?.actions?.navigate
+  const onThreadsPage = app?.navigation === 'threads'
+  const councilHere = councilOn && councilAskable(thread, state.connections?.find(connection => connection.kind === 'local')?.hostId)
   const councilAsk = useMemo(() => !councilHere ? null : (text: string) => {
-    offerCouncilDraft({ originThread: thread.id, question: quotedReply(text) })
-    navigate!('council')
-  }, [councilHere, thread.id, navigate])
+    openCouncilDraft({ originThread: thread.id, question: quotedReply(text) })
+    // Beside Watcher a pane has no drawer: the thread opens in Threads, selected, as Open in Threads does.
+    if (!onThreadsPage && navigate) void command({ type: 'select-thread', threadId: thread.id }).finally(() => navigate('threads'))
+  }, [councilHere, thread.id, onThreadsPage, navigate, command])
   // Continuing on another provider (ADR-0089; Owl only): where this thread came from, where it went, and its handover's source.
   const continueOn = useContinueEnabled() && !watcher
   const continuedIn = useShared(useMemo(() => continueOn ? continuedInByTurn(thread.continuedIn, messages) : undefined, [continueOn, thread.continuedIn, messages]))

@@ -44,7 +44,7 @@ async function startRun(threadId: string, command: string, bridge: TerminalBridg
   // A listing superseded by another (the drawer's own, opened at the same moment) leaves no folder; list once more.
   for (let attempt = 0; attempt < 2 && !store.thread(threadId)?.workspace; attempt++) await store.activate(bridge, threadId)
   const started = store.create(bridge, threadId, startSize(threadId, chromeStore), command)
-  chromeStore.setOpen(threadId, true)
+  chromeStore.show(threadId, 'terminal')
   return started
 }
 

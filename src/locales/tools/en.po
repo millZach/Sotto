@@ -1149,6 +1149,13 @@ msgstr "Could not stop this thread using the browser without asking; try Stop ag
 msgid "Could not unlink the pull request."
 msgstr "Could not unlink the pull request."
 
+#. The drawer's tab that shows the Council under a thread, before its shells' tabs (ADR-0177).
+#. The pane header button that shows the Council in the drawer under the thread (ADR-0177).
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Council"
+msgstr "Council"
+
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Create PR"
 msgstr "Create PR"
@@ -1281,6 +1288,10 @@ msgstr "Drag to resize"
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
 msgid "Drag to resize · Double-click to reset to a third"
 msgstr "Drag to resize · Double-click to reset to a third"
+
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
+msgid "Drag to resize · Double-click to reset to half"
+msgstr "Drag to resize · Double-click to reset to half"
 
 #. An element of a web page, chosen to give feedback on.
 #: src/renderer/src/tools/BrowserFeedback.tsx
@@ -1552,6 +1563,11 @@ msgstr "Has uncommitted changes"
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Hide"
 msgstr "Hide"
+
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Hide Council"
+msgstr "Hide Council"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Hide file tree"
@@ -2627,6 +2643,10 @@ msgid "Reopening..."
 msgstr "Reopening..."
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
+msgid "Resize Council"
+msgstr "Resize Council"
+
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
 msgid "Resize terminal"
 msgstr "Resize terminal"
 
@@ -2792,6 +2812,10 @@ msgstr "Show all"
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Show at {width} x {height}"
 msgstr "Show at {width} x {height}"
+
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Show Council"
+msgstr "Show Council"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Show file tree"
@@ -3074,6 +3098,7 @@ msgid "Terminal could not list its sessions."
 msgstr "Terminal could not list its sessions."
 
 #: src/renderer/src/tools/PaneTerminalToggle.tsx
+#: src/renderer/src/tools/TerminalSurface.tsx
 msgid "Terminal drawer"
 msgstr "Terminal drawer"
 

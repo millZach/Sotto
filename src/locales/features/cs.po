@@ -1923,13 +1923,6 @@ msgstr ""
 msgid "Could not stop"
 msgstr ""
 
-#. The Council page: one question put to several models, which answer, review each other and get a verdict.
-#. The room switch: the Council page, one question put to several models (ADR-0177).
-#: src/renderer/src/components/AppShell.tsx
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Council"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Counted, so the next start sees it"
 msgstr ""
@@ -5365,7 +5358,7 @@ msgid "Sotto could not read phone access. Nothing was changed. You can turn it o
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Sotto could not read the Councils. Nothing was changed. Open the page again."
+msgid "Sotto could not read the Councils. Nothing was changed. Open the Council again."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx

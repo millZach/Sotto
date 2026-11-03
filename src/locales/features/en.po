@@ -1923,13 +1923,6 @@ msgstr "Could not start"
 msgid "Could not stop"
 msgstr "Could not stop"
 
-#. The Council page: one question put to several models, which answer, review each other and get a verdict.
-#. The room switch: the Council page, one question put to several models (ADR-0177).
-#: src/renderer/src/components/AppShell.tsx
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Council"
-msgstr "Council"
-
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Counted, so the next start sees it"
 msgstr "Counted, so the next start sees it"
@@ -5365,8 +5358,8 @@ msgid "Sotto could not read phone access. Nothing was changed. You can turn it o
 msgstr "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Sotto could not read the Councils. Nothing was changed. Open the page again."
-msgstr "Sotto could not read the Councils. Nothing was changed. Open the page again."
+msgid "Sotto could not read the Councils. Nothing was changed. Open the Council again."
+msgstr "Sotto could not read the Councils. Nothing was changed. Open the Council again."
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them."
