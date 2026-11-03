@@ -22,7 +22,7 @@ from collections import Counter, defaultdict
 TOP_UNDER, TOP_OWN, TOP_IMAGES, TOP_APP, TOP_FRAMES = 50, 25, 12, 40, 12
 LONG_MS = 50
 APP_IMAGES = {"Sotto", "Sotto.debug.dylib"}
-SHOWN = ["open", "thread-scroll", "stream"]
+SHOWN = ["list-scroll", "open", "thread-scroll", "stream"]
 
 
 def names(addresses):

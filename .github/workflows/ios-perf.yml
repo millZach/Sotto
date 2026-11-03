@@ -1,7 +1,7 @@
 name: iPhone benchmarks
 
-# Measuring branch only, never merged: the Threads list's scroll before #2023 and at its merge, taking turns on one
-# runner (apps/ios/Scripts/scroll-ab.sh), for issue #2100.
+# Measuring branch only, never merged: why the Threads list draws again during its scroll at the merge of #2023, with the
+# benchmark's environment probe under the list ("before") and without it ("merge"), for issue #2100.
 on:
   workflow_dispatch:
     inputs:
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   bench:
-    name: iPhone list scroll before and at the merge (macOS)
+    name: Why the iPhone list draws again in its scroll (macOS)
     runs-on: macos-26
     timeout-minutes: 150
     env:
@@ -30,9 +30,9 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Run both builds in turn
-        # Eight rounds of two blocks, about nine minutes a round; no round starts after 110 minutes.
-        timeout-minutes: 135
-        run: sh apps/ios/Scripts/scroll-ab.sh "$RUNNER_TEMP/ab" 8 110
+        # Six rounds of two blocks, about nine minutes a round; no round starts after 70 minutes.
+        timeout-minutes: 100
+        run: sh apps/ios/Scripts/scroll-ab.sh "$RUNNER_TEMP/ab" 6 70
       - name: Summary
         if: always()
         run: cat "$RUNNER_TEMP/ab/summary.md" >> "$GITHUB_STEP_SUMMARY"
@@ -40,7 +40,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-scroll-ab
+          name: ios-scroll-why
           path: |
             ${{ runner.temp }}/ab/*.json
             ${{ runner.temp }}/ab/*.md

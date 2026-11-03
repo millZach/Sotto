@@ -9,7 +9,7 @@ start=$(date +%s)
 out=$1; rounds=$2; limit=$3
 mkdir -p "$out"
 root=$(git rev-parse --show-toplevel)
-parent=3f50270929db8902b1100585a46d814b329461e2
+parent=377ecd44b897250e2598ca7319e6514884ddf501
 control="$RUNNER_TEMP/before"
 git worktree add --detach "$control" "$parent"
 { git -C "$root" log -1 --format='merge %H %s'; git -C "$control" log -1 --format='before %H %s'; git -C "$root" diff --stat "$parent" HEAD -- apps/ios/Sotto; } | tee "$out/source.txt"
@@ -43,17 +43,19 @@ for side in before merge; do
         || { tail -60 "$out/build-$side.log"; echo "The $side side did not build."; exit 1; }
 done
 
-# One journey from a cold launch, as bench.sh's journey() runs it.
+# One journey from a cold launch, as bench.sh's journey() runs it; a second argument turns the app's sampler on.
 journey() {
     report=$1
+    sampling=
+    if [ $# -gt 1 ]; then sampling="--bench-sample $2"; fi
     rm -f "$report"
     xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true
     sleep 2
     SIMCTL_CHILD_SOTTO_BENCH_FILE="$report" xcrun simctl launch "$device" com.millzach.sotto.ios \
-        --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey all \
+        --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey all $sampling \
         -AppleLanguages '(en)' -AppleLocale en_US >/dev/null
     outcome=timed-out
-    for _ in $(seq 1 300); do
+    for _ in $(seq 1 600); do
         if [ -f "$report" ]; then
             if grep -q '"phase":"finished"' "$report"; then outcome=finished; break; fi
             if grep -q '"phase":"failed-' "$report"; then outcome=failed; break; fi
@@ -70,7 +72,19 @@ block() {
     xcrun simctl install "$device" "$(dir "$side")/.build-bench/Build/Products/Debug-iphonesimulator/Sotto.app"
     xcrun simctl launch "$device" com.millzach.sotto.ios --ui-fixture >/dev/null || true
     sleep 8
-    for run in 1 2 3 4 5; do journey "$out/$side-$round-$run.json"; done
+    for run in 1 2 3 4 5; do
+        name="$side-$round-$run"
+        if [ $((round % 2)) = 0 ]; then journey "$out/$name.json" "$out/$name.samples.txt"; else journey "$out/$name.json"; fi
+    done
+    # The sampled journeys whose list drew again during the scroll, named while this build's images are still installed.
+    if [ $((round % 2)) = 0 ]; then
+        for run in 1 2 3 4 5; do
+            name="$side-$round-$run"
+            if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["phases"]["list-scroll"]["counts"].get("body.ThreadListSections") else 1)' "$out/$name.json" 2>/dev/null; then
+                python3 "$root/apps/ios/Scripts/bench-sample.py" "$out/$name.samples.txt" > "$out/trace-$name.md" 2> "$out/trace-$name.log" || true
+            fi
+        done
+    fi
 }
 
 round=1
