@@ -139,7 +139,7 @@ body.popup-page #root {
   padding: 7px 7px 7px 10px;
   border-radius: var(--tt-radius-row);
   background: var(--tt-warning-surface);
-  color: var(--tt-warning-on-tint);
+  color: var(--tt-warning-text);
   font-size: var(--tt-type-small);
 }
 
@@ -166,7 +166,6 @@ body.popup-page #root {
   padding: 5px 8px;
   border-radius: var(--tt-radius-row);
   font-size: var(--tt-type-small);
-  cursor: pointer;
 }
 
 .popup-menu__item[aria-selected='true'] {
@@ -230,19 +229,17 @@ body.popup-page #root {
   border-radius: var(--tt-radius-control);
   background: var(--tt-accent);
   color: var(--tt-on-accent);
-  cursor: pointer;
   transition: background-color 150ms ease-out, color 150ms ease-out;
 }
 
 .popup-send:disabled {
   background: color-mix(in oklch, var(--tt-text) 8%, transparent);
   color: var(--tt-text-muted);
-  cursor: default;
 }
 
 .popup-send.is-stop {
-  background: var(--tt-text);
-  color: var(--tt-canvas);
+  background: var(--tt-pill);
+  color: var(--tt-pill-ink);
 }
 
 /* The owl: 18 by 18 points drawn 1.5 to a point, crisp at every size. Its moon is muted, its eyes the accent. */
@@ -295,7 +292,6 @@ body.popup-page #root {
   background: transparent;
   color: var(--tt-text-muted);
   font: inherit;
-  cursor: pointer;
 }
 
 .popup-icon {
@@ -318,7 +314,6 @@ body.popup-page #root {
 
 .popup-footer__button:disabled {
   opacity: 0.45;
-  cursor: default;
 }
 
 .popup-target.is-watcher {
