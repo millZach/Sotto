@@ -149,6 +149,8 @@ export interface AppSettings {
   menuBarOwlBody: MenuBarOwlBody
   /** The colour its eyes glow. */
   menuBarOwlEyes: MenuBarOwlEyes
+  /** Off takes Sotto's icon out of a Mac's menu bar, where the `hide-menu-bar-icon` Owl feature is on; kept whole elsewhere. */
+  showMenuBarIcon: boolean
   /** The place Watcher's night scene is set in (ADR-0149); kept whole where Watcher is off. */
   watcherScene: WatcherScene
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
@@ -482,6 +484,7 @@ const fieldSchemas = {
   effortColor: z.enum(EFFORT_COLORS),
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
+  showMenuBarIcon: z.boolean(),
   watcherScene: z.enum(WATCHER_SCENES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
@@ -609,6 +612,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   effortColor: 'ember',
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
+  showMenuBarIcon: true,
   watcherScene: DEFAULT_WATCHER_SCENE,
   creature: 'sotto',
   showCreature: true,
@@ -804,6 +808,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     effortColor: parseField(persisted, 'effortColor', defaults),
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
+    showMenuBarIcon: parseField(persisted, 'showMenuBarIcon', defaults),
     watcherScene: parseField(persisted, 'watcherScene', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),

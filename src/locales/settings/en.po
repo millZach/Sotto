@@ -3193,6 +3193,14 @@ msgstr "may slow down"
 msgid "memory unknown"
 msgstr "memory unknown"
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon hidden."
+msgstr "Menu bar icon hidden."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon shown."
+msgstr "Menu bar icon shown."
+
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Menu bar owl"
@@ -3672,6 +3680,10 @@ msgstr "Off, nothing stands above the composer. The sidebar still says when a th
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Off, one theme paints light and dark."
 msgstr "Off, one theme paints light and dark."
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Off, open Sotto from the Dock."
+msgstr "Off, open Sotto from the Dock."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Off. Sotto turns it on for {who} before anything else, so the host starts before anyone signs in to {name} and keeps running after they sign out. If {name} asks for an administrator, nothing on {name} changes: run this there, then press Start at boot again. Sotto never runs sudo."
@@ -4889,6 +4901,10 @@ msgstr "Show floating widget when idle"
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
 msgid "Show hidden tips again"
 msgstr "Show hidden tips again"
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Show in menu bar"
+msgstr "Show in menu bar"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Show or hide the focused pane’s terminal drawer."
