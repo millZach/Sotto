@@ -111,15 +111,8 @@ export function noteWords(ink: ThemeRgb, canvas: ThemeRgb, text: ThemeRgb): Them
  * strength, and plain is its text. A note's words are `noteWords` on the ink.
  */
 export function inkColours(host: Element): InkColours {
-  const probe = document.createElement('span')
-  probe.hidden = true
-  // Page observers, the theme inspector's among them, skip probe elements coming and going (ADR-0011).
-  probe.setAttribute(THEME_TOKEN_PROBE_ATTRIBUTE, '')
-  host.appendChild(probe)
-  const read = (role: string): string => { probe.style.color = `var(${role})`; return getComputedStyle(probe).color || 'currentcolor' }
-  const stroke = { red: read(INK_ROLES.red), amber: read(INK_ROLES.amber), plain: read(INK_ROLES.plain) }
-  const canvas = read('--tt-canvas'), text = stroke.plain
-  probe.remove()
+  const [red, amber, plain, canvas] = themeColours(host, [INK_ROLES.red, INK_ROLES.amber, INK_ROLES.plain, '--tt-canvas']) as [string, string, string, string]
+  const stroke = { red, amber, plain }, text = plain
   const light = painted(canvas), dark = painted(text)
   const on = (ink: string): string => {
     const shade = painted(ink)
@@ -128,6 +121,18 @@ export function inkColours(host: Element): InkColours {
     return words === light ? canvas : words === dark ? text : rgbToHex(words)
   }
   return { stroke, noteText: { red: on(stroke.red), amber: on(stroke.amber), plain: on(stroke.plain) } }
+}
+
+/** The colours `roles` resolve to where `host` sits, read through one probe element, in the order asked. */
+export function themeColours(host: Element, roles: readonly string[]): string[] {
+  const probe = document.createElement('span')
+  probe.hidden = true
+  // Page observers, the theme inspector's among them, skip probe elements coming and going (ADR-0011).
+  probe.setAttribute(THEME_TOKEN_PROBE_ATTRIBUTE, '')
+  host.appendChild(probe)
+  const colours = roles.map(role => { probe.style.color = `var(${role})`; return getComputedStyle(probe).color || 'currentcolor' })
+  probe.remove()
+  return colours
 }
 
 /** Whether two readings of the inks are the same, so a root change that moved nothing redraws nothing. */
@@ -176,10 +181,11 @@ export function markedName(name: string): string {
 }
 
 /**
- * The picture with its marks drawn on it, at the picture's full size, as a PNG file named after it. Null when the
- * picture could not be read or drawn.
+ * The picture with its marks drawn on it, at the picture's full size, as a PNG file named after it, and `under` drawn
+ * beneath the marks. Null when the picture could not be read or drawn.
  */
-export async function markedCopy(source: string, name: string, marks: readonly MarkupShape[], colours: InkColours): Promise<File | null> {
+export async function markedCopy(source: string, name: string, marks: readonly MarkupShape[], colours: InkColours,
+  under?: (context: CanvasRenderingContext2D, size: MarkupSize) => void): Promise<File | null> {
   const picture = new Image()
   picture.decoding = 'async'
   picture.src = source
@@ -191,6 +197,8 @@ export async function markedCopy(source: string, name: string, marks: readonly M
   const context = canvas.getContext('2d')
   if (!context) return null
   context.drawImage(picture, 0, 0)
+  // What goes under the user's marks: the agent's callouts, when the copy keeps them (ADR-0170, part 6).
+  under?.(context, size)
   drawMarks(context, marks, size, colours)
   const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
   return blob ? new File([blob], markedName(name), { type: 'image/png' }) : null

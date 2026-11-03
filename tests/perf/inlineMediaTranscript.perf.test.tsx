@@ -10,6 +10,8 @@
  *     than twelve frames a second in view, and never through React;
  *   - the same thread with a video in each turn (part 4): a chunk commits as often, nothing plays on its own, only the
  *     near tiles hold a video's source, and a video reads nothing until it is played.
+ *   - the same thread with three callouts on each picture (part 6): a chunk commits as often, and the callouts read
+ *     nothing more than their pictures.
  *
  * The milliseconds print every run, for the before and after numbers each pull request in docs/plans/inline-media.md
  * shows; they are asserted only under SOTTO_PERF_ASSERT=1. jsdom has no layout, so "near the screen" is the observer
@@ -68,7 +70,14 @@ class DrivenObserver {
 }
 
 /** The last `making` turns' steps are images still being made: running, with no picture yet. `media` is what each turn holds. */
-function thread(media: boolean | 'videos', making = 0): AgentThread {
+/** Three callouts on each picture, as an agent that pointed at a page's problems placed them (ADR-0170, part 6). */
+const CALLOUTS = [
+  { n: 1, x: 0.6, y: 0.48, w: 0.335, h: 0.115, note: 'The Pay button sits on top of the total.' },
+  { n: 2, x: 0.055, y: 0.365, w: 0.453, h: 0.083, note: 'The card number field has no label.' },
+  { n: 3, x: 0.49, y: 0.815, w: 0.51, h: 0.088, note: 'At 390 wide the Pay button runs off the screen.' },
+]
+
+function thread(media: boolean | 'videos' | 'callouts', making = 0): AgentThread {
   const pictures = media !== false
   const messages: AgentMessage[] = []
   const activities: AgentActivity[] = []
@@ -76,12 +85,13 @@ function thread(media: boolean | 'videos', making = 0): AgentThread {
     const at = (offset: number) => new Date(NOW - (TURNS - index) * 120_000 + offset).toISOString()
     messages.push({ id: `u${index}`, role: 'user', text: `Check page ${index} and show me.`, createdAt: at(0) })
     messages.push({ id: `a${index}`, role: 'assistant', text: `Page ${index} looks right. The header holds and the footer is where it should be.`, createdAt: at(60_000) })
-    activities.push({ id: `tool-${index}`, turnId: `u${index}`, sequence: index, afterMessageId: `u${index}`, kind: 'tool', status: 'completed',
+    // The callouts' records are their own, so their tiles are read as the first pictures' were, not taken from the cache.
+    activities.push({ id: `${media === 'callouts' ? 'marked-' : ''}tool-${index}`, turnId: `u${index}`, sequence: index, afterMessageId: `u${index}`, kind: 'tool', status: 'completed',
       title: 'sotto_browser / screenshot', output: 'Took a screenshot.', startedAt: at(1_000), completedAt: at(2_000),
       ...media === 'videos' ? { media: [{ id: 'm0', digest: index.toString(16).padStart(64, '0'), kind: 'video' as const, mimeType: 'video/webm' as const,
         sizeBytes: 14_000_000, name: 'recording.webm', source: 'file' as const }] }
         : pictures ? { media: [{ id: 'm0', digest: index.toString(16).padStart(64, '0'), kind: 'image' as const, mimeType: 'image/png' as const,
-        sizeBytes: 480_000, width: 1280, height: 800, name: 'picture-1.png', source: 'tool' as const }] } : {} })
+        sizeBytes: 480_000, width: 1280, height: 800, name: 'picture-1.png', source: 'tool' as const, ...media === 'callouts' ? { callouts: CALLOUTS } : {} }] } : {} })
     if (index >= TURNS - making) activities[index] = { ...activities[index]!, title: 'Image', status: 'running', generates: 'image', media: undefined, output: undefined, completedAt: undefined }
   }
   return { id: 'media-thread', projectId: 'project', title: 'Check every page', modelId: 'claude:test', providerId: 'claude', status: 'running', requests: [], messages, activities }
@@ -101,7 +111,7 @@ describe('inline media cost', () => {
 
   it('holds a streamed chunk, mount and scroll to their counts with 200 pictures', async () => {
     let commits = 0, committed = 0
-    const measure = async (pictures: boolean | 'videos') => {
+    const measure = async (pictures: boolean | 'videos' | 'callouts') => {
       const open = thread(pictures)
       let state = stateAround(host(open), open.id)
       const store = new ThreadDraftStore(vi.fn(async () => state))
@@ -170,9 +180,10 @@ describe('inline media cost', () => {
 
     const without = await measure(false)
     const withPictures = await measure(true)
+    const withCallouts = await measure('callouts')
     const played = vi.spyOn(HTMLMediaElement.prototype, 'play')
     const withVideos = await measure('videos')
-    console.info(`inline media: ${JSON.stringify({ without, withPictures, withVideos })}`)
+    console.info(`inline media: ${JSON.stringify({ without, withPictures, withCallouts, withVideos })}`)
     // A video never plays until it is pressed, holds its source only near the screen, and is read by its player, not as a picture.
     expect(played).not.toHaveBeenCalled()
     played.mockRestore()
@@ -199,10 +210,20 @@ describe('inline media cost', () => {
     expect(without.scrollReads).toBe(0)
     // A tile that leaves lets go of its picture, so the page never holds more than the near ones.
     expect(withPictures.mostHeld).toBeLessThanOrEqual(NEAR)
+    // Callouts (part 6) ride on the handle: drawn with the tile, they read nothing more and commit no more for a chunk.
+    expect(withCallouts.tiles).toBe(withPictures.tiles)
+    expect(withCallouts.chunkCommits).toBe(without.chunkCommits)
+    expect(withCallouts.chunkReads).toBe(0)
+    expect(withCallouts.mountReads).toBe(NEAR)
+    expect(withCallouts.scrollReads).toBe(withCallouts.scrollSteps)
+    expect(withCallouts.mostHeld).toBeLessThanOrEqual(NEAR)
     if (process.env.SOTTO_PERF_ASSERT === '1') {
       expect(withPictures.chunkReactMs).toBeLessThan(Math.max(without.chunkReactMs * 1.25, without.chunkReactMs + 0.5))
       expect(withPictures.mountMs).toBeLessThan(without.mountMs * 1.5)
       expect(withPictures.scrollStepMs).toBeLessThan(without.scrollStepMs + 5)
+      expect(withCallouts.chunkReactMs).toBeLessThan(Math.max(without.chunkReactMs * 1.25, without.chunkReactMs + 0.5))
+      expect(withCallouts.mountMs).toBeLessThan(without.mountMs * 1.5)
+      expect(withCallouts.scrollStepMs).toBeLessThan(without.scrollStepMs + 5)
       expect(withVideos.chunkReactMs).toBeLessThan(Math.max(without.chunkReactMs * 1.25, without.chunkReactMs + 0.5))
       expect(withVideos.mountMs).toBeLessThan(without.mountMs * 1.5)
     }

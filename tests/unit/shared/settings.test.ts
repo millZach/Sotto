@@ -55,6 +55,10 @@ const customSettings = {
   watcherSettlesFinishedThreads: false,
   newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
   watcherCompactAtTokens: 650_000,
+  councilPanelists: [{ modelId: 'claude:model:opus', reasoningEffort: 'high' }, null, { modelId: 'codex:model:gpt-6.1-sol', reasoningEffort: null }],
+  councilChair: { modelId: 'grok:model:grok-4.7-build', reasoningEffort: 'high' },
+  councilLayout: 'round-table',
+  councilStageDeadline: 25,
   compactIdleThreads: false,
   reducedMotion: 'on',
   clickEffect: false,
@@ -64,8 +68,10 @@ const customSettings = {
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
+  hotkeyStandby: false,
   pressShortcuts: ['Alt+Shift+D'],
   holdShortcuts: ['Fn', 'Control+Alt'],
+  popupShortcut: 'Control+Alt+P',
   threadShortcuts: { settle: 'mod+alt+e', restore: null },
   maxRecordingSeconds: 300,
   soundCues: false,
@@ -117,6 +123,8 @@ const customSettings = {
   autoSettleMergedThreads: true,
   clearSettledThreadsAfterDays: 90,
   proactivePanels: true,
+  productEventsEnabled: false,
+  productEventsNoticeAnswered: true,
   pullRequestText: false,
   commitMessages: false,
   autoUpdateCheck: false,
@@ -124,6 +132,7 @@ const customSettings = {
   localHostEnabled: false,
   phoneAccess: true,
   phoneAccessName: 'Studio',
+  localApps: true,
   tailnetConnections: true,
   memoryEnabled: true,
   cloudIphoneMonthlyMinutes: 1_000,
@@ -442,6 +451,10 @@ describe('settings', () => {
       watcherSettlesFinishedThreads: true,
       newWorkerMachine: 'this-computer',
       watcherCompactAtTokens: 400_000,
+      councilPanelists: [null, null, null],
+      councilChair: null,
+      councilLayout: 'long-table',
+      councilStageDeadline: 10,
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
@@ -474,8 +487,10 @@ describe('settings', () => {
       roomTransitionLook: 'band',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
+      hotkeyStandby: false,
       pressShortcuts: [],
       holdShortcuts: [],
+      popupShortcut: 'Alt+Shift+Space',
       threadShortcuts: {},
       maxRecordingSeconds: 60,
       soundCues: true,
@@ -527,6 +542,8 @@ describe('settings', () => {
       autoSettleMergedThreads: false,
       clearSettledThreadsAfterDays: 30,
       proactivePanels: false,
+      productEventsEnabled: true,
+      productEventsNoticeAnswered: false,
       pullRequestText: true,
       commitMessages: true,
       autoUpdateCheck: true,
@@ -534,6 +551,7 @@ describe('settings', () => {
       localHostEnabled: true,
       phoneAccess: false,
       phoneAccessName: '',
+      localApps: false,
       tailnetConnections: false,
       cloudIphoneMonthlyMinutes: 750,
       cloudIphoneIdleMinutes: 5,
@@ -764,6 +782,25 @@ describe('Compact Watcher at', () => {
     const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
     delete older.watcherCompactAtTokens
     expect(parseSettings(older).watcherCompactAtTokens).toBe(400_000)
+  })
+})
+
+describe('Council settings', () => {
+  it('starts with three seats Sotto fills, the long table and a ten-minute stage deadline', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ councilPanelists: [null, null, null], councilChair: null, councilLayout: 'long-table', councilStageDeadline: 10 })
+  })
+
+  it('keeps a chosen panel and repairs a damaged seat on its own', () => {
+    const opus = { modelId: 'claude:model:opus', reasoningEffort: 'high' }
+    expect(parseSettings({ ...DEFAULT_SETTINGS, councilPanelists: [opus, { modelId: '' }, null, 'broken'] }).councilPanelists).toEqual([opus, null, null, null])
+    expect(parseSettings({ ...DEFAULT_SETTINGS, councilPanelists: [opus] }).councilPanelists).toEqual([null, null, null])
+    expect(parseSettings({ ...DEFAULT_SETTINGS, councilPanelists: [opus, opus, opus, opus, opus, opus] }).councilPanelists).toHaveLength(5)
+  })
+
+  it('falls back for a layout or deadline it cannot read', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, councilLayout: 'amphitheatre' }).councilLayout).toBe('long-table')
+    for (const minutes of [0, 121, 2.5, '10', null]) expect(parseSettings({ ...DEFAULT_SETTINGS, councilStageDeadline: minutes }).councilStageDeadline, String(minutes)).toBe(10)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, councilStageDeadline: 45 }).councilStageDeadline).toBe(45)
   })
 })
 

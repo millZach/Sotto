@@ -7,6 +7,8 @@ import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './in
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { DEFAULT_WATCHER_SCENE, WATCHER_SCENES, type WatcherScene } from './watcherScene'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { COUNCIL_STAGE_DEADLINE, councilChairSchema, councilLayoutSchema, councilPanelistsSchema, councilStageDeadlineSchema, DEFAULT_COUNCIL_LAYOUT, DEFAULT_COUNCIL_PANELISTS,
+  parseCouncilPanelists, type CouncilLayout, type CouncilSeatChoice } from './council'
 import { DEFAULT_WORKER_CEILING, DEFAULT_WORKER_MACHINE, workerCeilingSchema, workerMachineCeilingsSchema, workerMachineSettingSchema,
   type WorkerMachineCeilings, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
@@ -209,6 +211,18 @@ export interface AppSettings {
    */
   watcherCompactAtTokens: number
   /**
+   * The Council's panel (ADR-0177), under Settings, Council, part of the Owl feature `council`: one entry per seat, two to
+   * five, each the model and effort the user chose or null for a seat Sotto fills from the providers connected now, so
+   * nothing here changes when a provider comes or goes. The Ask screen starts from it. Kept whole where the feature is off.
+   */
+  councilPanelists: (CouncilSeatChoice | null)[]
+  /** The Council's chair: the model and effort the user chose, or null for the one Sotto fills (ADR-0177). */
+  councilChair: CouncilSeatChoice | null
+  /** How the Council's chamber is laid out (ADR-0177 decision 6), the same setting its Layout menu changes. */
+  councilLayout: CouncilLayout
+  /** How long, in minutes, a Council stage waits for a thread before its row offers Retry, Use another model and Go on without it. */
+  councilStageDeadline: number
+  /**
    * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
    * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
    */
@@ -280,10 +294,20 @@ export interface AppSettings {
   roomTransitionLook: RoomTransitionLook
   microphoneId: string | null
   hotkey: string
+  /**
+   * The user removed `hotkey` while a shortcut that needs the key listener remains (Owl, ADR-0097): it stays saved and
+   * registers only while that listener is not running, as when macOS has turned Input Monitoring off.
+   */
+  hotkeyStandby: boolean
   /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
   pressShortcuts: string[]
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
   holdShortcuts: string[]
+  /**
+   * The global shortcut that shows or hides the popup (Owl `popup`, ADR-0181), as an Electron accelerator; null has
+   * none, and the popup opens only from the tray. Kept whole while the feature is off.
+   */
+  popupShortcut: string | null
   /**
    * The keyboard shortcuts for working in threads the user changed under Settings › Keyboard (ADR-0133), by
    * shortcut. A row left out follows its default (`threadShortcuts.ts`); a row set to null has no shortcut.
@@ -373,6 +397,13 @@ export interface AppSettings {
   nextPromptSuggestions: boolean
   /** One tip under a working thread's working line and Watcher's (ADR-0159; Owl only). */
   threadTips: boolean
+  /**
+   * Send product events (ADR-0179): on by default, and nothing goes until the notice has been answered. Off sends nothing
+   * more, drops what is waiting and deletes the install ID.
+   */
+  productEventsEnabled: boolean
+  /** A button on the product events notice has been pressed. Reset settings clears it, so the notice asks again. */
+  productEventsNoticeAnswered: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
@@ -399,6 +430,11 @@ export interface AppSettings {
   /** This computer's name as phones show it. Empty uses the Tailscale machine name, or the computer's own. */
   phoneAccessName: string
   /**
+   * Let apps on this computer connect (Owl `local-apps`, ADR-0180): a loopback-only host protocol listener and a token
+   * file only this user can read, so an app such as Agent Popup connects without a pairing code. Needs the local host.
+   */
+  localApps: boolean
+  /**
    * Host-local, read only by a headless host (ADR-0053): Tailscale Serve carries the host's tailnet listener for paired
    * desktops' tailnet connections while this or `phoneAccess` is on. The host's administrative route sets it; nothing on
    * a desktop does, so it is not on the settings allow-list.
@@ -417,7 +453,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
+  Omit<AppSettings, 'hotkey' | 'hotkeyStandby' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -459,6 +495,10 @@ const fieldSchemas = {
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
+  councilPanelists: councilPanelistsSchema,
+  councilChair: councilChairSchema,
+  councilLayout: councilLayoutSchema,
+  councilStageDeadline: councilStageDeadlineSchema,
   compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   clickEffect: z.boolean(),
@@ -467,8 +507,10 @@ const fieldSchemas = {
   roomTransitionLook: z.enum(ROOM_TRANSITION_LOOKS),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  hotkeyStandby: z.boolean(),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  popupShortcut: z.string().min(1).max(64).nullable(),
   threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
@@ -527,6 +569,8 @@ const fieldSchemas = {
   autoSettleMergedThreads: z.boolean(),
   clearSettledThreadsAfterDays: clearSettledThreadsAfterDaysSchema,
   proactivePanels: z.boolean(),
+  productEventsEnabled: z.boolean(),
+  productEventsNoticeAnswered: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   autoUpdateCheck: z.boolean(),
@@ -534,6 +578,7 @@ const fieldSchemas = {
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
+  localApps: z.boolean(),
   tailnetConnections: z.boolean(),
   memoryEnabled: z.boolean(),
   cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
@@ -575,6 +620,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
+  councilPanelists: [...DEFAULT_COUNCIL_PANELISTS],
+  councilChair: null,
+  councilLayout: DEFAULT_COUNCIL_LAYOUT,
+  councilStageDeadline: COUNCIL_STAGE_DEADLINE.default,
   compactIdleThreads: true,
   reducedMotion: 'system',
   clickEffect: true,
@@ -583,8 +632,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   roomTransitionLook: 'band',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  hotkeyStandby: false,
   pressShortcuts: [],
   holdShortcuts: [],
+  // Option-Shift-Space on a Mac, the chord Sotto Popup used before the popup was built in (ADR-0181).
+  popupShortcut: 'Alt+Shift+Space',
   // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
   threadShortcuts: {},
   terminalFontSize: 13,
@@ -649,6 +701,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   clearSettledThreadsAfterDays: 30,
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
+  productEventsEnabled: true,
+  productEventsNoticeAnswered: false,
   pullRequestText: true,
   // On by default: when a thread's provider writes nothing, the Git action commits
   // under the stand-in subject "Update project files" rather than waiting.
@@ -665,6 +719,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Off by default: nothing listens beyond this computer until the owner turns it on (ADR-0033).
   phoneAccess: false,
   phoneAccessName: '',
+  // Off by default: no token is written and nothing else listens until the owner turns it on (ADR-0180).
+  localApps: false,
   // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
   tailnetConnections: false,
   // Off for the beta: memory does not ship in the first one.
@@ -759,6 +815,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
     watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
+    // Seat by seat, so one damaged seat costs only that seat.
+    councilPanelists: persisted.councilPanelists === undefined ? [...defaults.councilPanelists] : parseCouncilPanelists(persisted.councilPanelists),
+    councilChair: parseField(persisted, 'councilChair', defaults),
+    councilLayout: parseField(persisted, 'councilLayout', defaults),
+    councilStageDeadline: parseField(persisted, 'councilStageDeadline', defaults),
     compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     clickEffect: parseField(persisted, 'clickEffect', defaults),
@@ -767,12 +828,14 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     roomTransitionLook: parseField(persisted, 'roomTransitionLook', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
+    hotkeyStandby: linuxBeforeRecorder ? false : parseField(persisted, 'hotkeyStandby', defaults),
     pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
     // The hold default is for new installs only: an existing profile without the field, or with a damaged one, holds nothing.
     // Linux is the exception above: its existing profiles already held F9.
     holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
+    popupShortcut: parseField(persisted, 'popupShortcut', defaults),
     // Row by row, so one damaged shortcut falls back to its own default and no other.
     threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
@@ -826,6 +889,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     autoSettleMergedThreads: parseField(persisted, 'autoSettleMergedThreads', defaults),
     clearSettledThreadsAfterDays: parseField(persisted, 'clearSettledThreadsAfterDays', defaults),
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
+    productEventsEnabled: parseField(persisted, 'productEventsEnabled', defaults),
+    productEventsNoticeAnswered: parseField(persisted, 'productEventsNoticeAnswered', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
@@ -833,6 +898,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
+    localApps: parseField(persisted, 'localApps', defaults),
     tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),

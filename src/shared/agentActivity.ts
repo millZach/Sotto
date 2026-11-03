@@ -53,6 +53,22 @@ export type AgentVideoMimeType = typeof AGENT_VIDEO_MIME_TYPES[number]
 export const AGENT_VIDEO_PART_BYTES = 8 * 1024 * 1024
 /** The most parts a video takes: one of `AGENT_VIDEO_MAX_BYTES` in `AGENT_VIDEO_PART_BYTES` parts. */
 export const AGENT_VIDEO_PARTS_MAX = Math.ceil(AGENT_VIDEO_MAX_BYTES / AGENT_VIDEO_PART_BYTES)
+/** The most callouts one show_in_thread call places, across all its pictures (ADR-0170, part 6). */
+export const MAX_MEDIA_CALLOUTS = 12
+/** The longest callout note, in characters. */
+export const CALLOUT_NOTE_MAX = 200
+const share = z.number().min(0).max(1)
+/**
+ * A numbered box with a note that the agent placed on a picture it showed (ADR-0170, part 6): where the box is, as shares
+ * of the picture's width and height from its top left, so it lands in the same place at any size. `n` numbers the
+ * callouts of one step, across its pictures.
+ */
+export const agentMediaCalloutSchema = z.object({
+  n: z.number().int().min(1).max(MAX_MEDIA_CALLOUTS),
+  x: share, y: share, w: z.number().gt(0).max(1), h: z.number().gt(0).max(1),
+  note: z.string().min(1).max(CALLOUT_NOTE_MAX),
+})
+export type AgentMediaCallout = z.infer<typeof agentMediaCalloutSchema>
 export const agentActivityMediaSchema = z.object({
   id: z.string().regex(/^m[0-7]$/u),
   digest: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -63,6 +79,8 @@ export const agentActivityMediaSchema = z.object({
   name: z.string().min(1).max(200),
   /** Where it came from: a tool's result, an image the agent generated, or a file it wrote. */
   source: z.enum(['tool', 'generated', 'file']),
+  /** The callouts the agent placed on this picture when it showed it (ADR-0170, part 6). Never on a video. */
+  callouts: z.array(agentMediaCalloutSchema).max(MAX_MEDIA_CALLOUTS).optional(),
 })
 export type AgentActivityMedia = z.infer<typeof agentActivityMediaSchema>
 export const agentActivitySchema = z.object({

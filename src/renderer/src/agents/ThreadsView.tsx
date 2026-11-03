@@ -35,6 +35,7 @@ import { SidebarChromeProvider } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
+import { useThreadSnoozes, useWakeWhenNeeded } from './threadSnooze'
 
 type Command = AgentConnection['command']
 
@@ -98,7 +99,7 @@ function samePaneProps(previous: ShownPaneProps, next: ShownPaneProps): boolean 
 const ShownPane = memo(function ShownPane({ row, state, command, store, focused, promptId, error, now, chrome, onOpenBeside, tools, paneTerminal, paneWorkingCopy, paneNotice, paneDrawer }: ShownPaneProps): ReactNode {
   const threadId = row.thread.id
   const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
-  // Tools and the drawer are rows of the pane's ··· menu now, so nothing in the header comes or goes with focus.
+  // Every pane carries the same symbols, so nothing in the header comes or goes with focus (ADR-0182).
   return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
     promptId={promptId} error={error} onOpenBeside={() => onOpenBeside(threadId)} now={now}
     workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} drawer={paneDrawer?.(slot)}
@@ -111,9 +112,9 @@ export interface ThreadsViewProps {
   readonly updateControl?: ReactNode
   /** One shared tools panel, rendered beside the thread panes. */
   readonly tools?: ThreadToolsSlot | undefined
-  /** The focused pane's ··· menu lists Tools, the shared panel beside the panes (ADR-0163). */
+  /** Each pane's header carries the Tools symbol, for the shared panel beside the panes (ADR-0182). */
   readonly paneTools?: boolean | undefined
-  /** Whether a pane's ··· menu lists its own Terminal drawer, focused or not. */
+  /** Whether a pane has its own Terminal drawer, and its header the symbol for it, focused or not. */
   readonly paneTerminal?: ((props: ThreadPaneSlotProps) => boolean) | undefined
   /** The working-copy control in each pane's header, after the project title. */
   readonly paneWorkingCopy?: ThreadPaneSlot | undefined
@@ -178,7 +179,10 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const delegation = useOwlFeature('thread-delegation')
   const swarms = useOwlFeature('worker-swarms')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms), [state, sidebarRows, query, delegation, now, swarms, words]))
+  // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
+  const snoozes = useThreadSnoozes()
+  useWakeWhenNeeded(rows, snoozes)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -360,7 +364,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
     const focused = threadId === focusedId
     return <ShownPane row={row} state={state} command={command} store={store} focused={focused}
       promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} now={fixedNow} clock={now} chrome={chrome}
-      onOpenBeside={openBeside} tools={paneTools && focused} paneTerminal={paneTerminal}
+      onOpenBeside={openBeside} tools={paneTools} paneTerminal={paneTerminal}
       paneWorkingCopy={paneWorkingCopy} paneNotice={paneNotice} paneDrawer={paneDrawer} />
   }
 

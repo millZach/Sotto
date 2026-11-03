@@ -7,7 +7,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
+import { appRooms, roomFor, RoomTabFace, useCouncilRoom, useRoomSwitch } from '../components/AppShell'
 import { pageShortcutFor, usePageShortcutLabels } from '../components/pageShortcuts'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
@@ -74,7 +74,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
 
 /**
  * The room switch, drawn from the one room definition (`appRooms`): Dictate | Threads, with Watcher's owl between
- * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
+ * them while its gate is on and the Council left of the owl while its Owl feature is and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
  * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
@@ -83,7 +83,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
-  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
+  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn(), council: useCouncilRoom() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   const { t } = useLingui()
   if (rooms.length < 2) return null

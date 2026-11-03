@@ -238,8 +238,25 @@
 .attachment-viewer__thumb:hover { opacity: .85; }
 .attachment-viewer__thumb[aria-current='true'] { border-color: var(--tt-accent); opacity: 1; }
 .attachment-viewer__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* The picture and, when the agent placed callouts on it (ADR-0170, part 6), their notes beside it. */
+.attachment-viewer__body { display: flex; flex: 1; min-height: 0; }
+.attachment-viewer__body > .rich-diagram-viewer__viewport { min-width: 0; }
+.attachment-viewer__callouts { flex: none; width: 260px; padding: 14px 16px; overflow-y: auto; border-left: 1px solid var(--tt-hairline); background: var(--tt-surface-elevated); }
+.attachment-viewer__callouts-heading { margin: 0 0 10px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+/* Callouts (ADR-0170, part 6): a dashed box in the accent with a numbered pin at its top left, over the picture. */
+.callouts__box { fill: none; stroke: var(--tt-accent); }
+.callouts__pin { fill: var(--tt-accent); }
+.callouts__number { fill: var(--tt-on-accent); font-family: var(--tt-font-ui); font-weight: 700; }
+.attachment-viewer__callout-layer { overflow: visible; }
+.callout-notes { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.callout-notes li { display: flex; gap: 8px; align-items: flex-start; }
+.callout-notes__number { display: grid; flex: none; place-items: center; width: 20px; height: 20px; border-radius: var(--tt-radius-full); background: var(--tt-accent); color: var(--tt-on-accent); font-size: var(--tt-type-caption); font-weight: 700; }
+.callout-notes__note { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); line-height: 1.4; overflow-wrap: anywhere; }
 /* A narrow pane keeps the image's name readable: Copy image keeps its name for assistive technology but shows its icon alone. */
 @container thread-pane (max-width: 640px) {
+  /* A narrow pane lists the callouts under the picture instead of beside it. */
+  .attachment-viewer__body { flex-direction: column; }
+  .attachment-viewer__callouts { width: auto; max-height: 34%; border-top: 1px solid var(--tt-hairline); border-left: 0; }
   .attachment-viewer__copy > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .rich-code__copy.attachment-viewer__copy { width: 36px; padding: 0; justify-content: center; }
   .attachment-viewer__details { display: none; }
@@ -256,6 +273,12 @@
 .thread-media__play { position: absolute; top: 50%; left: 50%; display: grid; place-items: center; width: 40px; height: 40px; margin: -20px 0 0 -20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-full); background: var(--tt-surface-overlay); color: var(--tt-text); }
 .thread-media__play:hover { border-color: var(--tt-hairline); }
 .thread-media__play--corner { top: 8px; left: auto; right: 8px; width: 28px; height: 28px; margin: 0; }
+/* A picture with callouts (ADR-0170, part 6) fills its tile at its own shape, so the boxes drawn over it land on it; the count sits in a corner. */
+.thread-media__frame--callouts { position: relative; }
+.thread-media__frame--callouts img { width: 100%; height: 100%; object-fit: contain; }
+.thread-media__callouts { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.thread-media__callout-count { position: absolute; top: 6px; right: 6px; min-width: 20px; padding: 1px 7px; border-radius: var(--tt-radius-full); background: var(--tt-accent); color: var(--tt-on-accent); font-size: var(--tt-type-caption); font-weight: 700; text-align: center; pointer-events: none; }
+.thread-media__callout-count--start { right: auto; left: 6px; }
 /* The owl at the easel (ADR-0170): two layers of text the same size, the painting over the easel and the owl. */
 .owl-easel { position: absolute; inset: 0; overflow: hidden; }
 .owl-easel pre { position: absolute; inset: 0; margin: 0; font-family: var(--tt-font-mono); white-space: pre; overflow: hidden; }

@@ -180,6 +180,8 @@ const settingKeys = [
   'clearSettledThreadsAfterDays',
   'proactivePanels',
   'commitMessages',
+  'productEventsEnabled',
+  'productEventsNoticeAnswered',
   'pullRequestText',
   'autoUpdateCheck',
   'mainFreezeNotice',
@@ -188,6 +190,8 @@ const settingKeys = [
   'localHostEnabled',
   'phoneAccess',
   'phoneAccessName',
+  'localApps',
+  'popupShortcut',
   'showBrowserPreviews',
   'browserWithoutAsking',
   'visualsInThreads',
@@ -200,6 +204,10 @@ const settingKeys = [
   'watcherSettlesFinishedThreads',
   'newWorkerMachine',
   'watcherCompactAtTokens',
+  'councilPanelists',
+  'councilChair',
+  'councilLayout',
+  'councilStageDeadline',
   'compactIdleThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
@@ -211,7 +219,7 @@ const looseSettingsPatchSchema = settingsSchema
   // so a payload naming it is refused rather than dropped (ADR-0053).
   // The speech model is chosen through SPEECH_MODEL_CHOOSE, which also loads it; a plain save would
   // change the setting without the model following, so a payload naming it is refused (ADR-0094).
-  .omit({ hotkey: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
+  .omit({ hotkey: true, hotkeyStandby: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011). The retired glass and frost settings are
@@ -267,6 +275,7 @@ const hotkeySchema = z
 const dictationShortcutsChangeSchema = z.object({
   press: z.array(z.string().min(1).max(64)).min(1).max(4),
   hold: z.array(z.string().min(1).max(64)).max(4),
+  standby: z.boolean().optional(),
 }).strict()
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })
@@ -505,7 +514,8 @@ export function isAuthorizedIpcSender(
   return findAuthorizedIpcSenderRole(event, trustedSenders, allowedRoles) !== null
 }
 
-function findAuthorizedIpcSenderRole(
+/** The role of a trusted window that sent `event`, among `allowedRoles`; null for any other sender. */
+export function findAuthorizedIpcSenderRole(
   event: IpcInvocationEvent,
   trustedSenders: readonly TrustedIpcSender[],
   allowedRoles: readonly RendererRole[],
@@ -601,7 +611,8 @@ export function registerIpc(
   try {
     if (dependencies.watcher) {
       const watcher = dependencies.watcher
-      register(WATCHER_GET, noPayloadSchema, 0, () => watcher.get())
+      // The popup reads the room for its current Watcher's thread (ADR-0181).
+      register(WATCHER_GET, noPayloadSchema, 0, () => watcher.get(), ['main', 'popup'])
       register(WATCHER_OPEN, watcherOpenRequestSchema, 1, request => watcher.open(request))
       register(WATCHER_PREPARE_STOP_ALL, noPayloadSchema, 0, () => watcher.prepareStopAll())
       register(WATCHER_STOP_ALL, watcherStopAllRequestSchema, 1, request => watcher.stopAll(request))
@@ -623,14 +634,15 @@ export function registerIpc(
       dependencies.recoveryNotices?.dismissPastePermission?.(code)
       return { ok: true as const }
     })
-    register(SETTINGS_GET, noPayloadSchema, 0, () => dependencies.settings.get())
+    // The popup paints the chosen look and reads the working-copy default for a thread it starts (ADR-0181).
+    register(SETTINGS_GET, noPayloadSchema, 0, () => dependencies.settings.get(), ['main', 'popup'])
     register(SETTINGS_UPDATE, settingsPatchSchema, 1, (patch) =>
       dependencies.settings.update(patch),
     )
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
     if (dependencies.interfaceLanguage) {
       const interfaceLanguage = dependencies.interfaceLanguage
-      register(INTERFACE_LANGUAGE_GET, noPayloadSchema, 0, () => interfaceLanguage.current(), ['main', 'widget'])
+      register(INTERFACE_LANGUAGE_GET, noPayloadSchema, 0, () => interfaceLanguage.current(), ['main', 'widget', 'popup'])
     }
 
     // Transcripts saved before Keep local history was turned off stay listed, and can be copied and deleted, while it is off.
@@ -708,7 +720,7 @@ export function registerIpc(
     register(EXTERNAL_LINK_OPEN, externalLinkSchema, 1, async url => {
       if (!dependencies.openExternalLink) return UNAVAILABLE
       try { await dependencies.openExternalLink(url); return OK } catch { return UNAVAILABLE }
-    })
+    }, ['main', 'popup'])
     register(QUESTION_PAGE_OPEN, questionPageOpenSchema, 1, async input => {
       if (!dependencies.openQuestionPage) return UNAVAILABLE
       try { return await dependencies.openQuestionPage(input) } catch { return UNAVAILABLE }

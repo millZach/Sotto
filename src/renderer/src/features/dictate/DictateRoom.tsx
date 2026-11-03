@@ -17,6 +17,7 @@ import type { HistoryEntry } from '../../../../shared/history'
 import type { DictationRecord } from '../../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings } from '../../../../shared/settings'
+import { startShortcut } from '../../../../shared/dictationShortcuts'
 import { Button } from '../../components/Button'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { VoiceWave, type VoiceWaveStage } from '../../components/VoiceWave'
@@ -334,8 +335,8 @@ export function DictateRoom({
           : t`With Sotto’s compositor bindings: hold ${hold} to talk, or press ${press}. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.`
     } else {
       hint = listening
-        ? <Trans>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> again</Trans>
-        : <Trans>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> in any app</Trans>
+        ? <Trans>or press <ShortcutKey accelerator={startShortcut(settings)} platform={platform} /> again</Trans>
+        : <Trans>or press <ShortcutKey accelerator={startShortcut(settings)} platform={platform} /> in any app</Trans>
     }
   } else {
     hint = microphoneSkipped ? null : speechModelSummary(speechModel, speechModelName)

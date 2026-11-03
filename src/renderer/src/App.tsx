@@ -6,12 +6,14 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { speechModelSummary } from './components/SpeechModelStatus'
 import { PARAKEET_V3, sottoSpeechModel, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
-import { AppShell, layoutFor } from './components/AppShell'
+import { startShortcut } from '../../shared/dictationShortcuts'
+import { AppShell, layoutFor, useCouncilRoom } from './components/AppShell'
 import { usePageShortcuts } from './components/pageShortcuts'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { UsageView } from './features/usage/UsageView'
+import { CouncilView } from './features/council/CouncilView'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { ThreadsTour } from './features/onboarding/ThreadsTour'
 import { UpdateControl } from './features/updates/UpdateControl'
@@ -141,6 +143,7 @@ function FooterStatus({ navigation, dictationOn, cloudTranscription, speechModel
   const { t } = useLingui()
   switch (navigation) {
     case 'usage': return t`Numeric usage stays on each computer.`
+    case 'council': return null
     case 'memory': return t`Your preferences, with their history.`
     case 'settings': return t`Changes save as you make them.`
     case 'help': return t`Shortcuts, privacy, and troubleshooting.`
@@ -154,6 +157,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const watcherEnabled = useWatcherEnabled()
   const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
+  // The Council page (ADR-0177): only while its Owl feature is on and main gave the window its bridge.
+  const councilEnabled = useCouncilRoom()
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   // Set when main refused the last choice, so the picker can say why nothing changed.
@@ -281,6 +286,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     app.actions.navigate(opening.page)
   }, [app.actions])
   useOpenNotification(openNotification)
+  // The popup's Show in Sotto (ADR-0181): main selected the thread; the window opens its room the same way.
+  const popupOn = useOwlFeature('popup')
+  useEffect(() => popupOn ? window.sotto?.popup?.onOpened(openNotification) : undefined, [popupOn, openNotification])
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
@@ -446,7 +454,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     // Watcher's room is reachable only while its gate is on, and Dictate only while dictation is on (ADR-0107);
     // without them the navigation lands on Threads.
     const watcherPage = navigation === 'watcher' && watcherEnabled
-    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'home' && !dictationOn)
+    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'council' && !councilEnabled) || (navigation === 'home' && !dictationOn)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
@@ -473,6 +481,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         break
       case 'usage':
         view = usageEnabled ? <UsageView /> : threadWorkspace
+        break
+      case 'council':
+        view = councilEnabled ? <CouncilView /> : threadWorkspace
         break
       case 'settings':
         view = <SettingsView
@@ -505,7 +516,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
+        view = <HelpView shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
         break
       default:
         view = threadsPage ? threadWorkspace : <DictateRoom

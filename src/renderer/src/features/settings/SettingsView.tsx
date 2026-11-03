@@ -1,8 +1,10 @@
 import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
+import { LocalAppsSettings } from './LocalAppsSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { ThreadShortcutsSettings } from './ThreadShortcutsSettings'
+import { PopupShortcutSetting } from './PopupShortcutSetting'
 import { useRevisionDraft } from './useRevisionDraft'
 import { shownWords, type LaterWords } from './laterWords'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
@@ -11,7 +13,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
+import { AppWindow, AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -71,6 +73,7 @@ import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { ClearThreadsSettings } from './ClearThreadsSettings'
 import { ThreadTipsSetting } from './ThreadTipsSetting'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
+import { CouncilSettings } from './CouncilSettings'
 import { WorkerCapacitySettings, WorkerMachineSettings } from './WorkerMachineSettings'
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
@@ -140,6 +143,8 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-git': GitBranch,
   // Watcher, an Owl feature: shown only while the Owl list turns it on. Worker roles (#1041) inside it follow their own.
   'settings-watcher': WatcherNavIcon,
+  // The Council (ADR-0177), an Owl feature: shown only while the Owl list turns `council` on.
+  'settings-council': Landmark,
   'settings-providers': Command,
   'settings-hosts': Server,
   'settings-cloud-iphone': Cloud,
@@ -459,10 +464,13 @@ export function SettingsView({
   // Where new workers start (#1032), part of the Owl feature Work across machines, inside Watcher's page.
   const workerMachine = watcherOn && crossMachineOn
   const performanceOn = useOwlFeature('main-freeze')
+  const councilOn = useOwlFeature('council')
+  const popupOn = useOwlFeature('popup') && window.sotto?.popup !== undefined
+  const localAppsOn = useOwlFeature('local-apps')
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
   const dictation = dictationOn(settings, dictationSwitch)
-  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn)
+  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn) && (section.id !== 'settings-council' || councilOn)
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
@@ -486,7 +494,7 @@ export function SettingsView({
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'local-apps': localAppsOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -793,7 +801,8 @@ export function SettingsView({
 
               <Card className="settings-section" id="settings-keyboard" {...panelProps('settings-keyboard')}>
                 <div className="settings-section__heading"><h2><Trans>Keyboard</Trans></h2><p className="tt-paragraph"><Trans>Every shortcut in Sotto, in one place</Trans></p></div>
-                <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')} />
+                <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')}
+                  before={<PopupShortcutSetting settings={settings} platform={platform} />} />
               </Card>
 
               <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
@@ -818,6 +827,10 @@ export function SettingsView({
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
+              {councilOn ? <Card className="settings-section" id="settings-council" {...panelProps('settings-council')}>
+                <div className="settings-section__heading"><h2><Trans>Council</Trans></h2><p className="tt-paragraph"><Trans>Who sits on a Council, how its chamber is laid out, and how long a stage waits</Trans></p></div>
+                <CouncilSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card> : null}
+
               <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2><Trans>Providers</Trans></h2><p className="tt-paragraph"><Trans>Accounts &amp; connections</Trans></p></div><ProvidersSettings compactIdle={{ checked: settings.compactIdleThreads, onChange: checked => void save({ compactIdleThreads: checked }) }} /></Card>
 
               <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}>
@@ -828,6 +841,9 @@ export function SettingsView({
                   <PhonesSettings phoneAccess={settings.phoneAccess} phoneAccessName={settings.phoneAccessName} onUpdateSettings={onUpdateSettings}
                     onOpenHosts={() => { const panel = document.getElementById('settings-hosts'); const control = panel && findSettingControl(panel, 'local-host'); if (control) revealSetting(control) }} />
                 </SettingsGroup>
+                {localAppsOn ? <SettingsGroup title={t`Apps on this computer`} icon={AppWindow} rows={false}>
+                  <LocalAppsSettings localApps={settings.localApps} onUpdateSettings={onUpdateSettings} />
+                </SettingsGroup> : null}
               </Card>
 
               <Card className="settings-section" id="settings-cloud-iphone" {...panelProps('settings-cloud-iphone')}><div className="settings-section__heading"><h2><Trans>Cloud iPhone</Trans></h2><p className="tt-paragraph"><Trans>Native iOS builds on a run.cloud simulator</Trans></p></div>

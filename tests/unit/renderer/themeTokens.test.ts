@@ -333,6 +333,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/providers.css',
       'src/renderer/src/agents/opencodeSources.css',
       'src/renderer/src/agents/ownServers.css',
+      'src/renderer/src/agents/serverMark.css',
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/hostUpdates.css',
       'src/renderer/src/features/updates/updateAll.css',
@@ -350,6 +351,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/components/listeningBars.css',
       'src/renderer/src/features/dictate/dictate.css',
       'src/renderer/src/features/usage/usage.css',
+    'src/renderer/src/features/council/council.css',
       'src/renderer/src/features/performance/mainActivity.css',
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',
@@ -364,6 +366,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/tools/tools.css',
       'src/renderer/src/tools/toolsRail.css',
       'src/renderer/src/tools/paneTerminal.css',
+      'src/renderer/src/popup/popup.css',
     ]
     for (const path of owned) {
       const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')

@@ -17,7 +17,7 @@ import { useDelegationsEnabled } from '../agents/delegations'
 import type { AgentContinueOptions } from './AgentContinue'
 import { useThreadStarts } from '../agents/ThreadStart'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
-import { TOOLS_OPENER } from './toolsMenu'
+import { TOOLS_PANEL_ID } from './ToolsToggle'
 import { offersBabysitting } from '../agents/babysitting'
 import { useRestartStopped } from '../agents/RestartStopped'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -57,7 +57,6 @@ import {
 import './tools.css'
 import './toolsRail.css'
 
-const TOOLS_PANEL_ID = 'sotto-tools-panel'
 const FEEDBACK_MS = 1_600
 const RESIZE_STEP = 24
 const OVERLAY_GUTTER = 48
@@ -104,9 +103,9 @@ function workspaceArea(panel: HTMLElement | null): HTMLElement | null {
   return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-player') && !child.classList.contains('browser-player-pill') && !child.classList.contains('phone-player')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
 }
 
-/** Back to the More button whose menu opened the panel: the focused pane's, the one that lists Tools (ADR-0163). */
+/** Back to the Tools symbol in the focused pane's header, the pane whose thread the panel follows (ADR-0182). */
 function focusToggle(): void {
-  document.querySelector<HTMLElement>(`[data-opens="${TOOLS_OPENER}"]`)?.focus()
+  (document.querySelector<HTMLElement>(`.thread-pane[data-focused] [aria-controls="${TOOLS_PANEL_ID}"]`) ?? document.querySelector<HTMLElement>(`[aria-controls="${TOOLS_PANEL_ID}"]`))?.focus()
 }
 
 /**

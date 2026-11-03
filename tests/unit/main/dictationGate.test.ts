@@ -20,14 +20,19 @@ function os(refuse: string[] = []) {
   return { adapter, live }
 }
 
-function listener(): KeyListener & { watched: () => readonly string[] } {
+function listener(): KeyListener & { watched: () => readonly string[]; chords: () => readonly string[] } {
   let watched: readonly string[] = []
+  let chords: readonly string[] = []
   return {
-    watch: vi.fn((tokens: readonly string[]) => { watched = tokens }),
+    watch: vi.fn((tokens: readonly string[], keyChords: readonly string[] = []) => {
+      watched = tokens
+      chords = keyChords
+    }),
     record: vi.fn(), request: vi.fn(), running: () => watched.length > 0, ready: () => true,
     permission: () => 'granted', dispose: vi.fn(),
     watched: () => watched,
-  } as KeyListener & { watched: () => readonly string[] }
+    chords: () => chords,
+  } as KeyListener & { watched: () => readonly string[]; chords: () => readonly string[] }
 }
 
 describe('dictation gate', () => {
@@ -66,16 +71,19 @@ describe('dictation gate', () => {
     const inner = listener()
     const gate = createDictationGate(os().adapter, true)
     const gated = gate.listener(inner)
-    gated.watch(['Fn'])
-    expect(inner.watched()).toEqual(['Fn'])
+    gated.watch(['Fn', 'Space'], ['Fn+Space'])
+    expect(inner.watched()).toEqual(['Fn', 'Space'])
+    expect(inner.chords()).toEqual(['Fn+Space'])
 
     gate.set(false)
     expect(inner.watched()).toEqual([])
-    gated.watch(['Fn', 'RightCommand'])
+    expect(inner.chords()).toEqual([])
+    gated.watch(['Fn', 'Shift', 'D'], ['Fn+Shift+D'])
     expect(inner.watched()).toEqual([])
 
     gate.set(true)
-    expect(inner.watched()).toEqual(['Fn', 'RightCommand'])
+    expect(inner.watched()).toEqual(['Fn', 'Shift', 'D'])
+    expect(inner.chords()).toEqual(['Fn+Shift+D'])
   })
 
   it('starts no key listener recording while off', () => {

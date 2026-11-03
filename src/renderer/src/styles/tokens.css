@@ -188,12 +188,12 @@
   --tt-text: color-mix(in oklab, color-mix(in oklab, var(--theme-text) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
   --tt-text-2: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
   --tt-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
-  /* The prompt's hint (its placeholder): the muted tier drawn from the theme's own Muted text role rather than its muted
-     foreground. An Omarchy theme can lift the muted foreground all the way to the body text so Changes' line numbers
-     read on its selected rows, and a hint in body ink reads as typed words. In most built-in themes the two roles are
-     one colour. High Contrast lifts it at half strength, so at the top step it stays dimmer than typed words, which go
-     to pure white (or black) there. */
-  --tt-text-hint: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text-muted) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-hint-boost));
+  /* The prompt's hint (its placeholder): the theme's own Placeholder role, the ink every other field's placeholder takes.
+     It was the Muted text role, but a theme can draw its muted text close to its body text (Vellum Night's sits at
+     7.7:1 on the composer card, against the body's 12:1), and a hint that bright reads as typed words (Drake, November
+     2, 2026). High Contrast lifts it at half strength, so at the top step it stays dimmer than typed words, which go to
+     pure white (or black) there. */
+  --tt-text-hint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-hint-boost));
   --tt-text-faint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
 
   /* Boundaries: `border` draws rules, `input` outlines fields, and the

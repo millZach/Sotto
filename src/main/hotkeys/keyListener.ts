@@ -31,7 +31,8 @@ export interface KeyListenerOptions {
 }
 
 export interface KeyListener {
-  watch(tokens: readonly string[]): void
+  /** The keys to report, and the shortcuts whose key is kept from the app in front (macOS, with Accessibility). */
+  watch(tokens: readonly string[], chords?: readonly string[]): void
   record(on: boolean): void
   request(): void
   running(): boolean
@@ -46,6 +47,7 @@ const RESTART_WINDOW_MS = 60_000
 const MAX_RESTARTS = 3
 const MAX_BUFFERED_CHARS = 4_096
 const TOKEN_PATTERN = /^[A-Za-z0-9]+$/
+const CHORD_PATTERN = /^[A-Za-z0-9]+(?:\+[A-Za-z0-9]+)*$/
 
 interface Session {
   readonly child: KeyListenerChild
@@ -64,6 +66,7 @@ export function createKeyListener(options: KeyListenerOptions): KeyListener {
 
   let session: Session | null = null
   let tokens: string[] = []
+  let chords: string[] = []
   let recording = false
   let permission: KeyListenerPermissionState = 'unknown'
   let restarts: number[] = []
@@ -183,6 +186,7 @@ export function createKeyListener(options: KeyListenerOptions): KeyListener {
       return
     }
     send(target, `keys ${tokens.join(' ')}`.trimEnd())
+    send(target, `swallow ${chords.join(' ')}`.trimEnd())
     if (recording) send(target, 'record on')
   }
 
@@ -199,11 +203,15 @@ export function createKeyListener(options: KeyListenerOptions): KeyListener {
   }
 
   return {
-    watch(next) {
+    watch(next, nextChords = []) {
       if (disposed) return
       tokens = next.filter((token) => TOKEN_PATTERN.test(token))
+      chords = nextChords.filter((chord) => CHORD_PATTERN.test(chord))
       rearm()
-      if (session !== null && wanted()) send(session, `keys ${tokens.join(' ')}`.trimEnd())
+      if (session !== null && wanted()) {
+        send(session, `keys ${tokens.join(' ')}`.trimEnd())
+        send(session, `swallow ${chords.join(' ')}`.trimEnd())
+      }
       sync()
     },
 

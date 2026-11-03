@@ -6,6 +6,8 @@ Accepted October 31, 2026, by Zach's picks on `docs/prototypes/inline-media-prot
 
 **Amended November 1, 2026: request-only** (below). An agent's pictures and videos now show only when the user asked for them: decisions 3, 10, 11 and 12 no longer capture on their own, and `sotto_media`'s show_in_thread is how an agent shows one.
 
+**Amended November 2, 2026: callouts (part 6)** (below), by Zach's picks on `docs/prototypes/inline-media-callouts-prototype.html`.
+
 Amends [ADR-0031](0031-images-are-staged-once-and-carried-by-handle.md): a second store, kept the same way, holds the pictures an agent made. Leaves [ADR-0056](0056-an-agent-can-draw-a-visual-in-its-thread.md)'s visuals as they are.
 
 ## Context
@@ -78,6 +80,16 @@ Mark up keeps the request-only rule (R1 to R3). It is the user's own act: a mark
 
 **18. The copy is made where the picture already is.** On the desktop the copy is the full picture the viewer holds, drawn on a canvas at its own size and sent as a PNG, so a 1920x1200 screenshot goes in at 1920x1200 before the reply box's usual resizing. On the iPhone it is the picture the viewer holds, at most 2048 pixels on its longer side, so marking asks the computer for nothing more. The editor reads nothing either: it draws the viewer's picture. A pen's pressure widens its line on both. On the iPhone, once an Apple Pencil has drawn, or when Only Draw with Apple Pencil is on, the pen draws and a finger moves and zooms the picture, until **Draw with a finger too** says otherwise. From the desktop's keyboard, A, O, B, P and T pick a tool, the picture takes focus and Enter starts a mark at a cross the arrow keys move, and Enter ends it; Ctrl+Z, Ctrl+Shift+Z and Ctrl+Enter (Command on a Mac) undo, redo and add, unless the dictation hotkey holds the chord.
 
+## Callouts (part 6), November 2, 2026
+
+Zach's picks on November 2, on `docs/prototypes/inline-media-callouts-prototype.html`, built on the page he picked from on October 31: option 2, a tile draws the callouts' boxes and pins as well as their count, where layout B had shown the count alone; and the editor's **Show** and **Keep the callouts in the copy**, both on by default.
+
+**19. An agent places callouts with the pictures it shows.** `show_in_thread` takes up to 12 callouts beside its paths, each naming one of the call's pictures as `paths` names it, a box in that picture's own pixels (`x` and `y` from its top left, `width` and `height`) and a note of up to 200 characters. Each is kept on its picture's handle as shares of the picture's width and height, to four places, so it lands in the same place on a tile, in the viewer and on the iPhone at any size; they are numbered across the call, by the pictures' order and then the order given. A box partly off the picture is cut to it. A callout whose picture was not shown, is a video or has no size Sotto read, or whose box lies outside the picture, is not placed, and the tool's answer names each with why; the pictures still show. Callouts keep the request-only rule (R1 to R3): they come only with a picture the agent shows because the user asked, and Sotto places none of its own. They are text on the handle, at most 12 notes of 200 characters a call and never bytes; the record's change signature counts them, the iPhone is sent them with the handle, and a client from before this part shows the picture without them.
+
+**20. Drawn the same everywhere, in the theme's accent.** A callout is a dashed box with a pin at its top left carrying its number, the accent and the colour that reads on it (`--tt-accent` and `--tt-on-accent`, the accent and on-accent roles on the iPhone). A tile draws its picture's callouts over the picture where it sits in the tile, their lines and pins a fixed size on screen, and their count in its corner, and names them in its accessible name ("with 2 callouts"). The viewer draws them over the picture, moving and zooming with it, and lists their notes beside it under "Callouts from" and the turn's provider, or Watcher; in a pane narrower than 640 pixels the list is under the picture. The iPhone lists them under the full-screen picture.
+
+**21. The editor keeps them unless asked not to.** The mark-up editor draws a picture's callouts under the user's marks and lists them above the user's own, with **Show**, which hides them while marking, and **Keep the callouts in the copy**, both on. A copy made while both are on has them drawn on it at the picture's size, under the marks, as the editor showed them; with them kept, **Add to reply** works before the user has drawn anything. A callout hidden by **Show** is never in the copy, so **Keep** follows it. On the iPhone the same two switches are under the picture, as **Show callouts** and **Keep the callouts in the copy**.
+
 ## Consequences
 
 - A thread's pictures cost disk, at most 1 GiB, while history is kept. Deleting a thread does not let its pictures go at once; they go as newer ones take their place, or all at once when history is turned off.
@@ -91,3 +103,6 @@ Mark up keeps the request-only rule (R1 to R3). It is the user's own act: a mark
 - Since the request-only amendment, a thread shows an agent's picture only when the agent calls show_in_thread or generates an image. An agent that ignores its instructions can still show a picture unasked, but only by naming it on purpose, one call at a time; nothing is shown as a side effect of a tool.
 - A marked copy is a new attachment: the agent sees the marks, never the marks as data, and once it is sent it is a sent image like any other. Marks can't be taken back off a copy already added; Undo works only while the editor is open.
 - Mark up adds nothing to a thread until it is opened: no state, no reads and no work on the update path.
+- An agent places callouts only in the call that shows the picture. To move one or add another, it shows the picture again with the callouts it wants, which is a new step; the first step keeps its own.
+- A callout's note is the agent's words, shown as it wrote them and never translated, as its step's title is.
+- A tile with callouts shows its picture whole at its own shape, even a picture smaller than the tile, so the boxes land on it; a tile without them shows the picture as before.

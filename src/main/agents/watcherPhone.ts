@@ -405,6 +405,9 @@ export class WatcherPhoneService {
   }
   subscribe(listener: () => void): () => void { return this.watcher.subscribe(listener) }
   get(mayAnswer: boolean, standing = true, steer = false): WatcherPhoneResult { return { status: 'ok', state: this.state(mayAnswer, standing, steer) } }
-  /** The phone listener's answer to whether a paired phone is still paired and admitted, while it runs (#1229). Returns the release. */
-  useAdmission(admits: (clientId: string) => boolean): () => void { return this.control.useWatcherPhoneAdmission(admits) }
+  /**
+   * A listener's answer to whether a paired phone is still paired and admitted, while it runs (#1229), or nothing for a
+   * client it leaves to another listener. Returns the release.
+   */
+  useAdmission(admits: (clientId: string) => boolean | undefined): () => void { return this.control.useWatcherPhoneAdmission(admits) }
 }

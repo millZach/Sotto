@@ -290,6 +290,19 @@ msgstr ""
 msgid "A contributed color theme is missing or outside the extension; nothing was imported."
 msgstr ""
 
+#: src/main/council/councilIpc.ts
+msgid "A Council starts from a thread on this computer."
+msgstr ""
+
+#: src/main/council/councilIpc.ts
+#: src/main/council/councilService.ts
+msgid "A Council starts from a thread on this computer. Choose one of this computer's threads. Nothing was started."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "A Council starts from an ordinary thread, not Watcher. Nothing was started."
+msgstr ""
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect."
 msgstr ""
@@ -316,6 +329,14 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "A remote host address must use HTTPS. Nothing was saved."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "A seat's model is not ready: its provider is not connected. Choose another model for it, then ask again. Nothing was started."
+msgstr ""
+
+#: src/main/council/councilSnapshot.ts
+msgid "A submodule in the thread's folder has uncommitted changes, and a snapshot can't carry them. Commit them inside the submodule, then ask again. Nothing was started."
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -691,6 +712,10 @@ msgstr ""
 msgid "Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts."
 msgstr ""
 
+#: src/main/council/councilSnapshot.ts
+msgid "Git could not take a snapshot of the thread's folder. Nothing was started. Ask the Council again."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Git history or staging changed after this checkpoint. Preserve those changes before reverting."
 msgstr ""
@@ -890,7 +915,12 @@ msgstr ""
 
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
+#: src/main/phones/ipc.ts
 msgid "Open Settings in the main Sotto window."
+msgstr ""
+
+#: src/main/council/councilIpc.ts
+msgid "Open the Council in the main Sotto window."
 msgstr ""
 
 #: src/main/agents/usageIpc.ts
@@ -1063,6 +1093,10 @@ msgstr "Ustawienia…"
 msgid "Setup stopped before it finished. Try again, or remove it in Settings › Dictation."
 msgstr ""
 
+#: src/main/tray/trayController.ts
+msgid "Show popup"
+msgstr ""
+
 #: src/main/app/applicationMenu.ts
 #: src/main/tray/trayController.ts
 msgid "Show recent turn records"
@@ -1130,6 +1164,10 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto could not install {to} on {name}."
+msgstr ""
+
+#: src/main/popup/popup.ts
+msgid "Sotto could not open the popup's thread. Check its host's connection in Settings, then choose the thread again."
 msgstr ""
 
 #: src/main/notifications/openNotificationThread.ts
@@ -1264,6 +1302,10 @@ msgstr ""
 msgid "Sotto is changing whether the host on {host} starts at boot. Nothing was changed. Wait for it to finish, then try again."
 msgstr ""
 
+#: src/main/council/councilService.ts
+msgid "Sotto is closing. Nothing was changed."
+msgstr ""
+
 #: src/main/hosts/desktopHosts.ts
 msgid "Sotto is closing. Nothing was checked."
 msgstr ""
@@ -1274,6 +1316,10 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto is updating the host on {host}. Nothing was changed. Wait for the update to finish, then try again."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "Sotto keeps {RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -1424,6 +1470,10 @@ msgstr ""
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 msgstr ""
 
+#: src/main/council/councilService.ts
+msgid "That Council is no longer here."
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "That element changed. Use Region to comment on the saved screenshot, or capture it again."
 msgstr ""
@@ -1449,8 +1499,24 @@ msgstr ""
 msgid "That model is not ready on this computer. Choose another one. Nothing was started."
 msgstr ""
 
+#: src/main/council/councilService.ts
+msgid "That model is not ready: its provider is not connected. Choose another. Nothing was changed."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "That row has nothing to do now. Nothing was changed."
+msgstr ""
+
 #: src/main/themes/ipc.ts
 msgid "That theme could not be exported."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "That thread has no folder Sotto can take a snapshot of. Nothing was started."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "That thread is not on this computer."
 msgstr ""
 
 #: src/main/notifications/desktopNotifier.ts
@@ -1635,6 +1701,10 @@ msgstr ""
 
 #: src/main/themes/openVsx.ts
 msgid "The extension uses a ZIP format Sotto does not read."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "The framing can change only after it is in and before the verdict, and only to something new. Nothing was changed."
 msgstr ""
 
 #. Stands in for a saved host’s name at the start of a sentence: “The host did not answer…”.
@@ -1991,6 +2061,10 @@ msgstr ""
 msgid "The plugin folder is not a folder. Sotto left it alone."
 msgstr ""
 
+#: src/main/popup/popup.ts
+msgid "The popup's thread is no longer available. Choose another thread or start a new one."
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "The previous owl folder changed. Sotto left it alone. Restore it before trying again."
 msgstr ""
@@ -2179,6 +2253,18 @@ msgstr ""
 msgid "The thread for this notification is no longer available. Choose another thread or start a new one."
 msgstr ""
 
+#: src/main/council/councilSnapshot.ts
+msgid "The thread's branch has characters in its name a snapshot cannot carry. Rename the branch, then ask again. Nothing was started."
+msgstr ""
+
+#: src/main/council/councilSnapshot.ts
+msgid "The thread's folder is not a Git repository, so the Council has no snapshot to work in. Nothing was started."
+msgstr ""
+
+#: src/main/council/councilSnapshot.ts
+msgid "The thread's folder is not on a branch. Check out a branch, then ask the Council again. Nothing was started."
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "The threads to dismiss could not be read."
 msgstr ""
@@ -2315,6 +2401,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This computer's OpenSSH is version {version}, which is too old. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then reconnect."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "This Council has stopped, so it takes no follow-up. Ask a new Council instead."
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -2819,6 +2909,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "Wait for the pending host request to finish. Nothing was saved."
+msgstr ""
+
+#: src/main/council/councilService.ts
+msgid "Wait for the verdict and its fairness check before asking a follow-up."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts

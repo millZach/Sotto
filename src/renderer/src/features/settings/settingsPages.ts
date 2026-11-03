@@ -22,6 +22,8 @@ export const SETTINGS_PAGES = [
   settingsPage('settings-keyboard', msg({ message: 'Keyboard', comment: 'A Settings page, named in its rail and its heading: the keyboard shortcuts for working in threads. Other messages name it as "Settings > Keyboard".' }), 1),
   settingsPage('settings-git', msg({ message: 'Git & worktrees', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".' }), 1),
   settingsPage('settings-watcher', 'Watcher', 1),
+  // The Council (ADR-0177), an Owl feature: directly below Watcher, shown only while the Owl list turns `council` on.
+  settingsPage('settings-council', msg({ message: 'Council', comment: 'A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".' }), 1),
   settingsPage('settings-providers', msg({ message: 'Providers', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".' }), 2),
   settingsPage('settings-hosts', msg({ message: 'Hosts & phones', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Hosts & phones".' }), 2),
   settingsPage('settings-cloud-iphone', msg({ message: 'Cloud iPhone', comment: 'A Settings page, named in its rail and its heading: a simulated iPhone on run.cloud. Other messages name it as "Settings > Cloud iPhone".' }), 2),
@@ -63,7 +65,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'thread-tips' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'thread-tips' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -160,6 +162,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'clear-settled-threads-after', label: msg`Clear settled threads after`, section: 'settings-agents', words: 'delete old threads history automatically', gate: 'clear-threads' },
     { id: 'clear-threads-now', label: msg`Clear now`, section: 'settings-agents', words: 'delete old settled threads history', gate: 'clear-threads' },
 
+    { id: 'popup-shortcut', label: msg`Popup shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey popup prompt floating global', gate: 'popup' },
     { id: 'shortcut-page-dictate', label: msg`Dictate page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages room dictate', gate: 'dictation' },
     { id: 'shortcut-page-watcher', label: msg`Watcher page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages room watcher', gate: 'watcher' },
     { id: 'shortcut-page-threads', label: msg`Threads page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages room threads' },
@@ -211,6 +214,10 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'worker-counts', label: msg`Workers`, section: 'settings-watcher', words: 'swarm angles usual up to how many count research parallel', fallback: 'worker-roles', gate: 'worker-swarms' },
     { id: 'worker-ceiling', label: msg`Most working at once`, section: 'settings-watcher', words: 'worker capacity ceiling limit queue wait concurrent machine', gate: 'worker-swarms' },
 
+    { id: 'council-panel', label: msg`Council panel`, section: 'settings-council', words: 'panelists chair models seats council', gate: 'council' },
+    { id: 'council-layout', label: msg`Council layout`, section: 'settings-council', words: 'chamber long table half circle round table', gate: 'council' },
+    { id: 'council-deadline', label: msg`Stage deadline`, section: 'settings-council', words: 'council minutes wait retry', gate: 'council' },
+
     { id: 'own-model-servers', label: msg`Your own model servers`, section: 'settings-providers', words: 'local self-hosted ollama lm studio vllm sglang llama.cpp tailnet opencode add server', gate: 'own-model-servers' },
     { id: 'thread-providers', label: msg`Thread providers`, section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
     { id: 'client-updates', label: msg`Check for client updates`, section: 'settings-providers', words: 'agent clients' },
@@ -222,6 +229,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'phone-access', label: msg`Let phones connect`, section: 'settings-phones', words: 'iphone' },
     { id: 'phone-name', label: msg`Name on phones`, section: 'settings-phones', words: 'iphone' },
     { id: 'phone-pairing', label: msg`Pairing code`, section: 'settings-phones', words: 'pair iphone' },
+    { id: 'local-apps', label: msg`Let apps on this computer connect`, section: 'settings-hosts', words: 'agent popup menu bar token loopback', gate: 'local-apps' },
     { id: 'cloud-iphone-key', label: msg`run.cloud key`, section: 'settings-cloud-iphone', words: 'cloud iphone' },
     { id: 'cloud-iphone-cap', label: msg`Monthly cap`, section: 'settings-cloud-iphone', words: 'minutes spending cloud iphone' },
     { id: 'cloud-iphone-idle', label: msg`Idle sessions end after`, section: 'settings-cloud-iphone', words: 'cloud iphone' },

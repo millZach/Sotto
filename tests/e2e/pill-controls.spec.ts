@@ -27,7 +27,9 @@ test('the idle pill starts dictation and keeps its controls inside the capsule',
     await expect(widget.getByRole('button', { name: 'Stop dictation' })).toBeVisible()
     await widget.screenshot({ animations: 'disabled', path: join(evidence, 'pill-listening-controls.png') })
     expect(await widget.locator('.widget-capsule').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
-    await widget.getByRole('button', { name: 'Cancel dictation' }).click()
+    // Escape cancels on Windows and macOS, so the pill carries Stop alone.
+    await expect(widget.getByRole('button', { name: 'Cancel dictation' })).toHaveCount(0)
+    await widget.evaluate(() => window.sottoWidget!.requestCancel())
     await expect(widget.getByTestId('listening-bars')).toHaveCount(0)
   } finally { await closeSotto(launched) }
 })

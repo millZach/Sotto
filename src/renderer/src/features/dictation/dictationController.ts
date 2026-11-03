@@ -24,6 +24,7 @@ import type {
   TranscriptPolishAsrContext,
   TranscriptPolishResult,
 } from '../../../../shared/contracts'
+import { startShortcut } from '../../../../shared/dictationShortcuts'
 import { defaultHotkey, type SottoPlatform } from '../../../../shared/platform'
 import { defaultSettings, type AppSettings } from '../../../../shared/settings'
 import { widgetPresentationFor } from '../../../../shared/themeBranding'
@@ -311,7 +312,7 @@ export class DictationController {
       const publication = this.dependencies.publishWidgetState({
         status: 'idle',
         ...cachedWidgetPresentation(settings),
-        shortcut: settings.hotkey,
+        shortcut: startShortcut(settings),
         cancellable: false,
       })
       void Promise.resolve(publication).catch(() => undefined)
@@ -942,7 +943,7 @@ export class DictationController {
     }
     const metadata = {
       ...cachedWidgetPresentation(presented),
-      shortcut: session.settings.hotkey,
+      shortcut: startShortcut(session.settings),
       cancellable: session.cancellable && this.isCancellableState(),
     } as const
     const state = this.state
