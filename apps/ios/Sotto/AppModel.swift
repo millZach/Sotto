@@ -1611,6 +1611,8 @@ struct RailAsk: Equatable {
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
             if id == "settings" || id == "notes" { row["settledAt"] = date }
+            // Settled by the user rather than by age, so its long press offers Restore.
+            if id == "notes" { row["workspaceSettledAt"] = date }
             threads[host, default: []].append(row)
             fixtureDetails[host + "/" + id] = decode(ThreadDetail.self, ["threadId": id, "revision": 1,
                 "messages": [["id": "prompt", "role": "user", "text": title + ". Keep the changes focused."],
@@ -2562,12 +2564,21 @@ struct RailAsk: Equatable {
     /// settled on its own. One settled with its project, or one its provider closed, offers neither.
     func shelfAction(_ ref: ThreadRef) -> ShelfAction? {
         guard let thread = self.thread(ref) else { return nil }
-        let project = live[ref.hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
+        return shelfAction(thread, hostID: ref.hostID)
+    }
+    private func shelfAction(_ thread: ThreadSummary, hostID: String) -> ShelfAction? {
+        let project = live[hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
         if project?.workspaceSettledAt?.isEmpty == false { return nil }
         if thread.workspaceSettledAt?.isEmpty == false { return .restore }
         return ThreadGroups.isSettled(thread, project: project) ? nil : .settle
     }
     enum ShelfAction { case settle, restore }
+    /// What a list row's long press offers for the shelf, read from the row's own thread so a whole list doesn't search the
+    /// threads once per row, and whether its computer can take it now.
+    func shelfOffer(_ row: HostedThread) -> ShelfOffer? {
+        shelfAction(row.thread, hostID: row.ref.hostID).map { ShelfOffer(action: $0, held: actionHeld(row.ref) != nil) }
+    }
+    struct ShelfOffer: Equatable { let action: ShelfAction; let held: Bool }
     /// The Undo the banner offers: the thread must still stand where the press put it. One moved on another device, or
     /// held back from a new connection and not read here, has nothing to take back.
     var shelfUndoOffered: ShelfUndo? { shelfUndo.flatMap { shelfAction($0.ref) == $0.action ? $0 : nil } }

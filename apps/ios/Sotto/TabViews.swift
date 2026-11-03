@@ -222,9 +222,10 @@ struct ThreadsView: View {
                 let watched = model.watchedThreadIDs
                 let row = { (row: HostedThread) in
                     ThreadListRow(row: row, kind: .recent(unread: groups.isUnreadFinish(row)), watched: watched.contains(row.id), chosen: false,
-                                  canWatch: model.canChangeWatch(row.ref), identifier: "thread-",
+                                  canWatch: model.canChangeWatch(row.ref), shelf: model.shelfOffer(row), identifier: "thread-",
                                   open: { open(row.ref) },
-                                  setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+                                  setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
+                                  shelve: { action in Task { await model.shelve(row.ref, action) } })
                         .equatable()
                 }
                 ForEach(shelfRows(groups.settled, shelf, groups)) { row($0) }
@@ -841,17 +842,10 @@ struct CardPermissionButtons: View {
 
 // MARK: - Working now
 
-/// Settle or Restore in a row's long-press menu, as in a thread's •••. It acts at once, and the banner that confirms it
-/// offers Undo (#1859).
+/// The shelf's button for a card or row that reads the model itself.
 @MainActor @ViewBuilder private func shelfMenuButton(_ model: AppModel, _ ref: ThreadRef) -> some View {
     if let action = model.shelfAction(ref) {
-        Button { Task { await model.shelve(ref, action) } } label: {
-            Label(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
-                  : String(localized: "Restore", comment: "Restore a settled thread to open work."),
-                  systemImage: action == .settle ? "archivebox" : "tray.and.arrow.up")
-        }
-        .disabled(model.actionHeld(ref) != nil)
-        .accessibilityIdentifier(action == .settle ? "row-settle" : "row-restore")
+        shelfMenuButton(action, held: model.actionHeld(ref) != nil) { Task { await model.shelve(ref, action) } }
     }
 }
 

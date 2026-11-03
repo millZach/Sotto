@@ -654,9 +654,10 @@ struct ThreadListSections: View, Equatable {
         // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
         let marked = chosen.map { groups.rowID(for: $0) == row.id } ?? false
         return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: marked,
-                             canWatch: model.canChangeWatch(row.ref), identifier: identifier,
+                             canWatch: model.canChangeWatch(row.ref), shelf: kind == .needs ? nil : model.shelfOffer(row), identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
-                             setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+                             setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
+                             shelve: { action in Task { await model.shelve(row.ref, action) } })
             .equatable()
     }
     /// It draws from the model it watches and these: the rows' threads, which section each is in, who asks, the chosen
@@ -682,6 +683,18 @@ struct ThreadListSections: View, Equatable {
             ForEach(rows) { row($0) }
         }
     }
+}
+
+/// Settle or Restore in a row's long-press menu, as in a thread's •••. It acts at once, and the banner that confirms it
+/// offers Undo (#1859).
+@MainActor func shelfMenuButton(_ action: AppModel.ShelfAction, held: Bool, press: @escaping () -> Void) -> some View {
+    Button(action: press) {
+        Label(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+              : String(localized: "Restore", comment: "Restore a settled thread to open work."),
+              systemImage: action == .settle ? "archivebox" : "tray.and.arrow.up")
+    }
+    .disabled(held)
+    .accessibilityIdentifier(action == .settle ? "row-settle" : "row-restore")
 }
 
 /// A section's quiet heading in the thread list: its name and how many threads it holds.
@@ -715,14 +728,18 @@ struct ThreadListRow: View, Equatable {
     let watched: Bool
     let chosen: Bool
     let canWatch: Bool
+    /// Settle or Restore in its long-press menu. A Needs you row offers neither, as its card never did: settling leaves
+    /// its question waiting, and the row where it stands.
+    let shelf: AppModel.ShelfOffer?
     let identifier: String
     let open: () -> Void
     let setWatched: (Bool) -> Void
+    let shelve: (AppModel.ShelfAction) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
     /// What the row draws: the thread's title, state, place and times, its section, light and chip.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
         lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
-            && lhs.canWatch == rhs.canWatch && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
+            && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
     }
@@ -773,11 +790,14 @@ struct ThreadListRow: View, Equatable {
     }
     var body: some View {
         let _ = BenchProbe.body("ThreadListRow")
-        if canWatch {
+        if canWatch || shelf != nil {
             button.contextMenu {
-                Button { setWatched(!watched) } label: {
-                    Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                if canWatch {
+                    Button { setWatched(!watched) } label: {
+                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    }
                 }
+                if let shelf { shelfMenuButton(shelf.action, held: shelf.held) { shelve(shelf.action) } }
             }
         } else {
             button
