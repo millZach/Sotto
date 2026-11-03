@@ -205,6 +205,7 @@ it('delivers a brief to a delegated thread whose last turn was stopped, or cut s
   // Sotto restarts while that brief's turn runs, and the provider reports it cut short.
   await f.restart()
   await f.endTurn(child, 'Synthetic cut-short reply', 'interrupted')
+  await f.control.command({ type: 'observe-threads', threadIds: [child] })
   expect(f.ok(await f.read(parent, second.delegation.id)).delegation.outcome).toBe('stopped')
   const third = f.ok(await f.delegate(parent, { thread: child, brief: 'Synthetic brief after a restart', wait_seconds: 0 }))
   expect(third.delegation.outcome).not.toBe('paused')

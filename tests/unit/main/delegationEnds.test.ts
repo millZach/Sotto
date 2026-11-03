@@ -165,6 +165,27 @@ it.each(['absent', 'brief-only', 'unrelated'] as const)('keeps restart uncertain
   expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown' } })
   expect(await f.delegation.read('parent', {})).toMatchObject({ delegations: [{ outcome: 'unknown' }] })
   expect(f.told).toHaveLength(1)
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.command).not.toHaveBeenCalled()
+  f.delegation.close()
+})
+
+it('waits for history, then retries restart proof on reconnect after an attempt found none', async () => {
+  const lost = brief({})
+  const child = thread('child', { historyStatus: 'loading', messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }] })
+  const f = await service([lost], [thread('parent'), child], true)
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
+  child.historyStatus = 'ready'; f.hooks.observe(f.snapshot)
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  child.lastTurn = { id: lost.messageId, status: 'completed' }
+  // New history alone does not keep a restart unknown on the per-snapshot observation path.
+  f.hooks.observe(f.snapshot)
+  expect(f.delegation.views('parent').made[0]?.outcome).toBe('unknown')
+  f.snapshot.connected = false; f.hooks.observe(f.snapshot)
+  expect(f.hooks.observedThreadIds()).toEqual(['child'])
+  f.snapshot.connected = true; f.hooks.observe(f.snapshot)
+  expect(f.delegation.views('parent').made[0]?.outcome).toBe('answered')
+  expect(f.hooks.observedThreadIds()).toEqual([])
   expect(f.command).not.toHaveBeenCalled()
   f.delegation.close()
 })
@@ -225,7 +246,7 @@ it('ends the briefs of a delegated thread that is gone, stops looking at them an
 
 it('stops looking for restart evidence after the delegated thread is deleted', async () => {
   const lost = brief({})
-  const f = await service([lost], [thread('parent'), thread('child')], true)
+  const f = await service([lost], [thread('parent'), thread('child', { clientConnected: false })], true)
   expect(f.hooks.observedThreadIds()).toEqual(['child'])
   f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== 'child')
   f.hooks.observe(f.snapshot)

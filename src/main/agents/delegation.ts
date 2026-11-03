@@ -520,6 +520,9 @@ export class DelegationService {
   private readonly queuedBriefs = new Map<string, string>()
   /** Threads whose user's own turn pauses delegated sends until it ends (decision 6). */
   private readonly paused = new Set<string>()
+  /** Restart proof is checked once connected, then only on a provider reconnect or an explicit read. */
+  private readonly restartPending = new Set<string>()
+  private restartConnections: string | undefined
   /** Delegations a `delegate` call is still answering: their news goes in the call's result, not a wake-up. */
   private readonly calling = new Set<string>()
   private readonly waiters = new Map<string, Set<() => void>>()
@@ -643,6 +646,8 @@ export class DelegationService {
     this.options.remote?.useDelivery((callerId, news, replies) => this.options.relayedCallers?.caller(callerId)
       ? this.options.relayedCallers.tell(callerId, news, replies)
       : this.options.control.deliverWakeUp(callerId, news, { tool: this.options.tool?.(callerId) ?? false }))
+    // Register the startup candidates before the coordinator asks which histories to load.
+    for (const record of this.records) if (this.restarted(record)) this.restartPending.add(record.id)
     this.unhook = this.options.control.useDelegation({
       userCommand: (command, threadId, answersQuestion) => this.userCommand(command, threadId, answersQuestion),
       observe: (snapshot, threads) => this.observe(snapshot, threads),
@@ -2295,7 +2300,7 @@ export class DelegationService {
       && !isThreadTurnRunning(thread) && !this.options.control.hasPendingThreadWork(thread.id)
   }
   private observedThreadIds(): string[] {
-    return [...new Set([...this.records.filter(record => this.open(record) || this.restarted(record)).map(record => record.delegatedThreadId), ...this.paused])]
+    return [...new Set([...this.records.filter(record => this.open(record) || this.restarted(record) && this.restartPending.has(record.id)).map(record => record.delegatedThreadId), ...this.paused])]
   }
   /**
    * One pass over the coordinator's snapshot: each open brief's outcome from its thread, pauses whose turn has ended, and
@@ -2306,6 +2311,13 @@ export class DelegationService {
    */
   private observe(snapshot: AgentHostSnapshot, view?: HostThreadsView): void {
     if (this.closed) return
+    const connections = JSON.stringify([snapshot.connected, snapshot.providers?.map(provider => [provider.id, provider.connection])])
+    let observationChanged = connections !== this.restartConnections
+    if (observationChanged) {
+      this.restartConnections = connections
+      this.restartPending.clear()
+      for (const record of this.records) if (this.restarted(record)) this.restartPending.add(record.id)
+    }
     this.options.swarms?.admission.refresh(THIS_COMPUTER)
     if (this.options.swarms && this.activeSwarms.size) {
       let listedLeads: Map<string, AgentThread> | undefined
@@ -2324,9 +2336,12 @@ export class DelegationService {
         }
       }
     }
-    const open = this.records.filter(record => this.open(record) || this.restarted(record))
+    const open = this.records.filter(record => this.open(record) || this.restarted(record) && this.restartPending.has(record.id))
     if (this.untold.size) this.scheduleNews()
-    if (!open.length && !this.paused.size) return
+    if (!open.length && !this.paused.size) {
+      if (observationChanged) this.options.control.refreshDelegationObservation()
+      return
+    }
     let listed: Map<string, AgentThread> | undefined
     const threads: Pick<ReadonlyMap<string, AgentThread>, 'get'> = view
       ? { get: id => view.thread(id) }
@@ -2341,11 +2356,14 @@ export class DelegationService {
     for (const record of open) {
       const thread = threads.get(record.delegatedThreadId)
       if (!thread) {
+        if (this.restartPending.delete(record.id)) observationChanged = true
         if (this.gone(record)) changed = true
         continue
       }
       if (!isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
       if (this.restarted(record)) {
+        if (thread.historyStatus === 'loading') continue
+        this.restartPending.delete(record.id); observationChanged = true
         if (this.observeOutcome(record, thread, messageId => briefs.has(messageId) || isWakeUpOf(thread, messageId))) changed = true
         continue
       }
@@ -2369,7 +2387,8 @@ export class DelegationService {
       if (this.observeOutcome(record, thread, messageId => briefs.has(messageId) || isWakeUpOf(thread, messageId))) changed = true
     }
     if (this.releaseHeld(snapshot, threads)) changed = true
-    if (changed) { void this.persist(); this.options.control.refreshDelegationObservation() }
+    if (changed) void this.persist()
+    if (changed || observationChanged) this.options.control.refreshDelegationObservation()
   }
   /** A read can find history before the next provider observation. It uses the same proof and change paths. */
   private reconsiderRestarted(record: DelegationRecord): boolean {

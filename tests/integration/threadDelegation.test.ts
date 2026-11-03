@@ -138,6 +138,9 @@ it.each([
   if (!exact) f.native(child).messages.push({ id: randomUUID(), role: 'user', text: 'Unrelated request', createdAt: new Date().toISOString() })
   await f.endTurn(child, 'Synthetic reply after restart')
   expect(f.native(child).lastTurn?.id === briefId).toBe(exact)
+  // As opening the child does, load its history before reading: an unknown no longer keeps it observed forever.
+  await f.control.command({ type: 'observe-threads', threadIds: [child] })
+  expect(f.control.shell().host.threads.find(thread => thread.id === child)?.lastTurn?.id === briefId).toBe(exact)
   const read = f.ok(await f.read(parent, first.delegation.id))
   expect(read.delegation.outcome).toBe(outcome)
   if (exact) expect(read.delegation.reply?.text).toBe('Synthetic reply after restart')
@@ -164,6 +167,8 @@ it('recovers an older brief without rewinding the head a newer brief advanced, s
   f.native(child).activities = [{ id: randomUUID(), sequence: 0, kind: 'turn', turnId: briefId, afterMessageId: briefId,
     status: 'completed', title: 'Turn', startedAt: new Date().toISOString() }]
   await f.emit(child)
+  await f.control.commandShell({ type: 'disconnect', provider: 'codex' })
+  await f.control.commandShell({ type: 'connect', provider: 'codex' })
   expect(f.service.views(parent).made[0]).toMatchObject({ id: first.delegation.id, outcome: 'answered' })
   // No read of either brief repairs the head before this send.
   expect(f.ok(await f.delegate(parent, { thread: child, brief: 'Synthetic third brief', wait_seconds: 0 })).delegation.thread).toBe(child)
