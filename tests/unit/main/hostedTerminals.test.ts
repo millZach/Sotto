@@ -127,12 +127,13 @@ describe('the terminal of a thread on a paired host (ADR-0183)', () => {
   })
 
   it('starts nothing when its host is sent away while the shell is starting, so no shell runs that nobody can end', async () => {
-    const held: { service?: TerminalService } = {}
+    const held: { service?: TerminalService; ending?: Promise<void> } = {}
     const launch = hostedTerminals({ folders: () => FOLDERS, host: () => ({ target: 'forge' }), ssh: { file: 'ssh' } })
-    const f = await fixture({ hosted: { workspace: launch.workspace, launch: (owner, place) => { void held.service!.endHost(FORGE); return launch.launch(owner, place) } } })
+    const f = await fixture({ hosted: { workspace: launch.workspace, launch: (owner, place) => { held.ending = held.service!.endHost(FORGE); return launch.launch(owner, place) } } })
     const service = held.service = f.service
     const { workspace } = unwrap(await service.list({ threadId: THREAD, place: 'drawer' }))
     expect(await service.create({ threadId: THREAD, workspaceId: workspace.workspaceId, place: 'drawer' })).toMatchObject({ ok: false, error: { code: 'session-unavailable' } })
+    await held.ending
     expect(f.spawn).not.toHaveBeenCalled()
     expect(unwrap(await service.list({ threadId: THREAD, place: 'drawer' })).sessions).toEqual([])
   })
