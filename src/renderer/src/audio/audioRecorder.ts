@@ -3,6 +3,7 @@ import { MAX_TRANSCRIPTION_SAMPLES, TRANSCRIPTION_SAMPLE_RATE } from '../../../s
 import { calculateRms, resampleMono } from './audioMath'
 import { ensureMicrophoneAccess } from './ensureMicrophoneAccess'
 import { microphoneConstraints, type MicrophoneConstraints } from './microphoneConstraints'
+import type { PreparedAudioCapture, PreparedCaptureContext } from './preparedAudioCapture'
 export type { MicrophoneConstraints } from './microphoneConstraints'
 
 export const AUDIO_CAPTURE_PROCESSOR_NAME = 'sotto-audio-capture'
@@ -76,6 +77,9 @@ export interface AudioContextAdapter {
   readonly audioWorklet: { addModule(url: string): Promise<void> }
   readonly state?: 'suspended' | 'running' | 'closed'
   resume?(): Promise<void>
+  suspend(): Promise<void>
+  addEventListener?(type: 'statechange', listener: () => void): void
+  removeEventListener?(type: 'statechange', listener: () => void): void
   createMediaStreamSource(stream: MediaStreamAdapter): AudioNodeAdapter
   createGain(): GainNodeAdapter
   close(): Promise<void>
@@ -87,6 +91,8 @@ export interface AudioRecorderDependencies {
     getUserMedia(
       constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
     ): Promise<MediaStreamAdapter>
+    addEventListener?(type: 'devicechange', listener: () => void): void
+    removeEventListener?(type: 'devicechange', listener: () => void): void
   }
   createAudioContext(): AudioContextAdapter
   createAudioWorkletNode(
@@ -143,6 +149,7 @@ interface RecordingSession {
   resolveStartOnTermination?: boolean
   stream?: MediaStreamAdapter
   context?: AudioContextAdapter
+  preparedContext?: PreparedCaptureContext
   source?: AudioNodeAdapter
   worklet?: AudioWorkletNodeAdapter
   gain?: GainNodeAdapter
@@ -156,14 +163,10 @@ interface RecordingSession {
   captureTracks?: MediaStreamTrackAdapter[]
 }
 
-function defaultDependencies(): AudioRecorderDependencies {
+export function createAudioRecorderDependencies(): AudioRecorderDependencies {
   const browser = globalThis as unknown as {
     navigator: {
-      mediaDevices: {
-        getUserMedia(
-          constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
-        ): Promise<MediaStreamAdapter>
-      }
+      mediaDevices: AudioRecorderDependencies['mediaDevices']
     }
     document: { readonly baseURI: string }
     AudioContext: new () => AudioContextAdapter
@@ -177,6 +180,8 @@ function defaultDependencies(): AudioRecorderDependencies {
   return {
     audioWorkletModuleUrl: new URL('audio-capture-worklet.js', browser.document.baseURI).href,
     mediaDevices: {
+      addEventListener: (type, listener) => browser.navigator.mediaDevices?.addEventListener?.(type, listener),
+      removeEventListener: (type, listener) => browser.navigator.mediaDevices?.removeEventListener?.(type, listener),
       getUserMedia: async (constraints) => {
         if (!await ensureMicrophoneAccess()) {
           const error = new Error('Microphone access is blocked.')
@@ -206,8 +211,9 @@ export class AudioRecorder {
   constructor(
     private readonly options: AudioRecorderOptions = {},
     dependencies?: AudioRecorderDependencies,
+    private readonly preparedCapture?: PreparedAudioCapture,
   ) {
-    this.dependencies = dependencies ?? defaultDependencies()
+    this.dependencies = dependencies ?? createAudioRecorderDependencies()
     const duration = options.maxRecordingSeconds
     if (duration !== undefined && (!Number.isFinite(duration) || duration <= 0)) {
       throw new AudioRecorderError(
@@ -242,13 +248,24 @@ export class AudioRecorder {
       // after the stream goes live discards real speech (worklet compilation
       // alone can cost seconds on a cold start, silently dropping the
       // speaker's first words). None of this setup needs the stream.
+      // These marks measure this press's acquisition, never the earlier
+      // preparation's timestamps. A prepared module has no load left to wait for.
       markDictationTiming('audio-context-started')
-      session.context = this.dependencies.createAudioContext()
+      if (this.preparedCapture !== undefined) {
+        session.preparedContext = this.preparedCapture.claim(() => this.handleDeviceUnavailable(session))
+        session.context = session.preparedContext.context
+        await session.preparedContext.suspended
+        this.assertSessionLive(session)
+      } else {
+        session.context = this.dependencies.createAudioContext()
+      }
       // A context opened before the permission dialog can be left suspended once that dialog closes.
       if (session.context.state === 'suspended') await session.context.resume?.()
+      this.assertSessionLive(session)
       markDictationTiming('audio-context-ready')
       markDictationTiming('worklet-load-started')
-      await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
+      await (session.preparedContext?.registered ??
+        session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl))
       markDictationTiming('worklet-loaded')
       this.assertSessionLive(session)
 
@@ -337,7 +354,8 @@ export class AudioRecorder {
   }
 
   private assertSessionLive(session: RecordingSession): void {
-    if (session.terminated || this.session !== session) throw new Error('session terminated')
+    if (session.terminated || this.session !== session || session.context?.state === 'closed' ||
+      session.preparedContext?.retired) throw new Error('session terminated')
   }
 
   private receiveChunk(session: RecordingSession, data: unknown): void {
@@ -559,9 +577,12 @@ export class AudioRecorder {
 
     const context = session.context
     delete session.context
+    const preparedContext = session.preparedContext
+    delete session.preparedContext
     if (context !== undefined) {
       try {
-        await context.close()
+        if (preparedContext !== undefined) await this.preparedCapture?.release(preparedContext)
+        else await context.close()
       } catch {
         // Cleanup failures never replace the primary recorder result or finite app error.
       }

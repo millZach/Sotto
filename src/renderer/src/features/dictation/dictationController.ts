@@ -75,6 +75,11 @@ export type DictationOutputResult =
 
 export interface DictationControllerDependencies {
   readonly createRecorder: (options: AudioRecorderOptions) => DictationRecorder
+  readonly audioCapture?: {
+    setEnabled(enabled: boolean): void
+    prewarm(): Promise<void>
+    dispose(): void
+  }
   readonly transcriber: DictationTranscriber
   /**
    * Whether the speech model on this computer can transcribe now (ADR-0071). Until it can, a
@@ -322,21 +327,17 @@ export class DictationController {
     }
   }
 
-  prewarm(): Promise<void> {
-    if (this.disposed || this.isActive()) return Promise.resolve()
-    const load = this.dependencies.transcriber.load
-    if (load === undefined) return Promise.resolve()
+  prewarm(enabled = true): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    this.dependencies.audioCapture?.setEnabled(enabled)
+    if (!enabled || this.isActive()) return Promise.resolve()
 
-    try {
-      return Promise.resolve(
-        this.dependencies.transcriber.load?.({}),
-      ).then(
-        () => undefined,
-        () => undefined,
-      )
-    } catch {
-      return Promise.resolve()
-    }
+    // Each preparation is independent: a failed audio graph must not prevent
+    // loading the transcriber, or make a background warm-up report an error.
+    return Promise.allSettled([
+      Promise.resolve().then(() => this.disposed ? undefined : this.dependencies.audioCapture?.prewarm()),
+      Promise.resolve().then(() => this.disposed ? undefined : this.dependencies.transcriber.load?.({})),
+    ]).then(() => undefined)
   }
 
   start(): Promise<void> {
@@ -585,6 +586,7 @@ export class DictationController {
     } catch {
       // Dispose remains synchronous and best effort.
     }
+    this.dependencies.audioCapture?.dispose()
   }
 
   private async startRecorder(session: ActiveSession): Promise<void> {
