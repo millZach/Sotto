@@ -1153,7 +1153,7 @@ A minute after the reset, Sotto sends each thread this note, shown in the thread
 
 > Claude Code's usage limit has reset. Your last turn stopped at the limit partway through, and any command or tool it was running stopped too, so its result may be missing. Check where things stand, then carry on.
 
-Watcher goes first when its own provider stopped it. When Watcher is on, it then hears which threads Sotto restarted. A thread you sent to in the meantime, one that is working again or archived is left alone; one whose provider is not connected waits until it is. Earlier Watcher conversations are read-only history and leave the restart list when Watcher moves on. Your own message is never sent again, and the note answers no question or permission. A thread that stops at the limit again is scheduled again, up to three times in a row before a turn of its own finishes.
+Watcher goes first when its own provider stopped it. When Watcher is on, it then hears which threads Sotto restarted. A thread you sent to in the meantime, one that is working again, settled or archived is left alone; one whose provider is not connected waits until it is. Earlier Watcher conversations are read-only history and stay off the restart list when Watcher moves on. Your own message is never sent again, and the note answers no question or permission. A thread that stops at the limit again is scheduled again, up to three times in a row before a turn of its own finishes.
 
 If a provider gives no reset time, Sotto doesn't restart its threads on its own; the band says so, and you send again once the limit resets. That includes Devin, OpenCode, DeepSeek Harness and Cursor, and some Claude Code credit limits. A spending limit you set never resets on its own, so it schedules nothing.
 

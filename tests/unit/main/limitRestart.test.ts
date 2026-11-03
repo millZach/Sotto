@@ -161,6 +161,38 @@ describe('restarting threads a usage limit stopped', () => {
     await expect.poll(f.saved).toEqual([])
   })
 
+  describe.each([
+    ['settled', { settledAt: new Date(START).toISOString() }],
+    ['marked settled', { settledOverride: 'settled' as const }],
+    ['archived', { archivedAt: new Date(START).toISOString() }],
+  ])('a %s thread', (_name, closed) => {
+    it.each([undefined, new Date(START + 60_000).toISOString()])('keeps no restart after a fresh limit stop, with reset %s', async reset => {
+      const f = await fixture({ threads: [thread('fresh'), thread('prior')] })
+      f.update('prior', limitStop('prior', reset))
+      expect(f.restart.scheduled('prior')).toBeDefined()
+      // Closed before the failure, or in the same update as a new failed turn: neither can restart.
+      f.update('fresh', closed)
+      f.update('fresh', limitStop('fresh', reset))
+      f.update('prior', { ...limitStop('prior', reset, 'prior-2'), ...closed })
+      expect(['fresh', 'prior'].map(id => f.restart.scheduled(id))).toEqual([undefined, undefined])
+      expect(f.live()).toEqual([])
+      await expect.poll(f.saved).toEqual([])
+      f.update('fresh', { archivedAt: undefined, settledAt: undefined, settledOverride: 'active' })
+      expect(f.restart.scheduled('fresh')).toBeUndefined()
+    })
+  })
+
+  it.each([undefined, new Date(START + 60_000).toISOString()])('does not recreate a restart for Watcher history with background work when a sibling stops, with reset %s', async reset => {
+    const backgroundWork = [{ id: 'job', kind: 'command', status: 'running' }] as unknown as AgentThread['backgroundWork']
+    // History is read first, so its own cleanup cannot hide a record created by the sibling afterwards.
+    const f = await fixture({ threads: [thread('history', { kind: 'watcher-history', status: 'idle',
+      lastTurn: { id: 'history-1', status: 'completed' }, backgroundWork }), thread('worker')] })
+    f.update('worker', limitStop('worker', reset))
+    expect(f.restart.scheduled('history')).toBeUndefined()
+    expect(f.restart.scheduled('worker')).toBeDefined()
+    await expect.poll(f.saved).toEqual([expect.objectContaining({ threadId: 'worker' })])
+  })
+
   it('removes a saved no-reset card for an earlier Watcher conversation on startup', async () => {
     const f = await fixture({
       threads: [thread('watcher', { ...limitStop('watcher'), kind: 'watcher-history' })],

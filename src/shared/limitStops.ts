@@ -12,7 +12,7 @@ export interface LimitStop { readonly kind: 'usage' | 'spending'; readonly provi
 const CLAUDE_USAGE_LIMIT_LEAD = 'Claude Code has reached your plan’s usage limit, so this turn stopped.'
 /** Claude Code's usage-limit stop in Sotto's words (`claudeTurnFailure.ts`), with when it resets if Claude Code said. */
 export function claudeUsageLimitSentence(reset: string | undefined): string {
-  return `${CLAUDE_USAGE_LIMIT_LEAD} Nothing in the thread was lost. ${reset ? `Send again after it resets at ${reset}.` : 'Send again once it resets; Claude Code shows when.'}`
+  return `${CLAUDE_USAGE_LIMIT_LEAD} Nothing in the thread was lost. ${reset ? `Send again after it resets at ${reset}.` : 'Claude Code didn’t say when its limit resets. Send again once it has.'}`
 }
 export const CLAUDE_SPENDING_LIMIT_SENTENCE = 'Claude stopped this turn at the spending limit set in Claude Code. What it did so far is kept. Raise the limit in Claude Code, then send a message to carry on.'
 
