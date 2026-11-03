@@ -16,6 +16,7 @@ Pressed through the page with real pointer events: the header's **Council** butt
 | 1280 × 800 | 800 | 400 (50%) | 1000 | 1000 |
 | 820 × 560 | 560 | 240 (43%: the conversation keeps its 320px) | 560 | 560 |
 
+- With the Council off, as on stable, the header is unchanged: Watch, Tools, Terminal drawer, ··· (`header-council-off.png`).
 - The Council button sits right after Watch and before Tools, a 30px `pane-action` with lucide's landmark at 16px, as Tools and the Terminal drawer are. Pressed, it wears the same tint they do (`header-council-open.png`, `header-council-open-light.png`).
 - Opening it gives `Council*` selected before `zsh 1` and `zsh 2` on one bar. The Council button is pressed and the Terminal drawer button is not. A shell's tab gives the shells at a third of the pane (333px) with the Terminal drawer button pressed. The Council tab brings the Council back at 500px.
 - Dragged taller, the drawer measured 680px. At its 240px minimum the Council became one column that scrolls: the figures at 120px, the seats, then the form. Double-clicking the divider went back to 500px, and the header button hid the drawer.
