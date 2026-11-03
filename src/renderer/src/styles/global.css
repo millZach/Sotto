@@ -528,6 +528,8 @@ textarea.tt-input {
   bottom: var(--tt-corner-inset, 20px);
   z-index: 10;
   display: grid;
+  /* The track keeps to the region's width, so a toast's one-line words truncate rather than widen it. */
+  grid-template-columns: minmax(0, 1fr);
   max-width: min(360px, calc(100vw - 40px));
   gap: 8px;
 }
