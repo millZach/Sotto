@@ -1935,6 +1935,14 @@ msgstr "Ask about your threads, or say what to start or send"
 msgid "Ask for approval"
 msgstr "Ask for approval"
 
+#: src/renderer/src/agents/CouncilPress.tsx
+msgid "Ask the Council"
+msgstr "Ask the Council"
+
+#: src/renderer/src/agents/CouncilPress.tsx
+msgid "Ask the Council about this reply"
+msgstr "Ask the Council about this reply"
+
 #. A tip under Watcher's working line.
 #: src/renderer/src/agents/tips.tsx
 msgid "Ask Watcher to start a thread for a job. It follows the thread and tells you when it needs you."

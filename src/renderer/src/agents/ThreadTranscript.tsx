@@ -48,6 +48,10 @@ import { StartHandoverCard, ThreadStartContext, ThreadStartNote, threadStartView
 import { ReplyQuoteButton } from './ReplyQuoteButton'
 import { useTipLine } from './tips'
 import { ForkCard, ForkContext, ForkPress, useForkOptions, type ForkOptions } from './ForkFromHere'
+import { CouncilPress } from './CouncilPress'
+import { CouncilAskContext, councilAskable, offerCouncilDraft, quotedReply, useCouncilAsk } from '../features/council/councilDraft'
+import { useCouncilRoom } from '../components/AppShell'
+import { useOptionalApp } from '../state/AppContext'
 import { isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import type { AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import { ThreadGreeting } from './ThreadGreeting'
@@ -352,6 +356,8 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   // Fork from here (#1028, E5b): offered on a finished turn's reply; what follows the open one is not carried.
   const fork = useForkOptions()
   const forkHere = forkable === true && fork !== null && !writing
+  const askCouncil = useCouncilAsk()
+  const councilHere = forkable === true && askCouncil !== null && !writing
   const forkedAt = started !== null && started !== 'off' && started.start.from === 'turn' && started.start.route === 'fork' && started.start.messageId === message.id
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
@@ -374,7 +380,10 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
-    {forkHere ? <ForkPress messageId={message.id} at={message.createdAt} /> : null}
+    {forkHere || councilHere ? <div className="thread-message__actions">
+      {councilHere ? <CouncilPress text={message.text} ask={askCouncil!} /> : null}
+      {forkHere ? <ForkPress messageId={message.id} at={message.createdAt} /> : null}
+    </div> : null}
   </article>
   {speaker === 'watcher' ? <WatcherAfterMessage message={message} /> : null}
   {forkHere ? <ForkCard messageId={message.id} at={message.createdAt} /> : null}
@@ -879,6 +888,14 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     workingCopyOptions: thread.remoteHost ? undefined : window.sotto?.agents?.workingCopyOptions,
     openAt: forkAt, open: setForkAt, after: forkAfter, busy: forkBusy },
   [forkModels, thread.id, thread.title, thread.providerId, thread.projectId, thread.remoteHost, thread.hostLabel, thread.modelId, thread.kind, command, forkRepository, forkBranch, forkAt, forkAfter, forkBusy, t])
+  // Ask the Council on a reply (ADR-0177; Owl only): from a thread the Council can start from, kept the same while it can.
+  const councilRoom = useCouncilRoom()
+  const navigate = useOptionalApp()?.actions.navigate
+  const councilHere = councilRoom && navigate !== undefined && councilAskable(thread, state.connections?.find(connection => connection.kind === 'local')?.hostId)
+  const councilAsk = useMemo(() => !councilHere ? null : (text: string) => {
+    offerCouncilDraft({ originThread: thread.id, question: quotedReply(text) })
+    navigate!('council')
+  }, [councilHere, thread.id, navigate])
   // Continuing on another provider (ADR-0089; Owl only): where this thread came from, where it went, and its handover's source.
   const continueOn = useContinueEnabled() && !watcher
   const continuedIn = useShared(useMemo(() => continueOn ? continuedInByTurn(thread.continuedIn, messages) : undefined, [continueOn, thread.continuedIn, messages]))
@@ -1141,10 +1158,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
-        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider>
-        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : emptyNote != null && thread.status !== 'running' && thread.compaction?.status !== 'running' ? emptyNote
