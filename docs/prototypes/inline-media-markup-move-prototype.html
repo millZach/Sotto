@@ -1,0 +1,942 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything.
+
+  Zach's feedback on Mark up (ADR-0170, part 5), November 3, 2026: marks can't be moved, a note's words sit on a red
+  label, the text can't be sized, and a text box should move anywhere or belong to a shape.
+
+  The questions, each switchable under Options and in the URL:
+    ?move=A|B|C              how a mark is picked up, and how that stays clear of drawing
+    ?size=A|B|C              how text is sized
+    ?text=both|free|shape    free text, text on a shape, or both
+    ?follow=keep|center      what text on a shape does when the shape moves
+    ?look=outline|bare       the words alone, or with a thin edge so they read on any picture
+    ?resize=0|1 ?undo=0|1 ?del=0|1    the extras, each on or off
+    ?device=desktop|iphone|pencil     the editor on each surface
+  Add to reply draws the same marks on a canvas at the picture's full size, so the copy can be held against the screen.
+  Not here: pinching to zoom with a Pencil, translated strings, the theme list (dark and light only).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>PROTOTYPE · Mark up: move marks and text</title>
+<style>
+@font-face { font-family: Figtree; src: url(figtree-latin.woff2) format('woff2'); font-weight: 300 900; font-display: swap; }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-sunken: oklch(0.1 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-text-faint: oklch(0.52 0.012 265);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border-faint: oklch(0.26 0.016 265);
+  --tt-border: oklch(0.36 0.02 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-accent-hover: oklch(0.76 0.104 183);
+  --tt-on-accent: oklch(0.16 0.02 183);
+  --tt-accent-surface: color-mix(in srgb, oklch(0.714 0.104 183) 22%, transparent);
+  --tt-accent-surface-text: oklch(0.86 0.09 183);
+  --tt-ink-red: oklch(0.63 0.22 27);
+  --tt-ink-amber: oklch(0.8 0.16 80);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-scrim: rgb(0 0 0 / 70%);
+  --tt-font: Figtree, ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --fade: 160ms;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.99 0.003 85);
+  --tt-surface-sunken: oklch(0.945 0.006 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.36 0.014 75);
+  --tt-text-muted: oklch(0.47 0.014 75);
+  --tt-text-faint: oklch(0.6 0.012 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border-faint: oklch(0.9 0.01 80);
+  --tt-border: oklch(0.78 0.012 80);
+  --tt-accent: oklch(0.5 0.12 200);
+  --tt-accent-hover: oklch(0.45 0.12 200);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-accent-surface: color-mix(in srgb, oklch(0.5 0.12 200) 14%, transparent);
+  --tt-accent-surface-text: oklch(0.4 0.12 200);
+  --tt-ink-red: oklch(0.55 0.22 27);
+  --tt-ink-amber: oklch(0.62 0.14 70);
+  --tt-hover: color-mix(in srgb, oklch(0.9 0.03 200) 70%, transparent);
+  --tt-scrim: rgb(20 22 26 / 55%);
+}
+:root[data-motion='reduced'] { --fade: 0ms; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body { margin: 0; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.45 var(--tt-font); overscroll-behavior: none; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+#root { display: flex; flex-direction: column; height: 100dvh; }
+
+/* ---------- the prototype's own chrome: cream, so it is plainly not part of the design ---------- */
+.pbar { flex: none; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); background: #f3f0e8; color: #15130e; font: 600 13px/1.25 system-ui, sans-serif; }
+.pbar button { flex: none; min-width: 40px; height: 40px; padding: 0 12px; border: 1px solid #c8c3b6; border-radius: 8px; background: #fff; color: #15130e; font-weight: 700; cursor: pointer; }
+.pbar__what { flex: 1; min-width: 0; text-align: center; }
+.pbar__what b { display: block; font-weight: 800; }
+.pbar__what span { display: block; color: #57524a; font-weight: 500; font-size: 12px; }
+.psheet { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; background: rgb(0 0 0 / 40%); }
+.psheet__panel { display: flex; flex-direction: column; width: min(420px, 100%); height: 100%; background: #f3f0e8; color: #15130e; font: 500 13px/1.35 system-ui, sans-serif; }
+.psheet__head { display: flex; flex: none; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #d8d3c6; font-weight: 800; font-size: 15px; }
+.psheet__head button { height: 40px; padding: 0 16px; border: 0; border-radius: 8px; background: #15130e; color: #fff; font-weight: 700; }
+.psheet__body { flex: 1; overflow-y: auto; padding: 4px 14px calc(16px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+.pgroup { padding: 10px 0; border-bottom: 1px solid #e0dbcf; }
+.pgroup h3 { margin: 0 0 6px; font-size: 13px; font-weight: 800; }
+.pgroup p { margin: 6px 0 0; color: #57524a; font-size: 12.5px; }
+.pseg { display: flex; flex-wrap: wrap; gap: 4px; }
+.pseg button { min-height: 38px; padding: 4px 10px; border: 1px solid #c8c3b6; border-radius: 8px; background: #fff; color: #15130e; font-weight: 600; font-size: 13px; text-align: left; }
+.pseg button[aria-pressed='true'] { background: #15130e; border-color: #15130e; color: #fff; }
+.pcheck { display: flex; align-items: center; gap: 8px; min-height: 34px; font-weight: 600; }
+.pcheck input { width: 18px; height: 18px; margin: 0; accent-color: #15130e; }
+.ptry { margin: 0; padding-left: 18px; }
+.ptry li { margin: 3px 0; }
+.pstate { margin: 0; padding: 8px; overflow-x: auto; border-radius: 6px; background: #e8e3d6; font: 11.5px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+
+/* ---------- where the editor sits ---------- */
+#stagehost { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: stretch; background: var(--tt-canvas); }
+#stagehost[data-framed] { padding: 14px; background: #2a2c33; }
+:root[data-theme='light'] #stagehost[data-framed] { background: #c9ccd2; }
+.device { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; background: var(--tt-canvas); }
+#stagehost[data-framed] .device { width: var(--device-width); max-height: 860px; align-self: center; height: 100%; overflow: hidden; border: 8px solid #0b0c0f; border-radius: 34px; }
+
+/* ---------- the desktop editor, from markup.css ---------- */
+.bar { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 44px; padding: 4px 8px 4px 18px; border-bottom: 1px solid var(--tt-hairline); }
+.title { min-width: 0; max-width: 22ch; margin: 0 10px 0 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.tools { display: flex; gap: 2px; }
+.tool, .action { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; transition: color var(--fade) ease, background-color var(--fade) ease; }
+.tool:hover, .action:hover { background: var(--tt-hover); color: var(--tt-text); }
+.tool[aria-pressed='true'] { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.tool[aria-disabled='true'], .action[aria-disabled='true'] { color: var(--tt-text-faint); }
+.tool--icon { width: 32px; padding: 0; justify-content: center; }
+.action--primary { background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; }
+.action--primary:hover { background: var(--tt-accent-hover); color: var(--tt-on-accent); }
+.divider { width: 1px; height: 20px; margin: 0 6px; background: var(--tt-border-faint); }
+.space { flex: 1; }
+.inks { display: flex; gap: 4px; }
+.ink { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 999px; background: transparent; }
+.ink::before { content: ''; display: block; width: 18px; height: 18px; margin: auto; border-radius: 999px; background: var(--ink); box-shadow: 0 0 0 1px var(--tt-border); }
+.ink[aria-checked='true']::before { box-shadow: 0 0 0 2px var(--tt-surface), 0 0 0 4px var(--tt-text); }
+.ink--red { --ink: var(--tt-ink-red); } .ink--amber { --ink: var(--tt-ink-amber); } .ink--plain { --ink: var(--tt-text); }
+.size { display: inline-flex; align-items: center; gap: 2px; }
+.size__label { padding: 0 4px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.size__button { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; font-weight: 600; }
+.size__button--word { width: auto; min-width: 32px; padding: 0 8px; }
+.size__button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.size__button[aria-pressed='true'] { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.size[data-off] .size__label { color: var(--tt-text-faint); }
+.size__button[aria-disabled='true'] { color: var(--tt-text-faint); background: transparent; }
+
+.body { display: flex; flex: 1; min-height: 0; }
+.room { display: grid; flex: 1; min-width: 0; min-height: 0; place-items: center; padding: 12px; overflow: hidden; background: var(--tt-surface-sunken); }
+.surface { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; outline-offset: 3px; }
+.surface[data-cursor='move'] { cursor: default; }
+.surface[data-cursor='grab'] { cursor: grab; }
+.surface[data-cursor='grabbing'] { cursor: grabbing; }
+.surface[data-cursor='nwse'] { cursor: nwse-resize; }
+.surface img, .surface svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
+.surface[data-lifted] svg .sel-box { animation: lift 220ms ease-out; }
+@keyframes lift { from { opacity: 0; } to { opacity: 1; } }
+:root[data-motion='reduced'] .surface[data-lifted] svg .sel-box { animation: none; }
+.note-input { position: absolute; z-index: 1; min-width: 12ch; max-width: 70%; padding: 2px 8px; transform: translateY(-50%); border: 1px solid var(--tt-accent); border-radius: 6px; background: var(--tt-surface-elevated); color: var(--tt-text); font-size: 14px; }
+.side { display: flex; flex: none; flex-direction: column; gap: 8px; width: 232px; padding: 14px 16px; overflow-y: auto; border-left: 1px solid var(--tt-hairline); }
+.heading { margin: 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.empty, .copy-note { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.copy-note { margin-top: auto; }
+.marks { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.marks li { display: flex; align-items: center; gap: 2px; min-height: 32px; border-radius: 6px; color: var(--tt-text); font-size: 13px; }
+.marks li[data-selected] { background: var(--tt-accent-surface); }
+.mark-pick { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; text-align: left; }
+.mark-pick:hover { background: var(--tt-hover); }
+.swatch { flex: none; width: 10px; height: 10px; border-radius: 999px; background: var(--ink); }
+.mark-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remove { display: inline-grid; flex: none; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); }
+.remove:hover { background: var(--tt-hover); color: var(--tt-text); }
+.status { min-height: 0; margin: 0; padding: 0 18px; color: var(--tt-text); font-size: 13px; }
+.status:not(:empty) { padding-top: 8px; }
+.hint { margin: 0; padding: 8px 18px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+@media (max-width: 860px) {
+  .device--desktop .tool > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .device--desktop .tool { width: 32px; padding: 0; justify-content: center; }
+  .device--desktop .title { max-width: 16ch; }
+  .device--desktop .body { flex-direction: column; }
+  .device--desktop .side { width: auto; max-height: 112px; padding: 10px 18px; border-top: 1px solid var(--tt-hairline); border-left: 0; }
+  .device--desktop .copy-note, .device--desktop .hint { display: none; }
+}
+
+/* ---------- the iPhone editor, from MarkupViews.swift ---------- */
+.ptop { display: flex; flex: none; align-items: center; justify-content: space-between; min-height: 44px; padding: env(safe-area-inset-top) 20px 0; }
+.ptop button { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-size: 15px; }
+.ptop b { font-weight: 600; font-size: 15px; }
+.ptop .add { font-weight: 600; }
+.penline { flex: none; padding-bottom: 6px; color: var(--tt-text-muted); font-size: 13px; text-align: center; }
+.pstage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; background: var(--tt-surface-sunken); }
+.pcontext { display: flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 4px 12px 0; }
+.pcontext .size__button { width: 44px; height: 44px; font-size: 15px; }
+.pcontext .size__button--word { width: auto; min-width: 44px; }
+.pcontext .delete { display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text); font-size: 13px; }
+.pcontext .delete[aria-disabled='true'] { color: var(--tt-text-faint); }
+.pnote { flex: none; padding: 4px 20px 0; color: var(--tt-text); font-size: 13px; text-align: center; min-height: 0; }
+.ppal { display: flex; flex: none; flex-wrap: wrap; justify-content: center; gap: 2px 8px; padding: 6px 6px 10px; }
+.ppal__row { display: flex; gap: 2px; }
+.ptool { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text); }
+.ptool[aria-pressed='true'] { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.ptool[aria-disabled='true'] { color: var(--tt-text-faint); }
+.pink { position: relative; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; }
+.pink::before { content: ''; position: absolute; inset: 11px; border-radius: 999px; background: var(--ink); }
+.pink[aria-checked='true']::after { content: ''; position: absolute; inset: 7px; border-radius: 999px; border: 2px solid var(--tt-text); }
+.palert { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 30px; background: var(--tt-scrim); }
+.palert__box { display: flex; flex-direction: column; gap: 10px; width: min(280px, 100%); padding: 16px; border-radius: 14px; background: var(--tt-surface-elevated); }
+.palert__box b { text-align: center; }
+.palert__box input { padding: 7px 8px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-sunken); font-size: 16px; }
+.palert__row { display: flex; gap: 8px; }
+.palert__row button { flex: 1; height: 40px; border: 0; border-radius: 8px; background: var(--tt-hover); }
+.palert__row .primary { background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; }
+
+/* ---------- the copy ---------- */
+.copy { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--tt-canvas); }
+.copy__head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--tt-hairline); }
+.copy__head div { min-width: 0; }
+.copy__head b { display: block; }
+.copy__head span { display: block; color: var(--tt-text-muted); font-size: 12px; }
+.copy__head button { flex: none; height: 40px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; }
+.copy__pic { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; background: var(--tt-surface-sunken); }
+.copy__pic img { display: block; max-width: 100%; max-height: 100%; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="stagehost"></div>
+  <div class="pbar">
+    <button type="button" id="prev" aria-label="Previous way of moving">‹</button>
+    <div class="pbar__what"><b id="pwhat"></b><span id="pwhy"></span></div>
+    <button type="button" id="next" aria-label="Next way of moving">›</button>
+    <button type="button" id="opts">Options</button>
+  </div>
+</div>
+<div id="sheethost"></div>
+<div id="copyhost"></div>
+
+<script>
+'use strict'
+const W = 1280, H = 800, LONGER = Math.max(W, H)
+const params = new URLSearchParams(location.search)
+const pick = (name, allowed, fallback) => allowed.includes(params.get(name)) ? params.get(name) : fallback
+const onOff = (name, fallback) => params.has(name) ? params.get(name) === '1' : fallback
+
+const MOVES = {
+  A: ['A · Move tool', 'Pick Move, then drag a mark. Drawing tools only draw.'],
+  B: ['B · Press any mark', 'With any tool, a press on a mark picks it up. Elsewhere draws.'],
+  C: ['C · Hold a mark', 'Hold a mark for a moment, then drag. A quick drag draws.'],
+}
+const SIZES = {
+  A: ['A · Smaller and larger', 'Two buttons step through five sizes'],
+  B: ['B · S, M, L', 'Three sizes to pick from'],
+  C: ['C · Drag a corner', 'No buttons. Select the text and drag its corner'],
+}
+const SIZE_STEPS = [0.7, 1, 1.4, 1.9, 2.6]
+const SML = { S: 0.7, M: 1, L: 1.6 }
+
+const S = {
+  device: pick('device', ['desktop', 'iphone', 'pencil'], innerWidth < 720 ? 'iphone' : 'desktop'),
+  move: pick('move', ['A', 'B', 'C'], 'A'),
+  size: pick('size', ['A', 'B', 'C'], 'A'),
+  text: pick('text', ['both', 'free', 'shape'], 'both'),
+  follow: pick('follow', ['keep', 'center'], 'keep'),
+  look: pick('look', ['outline', 'bare'], 'outline'),
+  resize: onOff('resize', true), undoMoves: onOff('undo', true), del: onOff('del', true),
+  theme: pick('theme', ['dark', 'light'], 'dark'), reduced: false,
+  touchAs: 'finger', tool: 'arrow', ink: 'red', nextScale: 1,
+  sel: null, marks: [], past: [], future: [], live: null, status: '', note: null, pan: { x: 0, y: 0 }, sheet: false, copy: null, lifted: false,
+}
+let nextId = 1
+
+/* ---------- the picture: a made-up checkout page with dark, light and busy ground, so text is tested on all three ---------- */
+const PICTURE = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Helvetica,Arial,sans-serif">
+<defs><linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#26415f"/><stop offset=".5" stop-color="#d8934a"/><stop offset="1" stop-color="#7c2d3a"/></linearGradient></defs>
+<rect width="${W}" height="${H}" fill="#f6f6f4"/><rect width="${W}" height="84" fill="#14181f"/>
+<text x="44" y="54" font-size="30" font-weight="700" fill="#f4f4f2">Fieldnote Supply</text>
+<text x="1040" y="52" font-size="22" fill="#b9bec7">Cart · Checkout</text>
+<rect x="44" y="124" width="520" height="340" rx="10" fill="url(#p)"/><circle cx="200" cy="250" r="66" fill="#f3e6c4" opacity=".85"/><path d="M44 420 L220 300 L340 390 L450 280 L564 400 L564 464 L44 464Z" fill="#1d2b3a" opacity=".7"/>
+<text x="44" y="510" font-size="28" font-weight="700" fill="#14181f">Canvas field notebook, 3 pack</text>
+<text x="44" y="548" font-size="22" fill="#59606b">Graph paper, lay-flat binding</text>
+<text x="44" y="590" font-size="22" fill="#59606b">Ships in 2 to 3 days</text>
+<rect x="628" y="124" width="608" height="620" rx="12" fill="#fff" stroke="#dedfdb" stroke-width="2"/>
+<text x="664" y="178" font-size="30" font-weight="700" fill="#14181f">Order summary</text>
+<text x="664" y="238" font-size="24" fill="#3a404a">Notebook x 3</text><text x="1200" y="238" text-anchor="end" font-size="24" fill="#3a404a">$36.00</text>
+<text x="664" y="284" font-size="24" fill="#3a404a">Shipping</text><text x="1200" y="284" text-anchor="end" font-size="24" fill="#3a404a">$6.50</text>
+<text x="664" y="330" font-size="24" fill="#3a404a">Tax</text><text x="1200" y="330" text-anchor="end" font-size="24" fill="#3a404a">$3.42</text>
+<line x1="664" y1="358" x2="1200" y2="358" stroke="#dedfdb" stroke-width="2"/>
+<text x="664" y="408" font-size="30" font-weight="700" fill="#14181f">Total</text><text x="1200" y="408" text-anchor="end" font-size="30" font-weight="700" fill="#14181f">$54.92</text>
+<rect x="664" y="460" width="536" height="72" rx="10" fill="#16614f"/><text x="932" y="506" text-anchor="middle" font-size="28" font-weight="700" fill="#fff">Pay now</text>
+<text x="664" y="590" font-size="20" fill="#59606b">Card ending 4242</text><text x="664" y="626" font-size="20" fill="#59606b">Billing same as shipping</text>
+<rect x="664" y="656" width="536" height="56" rx="8" fill="#14181f"/><text x="932" y="692" text-anchor="middle" font-size="22" fill="#d6d8dc">Have a promo code?</text>
+<rect x="0" y="760" width="${W}" height="40" fill="#14181f"/><text x="44" y="787" font-size="18" fill="#8d939d">Returns within 30 days</text>
+</svg>`)
+
+/* ---------- geometry, as in markup.ts, with the text's label gone ---------- */
+const strokeWidth = () => LONGER / 200
+const baseFont = () => LONGER / 48
+const fontPx = mark => baseFont() * (mark.scale ?? 1)
+const fontOf = px => `600 ${px}px Figtree, system-ui, sans-serif`
+const measuring = document.createElement('canvas').getContext('2d')
+function textWidth(mark) { measuring.font = fontOf(fontPx(mark)); return measuring.measureText(mark.text).width }
+function noteRect(mark) { const px = fontPx(mark), w = textWidth(mark), h = px * 1.3; return { x: mark.x0, y: mark.y0 - h / 2, w, h } }
+function arrowGeometry(mark) {
+  const angle = Math.atan2(mark.y1 - mark.y0, mark.x1 - mark.x0), length = strokeWidth() * 6
+  const corner = turn => [mark.x1 - length * Math.cos(angle + turn), mark.y1 - length * Math.sin(angle + turn)]
+  return { shaft: [mark.x1 - Math.cos(angle) * length * .6, mark.y1 - Math.sin(angle) * length * .6], head: [[mark.x1, mark.y1], corner(-.45), corner(.45)] }
+}
+function bounds(mark) {
+  if (mark.tool === 'note') return noteRect(mark)
+  if (mark.tool === 'pen') {
+    const xs = mark.points.map(p => p[0]), ys = mark.points.map(p => p[1])
+    const x = Math.min(...xs), y = Math.min(...ys)
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
+  }
+  return { x: Math.min(mark.x0, mark.x1), y: Math.min(mark.y0, mark.y1), w: Math.abs(mark.x1 - mark.x0), h: Math.abs(mark.y1 - mark.y0) }
+}
+function segDistance(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy
+  const t = l ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l)) : 0
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy)
+}
+/** How far a place is from a mark's line; inside a box or circle counts only when `inner`. */
+function distanceTo(mark, p, inner) {
+  if (mark.tool === 'note') { const r = noteRect(mark); return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h ? 0 : Math.hypot(Math.max(r.x - p.x, 0, p.x - r.x - r.w), Math.max(r.y - p.y, 0, p.y - r.y - r.h)) }
+  if (mark.tool === 'arrow') return segDistance(p.x, p.y, mark.x0, mark.y0, mark.x1, mark.y1)
+  if (mark.tool === 'pen') { let best = Infinity; for (let i = 1; i < mark.points.length; i++) best = Math.min(best, segDistance(p.x, p.y, mark.points[i - 1][0], mark.points[i - 1][1], mark.points[i][0], mark.points[i][1])); return best }
+  const r = bounds(mark)
+  if (mark.tool === 'box') {
+    const inside = p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
+    if (inside && inner) return 0
+    return inside ? Math.min(p.x - r.x, r.x + r.w - p.x, p.y - r.y, r.y + r.h - p.y) : Math.hypot(Math.max(r.x - p.x, 0, p.x - r.x - r.w), Math.max(r.y - p.y, 0, p.y - r.y - r.h))
+  }
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2, n = Math.hypot((p.x - cx) / (r.w / 2 || 1), (p.y - cy) / (r.h / 2 || 1))
+  if (n <= 1 && inner) return 0
+  return Math.abs(n - 1) * Math.min(r.w, r.h) / 2
+}
+function hit(p, tolerance, inner) {
+  // Text and lines first, so a note on a box picks up the note; among the boxes around the place, the smallest.
+  for (let i = S.marks.length - 1; i >= 0; i--) { const m = S.marks[i]; if (m.tool === 'note' && distanceTo(m, p, false) <= tolerance) return m }
+  for (let i = S.marks.length - 1; i >= 0; i--) { const m = S.marks[i]; if (m.tool !== 'note' && distanceTo(m, p, false) <= tolerance) return m }
+  if (!inner) return null
+  let best = null
+  for (const m of S.marks) if ((m.tool === 'box' || m.tool === 'ellipse') && distanceTo(m, p, true) === 0) { const r = bounds(m); if (!best || r.w * r.h < best.area) best = { m, area: r.w * r.h } }
+  return best?.m ?? null
+}
+/** The shape text would belong to at this place. */
+function shapeAt(p, tolerance) {
+  if (S.text === 'free') return null
+  let best = null
+  for (const m of S.marks) {
+    if (m.tool === 'note') continue
+    const d = distanceTo(m, p, true)
+    if (d <= tolerance) { const r = bounds(m), area = r.w * r.h; if (!best || area < best.area) best = { m, area } }
+  }
+  return best?.m ?? null
+}
+function shift(mark, dx, dy) {
+  if (mark.tool === 'pen') return { ...mark, points: mark.points.map(([x, y, z]) => [x + dx, y + dy, z]) }
+  if (mark.tool === 'note') return { ...mark, x0: mark.x0 + dx, y0: mark.y0 + dy }
+  return { ...mark, x0: mark.x0 + dx, y0: mark.y0 + dy, x1: mark.x1 + dx, y1: mark.y1 + dy }
+}
+/** A mark and the text on it: what moves together. */
+const family = (marks, id) => marks.filter(m => m.id === id || (m.tool === 'note' && m.on === id))
+function centred(note, shape) { const r = bounds(shape), w = textWidth(note); return { ...note, x0: r.x + r.w / 2 - w / 2, y0: r.y + r.h / 2 } }
+function resolveCentred(marks) {
+  if (S.follow !== 'center') return marks
+  return marks.map(m => { if (m.tool !== 'note' || !m.on) return m; const shape = marks.find(o => o.id === m.on); return shape ? centred(m, shape) : m })
+}
+
+/* ---------- drawing: the same list of shapes as SVG and on a canvas ---------- */
+const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+function colourOf(role) { const el = document.createElement('span'); el.hidden = true; el.style.color = `var(${role})`; document.body.append(el); const c = getComputedStyle(el).color; el.remove(); return c }
+function rgb(colour) { probe.clearRect(0, 0, 1, 1); probe.fillStyle = colour; probe.fillRect(0, 0, 1, 1); const [r, g, b] = probe.getImageData(0, 0, 1, 1).data; return [r, g, b] }
+function lum([r, g, b]) { const ch = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4 }; return .2126 * ch(r) + .7152 * ch(g) + .0722 * ch(b) }
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05) }
+function inks() {
+  const stroke = { red: colourOf('--tt-ink-red'), amber: colourOf('--tt-ink-amber'), plain: colourOf('--tt-text') }
+  // The edge is black or white, whichever stands further from the ink, so it holds on any ground.
+  const edge = {}
+  for (const key of Object.keys(stroke)) { const shade = rgb(stroke[key]); edge[key] = contrast(shade, [0, 0, 0]) >= contrast(shade, [255, 255, 255]) ? '#000' : '#fff' }
+  return { stroke, edge }
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+function shapeSVG(mark, colours) {
+  const ink = colours.stroke[mark.ink], line = strokeWidth()
+  const common = `stroke="${ink}" stroke-width="${line}" fill="none" stroke-linecap="round" stroke-linejoin="round"`
+  const r = mark.tool === 'pen' || mark.tool === 'note' ? null : bounds(mark)
+  if (mark.tool === 'box') return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="${line * 2}" ${common}/>`
+  if (mark.tool === 'ellipse') return `<ellipse cx="${r.x + r.w / 2}" cy="${r.y + r.h / 2}" rx="${r.w / 2}" ry="${r.h / 2}" ${common}/>`
+  if (mark.tool === 'arrow') { const { shaft, head } = arrowGeometry(mark); return `<line x1="${mark.x0}" y1="${mark.y0}" x2="${shaft[0]}" y2="${shaft[1]}" ${common}/><polygon points="${head.map(p => p.join(',')).join(' ')}" fill="${ink}"/>` }
+  if (mark.tool === 'pen') return `<polyline points="${mark.points.map(p => p[0] + ',' + p[1]).join(' ')}" ${common}/>`
+  const px = fontPx(mark), edge = S.look === 'outline' ? `stroke="${colours.edge[mark.ink]}" stroke-width="${px * .1}" stroke-linejoin="round" paint-order="stroke"` : ''
+  return `<text x="${mark.x0}" y="${mark.y0 + px * .35}" fill="${ink}" ${edge} style="font:${fontOf(px)}">${esc(mark.text)}</text>`
+}
+function drawCopy(context, marks, colours) {
+  const line = strokeWidth()
+  context.lineCap = 'round'; context.lineJoin = 'round'
+  for (const mark of marks) {
+    const ink = colours.stroke[mark.ink]
+    context.strokeStyle = ink; context.fillStyle = ink; context.lineWidth = line
+    if (mark.tool === 'box') { const r = bounds(mark); context.beginPath(); context.roundRect(r.x, r.y, r.w, r.h, line * 2); context.stroke() }
+    else if (mark.tool === 'ellipse') { const r = bounds(mark); context.beginPath(); context.ellipse(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, r.h / 2, 0, 0, Math.PI * 2); context.stroke() }
+    else if (mark.tool === 'arrow') { const { shaft, head } = arrowGeometry(mark); context.beginPath(); context.moveTo(mark.x0, mark.y0); context.lineTo(shaft[0], shaft[1]); context.stroke(); context.beginPath(); context.moveTo(...head[0]); context.lineTo(...head[1]); context.lineTo(...head[2]); context.closePath(); context.fill() }
+    else if (mark.tool === 'pen') { context.beginPath(); mark.points.forEach((p, i) => i ? context.lineTo(p[0], p[1]) : context.moveTo(p[0], p[1])); context.stroke() }
+    else {
+      const px = fontPx(mark)
+      context.font = fontOf(px)
+      if (S.look === 'outline') { context.strokeStyle = colours.edge[mark.ink]; context.lineWidth = px * .1; context.strokeText(mark.text, mark.x0, mark.y0 + px * .35) }
+      context.fillText(mark.text, mark.x0, mark.y0 + px * .35)
+    }
+  }
+}
+
+/* ---------- history ---------- */
+function push(next, keepInHistory = true) {
+  const resolved = resolveCentred(next)
+  if (keepInHistory) { S.past = [...S.past, S.marks]; S.future = [] }
+  S.marks = resolved
+}
+function undo() { if (!S.past.length) return; S.future = [S.marks, ...S.future]; S.marks = S.past.at(-1); S.past = S.past.slice(0, -1); if (!S.marks.some(m => m.id === S.sel)) S.sel = null; paint() }
+function redo() { if (!S.future.length) return; S.past = [...S.past, S.marks]; S.marks = S.future[0]; S.future = S.future.slice(1); if (!S.marks.some(m => m.id === S.sel)) S.sel = null; paint() }
+function removeMark(id) {
+  push(S.marks.filter(m => m.id !== id && !(m.tool === 'note' && m.on === id)))
+  if (S.sel === id) S.sel = null
+  paint()
+}
+const selected = () => S.marks.find(m => m.id === S.sel) ?? null
+
+function seed() {
+  S.past = []; S.future = []; S.sel = null; S.status = ''; nextId = 1
+  const box = { id: nextId++, ink: 'red', tool: 'box', x0: 650, y0: 372, x1: 1216, y1: 424 }
+  const arrow = { id: nextId++, ink: 'red', tool: 'arrow', x0: 560, y0: 660, x1: 700, y1: 540 }
+  const onBox = S.text !== 'free'
+  const words = { id: nextId++, ink: 'red', tool: 'note', x0: 660, y0: 450, text: 'This total is wrong', scale: 1, on: onBox ? box.id : null }
+  // Off the box's edge the note sits inside it when it belongs to it; drawn just under when it is free.
+  if (onBox) { words.x0 = 830; words.y0 = 398 }
+  const free = { id: nextId++, ink: 'plain', tool: 'note', x0: 70, y0: 300, text: 'Plain ink on the photo', scale: 1, on: null }
+  const pen = { id: nextId++, ink: 'amber', tool: 'pen', pressure: false, points: [[664, 296], [710, 292], [760, 298], [812, 293], [860, 297]].map(p => [...p, .5]) }
+  S.marks = resolveCentred(S.text === 'shape' ? [box, arrow, words, pen] : [box, arrow, words, free, pen])
+}
+
+/* ---------- pointer ---------- */
+let surfaceEl = null, gesture = null
+const toolIsMove = () => S.move === 'A' && S.tool === 'move'
+function place(event) {
+  const box = surfaceEl.getBoundingClientRect()
+  return { x: Math.min(W, Math.max(0, (event.clientX - box.left) / (box.width || 1) * W)), y: Math.min(H, Math.max(0, (event.clientY - box.top) / (box.height || 1) * H)) }
+}
+function pxPerScreen() { return W / (surfaceEl.getBoundingClientRect().width || 1) }
+function role(event) {
+  if (S.device !== 'pencil') return 'draw'
+  return event.pointerType === 'pen' ? 'draw' : S.touchAs === 'pencil' ? 'draw' : 'finger'
+}
+function handleHit(p, event) {
+  const mark = selected()
+  if (!mark) return null
+  const grip = (event.pointerType === 'touch' ? 22 : 12) * pxPerScreen()
+  const handles = handlesOf(mark)
+  for (const h of handles) if (Math.hypot(p.x - h.x, p.y - h.y) <= grip) return h
+  return null
+}
+function resizable(mark) {
+  if (mark.tool === 'note') return S.size === 'C' && !(S.follow === 'center' && mark.on)
+  return S.resize
+}
+function handlesOf(mark) {
+  if (!resizable(mark)) return []
+  if (mark.tool === 'arrow') return [{ x: mark.x0, y: mark.y0, end: 0 }, { x: mark.x1, y: mark.y1, end: 1 }]
+  const r = bounds(mark)
+  if (mark.tool === 'note') return [{ x: r.x + r.w, y: r.y + r.h, corner: 'se' }]
+  return [{ x: r.x, y: r.y, corner: 'nw' }, { x: r.x + r.w, y: r.y, corner: 'ne' }, { x: r.x, y: r.y + r.h, corner: 'sw' }, { x: r.x + r.w, y: r.y + r.h, corner: 'se' }]
+}
+function applyResize(base, handle, p) {
+  if (base.tool === 'arrow') return handle.end ? { ...base, x1: p.x, y1: p.y } : { ...base, x0: p.x, y0: p.y }
+  const r = bounds(base)
+  const anchorX = handle.corner.includes('w') ? r.x + r.w : r.x, anchorY = handle.corner.includes('n') ? r.y + r.h : r.y
+  if (base.tool === 'note') {
+    const widthThen = textWidth(base), scale = Math.min(4, Math.max(.5, (base.scale ?? 1) * Math.max(10, p.x - r.x) / (widthThen || 1)))
+    return { ...base, scale }
+  }
+  if (base.tool === 'pen') {
+    const sx = (p.x - anchorX) / ((handle.corner.includes('w') ? r.x : r.x + r.w) - anchorX || 1)
+    const sy = (p.y - anchorY) / ((handle.corner.includes('n') ? r.y : r.y + r.h) - anchorY || 1)
+    return { ...base, points: base.points.map(([x, y, z]) => [anchorX + (x - anchorX) * sx, anchorY + (y - anchorY) * sy, z]) }
+  }
+  return { ...base, x0: anchorX, y0: anchorY, x1: p.x, y1: p.y }
+}
+function clampDelta(ids, base, dx, dy) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const m of base) if (ids.includes(m.id)) { const r = bounds(m); minX = Math.min(minX, r.x); minY = Math.min(minY, r.y); maxX = Math.max(maxX, r.x + r.w); maxY = Math.max(maxY, r.y + r.h) }
+  const low = -minX, high = W - maxX, lowY = -minY, highY = H - maxY
+  return { dx: low > high ? low : Math.min(high, Math.max(low, dx)), dy: lowY > highY ? lowY : Math.min(highY, Math.max(lowY, dy)) }
+}
+function startMove(mark, p, event) {
+  S.sel = mark.id
+  S.status = ''
+  // Text centred on its shape cannot leave it: dragging it moves the shape.
+  const lead = mark.tool === 'note' && mark.on && S.follow === 'center' ? S.marks.find(m => m.id === mark.on) ?? mark : mark
+  // Text moves alone; a shape brings its text.
+  const ids = lead.tool === 'note' ? [lead.id] : family(S.marks, lead.id).map(m => m.id)
+  gesture = { kind: 'move', pointer: event.pointerId, from: p, base: S.marks, ids, lead: lead.id, moved: false }
+}
+/** While a pointer is down the surface stays in place, because rebuilding it would drop the pointer's capture. */
+const settle = () => gesture ? paintMarks() : paint()
+function onDown(event) {
+  if (event.button > 0 || S.note) return
+  event.preventDefault()
+  surfaceEl.setPointerCapture?.(event.pointerId)
+  // A touch has no keyboard to serve, so it leaves the focus ring off.
+  if (event.pointerType !== 'touch') surfaceEl.focus({ preventScroll: true })
+  const p = place(event), tolerance = (event.pointerType === 'touch' ? 18 : 9) * pxPerScreen(), who = role(event)
+  S.status = ''
+  const handle = handleHit(p, event)
+  if (handle) { gesture = { kind: 'resize', pointer: event.pointerId, handle, base: S.marks, baseMark: selected(), moved: false }; settle(); return }
+  if (S.move === 'A' && toolIsMove()) {
+    const mark = hit(p, tolerance, true)
+    if (mark) { startMove(mark, p, event); settle(); return }
+    S.sel = null
+    if (who === 'finger') gesture = { kind: 'pan', pointer: event.pointerId, x: event.clientX, y: event.clientY, start: { ...S.pan } }
+    settle(); return
+  }
+  if (S.move === 'B') {
+    const mark = hit(p, tolerance, false)
+    if (mark) { startMove(mark, p, event); settle(); return }
+  }
+  S.sel = null
+  if (S.move === 'C') {
+    const mark = hit(p, tolerance, true)
+    if (mark) {
+      const timer = setTimeout(() => {
+        if (gesture?.timer !== timer) return
+        S.live = null; startMove(mark, p, event); S.lifted = true; surfaceEl.dataset.lifted = ''; paintMarks()
+        setTimeout(() => { S.lifted = false }, 240)
+        if (navigator.vibrate) navigator.vibrate(10)
+      }, 350)
+      beginDrawing(event, p, who, tolerance)
+      if (gesture) gesture.timer = timer, gesture.startX = event.clientX, gesture.startY = event.clientY
+      else gesture = { kind: 'wait', pointer: event.pointerId, timer, startX: event.clientX, startY: event.clientY }
+      settle(); return
+    }
+  }
+  beginDrawing(event, p, who, tolerance)
+  settle()
+}
+function beginDrawing(event, p, who, tolerance) {
+  if (who === 'finger') { gesture = { kind: 'pan', pointer: event.pointerId, x: event.clientX, y: event.clientY, start: { ...S.pan } }; return }
+  if (S.tool === 'move') return
+  if (S.tool === 'note') { gesture = { kind: 'note', pointer: event.pointerId, tolerance }; return }
+  const id = nextId++
+  S.live = S.tool === 'pen' ? { id, ink: S.ink, tool: 'pen', pressure: false, points: [[p.x, p.y, .5]] } : { id, ink: S.ink, tool: S.tool, x0: p.x, y0: p.y, x1: p.x, y1: p.y }
+  gesture = { kind: 'draw', pointer: event.pointerId }
+}
+function dropHold() { if (gesture?.timer) { clearTimeout(gesture.timer); gesture.timer = null } }
+function onMove(event) {
+  if (!gesture) { hoverCursor(event); return }
+  if (gesture.pointer !== event.pointerId) return
+  if (gesture.timer && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 6) { dropHold(); if (gesture.kind === 'wait') gesture = null }
+  const p = place(event)
+  if (gesture.kind === 'draw' && S.live) {
+    S.live = S.live.tool === 'pen' ? { ...S.live, points: [...S.live.points, [p.x, p.y, .5]] } : { ...S.live, x1: p.x, y1: p.y }
+    paintMarks(); return
+  }
+  if (gesture.kind === 'pan') { S.pan = { x: gesture.start.x + event.clientX - gesture.x, y: gesture.start.y + event.clientY - gesture.y }; surfaceEl.style.transform = `translate(${S.pan.x}px, ${S.pan.y}px)`; return }
+  if (gesture.kind === 'move') {
+    const { dx, dy } = clampDelta(gesture.ids, gesture.base, p.x - gesture.from.x, p.y - gesture.from.y)
+    gesture.moved = gesture.moved || Math.hypot(p.x - gesture.from.x, p.y - gesture.from.y) > 2 * pxPerScreen()
+    S.marks = resolveCentred(gesture.base.map(m => gesture.ids.includes(m.id) ? shift(m, dx, dy) : m))
+    paintMarks(); return
+  }
+  if (gesture.kind === 'resize') {
+    gesture.moved = true
+    S.marks = resolveCentred(gesture.base.map(m => m.id === gesture.baseMark.id ? applyResize(gesture.baseMark, gesture.handle, p) : m))
+    paintMarks()
+  }
+}
+function onUp(event) {
+  if (!gesture || gesture.pointer !== event.pointerId) return
+  const g = gesture
+  dropHold()
+  gesture = null
+  const p = place(event)
+  if (g.kind === 'draw' && S.live) {
+    const mark = S.live
+    S.live = null
+    const made = mark.tool === 'pen' ? mark.points.length > 2 : Math.hypot(mark.x1 - mark.x0, mark.y1 - mark.y0) > LONGER / 80
+    if (made) push([...S.marks, mark])
+  } else if (g.kind === 'note') {
+    openNote(p, g.tolerance)
+  } else if (g.kind === 'move') {
+    const moved = S.marks
+    S.marks = g.base
+    if (g.moved) {
+      push(settleText(moved, g), S.undoMoves)
+    }
+  } else if (g.kind === 'resize') {
+    const moved = S.marks
+    S.marks = g.base
+    if (g.moved) push(moved, S.undoMoves)
+  }
+  paint()
+}
+/** Text on a shape belongs to it, and text off every shape is free: the one rule, checked where the text was let go. */
+function settleText(marks, g) {
+  const lead = marks.find(m => m.id === g.lead)
+  if (!lead || lead.tool !== 'note' || S.text === 'free') return marks
+  const r = noteRect(lead), centre = { x: r.x + r.w / 2, y: r.y + r.h / 2 }
+  const others = S.marks
+  S.marks = marks.filter(m => m.id !== lead.id)
+  const shape = shapeAt(centre, 14 * pxPerScreen())
+  S.marks = others
+  if (S.text === 'shape' && !shape) { S.status = 'Text stays on its shape. It went back.'; return g.base }
+  const was = g.base.find(m => m.id === lead.id)?.on ?? null
+  if ((shape?.id ?? null) !== was) S.status = shape ? `Text is on the ${shapeName(shape)} now. It moves with it.` : 'Text is free now.'
+  return marks.map(m => m.id === lead.id ? { ...m, on: shape?.id ?? null } : m)
+}
+const shapeName = m => ({ box: 'box', ellipse: 'circle', arrow: 'arrow', pen: 'pen line' })[m.tool]
+function hoverCursor(event) {
+  if (!surfaceEl || event.pointerType === 'touch') return
+  const p = place(event), tolerance = 9 * pxPerScreen()
+  let cursor = 'crosshair'
+  if (handleHit(p, event)) cursor = 'nwse'
+  else if (toolIsMove()) cursor = hit(p, tolerance, true) ? 'grab' : 'move'
+  else if (S.move === 'B' && hit(p, tolerance, false)) cursor = 'grab'
+  surfaceEl.dataset.cursor = cursor
+}
+function openNote(p, tolerance) {
+  const shape = shapeAt(p, tolerance)
+  if (S.text === 'shape' && !shape) { S.status = 'Press a shape to put text on it.'; return }
+  S.note = { x: p.x, y: p.y, on: shape?.id ?? null, value: '' }
+}
+function finishNote(words) {
+  const note = S.note
+  S.note = null
+  const text = (words ?? '').trim().slice(0, 120)
+  if (text) {
+    const id = nextId++
+    push([...S.marks, { id, ink: S.ink, tool: 'note', x0: note.x, y0: note.y, text, scale: S.nextScale, on: note.on }])
+    if (S.device === 'desktop') S.sel = null
+  }
+  paint()
+  if (S.device === 'desktop') surfaceEl?.focus({ preventScroll: true })
+}
+
+/* ---------- text size ---------- */
+const sizeTarget = () => { const m = selected(); return m?.tool === 'note' ? m : null }
+const sizeLive = () => !!sizeTarget() || S.tool === 'note'
+const currentScale = () => sizeTarget()?.scale ?? S.nextScale
+function setScale(scale) {
+  S.nextScale = scale
+  const target = sizeTarget()
+  if (target) push(S.marks.map(m => m.id === target.id ? { ...m, scale } : m))
+  paint()
+}
+function stepScale(by) {
+  const now = currentScale()
+  let index = SIZE_STEPS.reduce((best, step, i) => Math.abs(step - now) < Math.abs(SIZE_STEPS[best] - now) ? i : best, 0)
+  index = Math.max(0, Math.min(SIZE_STEPS.length - 1, index + by))
+  setScale(SIZE_STEPS[index])
+}
+
+/* ---------- the copy ---------- */
+async function addToReply() {
+  if (!S.marks.length) { S.status = 'Draw on the picture first. Nothing was added.'; paint(); return }
+  const picture = new Image()
+  picture.src = PICTURE
+  await picture.decode()
+  await document.fonts.load(fontOf(40), 'Aa')
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  const context = canvas.getContext('2d')
+  context.drawImage(picture, 0, 0, W, H)
+  drawCopy(context, S.marks, inks())
+  S.copy = canvas.toDataURL('image/png')
+  S.sel = null
+  paint()
+}
+
+/* ---------- icons, lucide's ---------- */
+const svg = (inner, size = 16) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`
+const ICON = {
+  move: '<path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/>',
+  arrow: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>', ellipse: '<circle cx="12" cy="12" r="10"/>', box: '<rect width="18" height="18" x="3" y="3" rx="2"/>',
+  pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>', note: '<path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', hand: '<path d="M18 11V6a2 2 0 0 0-4 0"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
+}
+const TOOL_WORDS = { move: 'Move', arrow: 'Arrow', ellipse: 'Circle', box: 'Box', pen: 'Pen', note: 'Note' }
+const TOOL_KEYS = { move: 'V', arrow: 'A', ellipse: 'O', box: 'B', pen: 'P', note: 'T' }
+const toolList = () => (S.move === 'A' ? ['move'] : []).concat(['arrow', 'ellipse', 'box', 'pen', 'note'])
+const INK_WORDS = { red: 'Red ink', amber: 'Amber ink', plain: 'Plain ink' }
+function markWords(mark) {
+  if (mark.tool === 'note') { const shape = mark.on ? S.marks.find(m => m.id === mark.on) : null; return shape ? `Note on the ${shapeName(shape)}: ${mark.text}` : `Note: ${mark.text}` }
+  return mark.tool === 'pen' ? 'Pen line' : TOOL_WORDS[mark.tool]
+}
+
+/* ---------- the size control, whichever way it goes ---------- */
+function sizeControl(phone) {
+  if (S.size === 'C') return ''
+  const off = !sizeLive(), dis = off ? 'aria-disabled="true"' : ''
+  if (S.size === 'A') {
+    const now = currentScale(), low = now <= SIZE_STEPS[0], high = now >= SIZE_STEPS.at(-1)
+    return `<div class="size" ${off ? 'data-off' : ''} role="group" aria-label="Text size"><button type="button" class="size__button" ${off || low ? 'aria-disabled="true"' : ''} data-cmd="smaller" aria-label="Make the text smaller" title="Make the text smaller (-)">A−</button><span class="size__label">Text size</span><button type="button" class="size__button" ${off || high ? 'aria-disabled="true"' : ''} data-cmd="larger" aria-label="Make the text larger" title="Make the text larger (=)">A+</button></div>`
+  }
+  return `<div class="size" ${off ? 'data-off' : ''} role="group" aria-label="Text size"><span class="size__label">Text size</span>${Object.entries(SML).map(([word, value]) => `<button type="button" class="size__button size__button--word" ${dis} data-scale="${value}" aria-pressed="${!off && Math.abs(currentScale() - value) < .01}" aria-label="${{ S: 'Small', M: 'Medium', L: 'Large' }[word]} text">${word}</button>`).join('')}</div>`
+}
+
+/* ---------- painting ---------- */
+function marksInner() {
+  const colours = inks()
+  let out = S.marks.map(m => shapeSVG(m, colours)).join('')
+  if (S.live) out += shapeSVG(S.live, colours)
+  const mark = selected()
+  if (mark && !S.copy) {
+    const unit = surfaceEl ? pxPerScreen() : 1, pad = 6 * unit, r = bounds(mark)
+    out += `<rect class="sel-box" x="${r.x - pad}" y="${r.y - pad}" width="${r.w + pad * 2}" height="${r.h + pad * 2}" fill="none" stroke="var(--tt-accent)" stroke-width="${1.5 * unit}" stroke-dasharray="${5 * unit} ${4 * unit}"/>`
+    const size = 5 * unit
+    for (const h of handlesOf(mark)) out += `<circle cx="${h.x}" cy="${h.y}" r="${size}" fill="var(--tt-surface)" stroke="var(--tt-accent)" stroke-width="${1.5 * unit}"/>`
+    // A thin line ties text on a shape to it while it is selected, so where it belongs is plain.
+    const tied = mark.tool === 'note' && mark.on ? S.marks.find(m => m.id === mark.on) : null
+    if (tied) { const a = bounds(tied), line = `stroke="var(--tt-accent)" stroke-width="${1.5 * unit}" fill="none" stroke-dasharray="${2 * unit} ${4 * unit}"`; out += `<rect x="${a.x - pad}" y="${a.y - pad}" width="${a.w + pad * 2}" height="${a.h + pad * 2}" ${line}/>` }
+  }
+  return out
+}
+function paintMarks() {
+  const host = surfaceEl?.querySelector('svg')
+  if (host) host.innerHTML = marksInner()
+}
+function fitSurface() {
+  if (!surfaceEl) return
+  const room = surfaceEl.parentElement, styles = getComputedStyle(room)
+  const width = room.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight), height = room.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom)
+  const scale = Math.min(width / W, height / H)
+  if (scale > 0) { surfaceEl.style.width = W * scale + 'px'; surfaceEl.style.height = H * scale + 'px' }
+  paintMarks()
+}
+function surfaceHTML() {
+  const noteInput = S.note && S.device === 'desktop' ? `<input class="note-input" id="noteinput" maxlength="120" aria-label="Note" placeholder="Type a note" style="left:${S.note.x / W * 100}%;top:${S.note.y / H * 100}%">` : ''
+  return `<div class="surface" id="surface" role="application" tabindex="0" aria-label="Picture to mark up: checkout.png" data-cursor="${toolIsMove() ? 'move' : 'crosshair'}" ${S.lifted ? 'data-lifted' : ''} style="transform:translate(${S.pan.x}px,${S.pan.y}px)"><img src="${PICTURE}" alt="" draggable="false"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"></svg>${noteInput}</div>`
+}
+function hintWords() {
+  const moving = S.move === 'A' ? 'Move or V picks marks up: press one and drag it, or press Enter to step through them and use the arrow keys.'
+    : S.move === 'B' ? 'Press a mark to pick it up and drag it. Pick one in the list to use the arrow keys.' : 'Hold a mark, then drag it. Pick one in the list to use the arrow keys.'
+  return `Drag to draw. Press where a note goes, then type. ${moving} Delete takes the picked mark off. Escape lets it go, then cancels.`
+}
+function desktopHTML() {
+  const undoOff = !S.past.length, redoOff = !S.future.length, marks = S.marks
+  return `<div class="device device--desktop">
+    <header class="bar" role="toolbar" aria-label="Mark-up tools">
+      <h2 class="title">Mark up checkout.png</h2>
+      <div class="tools">${toolList().map(tool => `<button type="button" class="tool" data-tool="${tool}" aria-pressed="${S.tool === tool}" title="${TOOL_WORDS[tool]} (${TOOL_KEYS[tool]})">${svg(ICON[tool])}<span>${TOOL_WORDS[tool]}</span></button>`).join('')}</div>
+      <span class="divider"></span>
+      <div class="inks" role="radiogroup" aria-label="Ink">${Object.keys(INK_WORDS).map(ink => `<button type="button" role="radio" class="ink ink--${ink}" data-ink="${ink}" aria-checked="${S.ink === ink}" aria-label="${INK_WORDS[ink]}" title="${INK_WORDS[ink]}"></button>`).join('')}</div>
+      ${S.size === 'C' ? '' : `<span class="divider"></span>${sizeControl(false)}`}
+      <span class="divider"></span>
+      <button type="button" class="tool" data-cmd="undo" ${undoOff ? 'aria-disabled="true"' : ''} title="Undo (Ctrl+Z)">${svg(ICON.undo)}<span>Undo</span></button>
+      <button type="button" class="tool tool--icon" data-cmd="redo" ${redoOff ? 'aria-disabled="true"' : ''} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${svg(ICON.redo)}</button>
+      <span class="space"></span>
+      <button type="button" class="action" data-cmd="cancel" title="Cancel (Esc)">Cancel</button>
+      <button type="button" class="action action--primary" data-cmd="add" title="Add to reply (Ctrl+Enter)">Add to reply</button>
+    </header>
+    <div class="body">
+      <div class="room" id="room">${surfaceHTML()}</div>
+      <aside class="side" aria-label="Your marks">
+        <h3 class="heading">Your marks</h3>
+        ${marks.length ? `<ul class="marks">${marks.map(mark => `<li ${S.sel === mark.id ? 'data-selected' : ''}><button type="button" class="mark-pick" data-pick="${mark.id}" aria-pressed="${S.sel === mark.id}"><span class="swatch ink--${mark.ink}"></span><span class="mark-name">${esc(markWords(mark))}</span></button><button type="button" class="remove" data-remove="${mark.id}" aria-label="Remove ${esc(markWords(mark))}" title="Remove">${svg(ICON.x, 13)}</button></li>`).join('')}</ul>` : '<p class="empty">None yet. Draw on the picture.</p>'}
+        <p class="copy-note">The marked copy goes into your reply. The picture in the thread stays as it was.</p>
+      </aside>
+    </div>
+    <p class="status" role="status" aria-live="polite">${esc(S.status)}</p>
+    <p class="hint">${hintWords()}</p>
+  </div>`
+}
+function phoneHTML() {
+  const pencil = S.device === 'pencil', undoOff = !S.past.length, redoOff = !S.future.length, mark = selected()
+  const alert = S.note ? `<div class="palert"><div class="palert__box" role="dialog" aria-label="Note"><b>Note</b><input id="alertinput" maxlength="120" placeholder="Type a note"><div class="palert__row"><button type="button" data-cmd="note-cancel">Cancel</button><button type="button" class="primary" data-cmd="note-add">Add</button></div></div></div>` : ''
+  const canDelete = S.del && mark
+  return `<div class="device device--phone" style="position:relative">
+    <div class="ptop"><button type="button" data-cmd="cancel">Cancel</button><b>Mark up</b><button type="button" class="add" data-cmd="add">Add to reply</button></div>
+    ${pencil ? `<div class="penline">Pen draws · finger moves the picture</div>` : ''}
+    <div class="pstage" id="room">${surfaceHTML()}</div>
+    ${S.status ? `<div class="pnote" role="status">${esc(S.status)}</div>` : ''}
+    <div class="pcontext">
+      ${sizeControl(true)}
+      ${S.del ? `<button type="button" class="delete" data-cmd="delete" ${canDelete ? '' : 'aria-disabled="true"'} aria-label="Delete the picked mark">${svg(ICON.trash)}Delete</button>` : ''}
+    </div>
+    <div class="ppal" role="toolbar" aria-label="Mark-up tools">
+      <div class="ppal__row">${toolList().map(tool => `<button type="button" class="ptool" data-tool="${tool}" aria-pressed="${S.tool === tool}" aria-label="${TOOL_WORDS[tool]}">${svg(ICON[tool], 20)}</button>`).join('')}</div>
+      <div class="ppal__row">
+        ${Object.keys(INK_WORDS).map(ink => `<button type="button" role="radio" class="pink ink--${ink}" data-ink="${ink}" aria-checked="${S.ink === ink}" aria-label="${INK_WORDS[ink]}"></button>`).join('')}
+        <button type="button" class="ptool" data-cmd="undo" ${undoOff ? 'aria-disabled="true"' : ''} aria-label="Undo">${svg(ICON.undo, 20)}</button>
+        <button type="button" class="ptool" data-cmd="redo" ${redoOff ? 'aria-disabled="true"' : ''} aria-label="Redo">${svg(ICON.redo, 20)}</button>
+        ${pencil ? `<button type="button" class="ptool" aria-label="Draw with a finger too" title="Draw with a finger too">${svg(ICON.hand, 20)}</button>` : ''}
+      </div>
+    </div>
+    ${alert}
+  </div>`
+}
+function seg(group, options, current) {
+  return `<div class="pseg">${options.map(([value, words]) => `<button type="button" data-seg="${group}" data-value="${value}" aria-pressed="${current === value}">${words}</button>`).join('')}</div>`
+}
+function sheetHTML() {
+  const stateLines = S.marks.map(m => `${m.id} ${m.tool}${m.tool === 'note' ? ` "${m.text}" size ${(m.scale ?? 1).toFixed(2)}${m.on ? ` on ${m.on}` : ' free'}` : ''}${S.sel === m.id ? ' ← picked' : ''}`).join('\n')
+  return `<div class="psheet" data-cmd="sheet-close"><div class="psheet__panel" role="dialog" aria-label="Options" data-stop>
+    <div class="psheet__head">Options<button type="button" data-cmd="sheet-close">Done</button></div>
+    <div class="psheet__body">
+      <div class="pgroup"><h3>Where</h3>${seg('device', [['desktop', 'Desktop'], ['iphone', 'iPhone'], ['pencil', 'iPhone with Pencil']], S.device)}
+        ${S.device === 'pencil' ? `<p>A finger moves the picture and the Pencil draws. With no Pencil to hand, say what your touch stands for:</p>${seg('touchAs', [['finger', 'My touch is a finger'], ['pencil', 'My touch is the Pencil']], S.touchAs)}` : ''}</div>
+      <div class="pgroup"><h3>Moving a mark</h3>${seg('move', Object.entries(MOVES).map(([k, v]) => [k, v[0]]), S.move)}<p>${MOVES[S.move][1]}</p></div>
+      <div class="pgroup"><h3>Text size</h3>${seg('size', Object.entries(SIZES).map(([k, v]) => [k, v[0]]), S.size)}<p>${SIZES[S.size][1]}. It sizes the picked text and the next note you place.</p></div>
+      <div class="pgroup"><h3>How text looks on the picture</h3>${seg('look', [['outline', 'With a thin edge'], ['bare', 'Just the ink']], S.look)}<p>Move the plain ink note onto the white page and back onto the dark bar to see why the edge is there.</p></div>
+      <div class="pgroup"><h3>Text and shapes</h3>${seg('text', [['both', 'Both: on a shape or free'], ['free', 'Free only'], ['shape', 'Only on a shape']], S.text)}
+        ${S.text !== 'free' ? `<p>When a shape moves, its text:</p>${seg('follow', [['keep', 'Moves with it, where you put it'], ['center', 'Stays centred in it']], S.follow)}` : ''}</div>
+      <div class="pgroup"><h3>Also, each on or off</h3>
+        <label class="pcheck"><input type="checkbox" data-flag="undoMoves" ${S.undoMoves ? 'checked' : ''}>Undo steps back a move or resize</label>
+        <label class="pcheck"><input type="checkbox" data-flag="resize" ${S.resize ? 'checked' : ''}>Resize a picked mark by its corners</label>
+        <label class="pcheck"><input type="checkbox" data-flag="del" ${S.del ? 'checked' : ''}>Delete a picked mark (iPhone button, Delete key)</label></div>
+      <div class="pgroup"><h3>Look</h3>${seg('theme', [['dark', 'Dark'], ['light', 'Light']], S.theme)}<label class="pcheck" style="margin-top:6px"><input type="checkbox" data-flag="reduced" ${S.reduced ? 'checked' : ''}>Reduced motion</label></div>
+      <div class="pgroup"><h3>Try</h3><ol class="ptry"><li>Move the red box: its text comes with it.</li><li>Drag the text off the box: it is free now. Drag it back on.</li><li>Pick Note, press the box, type: the words have no red behind them.</li><li>Pick the text and size it up and down.</li><li>Press Add to reply and hold the copy against the editor.</li></ol></div>
+      <div class="pgroup"><h3>What is on the picture now</h3><pre class="pstate">${esc(stateLines || 'Nothing')}</pre><p style="margin-top:8px"><button type="button" data-cmd="reset" style="height:36px;padding:0 12px;border:1px solid #c8c3b6;border-radius:8px;background:#fff;color:#15130e;font-weight:600">Start again</button></p></div>
+    </div>
+  </div></div>`
+}
+function syncUrl() {
+  const q = new URLSearchParams({ device: S.device, move: S.move, size: S.size, text: S.text, follow: S.follow, look: S.look, resize: S.resize ? '1' : '0', undo: S.undoMoves ? '1' : '0', del: S.del ? '1' : '0', theme: S.theme })
+  history.replaceState(null, '', '?' + q)
+}
+function paint() {
+  document.documentElement.dataset.theme = S.theme
+  document.documentElement.dataset.motion = S.reduced ? 'reduced' : ''
+  const host = document.getElementById('stagehost')
+  const framed = S.device !== 'desktop' && innerWidth >= 720
+  if (framed) { host.dataset.framed = ''; host.style.setProperty('--device-width', S.device === 'pencil' ? '700px' : '390px') } else delete host.dataset.framed
+  const stayFocused = document.activeElement?.id === 'surface'
+  host.innerHTML = S.device === 'desktop' ? desktopHTML() : phoneHTML()
+  surfaceEl = document.getElementById('surface')
+  surfaceEl.addEventListener('pointerdown', onDown)
+  surfaceEl.addEventListener('pointermove', onMove)
+  surfaceEl.addEventListener('pointerup', onUp)
+  surfaceEl.addEventListener('pointercancel', () => { dropHold(); gesture = null; S.live = null; paint() })
+  fitSurface()
+  if (stayFocused) surfaceEl.focus({ preventScroll: true })
+  const noteInput = document.getElementById('noteinput')
+  if (noteInput) {
+    noteInput.focus()
+    noteInput.addEventListener('keydown', event => { event.stopPropagation(); if (event.key === 'Enter') finishNote(noteInput.value); if (event.key === 'Escape') finishNote('') })
+    noteInput.addEventListener('blur', () => { if (S.note) finishNote(noteInput.value) })
+  }
+  const alertInput = document.getElementById('alertinput')
+  if (alertInput) { alertInput.focus(); alertInput.addEventListener('keydown', event => { event.stopPropagation(); if (event.key === 'Enter') finishNote(alertInput.value) }) }
+  document.getElementById('pwhat').textContent = MOVES[S.move][0]
+  document.getElementById('pwhy').textContent = MOVES[S.move][1]
+  const scrolled = document.querySelector('.psheet__body')?.scrollTop ?? 0
+  document.getElementById('sheethost').innerHTML = S.sheet ? sheetHTML() : ''
+  const sheetBody = document.querySelector('.psheet__body')
+  if (sheetBody) sheetBody.scrollTop = scrolled
+  document.getElementById('copyhost').innerHTML = S.copy ? `<div class="copy"><div class="copy__head"><div><b>The marked copy, as it goes into the reply</b><span>Drawn on a canvas at 1280 by 800, from the same marks.</span></div><button type="button" data-cmd="copy-close">Back to the editor</button></div><div class="copy__pic"><img src="${S.copy}" alt="The marked copy"></div></div>` : ''
+  syncUrl()
+}
+
+/* ---------- presses ---------- */
+const setTool = tool => { if (!toolList().includes(tool)) return; S.tool = tool; if (tool !== 'move' && S.move === 'A') S.sel = null; paint() }
+document.addEventListener('click', event => {
+  const target = event.target.closest('[data-tool],[data-ink],[data-cmd],[data-pick],[data-remove],[data-seg],[data-scale]')
+  if (event.target.closest('[data-stop]') && target?.dataset.cmd === 'sheet-close' && target.classList.contains('psheet')) return
+  if (!target) return
+  if (target.getAttribute('aria-disabled') === 'true') return
+  const d = target.dataset
+  if (d.tool) { setTool(d.tool); return }
+  if (d.ink) { S.ink = d.ink; paint(); return }
+  if (d.pick) { S.sel = S.sel === +d.pick ? null : +d.pick; if (S.move === 'A') S.tool = 'move'; paint(); return }
+  if (d.remove) { removeMark(+d.remove); return }
+  if (d.scale) { setScale(+d.scale); return }
+  if (d.seg) {
+    S[d.seg] = d.value
+    if (d.seg === 'move' && d.value !== 'A' && S.tool === 'move') S.tool = 'arrow'
+    if (d.seg === 'text' || d.seg === 'follow') seed()
+    if (d.seg === 'device') S.pan = { x: 0, y: 0 }
+    paint(); return
+  }
+  switch (d.cmd) {
+    case 'undo': undo(); break
+    case 'redo': redo(); break
+    case 'smaller': stepScale(-1); break
+    case 'larger': stepScale(1); break
+    case 'delete': if (S.sel) removeMark(S.sel); break
+    case 'add': addToReply(); break
+    case 'cancel': seed(); S.status = 'Cancelled. In the app this goes back to the picture.'; paint(); break
+    case 'note-add': finishNote(document.getElementById('alertinput')?.value); break
+    case 'note-cancel': finishNote(''); break
+    case 'sheet-close': S.sheet = false; paint(); break
+    case 'copy-close': S.copy = null; paint(); break
+    case 'reset': seed(); S.sheet = false; paint(); break
+  }
+})
+document.addEventListener('change', event => {
+  const flag = event.target.dataset?.flag
+  if (!flag) return
+  S[flag] = event.target.checked
+  paint()
+})
+document.getElementById('opts').addEventListener('click', () => { S.sheet = true; paint() })
+function cycle(by) {
+  const keys = Object.keys(MOVES), next = keys[(keys.indexOf(S.move) + by + keys.length) % keys.length]
+  S.move = next
+  if (next !== 'A' && S.tool === 'move') S.tool = 'arrow'
+  if (next === 'A') S.tool = 'move'
+  paint()
+}
+document.getElementById('prev').addEventListener('click', () => cycle(-1))
+document.getElementById('next').addEventListener('click', () => cycle(1))
+
+document.addEventListener('keydown', event => {
+  if (event.target.tagName === 'INPUT' && event.target.type !== 'checkbox') return
+  if (S.copy || S.sheet) { if (event.key === 'Escape') { S.copy = null; S.sheet = false; paint() } return }
+  const mod = event.ctrlKey || event.metaKey
+  if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); return }
+  if (mod && event.key === 'Enter') { event.preventDefault(); addToReply(); return }
+  if (mod || event.altKey) return
+  const mark = selected(), step = (event.shiftKey ? 8 : 1) * LONGER / 100
+  const arrow = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key]
+  if (arrow && mark) {
+    event.preventDefault()
+    const ids = mark.tool === 'note' ? [mark.id] : family(S.marks, mark.id).map(m => m.id)
+    const { dx, dy } = clampDelta(ids, S.marks, arrow[0], arrow[1])
+    push(S.marks.map(m => ids.includes(m.id) ? shift(m, dx, dy) : m), S.undoMoves)
+    paint(); return
+  }
+  if (arrow && !event.target.closest?.('button')) { cycle(event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0); return }
+  if (event.key === 'Enter' && toolIsMove() && document.activeElement?.id === 'surface' && S.marks.length) {
+    event.preventDefault()
+    const index = S.marks.findIndex(m => m.id === S.sel)
+    S.sel = S.marks[(index + 1) % S.marks.length].id
+    paint(); return
+  }
+  if ((event.key === 'Delete' || event.key === 'Backspace') && mark && S.del) { event.preventDefault(); removeMark(mark.id); return }
+  if (event.key === 'Escape') { if (S.sel) { S.sel = null; paint() } return }
+  if ((event.key === '-' || event.key === '=') && S.size === 'A' && sizeLive()) { stepScale(event.key === '-' ? -1 : 1); return }
+  const tool = Object.keys(TOOL_KEYS).find(k => TOOL_KEYS[k].toLowerCase() === event.key.toLowerCase())
+  if (tool) setTool(tool)
+})
+addEventListener('resize', () => { paint() })
+
+/* ---------- start ---------- */
+seed()
+if (S.move === 'A') S.tool = 'move'
+paint()
+document.fonts?.load?.(fontOf(40), 'Aa').then(() => { paint() })
+</script>
+</body>
+</html>
