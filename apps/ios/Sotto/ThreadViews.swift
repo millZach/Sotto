@@ -533,6 +533,7 @@ private struct Conversation: View {
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
+                    .tapPutsAwayKeyboard { [model, ref] in !model.replyHoldsAnything(ref) }
                     .benchEnvironment("EnvironmentUnderThread")
             }
             .defaultScrollAnchor(.bottom)
@@ -553,7 +554,10 @@ private struct Conversation: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
-                ReplyDock(ref: ref, openRequest: openRequest)
+                // Only a new empty thread keeps the box full. One still opening goes by whether it has had a message.
+                ReplyDock(ref: ref, goesSmall: !rows.isEmpty || !pending.isEmpty || detail?.earlierAvailable == true
+                            || model.thread(ref)?.status == "running" || (detail == nil && model.thread(ref)?.summary?.lastMessageAt != nil),
+                          openRequest: openRequest)
                     .equatable()
                     .readingWidth()
                     .background(dockReader(proxy))
@@ -2291,12 +2295,15 @@ private struct ReplyDock: View, Equatable {
     /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
+    /// Whether the thread has content or is running, so the box goes small while nothing is being written (ADR-0184).
+    let goesSmall: Bool
     let openRequest: (AgentRequest) -> Void
     /// Drawn again for what it watches itself, not for each new revision of the conversation above it; a request it
     /// offers opens the same way every time.
-    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref }
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.goesSmall == b.goesSmall }
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var sent = 0
     @State private var stopped = 0
     /// Watched for which box listens, which changes only as dictation starts and stops.
@@ -2375,15 +2382,21 @@ private struct ReplyDock: View, Equatable {
         let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
         let settings = model.threadSettings(ref)
         let listening = dictation.key == ref.id
+        // Small unless the user is writing here, or the settings have something to say over the box. The accessibility
+        // text sizes stay full: one row can't hold the prompt at those sizes.
+        let small = goesSmall && !DebugFlags.replyBoxStaysFull && !typeSize.isAccessibilitySize && !focused && !written && !listening
+            && !model.preparingSends.contains(ref.id) && settings?.caption == nil && settings?.notices.isEmpty != false
         // As in Claude's iPhone app (Zach's pick A, November 1, 2026): photos and files wait inside the card above the
         // words, and the row under them holds the +, the thread's settings as one pill (ADR-0166), the mic and Send.
         // What the settings still wait on sits above the card.
         return VStack(alignment: .leading, spacing: Space.s2) {
             if let settings { ThreadSettingsLines(ref: ref, panel: settings) }
-            ComposerCard(focus: { focused = true }) {
+            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
+            // (ADR-0019).
+            ComposerCard(small: small, lit: settings?.atTopEffort == true, focus: { focused = true }) {
                 DraftAttachments(box: .thread(ref))
             } words: {
-                words(placeholder)
+                words(placeholder, small: small)
             } plus: {
                 if listening { ListeningLine() } else { AttachPhotosButton(box: .thread(ref)) }
             } pill: {
@@ -2391,20 +2404,17 @@ private struct ReplyDock: View, Equatable {
             } trailing: {
                 trailingButtons()
             }
-            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
-            // (ADR-0019).
-            .effortTrace(settings?.atTopEffort == true, radius: ComposerMetrics.radius)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
     }
 
-    private func words(_ placeholder: String) -> some View {
+    private func words(_ placeholder: String, small: Bool) -> some View {
         TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
             .font(.sotto(.body))
             .foregroundStyle(Palette.ink)
-            .lineLimit(1...6)
+            .lineLimit(small ? 1...1 : 1...6)
             .focused($focused)
             // Words added from a reply put the caret after them, here (ADR-0129).
             .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
@@ -2417,10 +2427,7 @@ private struct ReplyDock: View, Equatable {
     }
 
     /// Whether the box holds something to send: words, photos or files.
-    private var written: Bool {
-        !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
-            || !model.files(ref).isEmpty
-    }
+    private var written: Bool { model.replyHoldsAnything(ref) }
 
     /// The mic, then Send, which is always there: the accent once the box holds something, dim while it's empty. While
     /// the turn can be stopped, Stop takes Send's place until something is written; then Stop and Send sit side by side,
@@ -2848,7 +2855,6 @@ struct RequestSheet: View {
         let permission = current.kind == "permission"
         let count = current.questions?.count ?? 0
         let from = Self.from(count: count, provider: provider, threadTitle: threadTitle)
-        let ask: (headline: String?, rest: String?)? = permission ? Self.permissionAsk(current) : nil
         // Who asks and where is one quiet line over the request, and VoiceOver reads the request first (#1855).
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
@@ -2858,7 +2864,7 @@ struct RequestSheet: View {
             .accessibilityElement(children: .combine)
             // Several questions have no headline: each carries its own, and the text a provider built from them would only
             // repeat them.
-            if let headline = title(current, provider, ask: ask) {
+            if let headline = title(current, provider) {
                 Text(headline)
                     .font(.sotto(.title, .semibold))
                     .headingTracking(-0.4)
@@ -2887,18 +2893,15 @@ struct RequestSheet: View {
                 LinkRows(pages: pages, links: links) { opening = $0 }.padding(.top, Space.s4)
             }
         }
-        if let context = current.context {
+        if permission {
+            permissionBody(current, provider: provider)
+        } else if let context = current.context {
             if let command = context.command { PermissionCommand(command: command).padding(.top, Space.s5) }
             if let cwd = context.cwd { runsIn(cwd) }
             if let details = context.details {
                 Text(details).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
             }
-        }
-        // The rest of a permission's words, where its first line is the headline and it names no command of its own.
-        if let rest = ask?.rest, current.context?.command == nil {
-            Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
         }
         if !current.supported {
             note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
@@ -2920,6 +2923,46 @@ struct RequestSheet: View {
         }
     }
 
+    /// What a permission asks: a command under the model's summary of it, or what another request does, on what, with
+    /// every other field in readable lines. The summary is the model's own words, so it is marked as theirs (ADR-0185).
+    @ViewBuilder private func permissionBody(_ current: AgentRequest, provider: String) -> some View {
+        let context = current.context
+        if let command = context?.command {
+            if let summary = context?.summary {
+                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
+            } else {
+                Text(RequestText.noSummary(provider: provider)).font(.sotto(.body)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.top, Space.s3)
+            }
+            PermissionCommand(command: command).padding(.top, Space.s4)
+            ForEach(Array((context?.details ?? "").split(separator: "\n").enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Light(tone: .warning)
+                    Text(verbatim: String(line)).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .padding(.top, Space.s3)
+            }
+            if let cwd = context?.cwd { runsIn(cwd) }
+        } else {
+            if let summary = context?.summary {
+                ModelSummary(provider: provider, summary: summary).padding(.top, Space.s3)
+            }
+            // The rest of its words, where its first line is the headline.
+            if let rest = RequestText.permissionLead(current).rest {
+                Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+            }
+            if let target = context?.target {
+                Text(verbatim: target).font(.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s1)
+            }
+            if let details = context?.details { PermissionDetails(details: details).padding(.top, Space.s3) }
+            if let cwd = context?.cwd { runsIn(cwd) }
+        }
+    }
+
     /// Who asks, and in which thread, over the headline: "Claude Code · Choose the release target", the same on a
     /// permission and a question (#1855). Several questions have no headline, so the line counts them first.
     private static func from(count: Int, provider: String, threadTitle: String) -> String {
@@ -2929,23 +2972,11 @@ struct RequestSheet: View {
         return "\(questions) · \(place)"
     }
 
-    /// A permission as the desktop's card reads it (`permissionSummary` in `requestAnswers.ts`): its first line is what it
-    /// asks, and the rest of its words follow. A first line that only repeats the command it would run asks nothing of
-    /// its own, as Codex's does.
-    private static func permissionAsk(_ request: AgentRequest) -> (headline: String?, rest: String?) {
-        let lines = request.text.split(separator: "\n", omittingEmptySubsequences: false)
-        let first = lines.first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-        let rest = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        let command = (request.context?.command ?? "").split(separator: "\n").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-        let headline: String? = first.isEmpty || first == command ? nil : first
-        return (headline, rest.isEmpty ? nil : rest)
-    }
-
     /// The sheet's headline: what a permission asks, a lone question, or a request's own words when it has no
     /// structured questions. Nil for several questions.
-    private func title(_ request: AgentRequest, _ provider: String, ask: (headline: String?, rest: String?)?) -> String? {
+    private func title(_ request: AgentRequest, _ provider: String) -> String? {
         if request.kind == "permission" {
-            if let headline = ask?.headline { return headline }
+            if let headline = RequestText.permissionLead(request).headline { return headline }
             return request.context?.command != nil
                 ? String(localized: "\(provider) wants to run a command", comment: "%@ is the agent's name")
                 : String(localized: "\(provider) is asking permission", comment: "%@ is the agent's name")
@@ -3317,6 +3348,56 @@ private struct OptionLabel: View {
         .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
+    }
+}
+
+/// What a short permission card, which can answer, shows beyond its words: a setting beside a command, or the opening of a
+/// request's change and fields. **Details** opens the whole of it.
+struct CompactPermissionDetails: View {
+    let context: RequestContext?
+    var body: some View {
+        if let details = context?.details, !details.isEmpty {
+            if context?.command != nil {
+                Text(verbatim: details).font(.sotto(.small)).foregroundStyle(Palette.ink).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, Space.s2)
+            } else {
+                Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(4)
+                    .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                    .padding(.top, Space.s2)
+            }
+        }
+    }
+}
+
+/// The words a model wrote about what it asks, under whose they are: never a headline, since Sotto checked none of them.
+private struct ModelSummary: View {
+    let provider: String
+    let summary: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(RequestText.says(provider: provider)).font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text(verbatim: summary).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The rest of what a permission that is not a command asks: its change and every other field, on the code surface.
+private struct PermissionDetails: View {
+    let details: String
+    var body: some View {
+        Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s3)
+            .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
 

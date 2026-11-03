@@ -397,7 +397,13 @@ export const agentRequestSchema = z.object({
      *  (ADR-0176). The adapter of an agent's own question tool sets it; a typed form field never has it. */
     prose: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
-  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional(),
+  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(),
+    /** The asking model's own words for what it asks (a **command summary**, ADR-0185). Absent when it gave none; Sotto never writes one. */
+    summary: text.optional(),
+    /** What a request that is not a command does, and the path or address it acts on, for the card's head (ADR-0185). */
+    action: text.optional(), target: text.optional(),
+    /** The rest of what is asked, in readable lines: a setting beside a command in words, and otherwise every field and change. */
+    details: text.optional(),
     /** A plan the agent asks the user to accept, in its parts (Cursor's `cursor/create_plan`, ADR-0128); `steps` is Markdown. */
     plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
   /** A question the user may skip: its provider takes a decline and the turn goes on (ADR-0135, October 27, 2026). The
@@ -569,6 +575,10 @@ export const agentWorktreeSchema = z.object({
   /** When Sotto reclaimed this worktree's folder. The branch and the thread stay; the next send puts
    * the folder back on that branch (ADR-0041). Absent while the folder is there. */
   reclaimedAt: z.string().optional(),
+  /** The commit a reclaimed folder had checked out on no branch, a detached HEAD a cleanup rule removed because a branch
+   * or remote branch has it; the next send puts the folder back on it, detached (ADR-0041). Absent while the folder is
+   * there, and for a folder that was on a branch. */
+  detachedCommit: z.string().optional(),
   /** The worktree checks `branch` out as it stands instead of cutting a new branch from the base: a pull request
    * checked out into a worktree of its own, whose branch the first send puts in the new folder. */
   checkoutBranch: z.boolean().optional(),
@@ -613,7 +623,7 @@ export const agentThreadSchema = z.object({
   delegatedBy: id.optional(),
   /** Live swarm membership, supplied by its owner only while worker-swarms is on. */
   swarm: z.object({ id, leadThreadId: id, index: z.number().int().nonnegative().optional(), count: z.number().int().positive(),
-    synthesisDone: z.boolean().optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
+    synthesisDone: z.boolean().optional(), synthesisFailed: z.enum(['failed', 'stopped']).optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
     state: z.enum(['planned', 'queued', 'working', 'background', 'answered', 'failed', 'stopped', 'paused', 'unknown', 'refused']).optional() }).strict().optional(),
   /**
    * The thread this one continues on another provider (ADR-0089), and the threads that continue this one, newest last.

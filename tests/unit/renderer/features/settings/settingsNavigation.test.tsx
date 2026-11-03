@@ -108,7 +108,7 @@ describe('SettingsView', () => {
     expect(screen.getByRole('combobox', { name: 'Microphone' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Sound cues' })).toBeVisible()
-    expect(screen.getByRole('radiogroup', { name: 'Maximum recording time' })).toBeVisible()
+    expect(screen.getByRole('slider', { name: 'Recording limit' })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
     expect(screen.getByRole('heading', { level: 3, name: 'Parakeet v3' })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Whitespace formatting' })).toBeVisible()

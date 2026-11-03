@@ -3,7 +3,7 @@ import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { answerImageCarrier, type AgentAttachmentHandle, type AgentRequest, type QuestionPage } from '../../../../shared/agents'
+import { answerImageCarrier, PROVIDER_LABELS, type AgentAttachmentHandle, type AgentRequest, type ProviderId, type QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
@@ -51,6 +51,8 @@ export interface AgentRequestCardProps {
   /** The web links in the agent's message just before a question, which the card covers once it docks. Those the card
    *  already shows as links in the request's own words are left out. */
   readonly messageLinks?: readonly string[]
+  /** The asking thread's provider, whose words a command summary is (ADR-0185). */
+  readonly providerId?: ProviderId | undefined
   /** Whether the thread's model reads images. Present, and with `answer-images` on, a form that takes written words
    *  takes dropped or pasted images too, which go with the answer (ADR-0176). */
   readonly imagesSupported?: boolean
@@ -61,7 +63,7 @@ export interface AgentRequestCardProps {
  * exactly the choices the provider offered, sends one answer for this request's own ID, and holds instead of
  * resending when delivery is unknown — the sidebar's Needs you card pops this same card open, on the same store.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, providerId, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const { t } = useLingui()
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
@@ -175,10 +177,13 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
           labels={{ 'accept-plan': t`Accept plan`, 'reject-plan': t({ message: 'Reject', comment: 'Rejects a plan the coding agent proposed.' }) }} />
       </> : summary ? <>
         <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
-          {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
+          {request.context?.toolName && !request.context.toolName.includes('/') ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
+        <ModelSummary summary={summary.summary} isCommand={request.context?.command !== undefined} providerId={providerId} />
+        {summary.target ? <p className="agent-request__target" dir="ltr">{summary.target}</p> : null}
         {summary.command ? <pre className="agent-request__command"><code>{summary.command}</code></pre> : null}
+        {summary.details && request.context?.command ? <ul className="agent-request__also">{summary.details.split('\n').map((line, index) => <li key={index} className="tt-paragraph">{line}</li>)}</ul> : null}
         {summary.cwd ? <InFolder cwd={summary.cwd} /> : null}
-        {summary.details ? <pre className="agent-request__details">{summary.details}</pre> : null}
+        {summary.details && !request.context?.command ? <pre className="agent-request__details">{summary.details}</pre> : null}
         <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} />
       </> : mode === 'structured' ? <form className="agent-request__form" noValidate onKeyDown={event => {
         // Enter on a radio must not trigger the form's implicit submit. The send button still works by keyboard.
@@ -462,6 +467,18 @@ function FormContext({ request }: { readonly request: AgentRequest }): ReactNode
     {context?.cwd ? <InFolder cwd={context.cwd} /> : null}
     {details ? <pre className="agent-request__details">{details}</pre> : null}
   </>
+}
+
+/**
+ * The asking model's own words for what it asks, marked as its own: Sotto wrote and checked none of them, and the
+ * command under them is what the user answers (ADR-0185). A command that came with none says so.
+ */
+function ModelSummary({ summary, isCommand, providerId }: { readonly summary: string | undefined; readonly isCommand: boolean; readonly providerId: ProviderId | undefined }): ReactNode {
+  const { t } = useLingui()
+  const provider = providerId ? PROVIDER_LABELS[providerId] : t({ message: 'The agent', comment: 'Stands in for the coding agent’s name when it is not known, as in “The agent says”.' })
+  if (summary) return <p className="agent-request__summary tt-paragraph"><span className="agent-request__summary-who">{t({ message: `${provider} says`, comment: 'Over the words a coding agent wrote about what it asks to do. {provider} is its name.' })}</span>{summary}</p>
+  if (!isCommand) return null
+  return <p className="agent-request__summary tt-paragraph" data-none="true">{t({ message: `${provider} gave no summary of this command.`, comment: '{provider} is the coding agent’s name.' })}</p>
 }
 
 /** The folder a command or form acts in. */

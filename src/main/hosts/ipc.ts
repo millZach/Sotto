@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { shownSignInAnswer } from '../../shared/interfaceWords'
 import { HOSTS_GET, HOSTS_COMMAND, hostsCommandSchema, type HostsState } from '../../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD } from '../../shared/hostDevices'
-import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostClientUpdateRequestSchema, hostOpenCodeSignInRequestSchema, hostProviderActionSchema, hostSignInRequestSchema } from '../../shared/hostProviders'
+import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostClientUpdateRequestSchema, hostOpenCodeSignInRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../../shared/hostProviders'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { DesktopHosts } from './desktopHosts'
 import type { HostTailscale } from './tailscale'
@@ -16,7 +16,7 @@ const clientUpdateArguments = z.tuple([hostClientUpdateRequestSchema])
 const signInArguments = z.tuple([hostSignInRequestSchema])
 const openCodeSignInArguments = z.tuple([hostOpenCodeSignInRequestSchema])
 
-export function registerHostsIpc(ipc: IpcMainAdapter, hosts: DesktopHosts, senders: () => readonly TrustedIpcSender[], publish: (state: HostsState) => void,
+export function registerHostsIpc(ipc: IpcMainAdapter, hosts: Pick<DesktopHosts, 'get' | 'command' | 'providerAction' | 'updateClients' | 'signIn' | 'opencodeSignIn' | 'subscribe'>, senders: () => readonly TrustedIpcSender[], publish: (state: HostsState) => void,
   tailscale: Pick<HostTailscale, 'devices' | 'status' | 'connect' | 'openDownload' | 'dispose'>, options: { readonly opencode?: boolean } = {}): () => void {
   const answer = <T>(channel: string, run: () => T): void => {
     ipc.handle(channel, (event, ...args) => {
@@ -35,17 +35,17 @@ export function registerHostsIpc(ipc: IpcMainAdapter, hosts: DesktopHosts, sende
   ipc.handle(HOSTS_PROVIDER_ACTION, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
     const [action] = providerActionArguments.parse(args)
-    return hosts.providerAction(action)
+    return hosts.providerAction(action).then(answer => hostProviderActionResultSchema.parse(answer))
   })
   ipc.handle(HOSTS_UPDATE_CLIENTS, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
     const [request] = clientUpdateArguments.parse(args)
-    return hosts.updateClients(request)
+    return hosts.updateClients(request).then(answer => hostProviderActionResultSchema.parse(answer))
   })
   ipc.handle(HOSTS_SIGN_IN, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
     const [request] = signInArguments.parse(args)
-    return hosts.signIn(request)
+    return hosts.signIn(request).then(answer => providerSignInResultSchema.parse(answer))
   })
   // A host's OpenCode signed in to model sources (#1107): only while OpenCode's Owl feature is on. A request that does not
   // read is refused before it reaches a host, and a key in it is never echoed or logged.
@@ -54,7 +54,8 @@ export function registerHostsIpc(ipc: IpcMainAdapter, hosts: DesktopHosts, sende
     const parsed = openCodeSignInArguments.safeParse(args)
     if (!parsed.success) return { status: 'refused', message: t`Sotto could not read that request, so nothing was sent to the host. Close this and try again.` }
     // The host answers in English; this window reads OpenCode's sentences in the interface language (ADR-0123).
-    return hosts.opencodeSignIn(parsed.data[0]).then(shownSignInAnswer)
+    const [request] = parsed.data
+    return hosts.opencodeSignIn(request).then(answer => shownSignInAnswer(parseHostOpenCodeAnswer(request.call.action, answer)))
   })
   // Tailscale and the SSH setup are read on each request, so a device that just came online, or an alias
   // added a moment ago, is listed.

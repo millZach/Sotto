@@ -213,6 +213,34 @@ describe('AgentRequestCard', () => {
     expect(onSubmit).toHaveBeenCalledWith({ answer: 'Reject', approved: false, permissionChoice: 'no' })
   })
 
+  it('leads a command with the model’s summary as its own words, then the command, and no raw input (ADR-0185)', () => {
+    const request: AgentRequest = { id: 'perm-s', kind: 'permission', text: 'Run a command: Download the runs\ngh run download', options: [],
+      context: { toolName: 'Bash', command: 'gh run download', summary: 'Download the runs', details: 'It also asks to run outside the sandbox.' } }
+    const { container } = render(<AgentRequestCard ownerId="thread" ownerTitle="Compare runs" request={request} blocked={null} onSubmit={vi.fn(async () => ({ error: null }))} providerId="claude" store={new RequestAnswerStore()} />)
+    expect(screen.getByText('Run a command')).toBeTruthy()
+    const summary = container.querySelector('.agent-request__summary')!
+    expect(summary.textContent).toBe('Claude Code saysDownload the runs')
+    expect(summary.compareDocumentPosition(container.querySelector('.agent-request__command')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(container.querySelector('.agent-request__details')).toBeNull()
+    expect(container.querySelector('.agent-request__also')!.textContent).toBe('It also asks to run outside the sandbox.')
+  })
+
+  it('says a command came with no summary, and only a command', () => {
+    const command: AgentRequest = { id: 'perm-n', kind: 'permission', text: 'npm test', options: [], context: { toolName: 'item/commandExecution/requestApproval', command: 'npm test' } }
+    const first = render(<AgentRequestCard ownerId="thread" ownerTitle="Compare runs" request={command} blocked={null} onSubmit={vi.fn(async () => ({ error: null }))} providerId="codex" store={new RequestAnswerStore()} />)
+    expect(screen.getByText('Codex gave no summary of this command.')).toBeTruthy()
+    // A protocol method's name is no word for the user.
+    expect(first.container.querySelector('.agent-request__tag')).toBeNull()
+    first.unmount()
+    const edit: AgentRequest = { id: 'perm-e', kind: 'permission', text: 'Edit a file: /a.ts', options: [], context: { toolName: 'Edit', action: 'Edit a file', target: '/a.ts', details: '- one\n+ two' } }
+    const { container } = render(<AgentRequestCard ownerId="thread" ownerTitle="Compare runs" request={edit} blocked={null} onSubmit={vi.fn(async () => ({ error: null }))} providerId="claude" store={new RequestAnswerStore()} />)
+    expect(screen.queryByText(/no summary/u)).toBeNull()
+    expect(screen.getByText('Edit a file')).toBeTruthy()
+    expect(container.querySelector('.agent-request__target')!.textContent).toBe('/a.ts')
+    expect(container.querySelector('.agent-request__details')!.textContent).toBe('- one\n+ two')
+    expect(container.querySelector('.agent-request__command')).toBeNull()
+  })
+
   it('keeps a refused answer answerable and holds an unconfirmed one until checked', async () => {
     const refused = setup({ id: 'perm-2', kind: 'permission', text: 'Allow?', options: [] }, { outcome: { error: 'The request is no longer pending.' } })
     await refused.user.click(screen.getByRole('button', { name: 'Allow' }))

@@ -43,6 +43,8 @@ export interface CouncilControlHooks {
   observe(snapshot: AgentHostSnapshot, threads?: Pick<HostThreadsView, 'thread'>): void
   /** The threads whose turns the Council follows, kept in the observed set so their messages are read. */
   observedThreadIds(): readonly string[]
+  /** Whether a Council made this thread, whether or not it still follows it. */
+  madeThread(threadId: string): boolean
   /** The message ID a stage's prompt carries, so its turn is known by it from the first echo. */
   messageIdFor(draftId: string): string | undefined
   /** The guard a prompt carries to the provider's writer, asked again after the thread's preparation. */
@@ -143,6 +145,7 @@ export class CouncilService {
     this.unhook = this.options.control.useCouncil({
       observe: (snapshot, threads) => this.observe(snapshot, threads),
       observedThreadIds: () => this.watched,
+      madeThread: threadId => this.records.some(record => record.seats.some(seat => seat.thread === threadId || seat.formerThreads.includes(threadId))),
       messageIdFor: draftId => this.byDraft.get(draftId)?.turn.messageId,
       guardFor: draftId => { const held = this.byDraft.get(draftId); return held ? () => this.guard(held.record, held.turn) : undefined },
       ownsMessage: messageId => this.messages.has(messageId),
@@ -429,6 +432,12 @@ export class CouncilService {
       await this.persist()
       this.changed([record])
       this.options.control.refreshCouncilObservation()
+      // A reply may have arrived while this send held the thread; releasing it must let the next queued prompt go.
+      if (!this.closed) {
+        const snapshot = this.options.control.watcherSnapshot()
+        let list: Map<string, AgentThread> | undefined
+        this.dispatchFree(snapshot, id => (list ??= new Map(snapshot.threads.map(item => [item.id, item]))).get(id))
+      }
     }
   }
 

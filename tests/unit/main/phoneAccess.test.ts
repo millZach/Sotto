@@ -321,14 +321,16 @@ it('serves the name phones show: the setting, or the Tailscale machine name', as
 })
 
 it('shows one pairing code at a time, only while phones can connect, and forgets it once a phone redeems it', async () => {
-  const fake = fakeTailscale(), server = fakeServer()
-  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: false, phoneAccessName: '' })
+  const fake = fakeTailscale(), server = fakeServer(), featureUsed = vi.fn()
+  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer, featureUsed }, { phoneAccess: false, phoneAccessName: '' })
   await access.start()
   await expect(access.command({ type: 'show-code' })).rejects.toThrow('Turn on Let phones connect first')
+  expect(featureUsed).not.toHaveBeenCalled()
   settings.phoneAccess = true
   access.settingsChanged()
   await vi.waitFor(() => expect(access.get().phase).toBe('on'))
   const first = (await access.command({ type: 'show-code' })).code!
+  expect(featureUsed).toHaveBeenCalledExactlyOnceWith('add-phone')
   expect(first.code).toMatch(/^[2-9A-HJKMNP-TV-Z]{8}$/u)
   expect(Date.parse(first.expiresAt) - Date.now()).toBeGreaterThan(4 * 60_000)
   const second = (await access.command({ type: 'show-code' })).code!

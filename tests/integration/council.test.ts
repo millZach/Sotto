@@ -14,6 +14,7 @@ import type { AgentState } from '../../src/shared/agents'
 import type { CouncilView } from '../../src/shared/council'
 import { commitFile, git } from '../fixtures/branchRepositories'
 import { delegationFixture } from '../fixtures/delegationFixture'
+import { deferred } from '../fixtures/deferred'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -138,6 +139,11 @@ it('runs a Council end to end in a snapshot, keeps the user\'s checkout as it wa
   expect(await f.council.command({ type: 'settle', council: snapshot.id })).toMatchObject({ ok: true })
   await vi.waitFor(() => expect(f.view()).toMatchObject({ status: 'settled', snapshot: { removed: true } }), { timeout: 20_000 })
   expect(existsSync(path!)).toBe(false)
+  // A seat stays the Council's after it stops following it, for who product events say started the thread (ADR-0179).
+  const hooks = (f.control as unknown as { councilHooks: { madeThread(id: string): boolean; observedThreadIds(): readonly string[] } }).councilHooks
+  expect(hooks.observedThreadIds()).not.toContain(f.seat('chair'))
+  expect(hooks.madeThread(f.seat('chair'))).toBe(true)
+  expect(hooks.madeThread(f.origin)).toBe(false)
   expect(git(f.folder, 'worktree', 'list')).not.toContain('council-worktrees')
   expect(f.control.shell().host.threads.find(thread => thread.id === f.seat('A'))?.workspaceSettledAt).toEqual(expect.any(String))
 })
@@ -185,7 +191,20 @@ it('never sends again a prompt Sotto had not seen arrive before it restarted', a
 })
 
 it('sends a conversation too long for one prompt whole, in parts and in order, writing none of it to disk', async () => {
-  const f = await fixture()
+  const sendHeld = deferred(), releaseSend = deferred(), replyRecorded = deferred()
+  let first = true
+  const f = await fixture({ control: control => new Proxy(control, { get: (target, key) => {
+    if (key !== 'commandFromCouncil') { const value = Reflect.get(target, key) as unknown; return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value }
+    return async (command: Parameters<typeof control.commandFromCouncil>[0], guard: Parameters<typeof control.commandFromCouncil>[1]) => {
+      const result = await target.commandFromCouncil(command, guard)
+      if (command.type === 'manual-send' && first) { first = false; sendHeld.resolve(); await releaseSend.promise }
+      return result
+    }
+  } }) })
+  const unsubscribe = f.council.onChanged(() => {
+    if (f.view().rounds[0]?.rows.find(row => row.stage === 'history' && row.seat === 'chair')?.state === 'done') replyRecorded.resolve()
+  })
+  cleanups.push(async () => { unsubscribe(); releaseSend.resolve() })
   // A long origin conversation: two replies past what one prompt carries together.
   await f.endTurn(f.origin, `Synthetic long reply one ${'x'.repeat(60_000)}`)
   await f.endTurn(f.origin, `Synthetic long reply two ${'y'.repeat(60_000)}`)
@@ -193,7 +212,11 @@ it('sends a conversation too long for one prompt whole, in parts and in order, w
     { modelId: f.model('grok').id, reasoningEffort: 'high' }], chair: { modelId: f.model('claude').id, reasoningEffort: null } })
   const parts = f.view().history.parts
   expect(parts).toBeGreaterThan(1)
-  for (let part = 1; part <= parts; part++) await f.answer('chair', `This is part ${part} of ${parts}`, 'Read.')
+  await sendHeld.promise
+  await f.answer('chair', `This is part 1 of ${parts}`, 'Read.')
+  await replyRecorded.promise
+  releaseSend.resolve()
+  for (let part = 2; part <= parts; part++) await f.answer('chair', `This is part ${part} of ${parts}`, 'Read.')
   await f.answer('chair', 'Don\'t answer it', framing.replace(/angle: C.*\n/u, ''))
   const sent = f.native(f.seat('chair')).messages.filter(message => message.role === 'user').map(message => message.text)
   expect(sent.join('\n')).toContain('Synthetic long reply one')

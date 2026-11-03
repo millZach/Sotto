@@ -36,7 +36,7 @@ const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], MessageDes
 }
 const NO_CHECKPOINTS = msg`Turn checkpoints are kept only for threads on this computer. Nothing was changed.`
 
-export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
+export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges; featureUsed?: (feature: 'terminal') => void; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
   const channels: string[] = []
   const register = (channel: string, operation: (payload: unknown) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {
@@ -56,7 +56,12 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
     if (method === 'copyPath') { const parsed = gitPathRequestSchema.safeParse(payload); return parsed.success ? hosted.copyPath(parsed.data) : invalid }
     return { ok: false, error: { code: 'unavailable', message: i18n._(NOT_ON_HOST[method] ?? NO_CHECKPOINTS) } }
   }
-  for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage'] as const) register(TERMINAL_CHANNEL + method, payload => services.terminal[method](payload))
+  for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage'] as const) register(TERMINAL_CHANNEL + method, payload => {
+    const answer = services.terminal[method](payload)
+    // Only once a shell really started: a refusal at the limit, or for a thread that went, is not the terminal in use.
+    if (method === 'create' || method === 'reopen') void Promise.resolve(answer).then(result => { if (result.ok) services.featureUsed?.('terminal') }, () => undefined)
+    return answer
+  })
   register(TERMINAL_CHANNEL + 'focus', payload => { services.onTerminalFocus?.(focusedSchema.parse(payload)); return { ok: true, value: undefined } })
   for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
   for (const method of GIT_CHANGES_METHODS) register(GIT_CHANGES_CHANNEL + method, payload => namesHostThread(payload) ? onHost(method, payload) : services.gitChanges[method](payload))

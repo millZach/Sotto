@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PRODUCT_EVENTS_INSTALL_FILE } from '../../../../src/main/productEvents/identity'
-import { productEventsEndpoint, productEventsFromDesktops, productEventsOffByEnvironment, productEventsPermission, ProductEvents, type ProductEventsOptions } from '../../../../src/main/productEvents/productEvents'
+import { createProductEvents, PRODUCT_EVENTS_ENDPOINT, productEventsHostFollower, productEventsEndpoint, productEventsOffBy, productEventsFromDesktops, productEventsOffByEnvironment, productEventsPermission, ProductEvents, type ProductEventsOptions } from '../../../../src/main/productEvents/productEvents'
 
 const OWNER = 'b'.repeat(64)
 const INSTALL = { appVersion: '0.1.43', channel: 'stable', surface: 'desktop', platform: 'linux', arch: 'x64' } as const
@@ -300,6 +300,65 @@ describe('ProductEvents', () => {
     expect(events.waitingCount).toBe(left)
   })
 
+  describe('a host following its desktops', () => {
+    function follower() {
+      const calls: string[] = []
+      const follow = productEventsHostFollower({ setPermission: (permission: string) => calls.push(permission), record: (event: string) => calls.push(event) } as never)
+      return { calls, follow }
+    }
+
+    it('says nothing more of its start when its first answer is on, since the one it holds goes', () => {
+      const { calls, follow } = follower()
+      follow([])
+      follow(['waiting'])
+      follow(['on'])
+      expect(calls).toEqual(['on'])
+    })
+
+    it('keeps what it holds when the last desktop leaves', () => {
+      const { calls, follow } = follower()
+      follow(['on'])
+      follow([])
+      follow(['on'])
+      expect(calls).toEqual(['on', 'waiting', 'on'])
+    })
+
+    it('keeps neither queue nor ID when a connected desktop asks again, and says a start for the next ID', () => {
+      const { calls, follow } = follower()
+      follow(['on'])
+      follow(['waiting'])
+      expect(calls).toEqual(['on', 'off', 'waiting'])
+      follow(['on'])
+      expect(calls.slice(3)).toEqual(['on', 'app.started'])
+    })
+
+    it('says a start for the ID made after off', () => {
+      const { calls, follow } = follower()
+      follow(['on'])
+      follow(['off', 'on'])
+      expect(calls).toEqual(['on', 'off', 'off'])
+      follow(['on'])
+      expect(calls.slice(3)).toEqual(['on', 'app.started'])
+    })
+  })
+
+  it('has the endpoint only in a released build, or when the environment names one', () => {
+    expect(PRODUCT_EVENTS_ENDPOINT).toBe('https://events.saysotto.com')
+    const made = (released: boolean, environment: NodeJS.ProcessEnv) => createProductEvents({ released, environment, dataDirectory: '/nowhere', holdWhileWaiting: false, version: '1.2.3', channel: 'stable', surface: 'desktop' })
+    expect(made(true, {}).canSend).toBe(true)
+    expect(made(false, {}).canSend).toBe(false)
+    expect(made(false, { SOTTO_PRODUCT_EVENTS_ENDPOINT: 'http://127.0.0.1:8787' }).canSend).toBe(true)
+  })
+
+  it('names the variable that turned it off, and a released build off by it cannot send', () => {
+    expect(productEventsOffBy({})).toBeNull()
+    expect(productEventsOffBy({ SOTTO_TELEMETRY_ENABLED: 'false' })).toBe('SOTTO_TELEMETRY_ENABLED')
+    expect(productEventsOffBy({ DO_NOT_TRACK: '1' })).toBe('DO_NOT_TRACK')
+    expect(productEventsOffBy({ DO_NOT_TRACK: '0' })).toBeNull()
+    const made = createProductEvents({ released: true, environment: { DO_NOT_TRACK: '1' }, dataDirectory: '/nowhere', holdWhileWaiting: false, version: '1.2.3', channel: 'stable', surface: 'desktop' })
+    expect(made.canSend).toBe(false)
+  })
+
   it('takes an endpoint from the environment only over HTTPS or to this computer', () => {
     expect(productEventsEndpoint({})).toBeNull()
     expect(productEventsEndpoint({}, 'https://built.in')).toBe('https://built.in')
@@ -307,5 +366,39 @@ describe('ProductEvents', () => {
     expect(productEventsEndpoint({ SOTTO_PRODUCT_EVENTS_ENDPOINT: 'http://127.0.0.1:8787' })).toBe('http://127.0.0.1:8787')
     expect(productEventsEndpoint({ SOTTO_PRODUCT_EVENTS_ENDPOINT: 'http://events.test' })).toBeNull()
     expect(productEventsEndpoint({ SOTTO_PRODUCT_EVENTS_ENDPOINT: 'not a url' })).toBeNull()
+  })
+
+  describe('featureUsed', () => {
+    it('keeps one per feature per day, and lets another feature through', () => {
+      const events = make(); events.setPermission('on')
+      events.featureUsed('usage'); events.featureUsed('usage'); events.featureUsed('terminal')
+      expect(events.waitingCount).toBe(2)
+      clock += 24 * 60 * 60 * 1000 - 1
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(2)
+      clock += 1
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(3)
+    })
+    it('keeps nothing while off, and a use while off does not stop the next one counting', () => {
+      const events = make(); events.setPermission('off')
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(0)
+      events.setPermission('on')
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(1)
+    })
+    it('counts again after being turned off and on, since off forgets everything', () => {
+      const events = make(); events.setPermission('on')
+      events.featureUsed('usage')
+      events.setPermission('off'); events.setPermission('on')
+      events.featureUsed('usage')
+      expect(events.waitingCount).toBe(1)
+    })
+    it('refuses a name not on the list', () => {
+      const events = make(); events.setPermission('on')
+      events.featureUsed('secret-repo-name' as never)
+      expect(events.waitingCount).toBe(0)
+    })
   })
 })

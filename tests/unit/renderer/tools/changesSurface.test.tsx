@@ -102,6 +102,24 @@ describe('Changes as T3’s diff', () => {
     expect(within(panel()).getByRole('button', { name: 'Checkpoints' }).closest('.tools-chrome')).toHaveClass('changes-summary')
   })
 
+  it('says Changes and Files were opened once each as they are shown, and never while closed', async () => {
+    const toolOpened = vi.fn()
+    const shown = Object.getOwnPropertyDescriptor(window, 'sotto')
+    Object.defineProperty(window, 'sotto', { configurable: true, writable: true, value: { ...window.sotto, productEvents: { toolOpened } } })
+    try {
+      const { store } = setup()
+      await act(async () => { await Promise.resolve() })
+      expect(toolOpened.mock.calls).toEqual([['changes']])
+      await act(async () => { store.setSurface('files') })
+      expect(toolOpened.mock.calls).toEqual([['changes'], ['files']])
+      await act(async () => { store.setOpen(false) })
+      await act(async () => { store.setSurface('changes') })
+      expect(toolOpened).toHaveBeenCalledTimes(2)
+    } finally {
+      if (shown) Object.defineProperty(window, 'sotto', shown); else delete (window as { sotto?: unknown }).sotto
+    }
+  })
+
   it('names the preserved damaged file in the existing Checkpoints drawer', async () => {
     const git = fakeGit()
     const reason = 'Sotto set aside a checkpoint file it could not read as checkpoints.json.corrupt-fixture and kept the rest.'

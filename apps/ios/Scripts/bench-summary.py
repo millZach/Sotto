@@ -28,7 +28,7 @@ PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadL
 # What opening the long thread made and read once.
 ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
            "markdown.blocks", "markdown.bytes"]
-PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "back"]
+PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "reply-box", "reply-box-stream", "back"]
 # The Threads page's hold while a thread covers it (`ThreadsView.held`), counted over each whole journey: the page coming
 # into sight, holds taken, holds taken while the page could still show, and frames that could have shown an old row.
 WORST_PER_CHUNK = ["body.ThreadListSections", "body.ThreadListRow"]
@@ -43,6 +43,10 @@ BUDGETS = {
     "open.app.time.textview.measure.n": 60,
     # Each paragraph is measured once for its words, text size and width (0.36 a streamed word).
     "stream.per_chunk.time.textview.measure.n": 1.0,
+    # The small reply box lives inside the dock: going small and back draws no part of the conversation (ADR-0184).
+    "reply-box.app.body.Conversation": 0,
+    "reply-box.app.body.MessageView": 0,
+    "reply-box.app.textview.update": 0,
     # The Threads page holds its list while the long thread covers it (0.27 list bodies a streamed word before).
     "stream.worst_per_chunk.body.ThreadListSections": 0,
     "stream.worst_per_chunk.body.ThreadListRow": 0,
@@ -104,6 +108,12 @@ def app_metrics(folder):
     for name in ["list-scroll", "thread-scroll"]:
         put(f"{name}.app.points", [p.get("scrolledPoints") for p in phases[name]], "pt")
 
+    # Twenty moves of the reply box, alone and over a stream, with what they drew.
+    for key in ["body.Conversation", "body.MessageView", "body.ReplyDock", "textview.update"]:
+        put(f"reply-box.app.{key}", [c.get(key, 0) if c else None for c in counts["reply-box"]], "count")
+    put("reply-box.app.moves", [p.get("replyBoxMoves") for p in phases["reply-box"]], "count")
+    put("reply-box-stream.app.moves", [p.get("replyBoxMoves") for p in phases["reply-box-stream"]], "count")
+
     put("open.app.tap_to_drawn", [m["open-rendered"] - m["open-begin"] for m in marks if "open-rendered" in m and "open-begin" in m], "ms")
     for key in ON_OPEN:
         put(f"open.app.{key}", [c.get(key) for c in counts["open"]], "count")
@@ -117,6 +127,12 @@ def app_metrics(folder):
     put("stream.cpu_per_chunk", [p["cpuMs"] / chunks for p in stream if "cpuMs" in p], "ms")
     for key in PER_CHUNK:
         put(f"stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["stream"]], "count")
+    # The same 200 words over the moves, to set against `stream`: moving the box adds no drawing per word and no time.
+    box_stream = phases["reply-box-stream"]
+    put("reply-box-stream.wall_per_chunk", [p["wallMs"] / chunks for p in box_stream if "wallMs" in p], "ms")
+    put("reply-box-stream.cpu_per_chunk", [p["cpuMs"] / chunks for p in box_stream if "cpuMs" in p], "ms")
+    for key in PER_CHUNK:
+        put(f"reply-box-stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["reply-box-stream"]], "count")
     # The worst journey's, for the counts budgeted at zero, where the median would hide one journey that drew.
     for key in WORST_PER_CHUNK:
         values = [c.get(key, 0) / chunks for c in counts["stream"]]

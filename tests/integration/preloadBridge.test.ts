@@ -192,6 +192,7 @@ describe('typed preload bridge', () => {
         'openSystemSettings',
         'phones',
         'platform',
+        'productEvents',
         'polishTranscript',
         'publishWidgetState',
         'quitApp',

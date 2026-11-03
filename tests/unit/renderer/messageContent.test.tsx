@@ -7,6 +7,8 @@ import {
   AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, attachmentTypeLabel, formatAttachmentSize, localFilePath, safeLinkUrl,
 } from '../../../src/renderer/src/agents/MessageContent'
 import { ThreadWebLinks } from '../../../src/renderer/src/tools/webLinks'
+import { SentSkillsContext } from '../../../src/renderer/src/agents/sentSkills'
+import { renderedPlainText } from '../../../src/renderer/src/agents/richActions'
 
 const owl = vi.hoisted(() => ({ on: true }))
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({
@@ -649,4 +651,19 @@ describe('file links in a thread', () => {
     render(<MessageContent text="[Guide](/Users/me/Guide.pdf)" />)
     expect(screen.queryByRole('link')).toBeNull()
   })
+})
+
+it('shows a skill a sent message names as the composer pill, and leaves code, paths and names the thread lacks as text', () => {
+  const skills = new Map([['/ask-drake', { name: 'ask-drake', path: '/skills/ask-drake/SKILL.md', description: 'Check the Codex questions.', scope: 'user' as const }]])
+  const text = '/ask-drake now, please.\n\n`/ask-drake` and /tmp/x and /other'
+  const { container } = render(<SentSkillsContext.Provider value={skills}><MessageContent text={text} skills /></SentSkillsContext.Provider>)
+  expect(screen.getAllByRole('img', { name: 'Skill ask-drake' })).toHaveLength(1)
+  expect(container.querySelector('code')?.textContent).toBe('/ask-drake')
+  expect(container.textContent).toContain('ask-drake now, please.')
+  expect(container.textContent).toContain('/tmp/x and /other')
+  expect(renderedPlainText(container.querySelector('.rich-message')!)).toBe('/ask-drake now, please.\n/ask-drake and /tmp/x and /other')
+  cleanup()
+  // A reply names skills as words.
+  render(<SentSkillsContext.Provider value={skills}><MessageContent text={text} /></SentSkillsContext.Provider>)
+  expect(screen.queryByRole('img', { name: 'Skill ask-drake' })).toBeNull()
 })

@@ -22,7 +22,7 @@ export async function packageHost({
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const packagedVersion = version ?? pkg.version
   if (JSON.stringify(Object.keys(pkg.dependencies).sort()) !== '["node-pty","sherpa-onnx-node","zod"]') throw new Error('Production dependency policy changed')
-  await buildHost(outDir, { version })
+  await buildHost(outDir, { version, released: true })
   const dependencies = { zod: pkg.dependencies.zod }
   verifyHostExternalDependencies(JSON.parse(await readFile(join(outDir, 'external-dependencies.json'), 'utf8')), dependencies)
   await verifyThirdPartyNotices({ hostOutDir: outDir })

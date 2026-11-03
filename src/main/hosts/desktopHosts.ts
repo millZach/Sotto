@@ -261,6 +261,8 @@ export class DesktopHosts {
   private readonly heldProviders: HeldProviders
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
+    /** That the user began adding a host (ADR-0179). */
+    featureUsed?: (feature: 'add-host') => void;
     /** `museEnabled` is Muse's answer alone, from before the held set; `heldProviders` wins, and neither holds every one. */
     watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     /** Work across machines (#1310): each host's socket reads its own threads' delegations only where this is on. */
@@ -951,6 +953,7 @@ export class DesktopHosts {
     const previous = slot === 'dialog' ? this.adding : this.setupAttempt
     if (previous) await this.cancelAdd(previous.id)
     const host: SavedHost = { ...input }
+    this.options.featureUsed?.('add-host')
     if (slot === 'dialog') this.adding = host; else this.setupAttempt = host
     this.status.set(host.id, { ...this.fields(host), phase: 'connecting' })
     this.emit()

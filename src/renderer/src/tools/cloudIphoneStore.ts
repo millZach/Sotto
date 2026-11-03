@@ -75,11 +75,13 @@ export class CloudIphoneStore {
   }
 
   /** Settings' view of the key, the cap, this month's minutes and recent sessions. */
-  async loadStatus(bridge: CloudIphoneBridgeLike): Promise<void> {
-    if (!bridge) return
+  async loadStatus(bridge: CloudIphoneBridgeLike): Promise<boolean> {
+    if (!bridge) return false
     this.listen(bridge)
-    const result = await bridge.status()
-    if (result.ok) { this.status = result.value; this.emit() }
+    const result = await bridge.status().catch(() => null)
+    if (!result?.ok) return false
+    this.status = result.value; this.emit()
+    return true
   }
 
   /** Checks the key with run.cloud and saves it only if accepted; an empty value removes the saved key. */

@@ -50,6 +50,9 @@ export function renderedPlainLines(root: Element): string {
     const element = node as Element
     if (element.matches(PLAIN_TEXT_SKIP)) return
     if (element.tagName === 'BR') { into.push('\n'); return }
+    // A sent skill's pill shows its name; as text it is the token that was sent.
+    const skill = element.getAttribute('data-skill-token')
+    if (skill) { into.push(skill); return }
     if (element.tagName === 'TR') {
       const cells = [...element.children].filter(cell => cell.tagName === 'TD' || cell.tagName === 'TH')
         .map(cell => { const parts: string[] = []; for (const child of cell.childNodes) walk(child, parts, false); return parts.join('').trim() })

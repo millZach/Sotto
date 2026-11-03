@@ -120,7 +120,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const rowId = useId()
   const state = agents?.state
   const command = agents?.command
-  if (!state || !command) return <p role="status">{t`Loading providers…`}</p>
+  if (!state || !command) return <p className="tt-paragraph" role={agents?.error ? 'alert' : 'status'}>{agents?.error ?? t`Loading providers…`}</p>
   // This page is this computer's clients, whichever host is selected for new work: it reads this computer's entry and
   // names this computer on every command, so a Retry never reaches another host's client. Without host connections
   // (no router joining hosts), the state is this computer's alone.

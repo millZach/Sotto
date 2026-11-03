@@ -1,9 +1,13 @@
 import { isPastePermissionNotice, recoveryNoticeSchema, type PastePermissionNoticeCode, type RecoveryNotice, type RecoveryNoticeEvent } from '../../shared/recoveryNotice'
 
+export type RecoveryNoticeLogEvent = 'recovery-notice-listener-failed'
+
 export class RecoveryNoticeCenter {
   private readonly notices = new Map<RecoveryNotice['code'], RecoveryNotice>()
   private readonly seen = new Set<RecoveryNotice['code']>()
   private readonly listeners = new Set<(notice: RecoveryNoticeEvent) => void>()
+
+  constructor(private readonly log?: (event: RecoveryNoticeLogEvent) => void) {}
 
   publish(input: RecoveryNotice): void {
     const notice = Object.freeze(recoveryNoticeSchema.parse(input))
@@ -34,6 +38,7 @@ export class RecoveryNoticeCenter {
         listener(notice)
       } catch {
         // One observer cannot prevent durable recovery or later observers.
+        this.log?.('recovery-notice-listener-failed')
       }
     }
   }

@@ -8,6 +8,8 @@ It fixes an existing surface and goes straight to stable; it is not an Owl featu
 
 Amended by [ADR-0183](0183-a-paired-hosts-thread-opens-its-terminal-over-ssh.md): on Owl, the greyed button of decision 4 opens a real terminal over SSH.
 
+Amended by [ADR-0177](0177-the-council-puts-one-question-to-threads-on-several-providers.md) on November 3, 2026: on Owl, while the Council is on, a Council button sits right after Watch, before Tools, and the drawer has a Council tab before its shells.
+
 Amends [ADR-0163](0163-a-pane-header-is-the-git-action-watch-one-menu-and-close.md): this replaces its decision 3 and the Tools and Terminal drawer rows of its decision 2, and adds both buttons to its decision 1. It also amends [ADR-0049](0049-a-thread-pane-has-its-own-terminal-drawer.md), since a thread on a paired host now shows the drawer's button.
 
 ## Context

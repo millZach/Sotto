@@ -100,6 +100,14 @@ describe('the permission a continued thread starts on (Zach, October 16)', () =>
 })
 
 describe('a limit stop, from Sotto’s own sentence', () => {
+  it('says when Claude Code supplied no reset time without promising it elsewhere', () => {
+    expect(claudeUsageLimitSentence(undefined)).toBe('Claude Code has reached your plan’s usage limit, so this turn stopped. Nothing in the thread was lost. Claude Code didn’t say when its limit resets. Send again once it has.')
+    expect(claudeUsageLimitSentence('6pm')).toBe('Claude Code has reached your plan’s usage limit, so this turn stopped. Nothing in the thread was lost. Send again after it resets at 6pm.')
+    // Existing failure notices still identify a usage stop without supplying a time.
+    expect(limitStopOf('Claude Code has reached your plan’s usage limit, so this turn stopped. Nothing in the thread was lost. Send again once it resets; Claude Code shows when.'))
+      .toEqual({ kind: 'usage', provider: 'claude' })
+  })
+
   it('reads a usage limit, with when it resets where Claude Code said', () => {
     expect(limitStopOf(claudeUsageLimitSentence('6pm'))).toEqual({ kind: 'usage', provider: 'claude', resetsAt: '6pm' })
     expect(limitStopOf(claudeUsageLimitSentence(undefined))).toEqual({ kind: 'usage', provider: 'claude' })

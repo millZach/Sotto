@@ -36,6 +36,8 @@ const SWIPE_MINIMUM = 24
 const PHONE_CSS = 'html { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; }'
 export interface BrowserDependencies {
   files: FilesService
+  /** That the user or a thread opened a page or a test iPhone (ADR-0179). */
+  featureUsed?(feature: 'browser' | 'test-iphone'): void
   getWindow(): BrowserWindow | null
   emit(event: BrowserEvent): void
   destination(): Promise<'external' | 'embedded'>
@@ -190,6 +192,7 @@ export class BrowserService extends ToolOperations {
     if (this.pages.size >= 32) return fail('busy', 'Close a browser page before opening another (32 maximum).')
     const phone = request.device === 'iphone'
     if (phone && this.phoneOf(owner)) return fail('busy', 'This thread already has a test iPhone. Open the address on it instead.')
+    this.dependencies.featureUsed?.(phone ? 'test-iphone' : 'browser')
     const view = new WebContentsView({ webPreferences: {
       session: this.browserSession(owner, phone), contextIsolation: true, sandbox: true,
       nodeIntegration: false, nodeIntegrationInWorker: false, nodeIntegrationInSubFrames: false,

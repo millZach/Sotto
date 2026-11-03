@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { AgentRequest } from '../../shared/agents'
 import { permissionValue } from './nativeRequests'
+import { cardUnderHeadline, commandCard, modelSummary, otherRequestCard } from './requestInput'
 
 /**
  * What DeepSeek Harness asks the user (ADR-0138, ADR-0004). Its one request is a sandbox escalation: a tool call
@@ -60,24 +61,32 @@ export function deepseekPending(wireId: string | number, method: string, params:
   const headline = command ? `Run in ${boundary ?? 'a wider sandbox'}: ${command}`
     : path ? `${tool} ${path} outside the sandbox`
     : `DeepSeek Harness asks to use ${tool} outside the sandbox.`
+  // The escalation's own fields are said in words below; everything else in the input is an ordinary card's.
+  const rest = input ? Object.fromEntries(Object.entries(input).filter(([name]) => name !== 'sandbox_permissions' && name !== 'justification')) : undefined
+  const card = command ? commandCard(command.slice(0, TEXT_LIMIT), rest).context
+    : rest ? cardUnderHeadline(otherRequestCard(rest, detail.title?.trim()), headline.slice(0, TEXT_LIMIT)) : undefined
+  // The description says what a command does and the justification why it must cross. The summary takes the first it has.
+  const reasonIsSummary = Boolean(command && !card?.summary && modelSummary(justification, command))
+  const summary = card?.summary ?? (reasonIsSummary ? modelSummary(justification, command) : undefined)
   const detailLines = [
     ...(boundary ? [`Sandbox it asks for: ${boundary}`] : []),
-    ...(justification ? [`The model’s reason: ${justification}`] : []),
-    ...(command ? [] : input ? [JSON.stringify(input)] : []),
+    ...(justification && !reasonIsSummary ? [`The model’s reason: ${justification}`] : []),
+    ...(card?.details ? [card.details] : []),
   ]
   const id = `deepseek-request-${JSON.stringify(wireId)}`
   return {
     wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission,
     request: {
       id, kind: 'permission',
-      text: [headline, ...detailLines].join('\n').slice(0, TEXT_LIMIT),
+      text: headline.slice(0, TEXT_LIMIT),
       options: [],
       permissionChoices: permission.options.flatMap((option): NonNullable<AgentRequest['permissionChoices']> => option.kind === 'allow_once' ? [{ id: option.optionId, label: 'Allow once', kind: 'allow-once' }]
         : option.kind === 'reject_once' ? [{ id: option.optionId, label: 'Reject', kind: 'deny' }] : []),
       context: {
         toolCallId: permission.toolCall.toolCallId,
         ...(detail.title ? { toolName: detail.title.slice(0, TEXT_LIMIT) } : {}),
-        ...(command ? { command: command.slice(0, TEXT_LIMIT) } : {}),
+        ...card,
+        ...(summary ? { summary } : {}),
         ...(detailLines.length ? { details: detailLines.join('\n').slice(0, 100_000) } : {}),
       },
     },

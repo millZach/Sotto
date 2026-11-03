@@ -1,9 +1,9 @@
 import type { GitHubRateLimit } from './github'
-import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, pullRequestObservation, readDetail, readFingerprint, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
+import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 import type { PullRequestObservation } from './watcherEvidence'
-import { PULL_REQUEST_HOST, PULL_REQUEST_PASS_MS, askPullRequests, checksAfter, checksDue, isFailedRead, openPullRequestObservation, type ChecksRead } from './backgroundPullRequestReads'
+import { PULL_REQUEST_HOST, PULL_REQUEST_PASS_MS, REMARKS_REREAD_MS, askPullRequests, checksAfter, checksDue, isFailedRead, openPullRequestObservation, type ChecksRead } from './backgroundPullRequestReads'
 
 /**
  * Watcher's own background reads of pull requests (ADR-0144). With Restart stopped threads on, babysitting and its
@@ -14,8 +14,9 @@ import { PULL_REQUEST_HOST, PULL_REQUEST_PASS_MS, askPullRequests, checksAfter, 
  *
  * Babysitting's cost model holds: one fingerprint query per repository, 25 pull requests to a query, whatever number of
  * threads share one; checks only when the status moved, a check is still running or refused checks are due again; and
- * every read a background read under #820's reserve and pause. Remarks are never read in detail: Watcher hears that they
- * moved from the fingerprint alone. A pass's work grows with the pull requests asked for, never with a thread's history.
+ * every read a background read under #820's reserve and pause. On a new head or changed reviews, the last 100 reviews
+ * are classified for Bug Bot coverage and their bodies discarded. Other remarks move from the fingerprint alone.
+ * A pass's work grows with the pull requests asked for, never with a thread's history.
  */
 
 /** Stable event names only: never a link, a number, a login or any text. */
@@ -34,7 +35,7 @@ export interface WatchedPullRequestReaderOptions {
 
 interface Target { readonly key: string; readonly url: string; readonly owner: string; readonly name: string; readonly number: number }
 /** What the last read of a pull request saw, kept in memory: after a restart each is read whole once. */
-interface LastRead extends ChecksRead { readonly observation: PullRequestObservation }
+interface LastRead extends ChecksRead { readonly observation: PullRequestObservation; readonly reviews: string; readonly reviewsReadAt: number }
 
 export class WatchedPullRequestReader {
   private readonly run: RunGitCommand
@@ -141,28 +142,38 @@ export class WatchedPullRequestReader {
 
   private async readOne(target: Target, fingerprint: PullRequestFingerprint): Promise<void> {
     const now = this.now()
+    const last = this.lastReads.get(target.key)
+    const checks = fingerprint.state === 'open' && checksDue(last, last === undefined, fingerprint, now)
+    const reviews = fingerprint.reviews ?? fingerprint.remarks
+    const bugBotReviews = !last || last.observation.head !== fingerprint.head || last.reviews !== reviews
+      || last.observation.bugBotReview?.coverage === 'unknown' && now - last.reviewsReadAt >= REMARKS_REREAD_MS
+    let detail: DetailAnswer | null = null
+    let reviewsAsked = false
+    if ((checks || bugBotReviews) && this.mayRead()) {
+      reviewsAsked = bugBotReviews
+      const read = await askPullRequests(this.asker(), ['-f', `query=${DETAIL_QUERY}`, '-f', `owner=${target.owner}`, '-f', `name=${target.name}`,
+        '-F', `number=${target.number}`, '-F', `checks=${checks}`, '-F', 'remarks=false', '-F', `bugBotReviews=${bugBotReviews}`],
+      text => readDetail(text, { checks, remarks: false, bugBotReviews }))
+      if (typeof read === 'object') detail = read
+      else if (checks) {
+        if (read === 'limited' || read === 'unreachable') this.unavailable(target, read === 'limited' ? 'rate-limited' : 'read-failed')
+        else { this.lastReads.delete(target.key); this.failed([target]) }
+        return
+      } else if (isFailedRead(read)) this.options.log?.('watched-pull-request-read-failed')
+      // A failed coverage-only read leaves checks and terminal state intact: coverage is visibility, never a merge gate.
+    } else if (checks) return
+    const observation = openPullRequestObservation(fingerprint, detail, now, last?.observation, checks)
+    // A head that moved between the fingerprint and detail is unknown until the next pass; never reuse its old coverage.
+    observation.bugBotReview = (bugBotReviews
+      ? detail?.head === fingerprint.head ? detail?.bugBotReview : undefined
+      : last?.observation.bugBotReview) ?? { coverage: 'unknown', commit: null, url: null }
+    this.options.observed(observation)
     if (fingerprint.state !== 'open') {
-      // Merged or closed is in the fingerprint itself, and is told once: the pull request is not read again while it is asked for.
-      this.options.observed(pullRequestObservation(fingerprint, null, new Date(now).toISOString()))
       this.lastReads.delete(target.key)
       this.ended.add(target.key)
-      return
-    }
-    const last = this.lastReads.get(target.key)
-    const checks = checksDue(last, last === undefined, fingerprint, now)
-    let detail: DetailAnswer | null = null
-    if (checks) {
-      if (!this.mayRead()) return
-      const read = await askPullRequests(this.asker(), ['-f', `query=${DETAIL_QUERY}`, '-f', `owner=${target.owner}`, '-f', `name=${target.name}`,
-        '-F', `number=${target.number}`, '-F', 'checks=true', '-F', 'remarks=false'], text => readDetail(text, { checks: true, remarks: false }))
-      if (read === 'limited') { this.unavailable(target, 'rate-limited'); return }
-      if (read === 'unreachable') { this.unavailable(target, 'read-failed'); return }
-      if (isFailedRead(read)) { this.lastReads.delete(target.key); this.failed([target]); return }
-      detail = read
-    }
-    const observation = openPullRequestObservation(fingerprint, detail, now, last?.observation, checks)
-    this.options.observed(observation)
-    this.lastReads.set(target.key, { observation, ...checksAfter(last, checks, detail, fingerprint, now) })
+    } else this.lastReads.set(target.key, { observation,
+      reviews: reviewsAsked ? detail && detail.head !== fingerprint.head ? '' : reviews : last!.reviews,
+      reviewsReadAt: reviewsAsked ? now : last!.reviewsReadAt, ...checksAfter(last, checks, detail, fingerprint, now) })
   }
 
   /** A pass that could not read the pull request: Watcher hears it is unavailable, keeping the head it last knew. */

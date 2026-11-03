@@ -8,6 +8,7 @@ import { SecureSettings } from '../../../src/main/agents/secureSettings'
 import { SettingsRepository } from '../../../src/main/storage/settingsRepository'
 import { NativeSettingsCoordinator } from '../../../src/main/settings/nativeSettingsCoordinator'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
+import { listOpenRouterModels } from '../../../src/main/llm/openRouterModels'
 
 const roots: string[] = []
 class FixtureEncryption implements CredentialEncryption {
@@ -39,12 +40,49 @@ async function fixture() {
   return { root, encryption, credentials }
 }
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir())) throw new Error('Unexpected temporary test directory')
     await rm(root, { recursive: true, force: true })
   }
 })
 describe('credential storage and formatting migration', () => {
+  it('reads settings once for cleanup and zero times for a preset key lookup', async () => {
+    const f = await fixture()
+    await f.credentials.set('formatting', 'fixture-key')
+    const settings = new SecureSettings(new SettingsRepository(join(f.root, 'settings.json')), f.credentials)
+    const read = vi.spyOn(AtomicJsonStore.prototype, 'read')
+    expect((await settings.forFormatting()).llmApiKey).toBe('fixture-key')
+    expect(read).toHaveBeenCalledOnce()
+    read.mockClear()
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ data: [] }))
+    await expect(listOpenRouterModels({ fetchFn, getApiKey: async () => settings.formattingKey() })).resolves.toMatchObject({ ok: true })
+    expect(read).not.toHaveBeenCalled()
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(fetchFn.mock.calls[1]![1]?.headers).toEqual({ Authorization: 'Bearer fixture-key' })
+  })
+
+  it('preserves an unreadable key cause and notice while the anonymous catalog still loads without settings reads', async () => {
+    const f = await fixture()
+    await f.credentials.set('formatting', 'fixture-key')
+    const sealed = f.credentials.sealed('formatting')
+    const notice = vi.fn()
+    const settings = new SecureSettings(new SettingsRepository(join(f.root, 'settings.json')), f.credentials, notice)
+    const error = new Error('Fixture Keychain access was denied')
+    vi.spyOn(f.encryption, 'decryptString').mockImplementation(() => { throw error })
+    expect(() => settings.formattingKey()).toThrow(error)
+    notice.mockClear()
+    const read = vi.spyOn(AtomicJsonStore.prototype, 'read')
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ data: [{ id: 'a/model', name: 'A' }] }))
+    await expect(listOpenRouterModels({ fetchFn, getApiKey: async () => settings.formattingKey() })).resolves.toEqual({
+      ok: true, complete: true, models: [{ id: 'a/model', name: 'A' }],
+    })
+    expect(read).not.toHaveBeenCalled()
+    expect(fetchFn).toHaveBeenCalledOnce()
+    expect(notice).toHaveBeenCalledOnce()
+    expect(f.credentials.sealed('formatting')).toBe(sealed)
+  })
+
   it('deletes only the retired voice ciphertext while the vault is locked and unreadable', async () => {
     const f = await fixture()
     for (const slot of ['grokSpeech', 'formatting', 'reasoning', 'cloudIphone', 'independent']) await f.credentials.set(slot, `fixture-${slot}`)

@@ -367,7 +367,7 @@ export function Onboarding({
                 <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Transcribed on this computer by the speech model you choose</Trans></p>
                 <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Your audio never leaves this computer</Trans></p>
                 <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Your threads go only to each agent's own provider</Trans></p>
-                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>No Sotto account, no telemetry</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>No Sotto account. Product events are on until you turn them off in Settings</Trans></p>
               </div>
               <p className="onboarding-aside tt-paragraph"><Trans>Every step after this one can be skipped and finished later in Settings.</Trans></p>
             </section>

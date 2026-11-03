@@ -133,4 +133,17 @@ describe('Transcribe with OpenRouter in Settings → Dictation (Owl cloud-dictat
     expect(radios.every((radio) => radio.getAttribute('aria-checked') === 'false')).toBe(true)
     expect(radios[0]).toHaveAttribute('tabindex', '0')
   })
+
+  it('explains an empty model list and lets the user read it again', async () => {
+    const user = userEvent.setup()
+    let empty = true
+    const { onUpdateSettings, onListCloudSpeechModels } = renderSettings({ cloudTranscription: true }, async () => ({ ok: true, models: empty ? [] : MODELS }))
+    expect(await within(group()).findByText('No speech models were returned.')).toBeInTheDocument()
+    expect(within(group()).queryByRole('radiogroup')).toBeNull()
+    empty = false
+    await user.click(within(group()).getByRole('button', { name: 'Try again' }))
+    expect(await within(group()).findAllByRole('radio')).toHaveLength(5)
+    expect(onListCloudSpeechModels).toHaveBeenCalledTimes(2)
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
 })

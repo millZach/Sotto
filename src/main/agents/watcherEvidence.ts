@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { AgentThread } from '../../shared/agents'
 import { GIT_PULL_REQUEST_LINKS_MAX, pullRequestKey } from '../../shared/gitPullRequests'
-import { watcherEvidenceSchema, type WatcherEvidence, type WatcherThreadTarget } from '../../shared/watcher'
+import { watcherEvidenceSchema, type WatcherBugBotReview, type WatcherEvidence, type WatcherThreadTarget } from '../../shared/watcher'
 
 /**
  * Digests already made of short JSON, by that JSON. Every pass asks again for the same IDs and scopes of every watched
@@ -46,6 +46,8 @@ export interface PullRequestObservation {
   availability: 'available' | 'unavailable'; reason?: 'read-failed' | 'rate-limited'
   checks?: 'passed' | 'failed' | 'pending' | 'unknown'; checksObservedAt?: string; checkCount?: number; reviewApproved?: boolean
   autoMerge?: boolean
+  /** The latest marked Bug Bot review against this head. Coverage says nothing about approval or merge eligibility. */
+  bugBotReview?: WatcherBugBotReview
   /** Whether GitHub says the branch conflicts with its base; absent when it has not worked that out. */
   conflicting?: boolean
   /** Whether the review decision asks for changes. */
@@ -62,7 +64,7 @@ export interface PullRequestObservation {
  */
 interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number; requiredPassedHead?: string; observedAt: string }
 /** One thing a pull request says that needs Watcher, and the key that tells it from what Watcher was told before. */
-export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks'
+export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks' | 'bug-bot-review'
 /** `returns` counts how often the fact came back after it was gone, so checks that fail again on a commit are a new fact. */
 export interface WatcherAttentionFact { readonly pr: string; readonly kind: WatcherAttentionKind; readonly key: string; readonly returns: number }
 /**
@@ -141,6 +143,8 @@ export class WatcherEvidenceStore {
         ...connected ? (['github', 'working-copy'].includes(item.source) && now - Date.parse(item.observedAt) > 5 * 60_000 ? { freshness: 'stale' as const } : {})
           : { freshness: 'stale' as const, availability: 'unavailable' as const, reason: 'disconnected' as const },
         ...connected && unread?.availability === 'unavailable' && (unread.reason === 'read-failed' || unread.reason === 'rate-limited') ? { freshness: 'stale' as const, availability: 'unavailable' as const, ...(unread.reason ? { reason: unread.reason } : {}) } : {},
+        ...item.bugBotReview && (!connected || unread?.availability === 'unavailable')
+          ? { bugBotReview: { ...item.bugBotReview, coverage: 'unknown' as const } } : {},
       }
     })
   }
@@ -238,6 +242,7 @@ export class WatcherEvidenceStore {
       if (item.checksState === 'failed' || item.checksState === 'passed') add(pr, `checks-${item.checksState}`, item.headId ?? '')
       if (item.checksState === 'passed') passed.add(JSON.stringify([pr, item.headId ?? '']))
       if (item.githubReviewApproved === true) add(pr, 'approved')
+      if (item.bugBotReview) add(pr, 'bug-bot-review', JSON.stringify([item.headId, item.bugBotReview]))
     }
     for (const [pr, state] of ended) if (!this.lives.get(key)?.get(pr)?.linkedEnded) add(pr, state)
     for (const [pr, said] of this.attending.get(key) ?? []) {
@@ -395,6 +400,7 @@ export class WatcherEvidenceStore {
       ...(fact.checkCount !== undefined ? { checkCount: fact.checkCount } : {}),
       ...(fact.githubReviewApproved !== undefined ? { reviewApproved: fact.githubReviewApproved } : {}),
       ...(fact.githubAutoMergeEnabled !== undefined ? { autoMerge: fact.githubAutoMergeEnabled } : {}),
+      ...(fact.bugBotReview !== undefined ? { bugBotReview: fact.bugBotReview } : {}),
     }, 'host:github:')
     const { id: _id, ...input } = fact; void _id
     return this.put(`host:${fact.source}:${fact.referenceId ?? fact.url ?? ''}`, input)
@@ -402,6 +408,7 @@ export class WatcherEvidenceStore {
   private observePullRequest(target: WatcherThreadTarget, read: PullRequestObservation, prefix: string): boolean {
     const slot = prefix + pullRequestKey(read.url), entries = this.entries.get(targetKey(target))
     const previous = entries?.get(slot), available = read.availability === 'available'
+    const reviewBefore = entries?.get(slot + ':bug-bot-review')?.bugBotReview
     // Read before a new head clears the pull request's facts: a new commit never unmerges it.
     const stateBefore = entries?.get(slot + ':state')?.pullRequestState
     const head = available ? read.head ?? undefined : previous?.headId ?? read.head ?? undefined
@@ -430,6 +437,9 @@ export class WatcherEvidenceStore {
         fact: read.reviewApproved ? 'review-approved' : 'pull-request-observed', githubReviewApproved: read.reviewApproved })
       if (head && read.autoMerge !== undefined) put(slot + ':auto-merge', { ...common,
         fact: read.autoMerge ? 'auto-merge-observed' : 'pull-request-observed', githubAutoMergeEnabled: read.autoMerge })
+      const bugBotReview = read.bugBotReview ?? (previous?.headId !== head && reviewBefore
+        ? { coverage: 'unknown' as const, commit: null, url: null } : undefined)
+      if (bugBotReview) put(slot + ':bug-bot-review', { ...common, fact: 'pull-request-observed', bugBotReview })
     }
     put(slot, { ...common, fact: 'pull-request-observed', freshness: available ? 'fresh' : read.reason ? 'stale' : 'unknown',
       ...(read.reason ? { reason: read.reason } : !available ? { reason: 'checks-unavailable' as const } : {}) })

@@ -1,24 +1,28 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgentRequest, AgentThread } from '../../../../src/shared/agents'
+import type { AgentRequest, AgentThread, AgentThreadDetail } from '../../../../src/shared/agents'
 import type { PopupBridge } from '../../../../src/shared/popup'
 import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import type { WatcherRoomResult } from '../../../../src/shared/watcherRoom'
 import { PopupApp } from '../../../../src/renderer/src/popup/PopupApp'
-import { POPUP_MEMORY_KEY } from '../../../../src/renderer/src/popup/popupLogic'
+import { POPUP_MEMORY_KEY, readPopupMemory, writePopupMemory, type PopupTarget } from '../../../../src/renderer/src/popup/popupLogic'
 import { MessageLinks } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
 import { requestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { agentThread, threadsStateFixture } from '../../../fixtures/agentState'
+import { deferred } from '../../../fixtures/deferred'
 
 beforeEach(() => {
+  window.localStorage.clear()
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   // The popup must work without the main window's bridge or app context.
   vi.stubGlobal('sotto', undefined)
 })
 afterEach(() => {
   cleanup()
+  window.localStorage.clear()
   requestAnswerStore.prune('thread', [])
   vi.unstubAllGlobals()
 })
@@ -202,4 +206,167 @@ it('switches to Watcher, queues its running turn, and opens its room', async () 
   fireEvent.change(prompt, { target: { value: '/open' } })
   fireEvent.keyDown(prompt, { key: 'Enter' })
   expect(f.bridge.open).toHaveBeenCalledExactlyOnceWith({ threadId: 'thread', watcher: true })
+})
+
+async function setup({ thread = agentThread(), target = 'thread' }: { thread?: AgentThread; target?: PopupTarget } = {}) {
+  const state = threadsStateFixture({ projects: [{ id: thread.projectId }], threads: [thread] })
+  writePopupMemory(localStorage, { target, threadId: thread.id, projectId: thread.projectId })
+  let shown = (): void => undefined
+  let pushed: (thread: AgentThread) => void = () => undefined
+  const bridge = {
+    platform: 'darwin',
+    getSettings: async () => DEFAULT_SETTINGS,
+    onSettingsChanged: () => () => undefined,
+    shell: vi.fn(async () => state),
+    watcher: vi.fn(async () => ({ status: 'ok' as const, state: {
+      current: null, currentOptions: null, history: [], requests: [], watchedThreads: [], receipts: [],
+      recoveryNotice: null, observedAt: '2026-11-03T00:00:00.000Z',
+    } })),
+    threadDetail: vi.fn(async () => ({ threadId: thread.id, revision: 1, messages: [], activities: [] })),
+    onThreadDetail: () => () => undefined,
+    onThread: (listener: (thread: AgentThread) => void) => { pushed = listener; return () => undefined },
+    command: vi.fn<PopupBridge['command']>(async () => ({ ...state, host: {
+      ...state.host, models: { revision: 1, omitted: true }, clientHosts: [],
+    } })),
+    openExternalLink: async () => ({ ok: true }),
+    hide: vi.fn(async () => undefined),
+    fit: async () => undefined,
+    open: async () => undefined,
+    onShown: (listener: () => void) => { shown = listener; return () => undefined },
+  } satisfies PopupBridge
+  const view = render(<PopupApp bridge={bridge} />)
+  await screen.findByRole('textbox', { name: `Message ${thread.title}` })
+  return { bridge, view, thread, show: () => shown(), push: (next: AgentThread) => pushed(next) }
+}
+
+const lastTurn = { id: 'turn', status: 'running' as const }
+
+describe('the popup regressions from #2061 (ADR-0181)', () => {
+  it('shows Working and a Stop button when an idle thread still reports its last turn running', async () => {
+    const { bridge, thread } = await setup({ thread: agentThread({ status: 'idle', lastTurn }) })
+    expect(screen.getByRole('status')).toHaveTextContent('Working…')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop the running turn' })) })
+    expect(bridge.command).toHaveBeenCalledWith({ type: 'interrupt', threadId: thread.id })
+    expect(bridge.hide).not.toHaveBeenCalled()
+  })
+
+  it('stops on Escape while the last turn runs, then hides once that turn completes', async () => {
+    const { bridge, thread, push } = await setup({ thread: agentThread({ status: 'idle', lastTurn }) })
+    const prompt = screen.getByRole('textbox')
+    await act(async () => { fireEvent.keyDown(prompt, { key: 'Escape' }) })
+    expect(bridge.command).toHaveBeenCalledWith({ type: 'interrupt', threadId: thread.id })
+    expect(bridge.hide).not.toHaveBeenCalled()
+
+    await act(async () => { push({ ...thread, lastTurn: { ...lastTurn, status: 'completed' } }) })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop the running turn' })).not.toBeInTheDocument()
+    await act(async () => { fireEvent.keyDown(prompt, { key: 'Escape' }) })
+    expect(bridge.hide).toHaveBeenCalledOnce()
+  })
+
+  it('queues a prompt behind the last running turn, then sends normally after it completes', async () => {
+    const { bridge, thread, push } = await setup({ thread: agentThread({ status: 'idle', lastTurn }) })
+    const prompt = screen.getByRole('textbox')
+    fireEvent.change(prompt, { target: { value: 'Do this next' } })
+    await act(async () => { fireEvent.keyDown(prompt, { key: 'Enter' }) })
+    expect(bridge.command).toHaveBeenCalledWith({
+      type: 'queue-followup', threadId: thread.id, draftId: expect.any(String), text: 'Do this next',
+    })
+    expect(bridge.command.mock.calls.some(([command]) => command.type === 'manual-send')).toBe(false)
+
+    await act(async () => { push({ ...thread, lastTurn: { ...lastTurn, status: 'completed' } }) })
+    fireEvent.change(prompt, { target: { value: 'Do this now' } })
+    await act(async () => { fireEvent.keyDown(prompt, { key: 'Enter' }) })
+    expect(bridge.command).toHaveBeenCalledWith({
+      type: 'manual-send', threadId: thread.id, draftId: expect.any(String), text: 'Do this now',
+    })
+  })
+
+  it('says Watcher is not running once and keeps the thread target across shows and a remount', async () => {
+    const { bridge, view, thread, show } = await setup({ target: 'watcher' })
+    expect(screen.getByRole('alert')).toHaveTextContent('Watcher isn’t running, so the popup is on your thread.')
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await act(async () => { show() })
+    expect(bridge.shell).toHaveBeenCalledTimes(2)
+    expect(bridge.watcher).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(readPopupMemory(localStorage)).toEqual({ target: 'thread', threadId: thread.id, projectId: thread.projectId })
+
+    view.unmount()
+    await act(async () => { render(<PopupApp bridge={bridge} />) })
+    expect(bridge.shell).toHaveBeenCalledTimes(3)
+    expect(bridge.watcher).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('textbox', { name: `Message ${thread.title}` })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+function bridgeFixture(patch: Partial<PopupBridge> = {}): PopupBridge {
+  const state = threadsStateFixture({ threads: [{ id: 'thread', title: 'Work' }] })
+  return {
+    platform: 'darwin', getSettings: async () => DEFAULT_SETTINGS,
+    onSettingsChanged: () => () => undefined,
+    shell: async () => state, threadDetail: async () => ({ threadId: 'thread', revision: 0, messages: [] }),
+    onThreadDetail: () => () => undefined, onThread: () => () => undefined,
+    command: async () => ({ ...state, host: { ...state.host, models: { revision: 0, omitted: true }, clientHosts: [] } }), openExternalLink: async () => ({ ok: true }),
+    hide: async () => undefined, fit: async () => undefined, open: async () => undefined, onShown: () => () => undefined,
+    ...patch,
+  }
+}
+
+it('reports a failed shell read using the existing popup notice', async () => {
+  render(<PopupApp bridge={bridgeFixture({ shell: async () => { throw new Error('ENOENT /private/threads.json') } })} />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Sotto could not read the threads. Reopen the popup and try again.')
+  expect(document.body).not.toHaveTextContent('/private/')
+})
+
+it('reports a rejected thread history without replacing it with a raw failure', async () => {
+  writePopupMemory(window.localStorage, { target: 'thread', threadId: 'thread', projectId: null })
+  render(<PopupApp bridge={bridgeFixture({ threadDetail: async () => {
+    throw new Error('ENOENT /private/messages.json')
+  } })} />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again.')
+  expect(document.body).not.toHaveTextContent('/private/')
+})
+
+it('prunes a removed thread while keeping the Watcher choice when its room read fails', async () => {
+  writePopupMemory(window.localStorage, { target: 'watcher', threadId: 'removed', projectId: null })
+  render(<PopupApp bridge={bridgeFixture({ watcher: async () => { throw new Error('room unavailable') } })} />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Sotto could not read Watcher’s room. Reopen the popup and try again.')
+  expect(readPopupMemory(window.localStorage)).toMatchObject({ target: 'watcher', threadId: null })
+  expect(document.body).not.toHaveTextContent('Watcher isn’t running')
+})
+
+it('forgets a removed thread without reporting a read failure', async () => {
+  const state = threadsStateFixture({ threads: [] })
+  writePopupMemory(window.localStorage, { target: 'thread', threadId: 'removed', projectId: null })
+  await act(async () => { render(<PopupApp bridge={bridgeFixture({ shell: async () => state, threadDetail: async () => null })} />) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('textbox')).toHaveAccessibleName(/^Message New thread/u)
+})
+
+it('ignores a failed read after the user starts a new thread', async () => {
+  const pending = deferred<AgentThreadDetail | null>()
+  writePopupMemory(window.localStorage, { target: 'thread', threadId: 'thread', projectId: null })
+  render(<PopupApp bridge={bridgeFixture({ threadDetail: () => pending.promise })} />)
+  await userEvent.click(screen.getByRole('button', { name: 'New thread' }))
+  await act(async () => { pending.reject(new Error('old read')) })
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('clears a history read notice when reopening successfully reads it', async () => {
+  let show!: () => void
+  let fail = true
+  writePopupMemory(window.localStorage, { target: 'thread', threadId: 'thread', projectId: null })
+  render(<PopupApp bridge={bridgeFixture({
+    onShown: listener => { show = listener; return () => undefined },
+    threadDetail: async () => {
+      if (fail) throw new Error('history unavailable')
+      return { threadId: 'thread', revision: 0, messages: [] }
+    },
+  })} />)
+  await screen.findByRole('alert')
+  fail = false
+  await act(async () => { show() })
+  expect(screen.queryByRole('alert')).toBeNull()
 })

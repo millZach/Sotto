@@ -51,6 +51,9 @@ Then:
    - `open`: the long thread opened as a notification opens it, to its first drawn frame.
    - `thread-scroll`: the long thread scrolled 12,000 points up and back.
    - `stream`: the reply streamed in.
+   - `reply-box`: the reply box out to full and back to small twenty times, by a draft put in and taken out, so no
+     keyboard moves the page. Its budgets hold that this draws no part of the conversation (ADR-0184).
+   - `reply-box-stream`: the same for as long as another 200 words stream in, to set against `stream`.
    - `back`: back to the Threads list, as a press on Back goes, until the list is drawn as it stands.
 
    Each phase lasts until half a second passes without a late frame. The scroll sets the offset from the clock every
