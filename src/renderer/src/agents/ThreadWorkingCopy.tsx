@@ -36,6 +36,8 @@ export interface WorkingCopyFacts {
   readonly error?: string | undefined
   /** The folder was reclaimed; the branch stays and the next send puts the folder back. */
   readonly reclaimed?: boolean | undefined
+  /** The commit a folder reclaimed on a detached HEAD is put back on. */
+  readonly detachedCommit?: string | undefined
 }
 
 /** The project already names itself beside this label, so its own folder is called what it is. */
@@ -53,7 +55,7 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
     const directory = resolve()
     return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : i18n._(msg`Working folder`) }
   }
-  const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt) }
+  const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt), detachedCommit: worktree.detachedCommit }
   if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? i18n._(msg`Project folder`) : i18n._(msg`New worktree`) }
   if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: i18n._(msg`Worktree not ready`), error: worktreeErrorWords(worktree.error) }
   const directory = resolve()
@@ -150,7 +152,9 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
         {facts.directory ? <div><dt><Trans>Folder</Trans></dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
         {facts.branch ? <div><dt><Trans>Branch</Trans></dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
         {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt><Trans>Repository</Trans></dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
-        {facts.status === 'ready' && facts.reclaimed ? <div><dt><Trans>Status</Trans></dt><dd>{branch === undefined ? t`Folder removed. Sending to this thread puts it back on its branch.` : t({ message: `Folder removed. Sending to this thread puts it back on ${ph({ branch: leftToRight(branch) })}.`, comment: '{branch} is a Git branch name.' })}</dd></div> : null}
+        {facts.status === 'ready' && facts.reclaimed ? <div><dt><Trans>Status</Trans></dt><dd>{branch !== undefined ? t({ message: `Folder removed. Sending to this thread puts it back on ${ph({ branch: leftToRight(branch) })}.`, comment: '{branch} is a Git branch name.' })
+          : facts.detachedCommit ? t({ message: `Folder removed. Sending to this thread puts it back on commit ${ph({ commit: leftToRight(facts.detachedCommit.slice(0, 7)) })}.`, comment: '{commit} is the start of a Git commit ID.' })
+          : t`Folder removed. Sending to this thread puts it back on its branch.`}</dd></div> : null}
         {facts.status === 'ready' && !facts.reclaimed && facts.dirty !== undefined ? <div><dt><Trans>Changes</Trans></dt><dd>{facts.dirty ? t`Uncommitted changes` : t`No uncommitted changes`}</dd></div> : null}
         {/* A draft's worktree is not being prepared: it is made on first send (ADR-0027). */}
         {facts.status === 'pending' ? <div><dt><Trans>Status</Trans></dt><dd>{thread.nativeSessionStarted === false ? t`Created on first send. Choose the workspace and branch before sending.` : t`Preparing the working copy.`}</dd></div> : null}

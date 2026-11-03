@@ -182,14 +182,19 @@ export class LimitRestart {
     const turn = thread.lastTurn, key = turn ? `${turn.status} ${turn.id}` : ''
     const before = this.turns.get(thread.id)
     this.turns.set(thread.id, key)
+    // Settled or archived threads cannot restart, even when this update also reports a new limit stop.
+    if (isThreadClosed(thread)) {
+      // A send in flight needs its record until its result is saved and the restart reported.
+      if (!this.records.has(thread.id) || this.delivering.has(thread.id)) return false
+      this.drop(thread.id)
+      return true
+    }
     // A thread first seen is where it was: a stop it already shows was recorded then, or was not this run's to record.
     if (turn?.status === 'failed' && turn.limitStop && thread.providerId && before !== undefined && before !== key) {
       return this.stopped(thread, { provider: thread.providerId, ...(turn.limitStop.resetsAt ? { resetsAt: turn.limitStop.resetsAt } : {}) })
     }
     const record = this.records.get(thread.id)
     if (!record || this.delivering.has(thread.id)) return false
-    // Archived or closed by its provider: nothing restarts it.
-    if (isThreadClosed(thread)) { this.drop(thread.id); return true }
     // A turn of the thread's own finished: it carried on, and its restarts in a row start again from none.
     if (turn?.status === 'completed' && !isThreadTurnRunning(thread) && before !== undefined && before !== key) { this.drop(thread.id); return true }
     // Before its restart, a turn running is someone else's: the user, Watcher or the provider carried it on.
@@ -218,7 +223,7 @@ export class LimitRestart {
     if (first) {
       for (const other of this.options.control.host().threads) {
         if (other.id === thread.id || other.providerId !== report.provider || this.records.has(other.id) || this.dormant(other.id)) continue
-        if (!(other.backgroundWork?.length) || isThreadTurnRunning(other) || isThreadClosed(other)) continue
+        if (other.kind === 'watcher-history' || !(other.backgroundWork?.length) || isThreadTurnRunning(other) || isThreadClosed(other)) continue
         this.set({ threadId: other.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts: 0 })
       }
     }

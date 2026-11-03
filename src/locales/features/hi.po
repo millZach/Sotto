@@ -5387,6 +5387,10 @@ msgstr ""
 msgid "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read Watcher’s room. Reopen the popup and try again."
+msgstr ""
+
 #: src/renderer/src/features/onboarding/ComputersStep.tsx
 msgid "Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones."
 msgstr ""

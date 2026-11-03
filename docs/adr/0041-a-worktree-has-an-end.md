@@ -2,6 +2,8 @@
 
 Accepted September 22, 2026.
 
+Amended November 2, 2026: the cleanup rules, Clear now and Clear settled threads after also reclaim a clean worktree on a detached HEAD when a branch or remote branch has its commit, and the next send puts the folder back on that commit. See the correction at the end.
+
 Amended October 27, 2026: Auto-settle merged threads also settles a thread whose branch was deleted after its pull request merged, or that never recorded a branch, from the thread's own pull request links. See the correction at the end.
 
 Amended October 22, 2026 ([ADR-0115](0115-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): the cleanup rules moved from Settings → Application to the first group of Settings → Git & worktrees, **Removing worktrees**. Where this record says Application or Git below, read that.
@@ -121,3 +123,19 @@ A thread at rest whose last-sent branch is gone, or that never recorded one, is 
 
 Each answer also brings the thread's link to the state GitHub gave (#1147), so a merged pull request stops reading open on a thread no read had followed since Watcher stopped watching it. Merged answers are kept while Sotto runs; only links still open are asked again on the next sweep. Every ask is a background read under #820's reserve and pause. The sweep logs, once a sweep each and by name alone, when a branch was gone, when a link was still open and when a merged link came from another branch.
 
+## Correction, November 2, 2026: a detached HEAD whose commit a branch has
+
+On Drake's Mac on November 2, every cleanup rule and Auto-settle merged threads were on, and 40 settled threads still had clean folders, 73 GB of them. 24 were on a detached HEAD: threads that build, install or review a commit check out the commit rather than a branch. `reclaim` refused every folder with no branch checked out, since there would be nothing to come back on, and the sweep did not look at one. Every one of those commits was on a local or remote branch, so removing the folders would have lost nothing.
+
+A folder on a detached HEAD is now reclaimed, by a rule, by Clear now or by Clear settled threads after ([ADR-0140](0140-settled-threads-can-be-cleared.md)), when a local branch or remote-tracking ref has its commit, which Git answers with `rev-list <commit> --not --branches --remotes`. A commit no branch has, which only the folder's own HEAD keeps from Git's garbage collection, keeps its folder, and the refusal says to create a branch at it. Tags do not count. The check runs before anything is written and again in the registry lane, under the thread's lane and the checkout guard, just before Git's lock is taken, so a folder that moved to another commit, or whose last branch with that commit was deleted meanwhile, stays.
+
+The reclaimed record keeps the commit (`detachedCommit`), and the next send puts the folder back on it with `git worktree add --detach`, detached as it was; the Working copy panel names the commit. A removal cut off partway is finished on the commit Git still records for the folder, whatever branch an older record names, and only while a branch or remote branch still has that commit; until one does, Git's registration, which Sotto's lock keeps, holds the commit and nothing more is removed. If the repository no longer has the commit when a send comes, the send says so and changes nothing. The idle, settle and unchanged rules look at such a folder; the merged rule needs a branch to ask GitHub about.
+
+**Remove worktree**, the question Settle asks and **Delete thread…** still ask for a branch: their questions have no words for a detached folder yet. The host refuses a detached folder to any removal not made by a rule or a clear, so a client's command cannot take one either.
+
+Ignored files besides dependencies still keep a folder from a rule. 15 of the 40 held build output, `out/`, `release/`, `native/coreml-asr/.build/` and `native/key-listener/build/`, about 3 GB each. Whether a rule may take build output too is Zach's decision; until he makes it, those folders stay. Each way of letting it moves the asking from the user to a declaration, and each puts something at risk:
+
+- A folder its tool tags with a `CACHEDIR.TAG` file, as SwiftPM's `.build/` and Cargo's `target/` are, counts like `node_modules`. The tag is a standard that backup tools already skip, but it frees nothing here on its own: `out/`, `release/` and `native/key-listener/build/` carry none.
+- A folder the repository declares with a Git attribute, such as `/out sotto-build-output` in `.gitattributes`, or in the user's own `.git/info/attributes`, read with one `git check-attr` over the ignored list. Nothing changes for a repository that declares nothing, but a committed `.gitattributes` is the repository's word rather than the user's, so a cloned repository could let a rule delete what the user put in a folder it names.
+- A fixed list of names (`out/`, `release/`, `build/`, `.build/`, `dist/`, `target/`) would apply to every repository, and those names can hold results that are slow or impossible to make again.
+- Or build output stays the user's to discard, as it is now.

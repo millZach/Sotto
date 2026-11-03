@@ -4,17 +4,22 @@ import { describe, expect, it, vi } from 'vitest'
 import { PopupShortcut, type PopupShortcutKeys } from '../../../../src/main/popup/popupShortcut'
 import type { PopupShortcutState } from '../../../../src/shared/popup'
 
+// Electron treats a chord's reordered modifiers as one accelerator. Keep this independent of Sotto's sameChord.
+const accelerator = (chord: string): string => chord.split('+').sort().join('+')
+
 /** A system shortcut table: each chord one owner, and the chords other apps hold. */
 function system(taken: readonly string[] = []) {
   const held = new Map<string, () => void>()
+  const unavailable = new Set(taken.map(accelerator))
   return {
     held,
     register: vi.fn((chord: string, run: () => void) => {
-      if (taken.includes(chord) || held.has(chord)) return false
-      held.set(chord, run)
+      const key = accelerator(chord)
+      if (unavailable.has(key) || held.has(key)) return false
+      held.set(key, run)
       return true
     }),
-    unregister: vi.fn((chord: string) => { held.delete(chord) }),
+    unregister: vi.fn((chord: string) => { held.delete(accelerator(chord)) }),
   }
 }
 
@@ -44,14 +49,14 @@ describe('the popup shortcut (ADR-0181)', () => {
     shortcut.apply(keys('Alt+Shift+Space'))
     expect(shortcuts.register).toHaveBeenCalledTimes(1)
     shortcut.apply(keys('Control+Alt+P'))
-    expect([...shortcuts.held.keys()]).toEqual(['Control+Alt+P'])
+    expect([...shortcuts.held.keys()]).toEqual(['Alt+Control+P'])
     shortcut.apply(keys(null))
     expect(shortcuts.held.size).toBe(0)
     expect(states.map(state => state.status)).toEqual(['on', 'on', 'off'])
   })
 
   it('says when another app holds the saved keys, and leaves keys dictation holds to dictation', () => {
-    const { shortcuts, shortcut } = setup(['Alt+Shift+Space'])
+    const { shortcuts, shortcut } = setup(['Shift+Alt+Space'])
     shortcut.apply(keys('Alt+Shift+Space'))
     expect(shortcut.state()).toEqual({ status: 'taken', chord: 'Alt+Shift+Space' })
     shortcut.apply(keys('Shift+CommandOrControl+Space'))
@@ -67,16 +72,27 @@ describe('the popup shortcut (ADR-0181)', () => {
     expect(shortcut.replace('CommandOrControl+Shift+Space', keys(null))).toEqual({ ok: false, reason: 'dictation' })
     expect(shortcut.replace('Shift+P', keys(null))).toEqual({ ok: false, reason: 'invalid' })
     expect(shortcut.replace('Control+Alt+K', keys(null))).toEqual({ ok: true })
-    expect([...shortcuts.held.keys()]).toEqual(['Control+Alt+K'])
+    expect([...shortcuts.held.keys()]).toEqual(['Alt+Control+K'])
     expect(shortcut.replace(null, keys(null))).toEqual({ ok: true })
     expect(shortcuts.held.size).toBe(0)
   })
 
-  it('takes the same keys in another spelling by letting the old spelling go first', () => {
-    const { shortcuts, shortcut } = setup()
-    shortcut.apply(keys('Alt+Shift+Space'))
-    expect(shortcut.replace('Shift+Alt+Space', keys(null))).toEqual({ ok: true })
-    expect([...shortcuts.held.keys()]).toEqual(['Shift+Alt+Space'])
+  it.each([
+    ['Alt+Shift+Space', 'Shift+Alt+Space'],
+    ['Shift+Alt+Space', 'Alt+Shift+Space'],
+  ])('keeps the shortcut working after recording %s as %s and saving it', (previous, recorded) => {
+    const { shortcuts, shortcut, press } = setup()
+    shortcut.apply(keys(previous))
+    expect(shortcut.replace(recorded, keys(null))).toEqual({ ok: true })
+    expect(shortcut.state()).toEqual({ status: 'on', chord: recorded })
+    expect([...shortcuts.held.keys()]).toEqual(['Alt+Shift+Space'])
+    shortcuts.held.get('Alt+Shift+Space')!()
+    expect(press).toHaveBeenCalledOnce()
+
+    // Following the saved setting must keep the registration, not just report that it is on.
+    shortcut.apply(keys(recorded))
+    shortcuts.held.get('Alt+Shift+Space')!()
+    expect(press).toHaveBeenCalledTimes(2)
   })
 
   it('stands aside while Settings records keys and comes back after, or on the change it records', () => {
@@ -88,10 +104,10 @@ describe('the popup shortcut (ADR-0181)', () => {
     shortcut.apply(keys('Control+Alt+P'))
     expect(shortcuts.held.size).toBe(0)
     shortcut.suspend(false)
-    expect([...shortcuts.held.keys()]).toEqual(['Control+Alt+P'])
+    expect([...shortcuts.held.keys()]).toEqual(['Alt+Control+P'])
     shortcut.suspend(true)
     expect(shortcut.replace('Control+Alt+K', keys(null))).toEqual({ ok: true })
-    expect([...shortcuts.held.keys()]).toEqual(['Control+Alt+K'])
+    expect([...shortcuts.held.keys()]).toEqual(['Alt+Control+K'])
   })
 
   it('lets dictation take its keys, and takes them back when dictation did not', () => {

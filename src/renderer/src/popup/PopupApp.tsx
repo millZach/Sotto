@@ -29,6 +29,7 @@ const COMMAND_WORDS: Readonly<Record<SlashCommand, ReturnType<typeof msg>>> = {
 
 const HISTORY_UNAVAILABLE = msg`Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again.`
 const THREADS_UNAVAILABLE = msg`Sotto could not read the threads. Reopen the popup and try again.`
+const WATCHER_UNAVAILABLE = msg`Sotto could not read Watcher’s room. Reopen the popup and try again.`
 
 /** Main's answer to a command, or null when none came: the popup reads only whether it was refused, and why. */
 type Reply = { readonly error: string | null } | null
@@ -88,12 +89,6 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
       if (state === null) { setNotice(THREADS_UNAVAILABLE); return }
       setNotice(current => current === THREADS_UNAVAILABLE ? null : current)
       setShell(state)
-      const room = bridge.watcher ? await bridge.watcher().catch(() => null) : null
-      if (!live) return
-      if (bridge.watcher && room === null) { setNotice(THREADS_UNAVAILABLE); return }
-      const current = room?.status === 'ok' ? room.state.current : null
-      const watcherThread = current ? threadForTarget(state, current.target) : undefined
-      setWatcher(watcherThread && room?.status === 'ok' ? { threadId: watcherThread.id, handover: room.state.handover != null } : null)
       setMemory(current => {
         const kept = current.threadId !== null && state.host.threads.some(item => item.id === current.threadId && !item.archivedAt) ? current.threadId : null
         if (kept === current.threadId) return current
@@ -101,6 +96,13 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
         writePopupMemory(storage(), next)
         return next
       })
+      const room = bridge.watcher ? await bridge.watcher().catch(() => null) : null
+      if (!live) return
+      if (bridge.watcher && room === null) { setNotice(WATCHER_UNAVAILABLE); return }
+      setNotice(current => current === WATCHER_UNAVAILABLE ? null : current)
+      const current = room?.status === 'ok' ? room.state.current : null
+      const watcherThread = current ? threadForTarget(state, current.target) : undefined
+      setWatcher(watcherThread && room?.status === 'ok' ? { threadId: watcherThread.id, handover: room.state.handover != null } : null)
       // Said once: the popup stays on the thread from then on, until the user asks for Watcher again.
       if (memory.target === 'watcher' && watcherThread === undefined) { setNotice(msg`Watcher isn’t running, so the popup is on your thread.`); remember({ target: 'thread' }) }
     })()
@@ -292,7 +294,7 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
               </div>)}
             {echo !== null ? <div className="popup-entry popup-entry--user is-sending"><ChevronRight size={12} aria-hidden="true" /><p>{echo.text}</p></div> : null}
             {current?.requests.map(request => (
-              <AgentRequestCard key={request.id} ownerId={current.id} ownerTitle={current.title} request={request} blocked={null}
+              <AgentRequestCard key={request.id} ownerId={current.id} ownerTitle={current.title} watcher={target === 'watcher'} request={request} blocked={null}
                 onSubmit={answer(request)} onWriteAnswer={open} />
             ))}
             {running || waiting ? (
