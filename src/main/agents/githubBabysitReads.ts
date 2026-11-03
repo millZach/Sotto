@@ -5,6 +5,8 @@ import type { GitPullRequestCheck } from '../../shared/gitPullRequests'
 import type { PullRequestObservation } from './watcherEvidence'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { summarizePullRequestChecks } from './pullRequestCheckState'
+import { BUG_BOT_REVIEWS_SELECTION, bugBotReviewsSchema, readBugBotReview } from './bugBotReview'
+import type { WatcherBugBotReview } from '../../shared/watcher'
 
 /** Publish facts from an existing read. Neither comments nor check names/output cross this boundary. */
 const passedOnlyWhole = (summary: ReturnType<typeof summarizePullRequestChecks>, whole: boolean) => summary === 'passed' && !whole ? 'pending' : summary
@@ -83,6 +85,8 @@ export interface PullRequestFingerprint {
   readonly status: string
   /** Comment, review and review-thread counts and the newest edits: when this moves, the remarks are read. */
   readonly remarks: string
+  /** Review counts and newest edits alone, so Watcher's coverage read need not follow ordinary comments. */
+  readonly reviews?: string
   /** A check is queued or still running, so the checks are read every pass until none is. */
   readonly checksRunning: boolean
   readonly reviewThreads: number
@@ -126,6 +130,7 @@ export function readFingerprint(text: string, numbers: readonly number[]): Finge
       head: node.headRefOid ?? null, base: node.baseRefName ?? '',
       status: [upper, mergeable ?? '', node.headRefOid ?? '', checks].join(' '),
       remarks: [node.comments.totalCount, newestEdit(node.comments), node.reviews.totalCount, newestEdit(node.reviews), node.reviewThreads.totalCount].join(' '),
+      reviews: [node.reviews.totalCount, newestEdit(node.reviews)].join(' '),
       checksRunning: [...checkRuns, ...statuses].some(entry => entry != null && entry.count > 0 && RUNNING.has(entry.state.toUpperCase())),
       reviewThreads: node.reviewThreads.totalCount,
     })
@@ -148,14 +153,16 @@ export const REMARKS_READ_MAX = COMMENTS_READ + REVIEWS_READ + REVIEW_THREADS_RE
  * each switched on only when the fingerprint says it moved. `isRequired` is asked on github.com, which is the only host
  * Sotto links pull requests from (ADR-0027). With the checks go the checks the base branch's rules require by name,
  * which GitHub lists before a required job has started: `isRequired` can only be asked of a check that exists. No
- * remark's text is asked for: a wake-up never carries it (ADR-0061 decision 7). Whether its author is a bot is, since a
- * bot's notice that it could not run is read apart (`remarkWordsQuery`).
+ * ordinary remark's text is asked for: a wake-up never carries it (ADR-0061 decision 7). Watcher can also ask for the
+ * bounded Bug Bot review classification (ADR-0144), whose bodies are discarded by this parser. Whether an ordinary
+ * remark's author is a bot is read, since its notice that it could not run is read apart (`remarkWordsQuery`).
  */
-export const DETAIL_QUERY = `query BabysitDetail($owner: String!, $name: String!, $number: Int!, $checks: Boolean!, $remarks: Boolean!) {
+export const DETAIL_QUERY = `query BabysitDetail($owner: String!, $name: String!, $number: Int!, $checks: Boolean!, $remarks: Boolean!, $bugBotReviews: Boolean! = false) {
   ${RATE_LIMIT_SELECTION}
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       headRefOid
+      ${BUG_BOT_REVIEWS_SELECTION}
       baseRef @include(if: $checks) { rules(first: 50) { pageInfo { hasNextPage } nodes { type parameters { ... on RequiredStatusChecksParameters { requiredStatusChecks { context } } } } } }
       commits(last: 1) @include(if: $checks) { nodes { commit { oid statusCheckRollup { contexts(first: 100) { pageInfo { hasNextPage } nodes {
         __typename
@@ -175,6 +182,7 @@ const detailAnswerSchema = z.object({ data: z.object({
   rateLimit: rateLimitSchema,
   repository: z.object({ pullRequest: loose(z.object({
     headRefOid: loose(z.string()),
+    bugBotReviews: bugBotReviewsSchema,
     baseRef: loose(z.object({ rules: loose(z.object({ pageInfo: loose(z.object({ hasNextPage: loose(z.boolean()) })), nodes: loose(z.array(loose(z.object({ type: loose(z.string()),
       parameters: loose(z.object({ requiredStatusChecks: loose(z.array(loose(z.object({ context: loose(z.string()) })))) })) })))) })) })),
     commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ oid: loose(z.string()), statusCheckRollup: loose(z.object({ contexts: loose(z.object({ pageInfo: loose(z.object({ hasNextPage: loose(z.boolean()) })), nodes: loose(z.array(loose(z.object({
@@ -218,6 +226,8 @@ export interface DetailAnswer {
   readonly rateLimit: z.infer<typeof rateLimitSchema>
   /** The head the pull request is on now, as this read saw it. */
   readonly head: string | null
+  /** Present only when Watcher asked for Bug Bot coverage. Review bodies never leave the parser. */
+  readonly bugBotReview?: WatcherBugBotReview
   /**
    * The head's checks, or null when they were not asked for, were read from another commit than the head, or GitHub
    * refused them. Null is never no checks: the reader asks again next pass.
@@ -250,7 +260,7 @@ function remarkTimes(written: string, out: string | null | undefined, edited: st
 }
 
 /** Reads a detail answer for the parts asked. Throws when it is not GitHub's answer, or names no pull request. */
-export function readDetail(text: string, asked: { readonly checks: boolean; readonly remarks: boolean }): DetailAnswer {
+export function readDetail(text: string, asked: { readonly checks: boolean; readonly remarks: boolean; readonly bugBotReviews?: boolean }): DetailAnswer {
   const answer = detailAnswerSchema.parse(JSON.parse(text))
   const pullRequest = answer.data.repository?.pullRequest
   if (!pullRequest) throw new Error('GitHub answered no pull request.')
@@ -303,7 +313,9 @@ export function readDetail(text: string, asked: { readonly checks: boolean; read
   }
   const checksComplete = pullRequest.commits?.nodes?.at(-1)?.commit?.statusCheckRollup?.contexts?.pageInfo?.hasNextPage !== true
     && pullRequest.baseRef?.rules?.pageInfo?.hasNextPage !== true
-  return { rateLimit: answer.data.rateLimit, head, checks, requiredChecks, checksComplete, remarks }
+  return { rateLimit: answer.data.rateLimit, head, checks, requiredChecks, checksComplete, remarks,
+    ...asked.bugBotReviews ? { bugBotReview: readBugBotReview(pullRequest.bugBotReviews, head,
+      (answer.errors ?? []).some(error => error?.path?.includes('bugBotReviews') === true)) } : {} }
 }
 const isBot = (author: z.infer<typeof authorSchema>): boolean => author?.__typename === 'Bot'
 
