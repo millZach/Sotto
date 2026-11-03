@@ -7,7 +7,7 @@ import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { EMPTY_SUBAGENT_SUMMARY, type SubagentRow, type SubagentsBridge } from '../../../../src/shared/subagents'
 import { delegatedBelow, delegatedRoster, mixedRoster, openAction, openDelegatedThread, rosterCounts, threadsMissingStarts, type DelegatedRosterRow, type DelegationReadOf, type DelegationReads } from '../../../../src/renderer/src/tools/delegatedRoster'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
-import { ThreadPaneMenu } from '../../../../src/renderer/src/agents/ThreadPaneMenu'
+import { ToolsToggle } from '../../../../src/renderer/src/tools/ToolsToggle'
 import { delegatedStatusWord } from '../../../../src/renderer/src/tools/DelegatedThreads'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
@@ -238,7 +238,7 @@ describe('Tools › Agents with delegated threads', () => {
     const command = vi.fn(async () => state)
     const subagents = agentsBridge([agent('explore', 2)])
     const ui = (focusedThreadId: string) => <div className="thread-workspace__body">
-      <section className="thread-pane" data-thread-id={focusedThreadId}><ThreadPaneMenu threadId={focusedThreadId} tools terminal={false} layout={[]} groups={[]} toolsStore={store} state={state} /></section>
+      <section className="thread-pane" data-thread-id={focusedThreadId}><ToolsToggle threadId={focusedThreadId} focused store={store} state={state} /></section>
       <ToolsPanel focusedThreadId={focusedThreadId} state={state} command={command} subagents={subagents} store={store} />
     </div>
     const view = render(ui(focused))

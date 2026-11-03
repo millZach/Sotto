@@ -108,7 +108,7 @@ private struct ThemeChoice: View {
                 HStack(spacing: 6) {
                     Text(palette.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.8)
                     if selected {
-                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.accentText)
+                        Image(systemName: "checkmark").iconFont(11, weight: .bold).foregroundStyle(Palette.accentText)
                             .accessibilityHidden(true)
                     }
                 }
@@ -291,7 +291,7 @@ private struct DuoTabsPanel: View {
             Segmented(name: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."),
                       choices: DuoTabsSide.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-duo-tabs-\($0.rawValue)" }) { side = $0.rawValue }
-            PanelHint(text: String(localized: "Upright, they run along the bottom.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs run along the bottom of the screen."))
+            PanelHint(text: String(localized: "Upright, they stand down the right edge.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen."))
         }
         .lookRow()
     }
@@ -541,16 +541,31 @@ private struct DefaultRow<Choices: View>: View {
     let value: String
     let identifier: String
     @ViewBuilder let choices: () -> Choices
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         Menu {
             choices()
         } label: {
-            HStack(spacing: Space.s3) {
-                Text(label).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                Spacer(minLength: Space.s2)
-                Text(value).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
-                    .accessibilityHidden(true)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    // At the largest sizes the value goes under its name: beside it, it was cut in the middle of a word.
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        name
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                            Text(value).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                            mark
+                        }
+                    }
+                    .padding(.vertical, Space.s2)
+                } else {
+                    HStack(spacing: Space.s3) {
+                        name
+                        Spacer(minLength: Space.s2)
+                        Text(value).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
+                        mark
+                    }
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
             .contentShape(Rectangle())
@@ -561,6 +576,11 @@ private struct DefaultRow<Choices: View>: View {
         .accessibilityValue(value)
         .accessibilityHint("Shows the choices.")
         .accessibilityIdentifier(identifier)
+    }
+    private var name: some View { Text(label).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink) }
+    private var mark: some View {
+        Image(systemName: "chevron.up.chevron.down").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
+            .accessibilityHidden(true)
     }
 }
 

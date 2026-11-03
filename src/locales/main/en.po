@@ -916,6 +916,7 @@ msgstr "Open Phones in the main Sotto window."
 
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
+#: src/main/phones/ipc.ts
 msgid "Open Settings in the main Sotto window."
 msgstr "Open Settings in the main Sotto window."
 
@@ -1093,6 +1094,10 @@ msgstr "Settings…"
 msgid "Setup stopped before it finished. Try again, or remove it in Settings › Dictation."
 msgstr "Setup stopped before it finished. Try again, or remove it in Settings › Dictation."
 
+#: src/main/tray/trayController.ts
+msgid "Show popup"
+msgstr "Show popup"
+
 #: src/main/app/applicationMenu.ts
 #: src/main/tray/trayController.ts
 msgid "Show recent turn records"
@@ -1161,6 +1166,10 @@ msgstr "Sotto could not download {to} on {name}."
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto could not install {to} on {name}."
 msgstr "Sotto could not install {to} on {name}."
+
+#: src/main/popup/popup.ts
+msgid "Sotto could not open the popup's thread. Check its host's connection in Settings, then choose the thread again."
+msgstr "Sotto could not open the popup's thread. Check its host's connection in Settings, then choose the thread again."
 
 #: src/main/notifications/openNotificationThread.ts
 msgid "Sotto could not open this thread. Check its host's connection in Settings, then choose the thread again."
@@ -2052,6 +2061,10 @@ msgstr "The pairing code could not be read from the host. Nothing was saved. Che
 #: src/main/omarchy/files.ts
 msgid "The plugin folder is not a folder. Sotto left it alone."
 msgstr "The plugin folder is not a folder. Sotto left it alone."
+
+#: src/main/popup/popup.ts
+msgid "The popup's thread is no longer available. Choose another thread or start a new one."
+msgstr "The popup's thread is no longer available. Choose another thread or start a new one."
 
 #: src/main/omarchy/setup.ts
 msgid "The previous owl folder changed. Sotto left it alone. Restore it before trying again."

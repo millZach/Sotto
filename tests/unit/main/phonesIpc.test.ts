@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { expect, it, vi } from 'vitest'
-import { registerPhonesIpc } from '../../../src/main/phones/ipc'
+import { registerLocalAppsIpc, registerPhonesIpc } from '../../../src/main/phones/ipc'
 
 import { PHONES_COMMAND, PHONES_GET, type PhonesState } from '../../../src/shared/phones'
+import { LOCAL_APPS_GET, type LocalAppsState } from '../../../src/shared/localApps'
 import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 function harness() {
@@ -27,4 +28,21 @@ it('answers the Phones page in the main window only, and parses every command', 
   expect(() => handlers.get(PHONES_COMMAND)!(main, { type: 'open-url', url: 'https://example.com' })).toThrow()
   cleanup()
   expect(handlers.size).toBe(0)
+})
+
+it('answers Let apps on this computer connect in the main window only, and publishes each change (ADR-0180)', () => {
+  const { ipc, handlers, main, widget, trusted } = harness()
+  const state: LocalAppsState = { phase: 'on', localHostRunning: true }
+  let told: ((next: LocalAppsState) => void) | undefined
+  const localApps = { get: vi.fn(() => state), subscribe: vi.fn((listener: (next: LocalAppsState) => void) => { told = listener; return () => { told = undefined } }) }
+  const publish = vi.fn()
+  const cleanup = registerLocalAppsIpc(ipc, localApps, () => trusted, publish)
+  expect(handlers.get(LOCAL_APPS_GET)!(main)).toBe(state)
+  expect(() => handlers.get(LOCAL_APPS_GET)!(widget)).toThrow('Open Settings in the main Sotto window.')
+  expect(() => handlers.get(LOCAL_APPS_GET)!(main, 'extra')).toThrow()
+  told!({ phase: 'failed', localHostRunning: true })
+  expect(publish).toHaveBeenCalledWith({ phase: 'failed', localHostRunning: true })
+  cleanup()
+  expect(handlers.size).toBe(0)
+  expect(told).toBeUndefined()
 })

@@ -1,3 +1,4 @@
+import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { msg, t } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
@@ -265,6 +266,8 @@ export class DesktopHosts {
     crossMachineEnabled?: boolean;
     /** Whether this desktop wants its hosts' next prompts now (ADR-0173), present only while its `next-prompt` Owl answer is on. */
     nextPromptsWanted?: () => boolean;
+    /** This desktop's answer for its hosts' product events (ADR-0179). */
+    productEventAnswer?: () => ProductEventPermission;
     /** This desktop relays hosts' delegations to This computer (#1316), only while Work across machines and Watcher run. */
     relaysDelegation?: boolean;
     /**
@@ -1542,7 +1545,7 @@ export class DesktopHosts {
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
-      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), ...(this.options.productEventAnswer ? { productEventAnswer: this.options.productEventAnswer } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
