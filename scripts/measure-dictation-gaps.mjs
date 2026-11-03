@@ -209,11 +209,36 @@ if (values.summarize) {
   async function coldLaunch() {
     await desktopCommand(['close-app', 'Sotto'])
     await desktopCommand(['launch', 'com.sotto.desktop', '--arg=--dictation-timing', '--activate'], 45_000)
-    // A restored Electron window can exist while hidden; make it visible before asking for focus.
-    await desktopCommand(['wait', '--app', 'Sotto', '--window', 'Sotto Owl', '--timeout', '60000'], 75_000)
-    await desktopCommand(['restore', '--app', 'Sotto'])
-    await desktopCommand(['focus-window', '--app', 'Sotto', '--title', 'Sotto Owl'])
-    const room = await desktopCommand(['snapshot', '--app', 'Sotto', '--wait-for', 'radiobutton:Dictate', '--wait-timeout', '60000'], 75_000)
+    const main = await desktopCommand(['wait', '--app', 'Sotto', '--window', 'Sotto Owl', '--timeout', '60000'], 75_000)
+    const scope = ['--app', 'Sotto', '--window-id', main.window.id]
+    // The app's Settings menu explicitly shows main and publishes its visibility; native restore only unminimizes it.
+    const menu = await desktopCommand(['snapshot', '--app', 'Sotto', '--surface', 'menubar'])
+    if (menu.complete !== true || !menu.tree) throw new Error('Application menu observation was incomplete')
+    const menuNodes = [menu.tree]
+    let settings
+    for (const node of menuNodes) {
+      if (node.role === 'menuitem' && node.name === 'Settings…') settings = node.ref_id
+      if (Array.isArray(node.children)) menuNodes.push(...node.children)
+    }
+    if (!settings) throw new Error('Settings menu command was not observed; no hotkey was sent')
+    await desktopCommand(['click', settings])
+    let room
+    try {
+      room = await desktopCommand(['snapshot', ...scope, '--wait-for', 'radiobutton:Dictate', '--wait-timeout', '15000'], 20_000)
+    } catch (error) {
+      if (!error.message.includes('snapshot failed (TIMEOUT)')) throw error
+      const startup = await desktopCommand(['snapshot', ...scope])
+      if (startup.complete !== true || !startup.tree) throw new Error('Startup observation was incomplete; no hotkey was sent', { cause: error })
+      const startupNodes = [startup.tree]
+      let open
+      for (const node of startupNodes) {
+        if (node.role === 'button' && (node.name === 'Open Sotto now' || node.name?.startsWith('Open Sotto without '))) open = node.ref_id
+        if (Array.isArray(node.children)) startupNodes.push(...node.children)
+      }
+      if (!open) throw new Error('Neither Dictate nor the startup fallback was observed; no hotkey was sent', { cause: error })
+      await desktopCommand(['click', open, '--headed'])
+      room = await desktopCommand(['snapshot', ...scope, '--wait-for', 'radiobutton:Dictate', '--wait-timeout', '60000'], 75_000)
+    }
     const roomNodes = [room.tree]
     let dictate
     for (const node of roomNodes) {
@@ -222,7 +247,7 @@ if (values.summarize) {
     }
     if (!dictate) throw new Error('Dictate control was not observed; no hotkey was sent')
     await desktopCommand(['click', dictate, '--headed'])
-    const snapshot = await desktopCommand(['snapshot', '--app', 'Sotto', '--wait-for', 'button:Start dictation', '--wait-timeout', '60000'], 75_000)
+    const snapshot = await desktopCommand(['snapshot', ...scope, '--wait-for', 'button:Start dictation', '--wait-timeout', '60000'], 75_000)
     if (snapshot.complete !== true || !snapshot.tree) throw new Error('Speech-model readiness observation was incomplete')
     const nodes = [snapshot.tree]
     let ready
