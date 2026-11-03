@@ -11,6 +11,7 @@ import { useWatcherProviderWords } from '../../watcher/watcherProviders'
 import { linuxKeyWords } from '../omarchy/linuxKeys'
 import { dismissDisclosure } from '../usage/UsageCharts'
 import type { HelpRequest, HelpTopicId } from './helpTopics'
+import { useProductEventsState } from '../productEvents/useProductEventsState'
 
 export interface HelpViewProps {
   readonly shortcut: string
@@ -23,6 +24,8 @@ export interface HelpViewProps {
   readonly releaseTrack?: ReleaseTrack | undefined
   /** A topic another page asked Help to open at, such as Watcher's room's How Watcher works. */
   readonly openTopic?: HelpRequest | null | undefined
+  /** The switch's answer, so About never says product events are on while they are off. */
+  readonly productEventsEnabled?: boolean | undefined
 }
 
 interface Topic {
@@ -45,7 +48,8 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
   ))
 }
 
-export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable', openTopic = null }: HelpViewProps): ReactNode {
+export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable', openTopic = null, productEventsEnabled = true }: HelpViewProps): ReactNode {
+  const productEventsOff = useProductEventsState()?.offBy != null || !productEventsEnabled
   const { t } = useLingui()
   const watcher = useWatcherEnabled()
   const providers = useWatcherProviderWords()
@@ -131,11 +135,15 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
           <section className="tt-panel">
             <div className="tt-panel__header"><h2><Trans comment="Heading over the running version and what Sotto sends where">About</Trans></h2></div>
             <p className="help-about tt-paragraph">
-              <Trans>
+              {productEventsOff ? <Trans>
+                {about}, {system}. No account with Sotto. Product events are off.
+                <br />
+                Transcription runs on this computer; AI cleanup uses your OpenRouter account.
+              </Trans> : <Trans>
                 {about}, {system}. No account with Sotto. Product events are on until you turn them off.
                 <br />
                 Transcription runs on this computer; AI cleanup uses your OpenRouter account.
-              </Trans>
+              </Trans>}
             </p>
           </section>
         </div>

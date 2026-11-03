@@ -27,6 +27,7 @@ With a local server standing in for the Worker, all four pass:
 - **Off:** the switch off in Settings deletes the install ID and nothing more arrives.
 - **Answers across starts:** Escape, from wherever focus is, asks again at the next start. Turn off says so, stays off at the next start with no notice, and the server hears nothing at all across the three starts.
 - **Environment:** with `DO_NOT_TRACK=1`, no notice, and the row reads off, cannot be pressed and says why.
+- **Help:** About follows the answer: `helpView.test.tsx` reads "Product events are off." with the switch off or the environment off, and the words Zach chose otherwise. A unit test, not a journey.
 - **Fit:** the notice and the list stay inside the window at 1600x1000, 1280x800 and 820x560 in light and dark. Citrine and Graphite are captured at 820x560, and Tab goes Got it, Turn off, See every event.
 
 `productEventsWords.test.ts` fails if the docs page or the dialog misses an event or field, if the hashed-and-linked sentence goes from the notice, the row, the README, the guide or the page, or if "no analytics", "no telemetry" or the like comes back.

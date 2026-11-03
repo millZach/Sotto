@@ -110,6 +110,10 @@ msgid "{0}, asked again"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
+msgid "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
 msgid "{about}, {system}. No account with Sotto. Product events are on until you turn them off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 msgstr ""
 

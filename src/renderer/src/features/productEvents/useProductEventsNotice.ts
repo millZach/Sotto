@@ -16,7 +16,7 @@ export interface ProductEventsNoticeControl {
   clearTurnedOff(): void
 }
 
-/** The one-time notice's state (ADR-0179). Turning the switch off in Settings takes the notice down, and turning it back on asks again. */
+/** The one-time notice's state (ADR-0179). Turning the switch off in Settings takes an unanswered notice down, and turning it back on asks again. Once answered it never asks: the switch alone decides, until Reset settings. */
 export function useProductEventsNotice(settings: Pick<AppSettings, 'productEventsEnabled' | 'productEventsNoticeAnswered'> | null, save: (patch: SettingsPatch) => Promise<boolean>): ProductEventsNoticeControl {
   const state = useProductEventsState()
   const [putOff, setPutOff] = useState(false)
