@@ -31,6 +31,21 @@
 .council-field { display: grid; gap: 5px; min-width: 0; }
 .council-field > span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .council-field > :is(select, textarea) { width: 100%; min-width: 0; }
+/* The thread a question comes from: one line, the field's height; Change opens the list under it. */
+.council-origin { display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; padding: 0 4px 0 11px; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); }
+.council-origin .provider-mark, .council-origin__row .provider-mark { flex: none; color: var(--tt-text-muted); }
+.council-origin__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.council-origin__project { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.council-origin__change { flex: none; padding: 4px 8px; border: 0; border-radius: var(--tt-radius-row); background: none; color: var(--tt-accent-text); font: inherit; font-size: var(--tt-type-small); }
+.council-origin__change:hover { background: var(--tt-hover); }
+.council-origin__list { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); }
+.council-origin__search { width: 100%; min-width: 0; }
+.council-origin__rows { max-height: 260px; overflow-y: auto; scrollbar-color: var(--tt-scrollbar) transparent; }
+.council-origin__group { margin: 8px 6px 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.council-origin__row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 6px; border: 0; border-radius: var(--tt-radius-row); background: none; color: var(--tt-text); font: inherit; text-align: left; }
+.council-origin__row:hover { background: var(--tt-hover); }
+.council-origin__row[aria-current] { background: var(--tt-hover-strong); }
+.council-origin__empty { margin: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .council-ask__question { min-height: 72px; resize: vertical; }
 .council-ask__estimate { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-ask__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }

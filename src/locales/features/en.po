@@ -1399,6 +1399,8 @@ msgstr "Carried {carried}."
 msgid "Chair"
 msgstr "Chair"
 
+#. Opens the list of threads a Council question can come from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Change"
 msgstr "Change"
@@ -2126,6 +2128,7 @@ msgid "done"
 msgstr "done"
 
 #. An Omarchy setup piece that is set up
+#. Closes the list of threads a Council question can come from
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
@@ -2315,6 +2318,10 @@ msgid "Filter threads"
 msgstr "Filter threads"
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Find a thread"
+msgstr "Find a thread"
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Findings: {found}."
 msgstr "Findings: {found}."
 
@@ -2388,6 +2395,8 @@ msgstr "freezes over 100 ms"
 msgid "French"
 msgstr "French"
 
+#. The thread a Council question comes from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "From"
 msgstr "From"
@@ -3597,6 +3606,10 @@ msgstr "No thread can move to {named} now"
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "No thread matches “{typed}”."
 msgstr "No thread matches “{typed}”."
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No thread matches."
+msgstr "No thread matches."
 
 #: src/renderer/src/features/usage/UsageCharts.tsx
 msgid "No token counts in this range"
@@ -6337,8 +6350,6 @@ msgstr "This Watcher is new, so there is nothing to hand over yet."
 msgid "This work wasn't matched to a model."
 msgstr "This work wasn't matched to a model."
 
-#. The thread a Council question comes from
-#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr "Thread"

@@ -1399,6 +1399,8 @@ msgstr ""
 msgid "Chair"
 msgstr ""
 
+#. Opens the list of threads a Council question can come from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Change"
 msgstr ""
@@ -2126,6 +2128,7 @@ msgid "done"
 msgstr ""
 
 #. An Omarchy setup piece that is set up
+#. Closes the list of threads a Council question can come from
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
@@ -2315,6 +2318,10 @@ msgid "Filter threads"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
+msgid "Find a thread"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
 msgid "Findings: {found}."
 msgstr ""
 
@@ -2388,6 +2395,8 @@ msgstr ""
 msgid "French"
 msgstr ""
 
+#. The thread a Council question comes from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "From"
 msgstr ""
@@ -3596,6 +3605,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "No thread matches “{typed}”."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No thread matches."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageCharts.tsx
@@ -6337,8 +6350,6 @@ msgstr ""
 msgid "This work wasn't matched to a model."
 msgstr ""
 
-#. The thread a Council question comes from
-#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr ""
