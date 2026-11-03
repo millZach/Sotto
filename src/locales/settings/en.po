@@ -1156,6 +1156,18 @@ msgstr "Approve the connection to {name} in Tailscale"
 msgid "Approved in Tailscale"
 msgstr "Approved in Tailscale"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Apps on this computer"
+msgstr "Apps on this computer"
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Apps on this computer can read and send to your threads and Watcher, and answer questions and permissions, without a pairing code."
+msgstr "Apps on this computer can read and send to your threads and Watcher, and answer questions and permissions, without a pairing code."
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Apps on this computer can’t connect. Sotto couldn’t open their listener or save their files in its data folder. Turn this off and on again, or restart Sotto."
+msgstr "Apps on this computer can’t connect. Sotto couldn’t open their listener or save their files in its data folder. Turn this off and on again, or restart Sotto."
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "as {user}, port {port}"
 msgstr "as {user}, port {port}"
@@ -3069,6 +3081,11 @@ msgstr "Let agents draw visuals in threads"
 msgid "Let agents use the browser without asking"
 msgstr "Let agents use the browser without asking"
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Let apps on this computer connect"
+msgstr "Let apps on this computer connect"
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -3344,6 +3361,10 @@ msgstr "Native iOS builds on a run.cloud simulator"
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Needs attention"
 msgstr "Needs attention"
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Needs the local host. Turn on Run the local host above, then restart Sotto."
+msgstr "Needs the local host. Turn on Run the local host above, then restart Sotto."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Needs you"
@@ -5970,6 +5991,10 @@ msgstr "The pull request checklist starts on the method you used last, or Merge 
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "The sea, a ship at the quay and a lighthouse."
 msgstr "The sea, a ship at the quay and a lighthouse."
+
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "The setting could not be saved. Nothing was changed. Try again."
+msgstr "The setting could not be saved. Nothing was changed. Try again."
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "The setup could not be stopped. Try again."

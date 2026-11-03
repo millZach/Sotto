@@ -485,10 +485,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {},
       ...branchMoves ? { branchMoves } : {} } : {}
+  const pullRequestState = options.worktreeCleanup?.pullRequestState
+  const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
-      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
+      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
       ...workerAdmission ? { swarms: { admission: workerAdmission, service: () => delegation,
         ceiling: workerCeiling } } : {},
@@ -608,8 +610,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
   const merged = options.worktreeCleanup?.pullRequestMerged
   const openPullRequests = options.worktreeCleanup?.openPullRequestBranches
-  const pullRequestState = options.worktreeCleanup?.pullRequestState
-  const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl:
   // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,

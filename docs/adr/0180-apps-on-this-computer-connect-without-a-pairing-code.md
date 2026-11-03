@@ -25,7 +25,7 @@ The options considered:
    { "version": 1, "port": 54321, "token": "…", "clientId": "…" }
    ```
 
-   `port` is the loopback listener's port, tried first again at the next start. `token` is the bearer for `POST /v1/session`, exactly as a pairing would return it; the pairing store keeps only its hash. The file exists only while the switch is on. An app reads it, checks `/v1/health`, opens a session with the token and then speaks host protocol v1 as a phone does. A 401 means the switch was turned off and on again, which mints a new token: read the file again.
+   `port` is the loopback listener's port, tried first again at the next start. `token` is the bearer for `POST /v1/session`, exactly as a pairing would return it; the pairing store keeps only its hash. The file exists only while the switch is on. An app reads it, checks `/v1/health`, opens a session with the token and then speaks host protocol v1 as a phone does. A 401 means the switch was turned off and on again, which mints a new token: read the file again. At a start with the switch on, a file that is missing, whose token the store no longer knows, or whose port another program now holds is replaced: Sotto revokes whatever client the store and the file name and pairs a new one, since an app may have sent the old token to whatever holds that port. An app that unpairs itself (`/v1/revoke`) gets the same while the switch stays on. The store holds only this one client, so a damaged store is replaced rather than leaving apps shut out. A switch turned off while Sotto was closed is cleaned up at the next start.
 5. **What is logged.** Stable event names only, never the token, the port or the client ID.
 
 ## Consequences

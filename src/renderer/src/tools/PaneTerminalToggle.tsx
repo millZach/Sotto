@@ -1,8 +1,7 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, type ReactNode } from 'react'
 import { PanelBottom } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { SottoPlatform } from '../../../shared/platform'
-import type { PaneMenuItem } from '../agents/PaneMenu'
 import { useOptionalApp } from '../state/AppContext'
 import { chosenThreadChord } from '../agents/threadShortcuts'
 import { paneTerminalChord, paneTerminalShortcutKeys, paneTerminalShortcutLabel, type PaneTerminalShortcut } from './paneTerminalShortcut'
@@ -17,15 +16,36 @@ export function usePaneTerminalShortcut(): PaneTerminalShortcut | null {
 }
 
 /**
- * Shows or hides this pane's own terminal drawer, as a row of the pane's More menu (ADR-0163), in every pane that has
- * a drawer. Its name stays put, "Terminal drawer" (Terminal alone is the Tools tab's), and its tick says whether the
- * drawer is open, so it never shares a name with the drawer's own Hide terminal button. Its keys follow it.
+ * Shows or hides this pane's own terminal drawer, a symbol in the pane's header after Tools (ADR-0182), in every pane that
+ * has a drawer. Its name stays put, "Terminal drawer" (Terminal alone is the Tools tab's), and aria-pressed says whether
+ * the drawer is open, so it never shares a name with the drawer's own Hide terminal button.
  */
-export function usePaneTerminalMenuItem(threadId: string, offered: boolean, store: PaneTerminalChromeStore = paneTerminalChromeStore): PaneMenuItem | null {
+export function PaneTerminalToggle({ threadId, store = paneTerminalChromeStore }: { readonly threadId: string; readonly store?: PaneTerminalChromeStore }): ReactNode {
   const { t } = useLingui()
   const chrome = usePaneTerminalChrome(threadId, store)
   const shortcut = usePaneTerminalShortcut()
-  if (!offered) return null
-  return { id: 'terminal-drawer', label: t`Terminal drawer`, icon: <PanelBottom size={15} aria-hidden="true" />, shown: chrome.open,
-    shortcut: shortcut ? { plain: shortcut.label, keys: shortcut.keys } : undefined, run: () => store.setOpen(threadId, !chrome.open) }
+  const keys = shortcut?.label
+  const does = chrome.open
+    ? keys ? t`Hide terminal drawer (${keys})` : t`Hide terminal drawer`
+    : keys ? t`Show terminal drawer (${keys})` : t`Show terminal drawer`
+  return <button type="button" className="pane-action tt-focusable" data-pane-terminal-toggle aria-pressed={chrome.open}
+    aria-label={t`Terminal drawer`} aria-keyshortcuts={shortcut?.keys} title={does}
+    onClick={() => store.setOpen(threadId, !chrome.open)}>
+    <PanelBottom size={16} aria-hidden="true" />
+  </button>
+}
+
+/**
+ * The same symbol on a thread on a paired host, whose terminal is on that machine (ADR-0049): greyed, and saying where
+ * (ADR-0182). It stays reachable from the keyboard, as the Git action does while it is disabled, so the reason can be read.
+ */
+export function PaneTerminalOnHost({ host }: { readonly host: string | undefined }): ReactNode {
+  const { t } = useLingui()
+  const where = host === undefined
+    ? t`This thread’s terminal is on the host machine. Open it there.`
+    : t({ message: `This thread’s terminal is on ${host}. Open it there.`, comment: '{host} is the name of a paired host, as in forge.' })
+  return <button type="button" className="pane-action tt-focusable" data-pane-terminal-toggle aria-disabled="true"
+    aria-label={t`Terminal drawer`} aria-description={where} title={where}>
+    <PanelBottom size={16} aria-hidden="true" />
+  </button>
 }

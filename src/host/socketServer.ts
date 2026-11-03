@@ -174,6 +174,11 @@ export interface SocketServerOptions {
    */
   observationKey?: string
   /**
+   * Set on a listener whose pairing store sits beside the phones' over one service, as the local apps' does (ADR-0180).
+   * Whether a client it never paired may still give Watcher instructions is then left to the listener that paired it.
+   */
+  ownClientsOnly?: true
+  /**
    * Who a headless host's tailnet listener admits (ADR-0053). Absent, every client counts as a desktop and is always
    * admitted: the listener with the administrative routes is reached only on the host machine and through SSH, and the
    * desktop's own phone listener offers no desktop-only feature and stops whenever phone access is off.
@@ -1967,7 +1972,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   // While this listener serves Watcher's phone page, it says whether a phone that queued a follow-up for Watcher is still
   // paired and admitted, so the follow-up goes under that phone's guard as its own send would (#1229).
   const releasePhoneAdmission = features.includes('watcher-phone')
-    ? service.watcherPhone?.useAdmission(clientId => pairing.isPaired(clientId) && admits(clientId)) : undefined
+    ? service.watcherPhone?.useAdmission(clientId => options.ownClientsOnly && !pairing.isPaired(clientId) ? undefined : pairing.isPaired(clientId) && admits(clientId))
+    : undefined
   /** Closes every socket whose session ended, and every phone's while phones are not admitted. */
   const dropRefused = (): void => { for (const peer of peers) if (!authenticated(peer) || !admits(peer.client.clientId)) peer.frames.close() }
   const expiry = setInterval(dropRefused, 1000)

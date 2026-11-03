@@ -291,10 +291,9 @@ describe('split thread workspace', () => {
     for (const [title, id] of [['Grok voice previews', 'grok-previews'], ['Streaming WAV stall', 'wav-stall']] as const) {
       expect(within(view.pane(title)).getByTestId('crumb')).toHaveTextContent(id)
     }
-    // Tools is a row of the focused pane's ··· menu, as its toggle was the focused pane's, and that ··· button wears its
-    // dot (ADR-0163). Opening another pane's menu focuses that pane first.
-    expect(view.pane('Streaming WAV stall').querySelector('[data-opens="tools"]')).toHaveAccessibleName('More actions')
-    expect(view.pane('Grok voice previews').querySelector('[data-opens="tools"]')).toBeNull()
+    // Every pane carries the Tools symbol, so nothing in a header comes or goes with focus (ADR-0182).
+    expect(within(view.pane('Streaming WAV stall')).getByRole('button', { name: 'Tools' })).toBeVisible()
+    expect(within(view.pane('Grok voice previews')).getByRole('button', { name: 'Tools' })).toBeVisible()
     // A pane with a Terminal drawer says so in its header, where the drawer's keys look for it.
     expect(view.pane('Streaming WAV stall').querySelector('header')).toHaveAttribute('data-terminal-drawer')
     expect(view.pane('Grok voice previews').querySelector('header')).not.toHaveAttribute('data-terminal-drawer')
