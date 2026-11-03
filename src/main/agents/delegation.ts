@@ -520,6 +520,9 @@ export class DelegationService {
   private readonly queuedBriefs = new Map<string, string>()
   /** Threads whose user's own turn pauses delegated sends until it ends (decision 6). */
   private readonly paused = new Set<string>()
+  /** Restart proof is checked once connected, then only on a provider reconnect or an explicit read. */
+  private readonly restartPending = new Set<string>()
+  private restartConnections: string | undefined
   /** Delegations a `delegate` call is still answering: their news goes in the call's result, not a wake-up. */
   private readonly calling = new Set<string>()
   private readonly waiters = new Map<string, Set<() => void>>()
@@ -597,7 +600,8 @@ export class DelegationService {
 
   /**
    * Reads the record and starts following the coordinator. A brief that was unconfirmed or still working when Sotto
-   * stopped is `unknown` from now on and is never sent again (decision 7); a brief that was waiting is dropped unsent.
+   * stopped is `unknown` until its exact answering turn proves an outcome, and is never sent again (decision 7);
+   * a brief that was waiting is dropped unsent.
    */
   async recover(): Promise<void> {
     const file = await this.store.read().catch((): DelegationFile => ({ version: 1, delegations: [], links: [], roots: [] }))
@@ -642,6 +646,8 @@ export class DelegationService {
     this.options.remote?.useDelivery((callerId, news, replies) => this.options.relayedCallers?.caller(callerId)
       ? this.options.relayedCallers.tell(callerId, news, replies)
       : this.options.control.deliverWakeUp(callerId, news, { tool: this.options.tool?.(callerId) ?? false }))
+    // Register the startup candidates before the coordinator asks which histories to load.
+    for (const record of this.records) if (this.restarted(record)) this.restartPending.add(record.id)
     this.unhook = this.options.control.useDelegation({
       userCommand: (command, threadId, answersQuestion) => this.userCommand(command, threadId, answersQuestion),
       observe: (snapshot, threads) => this.observe(snapshot, threads),
@@ -663,8 +669,9 @@ export class DelegationService {
           () => this.options.control.resumeDelegationNews?.(), threadId) === 'working'
       },
     })
+    this.observe(this.snapshot())
     await this.persist()
-    // What a restart left unknown is news, told once; it never moves again and nothing is resent (decision 7).
+    // What a restart still leaves unknown is news, told once; nothing is resent (decision 7).
     for (const record of this.records) {
       if (this.outcomeOf(record) === 'unknown' && record.told !== 'unknown' && (record.unknownBecause === 'restarted' || record.failure === 'restarted')) this.changed(record.id)
     }
@@ -771,7 +778,13 @@ export class DelegationService {
   }
 
   private async swarmResult(swarm: WorkerSwarm): Promise<Record<string, unknown>> {
+    let recovered = false
+    for (const member of swarm.members) {
+      const record = member.delegationId ? this.byId.get(member.delegationId) : undefined
+      if (record && this.reconsiderRestarted(record)) recovered = true
+    }
     const lead = swarm.leadDelegationId ? this.byId.get(swarm.leadDelegationId) : undefined
+    if (recovered && !lead) await this.persist()
     return { ...lead ? await this.result(lead) : { status: 'ok' }, ...swarmReceipt(swarm) }
   }
 
@@ -1327,7 +1340,12 @@ export class DelegationService {
     if (!parsed.success) return delegationRefusal('INVALID_INPUT', 'Name the delegation by its ID, or leave it out to list them.')
     try {
       const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
-      if (parsed.data.delegation === undefined) return this.listing(caller, snapshot)
+      if (parsed.data.delegation === undefined) {
+        let recovered = false
+        for (const record of this.byDelegating.get(caller.id) ?? []) if (this.reconsiderRestarted(record)) recovered = true
+        if (recovered) await this.persist()
+        return this.listing(caller, snapshot)
+      }
       const swarm = this.options.swarms ? this.swarms.get(parsed.data.delegation) : undefined
       if (swarm && (swarm.ownerThreadId === caller.id || swarm.leadThreadId === caller.id)) return await this.swarmResult(swarm)
       const refused = this.refusedOf(caller.id, parsed.data.delegation)
@@ -1718,6 +1736,10 @@ export class DelegationService {
     if (record.deliveryState === 'failed') return false
     if (record.deliveryState !== 'accepted') return record.outcome !== 'unknown'
     return !record.outcome || !WATCHER_FINAL_OUTCOMES.has(record.outcome)
+  }
+  /** Only restart uncertainty can be revised, and a dropped queued brief can never have an answering turn. */
+  private restarted(record: DelegationRecord): boolean {
+    return record.outcome === 'unknown' && record.unknownBecause === 'restarted' && record.deliveryState !== 'failed'
   }
   private outcomeOf(record: DelegationRecord): WatcherOutcome {
     if (record.deliveryState === 'failed') return FAILURE_OUTCOMES[record.failure ?? 'provider']
@@ -2299,7 +2321,7 @@ export class DelegationService {
       && !isThreadTurnRunning(thread) && !this.options.control.hasPendingThreadWork(thread.id)
   }
   private observedThreadIds(): string[] {
-    return [...new Set([...this.records.filter(record => this.open(record)).map(record => record.delegatedThreadId), ...this.paused,
+    return [...new Set([...this.records.filter(record => this.open(record) || this.restarted(record) && this.restartPending.has(record.id)).map(record => record.delegatedThreadId), ...this.paused,
       ...[...this.activeSwarms.values()].flatMap(swarm => swarm.leadThreadId ? [swarm.leadThreadId] : [])])]
   }
   /**
@@ -2311,6 +2333,13 @@ export class DelegationService {
    */
   private observe(snapshot: AgentHostSnapshot, view?: HostThreadsView): void {
     if (this.closed) return
+    const connections = JSON.stringify([snapshot.connected, snapshot.providers?.map(provider => [provider.id, provider.connection])])
+    let observationChanged = connections !== this.restartConnections
+    if (observationChanged) {
+      this.restartConnections = connections
+      this.restartPending.clear()
+      for (const record of this.records) if (this.restarted(record)) this.restartPending.add(record.id)
+    }
     this.options.swarms?.admission.refresh(THIS_COMPUTER)
     if (this.options.swarms && this.activeSwarms.size) {
       let listedLeads: Map<string, AgentThread> | undefined
@@ -2338,9 +2367,12 @@ export class DelegationService {
         }
       }
     }
-    const open = this.records.filter(record => this.open(record))
+    const open = this.records.filter(record => this.open(record) || this.restarted(record) && this.restartPending.has(record.id))
     if (this.untold.size) this.scheduleNews()
-    if (!open.length && !this.paused.size) return
+    if (!open.length && !this.paused.size) {
+      if (observationChanged) this.options.control.refreshDelegationObservation()
+      return
+    }
     let listed: Map<string, AgentThread> | undefined
     const threads: Pick<ReadonlyMap<string, AgentThread>, 'get'> = view
       ? { get: id => view.thread(id) }
@@ -2355,10 +2387,17 @@ export class DelegationService {
     for (const record of open) {
       const thread = threads.get(record.delegatedThreadId)
       if (!thread) {
+        if (this.restartPending.delete(record.id)) observationChanged = true
         if (this.gone(record)) changed = true
         continue
       }
       if (!isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
+      if (this.restarted(record)) {
+        if (thread.historyStatus === 'loading') continue
+        this.restartPending.delete(record.id); observationChanged = true
+        if (this.observeOutcome(record, thread, messageId => briefs.has(messageId) || isWakeUpOf(thread, messageId))) changed = true
+        continue
+      }
       if (record.deliveryState === 'queued') {
         // The user's own queue there came to hold it, as a Stop in that thread does: it ends unsent rather than wait unseen.
         if (this.queuedBriefs.has(record.id) && !this.sending.has(record.delegatedThreadId) && this.queueHeld(thread.id)) { this.fail(record.id, 'paused'); changed = true; continue }
@@ -2376,22 +2415,43 @@ export class DelegationService {
         }
         continue
       }
-      const swarm = this.swarmOutcome(thread.id, thread)
-      let seen = watcherTurnOutcome({ messageId: swarm?.messageId ?? record.messageId, delivery: 'now', ...(record.outcome ? { outcome: record.outcome } : {}) }, thread, messageId => briefs.has(messageId) || isWakeUpOf(thread, messageId))
-      if (seen && swarm?.outcome) seen = { ...seen, outcome: swarm.outcome }
-      if (seen && seen.outcome !== 'working' && !isThreadTurnRunning(thread)) this.options.swarms?.admission.leave(record.id)
-      if (seen?.outcome === 'answered' && swarm?.pending) seen = { ...seen, outcome: 'background' }
-      if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) continue
-      this.update(record.id, saved => {
-        saved.outcome = seen.outcome; saved.outcomeAt = now(); delete saved.releasedAt; delete saved.releaseTold
-        for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) { if (seen[field]) saved[field] = seen[field]; else delete saved[field] }
-      })
-      if (seen.outcome === 'answered') this.answeredThisRun.add(record.id)
-      changed = true
-      this.changed(record.id)
+      if (this.observeOutcome(record, thread, messageId => briefs.has(messageId) || isWakeUpOf(thread, messageId))) changed = true
     }
     if (this.releaseHeld(snapshot, threads)) changed = true
-    if (changed) { void this.persist(); this.options.control.refreshDelegationObservation() }
+    if (changed) void this.persist()
+    if (changed || observationChanged) this.options.control.refreshDelegationObservation()
+  }
+  /** A read can find history before the next provider observation. It uses the same proof and change paths. */
+  private reconsiderRestarted(record: DelegationRecord): boolean {
+    if (!this.restarted(record)) return false
+    const snapshot = this.snapshot(), thread = snapshot.threads.find(item => item.id === record.delegatedThreadId)
+    if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) return false
+    const recovered = this.observeOutcome(record, thread, messageId => this.records.some(item => item.messageId === messageId) || isWakeUpOf(thread, messageId))
+    if (recovered) this.options.control.refreshDelegationObservation()
+    return recovered
+  }
+  /** Derives an outcome from structured turns; a retained brief alone proves no turn after a restart. */
+  private observeOutcome(record: DelegationRecord, thread: AgentThread, watcherMessage: (messageId: string) => boolean): boolean {
+    const restarted = this.restarted(record)
+    const operation = { messageId: record.messageId, delivery: 'now' as const, ...(record.outcome ? { outcome: record.outcome } : {}) }
+    let seen = restarted ? watcherTurnOutcome(operation, thread, watcherMessage) : undefined
+    if (restarted && (!seen?.turnMessageId || seen.outcome === 'unknown')) return false
+    const swarm = this.swarmOutcome(thread.id, thread)
+    if (!restarted || swarm?.messageId) seen = watcherTurnOutcome({ ...operation, messageId: swarm?.messageId ?? record.messageId }, thread, watcherMessage)
+    if (restarted && (!seen?.turnMessageId || seen.outcome === 'unknown')) return false
+    if (seen && swarm?.outcome) seen = { ...seen, outcome: swarm.outcome }
+    if (seen && seen.outcome !== 'working' && !isThreadTurnRunning(thread)) this.options.swarms?.admission.leave(record.id)
+    if (seen?.outcome === 'answered' && swarm?.pending) seen = { ...seen, outcome: 'background' }
+    if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) return false
+    this.update(record.id, saved => {
+      saved.outcome = seen.outcome; saved.outcomeAt = now(); delete saved.releasedAt; delete saved.releaseTold
+      // Proof of an older turn does not change the caller's last-seen head, which a newer brief may have advanced.
+      if (restarted) { saved.deliveryState = 'accepted'; delete saved.unknownBecause }
+      for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) { if (seen[field]) saved[field] = seen[field]; else delete saved[field] }
+    })
+    if (seen.outcome === 'answered' && !restarted) this.answeredThisRun.add(record.id)
+    this.changed(record.id)
+    return true
   }
   /**
    * Releases each background outcome whose delegated thread has sat idle, no turn running, for WATCHER_QUIET_MS since that
@@ -2497,6 +2557,8 @@ export class DelegationService {
         if (!pending.ids.size) this.untold.delete(threadId)
         else { pending.attempts = 0; this.scheduleNews() }
         await this.persist()
+        // A reconnect can prove an outcome while its earlier unknown news is being delivered.
+        for (const { record, outcome } of told) if (this.outcomeOf(record) !== outcome) this.changed(record.id)
       } catch { /* Offered again on a later pass. */ } finally { this.telling.delete(threadId) }
     }))
   }
@@ -2518,6 +2580,7 @@ export class DelegationService {
    * also records the delegated thread's newest user message as seen, which the next brief to it carries.
    */
   private async result(record: DelegationRecord, reading = false) {
+    this.reconsiderRestarted(record)
     const outcome = this.outcomeOf(record)
     const thread = this.snapshot().threads.find(item => item.id === record.delegatedThreadId)
     const latest = this.records.findLast(item => item.delegatedThreadId === record.delegatedThreadId && item.deliveryState === 'accepted')

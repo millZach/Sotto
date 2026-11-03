@@ -112,6 +112,11 @@ describe('the effort trace', () => {
     expect(css).toMatch(/\.effort-trace \{ display: none;/u)
   })
 
+  it('keeps the halo’s spill as paint, so the scrolling pane under it gains no room to scroll', () => {
+    // The halo reaches 30px past the card and 10px past the pane's floor; counted as scrollable, it lifted the pane's header.
+    expect(css).toMatch(/\.effort-trace \{[^}]*\bcontain: layout;[^}]*\}/u)
+  })
+
   it('turns by transform alone, under motion only, and pauses in a hidden window', () => {
     const turn = /@keyframes effort-trace-turn \{(?:[^{}]|\{[^{}]*\})*\}/u.exec(css)?.[0] ?? ''
     expect(turn).not.toBe('')
