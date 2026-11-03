@@ -1,4 +1,5 @@
-// Installed-app diagnostic. Prepare a blank TextEdit document, enable Ctrl+Alt+Space, turn AI cleanup off,
+// Installed-app diagnostic with microphone permission already granted. Prepare a blank TextEdit document,
+// enable Ctrl+Alt+Space, turn AI cleanup off,
 // and leave Sotto's Dictate page selected. For --one/--warm, launch with --dictation-timing and focus TextEdit.
 // --cold quits/relaunches Sotto, requires its enabled Start dictation control, then activates TextEdit.
 //
@@ -103,6 +104,8 @@ const handoffPairs = {
   audioContextToWorkletMs: ['audio-context-ready', 'worklet-load-started'],
   workletToMicrophoneMs: ['worklet-loaded', 'microphone-request-started'],
   microphoneToSourceMs: ['microphone-resolved', 'source-connect-started'],
+  microphoneToListeningDispatchMs: ['microphone-resolved', 'started-dispatched'],
+  listeningDispatchToSourceMs: ['started-dispatched', 'source-connect-started'],
   sourceToListeningDispatchMs: ['source-connected', 'started-dispatched'],
   listeningDispatchToCommitMs: ['started-dispatched', 'widget-listening-committed'],
   listeningCommitToShownMs: ['widget-listening-committed', 'widget-listening-shown'],
@@ -300,6 +303,9 @@ if (values.summarize) {
       run.captureDurationMs = Math.round(run.events['stop-pressed'][0] - run.events['first-audio-chunk'][0])
       await waitFor('paste-keystroke-sent')
       await waitFor('widget-ready')
+      if (run.events['widget-permission-waiting-committed']) {
+        throw new Error('Waiting for microphone appeared during a granted-permission measurement')
+      }
       return run
     } finally {
       watcher.close()

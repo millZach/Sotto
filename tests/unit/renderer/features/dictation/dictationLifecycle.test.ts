@@ -89,7 +89,7 @@ describe('DictationController', () => {
     const stopping = deferred<null>()
     const harness = createHarness({
       recorder: {
-        start: vi.fn(() => starting.promise),
+        start: vi.fn(async (onReady: () => void) => { await starting.promise; onReady() }),
         stop: vi.fn(() => stopping.promise),
       },
     })
@@ -123,21 +123,19 @@ describe('DictationController', () => {
     await stop
   })
 
-  it.each(['stop', 'toggle'] as const)('remembers %s while connecting and cancels when the microphone is ready', async (action) => {
+  it.each(['stop', 'toggle'] as const)('cancels %s immediately while connecting and ignores late readiness', async (action) => {
     const starting = deferred<void>()
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }
     const harness = createHarness({
-      recorder: { start: vi.fn(() => starting.promise) },
+      recorder: { start: vi.fn(async (onReady: () => void) => { await starting.promise; onReady() }) },
       cuePlayer,
     })
     const start = harness.controller.start()
 
     await harness.controller[action]()
-    await harness.controller[action]()
-    await harness.controller.start()
-    expect(harness.controller.getState().status).toBe('requesting-permission')
+    expect(harness.controller.getState().status).toBe('cancelled')
     expect(harness.createRecorder).toHaveBeenCalledTimes(1)
-    expect(harness.recorder.cancel).not.toHaveBeenCalled()
+    expect(harness.recorder.cancel).toHaveBeenCalledOnce()
     recorderOptions(harness).onSegment?.({
       samples: new Float32Array([0.5]), sourceSampleRate: 16_000, durationMs: 300,
     })
@@ -181,7 +179,7 @@ describe('DictationController', () => {
 
   it('invalidates before cancelling while microphone permission is pending', async () => {
     const starting = deferred<void>()
-    const harness = createHarness({ recorder: { start: vi.fn(() => starting.promise) } })
+    const harness = createHarness({ recorder: { start: vi.fn(async (onReady: () => void) => { await starting.promise; onReady() }) } })
     const start = harness.controller.start()
 
     await harness.controller.cancel()

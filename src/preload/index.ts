@@ -124,6 +124,7 @@ import {
   SPEECH_MODEL_STATUS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
+  MICROPHONE_ACCESS_WAITING,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -146,6 +147,7 @@ import {
 } from '../shared/channels'
 import {
   dictationCommandSchema,
+  microphoneAccessWaitingSchema,
   openRouterKeyCheckSchema,
   openRouterModelListSchema,
   cloudSpeechModelListSchema,
@@ -712,7 +714,18 @@ export function createSottoBridge(
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
     listOpenRouterModels: () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
     listCloudSpeechModels: () => invokeParsed(renderer, OPENROUTER_LIST_SPEECH_MODELS, cloudSpeechModelListSchema),
-    ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema),
+    ensureMicrophoneAccess: async (onWaiting) => {
+      if (onWaiting === undefined) return invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema)
+      const requestId = crypto.randomUUID()
+      const unsubscribe = subscribe(renderer, MICROPHONE_ACCESS_WAITING, microphoneAccessWaitingSchema, update => {
+        if (update.requestId === requestId) onWaiting(update.waiting)
+      })
+      try {
+        return await invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema, requestId)
+      } finally {
+        unsubscribe()
+      }
+    },
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
     checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),

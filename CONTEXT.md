@@ -781,7 +781,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Shell pill.** The dictation widget drawn by Omarchy’s `sotto.dictation` shell plugin: a bar indicator between dictations and a pill while dictating, with Stop, Cancel, Try again and Discard. On Linux it replaces the Electron widget while its installed folder exists and Sotto has started the dictation socket and published a live state file. Main publishes status, fixed copy, whether a failed recording is kept and the saved edge in a private runtime file; never the transcript or audio. The pill starts centred under the bar, snaps to a centred screen edge on release and remembers that edge through `sotto dictation place`. It appears on the focused display when dictation starts and stays there until it ends (#850). While it stands in, Settings' **Show floating widget when idle** says so and cannot be changed.
 
-Pressing Stop, releasing F9 or pressing the dictation shortcut again while the microphone is connecting cancels the session as soon as the microphone is ready. No audio is kept or transcribed.
+Pressing Stop, releasing F9 or pressing the dictation shortcut again while the microphone is connecting cancels the session immediately. A microphone that opens after cancellation is closed without keeping or transcribing audio. Listening begins when the microphone opens; Waiting for microphone means the operating system's microphone permission request is outstanding.
 
 ## Memory
 

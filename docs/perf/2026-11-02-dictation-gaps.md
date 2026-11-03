@@ -210,4 +210,4 @@ An earlier installation attempt produced zero accepted samples: the delayed inst
 | App-owned idle gap at each handoff | ≤16 ms |
 | Idle CPU increase / memory increase | ≤0.5 percentage points / ≤15 MB |
 
-Pending: real-app measurements, scripted coverage for speech beginning at 150 ms, controller and recorder coverage, typecheck, lint and GitHub CI.
+Baseline and A measurements are complete. B–E, the scripted 150 ms speech proof, permission-dialog and stop-during-start coverage, final resource comparisons and GitHub CI remain. Typecheck and lint passed for A; later code must pass them again. A's warm first-chunk regression remains unresolved.

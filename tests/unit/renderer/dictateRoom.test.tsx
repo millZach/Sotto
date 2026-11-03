@@ -422,7 +422,8 @@ describe('DictateRoom', () => {
     expect(countWords('')).toBe(0)
     const copy = platformCopy('win32')
     expect(dictateSentence({ status: 'idle' }, copy).sentence).toBe('Ready when you are.')
-    expect(dictateSentence({ status: 'requesting-permission', sessionId: 'a' }, copy)).toMatchObject({ sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail })
+    expect(dictateSentence({ status: 'requesting-permission', sessionId: 'a' }, copy)).toEqual({ sentence: 'Connecting to your microphone.', tone: 'normal' })
+    expect(dictateSentence({ status: 'requesting-permission', sessionId: 'a', permissionPending: true }, copy)).toMatchObject({ sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail })
     expect(dictateSentence({ status: 'error', sessionId: 'a', code: 'MIC_PERMISSION_DENIED', message: '' }, copy)).toMatchObject({ tone: 'error', detail: copy.homeMicrophonePermissionDenied })
   })
 

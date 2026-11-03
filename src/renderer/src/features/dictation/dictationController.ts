@@ -49,7 +49,8 @@ import type {
 import { TranscriptionError } from '../../transcription/localTranscriber'
 
 export interface DictationRecorder {
-  start(): Promise<void>
+  /** onReady runs once, synchronously at microphone readiness, before source connection. */
+  start(onReady: () => void): Promise<void>
   stop(): Promise<AudioRecordingResult | null>
   cancel(): Promise<void>
 }
@@ -138,6 +139,7 @@ interface ActiveSession {
   startedAt: number
   /** Whether the recorder reached listening, independent of its start timestamp. */
   captureStarted: boolean
+  startFinished: boolean
   /** Whether a voice is heard, from the levels while listening; made with the first level. */
   gate?: SpeakingGate
   /** The recording's parts in order: segments emitted while listening, then the tail. */
@@ -368,6 +370,7 @@ export class DictationController {
       acceptProgress: true,
       startedAt: 0,
       captureStarted: false,
+      startFinished: false,
       parts: [],
       durationMs: 0,
       kept: false,
@@ -403,6 +406,11 @@ export class DictationController {
       session.recorder = this.dependencies.createRecorder({
         ...(settings.microphoneId === null ? {} : { selectedDeviceId: settings.microphoneId }),
         ...(settings.maxRecordingSeconds === null ? {} : { maxRecordingSeconds: settings.maxRecordingSeconds }),
+        onPermissionWaiting: (waiting) => {
+          if (this.isCurrent(session) && !session.stopClaimed) {
+            this.dispatch({ type: 'PERMISSION_WAIT_CHANGED', sessionId: session.id, waiting }, session)
+          }
+        },
         onLevel: (level) => this.handleLevel(session, level),
         onDurationLimit: (result) => this.handleDurationLimit(session, result),
         onDeviceUnavailable: () => this.handleDeviceUnavailable(session),
@@ -420,10 +428,10 @@ export class DictationController {
   stop(): Promise<void> {
     markDictationTiming('controller-stop-received')
     const session = this.session
-    if (session !== null && this.state.status === 'requesting-permission') {
-      // Remember Stop without finalizing audio or starting transcription.
+    if (session !== null && (this.state.status === 'requesting-permission' ||
+      (this.state.status === 'listening' && !session.startFinished))) {
       session.stopClaimed = true
-      return Promise.resolve()
+      return this.cancel()
     }
     if (session === null || this.state.status !== 'listening') {
       return session?.processing ?? Promise.resolve()
@@ -591,16 +599,19 @@ export class DictationController {
 
   private async startRecorder(session: ActiveSession): Promise<void> {
     try {
-      await session.recorder?.start()
+      await session.recorder?.start(() => this.recorderReady(session))
+      session.startFinished = true
     } catch (error: unknown) {
       if (this.isCurrent(session)) this.fail(session, classifyStartFailure(error))
       return
     }
-    if (!this.isCurrent(session) || this.state.status !== 'requesting-permission') return
-    if (session.stopClaimed) {
-      await this.cancel()
-      return
+    if (this.isCurrent(session) && this.state.status === 'listening' && !session.stopClaimed) {
+      this.playCue(session, 'start')
     }
+  }
+
+  private recorderReady(session: ActiveSession): void {
+    if (!this.isCurrent(session) || session.stopClaimed || this.state.status !== 'requesting-permission') return
     session.startedAt = finiteTimestamp(this.now())
     session.captureStarted = true
     this.dispatch(
@@ -608,7 +619,6 @@ export class DictationController {
       session,
     )
     markDictationTiming('started-dispatched')
-    this.playCue(session, 'start')
   }
 
   private claimStop(session: ActiveSession): boolean {
@@ -971,7 +981,8 @@ export class DictationController {
       case 'idle':
         return { status: 'idle', ...metadata, cancellable: false }
       case 'requesting-permission':
-        return { status: state.status, sessionId: state.sessionId, ...metadata }
+        return { status: state.status, sessionId: state.sessionId,
+          ...(state.permissionPending ? { permissionPending: true as const } : {}), ...metadata }
       case 'listening':
         return {
           status: state.status,

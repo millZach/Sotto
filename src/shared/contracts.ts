@@ -15,6 +15,13 @@ import { widgetPaletteSchema } from './themeBranding'
 export type Unsubscribe = () => void
 
 const boundedSessionId = z.string().min(1).max(128)
+/** Preload owns the request id; it correlates observations, never grants access. */
+export const microphoneAccessRequestSchema = z.string().uuid().optional()
+export const microphoneAccessWaitingSchema = z.object({
+  requestId: z.string().uuid(),
+  waiting: z.boolean(),
+}).strict()
+
 const widgetErrorCodeSchema = z.enum(WIDGET_ERROR_CODES)
 
 export const dictationCommandSchema = z
@@ -36,6 +43,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
     .object({
       status: z.literal('requesting-permission'),
       sessionId: boundedSessionId,
+      permissionPending: z.literal(true).optional(),
       ...widgetMetadataSchema,
     })
     .strict(),
@@ -521,7 +529,7 @@ export interface SottoBridge {
   /** OpenRouter's speech models, best first (Owl `cloud-dictation`, ADR-0160); refused while that feature is off. */
   listCloudSpeechModels(): Promise<CloudSpeechModelList>
   /** Asks the operating system for the microphone before Chromium captures. */
-  ensureMicrophoneAccess(): Promise<boolean>
+  ensureMicrophoneAccess(onWaiting?: (waiting: boolean) => void): Promise<boolean>
 
   getUpdateStatus(): Promise<UpdateStatus | UnavailableResult>
   checkForUpdates(): Promise<UpdateStatus | UnavailableResult>

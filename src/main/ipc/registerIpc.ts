@@ -48,6 +48,7 @@ import {
   OPENROUTER_LIST_SPEECH_MODELS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
+  MICROPHONE_ACCESS_WAITING,
   TRANSCRIPT_POLISH,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -71,6 +72,7 @@ import {
   widgetDragSchema,
   widgetPresentationPayloadSchema,
   widgetSnapshotSchema,
+  microphoneAccessRequestSchema,
   type CommandResult,
   type DictationCommand,
   type DictationShortcutsChange,
@@ -287,6 +289,7 @@ export interface IpcWebContentsLike {
   readonly mainFrame: IpcFrameLike
   getURL(): string
   isDestroyed(): boolean
+  send?(channel: string, payload: unknown): void
 }
 
 export interface IpcFrameLike {
@@ -453,7 +456,7 @@ export interface RegisterIpcDependencies {
   readonly updates?: UpdateIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
-  readonly microphoneAccess?: { ensure(): Promise<boolean> }
+  readonly microphoneAccess?: { ensure(onWaiting?: (waiting: boolean) => void): Promise<boolean> }
   /** Supplied only while the `interface-language` Owl feature is on (ADR-0123); both windows ask it as they start. */
   readonly interfaceLanguage?: { current(): InterfaceLanguageState }
 }
@@ -563,8 +566,8 @@ export function registerIpc(
   const register = <Input, Result>(
     channel: string,
     schema: z.ZodType<Input>,
-    argumentCount: 0 | 1,
-    operation: (input: Input, role: RendererRole) => Result | Promise<Result>,
+    argumentCount: 0 | 1 | 'optional',
+    operation: (input: Input, role: RendererRole, event: IpcInvocationEvent) => Result | Promise<Result>,
     allowedRoles: readonly RendererRole[] = ['main'],
   ): void => {
     ipcMain.handle(channel, async (event, ...args) => {
@@ -576,11 +579,11 @@ export function registerIpc(
       if (role === null) {
         throw new UnauthorizedIpcSenderError()
       }
-      if (args.length !== argumentCount) {
+      if (argumentCount === 'optional' ? args.length > 1 : args.length !== argumentCount) {
         throw new InvalidIpcPayloadError()
       }
       const input = parsePayload(schema, argumentCount === 0 ? undefined : args[0])
-      return operation(input, role)
+      return operation(input, role, event)
     })
     ownership.set(channel, owner)
     ownedChannels.push(channel)
@@ -860,9 +863,11 @@ export function registerIpc(
       const speechModels = dependencies.openRouterKey?.speechModels
       return speechModels === undefined ? { ok: false, reason: 'http' } : speechModels()
     })
-    register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
+    register(MICROPHONE_ENSURE_ACCESS, microphoneAccessRequestSchema, 'optional', async (requestId, _role, event): Promise<boolean> => {
       if (dependencies.microphoneAccess === undefined) return true
-      return dependencies.microphoneAccess.ensure()
+      return dependencies.microphoneAccess.ensure(requestId === undefined ? undefined : waiting => {
+        if (!event.sender.isDestroyed()) event.sender.send?.(MICROPHONE_ACCESS_WAITING, { requestId, waiting })
+      })
     })
     register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {
       if (dependencies.output === undefined) {

@@ -65,6 +65,10 @@ msgid "Connect a microphone and try again."
 msgstr "Connect a microphone and try again."
 
 #: src/renderer/src/widget/WidgetApp.tsx
+msgid "Connecting to your microphone."
+msgstr "Connecting to your microphone."
+
+#: src/renderer/src/widget/WidgetApp.tsx
 msgid "Copied — paste manually"
 msgstr "Copied — paste manually"
 

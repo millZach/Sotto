@@ -11,7 +11,7 @@ export const DICTATION_TIMING_EVENTS = [
   'worklet-load-started', 'worklet-loaded', 'microphone-request-started',
   'microphone-resolved', 'source-connect-started', 'source-connected',
   'start-cue-started', 'start-cue-returned',
-  'started-dispatched', 'widget-listening-committed', 'widget-listening-shown',
+  'started-dispatched', 'widget-permission-waiting-committed', 'widget-listening-committed', 'widget-listening-shown',
   'first-audio-chunk', 'stop-pressed', 'controller-stop-received',
   'recorder-stop-started', 'recorder-stop-resolved',
   'transcription-request-started', 'transcription-request-returned', 'last-segment-transcribed',

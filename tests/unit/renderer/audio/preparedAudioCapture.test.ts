@@ -96,6 +96,43 @@ describe('prepared audio capture', () => {
     expect(harness.context.state).toBe('suspended')
   })
 
+  it.each(['cancel', 'stop'] as const)('releases the warm graph on %s during post-permission resume', async action => {
+    const harness = preparedHarness()
+    const entered = deferred<void>()
+    const resumed = deferred<void>()
+    await harness.owner.prewarm()
+    harness.getUserMedia.mockImplementationOnce(async () => {
+      harness.context.setState('suspended')
+      harness.context.resume.mockImplementationOnce(() => {
+        // The resume command precedes the later suspend command; hold its acknowledgement.
+        harness.context.setState('running')
+        entered.resolve()
+        return resumed.promise
+      })
+      return harness.stream
+    })
+    const ready = vi.fn()
+    const recorder = harness.owner.createRecorder({ maxRecordingSeconds: 10 })
+    const outcome = recorder.start(ready).then(() => 'started', () => 'cancelled')
+    await entered.promise
+    expect(ready).toHaveBeenCalledOnce()
+    expect(harness.context.source.connect).toHaveBeenCalledOnce()
+
+    await recorder[action]()
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+    expect(harness.context.state).toBe('suspended')
+    expect(harness.worklets[0]!.port.onmessage).toBeNull()
+    resumed.resolve()
+
+    expect(await outcome).toBe(action === 'stop' ? 'started' : 'cancelled')
+    expect(harness.context.source.connect).toHaveBeenCalledOnce()
+    expect(harness.context.source.disconnect).toHaveBeenCalledOnce()
+    expect(harness.context.state).toBe('suspended')
+    expect(harness.context.close).not.toHaveBeenCalled()
+    expect(harness.dependencies.setTimer).not.toHaveBeenCalled()
+    expect(recorder).toHaveProperty('session', null)
+  })
+
   it('rebuilds an idle context after devicechange without opening a microphone', async () => {
     const harness = preparedHarness()
     await harness.owner.prewarm()
@@ -171,7 +208,8 @@ describe('prepared audio capture', () => {
         return pending.promise
       })
       const recorder = harness.owner.createRecorder({})
-      const outcome = recorder.start().then(() => 'started', () => 'cancelled')
+      const ready = vi.fn()
+      const outcome = recorder.start(ready).then(() => 'started', () => 'cancelled')
       if (phase === 'module') await entered.promise
 
       await recorder[action]()
@@ -179,6 +217,7 @@ describe('prepared audio capture', () => {
 
       expect(await outcome).toBe(action === 'stop' ? 'started' : 'cancelled')
       expect(harness.getUserMedia).not.toHaveBeenCalled()
+      expect(ready).not.toHaveBeenCalled()
       expect(harness.context.state).toBe('suspended')
       expect(harness.worklets).toHaveLength(0)
       expect(recorder).toHaveProperty('session', null)
@@ -186,27 +225,44 @@ describe('prepared audio capture', () => {
     }
   })
 
-  it.each(['cancel', 'stop'] as const)('preserves %s semantics while permission is pending and stops every late track', async action => {
+  it.each([
+    ['cancel', 'permission'], ['stop', 'permission'],
+    ['cancel', 'microphone'], ['stop', 'microphone'],
+  ] as const)('preserves %s semantics while %s is pending and stops every late track', async (action, phase) => {
     const harness = preparedHarness()
     const pending = deferred<MediaStreamAdapter>()
+    const permission = deferred<boolean>()
     const entered = deferred<void>()
-    harness.getUserMedia.mockImplementationOnce(() => {
+    const waiting = vi.fn()
+    if (phase === 'permission') harness.dependencies.ensureMicrophoneAccess = async onWaiting => {
+      onWaiting?.(true)
+      entered.resolve()
+      const granted = await permission.promise
+      onWaiting?.(false)
+      return granted
+    }
+    else harness.getUserMedia.mockImplementationOnce(() => {
       entered.resolve()
       return pending.promise
     })
-    const recorder = harness.owner.createRecorder({})
-    const outcome = recorder.start().then(() => 'started', () => 'cancelled')
+    const recorder = harness.owner.createRecorder({ onPermissionWaiting: waiting })
+    const ready = vi.fn()
+    const outcome = recorder.start(ready).then(() => 'started', () => 'cancelled')
     await entered.promise
 
     await recorder[action]()
     await expect(recorder.start()).rejects.toMatchObject({ code: 'ALREADY_RECORDING' })
     expect(harness.context.state).toBe('suspended')
     const extraTrack = { stop: vi.fn() }
+    permission.resolve(true)
     pending.resolve({ getTracks: () => [harness.track, extraTrack] })
 
     expect(await outcome).toBe(action === 'stop' ? 'started' : 'cancelled')
-    expect(harness.track.stop).toHaveBeenCalledOnce()
-    expect(extraTrack.stop).toHaveBeenCalledOnce()
+    expect(ready).not.toHaveBeenCalled()
+    expect(harness.track.stop).toHaveBeenCalledTimes(phase === 'microphone' ? 1 : 0)
+    expect(extraTrack.stop).toHaveBeenCalledTimes(phase === 'microphone' ? 1 : 0)
+    expect(harness.getUserMedia).toHaveBeenCalledTimes(phase === 'microphone' ? 1 : 0)
+    expect(waiting.mock.calls).toEqual(phase === 'permission' ? [[true]] : [])
     expect(harness.context.source.connect).not.toHaveBeenCalled()
     expect(harness.worklets[0]!.port.onmessage).toBeNull()
     expect(recorder).toHaveProperty('session', null)

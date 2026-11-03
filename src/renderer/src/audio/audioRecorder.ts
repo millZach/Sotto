@@ -97,6 +97,7 @@ export interface AudioRecorderDependencies {
     addEventListener?(type: 'devicechange', listener: () => void): void
     removeEventListener?(type: 'devicechange', listener: () => void): void
   }
+  ensureMicrophoneAccess?(onWaiting?: (waiting: boolean) => void): Promise<boolean>
   createAudioContext(): AudioContextAdapter
   createAudioWorkletNode(
     context: AudioContextAdapter,
@@ -118,6 +119,8 @@ export interface AudioRecordingResult {
 }
 
 export interface AudioRecorderOptions {
+  /** Only the OS access gate reports a permission request, never an elapsed timer. */
+  onPermissionWaiting?: (waiting: boolean) => void
   selectedDeviceId?: string
   maxRecordingSeconds?: number
   onLevel?: (level: number) => void
@@ -185,15 +188,9 @@ export function createAudioRecorderDependencies(): AudioRecorderDependencies {
     mediaDevices: {
       addEventListener: (type, listener) => browser.navigator.mediaDevices?.addEventListener?.(type, listener),
       removeEventListener: (type, listener) => browser.navigator.mediaDevices?.removeEventListener?.(type, listener),
-      getUserMedia: async (constraints) => {
-        if (!await ensureMicrophoneAccess()) {
-          const error = new Error('Microphone access is blocked.')
-          error.name = 'NotAllowedError'
-          throw error
-        }
-        return await browser.navigator.mediaDevices.getUserMedia(constraints)
-      },
+      getUserMedia: (constraints) => browser.navigator.mediaDevices.getUserMedia(constraints),
     },
+    ensureMicrophoneAccess,
     createAudioContext: () => new browser.AudioContext(),
     createAudioWorkletNode: (context, processorName) =>
       new browser.AudioWorkletNode(context, processorName),
@@ -226,7 +223,8 @@ export class AudioRecorder {
     }
   }
 
-  async start(): Promise<void> {
+  /** Calls onReady synchronously when the stream resolves, before connecting its source. */
+  async start(onReady?: () => void): Promise<void> {
     if (this.session !== null) {
       throw new AudioRecorderError('ALREADY_RECORDING', 'Microphone capture is already active.')
     }
@@ -284,27 +282,44 @@ export class AudioRecorder {
 
       const selected = this.options.selectedDeviceId
       markDictationTiming('microphone-request-started')
+      if (this.dependencies.ensureMicrophoneAccess !== undefined) {
+        const granted = await this.dependencies.ensureMicrophoneAccess(waiting => {
+          if (!session.terminated && this.session === session) this.options.onPermissionWaiting?.(waiting)
+        })
+        this.assertSessionLive(session)
+        if (!granted) {
+          const error = new Error('Microphone access is blocked.')
+          error.name = 'NotAllowedError'
+          throw error
+        }
+      }
       try {
         session.stream = await this.dependencies.mediaDevices.getUserMedia(microphoneConstraints(selected))
       } catch (error: unknown) {
         if (!isConstraintError(error)) throw error
+        this.assertSessionLive(session)
         session.stream = await this.dependencies.mediaDevices.getUserMedia(
           selected ? { audio: { deviceId: { exact: selected } } } : { audio: true },
         )
       }
       markDictationTiming('microphone-resolved')
       this.assertSessionLive(session)
-      if (session.context.state === 'suspended') await session.context.resume?.()
+      onReady?.()
       this.assertSessionLive(session)
+      const resumed = session.context.state === 'suspended' ? session.context.resume?.() : undefined
+      // Observe failure even if a synchronous graph operation throws before the await below.
+      void resumed?.catch(() => undefined)
       this.monitorTrackEnd(session)
 
-      // Synchronous connects only from here: capture is live the moment the
-      // microphone is.
+      // Connect in the readiness callback's turn, including after a permission
+      // dialog. A suspended context can resume once the source is connected.
       markDictationTiming('source-connect-started')
       session.source = session.context.createMediaStreamSource(session.stream)
       session.source.connect(session.worklet)
       markDictationTiming('source-connected')
 
+      if (resumed !== undefined) await resumed
+      this.assertSessionLive(session)
       if (this.options.maxRecordingSeconds !== undefined) {
         session.timer = this.dependencies.setTimer(() => {
           void this.finishAtDurationLimit(session).catch((error: unknown) => {

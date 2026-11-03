@@ -6,6 +6,7 @@ afterEach(() => setDictationTimingSink(undefined))
 describe('dictation timing privacy boundary', () => {
   it('accepts only the fixed handoff vocabulary and a finite clock reading', () => {
     expect(dictationTimingMarkSchema.safeParse({ event: 'first-audio-chunk', atMs: 42 }).success).toBe(true)
+    expect(dictationTimingMarkSchema.safeParse({ event: 'widget-permission-waiting-committed', atMs: 42 }).success).toBe(true)
     expect(dictationTimingMarkSchema.safeParse({ event: 'dictated words', atMs: 42 }).success).toBe(false)
     expect(dictationTimingMarkSchema.safeParse({ event: 'first-audio-chunk', atMs: Infinity }).success).toBe(false)
     expect(dictationTimingMarkSchema.safeParse({ event: 'first-audio-chunk', atMs: 42, text: 'private' }).success).toBe(false)

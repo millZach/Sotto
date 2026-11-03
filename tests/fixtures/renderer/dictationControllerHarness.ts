@@ -45,7 +45,7 @@ export type HarnessOptions = {
 export function createHarness(options: HarnessOptions = {}) {
   const currentSettings = options.currentSettings ?? settings()
   const recorder: DictationRecorder = {
-    start: vi.fn(async () => undefined),
+    start: vi.fn(async (onReady: () => void) => { onReady() }),
     stop: vi.fn(async () => ({
       samples: new Float32Array([0.2]),
       sourceSampleRate: 16_000,

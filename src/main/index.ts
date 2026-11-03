@@ -2254,7 +2254,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Off, nothing in Sotto may open the microphone: every ask answers no without asking the user (ADR-0107).
   const microphoneAccessWhileOn = microphoneAccess === null ? null : {
     ...microphoneAccess,
-    ensure: () => dictationActive ? microphoneAccess.ensure() : Promise.resolve(false),
+    ensure: (onWaiting?: (waiting: boolean) => void) => dictationActive ? microphoneAccess.ensure(onWaiting) : Promise.resolve(false),
     isGranted: () => dictationActive && microphoneAccess.isGranted(),
   }
   if (platform === 'linux') {
