@@ -206,12 +206,20 @@ import UIKit
 
     /// Whether the box has come to the shape asked for: small with its words in the row of buttons, full with them over it.
     /// The pill only fades (it keeps its place, and its sheet), so XCUITest finds it either way and can't say which.
-    private func waitForReplyBox(small: Bool, words: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+    /// Generous on purpose: on CI's SE one look at the two frames took over four seconds, and a five second deadline ran
+    /// out during the first look with the box already small. It is never reached when the box is right.
+    private func waitForReplyBox(small: Bool, words: XCUIElement, timeout: TimeInterval = 30) -> Bool {
         let mic = byID("dictate")
+        var seen = "nothing read"
         let shaped = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            small ? words.frame.minY >= mic.frame.minY : words.frame.maxY <= mic.frame.minY + 1
+            let wordsFrame = words.frame, micFrame = mic.frame
+            seen = "words \(wordsFrame), mic \(micFrame)"
+            guard !wordsFrame.isEmpty, !micFrame.isEmpty else { return false }
+            return small ? wordsFrame.minY >= micFrame.minY : wordsFrame.maxY <= micFrame.minY + 1
         }, object: nil)
-        return XCTWaiter.wait(for: [shaped], timeout: timeout) == .completed
+        let reached = XCTWaiter.wait(for: [shaped], timeout: timeout) == .completed
+        if !reached { explain(small ? "reply-box-not-small" : "reply-box-not-full", seen) }
+        return reached
     }
 
     // MARK: The open thread
@@ -1567,7 +1575,7 @@ import UIKit
     /// New Watcher (Zach, November 1, 2026), asks first: cancelling stops nothing, and confirming stops only the threads
     /// Watcher started.
     func testStopAllAsksFirst() {
-        launch(Self.watcher)
+        launch(Self.watcher + ["--ui-reply-box-stays-full"])
         let login = row("login")
         reveal(login)
         XCTAssertTrue(login.label.contains("watched by Watcher"), "A watched thread says so in Threads (\(login.label))")
@@ -1981,7 +1989,7 @@ import UIKit
         thread.tap()
         let reply = byID("thread-reply"), settings = byID("thread-settings"), plus = byID("thread-attach-photos")
         let mic = byID("dictate"), send = byID("thread-send"), keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(reply.waitForExistence(timeout: 20))
         if UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory {
             XCTAssertTrue(waitForReplyBox(small: false, words: reply), "At the accessibility sizes the box stays full")
             capture("reply-box-accessibility-size")
@@ -1999,7 +2007,7 @@ import UIKit
 
         // A press brings it back full, with the settings, and the row's buttons where they were over the keyboard.
         reply.tap()
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "A press on the small box types in it")
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 20), "A press on the small box types in it")
         XCTAssertTrue(waitForReplyBox(small: false, words: reply), "Full again")
         XCTAssertTrue(settings.isHittable, "With the settings")
         XCTAssertGreaterThanOrEqual(settings.frame.minY, reply.frame.maxY - 1, "The words are back over the row")
@@ -2007,25 +2015,25 @@ import UIKit
 
         // A tap on the conversation puts an empty box away.
         let words = threadText("I have the context")
-        XCTAssertTrue(words.waitForExistence(timeout: 5))
+        XCTAssertTrue(words.waitForExistence(timeout: 20))
         words.tap()
-        XCTAssertTrue(waitUntilGone(keyboard, timeout: 5), "A tap on the conversation puts the keyboard away")
+        XCTAssertTrue(waitUntilGone(keyboard), "A tap on the conversation puts the keyboard away")
         XCTAssertTrue(waitForReplyBox(small: true, words: reply), "Empty, the box goes small again")
 
         // Words keep it full: a tap on the conversation leaves them alone, and so does opening the thread again.
         reply.tap()
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 20))
         reply.typeText("Fix")
         words.tap()
         XCTAssertTrue(keyboard.exists, "With words in the box a tap on the conversation leaves the keyboard up")
         back()
         thread.tap()
-        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(reply.waitForExistence(timeout: 20))
         XCTAssertTrue(waitForReplyBox(small: false, words: reply), "A draft keeps the box full")
         XCTAssertFalse(keyboard.exists, "Even with the keyboard away")
         // Read once the page has settled on the probe's next tick. The full box took no more room than the small one.
         let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in abs(dockTop() - smallTop) < 0.6 }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 5), .completed, "The dock keeps its height, so the conversation stays put (\(dockTop()), was \(smallTop))")
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 30), .completed, "The dock keeps its height, so the conversation stays put (\(dockTop()), was \(smallTop))")
         capture("reply-box-draft-dark")
     }
 
@@ -2037,7 +2045,7 @@ import UIKit
         openWorkingThread()
         let reply = byID("thread-reply")
         let stop = app.buttons["Stop this turn"]
-        XCTAssertTrue(stop.waitForExistence(timeout: 5), "A running thread's small box offers Stop")
+        XCTAssertTrue(stop.waitForExistence(timeout: 20), "A running thread's small box offers Stop")
         XCTAssertTrue(waitForReplyBox(small: true, words: reply), "With its words in the row, and no settings")
         XCTAssertFalse(byID("thread-send").exists, "With nothing written, Stop stands where Send was")
         capture("reply-box-small-running-dark")
@@ -2046,7 +2054,7 @@ import UIKit
         var thread = row("shortcuts")
         reveal(thread)
         thread.tap()
-        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(reply.waitForExistence(timeout: 20))
         XCTAssertTrue(waitForReplyBox(small: false, words: reply), "A new empty thread keeps the box full")
         capture("reply-box-empty-thread-dark")
 
@@ -2054,7 +2062,7 @@ import UIKit
         thread = row("shortcuts")
         reveal(thread)
         thread.tap()
-        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(reply.waitForExistence(timeout: 20))
         XCTAssertTrue(waitForReplyBox(small: true, words: reply), "Small at the top effort too")
         capture("reply-box-small-top-effort-dark")
         reply.tap()
@@ -2065,7 +2073,7 @@ import UIKit
         thread = row("shortcuts")
         reveal(thread)
         thread.tap()
-        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(reply.waitForExistence(timeout: 20))
         XCTAssertTrue(waitForReplyBox(small: true, words: reply), "In the light theme too")
         capture("reply-box-small-top-effort-light")
     }
@@ -2076,11 +2084,11 @@ import UIKit
         launch(Self.watcher + ["--ui-watcher-box"])
         openWatcher()
         let reply = byID("watcher-reply"), settings = byID("watcher-settings"), keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(reply.waitForExistence(timeout: 10))
+        XCTAssertTrue(reply.waitForExistence(timeout: 20))
         XCTAssertTrue(waitForReplyBox(small: true, words: reply), "Watcher has a conversation, so its box is small")
         capture("watcher-box-small-dark")
         reply.tap()
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 20))
         XCTAssertTrue(waitForReplyBox(small: false, words: reply), "A press on the small box brings it back full")
         XCTAssertTrue(settings.isHittable, "With its pill")
         capture("watcher-box-full-dark")
