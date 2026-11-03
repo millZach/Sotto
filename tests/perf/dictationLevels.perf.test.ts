@@ -87,15 +87,23 @@ it('publishes a snapshot when the speaking gate moves, not for every microphone 
 
 // A deterministic capture path, not a hardware latency measurement. Samples only
 // reach the worklet once the real recorder has connected its source.
-it('keeps first speech scripted 150 ms after the hotkey in the transcriber input', async () => {
+it('keeps first speech scripted 150 ms after the hotkey through to the output transcript', async () => {
   vi.useFakeTimers()
   vi.setSystemTime(0)
   const audio = createAudioHarness({}, 16_000)
   audio.context.audioWorklet.addModule.mockImplementation(() => new Promise(resolve => { setTimeout(resolve, 40) }))
   audio.getUserMedia.mockImplementation(() => new Promise(resolve => { setTimeout(() => resolve(audio.stream), 70) }))
-  const harness = createHarness({ now: Date.now, clockTimers: true })
-  harness.createRecorder.mockImplementation(options => new AudioRecorder(options, audio.dependencies))
   const firstSpeech = new Float32Array(960)
+  const firstWord = 'Ready'
+  const harness = createHarness({
+    now: Date.now,
+    clockTimers: true,
+    transcribe: async ({ audio }) => ({
+      text: firstSpeech.every((sample, index) => audio[index] === sample) ? `${firstWord} to dictate` : 'to dictate',
+      language: 'en',
+    }),
+  })
+  harness.createRecorder.mockImplementation(options => new AudioRecorder(options, audio.dependencies))
   const connected = () => audio.context.source.connect.mock.calls.length > 0
   for (let block = 0; block < 3; block++) {
     const samples = new Float32Array(320).fill((block + 1) / 8)
@@ -111,6 +119,8 @@ it('keeps first speech scripted 150 ms after the hotkey in the transcriber input
   await harness.controller.stop()
   expect(harness.transcriber.transcribe).toHaveBeenCalledOnce()
   expect(harness.transcriber.transcribe.mock.calls[0]![0].audio).toEqual(firstSpeech)
+  expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining(firstWord) }))
+  expect(harness.controller.getState()).toMatchObject({ status: 'success', text: expect.stringContaining(firstWord) })
   expect(audio.track.stop).toHaveBeenCalledOnce()
   expect(audio.context.source.disconnect).toHaveBeenCalledOnce()
   expect(audio.worklet.port.onmessage).toBeNull()
