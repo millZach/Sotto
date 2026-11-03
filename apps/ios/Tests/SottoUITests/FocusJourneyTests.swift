@@ -642,6 +642,7 @@ import UIKit
         let title = byID("thread-title")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertEqual(title.label, "Refine the iPhone thread view")
+        XCTAssertTrue(threadText("Codex · Sotto · Laptop").exists, "The line under the title reads provider · project · computer (#1861)")
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
         let running = byID("steps-run-drawer-test")
@@ -779,7 +780,11 @@ import UIKit
         stop.tap()
         XCTAssertTrue(babysit.waitForExistence(timeout: 5), "Stopping offers Babysit pull request again")
 
-        app.buttons["pull-request-close"].tap()
+        // Done closes it, trailing, as every sheet that only shows things closes (#1860).
+        let done = app.buttons["pull-request-done"]
+        XCTAssertEqual(done.label, "Done")
+        XCTAssertTrue(app.buttons["pull-request-github"].exists, "Open on GitHub stays beside Done")
+        done.tap()
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
         let read = NSPredicate(format: "label == %@", "Show pull request 721, draft. Checks: 1 failing, 1 running, 2 passed")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: read, evaluatedWith: chip)], timeout: 5), .completed, "Once read, the chip says its checks")
@@ -827,6 +832,26 @@ import UIKit
         XCTAssertTrue(waitUntilGone(typecheck), "Pressing the line again folds the steps")
         XCTAssertEqual(finished.label, "Show 3 steps")
         XCTAssertTrue(working.exists, "Folding a run leaves the working run's line in place")
+    }
+
+    /// A request sheet leads with what it asks, under one quiet line that says who asks and in which thread, the same on
+    /// a question and a permission (#1855).
+    func testARequestSheetLeadsWithWhatItAsks() {
+        launch(Self.fixture)
+        let release = row("release")
+        reveal(release)
+        release.tap()
+        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].waitForExistence(timeout: 5), "A waiting question opens with its thread")
+        let line = labelled("Claude Code · Choose the release target")
+        XCTAssertTrue(line.exists, "Who asks and where is one short line over the question")
+        reveal(app.buttons["Not now"])
+        app.buttons["Not now"].tap()
+        let permission = "Allow reading the release checklist?"
+        let headline = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label == %@", "request-headline", permission)).firstMatch
+        XCTAssertTrue(headline.waitForExistence(timeout: 5), "The permission's headline is what it asks")
+        XCTAssertTrue(line.exists, "Under the same short line as the question")
+        XCTAssertFalse(labelled("Claude Code is asking permission").exists, "The headline never only says who asks")
+        capture("request-permission-headline")
     }
 
     /// A question answered from its sheet leaves the conversation where the user was reading: at its end.
@@ -950,9 +975,8 @@ import UIKit
         collect(try app.snapshot())
         return elements
     }
-    /// The part of Watcher's conversation a press reaches: below its pinned glass bar and above its reply box, with
-    /// anything the box carries over it. XCTest calls a row under the bar hittable, but a press there lands on the bar
-    /// (on CI it opened Watched instead of a card's Review question).
+    /// The part of Watcher's conversation a press reaches: below the status bar and the page's fade under it, and above
+    /// its reply box, with anything the box carries over it. Watcher's page has no bar of its own (November 1, 2026).
     private var watcherBand: (top: CGFloat, bottom: CGFloat) {
         // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
         // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
@@ -981,135 +1005,46 @@ import UIKit
             }
         }
         guard let window = elements.first(where: { $0.elementType == .window }) else { return nil }
-        let header = element("watcher-section-conversation")
-        // The bar's glass ends the switch's own padding and the bar's bottom padding below Conversation | Watched. While
-        // the bar is away (#1278), the page shows from under the status bar's glass, which no iPhone draws taller than 60
-        // points.
-        let top = max(header?.frame.maxY ?? window.frame.minY, window.frame.minY + 44) + 16
+        // The page shows from under the status bar, which no iPhone draws taller than 62 points, and the page's ground
+        // fades in over the 10 points under it once the page moves.
+        let top = window.frame.minY + 62 + 10 + 8
         let tabs = elements.first { $0.identifier == "tab-threads" }
         var bottom = tabs?.frame.minY ?? window.frame.maxY
-        // The box's glass starts above its text; a held line or a message sits above the box, and on Watched, what a
-        // Stop watching press did sits over the tab bar. Watcher's permissions are in the hero, which scrolls (#1276).
+        // The box's glass starts above its text; a held line or a message sits above the box.
         let dock: [((any XCUIElementSnapshot)?, CGFloat)] = [(element("watcher-reply"), 20), (element("watcher-send-held"), 8),
-                                                             (element("Dismiss message", type: .button), 8),
-                                                             (element("watch-toast"), 8)]
+                                                             (element("Dismiss message", type: .button), 8)]
         // Presence and frame come from the same instant, including a toast that may leave between separate queries.
         for (element, gap) in dock {
             if let element { bottom = min(bottom, element.frame.minY - gap) }
         }
         return (top, bottom)
     }
-    /// One slow drag of Watcher's page down its leading margin (`watcherDragX`): `down` reads down the page, toward its
-    /// end, by dragging it up. Slow, and held at its end, so the page moves no farther than the finger.
-    private func dragWatcher(down: Bool, by distance: CGFloat = 160) {
-        let window = app.windows.firstMatch
-        let origin = window.coordinate(withNormalizedOffset: .zero)
-        let band = watcherBand
-        let middle = (band.top + band.bottom) / 2 - window.frame.minY
-        let direction: CGFloat = down ? -1 : 1
-        let start = origin.withOffset(CGVector(dx: watcherDragX, dy: middle - direction * distance / 2))
-        let end = origin.withOffset(CGVector(dx: watcherDragX, dy: middle + direction * distance / 2))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
-    }
-    /// Waits for Watcher's bar to be in its place, `away` or not: away, Conversation | Watched has slid up past the top of
-    /// the screen, where VoiceOver no longer finds it; back, it sits whole below the status bar where it can be pressed.
-    private func waitForWatcherBar(away: Bool, _ message: String) {
-        let window = app.windows.firstMatch.frame
-        var seen = "no look found the bar"
-        // One snapshot per look, so the frame and whether the bar is there come from the same instant: on CI's slower
-        // phone, separate queries took long enough that a bar already back read as not yet in its place.
-        let placed = NSPredicate { [app] _, _ in
-            guard let snapshot = try? app.snapshot() else { seen = "no snapshot of the page"; return false }
-            var stack: [any XCUIElementSnapshot] = [snapshot]
-            var conversation: (any XCUIElementSnapshot)?
-            while let next = stack.popLast(), conversation == nil {
-                if next.identifier == "watcher-section-conversation" { conversation = next } else { stack.append(contentsOf: next.children) }
-            }
-            guard let conversation else { seen = "Conversation is missing"; return away }
-            let frame = conversation.frame
-            seen = "Conversation \(frame)"
-            return away ? frame.maxY <= window.minY + 1
-                : frame.minY >= window.minY + 20 && frame.maxY <= window.maxY && conversation.isEnabled
-        }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 30)
-        if result != .completed { explain(away ? "watcher-bar-not-away" : "watcher-bar-not-back", seen) }
-        XCTAssertEqual(result, .completed, message + " (" + seen + ")")
-    }
-    /// Drags Watcher's page as `dragWatcher` does, which slides the bar `away` or brings it back, and checks the page under
-    /// the bar moves with the finger and by nothing else, during the slide or after it. `marker` picks an element on the
-    /// page. Its top is read before the drag and then, from one snapshot per look, until the bar is in its place and two
-    /// looks in a row agree. Every look after the drag must find it moved by the drag's distance, less no more than the
-    /// touch's slop before the page starts to follow, and none may differ from another: a page that jumped as the bar
-    /// went or came, by the bar's height or any part of it, fails either way, whether the jump is still running when the
-    /// drag ends or long over.
-    private func dragWatcherKeepingThePage(down: Bool, by distance: CGFloat, away: Bool, marker: String,
-                                           _ matches: @escaping (any XCUIElementSnapshot) -> Bool, _ message: String) {
-        // The touch moves this far before the page follows it.
-        let slop: CGFloat = 30
-        func look() -> (bar: CGRect?, top: CGFloat, marker: CGFloat?)? {
-            guard let elements = try? everyElement(),
-                  let window = elements.first(where: { $0.elementType == .window }) else { return nil }
-            let bar = elements.first { $0.elementType == .button && $0.identifier == "watcher-section-conversation" }
-            return (bar?.frame, window.frame.minY, elements.first(where: matches)?.frame.minY)
-        }
-        guard let start = look()?.marker else {
-            XCTFail("\(marker) must be on Watcher's page before the drag")
-            return
-        }
-        dragWatcher(down: down, by: distance)
-        var seen: [CGFloat] = []
-        var placedLooks = 0
-        var last = "no look after the drag"
-        let settled = NSPredicate { _, _ in
-            guard let now = look(), let top = now.marker else { last = "\(marker) is missing"; return false }
-            seen.append(top)
-            let placed = away ? (now.bar.map { $0.maxY <= now.top + 1 } ?? true) : (now.bar.map { $0.minY >= now.top + 20 } ?? false)
-            last = "bar \(now.bar.map { "\($0)" } ?? "missing"), \(marker) at \(top)"
-            placedLooks = placed ? placedLooks + 1 : 0
-            return placedLooks >= 2 && seen.count >= 2 && abs(seen[seen.count - 1] - seen[seen.count - 2]) <= 0.5
-        }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 30)
-        let moved = seen.map { (down ? start - $0 : $0 - start) }
-        let frames = "\(marker) at \(start) before the drag of \(distance), then \(seen); \(last)"
-        if result != .completed || moved.contains(where: { $0 < distance - slop || $0 > distance + 2 })
-            || (seen.max() ?? 0) - (seen.min() ?? 0) > 1 {
-            explain(away ? "watcher-bar-away-page-moved" : "watcher-bar-back-page-moved", frames)
-        }
-        XCTAssertEqual(result, .completed, message + ": the bar must settle in its place (" + frames + ")")
-        XCTAssertFalse(moved.contains { $0 < distance - slop || $0 > distance + 2 },
-                       message + ": the page moves with the finger and no farther (" + frames + ")")
-        XCTAssertLessThanOrEqual((seen.max() ?? 0) - (seen.min() ?? 0), 1,
-                                 message + ": nothing moves the page once the finger lifts (" + frames + ")")
-        waitForWatcherBar(away: away, message)
-    }
-    /// Brings Watcher's bar back if reading down the page slid it away: a short drag back up the page.
-    private func showWatcherBar() {
-        let conversation = app.buttons["watcher-section-conversation"]
-        let top = app.windows.firstMatch.frame.minY
-        if conversation.exists, conversation.frame.minY >= top + 20 { return }
-        dragWatcher(down: false, by: 80)
-        waitForWatcherBar(away: false, "Going back up the page brings the bar back")
-    }
-    /// Presses the bar's owl, and waits for the hero at the top of Watcher's page to bring Watcher's state into view.
-    @discardableResult private func toWatcherHero() -> XCUIElement {
-        let owl = app.buttons["watcher-to-top"]
-        XCTAssertTrue(owl.waitForExistence(timeout: 5), "The bar carries the owl")
-        showWatcherBar()
-        let state = byID("watcher-state")
-        // The bar and the box don't move; where the band begins and ends is read once.
-        let band = watcherBand
+    /// Presses the Watcher tab while Watcher's page shows, and waits for the page's top, where Watcher's hero is, to bring
+    /// Watcher's state into view between the status bar and the box, two looks in a row. Each look reads the state and
+    /// the band from one snapshot. On CI's large iPhone, separate queries took up to eleven seconds a look.
+    @discardableResult private func toWatcherHero(_ message: String = "A press on the Watcher tab brings Watcher's state into view") -> XCUIElement {
+        let tab = app.tab("Watcher")
+        XCTAssertTrue(tab.waitForExistence(timeout: 5), "The Watcher tab is there to press")
         var seen = "no look found Watcher's state"
+        var matches = 0
         let shown = NSPredicate { _, _ in
-            guard state.exists else { seen = "Watcher's state is missing"; return false }
-            let frame = state.frame
-            seen = "state \(frame), between \(band.top) and \(band.bottom)"
-            return frame.minY >= band.top && frame.maxY <= band.bottom && state.isHittable
+            guard let elements = try? self.everyElement(), let band = self.watcherBand(in: elements),
+                  let window = elements.first(where: { $0.elementType == .window }) else {
+                seen = "no snapshot of the page"; matches = 0; return false
+            }
+            guard let frame = elements.first(where: { $0.identifier == "watcher-state" })?.frame, !frame.isEmpty else {
+                seen = "Watcher's state is missing"; matches = 0; return false
+            }
+            seen = "state \(frame), under the window's top at \(window.frame.minY), above \(band.bottom)"
+            // The smallest status bar is 20 points; at the page's top the hero sits its own margin under the status bar.
+            matches = frame.minY >= window.frame.minY + 20 && frame.maxY <= band.bottom ? matches + 1 : 0
+            return matches >= 2
         }
         // Going to the top again does nothing more, so a dropped press is simply pressed again.
-        let result = press(owl, until: shown)
+        let result = press(tab, until: shown, timeout: 30)
         if result != .completed { explain("watcher-hero-state-not-shown", seen) }
-        XCTAssertEqual(result, .completed, "The owl brings Watcher's state into view (\(seen))")
-        return state
+        XCTAssertEqual(result, .completed, "\(message) (\(seen))")
+        return byID("watcher-state")
     }
     /// Watcher's settings pill in its box's row, whose menu holds Watcher's permissions (ADR-0166, amended November 1, 2026).
     private func watcherPill() -> XCUIElement {
@@ -1307,138 +1242,66 @@ import UIKit
         XCTAssertEqual(XCTWaiter.wait(for: [working], timeout: 10), .completed, "VoiceOver hears the working dot as Working")
     }
 
-    /// Watcher's name, state and computer head its page and scroll away with the conversation, as a thread's title does
-    /// (#1275, Zach's pick A). The slim bar stays, with Conversation | Watched, which still switches, and its owl, which
-    /// carries Watcher's state, brings the hero back.
-    func testWatchersHeroScrollsAwayUnderItsSlimBar() {
+    /// Watcher opens straight on its conversation, full screen, as any thread does, with no bar over it (Zach, November 1,
+    /// 2026). Watcher's name, state and computer head its page and scroll away with the conversation, as a thread's title
+    /// does (#1275, Zach's pick A), and a press on the Watcher tab while Watcher shows brings them back.
+    func testWatchersHeroScrollsAwayAndTheWatcherTabBringsItBack() {
         launch(Self.watcher)
         openWatcher()
-        let owl = app.buttons["watcher-to-top"]
-        XCTAssertTrue(owl.waitForExistence(timeout: 5), "The bar carries the owl")
-        XCTAssertEqual(owl.label, "Go to the top, where Watcher’s state is")
-        XCTAssertEqual(owl.value as? String, "Working", "The owl says Watcher's state once the hero has scrolled off")
-        let conversation = app.buttons["watcher-section-conversation"]
-        let watched = app.buttons["watcher-section-watched"]
-        XCTAssertTrue(conversation.isHittable && watched.isHittable, "Conversation | Watched sit in the bar")
-        let bar = conversation.frame.maxY
+        XCTAssertFalse(byID("watcher-bar").exists, "No bar over Watcher's page")
+        XCTAssertFalse(byID("watcher-to-top").exists, "No owl button: the tab goes to the top")
+        XCTAssertFalse(app.buttons["watcher-section-watched"].exists, "No Watched pane to switch to")
         let state = byID("watcher-state")
-        // Reading at the conversation's end, the hero has scrolled off under the bar.
+        // Reading at the conversation's end, the hero has scrolled off under the status bar.
         revealInWatcher(app.buttons["watcher-card-review"])
-        XCTAssertLessThanOrEqual(state.frame.maxY, bar, "Watcher's state scrolls away with the conversation (\(state.frame), bar at \(bar))")
-        XCTAssertEqual(conversation.frame.maxY, bar, accuracy: 1, "The bar stays")
+        let band = watcherBand
+        XCTAssertLessThanOrEqual(state.frame.maxY, band.top, "Watcher's state scrolls away with the conversation (\(state.frame), band from \(band.top))")
         capture("watcher-hero-away-dark")
-        // The switch still works from the bar, and Watched has the hero at its top too.
-        watched.tap()
-        XCTAssertTrue(byID("watcher-watched-lead").waitForExistence(timeout: 5), "Watched opens from the bar")
-        XCTAssertGreaterThanOrEqual(state.frame.minY, bar, "Watched opens at its top, with Watcher's hero")
+        toWatcherHero()
         XCTAssertTrue(text("Codex · GPT-6.1 Sol on Laptop").isHittable, "With Watcher's model and computer")
-        capture("watcher-hero-watched-dark")
-        conversation.tap()
-        XCTAssertTrue(byID("watcher-reply").waitForExistence(timeout: 5), "Conversation opens from the bar")
-        // The owl goes to the top of the conversation, where the hero is. Each look reads Watcher's state and the box from
-        // one snapshot. On CI's large iPhone, separate queries for them took up to eleven seconds a look, so twenty seconds
-        // held one whole look, and the deadline cut the second one's queries off, which read every frame as zero while the
-        // hero sat between the bar and the box.
-        var seen = "no look found Watcher's state"
-        var matches = 0
-        let atTop = NSPredicate { _, _ in
-            guard let elements = try? self.everyElement() else { seen = "no snapshot of the page"; matches = 0; return false }
-            guard let frame = elements.first(where: { $0.identifier == "watcher-state" })?.frame,
-                  let box = elements.first(where: { $0.identifier == "watcher-reply" })?.frame.minY else {
-                seen = "Watcher's state or the box is missing"; matches = 0; return false
-            }
-            seen = "state \(frame), bar at \(bar), the box at \(box)"
-            matches = frame.minY >= bar && frame.maxY <= box ? matches + 1 : 0
-            return matches >= 2
-        }
-        owl.tap()
-        let shown = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 30)
-        if shown != .completed { explain("watcher-hero-not-shown", seen) }
-        XCTAssertEqual(shown, .completed, "The owl brings Watcher's hero back into view (\(seen))")
+        XCTAssertTrue(byID("watcher-reply").exists, "And the box, where it always is")
         capture("watcher-hero-dark")
         watcherInLight()
-        // Counted again from here, so the hero must be seen in light on two looks of its own.
-        matches = 0
-        owl.tap()
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: atTop, object: nil)], timeout: 30), .completed,
-                       "The owl brings Watcher's hero back into view in light (\(seen))")
+        revealInWatcher(app.buttons["watcher-card-review"])
+        toWatcherHero("A press on the Watcher tab brings Watcher's state into view in light")
         capture("watcher-hero-light")
     }
 
-    /// Watcher's bar slides away as the user reads down the conversation, and comes back as they go up, as Safari's does
-    /// (#1278, pick A), and so it does on Watched, which measures its own page. The page under it moves with the finger
-    /// and by nothing else as the bar goes and comes back, and the box and the tab bar stay. No card waits, as one keeps
-    /// the bar (#1288). Ten of the user's follow-ups wait at the conversation's end and Watcher watches six more threads,
-    /// so both panes have a page to read down on the largest iPhone too.
-    func testWatchersBarSlidesAwayOnTheWayDownAndBackOnTheWayUp() {
-        launch(Self.watcher + ["--ui-watcher-nothing-waits", "--ui-watcher-queued-below", "--ui-watcher-many-watched"])
+    /// "Watcher is working" and what follows it stay whole above the box, the box's own gap clear of it, however tall the
+    /// box grows: the page follows its end, not just Watcher's newest words, which sit above the working line (Zach's iPhone Duo, November 1, 2026).
+    func testWatcherIsWorkingStaysAboveATallBox() {
+        launch(Self.watcher + ["--ui-watcher-nothing-waits"])
         openWatcher()
-        toWatcherHero()
+        let working = byID("watcher-working")
+        XCTAssertTrue(working.waitForExistence(timeout: 10), "Watcher works, and its page says so at its end")
+        XCTAssertEqual(working.label, "Watcher is working")
         let reply = byID("watcher-reply")
-        let firstWords = "The login test fails about one run in five"
-        XCTAssertTrue(text(firstWords).waitForExistence(timeout: 5))
-        let first: (any XCUIElementSnapshot) -> Bool = { $0.label.hasPrefix(firstWords) }
-        // Reading down the page from its top slides the bar away, and the page moves only with the finger.
-        dragWatcherKeepingThePage(down: true, by: 160, away: true, marker: "The first message", first,
-                                  "Reading down the conversation slides the bar away")
-        XCTAssertTrue(reply.isHittable, "The box stays")
-        XCTAssertTrue(app.tab("Watcher").isHittable, "The tab bar stays")
-        capture("watcher-bar-away-dark")
-        // Going back up a little brings it back, and it works.
-        dragWatcherKeepingThePage(down: false, by: 80, away: false, marker: "The first message", first,
-                                  "Going back up the conversation brings the bar back")
-        capture("watcher-bar-back-dark")
-        app.buttons["watcher-section-watched"].tap()
-        XCTAssertTrue(byID("watcher-watched-lead").waitForExistence(timeout: 5), "Watched opens from the bar that came back")
-        // Watched slides the bar the same way, from its own page.
-        let lead: (any XCUIElementSnapshot) -> Bool = { $0.identifier == "watcher-watched-lead" }
-        dragWatcherKeepingThePage(down: true, by: 160, away: true, marker: "Watched's lead", lead,
-                                  "Reading down Watched slides the bar away")
-        XCTAssertTrue(app.tab("Watcher").isHittable, "The tab bar stays on Watched")
-        capture("watcher-bar-away-watched-dark")
-        dragWatcherKeepingThePage(down: false, by: 80, away: false, marker: "Watched's lead", lead,
-                                  "Going back up Watched brings the bar back")
-        app.buttons["watcher-section-conversation"].tap()
-        XCTAssertTrue(reply.waitForExistence(timeout: 5), "Conversation opens from the bar")
-    }
-
-    /// While a card waits on the user in Watcher's conversation, the bar stays where it is however they move the page
-    /// (#1288, Zach's call on October 22, 2026): the page keeps a card the reader is on where they left it, and a bar that
-    /// slides would move the edge it keeps the card clear of. Once the card is answered and no card waits, reading down
-    /// slides the bar away again. Ten of the user's follow-ups wait at the page's end, so there is page enough to read
-    /// down once the card has gone.
-    func testTheBarStaysWhileACardWaitsAndSlidesOnceItIsAnswered() {
-        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-queued-below"])
-        openWatcher()
-        XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 5))
-        toWatcherHero()
-        // Reading down the page, twice, with Fix login test's question waiting, leaves the bar where it is.
-        let conversation = app.buttons["watcher-section-conversation"]
-        let top = app.windows.firstMatch.frame.minY
-        for _ in 0..<2 {
-            dragWatcher(down: true)
-            _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 1)
-            let shown = conversation.exists && conversation.frame.minY >= top + 20 && conversation.isHittable
-            if !shown { explain("watcher-bar-slid-while-a-card-waits", "Conversation \(conversation.frame)") }
-            XCTAssertTrue(shown, "With a card waiting, reading down leaves the bar where it is (\(conversation.frame))")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let oneLine = reply.frame.height
+        reply.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        reply.typeText("Look at the release notes thread and tell me what it is waiting on, then check the login test, "
+                       + "the wiring schedule and the iPhone thread view, and say which of them need me before lunch today.")
+        // Each look reads the working line and the box from one snapshot, as the band does.
+        var seen = "no look found the working line"
+        var matches = 0
+        let above = NSPredicate { _, _ in
+            guard let elements = try? self.everyElement(), let band = self.watcherBand(in: elements) else {
+                seen = "no snapshot of the page"; matches = 0; return false
+            }
+            guard let line = elements.first(where: { $0.identifier == "watcher-working" })?.frame, !line.isEmpty,
+                  let box = elements.first(where: { $0.identifier == "watcher-reply" })?.frame else {
+                seen = "the working line or the box is missing"; matches = 0; return false
+            }
+            seen = "working line \(line), box \(box), band from \(band.top) to \(band.bottom)"
+            let tall = box.height > oneLine * 2
+            matches = tall && line.minY >= band.top && line.maxY <= band.bottom + 1 && line.maxY <= box.minY ? matches + 1 : 0
+            return matches >= 2
         }
-        capture("watcher-bar-stays-card-waits-dark")
-        // The question is answered here, and leaves the page.
-        let choice = app.buttons["A fresh account for each run"]
-        revealInWatcher(choice)
-        choice.tap()
-        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
-        let send = app.buttons["watcher-card-send"]
-        revealInWatcher(send)
-        XCTAssertTrue(send.isEnabled)
-        send.tap()
-        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
-        XCTAssertTrue(waitUntilGone(send), "The card leaves Watcher's page once answered")
-        // With no card waiting, reading down from the top slides the bar away.
-        toWatcherHero()
-        dragWatcher(down: true)
-        waitForWatcherBar(away: true, "With no card waiting, reading down slides the bar away")
-        capture("watcher-bar-away-card-answered-dark")
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: above, object: nil)], timeout: 30)
+        if result != .completed { explain("watcher-working-under-the-box", seen) }
+        XCTAssertEqual(result, .completed, "With several lines in the box, Watcher is working ends above the box's top (\(seen))")
+        capture("watcher-working-tall-box-dark")
     }
 
     /// Whether a line over a thread's reply box says it is watched, as one did until October 31, 2026, in any wording.
@@ -1455,11 +1318,12 @@ import UIKit
             let row = app.buttons["watcher-receipt-\(laptop)/notes845"]
             revealInWatcher(row)
             XCTAssertTrue(row.label.contains("watched by Watcher"), "The row says Watcher works with the thread")
+            XCTAssertTrue(row.label.contains("Codex · Sotto · Laptop"), "and where it runs, as every thread's line does (#1861)")
             row.tap()
             let title = byID("thread-title")
             XCTAssertTrue(title.waitForExistence(timeout: 10), "The row opens its thread")
             XCTAssertEqual(title.label, "Babysit #845 release notes")
-            XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
+            XCTAssertTrue(text("Codex · Sotto · Laptop, watched by Watcher").exists, "The owl follows the provider's logo")
             XCTAssertEqual(app.buttons["thread-watch"].value as? String, "On", "Its Watch is on")
             XCTAssertFalse(watchedLineShows(), "Nothing over the reply box says what the lit owl says")
             capture("watcher-receipt-thread-" + appearance)
@@ -1689,28 +1553,30 @@ import UIKit
         XCTAssertTrue(watcherPill(pill, says: "Ask before actions"))
     }
 
-    /// Watched says what watching means, with a card for each watched thread and no count to fill, and Stop all asks
-    /// first: cancelling stops nothing, and confirming stops only the threads Watcher started.
+    /// The threads Watcher watches carry its owl in Threads, and Stop Watcher’s threads, in Watcher's settings sheet above
+    /// New Watcher (Zach, November 1, 2026), asks first: cancelling stops nothing, and confirming stops only the threads
+    /// Watcher started.
     func testStopAllAsksFirst() {
         launch(Self.watcher)
+        let login = row("login")
+        reveal(login)
+        XCTAssertTrue(login.label.contains("watched by Watcher"), "A watched thread says so in Threads (\(login.label))")
         openWatcher()
-        app.buttons["watcher-section-watched"].tap()
-        let lead = byID("watcher-watched-lead")
-        XCTAssertTrue(lead.waitForExistence(timeout: 5))
-        let three = "Watcher keeps these 3 threads going on its own and brings you their questions and permissions. Each stays watched until you stop it."
-        XCTAssertEqual(lead.label, three)
-        XCTAssertFalse(byID("watcher-meter").exists, "Watching has no limit, so there is no count of how many it may")
-        XCTAssertTrue(app.buttons["watched-\(laptop)/login"].exists, "Each watched thread opens from its card")
-        XCTAssertTrue(app.buttons["watched-stop-\(laptop)/login"].exists, "And has Stop watching")
-        XCTAssertTrue(text("No longer watched").exists)
-        capture("watcher-watched-dark")
-        let stopAll = app.buttons["watcher-stop-all"]
-        revealInWatcher(stopAll)
+        let settings = watcherPill()
+        let stopAll = app.buttons["watcher-stop-all"], new = menuItem("New Watcher")
+        press(settings, until: NSPredicate { _, _ in stopAll.exists })
+        XCTAssertTrue(stopAll.waitForExistence(timeout: 5), "The settings sheet offers Stop Watcher’s threads while Watcher watches any")
+        XCTAssertEqual(stopAll.label, "Stop Watcher’s threads")
+        XCTAssertTrue(stopAll.isEnabled)
+        XCTAssertTrue(new.exists)
+        XCTAssertLessThan(stopAll.frame.minY, new.frame.minY, "Above New Watcher, the sheet's last row")
+        capture("watcher-stop-row-dark")
         stopAll.tap()
         // An alert, named by its question, so its Cancel is always there to press (iOS 26 leaves a confirmation
-        // dialog's out).
+        // dialog's out). It comes once the sheet has gone.
         let question = app.alerts["Stop the 3 threads Watcher started?"]
-        XCTAssertTrue(question.waitForExistence(timeout: 5), "Stop all asks first")
+        XCTAssertTrue(question.waitForExistence(timeout: 10), "Stop Watcher’s threads asks first")
+        XCTAssertFalse(stopAll.exists, "The sheet has gone")
         let confirm = question.buttons["Stop 3 threads"]
         XCTAssertTrue(confirm.exists)
         let named = question.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Add Android share sheet, Claude Code on Studio Mac")).firstMatch
@@ -1718,19 +1584,20 @@ import UIKit
         capture("watcher-stop-all-dark")
         question.buttons["Cancel"].tap()
         XCTAssertTrue(waitUntilGone(question))
-        XCTAssertEqual(lead.label, three, "Cancelling stops nothing")
+        press(settings, until: NSPredicate { _, _ in stopAll.exists })
+        XCTAssertTrue(stopAll.waitForExistence(timeout: 5), "Cancelling stops nothing: Watcher still has threads to stop")
         stopAll.tap()
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10))
         confirm.tap()
         XCTAssertTrue(labelled("Stopped 3 threads Watcher started.").waitForExistence(timeout: 10))
-        let none = "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it."
-        let stopped = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", none), object: lead)
-        XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 5), .completed)
+        // With nothing watched, the sheet offers nothing to stop.
+        press(settings, until: NSPredicate { _, _ in new.exists })
+        XCTAssertTrue(new.waitForExistence(timeout: 5))
         XCTAssertFalse(stopAll.exists, "With nothing watched, there is nothing to stop")
         capture("watcher-stopped-dark")
+        dismissMenu()
+        XCTAssertTrue(waitUntilGone(new), "The sheet goes")
         watcherInLight()
-        app.buttons["watcher-section-watched"].tap()
-        XCTAssertTrue(lead.waitForExistence(timeout: 5))
         capture("watcher-stopped-light")
     }
 
@@ -1788,6 +1655,14 @@ import UIKit
         picked.tap()
         XCTAssertTrue(waitUntilGone(picked))
         XCTAssertTrue(watcherPill(pill, says: "Allow edits"))
+        // Done closes it too: a sheet that can be dragged away has a button that closes it (#1860).
+        openWatcherPermissions(watcherPill())
+        let done = app.buttons["watcher-permissions-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "The list closes with Done")
+        XCTAssertEqual(done.label, "Done")
+        done.tap()
+        XCTAssertTrue(waitUntilGone(done), "Done closes the list")
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"), "and changes nothing")
     }
 
     /// Watcher's box takes a thread box's pill (ADR-0166, amended November 1, 2026): Watcher's model and effort on it, and
@@ -1962,9 +1837,9 @@ import UIKit
         capture("watcher-own-change-no-reason-dark")
     }
 
-    /// Watch on a thread's page watches it at once, with Undo, and the owl follows its logo (watch B). Stop watching on
-    /// Watched stops it, and Watch a thread watches it again.
-    func testWatchAThreadFromItsPageAndStopWatchingFromWatched() {
+    /// Watch on a thread's page watches it at once, with Undo, and the owl follows its logo (watch B). Threads shows the
+    /// thread watched, and its own Watch stops watching it.
+    func testWatchAThreadFromItsPageAndStopWatchingFromItsPage() {
         launch(Self.watcher)
         let thread = row("shortcuts")
         reveal(thread)
@@ -1986,7 +1861,7 @@ import UIKit
         XCTAssertTrue(toast.waitForExistence(timeout: 5), "What the press did is said at once")
         XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
         XCTAssertEqual(watchReads("On"), .completed, "Watch is on")
-        XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
+        XCTAssertTrue(text("Codex · Sotto · Laptop, watched by Watcher").exists, "The owl follows the provider's logo")
         capture("watch-thread-page-dark")
         // Undo takes it back.
         let undo = app.buttons["watch-undo"]
@@ -1994,51 +1869,34 @@ import UIKit
         undo.tap()
         XCTAssertEqual(watchReads("Off"), .completed, "Undo stops watching it")
         XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
-        watch.tap()
-        XCTAssertEqual(watchReads("On"), .completed, "Watch watches it again")
+        let watchOn = NSPredicate { _, _ in watch.value as? String == "On" }
+        XCTAssertEqual(press(watch, until: watchOn, untouched: { watch.value as? String == "Off" }), .completed, "Watch watches it again")
         // Once the toast goes, nothing over the reply box takes its place: the lit owl says the thread is watched.
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: toast)
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 20), .completed, "The toast goes")
         XCTAssertFalse(watchedLineShows(), "No line says what watching means")
         capture("watch-thread-page-watched-dark")
         back()
-
-        openWatcher()
-        app.buttons["watcher-section-watched"].tap()
-        let card = app.buttons["watched-\(laptop)/shortcuts"]
-        XCTAssertTrue(card.waitForExistence(timeout: 5), "The thread has a card on Watched")
-        XCTAssertTrue(card.label.contains("Watching since"), "With how long Watcher has watched it with nothing sent")
-        let stop = app.buttons["watched-stop-\(laptop)/shortcuts"]
-        revealInWatcher(stop)
-        XCTAssertEqual(stop.label, "Stop watching Add keyboard shortcuts")
-        capture("watcher-watched-card-dark")
-        stop.tap()
+        // Threads shows it watched, with the owl after its logo, where Watched used to list it (November 1, 2026).
+        let watchedRow = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "watched by Watcher"), object: thread)
+        XCTAssertEqual(XCTWaiter.wait(for: [watchedRow], timeout: 10), .completed, "Threads says Watcher watches it (\(thread.label))")
+        capture("threads-watched-row-dark")
+        // Its own Watch stops watching it, with Undo.
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertTrue(watch.waitForExistence(timeout: 5))
+        XCTAssertEqual(watchReads("On"), .completed, "Watch is on")
+        watch.tap()
         // What a press did is said for eight seconds, so it is read straight after the press: on a loaded simulator the
         // waits that follow it have outlasted it.
         XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["watch-undo"].waitForExistence(timeout: 8), "With Undo")
-        capture("watcher-watched-stopped-dark")
-        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
-        // Watch a thread offers it again.
-        let add = app.buttons["watcher-watch-a-thread"]
-        revealInWatcher(add)
-        add.tap()
-        let pick = app.buttons["watch-pick-\(laptop)/shortcuts"]
-        XCTAssertTrue(pick.waitForExistence(timeout: 5), "Watch a thread lists the threads Watcher could watch")
-        XCTAssertFalse(app.buttons["watch-pick-\(laptop)/login"].exists, "Not one it watches already")
-        // Add keyboard shortcuts comes after the release, iPhone and wiring threads, at the half-height sheet's foot on the SE.
-        expandSheet()
-        reveal(pick)
-        XCTAssertEqual(pick.label, "Watch Add keyboard shortcuts")
-        capture("watcher-watch-a-thread-dark")
-        pick.tap()
-        XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").waitForExistence(timeout: 8), "What the press did is said at once")
-        XCTAssertTrue(waitUntilGone(pick), "Choosing one closes the list")
-        XCTAssertTrue(card.waitForExistence(timeout: 5), "And Watcher watches it")
-        watcherInLight()
-        app.buttons["watcher-section-watched"].tap()
-        revealInWatcher(app.buttons["watched-stop-\(laptop)/shortcuts"])
-        capture("watcher-watched-card-light")
+        XCTAssertEqual(watchReads("Off"), .completed, "Watch is off")
+        capture("watch-thread-page-stopped-dark")
+        back()
+        let unwatchedRow = XCTNSPredicateExpectation(predicate: NSPredicate(format: "NOT (label CONTAINS %@)", "watched by Watcher"), object: thread)
+        XCTAssertEqual(XCTWaiter.wait(for: [unwatchedRow], timeout: 10), .completed, "Threads no longer says Watcher watches it (\(thread.label))")
     }
 
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
@@ -2124,7 +1982,8 @@ import UIKit
             XCTAssertLessThan(settings.frame.maxX, mic.frame.minX, "The mic is on the right")
         }
         XCTAssertLessThan(mic.frame.maxX, send.frame.minX + 1, "Then Send")
-        XCTAssertLessThan(abs(plus.frame.midY - send.frame.midY), 1, "All on one line")
+        // Their tops, since each is drawn from the row's top and only some report the 44 points their press area reaches down.
+        XCTAssertLessThan(abs(plus.frame.minY - send.frame.minY), 1, "All on one line")
         XCTAssertEqual(mic.label, "Dictate")
         XCTAssertFalse(send.isEnabled, "Send is there with nothing to send, and waits")
         XCTAssertTrue(settings.isEnabled, "An idle thread's settings can be changed")
@@ -2580,6 +2439,28 @@ import UIKit
         XCTAssertTrue(app.tab("Settings").isHittable)
         XCUIDevice.shared.orientation = .portrait
         waitForRenderedOrientation(landscape: false)
+    }
+
+    /// At the accessibility text sizes New thread's title takes its own line, clear of its buttons, and Settings' New
+    /// thread defaults put each value under its name rather than cut it in the middle (#1857).
+    func testSheetHeadersAndDefaultsStackAtTheLargestTextSizes() {
+        launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        app.buttons["new-thread"].tap()
+        let cancel = app.buttons["Cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        let title = app.staticTexts["New thread"].firstMatch
+        XCTAssertTrue(title.exists)
+        XCTAssertFalse(title.frame.intersects(cancel.frame), "New thread's title doesn't run into Cancel")
+        capture("new-thread-largest-text")
+        cancel.tap()
+        XCTAssertTrue(waitUntilGone(cancel))
+        app.tab("Settings").tap()
+        let modelDefault = byID("setting-default-model")
+        // Plain swipes rather than `reveal`, whose drags no longer move Settings on main (#1752).
+        for _ in 0..<20 where !(modelDefault.exists && modelDefault.isHittable) { app.swipeUp() }
+        XCTAssertTrue(modelDefault.isHittable, "Settings scrolls to its New thread defaults")
+        XCTAssertGreaterThan(modelDefault.frame.height, 70, "At the largest sizes the default's value sits under its name")
+        capture("settings-defaults-largest-text")
     }
 }
 

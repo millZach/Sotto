@@ -266,7 +266,7 @@ export interface WindowManagerDependencies {
   readonly brandIconPath: string | null
   readonly isPackaged: boolean
   readonly log: (code: RendererDiagnostic) => void
-  readonly onRendererProcessGone?: (kind: RendererRole) => void
+  readonly onRendererProcessGone?: (kind: WindowKind) => void
   readonly getWidgetPlacement: () => StoredWidgetPlacement | null
   readonly onWidgetMoved: (placement: WidgetPlacement) => void
   /** The main window's title: the running build's name ("Sotto Owl" on that track). Defaults to Sotto. */
@@ -284,7 +284,8 @@ export interface WindowManagerDependencies {
   }
 }
 
-type WindowKind = RendererRole
+/** The windows this manager makes; the popup has its own (`popupWindow.ts`). */
+type WindowKind = Exclude<RendererRole, 'popup'>
 
 export type RendererDiagnostic =
   | 'renderer-load-failed:main:development'
@@ -301,7 +302,7 @@ export interface DevelopmentRendererSources {
 }
 
 export interface WindowRendererIdentity {
-  readonly role: WindowKind
+  readonly role: RendererRole
   readonly webContents: WebContentsLike
   readonly url: string
 }

@@ -189,6 +189,8 @@ describe('remote command allow-list', () => {
       // Whether a desktop that accepted next-prompts wants them now (ADR-0173): the user's switch, which only decides whether
       // the host asks its providers for suggestions. It answers nothing and grants nothing.
       'next-prompts-wanted',
+      // A desktop's answer for the host's product events (ADR-0179), which only decides whether the host sends its own.
+      'product-events-answer',
       // The settled threads a phone's list leaves out, a page at a time (ADR-0028, November 1 amendment): a read of the
       // same thread records `shell` carries, with the same trust.
       'settled-threads']

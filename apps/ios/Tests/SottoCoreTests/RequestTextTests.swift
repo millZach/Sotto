@@ -150,4 +150,24 @@ final class RequestTextTests: XCTestCase {
         XCTAssertFalse(before.asksTheSame(as: try request(#"{"id":"r","kind":"question","text":"Which other greeting?","options":[]}"#)))
         XCTAssertNoThrow(try Commands.answer(threadID: "t", request: before, currentRequests: [after], text: "A"))
     }
+
+    /// A command's own words can hold the model's summary, which reads as the model's under the headline and never as it.
+    func testACommandsWordsNeverLeadItsSheet() throws {
+        let lead = RequestText.permissionLead(try request(#"{"id":"r","kind":"permission","text":"Run a command: Lists the files\nls -la","options":[],"context":{"command":"ls -la","summary":"Lists the files"}}"#))
+        XCTAssertNil(lead.headline)
+        XCTAssertNil(lead.rest)
+    }
+
+    func testARequestLeadsWithWhatItDoesAndNotItsText() throws {
+        let lead = RequestText.permissionLead(try request(#"{"id":"r","kind":"permission","text":"Edit a file: src/a.ts","options":[],"context":{"action":"Edit a file","target":"src/a.ts"}}"#))
+        XCTAssertEqual(lead.headline, "Edit a file")
+        XCTAssertNil(lead.rest, "Its target has a place of its own")
+    }
+
+    func testARequestWithOnlyWordsLeadsWithItsFirstLine() throws {
+        let lead = RequestText.permissionLead(try request(#"{"id":"r","kind":"permission","text":"Allow reading the checklist?\n\nIt is in the docs folder.","options":[]}"#))
+        XCTAssertEqual(lead.headline, "Allow reading the checklist?")
+        XCTAssertEqual(lead.rest, "It is in the docs folder.")
+        XCTAssertNil(RequestText.permissionLead(try request(#"{"id":"r","kind":"permission","text":"","options":[]}"#)).headline, "No words leave the headline to the sheet")
+    }
 }

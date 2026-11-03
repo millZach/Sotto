@@ -915,6 +915,7 @@ msgstr ""
 
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
+#: src/main/phones/ipc.ts
 msgid "Open Settings in the main Sotto window."
 msgstr ""
 
@@ -1092,6 +1093,10 @@ msgstr "Einstellungen…"
 msgid "Setup stopped before it finished. Try again, or remove it in Settings › Dictation."
 msgstr ""
 
+#: src/main/tray/trayController.ts
+msgid "Show popup"
+msgstr ""
+
 #: src/main/app/applicationMenu.ts
 #: src/main/tray/trayController.ts
 msgid "Show recent turn records"
@@ -1159,6 +1164,10 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto could not install {to} on {name}."
+msgstr ""
+
+#: src/main/popup/popup.ts
+msgid "Sotto could not open the popup's thread. Check its host's connection in Settings, then choose the thread again."
 msgstr ""
 
 #: src/main/notifications/openNotificationThread.ts
@@ -2050,6 +2059,10 @@ msgstr ""
 
 #: src/main/omarchy/files.ts
 msgid "The plugin folder is not a folder. Sotto left it alone."
+msgstr ""
+
+#: src/main/popup/popup.ts
+msgid "The popup's thread is no longer available. Choose another thread or start a new one."
 msgstr ""
 
 #: src/main/omarchy/setup.ts

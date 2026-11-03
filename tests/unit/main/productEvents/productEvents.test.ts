@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PRODUCT_EVENTS_INSTALL_FILE } from '../../../../src/main/productEvents/identity'
-import { productEventsEndpoint, productEventsOffByEnvironment, productEventsPermission, ProductEvents, type ProductEventsOptions } from '../../../../src/main/productEvents/productEvents'
+import { productEventsEndpoint, productEventsFromDesktops, productEventsOffByEnvironment, productEventsPermission, ProductEvents, type ProductEventsOptions } from '../../../../src/main/productEvents/productEvents'
 
 const OWNER = 'b'.repeat(64)
 const INSTALL = { appVersion: '0.1.43', channel: 'stable', surface: 'desktop', platform: 'linux', arch: 'x64' } as const
@@ -44,6 +44,20 @@ describe('ProductEvents', () => {
     expect(fetcher).not.toHaveBeenCalled(); expect(events.waitingCount).toBe(0)
   })
 
+  it('joins what a host\u2019s desktops answered: any off wins, then any on, otherwise it waits', () => {
+    expect(productEventsFromDesktops([])).toBe('waiting')
+    expect(productEventsFromDesktops(['waiting'])).toBe('waiting')
+    expect(productEventsFromDesktops(['waiting', 'on'])).toBe('on')
+    expect(productEventsFromDesktops(['on', 'off', 'waiting'])).toBe('off')
+  })
+
+  it('a desktop turned off by its environment answers off, whatever its settings say', () => {
+    const on = { productEventsEnabled: true, productEventsNoticeAnswered: true }
+    expect(productEventsPermission(on, {})).toBe('on')
+    expect(productEventsPermission(on, { SOTTO_TELEMETRY_ENABLED: 'false' })).toBe('off')
+    expect(productEventsPermission(on, { DO_NOT_TRACK: '1' })).toBe('off')
+  })
+
   it('reads the environment switch the way people write it', () => {
     expect(productEventsOffByEnvironment({})).toBe(false)
     expect(productEventsOffByEnvironment({ SOTTO_TELEMETRY_ENABLED: 'true' })).toBe(false)
@@ -57,9 +71,9 @@ describe('ProductEvents', () => {
     const events = make()
     events.record('app.started', started); await events.flush()
     expect(events.waitingCount).toBe(0); expect(fetcher).not.toHaveBeenCalled(); expect(await hasId()).toBe(false)
-    expect(productEventsPermission({ productEventsEnabled: true, productEventsNoticeAnswered: false })).toBe('waiting')
-    expect(productEventsPermission({ productEventsEnabled: true, productEventsNoticeAnswered: true })).toBe('on')
-    expect(productEventsPermission({ productEventsEnabled: false, productEventsNoticeAnswered: true })).toBe('off')
+    expect(productEventsPermission({ productEventsEnabled: true, productEventsNoticeAnswered: false }, {})).toBe('waiting')
+    expect(productEventsPermission({ productEventsEnabled: true, productEventsNoticeAnswered: true }, {})).toBe('on')
+    expect(productEventsPermission({ productEventsEnabled: false, productEventsNoticeAnswered: true }, {})).toBe('off')
   })
 
   it('sends exactly the event, the install and the hashed ID once answered', async () => {

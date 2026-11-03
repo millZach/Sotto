@@ -170,6 +170,7 @@ describe('typed preload bridge', () => {
         'listCloudSpeechModels',
         'listRecoveryNotices',
         'listSpeechModels',
+        'localApps',
         'memory',
         'minimizeApp',
         'reloadApp',

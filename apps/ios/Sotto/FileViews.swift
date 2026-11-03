@@ -146,7 +146,7 @@ struct FilePill: View {
     @ViewBuilder private var lead: some View {
         if let progress { ProgressRing(progress: progress) }
         else if reading { ProgressView().controlSize(.mini) }
-        else { Image(systemName: Self.symbol(name)).font(.system(size: 14)).foregroundStyle(Palette.muted) }
+        else { Image(systemName: Self.symbol(name)).iconFont(14).foregroundStyle(Palette.muted) }
     }
     private var detail: String? {
         if let progress { return Self.percent(progress) }

@@ -887,12 +887,9 @@ private struct ThreadHero: View, Equatable {
         }
     }
 
-    /// Where it runs: the agent, the computer and the project.
+    /// Where it runs: the agent, the project and the computer, in the order every thread's line reads (#1861).
     private var place: String {
-        let base = String(localized: "\(Words.provider(thread?.providerId)) on \(model.name(ref.hostID))", comment: "Where a thread runs: the first %@ is the agent's name, the second the computer's name")
-        let project = model.lists.first(where: { $0.hostID == ref.hostID })?.projects.first(where: { $0.id == thread?.projectId })?.title
-        guard let project else { return base }
-        return base + " · " + project
+        model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
     }
 
     private func edgeReader(_ edge: KeyPath<CGRect, CGFloat>, _ moved: @escaping (CGFloat) -> Void) -> some View {
@@ -901,6 +898,22 @@ private struct ThreadHero: View, Equatable {
                 .onAppear { moved(proxy.frame(in: .global)[keyPath: edge]) }
                 .onChange(of: proxy.frame(in: .global)[keyPath: edge]) { _, value in moved(value) }
         }
+    }
+}
+
+extension AppModel {
+    /// Every project a computer shares, settled ones too: a thread in a settled project still names it.
+    func projectsListed(_ hostID: String) -> [Project] { live[hostID]?.shell?.host.projects ?? [] }
+    /// The name of the project a thread belongs to, where this iPhone lists the thread.
+    func projectTitle(_ ref: ThreadRef) -> String? {
+        guard let id = thread(ref)?.projectId else { return nil }
+        return projectsListed(ref.hostID).first { $0.id == id }?.title
+    }
+    /// Where a thread runs, as every row and card says it (#1861): provider · project · computer, the project only where
+    /// this iPhone lists the thread. The caller names the provider and computer, since Watcher's records name them for
+    /// threads this iPhone may not list.
+    func placeLine(_ ref: ThreadRef, provider: String, computer: String) -> String {
+        [provider, projectTitle(ref), computer].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -2009,7 +2022,7 @@ private struct FoldChevron: View {
     let open: Bool
     var body: some View {
         Image(systemName: "chevron.right")
-            .font(.system(size: 11, weight: .semibold))
+            .iconFont(11, weight: .semibold)
             .foregroundStyle(Palette.muted)
             .rotationEffect(.degrees(open ? 90 : 0))
             .accessibilityHidden(true)
@@ -2056,10 +2069,12 @@ private struct StepTrail: View {
 private struct StepLine: View {
     let record: Activity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The mark's room, which grows with the step's words so a sub-agent's Bot, which grows too, keeps clear of them.
+    @ScaledMetric(relativeTo: .caption) private var markRoom: CGFloat = 16
     var body: some View {
         let _ = BenchProbe.body("StepLine")
         HStack(spacing: 7) {
-            mark.frame(width: 16, height: 16)
+            mark.frame(width: markRoom, height: markRoom)
             Text(verbatim: record.title)
                 .font(.sotto(.caption, .semibold))
                 .foregroundStyle(verbStyle)
@@ -2089,9 +2104,12 @@ private struct StepLine: View {
             } else {
                 ProgressView().controlSize(.mini).tint(Palette.accentText).accessibilityHidden(true)
             }
+        } else if record.kind == "subagent" {
+            // One agent, as the Agents button and the Agents sheet draw it.
+            AgentMark(size: 13, relativeTo: .caption).foregroundStyle(iconStyle)
         } else {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
+                .iconFont(11, weight: .semibold, relativeTo: .footnote)
                 .foregroundStyle(iconStyle)
                 .accessibilityHidden(true)
         }
@@ -2139,7 +2157,6 @@ private struct StepLine: View {
         case "tool": return "wrench.and.screwdriver"
         case "reasoning": return "sparkles"
         case "plan": return "checklist"
-        case "subagent": return "person.2"
         case "compaction": return "arrow.down.right.and.arrow.up.left"
         default: return "info.circle"
         }
@@ -2362,7 +2379,7 @@ private struct ReplyDock: View, Equatable {
         // What the settings still wait on sits above the card.
         return VStack(alignment: .leading, spacing: Space.s2) {
             if let settings { ThreadSettingsLines(ref: ref, panel: settings) }
-            ComposerCard {
+            ComposerCard(focus: { focused = true }) {
                 DraftAttachments(box: .thread(ref))
             } words: {
                 words(placeholder)
@@ -2829,23 +2846,29 @@ struct RequestSheet: View {
         let provider = Words.provider(providerID)
         let permission = current.kind == "permission"
         let count = current.questions?.count ?? 0
-        let from = Self.from(permission: permission, count: count, provider: provider, threadTitle: threadTitle)
-        HStack(spacing: Space.s2) {
-            Light(tone: .warning)
-            Text(from).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
+        let from = Self.from(count: count, provider: provider, threadTitle: threadTitle)
+        // Who asks and where is one quiet line over the request, and VoiceOver reads the request first (#1855).
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Space.s2) {
+                Light(tone: .warning)
+                Text(from).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
+            }
+            .accessibilityElement(children: .combine)
+            // Several questions have no headline: each carries its own, and the text a provider built from them would only
+            // repeat them.
+            if let headline = title(current, provider) {
+                Text(headline)
+                    .font(.sotto(.title, .semibold))
+                    .headingTracking(-0.4)
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Space.s3)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilitySortPriority(1)
+                    .accessibilityIdentifier("request-headline")
+            }
         }
-        .accessibilityElement(children: .combine)
-        // Several questions have no headline: each carries its own, and the text a provider built from them would only
-        // repeat them.
-        if let headline = title(current, provider) {
-            Text(headline)
-                .font(.sotto(.title, .semibold))
-                .headingTracking(-0.4)
-                .foregroundStyle(Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Space.s3)
-                .accessibilityAddTraits(.isHeader)
-        }
+        .accessibilityElement(children: .contain)
         if !permission, count > 0, let explanation = RequestText.explanation(current) {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
@@ -2918,8 +2941,11 @@ struct RequestSheet: View {
             if let context, let summary = context.summary {
                 ModelSummary(heading: RequestText.summaryHeading(context, provider: provider), summary: summary).padding(.top, Space.s3)
             }
-            Text(verbatim: context?.action ?? current.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+            // The rest of its words, where its first line is the headline.
+            if let rest = RequestText.permissionLead(current).rest {
+                Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+            }
             if let target = context?.target {
                 Text(verbatim: target).font(.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s1)
@@ -2929,24 +2955,20 @@ struct RequestSheet: View {
         }
     }
 
-    /// Who asks, and in which thread, over the headline.
-    private static func from(permission: Bool, count: Int, provider: String, threadTitle: String) -> String {
-        if permission {
-            return String(localized: "Permission for \(provider) in \(threadTitle)", comment: "The first %@ is the agent's name, the second the thread's title")
-        }
-        if count > 1 {
-            let questions = count == 1
-                ? String(localized: "1 question", comment: "How many questions a request asks")
-                : String(localized: "\(count) questions", comment: "How many questions a request asks")
-            return String(localized: "\(questions) from \(provider) in \(threadTitle)", comment: "The first %@ is how many questions, such as “2 questions”, the second the agent's name, the third the thread's title")
-        }
-        return String(localized: "Question from \(provider) in \(threadTitle)", comment: "The first %@ is the agent's name, the second the thread's title")
+    /// Who asks, and in which thread, over the headline: "Claude Code · Choose the release target", the same on a
+    /// permission and a question (#1855). Several questions have no headline, so the line counts them first.
+    private static func from(count: Int, provider: String, threadTitle: String) -> String {
+        let place = "\(provider) · \(threadTitle)"
+        guard count > 1 else { return place }
+        let questions = String(localized: "\(count) questions", comment: "How many questions a request asks")
+        return "\(questions) · \(place)"
     }
 
-    /// The sheet's headline: what a permission is for, a lone question, or a request's own words when it has no
+    /// The sheet's headline: what a permission asks, a lone question, or a request's own words when it has no
     /// structured questions. Nil for several questions.
     private func title(_ request: AgentRequest, _ provider: String) -> String? {
         if request.kind == "permission" {
+            if let headline = RequestText.permissionLead(request).headline { return headline }
             return request.context?.command != nil
                 ? String(localized: "\(provider) wants to run a command", comment: "%@ is the agent's name")
                 : String(localized: "\(provider) is asking permission", comment: "%@ is the agent's name")
@@ -3248,7 +3270,7 @@ private struct LinkRows: View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         return HStack(spacing: Space.s3) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
+                .iconFont(16, weight: .semibold)
                 .foregroundStyle(Palette.accentText)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
@@ -3260,7 +3282,7 @@ private struct LinkRows: View {
             }
             Spacer(minLength: 0)
             Image(systemName: "arrow.up.right.square")
-                .font(.system(size: 16, weight: .semibold))
+                .iconFont(16, weight: .semibold)
                 .foregroundStyle(Palette.muted)
         }
         .padding(.horizontal, Space.s4)
