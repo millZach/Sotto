@@ -28,7 +28,7 @@ export const SETTINGS_PAGES = [
   settingsPage('settings-hosts', msg({ message: 'Hosts & phones', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Hosts & phones".' }), 2),
   settingsPage('settings-cloud-iphone', msg({ message: 'Cloud iPhone', comment: 'A Settings page, named in its rail and its heading: a simulated iPhone on run.cloud. Other messages name it as "Settings > Cloud iPhone".' }), 2),
   settingsPage('settings-appearance', msg({ message: 'Appearance', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".' }), 3),
-  settingsPage('settings-privacy', msg({ message: 'Application', comment: 'A Settings page, named in its rail and its heading: startup, history, updates and reset. Other messages name it as "Settings > Application".' }), 3),
+  settingsPage('settings-privacy', msg({ message: 'Application', comment: 'A Settings page, named in its rail and its heading: startup, history, product events, updates and reset. Other messages name it as "Settings > Application".' }), 3),
   settingsPage('settings-performance', msg({ message: 'Performance', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Performance".' }), 3),
 ] as const
 
@@ -46,6 +46,7 @@ export const SETTINGS_GROUPS = {
   'settings-phones': 'settings-hosts',
   'settings-new-workers': 'settings-watcher',
   'settings-history': 'settings-privacy',
+  'settings-product-events': 'settings-privacy',
   'settings-updates': 'settings-privacy',
 } as const satisfies Record<string, SettingsPageId>
 
@@ -252,6 +253,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'launch-at-startup', label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },
     { id: 'start-minimized', label: msg`Start minimized`, section: 'settings-privacy', words: 'startup tray' },
     { id: 'history-enabled', label: msg`Keep local history`, section: 'settings-history', words: 'transcripts privacy' },
+    { id: 'product-events', label: msg`Send product events`, section: 'settings-product-events', words: 'analytics telemetry privacy tracking data hashed account' },
     { id: 'history-retention', label: msg`History retention`, section: 'settings-history', words: 'transcripts' },
     { id: 'clear-history', label: msg`Clear transcript history`, section: 'settings-history', words: 'delete' },
     // Only where the window can show notifications: on a Mac (ADR-0117).

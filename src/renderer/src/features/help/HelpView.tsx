@@ -94,7 +94,7 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
     </> },
   ]
   const privacy: Topic[] = [
-    { title: t`Privacy`, body: <p className="tt-paragraph"><Trans>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer.</Trans></p> },
+    { title: t`Privacy`, body: <p className="tt-paragraph"><Trans>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application.</Trans></p> },
   ]
   const troubleshooting: Topic[] = [
     { title: t`Microphone access`, body: <p className="tt-paragraph">{copy.helpMicrophoneAccess}</p> },
@@ -132,7 +132,7 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
             <div className="tt-panel__header"><h2><Trans comment="Heading over the running version and what Sotto sends where">About</Trans></h2></div>
             <p className="help-about tt-paragraph">
               <Trans>
-                {about}, {system}. No account with Sotto and no telemetry.
+                {about}, {system}. No account with Sotto. Product events are on until you turn them off.
                 <br />
                 Transcription runs on this computer; AI cleanup uses your OpenRouter account.
               </Trans>

@@ -4,7 +4,7 @@
 
 Accepted November 2, 2026, at Zach's ask: "add anonymous analytics like T3 code has. Use their source code as reference and make it on my default in application tab of settings". He was told that hashed logins can still identify a person, and chose them. **Number provisional until merge** (docs/agents/domain.md).
 
-This amends the promise in `AGENTS.md`, the README and ADR-0017 that Sotto adds no analytics. Crash upload stays out. Until a release carries the notice and the built-in endpoint, the README's words stay true, because no build can send: the part of this decision that names the endpoint, the notice, the README, the guide, setup's and Help's lines ships in one pull request and one release.
+This amends the promise in `AGENTS.md`, the README and ADR-0017 that Sotto adds no analytics. Crash upload stays out. No build could send until the part of this decision that names the endpoint, the notice, the README, the guide, setup's and Help's lines, which shipped in one pull request and so in one release.
 
 ## Context
 
@@ -38,8 +38,10 @@ Sotto cannot tell which providers, models and features get used, or how often a 
 
 ## Consequences
 
-- `README.md`, `docs/guide.md`, setup's "No Sotto account, no telemetry", Help's "No account with Sotto and no telemetry", and ADR-0017's "Sotto remains telemetry-free" all change in the pull request that ships the notice.
-- The new host goes into the README's "Privacy and cost" section with it.
-- A new event or field is a change to this ADR, the schema and the docs page together.
-- A development or test build has no endpoint, so it counts as no install. `SOTTO_PRODUCT_EVENTS_ENDPOINT` names one for a test run, over HTTPS or to this computer only.
+- `README.md`, `docs/guide.md`, setup's and Help's lines and ADR-0017 say what is sent, in the pull request that ships the notice. The new host is in the README's "Privacy and cost" section. saysotto.com's description dropped "no analytics", published with the same release. The iPhone app sends none, so its store text does not change for this.
+- A new event or field is a change to this ADR, the schema and `docs/product-events.md` together. `tests/unit/main/productEvents/productEventsWords.test.ts` holds the page and the dialog to the schema, and every promise that could be wrong to what is true.
+- Only a released build has the endpoint: `app.isPackaged` on the desktop, and on a host the define that `scripts/package-host.mjs` turns on. A development or test build has none, shows no notice and counts as no install. `SOTTO_PRODUCT_EVENTS_ENDPOINT` names one for a test run, over HTTPS or to this computer only.
+- The notice takes the corner from the update cards until it is answered or put off, and waits for the Threads tour to end. It takes no focus when it appears, so a press meant for the composer cannot answer it, and Escape puts it off from anywhere unless an open dialog or something else claimed the press. Turning the switch off in Settings takes it down without answering it, and turning the switch back on asks again.
+- `app.started` goes when the answer turns to on, since nothing was kept before it: at start for an install that already answered, otherwise on the press. Turning the switch off and on makes a new install ID, which gets its own, on a host as on the desktop, and its own day of `feature.used`: the limit is per ID, since what it says is whether that install used the feature.
+- A host cannot tell "my desktop was reset" from a desktop that has simply not answered yet, except by having been on: a connected desktop saying it waits, on a host that was on, drops what the host holds and its ID. A second desktop that has never answered, left connected as the one that answered leaves, costs the same, which errs toward keeping less.
 - The prototype Zach chose from is kept as the tag `prototype/product-events`: notice variant A, switch variant A.
