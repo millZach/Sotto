@@ -1291,7 +1291,10 @@ struct RailAsk: Equatable {
     /// The computer being removed, while its pairing is revoked.
     @Published private(set) var removing: String?
     /// What just happened on the tabs. A problem stays until the user dismisses it; a confirmation passes (`confirm`).
-    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel() } }
+    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel(); shelfUndo = nil } }
+    /// The Settle or Restore the computer just confirmed, offered back as Undo beside its words until they go (#1859).
+    @Published private(set) var shelfUndo: ShelfUndo?
+    struct ShelfUndo: Equatable { let ref: ThreadRef; let action: ShelfAction }
     /// Set while `feedback` only says a thing worked, so it leaves by itself and with the page; new for each confirmation.
     @Published private(set) var passing: UUID?
     private var passingShown: UUID?
@@ -1600,6 +1603,8 @@ struct RailAsk: Equatable {
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
             if id == "settings" || id == "notes" { row["settledAt"] = date }
+            // Settled by the user rather than by age, so its long press offers Restore.
+            if id == "notes" { row["workspaceSettledAt"] = date }
             threads[host, default: []].append(row)
             fixtureDetails[host + "/" + id] = decode(ThreadDetail.self, ["threadId": id, "revision": 1,
                 "messages": [["id": "prompt", "role": "user", "text": title + ". Keep the changes focused."],
@@ -2528,12 +2533,32 @@ struct RailAsk: Equatable {
     /// settled on its own. One settled with its project, or one its provider closed, offers neither.
     func shelfAction(_ ref: ThreadRef) -> ShelfAction? {
         guard let thread = self.thread(ref) else { return nil }
-        let project = live[ref.hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
+        return shelfAction(thread, hostID: ref.hostID)
+    }
+    private func shelfAction(_ thread: ThreadSummary, hostID: String) -> ShelfAction? {
+        let project = live[hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
         if project?.workspaceSettledAt?.isEmpty == false { return nil }
         if thread.workspaceSettledAt?.isEmpty == false { return .restore }
         return ThreadGroups.isSettled(thread, project: project) ? nil : .settle
     }
     enum ShelfAction { case settle, restore }
+    /// What a list row's long press offers for the shelf, read from the row's own thread so a whole list doesn't search the
+    /// threads once per row, and whether its computer can take it now.
+    func shelfOffer(_ row: HostedThread) -> ShelfOffer? {
+        shelfAction(row.thread, hostID: row.ref.hostID).map { ShelfOffer(action: $0, held: actionHeld(row.ref) != nil) }
+    }
+    struct ShelfOffer: Equatable { let action: ShelfAction; let held: Bool }
+    /// The Undo the banner offers: the thread must still stand where the press put it. One moved on another device, or
+    /// held back from a new connection and not read here, has nothing to take back.
+    var shelfUndoOffered: ShelfUndo? { shelfUndo.flatMap { shelfAction($0.ref) == $0.action ? $0 : nil } }
+    /// Undo beside a confirmed Settle or Restore: the other one, as a press of its own. Settling is reversible, so it acts
+    /// at once and offers this rather than asking first. A press its computer can't take yet says why instead.
+    func undoShelf() async {
+        guard let undo = shelfUndoOffered else { shelfUndo = nil; return }
+        if let held = actionHeld(undo.ref) { feedback = held; return }
+        feedback = nil
+        await shelve(undo.ref, undo.action)
+    }
     func canAnswer(_ request: AgentRequest, in ref: ThreadRef) -> Bool {
         guard canAct(on: ref), mayAnswer(ref.hostID), request.supported else { return false }
         let allowed = capabilities(for: ref)
@@ -3874,6 +3899,7 @@ struct RailAsk: Equatable {
             if feedback == nil || feedbackOperations.contains(item.id) {
                 feedback = item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
                     : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf")
+                shelfUndo = ShelfUndo(ref: ThreadRef(hostID: item.hostID, threadID: item.threadID), action: item.kind == "settle" ? .restore : .settle)
             }
             return
         }

@@ -517,6 +517,29 @@ import UIKit
         capture("thread-long-open")
     }
 
+    /// A row's long press offers Settle, as a thread's ••• does; it acts at once, and its confirmation offers Undo (#1859).
+    func testARowsLongPressOffersSettle() {
+        launch(Self.fixture)
+        let recent = row("shortcuts")
+        reveal(recent)
+        recent.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Settle"].waitForExistence(timeout: 5), "A Recent row's long press offers Settle")
+        capture("row-menu-settle")
+    }
+
+    /// The Settled shelf draws its rows itself, so its long press is checked on its own: Restore, for a thread the user settled.
+    func testASettledRowsLongPressOffersRestore() {
+        launch(Self.fixture)
+        let settled = app.buttons["settled-threads"]
+        reveal(settled)
+        settled.tap()
+        let notes = row("notes")
+        reveal(notes)
+        notes.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Restore"].waitForExistence(timeout: 5), "A settled row's long press offers Restore")
+        capture("row-menu-restore")
+    }
+
     /// A thread whose turns carry pictures keeps a reader at its end once they are there: while its pictures and photos
     /// load, after reading back up past turns whose tiles let go of their pictures and dragging down again, and while a
     /// reply streams. On the phone such a thread kept snapping back up to one spot and would not let the reader reach its
