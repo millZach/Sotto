@@ -4075,7 +4075,7 @@ export class WatcherService implements WatcherControlHooks {
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now. Nothing kept was lost. Try read_state again.', true))
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
         const input = parsed.data as WatcherToolInput<'read_state'>, first = !input.cursor || input.cursor === 'restart'
-        // Computed from live data at each read (#1274), never kept, so none of it can go stale. The watched threads and the
+        // Computed from current records at each first page (#1274), never kept as notes. The watched threads and the
         // merge queue are read once, at the first page, and paged together, a hundred of each to a page; a later page reads
         // on from what the first one found.
         const live = first ? this.liveState() : { threads: [], waiting: [], watching: [], mergeQueue: [] }
@@ -4084,9 +4084,10 @@ export class WatcherService implements WatcherControlHooks {
           (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at] }))
         const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
         const staleNotes = this.staleNotes(kept, first ? threads : this.watching(this.state().watchedThreads))
-        // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder. The look
-        // comes first, so a reminder owed but not yet noticed is not raised again after this read.
-        this.lookAtState(); this.stateOwed = false
+        // Only the final page completes recovery: a partial read or an expired cursor leaves the reminder. Look first,
+        // so a reminder owed but not yet noticed is not raised again after the final page.
+        this.lookAtState()
+        if (page.nextCursor === null) this.stateOwed = false
         return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
           mergeQueue: shown.flatMap(row => row.queue ?? []), settleWithoutAsking: this.settlesWithoutAsking(),
           waitingOnUser: shown.flatMap(row => row.waiting ?? []), kept, staleNotes,

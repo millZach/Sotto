@@ -4,6 +4,25 @@ import { describe, expect, it, vi } from 'vitest'
 import { RecoveryNoticeCenter } from '../../../src/main/storage/recoveryNoticeCenter'
 
 describe('RecoveryNoticeCenter', () => {
+  it('logs observer failures without private error details and still notifies later observers', () => {
+    const log = vi.fn()
+    const center = new RecoveryNoticeCenter(log)
+    const listener = vi.fn()
+    center.subscribe(() => { throw new Error('private transcript in observer error') })
+    center.subscribe(listener)
+    center.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
+    center.clear('AUTOMATION_PERMISSION_REQUIRED')
+    center.resolve('AUTOMATION_PERMISSION_REQUIRED')
+    center.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
+    expect(listener.mock.calls).toEqual([
+      [{ code: 'AUTOMATION_PERMISSION_REQUIRED', cleared: false }],
+      [{ code: 'AUTOMATION_PERMISSION_REQUIRED', cleared: true }],
+      [{ code: 'AUTOMATION_PERMISSION_REQUIRED', cleared: false }],
+    ])
+    expect(center.list()).toEqual([{ code: 'AUTOMATION_PERMISSION_REQUIRED' }])
+    expect(log.mock.calls).toEqual(Array.from({ length: 3 }, () => ['recovery-notice-listener-failed']))
+  })
+
   it('retains and emits each safe recovery code once per launch', () => {
     const center = new RecoveryNoticeCenter()
     const listener = vi.fn()

@@ -2311,19 +2311,22 @@ it('gives the merge queue and each watched thread’s open pull requests from li
     host.touch(threadId)
     showLinks(f, threadId, links)
   }
-  link(first.target.threadId, [pr(5, 'open'), pr(6, 'open', true)])
+  link(first.target.threadId, [pr(5, 'open'), pr(6, 'open', true), pr(8, 'open')])
   link(second.target.threadId, [pr(7, 'open')])
   link(aside, [pr(4, 'merged')])
   const passed = (number: number, observedAt: string) => f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`,
     head: `synthetic-head-${number}`, observedAt, availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
-  passed(7, '2026-10-21T10:00:00.000Z'); passed(5, '2026-10-21T10:05:00.000Z'); passed(6, '2026-10-21T09:00:00.000Z')
+  const observed = Date.now()
+  passed(7, new Date(observed - 2_000).toISOString()); passed(5, new Date(observed - 1_000).toISOString()); passed(6, new Date(observed - 3_000).toISOString())
+  passed(8, new Date(observed - 5 * 60_000 - 1_000).toISOString())
   await f.call('keep_state', { decisions: ['Merge #4 once CI is green?', 'Merge #5 after #7?'], rules: ['Leave Synthetic release notes to the user.'] })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  // The draft passed first but is not queued; the rest go in the order their checks passed.
+  // The stale pass and draft are not queued; the fresh passes go in the order their checks passed.
   expect(read.mergeQueue.map(item => [item.target.threadId, item.pullRequest.number])).toEqual([[second.target.threadId, 7], [first.target.threadId, 5]])
   expect(read.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual([
-    expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' })])
+    expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' }),
+    expect.objectContaining({ number: 8, state: 'open', checks: 'passed', stale: true })])
   expect(read.staleNotes).toEqual([
     { list: 'decisions', id: 'd1', reasons: ['Names pull request #4, which is merged.'] },
     { list: 'rules', id: 'r3', reasons: ['Names the thread “Synthetic release notes”, which Watcher does not watch.'] },
@@ -2399,7 +2402,7 @@ it('lists a card once when the thread holding it is watched and a watched thread
   expect(f.service.state().state?.waitingOnUser).toEqual(expected)
 })
 
-it('pages what waits on the user with the watched threads, a hundred to a page, leaving none out', async () => {
+it('pages all 130 cards and keeps the recovery reminder through partial and expired reads until the final page', async () => {
   const f = await fixture()
   const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
@@ -2409,11 +2412,26 @@ it('pages what waits on the user with the watched threads, a hundred to a page, 
     return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === started.target.threadId
       ? { ...thread, requests: Array.from({ length: 130 }, (_, at) => ({ id: `card-${at}`, kind: 'question' as const, text: 'synthetic', options: [] })) } : thread) }
   })
+  f.service.beforeDispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: f.id }, undefined)
   const first = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (first.status !== 'ok' || first.nextCursor === null) throw new Error('expected a second page')
-  const second = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: first.nextCursor }))
+  expect(first.waitingOnUser).toHaveLength(100)
+  expect(f.service.stateNote()).toContain('call read_state')
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001)
+  try {
+    expect(await f.call('read_state', { cursor: first.nextCursor })).toMatchObject({ status: 'refused', code: 'CURSOR_EXPIRED', restartCursor: 'restart' })
+    expect(f.service.stateNote()).toContain('call read_state')
+  } finally { clock.mockRestore() }
+  const restarted = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: 'restart' }))
+  if (restarted.status !== 'ok' || restarted.nextCursor === null) throw new Error('expected a second page')
+  expect(restarted.waitingOnUser).toEqual(first.waitingOnUser)
+  expect(f.service.stateNote()).toContain('call read_state')
+  const second = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: restarted.nextCursor }))
   if (second.status !== 'ok') throw new Error('read refused')
-  expect([...first.waitingOnUser, ...second.waitingOnUser].map(item => item.requestCardId)).toEqual(Array.from({ length: 130 }, (_, at) => `card-${at}`))
+  expect(second.nextCursor).toBeNull()
+  expect(second.waitingOnUser).toHaveLength(30)
+  expect(f.service.stateNote()).toBeUndefined()
+  expect([...restarted.waitingOnUser, ...second.waitingOnUser].map(item => item.requestCardId)).toEqual(Array.from({ length: 130 }, (_, at) => `card-${at}`))
 })
 
 it('changes kept lines one at a time through keep_state, and refuses plainly when a list is full', async () => {
