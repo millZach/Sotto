@@ -117,6 +117,87 @@ A second baseline interval, still running the unchanged installed build, measure
 
 Each stage will record ten cold and twenty warm results before proceeding to the next.
 
+## A: warm suspended audio graph
+
+Source: `a4f7db4a7fe7a7443a374bf4b927c5368ae7ddd2`, local Owl `0.1.43-owl.20261103.8002`. The controller prepares one suspended AudioContext and registers its capture worklet at startup. Each recording owns its own stream and nodes; stopping closes every microphone track, retires the worklet processor and suspends the shared context. A device change or closed context rebuilds preparation. An active capture is retired on release rather than interrupted by an unrelated device notification.
+
+Ten cold and twenty warm recordings use the baseline settings and procedure. Independent accessibility readback found 61 matches of each expected clause: the pilot, 30 baseline recordings and all 30 A recordings. No target text was saved. Raw evidence: [cold](2026-11-02-dictation-gaps/a-cold.jsonl), [warm](2026-11-02-dictation-gaps/a-warm.jsonl). Every table entry remains p50 / p95 in milliseconds.
+
+| End-to-end measure | Cold (10) | Warm (20) |
+| --- | ---: | ---: |
+| `hotkeyToListeningCommittedMs` | 195.167 / 240.877 | 99.614 / 108.189 |
+| `hotkeyToListeningShownMs` | 209.267 / 255.077 | 111.086 / 121.408 |
+| `hotkeyToFirstAudioChunkMs` | 249.580 / 294.777 | 144.532 / 154.789 |
+| `stopToRecorderStoppedMs` | 73.188 / 85.986 | 16.657 / 20.575 |
+| `stopToLastSegmentMs` | 166.985 / 185.638 | 91.134 / 105.425 |
+| `stopToPasteKeystrokeMs` | 454.781 / 757.662 | 380.533 / 417.718 |
+| `stopToDeliveryReturnedMs` | 605.088 / 907.085 | 531.719 / 567.208 |
+| `captureDurationMs` | 5078.000 / 5126.000 | 5084.000 / 5102.000 |
+
+### A stage work
+
+| Measured interval | Cold p50 / p95 | Warm p50 / p95 |
+| --- | ---: | ---: |
+| `commandDeliveryMs` | 0.253 / 0.576 | 0.278 / 0.442 |
+| `widgetShowMs` | 0.089 / 3.357 | 0.077 / 4.208 |
+| `audioContextMs` | 20.700 / 30.600 | 28.800 / 39.100 |
+| `workletLoadMs` | 0.000 / 0.100 | 0.000 / 0.100 |
+| `microphoneRequestMs` | 165.800 / 204.000 | 66.200 / 75.900 |
+| `sourceConnectMs` | 0.100 / 0.300 | 0.000 / 0.100 |
+| `startCueMs` | 139.100 / 146.100 | 126.700 / 128.899 |
+| `recorderStopMs` | 70.800 / 83.500 | 13.000 / 15.899 |
+| `transcriptionRequestMs` | 92.000 / 109.000 | 74.800 / 88.600 |
+| `deliveryMs` | 440.100 / 739.300 | 439.000 / 448.599 |
+| `focusedAppMs` | 11.242 / 18.101 | 10.926 / 11.432 |
+| `clipboardWriteMs` | 0.383 / 0.779 | 0.296 / 0.334 |
+| `widgetHideMs` | 0.356 / 2.582 | 0.581 / 3.142 |
+| `pasteDelayMs` | 149.290 / 150.035 | 150.738 / 151.738 |
+| `pasteKeystrokeMs` | 127.482 / 423.914 | 121.870 / 129.838 |
+| `pasteSettleMs` | 149.417 / 150.005 | 151.041 / 151.765 |
+| `historyMs` | 9.800 / 12.700 | 10.400 / 12.600 |
+
+### A handoffs
+
+| Measured interval | Cold p50 / p95 | Warm p50 / p95 |
+| --- | ---: | ---: |
+| `hotkeyToCommandMs` | 0.167 / 0.173 | 0.043 / 0.082 |
+| `commandToRecorderMs` | 0.900 / 1.000 | 0.300 / 0.600 |
+| `recorderToAudioContextMs` | 0.000 / 0.100 | 0.000 / 0.099 |
+| `audioContextToWorkletMs` | 0.000 / 0.200 | 0.000 / 0.101 |
+| `workletToMicrophoneMs` | 0.300 / 0.500 | 0.100 / 0.200 |
+| `microphoneToSourceMs` | 0.200 / 0.400 | 0.000 / 0.100 |
+| `sourceToListeningDispatchMs` | 0.200 / 0.400 | 0.100 / 0.200 |
+| `listeningDispatchToCommitMs` | 3.700 / 9.700 | 1.200 / 1.700 |
+| `listeningCommitToShownMs` | 11.400 / 14.200 | 10.400 / 15.300 |
+| `sourceToFirstChunkMs` | 58.000 / 64.600 | 46.100 / 48.299 |
+| `stopToCommandMs` | 0.024 / 0.033 | 0.031 / 0.060 |
+| `stopCommandToControllerMs` | 0.100 / 0.200 | 0.000 / 0.100 |
+| `controllerToRecorderStopMs` | 2.200 / 2.400 | 3.200 / 3.901 |
+| `recorderStopToTranscriptionMs` | 0.200 / 0.300 | 0.099 / 0.100 |
+| `transcriptionToLastSegmentMs` | 0.100 / 0.200 | 0.099 / 0.100 |
+| `lastSegmentToDeliveryMs` | 0.800 / 1.000 | 0.200 / 0.600 |
+| `deliveryToFocusedAppMs` | 2.488 / 13.171 | 2.114 / 4.684 |
+| `deliveryToClipboardMs` | 3.561 / 14.471 | 3.082 / 5.623 |
+| `clipboardToWidgetHideMs` | 9.845 / 15.975 | 9.718 / 10.129 |
+| `focusedAppToWidgetHideMs` | 0.025 / 0.036 | 0.026 / 0.030 |
+| `widgetHideToPasteDelayMs` | 0.002 / 0.004 | 0.003 / 0.005 |
+| `pasteDelayToKeystrokeMs` | 0.007 / 0.011 | 0.009 / 0.019 |
+| `pasteKeystrokeToSettleMs` | 0.006 / 0.008 | 0.007 / 0.008 |
+| `pasteSettleToDeliveryReturnMs` | 0.207 / 0.370 | 0.220 / 0.452 |
+| `deliveryToHistoryMs` | 0.000 / 0.100 | 0.000 / 0.101 |
+| `historyToReadyDispatchMs` | 1401.100 / 1401.800 | 1401.300 / 1401.900 |
+| `readyDispatchToWidgetMs` | 4.500 / 9.100 | 8.400 / 12.200 |
+
+Cold Listening p95 falls from 550.796 to 255.077 ms. Worklet acquisition during a press is now at most 0.100 ms at p95. The context must still resume before capture, and opening the microphone remains 165.800 / 204.000 ms cold and 66.200 / 75.900 ms warm. A alone does not meet either Listening target.
+
+Warm first-chunk p95 regresses from 121.019 to 154.789 ms. Its source-connect-to-first-chunk p95 is 48.299 ms, versus 15.700 ms in the baseline. This is retained as an observed regression, with its cause still to resolve; it is not counted as a successful latency cut. Stop-to-paste retains every completed sample, including the first cold paste helper's 423.914 ms execution and the warm maximum.
+
+The 30.105-second idle observation measured 12.124% of one core across nine installed app processes, RSS 1199.469 → 1059.891 MiB ([evidence](2026-11-02-dictation-gaps/a-idle.json)). Against the first baseline interval that is −0.245 percentage points CPU and +4.407 MiB endpoint RSS. This single comparison does not prove the budgets: the unchanged baseline itself varied substantially, and A has one additional installed-app process. Matched repeat observations are still required.
+
+Additional unchanged-build baseline observations, all retained, were 17.517% CPU and 887.859 → 895.359 MiB over 30.085 seconds ([third](2026-11-02-dictation-gaps/baseline-idle-3.json)); 5.452% and 878.969 → 617.719 MiB over 30.082 seconds ([fourth](2026-11-02-dictation-gaps/baseline-idle-4.json)); and 12.361% and 717.109 → 705.031 MiB over 30.096 seconds ([fifth](2026-11-02-dictation-gaps/baseline-idle-5.json)). The fourth interval includes a 261.250 MiB RSS drop without a code change.
+
+An earlier installation attempt produced zero accepted samples: the delayed installer overlapped a measurement launch and rolled back. The successful run first closed the existing measurement app, waited for the installer's version-specific successful receipt and verified the installed version before starting. A direct system-speech preflight matched the baseline pilot's warmed speech output. Typecheck, lint and the measurement build passed. Recorder, controller, ownership, device-change and worklet-retirement test sources are added; they await GitHub CI and were not run locally.
+
 ## Acceptance and limitations
 
 | Measure | Required |
