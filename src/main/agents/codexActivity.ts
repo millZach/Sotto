@@ -38,11 +38,14 @@ function isComputerUse(server: unknown, args: unknown): boolean {
  * that the app is closed: a running app may have restarted and replaced its pipe. The
  * sandbox texts are Windows Codex's own; "trusted Node process exited" also names other crashes, so it counts as
  * the sandbox's doing only outside Full access, where the advice to switch can be right.
+ * The helper also stops when Chrome is not exposing the page's address (#2062). That sentence is read only at the start
+ * of a line: a read's output holds the page's own words, and a page that quotes it, such as that issue, is no failure.
  */
 export function computerUseNeeds(text: string | undefined, sandboxed: boolean): string | undefined {
   if (!text) return undefined
   if (/windows sandbox failed/iu.test(text) || sandboxed && /trusted Node process exited unexpectedly/iu.test(text)) return 'Computer Use cannot run in this thread\'s sandbox. Nothing was changed. Switch the thread to Full access to use it.'
   if (/native pipe/iu.test(text)) return 'Computer Use connection is unavailable. Open Codex if it is closed. Keep it open and try again. If this continues, restart Sotto when your other threads are idle.'
+  if (/^Computer Use has been stopped for this turn because it could not determine the current browser URL/mu.test(text)) return 'Computer Use stopped because it could not read this page\'s address from the browser. This can happen while a dialog is open or a large page is loading. Its last step may already have worked, so check the page, close any dialog and try again.'
   return undefined
 }
 export const codexItemSchema = z.preprocess(value => {
@@ -353,6 +356,8 @@ export class CodexActivityProjection {
     // A Computer Use call that failed for a known reason says what to do, above Codex's own words.
     const needs = item.computerUse ? computerUseNeeds([item.error?.message, output].filter(Boolean).join('\n'), thread.runtimeMode !== 'full-access') : undefined
     if (needs) activity.error = [needs, item.error?.message].filter(Boolean).join('\n')
+    // A failure that is the call's whole output goes under Sotto's words too, rather than above them in a code block.
+    if (needs && !item.error && output && !output.trim().includes('\n')) { activity.error = `${needs}\n${output.trim()}`; delete activity.output }
     if (item.type === 'collabAgentToolCall') {
       if (item.prompt != null) activity.text = item.prompt
       const ids = [...new Set([...(item.receiverThreadIds ?? []), ...Object.keys(item.agentsStates ?? {})])]

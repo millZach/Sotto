@@ -156,6 +156,8 @@ Codex can see and operate the apps on your computer with its Computer Use, as it
 
 Ask for it by name ("use Computer Use to…") or with Codex's `$computer-use` skill. Its calls show in the thread's activity as **Computer Use**. A recognised sandbox failure explains how to use Full access. If the connection to the app helper is unavailable, open Codex if it is closed. Keep it open and try again. The app can be open while an older connection no longer works, such as after Codex restarts. If this continues, restart Sotto when your other threads are idle. A connection failure does not tell Sotto whether an earlier action in the same call changed anything.
 
+On a browser page, Computer Use reads the page's address as it works and stops if it cannot. This can happen while a dialog is open or a large page is loading. Its last step may already have worked, so check the page, close any dialog and try again. This check is Codex's own, and Sotto does not change it.
+
 When the Codex app changes its connection, Sotto refreshes the thread's tools before the next prompt; a refresh failure leaves that prompt unsent so you can try again.
 
 ### Terminals
