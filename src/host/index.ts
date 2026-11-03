@@ -3,7 +3,7 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
-import { createProductEvents, productEventsFromDesktops } from '../main/productEvents/productEvents'
+import { createProductEvents, productEventsHostFollower } from '../main/productEvents/productEvents'
 import type { ProductEventPermission } from '../shared/hostProtocol'
 import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
@@ -43,6 +43,10 @@ import { MediaToolServer } from '../main/agents/mediaTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
+
+/** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
+declare const __SOTTO_RELEASED_HOST__: boolean | undefined
+
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -153,7 +157,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // The host's identity, read once from its own file; the self-update reads it here rather than copying the runtime's state.
   const hostId = await loadHostIdentity(directory)
   // Product events (ADR-0179): a host holds them in memory until a connected desktop says the switch is on, and makes no ID before that.
-  const productEvents = createProductEvents({ dataDirectory: directory, holdWhileWaiting: true, version: options.sottoVersion ?? packageVersion, channel: getReleaseTrack(options.sottoVersion ?? packageVersion), surface: 'host', ...options.log ? { log: options.log } : {} })
+  const productEvents = createProductEvents({ released: typeof __SOTTO_RELEASED_HOST__ !== 'undefined' && __SOTTO_RELEASED_HOST__, dataDirectory: directory, holdWhileWaiting: true, version: options.sottoVersion ?? packageVersion, channel: getReleaseTrack(options.sottoVersion ?? packageVersion), surface: 'host', ...options.log ? { log: options.log } : {} })
   productEvents.record('app.started', { pairedHosts: 0 })
   await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
   await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
@@ -168,7 +172,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let nextPromptsWanted = (): boolean => false
     /** What every connected desktop has answered for product events (ADR-0179), on either listener; none before they start. */
     let productEventAnswers = (): ProductEventPermission[] => []
-    const onProductEventAnswer = (): void => productEvents.setPermission(productEventsFromDesktops(productEventAnswers()))
+    const followDesktops = productEventsHostFollower(productEvents)
+    const onProductEventAnswer = (): void => followDesktops(productEventAnswers())
     const pairing = new PairedClients(directory)
     const desktops = new DesktopClients(directory, options.log)
     // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.

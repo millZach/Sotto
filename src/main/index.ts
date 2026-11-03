@@ -11,7 +11,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
-import { createProductEvents, productEventsPermission } from './productEvents/productEvents'
+import { createProductEvents, productEventsOffBy, productEventsPermission } from './productEvents/productEvents'
 import { registerProductEventsIpc } from './productEvents/ipc'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
@@ -919,8 +919,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const releaseTrack = getReleaseTrack(appRunningVersion)
-  // Product events (ADR-0179): nothing is sent, and no ID is made, unless a build or the environment names an endpoint and the notice was answered.
-  const productEvents = createProductEvents({ dataDirectory: userDataPath, holdWhileWaiting: false, version: appRunningVersion, channel: releaseTrack, surface: 'desktop', log: event => console.warn(event) })
+  // Product events (ADR-0179): nothing is sent, and no ID is made, until the notice was answered. A build that is not packaged has no endpoint unless its environment names one.
+  const productEvents = createProductEvents({ released: app.isPackaged, dataDirectory: userDataPath, holdWhileWaiting: false, version: appRunningVersion, channel: releaseTrack, surface: 'desktop', log: event => console.warn(event) })
   productEvents.setPermission(productEventsPermission(workingCopySettings))
   app.on('will-quit', () => productEvents.stop())
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
@@ -1996,7 +1996,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       syncHotkeyStandby()
       const productEventAnswer = productEventsPermission(settings)
       productEvents.setPermission(productEventAnswer)
-      if (productEventAnswer !== productEventsPermission(previous)) hostRouter.tellProductEventAnswer()
+      if (productEventAnswer !== productEventsPermission(previous)) {
+        hostRouter.tellProductEventAnswer()
+        // Nothing was kept before this answer, so the start this run began with is said now, under the ID it has now.
+        if (productEventAnswer === 'on') productEvents.record('app.started', { pairedHosts: desktopHosts.get().hosts.length })
+      }
       // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
       menuBarOwl?.applySettings(settings)
@@ -2301,7 +2305,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
       }, owlFeatures['reveal-linked-files'])
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
-      const cleanupProductEvents = registerProductEventsIpc(ipcMain, productEvents, () => windows.getTrustedRenderers())
+      const cleanupProductEvents = registerProductEventsIpc(ipcMain, { featureUsed: tool => productEvents.featureUsed(tool), state: { canSend: productEvents.canSend, offBy: productEventsOffBy(process.env) } }, () => windows.getTrustedRenderers())
       const cleanupUsage = registerUsageIpc(ipcMain, { read: query => { productEvents.featureUsed('usage'); return hostRouter.usageRead(query) },
         refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
       // The delegating thread's cards read delegation's own record (#1029); stable built no service, so nothing is registered.

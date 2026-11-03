@@ -49,7 +49,7 @@ import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationOpeningSchema, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
-import { PRODUCT_EVENT_TOOL_OPENED, type ProductEventsBridge } from '../shared/productEvents'
+import { PRODUCT_EVENT_STATE, PRODUCT_EVENT_TOOL_OPENED, type ProductEventsBridge, type ProductEventsState } from '../shared/productEvents'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -468,7 +468,7 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
-    productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) } }),
+    productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) }, state: () => renderer.invoke(PRODUCT_EVENT_STATE) as Promise<ProductEventsState | null> }),
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
       refresh: query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),

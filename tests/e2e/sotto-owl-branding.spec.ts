@@ -160,7 +160,7 @@ test.describe('Sotto Owl branding on the built app', () => {
         await expect(page.getByRole('heading', { level: 1, name: 'Help' })).toBeVisible()
         await expect(page.locator('.thread-nav__top').getByRole('img', { name: 'Sotto Owl' })).toHaveCount(track === 'owl' ? 1 : 0)
         const about = page.locator('.help-about')
-        await expect(about).toContainText(`${name} ${reported!.currentVersion}, Windows. No account with Sotto and no telemetry.`)
+        await expect(about).toContainText(`${name} ${reported!.currentVersion}, Windows. No account with Sotto. Product events are on until you turn them off.`)
         result.helpAbout = { text: (await about.innerText()).split('\n')[0], contrast: Number((await textContrast(about)).toFixed(2)) }
         await about.screenshot({ path: resolve(evidenceRoot, `help-about-${track}-${appearance}.png`), animations: 'disabled' })
 

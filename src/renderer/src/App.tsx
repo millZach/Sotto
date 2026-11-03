@@ -44,6 +44,8 @@ import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
 import { MoveThreadsSheetHost } from './watcher/MoveThreads'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
+import { ProductEventsNotice } from './features/productEvents/ProductEventsNotice'
+import { useProductEventsNotice } from './features/productEvents/useProductEventsNotice'
 import { UpdateAllCard } from './features/updates/UpdateAllCard'
 import { PageSidebar } from './agents/PageSidebar'
 import { useRegionCycle } from './components/regionCycle'
@@ -181,6 +183,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const [journalQuery, setJournalQuery] = useState('')
   // Set when first-run setup finishes, so the Threads tour runs once, on the Threads page it opens.
   const [threadsTour, setThreadsTour] = useState(false)
+  const productEventsNotice = useProductEventsNotice(app.settings, app.actions.updateSettings)
   const [journalSearchRequest, setJournalSearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
@@ -509,7 +512,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
+        view = <HelpView productEventsEnabled={app.settings.productEventsEnabled} shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
         break
       default:
         view = threadsPage ? threadWorkspace : <DictateRoom
@@ -585,6 +588,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         <ToastRegion messages={[
           ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice)),
           ...(themeNotice === null ? [] : [themeNotice]),
+          ...(!productEventsNotice.turnedOff ? [] : [{ id: 'product-events-off', message: t`Product events are off. Sotto sends nothing.`, onDismiss: productEventsNotice.clearTurnedOff }]),
           ...(notificationNotice === null ? [] : [{
             id: 'notification-open',
             message: <>{notificationNotice} <button type="button" className="tt-toast__link tt-focusable" onClick={() => setNotificationNotice(null)}><Trans>Dismiss</Trans></button></>,
@@ -622,8 +626,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         <WatcherRoomProvider bridge={watcherBridge}>
         {management ? content : strip(content)}
         </WatcherRoomProvider>
-        {/* Neither card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
-        {management ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard /> : null}
+        {/* No card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). The
+            product events notice has the corner first, after the Threads tour, until it is answered or put off (ADR-0179). */}
+        {management
+          ? productEventsNotice.open && !threadsTour
+            ? <ProductEventsNotice onAnswer={productEventsNotice.answer} onPutOff={productEventsNotice.putOff} />
+            : updateAll ? <UpdateAllCard /> : <ClientUpdateCard />
+          : null}
       </StartingScreenGate>
       {/* A saved host reconnecting on its own can need an answer from SSH over setup, the starting screen or any page, and setup can
           save a computer. One dialog serves them all, so a half-typed answer survives the starting screen giving way to the app. */}

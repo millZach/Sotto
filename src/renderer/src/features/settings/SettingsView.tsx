@@ -51,6 +51,7 @@ import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { WatcherCompactionSetting } from './WatcherCompactionSetting'
+import { ProductEventsSettings } from './ProductEventsSettings'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
 import { useDesktopNotifications } from '../../state/desktopNotifications'
@@ -853,7 +854,7 @@ export function SettingsView({
               </div>
 
               <Card className="settings-section" id="settings-privacy" {...panelProps('settings-privacy')}>
-                <div className="settings-section__heading"><h2><Trans>Application</Trans></h2><p className="tt-paragraph"><Trans>Startup, history, updates &amp; reset</Trans></p></div>
+                <div className="settings-section__heading"><h2><Trans>Application</Trans></h2><p className="tt-paragraph"><Trans>Startup, history, product events, updates &amp; reset</Trans></p></div>
                 <SettingsGroup title={t`When your computer starts`} icon={Power}>
                   <Toggle setting="launch-at-startup" label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
                     {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: t`Sotto cannot change sign-in startup here.` } : {})} onCheckedChange={async (checked) => {
@@ -875,6 +876,7 @@ export function SettingsView({
                     <Button variant="danger" data-setting="clear-history" onClick={() => { setClearFailure(null); setClearOpen(true) }}><Trans>Clear history</Trans></Button>
                   </div>
                 </SettingsGroup>
+                <ProductEventsSettings settings={settings} onSave={save} />
                 <NotificationSettings settings={settings} onSave={save} />
                 <SettingsGroup id="settings-updates" setting="updates" title={t`Updates`} icon={Download} note={copy.settingsUpdatesLead}>
                   {/* Where Sotto never updates itself, the row says how to update by hand and offers nothing to press. */}

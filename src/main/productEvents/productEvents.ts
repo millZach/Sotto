@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ProductEventPermission } from '../../shared/hostProtocol'
+import type { ProductEventsOffBy } from '../../shared/productEvents'
 import { deleteInstallId, ensureInstallId, productEventHomes, readProductEventOwners, type ProductEventOwner } from './identity'
 import { parseProductEvent, parseProductEventInstall, productEventArch, productEventPlatform, type ProductEventInstall, type ProductEventName, type ProductEventProperties } from './schema'
 
@@ -28,18 +29,24 @@ const GIVE_UP_AFTER_MS = 30 * 60_000
 /** These statuses refuse the batch itself; sending it again cannot help. */
 const REFUSED_STATUSES = new Set([400, 401, 403, 413, 422])
 
-/** The environment's answer outranks the switch. `SOTTO_TELEMETRY_ENABLED=false` or `DO_NOT_TRACK=1` turns product events off. */
-export function productEventsOffByEnvironment(environment: NodeJS.ProcessEnv): boolean {
+/** The variable that turned product events off, if one did. The environment's answer outranks the switch. */
+export function productEventsOffBy(environment: NodeJS.ProcessEnv): ProductEventsOffBy | null {
   const off = (value: string | undefined): boolean => /^(false|0|off|no)$/i.test(value?.trim() ?? '')
+  if (off(environment.SOTTO_TELEMETRY_ENABLED)) return 'SOTTO_TELEMETRY_ENABLED'
   const doNotTrack = environment.DO_NOT_TRACK?.trim()
-  return off(environment.SOTTO_TELEMETRY_ENABLED) || (doNotTrack !== undefined && doNotTrack !== '' && !off(doNotTrack))
+  return doNotTrack !== undefined && doNotTrack !== '' && !off(doNotTrack) ? 'DO_NOT_TRACK' : null
 }
 
-/** Where events go. No endpoint is built in until the notice ships in the same release, so a build without one sends nothing. */
-const BUILT_IN_ENDPOINT: string | null = null
+/** `SOTTO_TELEMETRY_ENABLED=false` or `DO_NOT_TRACK=1` turns product events off. */
+export function productEventsOffByEnvironment(environment: NodeJS.ProcessEnv): boolean {
+  return productEventsOffBy(environment) !== null
+}
+
+/** Where a released build's events go: the Worker in `workers/product-events/`. The notice ships in the same release. */
+export const PRODUCT_EVENTS_ENDPOINT = 'https://events.saysotto.com'
 
 /** The endpoint, or null for none. The environment can name another for a test run, over HTTPS or to this computer only. */
-export function productEventsEndpoint(environment: NodeJS.ProcessEnv, builtIn: string | null = BUILT_IN_ENDPOINT): string | null {
+export function productEventsEndpoint(environment: NodeJS.ProcessEnv, builtIn: string | null = null): string | null {
   const named = environment.SOTTO_PRODUCT_EVENTS_ENDPOINT?.trim()
   if (!named) return builtIn
   try {
@@ -115,7 +122,8 @@ export class ProductEvents {
     if (permission === previous) return
     this.permission = permission
     if (permission === 'on') { this.arm(); return }
-    // A host whose desktop has gone keeps what it holds and its ID. Off, or the desktop's notice asking again, keeps neither.
+    // A host whose desktop has gone keeps what it holds and its ID (`productEventsHostFollower` turns it off first when a desktop asks again).
+    // Off, or the desktop's own notice asking again, keeps neither.
     if (permission === 'waiting' && (this.options.holdWhileWaiting || previous === 'off')) this.stopSending()
     else this.forget()
   }
@@ -156,6 +164,9 @@ export class ProductEvents {
     if (this.permission === 'on' && this.distinctId && this.waiting.length > 0 && this.failures === 0) void this.send(this.nextBatch()).catch(() => undefined)
     this.stopped = true
   }
+
+  /** Whether this build can send at all: it has an endpoint and its environment has not turned product events off. */
+  get canSend(): boolean { return !this.dark }
 
   /** What is waiting to go. */
   get waitingCount(): number { return this.waiting.length }
@@ -285,14 +296,36 @@ export function productEventsFromDesktops(answers: readonly ProductEventPermissi
   return answers.includes('off') ? 'off' : answers.includes('on') ? 'on' : 'waiting'
 }
 
-/** The sender for this process, which has no endpoint and does nothing until a build or the environment names one. */
+/**
+ * How a host follows its desktops' answers (ADR-0179). No desktop connected keeps what it holds and its ID. A connected desktop
+ * still asking, once this host was on, is that desktop's Reset settings, so neither stays. An ID made after one was deleted has
+ * had no start said for it, so the next on says it.
+ */
+export function productEventsHostFollower(events: Pick<ProductEvents, 'setPermission' | 'record'>): (answers: readonly ProductEventPermission[]) => void {
+  let current: ProductEventPermission = 'waiting'
+  let startHeld = true
+  return answers => {
+    const next = productEventsFromDesktops(answers)
+    if (next === current) return
+    if (next === 'off' || (current === 'on' && next === 'waiting' && answers.length > 0)) { events.setPermission('off'); startHeld = false }
+    events.setPermission(next)
+    if (next === 'on') {
+      if (!startHeld) events.record('app.started', { pairedHosts: 0 })
+      startHeld = true
+    }
+    current = next
+  }
+}
+
+/** The sender for this process. Only a released build has the endpoint, so a development or test build sends nothing unless its environment names one. */
 export function createProductEvents(options: Pick<ProductEventsOptions, 'dataDirectory' | 'holdWhileWaiting' | 'log'> & {
   readonly version: string; readonly channel: ProductEventInstall['channel']; readonly surface: ProductEventInstall['surface']
+  readonly released: boolean
   readonly environment?: NodeJS.ProcessEnv
 }): ProductEvents {
   const environment = options.environment ?? process.env
   return new ProductEvents({
-    endpoint: productEventsEndpoint(environment), dataDirectory: options.dataDirectory, holdWhileWaiting: options.holdWhileWaiting, environment,
+    endpoint: productEventsEndpoint(environment, options.released ? PRODUCT_EVENTS_ENDPOINT : null), dataDirectory: options.dataDirectory, holdWhileWaiting: options.holdWhileWaiting, environment,
     homes: productEventHomes(environment), ...options.log ? { log: options.log } : {},
     install: { appVersion: options.version, channel: options.channel, surface: options.surface, platform: productEventPlatform(process.platform), arch: productEventArch(process.arch) },
   })

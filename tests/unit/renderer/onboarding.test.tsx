@@ -102,7 +102,7 @@ describe('first-run onboarding', () => {
     expect(screen.getByText(/Transcribed on this computer by the speech model you choose/i)).toBeVisible()
     expect(screen.getByText(/Your audio never leaves this computer/i)).toBeVisible()
     expect(screen.getByText(/no Sotto account/i)).toBeVisible()
-    expect(screen.getByText(/no telemetry/i)).toBeVisible()
+    expect(screen.getByText(/Product events are on until you turn them off/i)).toBeVisible()
   })
 
   it('has no Back button on Welcome and advances with Get started', () => {

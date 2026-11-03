@@ -42,3 +42,18 @@ Six earlier runs of nearly the same code, on a busier forge, moved both sides to
 What it adds, measured alone: 9 to 11 nanoseconds per update for a thread with a turn running, about one ten-thousandth of an update. Who started a thread is asked on a later tick as a turn begins and ends, never during an update, and each event costs `record`'s microseconds above. That question can walk Watcher's record once in a run, to build its index, and that walk is the one cost here that grows with history.
 
 `streamingCopyBudget`, `ownerScaleWorkBudget`, `copySites` and `zodSchemaSites` pass with the tracker wired into their pipelines, and no budget was raised. The first version read the coordinator's shown threads and went 21 reads of a thread per update over `ownerScaleWorkBudget`, so it now reads the thread changes the coordinator is already handed, which walks no list.
+
+## With the endpoint built in
+
+Added when the notice, the switch and the endpoint shipped together. That change adds no call on a thread's turn: the window asks one question at start, and a released build now takes the "switched on" and "sending" rows above rather than the "no endpoint" one. Forge, three runs on the final code, load average 1.5 to 3.0, the full command at the top.
+
+| What | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Longest event loop delay with nothing to send | 1.64 ms | 1.21 ms | 1.19 ms |
+| Longest event loop delay sending one batch of 20 | 1.19 ms | none registered | none registered |
+| Longest event loop delay sending 1,000 events | 1.35 ms | 1.39 ms | 1.65 ms |
+| An hour offline, work in all | 1.46 ms | 1.47 ms | 2.05 ms |
+| Stable, CPU per update, before and after | 0.19, 0.15 ms | 0.18, 0.16 ms | 0.17, 0.16 ms |
+| Owl, CPU per update, before and after | 0.17, 0.14 ms | 0.14, 0.14 ms | 0.13, 0.14 ms |
+
+Before is main's update path with no sender at all, and after has the tracker and a sender switched on. Stable reads lower after in all three runs, by 0.01 to 0.04 ms on a busy forge, with ranges that overlap; this adds work, so that is noise and not a saving. Nothing here shows a cost, and sending holds the event loop no longer than having nothing to send. This is what a thread's performance is held to.

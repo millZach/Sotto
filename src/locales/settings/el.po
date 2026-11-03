@@ -1128,7 +1128,7 @@ msgctxt "theme editor"
 msgid "Appearance"
 msgstr ""
 
-#. A Settings page, named in its rail and its heading: startup, history, updates and reset. Other messages name it as "Settings > Application".
+#. A Settings page, named in its rail and its heading: startup, history, product events, updates and reset. Other messages name it as "Settings > Application".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Application"
@@ -3653,6 +3653,14 @@ msgstr ""
 msgid "Off"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Off on this computer because DO_NOT_TRACK is set."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Off on this computer because SOTTO_TELEMETRY_ENABLED is set to false."
+msgstr ""
+
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Off on this computer. Connect to reach your other machines."
 msgstr ""
@@ -4188,6 +4196,11 @@ msgstr ""
 msgid "Proactive panels"
 msgstr ""
 
+#. A group on Settings > Application. A product event is one fact about how Sotto is used, sent to its developers.
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Product events"
+msgstr ""
+
 #. The project whose default is being chosen
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Project"
@@ -4687,6 +4700,10 @@ msgstr ""
 msgid "Searching themes…"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "See every event"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Select an element · Esc to cancel"
 msgstr ""
@@ -4700,8 +4717,17 @@ msgstr ""
 msgid "Send a test notification"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Send product events"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Send the prompt"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Sends Sotto’s developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts. Events carry a random ID for this install and hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person. It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys. Off stops this computer and its hosts, and drops anything waiting to go."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -5471,7 +5497,7 @@ msgid "Startup setting saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Startup, history, updates & reset"
+msgid "Startup, history, product events, updates & reset"
 msgstr ""
 
 #. A group of theme colors in the theme editor

@@ -110,8 +110,12 @@ msgid "{0}, asked again"
 msgstr "{0}, asked again"
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
-msgstr "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgid "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgstr "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "{about}, {system}. No account with Sotto. Product events are on until you turn them off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgstr "{about}, {system}. No account with Sotto. Product events are on until you turn them off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{activeThreads, plural, one {{detail} · {sessions} provider session} other {{detail} · {sessions} provider sessions}}"
@@ -952,6 +956,10 @@ msgstr "A speech model transcribes your speech on this computer. Choose it in Se
 msgid "A thread"
 msgstr "A thread"
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "A thread begins its first turn. It shows which providers and ways of starting get used."
+msgstr "A thread begins its first turn. It shows which providers and ways of starting get used."
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "a thread no longer here"
@@ -970,6 +978,10 @@ msgstr "A thread shows the agent's work, and the questions and permissions it as
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A thread’s"
 msgstr "A thread’s"
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "A turn ends. It shows reliability, speed and token use by provider and model."
+msgstr "A turn ends. It shows reliability, speed and token use by provider and model."
 
 #. Heading over the running version and what Sotto sends where
 #: src/renderer/src/features/help/HelpView.tsx
@@ -1260,8 +1272,8 @@ msgid "Attach to a thread"
 msgstr "Attach to a thread"
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer."
-msgstr "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer."
+msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
+msgstr "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Authority"
@@ -1614,6 +1626,7 @@ msgid "Clear usage…"
 msgstr "Clear usage…"
 
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Close"
@@ -2185,6 +2198,10 @@ msgstr "Draw the days as"
 msgid "Each bar is one second of the last minute; taller means main was blocked longer."
 msgstr "Each bar is one second of the last minute; taller means main was blocked longer."
 
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person."
+msgstr "Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person."
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Each model, {valuesWhen}"
 msgstr "Each model, {valuesWhen}"
@@ -2250,6 +2267,10 @@ msgstr "Enter your OpenRouter API key first."
 msgid "Esc stops it"
 msgstr "Esc stops it"
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Every product event"
+msgstr "Every product event"
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Every step after this one can be skipped and finished later in Settings."
 msgstr "Every step after this one can be skipped and finished later in Settings."
@@ -2301,6 +2322,10 @@ msgstr "Fastest: thinking off, {time} s."
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Favourites: {liked}."
 msgstr "Favourites: {liked}."
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
+msgstr "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Files Watcher changed"
@@ -2459,6 +2484,11 @@ msgstr "Go to the permission from {title} in this conversation"
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "Go to the question from {title} in this conversation"
 msgstr "Go to the question from {title} in this conversation"
+
+#. On the product events notice: keeps them on and closes the notice.
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Got it"
+msgstr "Got it"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Grok subscription"
@@ -2765,6 +2795,10 @@ msgstr "It is in the box below, not sent."
 #: src/renderer/src/watcher/MoveSuggestion.tsx
 msgid "It last worked {0} and is between turns."
 msgstr "It last worked {0} and is between turns."
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys."
+msgstr "It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys."
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions."
@@ -3560,8 +3594,8 @@ msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans 
 msgstr "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "No Sotto account, no telemetry"
-msgstr "No Sotto account, no telemetry"
+msgid "No Sotto account. Product events are on until you turn them off in Settings"
+msgstr "No Sotto account. Product events are on until you turn them off in Settings"
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "No speech model chosen"
@@ -3876,6 +3910,14 @@ msgstr "On {modelName}, with your own {accountProvider} account."
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "On {where}: <0>{left}%</0> left, {windowName} · {age}"
 msgstr "On {where}: <0>{left}%</0> left, {windowName} · {age}"
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Once per start, for each account signed in. It links one person’s computers."
+msgstr "Once per start, for each account signed in. It links one person’s computers."
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Once per start. It counts active installs by version and system."
+msgstr "Once per start. It counts active installs by version and system."
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "One line at the end of ~/.config/hypr/bindings.lua, after a backup copy."
@@ -4303,6 +4345,10 @@ msgstr "Previous microphone (unavailable)"
 msgid "Privacy"
 msgstr "Privacy"
 
+#: src/renderer/src/App.tsx
+msgid "Product events are off. Sotto sends nothing."
+msgstr "Product events are off. Sotto sends nothing."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Project: {scope}"
 msgstr "Project: {scope}"
@@ -4471,6 +4517,10 @@ msgstr "Read {name} limits again"
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "Read again"
 msgstr "Read again"
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Read every field on the docs page"
+msgstr "Read every field on the docs page"
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Read it"
@@ -4915,6 +4965,10 @@ msgstr "Search transcripts"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Second kind"
 msgstr "Second kind"
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "See every event"
+msgstr "See every event"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Send"
@@ -5504,6 +5558,10 @@ msgstr "Sotto lost the answer, so the stop may or may not have reached these thr
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto never updates itself on Linux. New versions come through pacman."
 msgstr "Sotto never updates itself on Linux. New versions come through pacman."
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Sotto now sends product events"
+msgstr "Sotto now sends product events"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Sotto opens the microphone only while you dictate or run this test."
@@ -6387,6 +6445,10 @@ msgstr "to"
 msgid "to do"
 msgstr "to do"
 
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
+msgstr "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
+
 #: src/renderer/src/features/dictate/journalFacts.ts
 #: src/renderer/src/features/dictate/JournalStats.tsx
 #: src/renderer/src/features/usage/UsageCharts.tsx
@@ -6558,6 +6620,11 @@ msgstr "Try microphone again"
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Trying again…"
 msgstr "Trying again…"
+
+#. On the product events notice: turns them off.
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Turn off"
+msgstr "Turn off"
 
 #: src/renderer/src/platformCopy.ts
 msgid "Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again."
@@ -7225,6 +7292,10 @@ msgstr "You set this."
 msgid "You skipped {title}’s question."
 msgstr "You skipped {title}’s question."
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."
+msgstr "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You told Sotto"
 msgstr "You told Sotto"
@@ -7240,6 +7311,10 @@ msgstr "You turned it off on this computer. Connect it to use it here."
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
 msgstr "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Your answer could not be saved, and nothing was sent. Try again."
+msgstr "Your answer could not be saved, and nothing was sent. Try again."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Your audio never leaves this computer"
