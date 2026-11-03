@@ -1,7 +1,5 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { deferred } from '../fixtures/deferred'
 import { WatcherService } from '../../src/main/agents/watcher'
@@ -16,6 +14,7 @@ import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 import { isWatcherWakeUpTurn } from '../../src/shared/threadActivity'
 import { SLASH_COMMAND_REFUSAL, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING } from '../../src/main/agents/watcherSendHolds'
+import { savedWatcherRecord } from '../fixtures/savedWatcher'
 
 /** A result without the times it was read at, which move between two reads of the same thing. */
 const steady = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (name, item: unknown) => name === 'observedAt' ? undefined : item))
@@ -848,7 +847,7 @@ it('never leaves Watcher’s live permission and its saved choice apart when the
   vi.spyOn(f.control, 'updateWatcher').mockRejectedValueOnce(new Error('Synthetic save failure'))
   expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'refused' })
   expect({ live: live(), saved: saved() }).toEqual(before)
-  // The phone loses Can answer at the save: the same.
+  // The phone loses its answers grant at the save: the same.
   expect(await f.service.setPermission({ runtimeMode: 'full-access' }, () => { throw new Error('Synthetic revoked phone') })).toMatchObject({ status: 'refused' })
   expect({ live: live(), saved: saved() }).toEqual(before)
   // The provider refuses the change: the saved choice goes back too.
@@ -869,8 +868,7 @@ it('persists the remembered permission before first creation and permits widenin
   }
   await f.service.setPermission({ runtimeMode: 'full-access' }); await f.restart()
   expect(f.service.state()).toMatchObject({ runtimeMode: 'full-access', currentOptions: { runtimeMode: 'full-access' } })
-  const record = JSON.parse(await readFile(join(f.f.root, 'agents.json'), 'utf8')) as { watcher: { lastRuntimeMode: string } }
-  expect(record.watcher.lastRuntimeMode).toBe('full-access')
+  expect((await savedWatcherRecord<{ lastRuntimeMode: string }>(f.f.root))!.lastRuntimeMode).toBe('full-access')
 })
 
 it('keeps Stop bounded within the current Watcher turn while retaining the standing watch', async () => {

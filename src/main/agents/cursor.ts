@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentThread } from '../../shared/agents'
@@ -10,7 +10,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { cursorActivities, cursorImage, cursorTask, cursorTodos, CURSOR_THINKING_ID_PREFIX, type CursorPlace } from './cursorActivity'
+import { cursorActivities, cursorImage, cursorToolId, cursorTask, cursorTodos, CURSOR_THINKING_ID_PREFIX, type CursorPlace } from './cursorActivity'
 import { cursorCatalog, cursorModeArguments, cursorModelListSchema, cursorRuntimeMode, leastEffort, CURSOR_RUNTIME_MODES, type CursorModelFacts, type CursorRuntimeMode } from './cursorModels'
 import { cursorAnswer, cursorDecline, cursorPending, type CursorPending } from './cursorRequests'
 import { compareCursorVersions, cursorEnvironment, CursorRejected, CursorRpc, CursorUncertain, CURSOR_ACP_VERSION, CURSOR_CLI_VERSION, findCursorProgram,
@@ -30,11 +30,12 @@ import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { ThreadMessageLog } from './threadMessageLog'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
+import type { MediaCapture, MediaFileCapture } from './threadMedia'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine } from './watcherRequestNote'
@@ -246,6 +247,10 @@ export interface CursorAcpOptions {
   startTimeoutMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
+  /** Keeps a tool result's pictures (ADR-0170); absent while `inline-media` is off, when a step carries none. */
+  captureMedia?: MediaCapture
+  /** Reads an image Cursor generated from the file it saved it to (ADR-0170); absent while `inline-media` is off. */
+  captureMediaFile?: MediaFileCapture
 }
 
 export class CursorAcpHost implements AgentHost {
@@ -260,6 +265,8 @@ export class CursorAcpHost implements AgentHost {
   private readonly indexes = new Map<string, ThreadIndex>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly connections = new Map<string, Connection>()
+  /** Generated images whose file is being read, by activity ID (ADR-0170). */
+  private readonly readingImages = new Set<string>()
   private readonly loading = new Map<string, Promise<Connection>>()
   private readonly stopping = new Map<string, Promise<void>>()
   private readonly turns = new Map<string, LiveTurn>()
@@ -596,6 +603,8 @@ export class CursorAcpHost implements AgentHost {
   private markOpenFailed(id: string, error: unknown): void {
     if (!this.aliases[id]) return
     this.thread(id).status = 'error'
+    // An earlier Watcher conversation in view is read only history: refusing to open it is not Cursor failing.
+    if (error instanceof WatcherHistoryRefusal) { this.emit(); return }
     this.state.error = error instanceof Error && error.message ? error.message : 'A Cursor thread could not be opened. Your thread is kept. Reconnect Cursor to try again.'
     this.emit()
   }
@@ -755,6 +764,22 @@ export class CursorAcpHost implements AgentHost {
     connection.effort = typeof effort === 'string' ? effort : undefined
   }
   /** Every frame from one thread's process. A request is answered on the process that asked, never another. */
+  /**
+   * The picture Cursor generated (ADR-0170), read from the file it saved it to once the step names one, off the update
+   * path, and added to the step when it lands. A step that holds it already, or is being read, reads nothing again.
+   */
+  private generatedImage(id: string, cwd: string, row: AgentActivity | undefined): void {
+    const path = row?.status === 'completed' && !row.media ? row.changes?.[0]?.path : undefined
+    if (!row || !path || !this.options.captureMediaFile || this.readingImages.has(row.id)) return
+    this.readingImages.add(row.id)
+    void this.options.captureMediaFile(isAbsolute(path) ? path : resolve(cwd, path), 'generated').then(media => {
+      const current = this.threads.get(id)?.activities?.find(record => record.id === row.id)
+      if (!media.length || !current || current.media || !this.aliases[id]) return
+      const thread = this.thread(id)
+      thread.activities = mergeAgentActivities(thread.activities, [{ ...current, media }]); this.emit(true)
+    }).catch(() => undefined).finally(() => this.readingImages.delete(row.id))
+  }
+
   private async frame(id: string, connection: Connection, frame: CursorFrame): Promise<void> {
     const alias = this.aliases[id]
     if (!alias || connection.closing) return
@@ -781,6 +806,7 @@ export class CursorAcpHost implements AgentHost {
         : frame.method === 'cursor/task' ? cursorTask(frame.params, place(params?.toolCallId, false), previous, true)
         : cursorImage(frame.params, place(params?.toolCallId, false), previous)
       if (rows.length) { thread.activities = mergeAgentActivities(previous, rows); this.emit(true) }
+      if (frame.method === 'cursor/generate_image') this.generatedImage(id, alias.cwd, rows[0])
       void connection.rpc.reply(frame.id, {}).catch(() => undefined)
       return
     }
@@ -858,7 +884,7 @@ export class CursorAcpHost implements AgentHost {
     }
     const key = kind === 'agent_thought_chunk' ? turn.places.thought()
       : typeof update.toolCallId === 'string' && (kind === 'tool_call' || kind === 'tool_call_update') ? turn.places.tool(update.toolCallId, kind === 'tool_call') : undefined
-    const rows = cursorActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, true)
+    const rows = cursorActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, true, this.options.captureMedia)
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
   }
   /** One update of a `session/load` replay: whole messages and finished work, in order, with no time or ID of Cursor's own. */
@@ -894,8 +920,21 @@ export class CursorAcpHost implements AgentHost {
     }
     const key = kind === 'agent_thought_chunk' ? turn.thought()
       : typeof update.toolCallId === 'string' && (kind === 'tool_call' || kind === 'tool_call_update') ? turn.tool(update.toolCallId, kind === 'tool_call') : undefined
-    const rows = cursorActivities(update, { turnId: turn.key, afterMessageId: replay.messages.at(-1)?.id, cwd: alias.cwd, key }, replay.activities, false)
+    const rows = cursorActivities(update, { turnId: turn.key, afterMessageId: replay.messages.at(-1)?.id, cwd: alias.cwd, key }, replay.activities, false, this.replayCapture(id, key))
     if (rows.length) replay.activities = mergeAgentActivities(replay.activities, rows)
+  }
+  /**
+   * A replay projects into rows of its own, so a step's pictures would be hashed again on every read of the history. The
+   * thread's saved row for the same step answers instead when it holds as many: it is looked up only for an update that
+   * carries pictures, never for one with words alone.
+   */
+  private replayCapture(id: string, key: string | undefined): MediaCapture | undefined {
+    const capture = this.options.captureMedia
+    if (!capture || !key) return capture
+    return (pictures, source) => {
+      const saved = this.threads.get(id)?.activities?.find(row => row.id === cursorToolId(key))?.media
+      return saved && saved.length >= pictures.length ? saved : capture(pictures, source)
+    }
   }
   /** A replay into the thread's log: what the store holds is recognised, and a reply streamed longer than its replay is kept. */
   private mergeReplay(id: string, replay: Replay): void {

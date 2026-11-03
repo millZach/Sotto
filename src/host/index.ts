@@ -3,6 +3,8 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
+import { createProductEvents, productEventsFromDesktops } from '../main/productEvents/productEvents'
+import type { ProductEventPermission } from '../shared/hostProtocol'
 import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
@@ -37,7 +39,10 @@ import { HostRemoteCallers } from '../main/agents/delegationRemoteHost'
 import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
+import { MediaToolServer } from '../main/agents/mediaTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
+import { tellWatcherTools } from '../main/agents/tellWatcherTools'
+import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -147,6 +152,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   })
   // The host's identity, read once from its own file; the self-update reads it here rather than copying the runtime's state.
   const hostId = await loadHostIdentity(directory)
+  // Product events (ADR-0179): a host holds them in memory until a connected desktop says the switch is on, and makes no ID before that.
+  const productEvents = createProductEvents({ dataDirectory: directory, holdWhileWaiting: true, version: options.sottoVersion ?? packageVersion, channel: getReleaseTrack(options.sottoVersion ?? packageVersion), surface: 'host', ...options.log ? { log: options.log } : {} })
+  productEvents.record('app.started', { pairedHosts: 0 })
   await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
   await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await removeRetiredVoiceCache(directory)
@@ -156,6 +164,11 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const policy = memory ? new PolicyStore(memory) : undefined
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
+    /** Whether a desktop on either listener wants next prompts (ADR-0173); none before the listeners start. */
+    let nextPromptsWanted = (): boolean => false
+    /** What every connected desktop has answered for product events (ADR-0179), on either listener; none before they start. */
+    let productEventAnswers = (): ProductEventPermission[] => []
+    const onProductEventAnswer = (): void => productEvents.setPermission(productEventsFromDesktops(productEventAnswers()))
     const pairing = new PairedClients(directory)
     const desktops = new DesktopClients(directory, options.log)
     // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.
@@ -181,7 +194,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = await createAgentRuntime({
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, clearThreadsEnabled,
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
+      nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
       // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
@@ -214,11 +229,19 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, log: event => options.log?.(event) },
       claudeSettingsLog: event => options.log?.(event),
     })
-    // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens. Only
-    // `sotto_delegate` so far; `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
+    // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens:
+    // `sotto_delegate`, and `sotto_media` with inline media on (ADR-0170, request-only), since this host keeps its own
+    // threads' pictures. `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
     // stays the desktop's.
-    const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = runtime.delegation && crossMachineEnabled
-      ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []
+    const agentHost = runtime.agentHost
+    // Watcher runs on a desktop, so a thread here reaches it over that desktop's connection (ADR-0073, November 2, 2026).
+    const tellWatcherRelay = watcherEnabled && runtime.watcher ? new HostTellWatcherRelay() : undefined
+    const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = [
+      ...(runtime.delegation && crossMachineEnabled
+        ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []),
+      ...(owlFeatures['inline-media'] ? [new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) })] : []),
+      ...(tellWatcherRelay && runtime.watcher ? [tellWatcherTools(agentHost, runtime.watcher, (threadId, words, userMessage) => tellWatcherRelay.tell({ threadId, words, ...userMessage ? { userMessage } : {} }))] : []),
+    ]
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
@@ -285,26 +308,33 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         if (heldMoves) { const held = heldMoves; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
         threadMoves = branchMoves ? new HostThreadMoves(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false, ...heldMoves ? { sources: heldMoves } : {} }) : undefined
-        const moves = { ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
+        const moves = { ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
-        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
+        listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
           watcherDesktops: desktops, delegation, ...hostUpdate, ...moves,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
-          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
+          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => { tailnet.revoked(clientId); onProductEventAnswer() },
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')
+            // A phone's pairing is its grant, and Remove the only revocation (ADR-0033); `--deny-answers` is for a desktop.
+            if (!allowed && tailnet.isPhone(clientId)) throw new Error('Remove a phone to stop it answering.')
             policy.setRemoteAnswers(clientId, allowed, 'The user allowed this paired device to answer permission requests on the host.')
           },
         })
         const { peers } = listener
         // A desktop or phone on the tailnet listener is a window in front as much as one through SSH is.
         peersConnected = () => peers() > 0 || tailnet.peers() > 0
+        const loopback = listener
+        nextPromptsWanted = () => loopback.nextPromptsWanted() || tailnet.nextPromptsWanted()
+        productEventAnswers = () => [...loopback.productEventAnswers(), ...tailnet.productEventAnswers()]
+        // A desktop on the tailnet listener may have answered before this one was up.
+        onProductEventAnswer()
         describing = true
         await writeDescriptor()
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
@@ -318,6 +348,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       service: runtime.hostService, credentials, pairing, descriptor: listener?.descriptor,
       close: (): Promise<void> => {
         closing ??= (async () => {
+          productEvents.stop()
           signIns.close()
           // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
           // The descriptor is no longer written from here on, so the one removed below stays removed.

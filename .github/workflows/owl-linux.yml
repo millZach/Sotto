@@ -1,6 +1,6 @@
 # Builds the Linux half of a Sotto Owl (ADR-0099): an x64 tarball and the sotto-bin pacman package made from it, from
-# the same source commit and Owl version as the Windows Owl the release lead packaged by hand. Runs only when started
-# by hand; never on a push or a pull request. It publishes nothing and reads no secrets: it attests the tarball and the
+# the same source commit and Owl version as the Windows Owl. Runs when started by hand beside a Windows Owl packaged by
+# hand, or when the Sotto Owl nightly calls it (owl-nightly.yml); never on a push or a pull request. It publishes nothing and reads no secrets: it attests the tarball and the
 # package and keeps them, with the recipe and receipts, as a workflow artifact that release:owl verifies and attaches to
 # the Owl prerelease. There is no Hyprland launch check here; that stays a stable-release step on forge (ADR-0062).
 name: Sotto Owl for Linux
@@ -14,6 +14,17 @@ on:
         type: string
       source:
         description: The full source commit the Windows Owl was built from
+        required: true
+        type: string
+  # The Sotto Owl nightly calls this workflow with the same two inputs (owl-nightly.yml).
+  workflow_call:
+    inputs:
+      version:
+        description: The nightly Owl's version, such as 0.1.38-owl.20261021.1
+        required: true
+        type: string
+      source:
+        description: The full source commit the nightly builds
         required: true
         type: string
 

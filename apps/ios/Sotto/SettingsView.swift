@@ -6,17 +6,33 @@ import SottoCore
 /// stays on this iPhone; nothing is sent to a paired computer or changes its settings.
 struct SettingsView: View {
     @State private var toast: String?
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         SheetPage {
             PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings."))
                 .padding(.top, Space.s1)
             SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."))
+            // Look is one group of rows on one card, as Notifications is, with the theme tiles on a card of their own
+            // under it (#1864).
             VStack(spacing: Space.s3) {
-                AppearancePanel()
+                VStack(spacing: 0) {
+                    AppearancePanel()
+                    RowDivider()
+                    TextSizePanel()
+                    RowDivider()
+                    GlowPanel()
+                    RowDivider()
+                    DensityPanel()
+                    // Only the iPhone Duo has a sideways screen with a strip for the tabs.
+                    if duo != .none {
+                        RowDivider()
+                        DuoTabsPanel()
+                    }
+                }
+                .padding(.horizontal, Space.s4)
+                .frame(maxWidth: .infinity)
+                .sottoCard(.plain)
                 ThemePanel { toast = $0 }
-                GlowPanel()
-                TextSizePanel()
-                DensityPanel()
             }
             SectionLabel(String(localized: "Notifications", comment: "Settings section heading for alerts."))
             NotificationsPanel()
@@ -43,7 +59,7 @@ private struct AppearancePanel: View {
             Segmented(name: String(localized: "Appearance"), choices: PhoneAppearance.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-\($0.rawValue)" }) { appearance = $0.rawValue }
         }
-        .card()
+        .lookRow()
     }
 }
 
@@ -92,7 +108,7 @@ private struct ThemeChoice: View {
                 HStack(spacing: 6) {
                     Text(palette.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.8)
                     if selected {
-                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.accentText)
+                        Image(systemName: "checkmark").iconFont(11, weight: .bold).foregroundStyle(Palette.accentText)
                             .accessibilityHidden(true)
                     }
                 }
@@ -174,7 +190,7 @@ private struct TextSizePanel: View {
             .accessibilityLabel("Text size")
             TextSample()
         }
-        .card()
+        .lookRow()
     }
 }
 
@@ -197,7 +213,7 @@ private struct TextSizeStep: View {
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background {
                     if selected {
-                        shape.fill(scheme == .dark ? Palette.raised : Palette.surface)
+                        shape.fill(scheme == .dark ? Palette.overlay : Palette.surface)
                             .overlay(shape.strokeBorder(theme.color(.accent).opacity(0.35), lineWidth: 1))
                             .glow(shape, color: theme.color(.accent), alpha: 0.4, radius: 8)
                     }
@@ -217,16 +233,12 @@ private struct TextSizeStep: View {
 /// A request card's words at the chosen size, so the size can be judged before leaving Settings.
 private struct TextSample: View {
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         VStack(alignment: .leading, spacing: 2) {
             Text("Pick the drawer shortcut").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
             Text("Asks: which shortcut should open the terminal drawer?").font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.canvas, in: shape)
-        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
         .accessibilityHidden(true)
     }
 }
@@ -251,7 +263,7 @@ private struct GlowPanel: View {
             }
             .frame(minHeight: 44)
         }
-        .card()
+        .lookRow()
     }
 }
 
@@ -265,7 +277,23 @@ private struct DensityPanel: View {
                       title: { $0.title }, identifier: { "setting-density-\($0.rawValue)" }) { density = $0.rawValue }
             PanelHint(text: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps."))
         }
-        .card()
+        .lookRow()
+    }
+}
+
+/// Where the iPhone Duo, unfolded and held sideways, puts the tabs (Zach's pick, October 30, 2026).
+private struct DuoTabsPanel: View {
+    @AppStorage(PhonePreferenceKey.duoTabsSide) private var side = DuoTabsSide.right.rawValue
+    var body: some View {
+        let current = DuoTabsSide(rawValue: side) ?? .right
+        VStack(alignment: .leading, spacing: Space.s3) {
+            PanelHeader(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil)
+            Segmented(name: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."),
+                      choices: DuoTabsSide.allCases, selection: current,
+                      title: { $0.title }, identifier: { "setting-duo-tabs-\($0.rawValue)" }) { side = $0.rawValue }
+            PanelHint(text: String(localized: "Upright, they stand down the right edge.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen."))
+        }
+        .lookRow()
     }
 }
 
@@ -396,12 +424,21 @@ private struct DefaultsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 0) {
                 DefaultRow(label: String(localized: "Model", comment: "A new-thread default: the model a thread starts on."), spoken: String(localized: "New thread model"), value: modelValue(models), identifier: "setting-default-model") {
+                    let lineup = ModelLineup.split(models)
                     Picker("Model", selection: saving($modelID)) {
                         Text(Self.computersChoice).tag("")
                         if !modelID.isEmpty && !models.contains(where: { $0.id == modelID }) {
                             Text("A model no connected computer offers").tag(modelID)
                         }
-                        ForEach(models) { value in Text(Self.modelName(value)).tag(value.id) }
+                        ForEach(lineup.latest) { value in Text(Self.modelName(value)).tag(value.id) }
+                    }
+                    // Older models of each line wait in a closed submenu (ADR-0171).
+                    if !lineup.legacy.isEmpty {
+                        Menu("Legacy") {
+                            Picker("Legacy", selection: saving($modelID)) {
+                                ForEach(lineup.legacy) { value in Text(Self.modelName(value)).tag(value.id) }
+                            }
+                        }
                     }
                 }
                 RowDivider()
@@ -504,16 +541,31 @@ private struct DefaultRow<Choices: View>: View {
     let value: String
     let identifier: String
     @ViewBuilder let choices: () -> Choices
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         Menu {
             choices()
         } label: {
-            HStack(spacing: Space.s3) {
-                Text(label).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                Spacer(minLength: Space.s2)
-                Text(value).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
-                    .accessibilityHidden(true)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    // At the largest sizes the value goes under its name: beside it, it was cut in the middle of a word.
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        name
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                            Text(value).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                            mark
+                        }
+                    }
+                    .padding(.vertical, Space.s2)
+                } else {
+                    HStack(spacing: Space.s3) {
+                        name
+                        Spacer(minLength: Space.s2)
+                        Text(value).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
+                        mark
+                    }
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
             .contentShape(Rectangle())
@@ -524,6 +576,11 @@ private struct DefaultRow<Choices: View>: View {
         .accessibilityValue(value)
         .accessibilityHint("Shows the choices.")
         .accessibilityIdentifier(identifier)
+    }
+    private var name: some View { Text(label).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink) }
+    private var mark: some View {
+        Image(systemName: "chevron.up.chevron.down").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
+            .accessibilityHidden(true)
     }
 }
 
@@ -640,7 +697,7 @@ private struct SegmentButton: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background {
                     if chosen {
-                        Capsule().fill(raised ? Palette.raised : Palette.surface)
+                        Capsule().fill(raised ? Palette.overlay : Palette.surface)
                             .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                             .matchedGeometryEffect(id: "knob", in: knob)
                     }
@@ -671,6 +728,13 @@ private struct NoteLine: View {
             .padding(.horizontal, Space.s1).padding(.top, Space.s2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .paragraphDirection()
+    }
+}
+
+extension View {
+    /// One row of Look's group: the padding a card gave it, without the card.
+    fileprivate func lookRow() -> some View {
+        padding(.vertical, Space.s4).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

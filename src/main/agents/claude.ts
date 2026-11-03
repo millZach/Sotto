@@ -1,3 +1,4 @@
+import type { MediaCapture } from './threadMedia'
 import { preserveLegacyAliases } from './legacyAliases'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
@@ -23,13 +24,14 @@ import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
 import { claudeSubagents, narrowerMode } from './subagentRoles'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { resolveModel } from '../../shared/modelCatalog'
+import { markLegacyModels } from '../../shared/modelLineup'
 import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE, ultracodeRunsAt, type UltracodeEffort } from '../../shared/ultracode'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
@@ -228,6 +230,8 @@ function toolAllowance(servers: readonly { server: Pick<ThreadMcpServer, 'name'>
 }
 export interface ClaudeStreamJsonHostOptions {
   usageEnabled?: boolean
+  /** Keeps a tool result's pictures and answers their handles (ADR-0170); absent while `inline-media` is off. */
+  captureMedia?: MediaCapture
   /** Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn stopped at a usage limit says so on its `lastTurn`. */
   limitStops?: boolean
   /** Test-only admission override. Production wiring never supplies it. */
@@ -323,9 +327,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   profileRefusalHandler(id: string) {
     const generation = this.generation, runtime = this.runtimes.get(id), spare = this.spares.get(id)
     if (!runtime && !spare) return undefined
-    return (reason: string) => {
+    return (reason: string, history = false) => {
       if (generation !== this.generation || this.runtimes.get(id) !== runtime || this.spares.get(id) !== spare) return
-      return this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime)
+      return this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime, !history)
     }
   }
   private browserTools: BrowserAgentTools | undefined
@@ -367,12 +371,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     } catch (error) {
       this.checkProfileContinuation(id, generation, runtime)
       const reason = error instanceof WatcherProfileRefusal ? error.message : 'Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.'
-      await this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime)
+      await this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime, !(error instanceof WatcherHistoryRefusal))
       throw error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal(reason)
     }
   }
+  /** `providerError` is false for an earlier Watcher conversation, whose refusal says nothing about Claude Code itself. */
   private async stopWatcher(id: string, profile: WatcherLaunchProfile | undefined, reason: string,
-    generation = this.generation, expectedRuntime?: Runtime): Promise<void> {
+    generation = this.generation, expectedRuntime?: Runtime, providerError = true): Promise<void> {
     this.checkProfileContinuation(id, generation, expectedRuntime)
     try { profile?.revoke(reason) } catch { /* A broken tool-server cleanup must still stop its provider process. */ }
     const spare = this.spares.get(id)
@@ -394,7 +399,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
       this.changed(id)
     }
-    this.state.error = reason; this.emit()
+    if (providerError) this.state.error = reason
+    this.emit()
   }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
@@ -483,8 +489,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** Threads whose CLI has opened a query since its last result; Claude Code opens every turn with `system/init`. */
   private readonly queries = new Set<string>()
   private readonly assistantBlocks = new Map<string, Map<string, string>>()
-  /** Watched set: the threads the coordinator asked for. Their CLIs are started eagerly and never reaped. */
+  /** Watched set: the threads the coordinator observes. Their transcripts are read each second and their messages held. */
   private readonly observed = new Set<string>()
+  /**
+   * The live-session set (CONTEXT.md): the threads whose CLI is started without waiting for an action and never reaped.
+   * Undefined until the coordinator names one, which it does before its first observation, and until then every observed
+   * thread is in it, as before the November 1, 2026 amendment to ADR-0016: a caller that only observes still gets a CLI
+   * for each thread it observes.
+   */
+  private liveSessions: Set<string> | undefined
   private readonly reaper: SessionReaper
   private readonly activity = new Map<string, ClaudeActivity>()
   /** Per thread: the subagent transcripts still being read for a model the stream never named. */
@@ -521,6 +534,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private polling: Promise<void> | undefined
   private queuedPoll: Promise<void> | undefined
+  /**
+   * The threads the poll timer's next tick reads besides those in use (`pollActiveSessionLogs`): those in use on the last
+   * tick, and those whose read it did not finish.
+   */
+  private readAgain = new Set<string>()
+  /** Threads whose CLI did anything since the last tick: a command, a start, or a frame. */
+  private readonly workedSinceTick = new Set<string>()
   private readonly closures = new Set<Promise<void>>()
   private trackClosure(work: Promise<void>): void {
     this.closures.add(work)
@@ -557,7 +577,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
       ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
-      isWatched: id => this.observed.has(id),
+      isWatched: id => this.keptLive(id),
       isBusy: id => this.busy(id),
       stop: id => this.stopSession(id),
     })
@@ -573,8 +593,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /**
    * End this thread's CLI and flush its transcript cursor, the way disconnecting does (ADR-0015). Nothing
-   * the user can see changes: the thread keeps its messages and its idle status, its transcript is still
-   * read, and the next action launches the CLI again from the stored session.
+   * the user can see changes: the thread keeps its messages and its idle status, its transcript is read
+   * while it is looked at or working and when it is opened, and the next action launches the CLI again from
+   * the stored session.
    */
   private async stopSession(id: string): Promise<void> {
     if (this.spares.has(id)) { this.discardSpare(id); return }
@@ -631,8 +652,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     await this.usage.load()
     const [account, executable, aliases, projects] = await Promise.all([this.client.status(), this.client.findExecutable(), this.readAliases(), this.projectStore.read()])
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    this.state.error = undefined; this.turnFailures.clear(); this.assistantErrors.clear(); this.state.models = account.models.map(model => ({ ...model, provider: PROVIDER_LABELS.claude, ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true,
-      ...(account.defaultModelId && model.id === account.defaultModelId ? { recommended: true } : {}) }))
+    this.state.error = undefined; this.turnFailures.clear(); this.assistantErrors.clear(); this.state.models = markLegacyModels(account.models.map(model => ({ ...model, provider: PROVIDER_LABELS.claude, ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true,
+      ...(account.defaultModelId && model.id === account.defaultModelId ? { recommended: true } : {}) })))
     delete this.state.problem; delete this.state.account
     if (!account.ready || !executable) {
       this.state.error = account.detail
@@ -674,18 +695,23 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.state.connected = true
     this.reaper.start()
-    // Lazy sessions: connecting starts a CLI only for the watched set. Every other known thread is in the snapshot
-    // from its alias, and starts on its first action. The watched set's start a few at a time, so a send to the last
-    // of them does not wait for every other to start first (#769).
-    const watched = [...this.observed].filter(id => aliases[id] && aliases[id].kind !== 'personal' && !aliases[id].rollbackPending)
+    // Lazy sessions: connecting starts a CLI only for the live-session set. Every other known thread is in the snapshot
+    // from its alias, and starts when the user types in it or on its first action, whether it is on screen or not. The
+    // live-session set's start a few at a time, so a send to the last of them does not wait for every other to start
+    // first (#769).
+    const watched = [...this.liveSessions ?? this.observed].filter(id => aliases[id] && aliases[id].kind !== 'personal' && !aliases[id].rollbackPending)
     const startNext = async (): Promise<void> => {
       for (let id = watched.shift(); id !== undefined && generation === this.generation; id = watched.shift()) {
-        try { await this.start(id) } catch (error) { if (generation === this.generation) { this.threads.get(id)!.status = 'error'; this.changed(id); this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED_SESSION } }
+        try { await this.start(id) } catch (error) {
+          if (generation !== this.generation) continue
+          this.threads.get(id)!.status = 'error'; this.changed(id)
+          if (!(error instanceof WatcherHistoryRefusal)) this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED_SESSION
+        }
       }
     }
     await Promise.all(Array.from({ length: Math.min(Math.max(1, this.options.connectStarts ?? CONNECT_STARTS), watched.length) }, startNext))
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    this.pollTimer = setInterval(() => { void this.pollSessionLogs().catch(() => { this.state.error = 'Claude history is unavailable. Check the native client before continuing.'; this.emit() }) }, this.options.pollIntervalMs ?? 1000)
+    this.pollTimer = setInterval(() => { void this.pollActiveSessionLogs().catch(() => { this.state.error = 'Claude history is unavailable. Check the native client before continuing.'; this.emit() }) }, this.options.pollIntervalMs ?? 1000)
     this.pollTimer.unref(); this.emit(); return this.view()
   }
   /**
@@ -716,8 +742,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     await Promise.all(this.stopOutdated())
   }
   /**
-   * Stop each CLI still running a replaced client whose thread is not busy, as the reaper would. A watched thread
-   * keeps a CLI, so it is started again on the new client straight away.
+   * Stop each CLI still running a replaced client whose thread is not busy, as the reaper would. A thread in the
+   * live-session set keeps a CLI, so it is started again on the new client straight away; one only on screen starts
+   * when the user next types or acts.
    */
   private stopOutdated(): Promise<void>[] {
     const stops: Promise<void>[] = []
@@ -728,11 +755,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.outdated.delete(id)
       const generation = this.generation
       stops.push(this.stopSession(id).catch(() => undefined).then(() => {
-        if (generation !== this.generation || !this.state.connected || !this.observed.has(id) || !this.aliases[id] || this.aliases[id].rollbackPending) return
-        void this.start(id).catch(() => {
+        if (generation !== this.generation || !this.state.connected || !this.keptLive(id) || !this.aliases[id] || this.aliases[id].rollbackPending) return
+        void this.start(id).catch((error: unknown) => {
           if (generation !== this.generation) return
           const thread = this.threads.get(id); if (thread) { thread.status = 'error'; this.changed(id) }
-          this.state.error = CLAUDE_RESUME_FAILED; this.emit()
+          if (!(error instanceof WatcherHistoryRefusal)) this.state.error = CLAUDE_RESUME_FAILED
+          this.emit()
         })
       }))
     }
@@ -776,6 +804,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return this.client.write({ ...prompt, model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory,
       executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
+  /** A side call for what has no session yet (ADR-0173), on the model chosen, at its least effort. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (!this.state.connected || !this.executable) return null
+    const effort = sideWritingEffort(this.state.models, target.modelId)
+    return this.client.write({ ...prompt, model: target.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(target.cwd ?? homedir()),
+      executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
+  }
   /**
    * Read a thread back from Claude Code: bring it up to date, then hand back the snapshot. The read before a send
    * (`beforeSend`) is the same read, and it stands for the send's own first read (#765).
@@ -796,8 +831,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.aliases[id]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (!this.aliases[id]) throw new Error('That Claude thread is unavailable.')
     const generation = this.generation
-    // Reading a thread is opening it, so a reaped or never-started session starts here. A start that
-    // cannot happen is reported by the action that needs it, not by a read.
+    // A read of one thread comes before acting on it (a send, a review, Watcher's read), so a reaped or never-started
+    // session starts here. A thread merely on screen is read from its transcript instead (`observeThreads`). A start
+    // that cannot happen is reported by the action that needs it, not by a read.
     await this.start(id).catch(error => { if (error instanceof WatcherProfileRefusal) throw error })
     await this.readLog(id)
     if (generation !== this.generation || !this.state.connected) throw new Error('Claude connection changed while reading the thread.')
@@ -820,15 +856,42 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.messageLog.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
+  /**
+   * The threads a window, Watcher or the coordinator looks at. Each is read from its transcript and starts no CLI: a
+   * thread on screen starts its CLI when the user types, sends or acts on it, and one Sotto must keep running is in the
+   * live-session set (`keepSessionsLive`; ADR-0016, November 1, 2026 amendment). A caller that never names that set
+   * still starts every observed thread's CLI, as it did before.
+   */
   observeThreads(ids: readonly string[]): void {
+    const before = new Set(this.observed)
     this.observed.clear(); for (const id of ids) if (this.aliases[id]?.kind !== 'personal') this.observed.add(id)
     this.messageLog.observe([...this.observed])
     if (!this.state.connected) return
+    if (!this.liveSessions) this.startLive(this.observed)
+    // A thread coming into view catches up at once, from its cursor, with what was written while nobody looked: work done
+    // in Claude Code outside Sotto shows as it opens rather than at the poll's next tick (#992). A read that fails is
+    // tried again by that tick.
+    for (const id of this.observed) if (!before.has(id) && this.logs.has(id)) void this.readLog(id).catch(() => undefined)
+  }
+  /**
+   * The live-session set: each of these threads gets its CLI now if it has none, and keeps it while it stays in the set,
+   * whatever the reaper's idle clock says. A thread that leaves the set keeps its CLI until the reaper finds it idle.
+   */
+  keepSessionsLive(ids: readonly string[]): void {
+    this.liveSessions = new Set(ids.filter(id => this.aliases[id]?.kind !== 'personal'))
+    if (this.state.connected) this.startLive(this.liveSessions)
+  }
+  /** Whether this thread's CLI is kept running: it is in the live-session set, or every observed thread is, until one is named. */
+  private keptLive(id: string): boolean { return (this.liveSessions ?? this.observed).has(id) }
+  /** Start the CLI of each of these threads that has none; `start` hands back one already running. */
+  private startLive(ids: ReadonlySet<string>): void {
     const generation = this.generation
-    for (const id of this.observed) if (this.aliases[id]) void this.start(id).catch(error => {
+    for (const id of ids) if (this.aliases[id]) void this.start(id).catch(error => {
       if (generation !== this.generation) return
       const thread = this.threads.get(id); if (thread) { thread.status = 'error'; this.changed(id) }
-      this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED; this.emit()
+      // An earlier Watcher conversation is read only history: refusing to start it is not Claude Code failing.
+      if (!(error instanceof WatcherHistoryRefusal)) this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED
+      this.emit()
     })
   }
   rollbackCapability(id: string): { supported: boolean; reason?: string } {
@@ -1018,7 +1081,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
     // The coordinator's read before this send stands for its first read (#765).
     const readForSend = this.readsBeforeSend.take(id, command)
-    this.reaper.touch(id)
+    this.worked(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
     if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
     if (command.type === 'compact-thread') {
@@ -1379,6 +1442,47 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   private async readSessionLogs(): Promise<void> { for (const [id, log] of this.logs) { await this.readLog(id, log); await this.readSubagentModels(id, log) } }
   /**
+   * The timer's read: only the transcripts of the threads in use, those a window or Watcher looks at (`observed`), those
+   * working (`busy`) and those whose CLI did anything since the last tick, so a turn begun and ended between two ticks is
+   * read too. Each is read once more on the tick after it leaves them, so the last lines of its turn land. A read that
+   * failed, or that found the transcript and could not open it, is tried again on the next tick, as every read was, and
+   * one that keeps failing holds up no other thread's. Every other thread's transcript waits for the
+   * thread to come into view or be sent to, or for the next connect, and is read then from its saved cursor, so a poll's
+   * cost follows the threads in use rather than every thread saved (#992). A read already under way stands for this
+   * tick; a whole read asked for meanwhile follows it (`pollSessionLogs`).
+   */
+  private pollActiveSessionLogs(): Promise<void> {
+    if (this.polling) return this.polling
+    const active = new Set([...this.logs.keys()].filter(id => this.observed.has(id) || this.busy(id) || this.workedSinceTick.has(id)))
+    this.workedSinceTick.clear()
+    const ids = [...active, ...[...this.readAgain].filter(id => !active.has(id))]
+    const failed = new Set<string>()
+    const work = (async () => {
+      let error: unknown
+      for (const id of ids) {
+        const log = this.logs.get(id)
+        if (!log) continue
+        try {
+          await this.readLog(id, log); await this.readSubagentModels(id, log)
+          if (log.unopened) failed.add(id)
+        } catch (cause) { failed.add(id); error ??= cause }
+      }
+      // Reported as a whole read's failure always was, once every other thread has been read.
+      if (error !== undefined) throw error
+    })()
+    this.polling = work
+    return work.finally(() => {
+      if (this.polling === work) this.polling = undefined
+      // A thread let go meanwhile has no transcript to read again.
+      this.readAgain = new Set([...active, ...failed].filter(id => this.logs.has(id)))
+    })
+  }
+  /** The CLI did something for this thread: the reaper hears of it, and the poll's next tick reads its transcript. */
+  private worked(id: string): void {
+    this.reaper.touch(id)
+    this.workedSinceTick.add(id)
+  }
+  /**
    * Read the rest of a thread's transcript. A replay ends once a read has run to the end of the file: not when the
    * read found no transcript yet or failed partway, since the next read still starts from where this one stopped,
    * and not when a later connect has put a note of its own in place of the one this read began with.
@@ -1392,7 +1496,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /**
    * A subagent's model from its own transcript, for the workflow and background agents the stream never
-   * named one for. Read on the transcript's cadence, bounded per thread, and only until each row has one.
+   * named one for. Read when the thread's transcript is, bounded per thread, and only until each row has one.
    */
   private async readSubagentModels(id: string, log: ClaudeSessionLog): Promise<void> {
     const projector = this.activity.get(id)
@@ -1417,7 +1521,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return Promise.resolve()
   }
   disconnect(): void {
-    this.generation++; clearInterval(this.pollTimer); this.pollTimer = undefined; this.state.connected = false
+    this.generation++; clearInterval(this.pollTimer); this.pollTimer = undefined; this.readAgain = new Set(); this.workedSinceTick.clear(); this.state.connected = false
     for (const id of this.threads.keys()) this.clearMonitoring(id)
     this.reaper.dispose()
     this.flushCursors()
@@ -1438,7 +1542,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const profile = await this.watcherProfile(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (this.aliases[id]?.kind === 'personal') throw new Error('That thread is unavailable.')
-    this.reaper.touch(id)
+    this.worked(id)
     const pending = this.starting.get(id)
     if (pending) {
       const started = await pending
@@ -1615,7 +1719,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const settings = settingsOf(draft, this.state.models)
     const spare: Spare = { sessionId: randomUUID(), cwd, settings, frames: [], scopedTools: '', exited: false }
     this.spares.set(id, spare)
-    this.reaper.touch(id)
+    this.worked(id)
     spare.ready = this.spawn(id, { sessionId: spare.sessionId, cwd, ...settings }, false, spare)
     try { await spare.ready } catch (error) {
       if (this.spares.get(id) === spare) this.spares.delete(id)
@@ -1758,7 +1862,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try { this.applyFrame(id, frame) } finally { this.changed(id) }
   }
   private applyFrame(id: string, frame: ClaudeFrame): void {
-    this.reaper.touch(id)
+    this.worked(id)
     const runtime = this.runtimes.get(id)!; const thread = this.threads.get(id)!; const alias = this.aliases[id]!
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return
     if (this.usageEnabled && frame.type === 'rate_limit_event') {
@@ -2300,7 +2404,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private projectActivity(id: string, frame: ClaudeFrame, live = false, turnEnd?: AgentActivity['status']): void {
     const thread = this.ensureActivityHistory(id)!
     let projector = this.activity.get(id)
-    if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
+    if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch), this.options.captureMedia); this.activity.set(id, projector) }
     const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
     const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
     const previous = thread.activities ?? []
@@ -2378,7 +2482,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!this.aliases[id]) return
     await this.stopSession(id)
     this.reaper.forget(id)
-    this.observed.delete(id)
+    this.observed.delete(id); this.liveSessions?.delete(id)
     this.clearMonitoring(id)
     this.dropSteers(id)
     this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.toolsRunning.delete(id)

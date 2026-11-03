@@ -11,6 +11,7 @@ import { agoWords, calmLabel, calmWords, countWords, cpuWords, lineText, listWor
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { machinesStore, useMachines } from './useMachines'
+import { WatcherMoveSuggestion } from './MoveSuggestion'
 import { savedMachines, useHostsState } from '../state/hostsState'
 import type { HostsBridge } from '../../../shared/hosts'
 import { threadAddressIndex, useWatcherRoom } from './watcherRoom'
@@ -25,6 +26,8 @@ const FOCUSABLE = 'button, [href], [tabindex]'
 /** The space a machine's panel keeps below it inside the room, and the least height it takes however short the room. */
 const PANEL_GAP = 12
 const PANEL_MIN_HEIGHT = 160
+/** No threads yet, the same empty list each draw so the suggestion does not plan again for nothing. */
+const NO_THREADS: readonly AgentThread[] = []
 
 /** The threads working on one machine, as its panel lists them: who started each, and its title. */
 function workingOn(entry: MachineEntry, threads: readonly AgentThread[]): readonly AgentThread[] {
@@ -269,7 +272,7 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
   </Fragment>)
   const opened = entries.find(entry => keyOf(entry) === open) ?? null
   const changeDefault = app === null ? null : (): void => { setOpen(null); app.actions.navigate('settings', 'settings-new-workers') }
-  return <div ref={line} className="watcher-machines" role="group" aria-labelledby={label} data-all={all || undefined}>
+  return <><div ref={line} className="watcher-machines" role="group" aria-labelledby={label} data-all={all || undefined}>
     <span id={label} className="tt-visually-hidden">{t`Machines and what works on each`}</span>
     <span className="watcher-machines__wide">{run(entries, true)}</span>
     <span className="watcher-machines__narrow">{run(short.shown, false)}
@@ -282,4 +285,6 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
     {opened !== null ? <MachinePanel key={keyOf(opened)} entry={opened} threads={threads ?? []} watcherIds={watcherIds} now={now ?? Date.now()}
       anchor={opener.current} frame={line.current} onClose={close} onChangeDefault={changeDefault} checks={opened.connected ? machineChecksOf(queues, opened) : undefined} /> : null}
   </div>
+  {/* A machine short on memory or busy, and another with room, from the reading the line just took (#1309). */}
+  <WatcherMoveSuggestion entries={entries} threads={threads ?? NO_THREADS} now={now ?? Date.now()} /></>
 }

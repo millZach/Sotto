@@ -9,10 +9,11 @@ import { pendingRequest } from '../../src/main/agents/codexRequests'
 import { defaultAgentConfiguration, type AgentRequest } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// Two Spec review fixes in the complete app: the arrangement switch in a compact pane view, and a structured form's
+// Two Spec review fixes in the complete app: the arrangement in a compact pane view, now a row of the pane's ··· menu
+// (ADR-0163), and a structured form's
 // native explanation and tool context. Providers are fixtures; the request payloads come from the real provider mappers.
 const SHOTS = evidenceDirectory('artifacts/phase-three-review-ui-fixes')
 
@@ -32,14 +33,14 @@ async function shoot(page: Page, name: string, before?: () => Promise<void>): Pr
 
 interface Rect { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
 
-/** The shown pane's layout controls against everything they must not crowd: title, crumb, header actions, tabs, composer. */
+/** The shown pane's header controls against everything they must not crowd: title, crumb, tabs, composer. */
 const controlsLayout = (pane: Locator) => pane.evaluate(section => {
   const rect = (element: Element | Range | null): Rect | null => {
     if (!element) return null
     const box = element.getBoundingClientRect()
     return box.width && box.height ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom } : null
   }
-  const controls = section.querySelector('.thread-pane__controls')!
+  const controls = section.querySelector('.thread-workspace__actions')!
   const title = section.querySelector('.thread-workspace__title h2')!
   // The heading box can stretch across the header; measure the words themselves.
   const range = document.createRange()
@@ -47,15 +48,15 @@ const controlsLayout = (pane: Locator) => pane.evaluate(section => {
   const others = {
     title: rect(range),
     crumb: rect(section.querySelector('.thread-workspace__crumb')),
-    actions: [...section.querySelectorAll('.thread-workspace__actions button')].map(rect).filter(Boolean),
     tabs: rect(document.querySelector('.thread-panes__tabs')),
     compose: rect(section.querySelector('.thread-workspace__compose')),
   }
-  return { controls: rect(controls)!, pane: rect(section)!, buttons: [...controls.querySelectorAll('button')].map(button => ({ name: button.getAttribute('aria-label'), ...rect(button)! })), others }
+  // The icon buttons: the ··· menu and close.
+  const buttons = [...controls.querySelectorAll(':scope > .pane-menu > .pane-action, :scope > .thread-pane__close')]
+  return { controls: rect(controls)!, pane: rect(section)!, buttons: buttons.map(button => ({ name: button.getAttribute('aria-label'), ...rect(button)! })), others }
 })
 
 // Buttons carry transparent padding around their marks; boxes that meet within 4px on an axis are grazing, not crowding.
-// (The placed grid's controls already graze the header's last action by about 2 × 3px at 1280.)
 const GRAZE = 4
 const overlaps = (a: Rect, b: Rect | null): boolean => b !== null && Math.min(a.right, b.right) - Math.max(a.left, b.left) > GRAZE && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > GRAZE
 
@@ -64,13 +65,13 @@ async function expectUncrowded(pane: Locator): Promise<void> {
   for (const button of layout.buttons) expect([button.right - button.left, button.bottom - button.top]).toEqual([30, 30])
   expect(layout.controls.right).toBeLessThanOrEqual(layout.pane.right)
   expect(layout.controls.top).toBeGreaterThanOrEqual(layout.pane.top)
-  const { title, crumb, actions, tabs, compose } = layout.others
-  for (const [name, other] of [['title', title], ['crumb', crumb], ['tabs', tabs], ['compose', compose], ...actions.map((box, index) => [`action ${index}`, box] as const)] as const) {
-    expect(overlaps(layout.controls, other), `layout controls overlap ${name}: ${JSON.stringify(layout)}`).toBe(false)
+  const { title, crumb, tabs, compose } = layout.others
+  for (const [name, other] of [['title', title], ['crumb', crumb], ['tabs', tabs], ['compose', compose]] as const) {
+    expect(overlaps(layout.controls, other), `header controls overlap ${name}: ${JSON.stringify(layout)}`).toBe(false)
   }
 }
 
-test('a single row that goes compact keeps its arrangement switch, and the grid comes back from it at 1280 and 820', async () => {
+test('a single row that goes compact keeps its arrangement row, and the grid comes back from it at 1280 and 820', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
   const profileOwner = await ownedE2EProfile({ prefix: 'sotto-e2e-review-ui-fixes-' })
@@ -115,43 +116,52 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
       await expectUncrowded(pane('visual-gate'))
 
       const tabs = page.getByRole('tablist', { name: 'Open panes' })
-      const toggle = pane('visual-gate').getByRole('button', { name: 'Single row' })
-      await toggle.click()
+      const more = pane('visual-gate').getByRole('button', { name: 'More actions', exact: true })
+      // What the menu offers says which arrangement is chosen: the other one.
+      const offers = async (name: string): Promise<void> => {
+        await more.click()
+        await expect(pane('visual-gate').getByRole('menuitem', { name, exact: true })).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(more).toBeFocused()
+      }
+      // Press the row from the keyboard: the ··· button, Enter, the row, then `key`.
+      const pressFromKeyboard = async (name: string, key: 'Enter' | 'Space'): Promise<void> => {
+        await more.focus()
+        await page.keyboard.press('Enter')
+        await pane('visual-gate').getByRole('menuitem', { name, exact: true }).focus()
+        await page.keyboard.press(key)
+      }
+      await paneMenuAction(pane('visual-gate'), 'Arrange in a single row')
       await expect(tabs).toBeVisible()
       await expect(tabs.getByRole('tab', { name: 'Visual gate flake' })).toHaveAttribute('aria-selected', 'true')
-      await expect(toggle).toBeVisible()
-      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-      await expect(pane('visual-gate').locator('.thread-pane__controls button')).toHaveCount(2)
+      await expect(more).toBeVisible()
+      await offers('Arrange in a grid')
       await shoot(page, 'panes-row-compact-1280')
       await expectUncrowded(pane('visual-gate'))
 
       // From the keyboard, back to the same grid.
-      await toggle.focus()
-      await page.keyboard.press('Enter')
+      await pressFromKeyboard('Arrange in a grid', 'Enter')
       await expect(tabs).toHaveCount(0)
       await expect(placed).toHaveCount(4)
       await expect(rows).toHaveAttribute('aria-valuenow', '45')
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-      await expect(toggle).toBeFocused()
+      await expect(more).toBeFocused()
+      await offers('Arrange in a single row')
       await expectPromptText(promptField(pane('footer-links')), 'Footer draft through compact.')
       await shoot(page, 'panes-grid-returned-1280')
 
-      // At 820 neither arrangement fits the pane area, so the view is compact either way; the switch stays and says which
+      // At 820 neither arrangement fits the pane area, so the view is compact either way; the row stays and says which
       // arrangement will return, and widening brings the one chosen here.
       await size(launched, 820, 560)
       await expect(tabs).toBeVisible()
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await offers('Arrange in a single row')
       await shoot(page, 'panes-grid-compact-820')
       await expectUncrowded(pane('visual-gate'))
-      await toggle.click()
-      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await paneMenuAction(pane('visual-gate'), 'Arrange in a single row')
       await expect(panes.locator('> [role="status"]')).toHaveText('Panes will be arranged in a single row when there is room')
       await shoot(page, 'panes-row-compact-820')
       await expectUncrowded(pane('visual-gate'))
-      await toggle.focus()
-      await page.keyboard.press('Space')
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-      await expect(toggle).toBeFocused()
+      await pressFromKeyboard('Arrange in a grid', 'Space')
+      await expect(more).toBeFocused()
       await expect(panes.locator('> [role="status"]')).toHaveText('Panes will be arranged in a grid when there is room')
       await size(launched, 1280, 800)
       await expect(tabs).toHaveCount(0)
@@ -240,4 +250,49 @@ test('threaded structured forms show the native explanation and tool context onc
     await shoot(page, 'form-threaded-claude-820', () => questions.evaluate(element => element.scrollIntoView({ block: 'start' })))
   } finally { await closeSotto(threaded) }
 
+})
+
+const claudeTool = (id: string, tool: string, input: Record<string, unknown>): AgentRequest => claudePending({ type: 'control_request', request_id: id, request: { subtype: 'can_use_tool', tool_name: tool, tool_use_id: `toolu_${id}`, input } })!.request
+
+test('a permission card shows the model’s summary and the command, or a readable request, and never raw input (ADR-0185)', async () => {
+  test.setTimeout(240_000)
+  await mkdir(SHOTS, { recursive: true })
+  const launched = await launchSotto()
+  try {
+    const { page } = launched
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+    })
+    await page.reload()
+    await openThreads(page)
+    const emit = (threadId: string, request: AgentRequest) => page.evaluate(async ([threadId, request]) => window.sottoE2E!.agentEvent!({ type: request.kind, threadId, text: request.text, request, status: 'running' }), [threadId, request] as const)
+    const command = 'cd /home/zach/Projects/Vellum; gh run download 26118734 -n bench-results -D /tmp/bench; jq -r \'.scenarios[] | [.name, .p50, .p95] | @tsv\' /tmp/bench/results.json | column -t'
+    await emit('workshop', claudeTool('command', 'Bash', { command, timeout: 300000, description: 'Download recent benchmark artifacts and tabulate key scenarios', dangerouslyDisableSandbox: true }))
+    await emit('docs', claudeTool('edit', 'Edit', { file_path: '/home/zach/Projects/Vellum/src/bench.ts', old_string: 'const limit = 10', new_string: 'const limit = 12' }))
+    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    const card = page.locator('.agent-request[data-kind="permission"]')
+    await expect(card.locator('.agent-request__head')).toContainText('Run a command')
+    await expect(card.locator('.agent-request__summary-who')).toContainText('says')
+    await expect(card.locator('.agent-request__summary')).toContainText('Download recent benchmark artifacts')
+    await expect(card.locator('.agent-request__command')).toHaveText(command)
+    await expect(card.locator('.agent-request__also')).toHaveText('It also asks to run outside the sandbox.')
+    await expect(card.locator('.agent-request__details')).toHaveCount(0)
+    expect(await card.textContent()).not.toContain('{"')
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await size(launched, width, height)
+      await card.evaluate(element => element.scrollIntoView({ block: 'center' }))
+      expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+      await shoot(page, `permission-command-${width}`)
+    }
+    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    const edit = page.locator('.agent-request[data-kind="permission"]')
+    await expect(edit.locator('.agent-request__head')).toContainText('Edit a file')
+    await expect(edit.locator('.agent-request__target')).toHaveText('/home/zach/Projects/Vellum/src/bench.ts')
+    await expect(edit.locator('.agent-request__details')).toHaveText('- const limit = 10\n+ const limit = 12')
+    await expect(edit.locator('.agent-request__summary')).toHaveCount(0)
+    await edit.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    await shoot(page, 'permission-edit-820')
+  } finally { await closeSotto(launched) }
 })

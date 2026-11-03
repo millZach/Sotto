@@ -287,3 +287,16 @@ export async function paneMenuAction(scope: Page | Locator, name: string): Promi
   await scope.getByRole('button', { name: 'More actions', exact: true }).first().click()
   await scope.getByRole('menu', { name: 'More actions' }).getByRole('menuitem', { name, exact: true }).click()
 }
+
+/** The focused pane's Tools symbol (ADR-0182): every pane has one, and this is where the panel hands focus back. */
+export const FOCUSED_TOOLS = '.thread-pane[data-focused] .tools-toggle'
+
+/** Shows or hides Tools from a pane's header: the given pane's symbol, or on a page the focused pane's. */
+export async function toggleTools(scope: Page | Locator): Promise<void> {
+  await scope.locator('goto' in scope ? FOCUSED_TOOLS : '.tools-toggle').click()
+}
+
+/** Shows or hides a pane's Terminal drawer from its header (ADR-0182): the given pane's, or the first pane's on a page. */
+export async function toggleTerminalDrawer(scope: Page | Locator): Promise<void> {
+  await scope.getByRole('button', { name: 'Terminal drawer', exact: true }).first().click()
+}

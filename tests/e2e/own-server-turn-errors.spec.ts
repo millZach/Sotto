@@ -149,11 +149,13 @@ test('says what your own model server is doing to a turn, and offers Stop, Try a
     await page.clock.fastForward(31_000)
     await expect(live.getByRole('status')).toHaveText('Still waiting for Sparks to start answering.')
     await expect(live).toContainText('A long prompt can take a few minutes. The turn stops waiting at 5 minutes.')
+    // The server mark stands where the pulse would, a cell walking round while the server reads the prompt (ADR-0124, November 1).
+    await expect(live.locator('.server-mark')).toHaveAttribute('data-state', 'reading')
     await capture('waiting', live, { words: '[role="status"]', clock: '.thread-activity__clock', stop: '.thread-activity-live__stop', note: '.thread-activity-live__note' })
-    // The same, with reduced motion: the dot holds still.
+    // The same, with reduced motion: the mark holds still.
     await page.evaluate(() => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
-    expect(await live.locator('.thread-activity__pulse').evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+    expect(await live.locator('.server-mark__cells > i').first().evaluate(node => getComputedStyle(node).animationName)).toBe('none')
     await page.screenshot({ path: join(evidence, 'waiting-1280-dark-reduced-motion.png') })
     await page.evaluate(() => window.sotto!.updateSettings({ reducedMotion: 'system' }))
 
@@ -170,13 +172,14 @@ test('says what your own model server is doing to a turn, and offers Stop, Try a
     // The window's clock back to the real time, so the next turns start where main says they do.
     await page.clock.setSystemTime(Date.now())
 
-    // 2. OpenCode tries the server again: the line counts the tries, in the attention colour, with Stop.
+    // 2. OpenCode tries the server again: the line counts the tries, its server mark hollow, with Stop.
     await send('Now the section on checking a server again.')
     await expect.poll(async () => (await thread()).status).toBe('running')
     await action('retry', { attempt: 2 })
     await expect(live.getByRole('status')).toHaveText('Sparks isn’t answering. Trying again (1 of 10).')
     await action('retry', { attempt: 4 })
     await expect(live.getByRole('status')).toHaveText('Sparks isn’t answering. Trying again (3 of 10).')
+    await expect(live.locator('.server-mark')).toHaveAttribute('data-state', 'not-answering')
     await expect(stop).toBeEnabled()
     await capture('retrying', live, { words: '[role="status"]', stop: '.thread-activity-live__stop' })
 

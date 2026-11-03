@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
-import { MoreHorizontal } from 'lucide-react'
+import { Check, MoreHorizontal } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 
 /**
@@ -19,10 +19,50 @@ export interface PaneMenuItem {
   readonly tone?: 'danger'
   /** Set on one of a group of choices, such as a size: the row is a radio item, checked when true. */
   readonly checked?: boolean
+  /** Set on a row that shows or hides something, such as a sidebar row's Watch: the row is a checkbox item, ticked while it holds. */
+  readonly shown?: boolean
+  /** Keys that do the same from where the menu is, at the row's end in a title's words and read as its shortcut. */
+  readonly shortcut?: { readonly plain: string; readonly keys: string } | undefined
+  /** Read after the row's name: a state it carries. */
+  readonly description?: string | undefined
   readonly run: () => void
 }
 
-const ITEM = ':is([role="menuitem"], [role="menuitemradio"]):not(:disabled)'
+const ITEM = ':is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]):not(:disabled)'
+const role = (item: PaneMenuItem): string => item.shown !== undefined ? 'menuitemcheckbox' : item.checked !== undefined ? 'menuitemradio' : 'menuitem'
+
+/**
+ * A menu's keys, shared by the pane's ··· menu and a sidebar row's menu: Up and Down move round its rows, Home and End go
+ * to its ends, and Escape or Tab closes it and hands focus back to what opened it. Enter and Space press the row.
+ */
+export function menuKeyDown(list: HTMLElement | null, event: React.KeyboardEvent, close: (restore: boolean) => void): void {
+  if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); close(true); return }
+  const entries = [...(list?.querySelectorAll<HTMLElement>(ITEM) ?? [])]
+  const index = entries.indexOf(document.activeElement as HTMLElement)
+  const next = event.key === 'ArrowDown' ? index + 1 : event.key === 'ArrowUp' ? index - 1
+    : event.key === 'Home' ? 0 : event.key === 'End' ? entries.length - 1 : null
+  if (next === null) return
+  event.preventDefault()
+  event.stopPropagation()
+  entries[(next + entries.length) % entries.length]?.focus()
+}
+
+/** A menu's first row that takes a press, which opening the menu focuses. */
+export const firstMenuItem = (list: HTMLElement | null): HTMLElement | null => list?.querySelector<HTMLElement>(ITEM) ?? null
+
+/** The rows of a menu in their groups, a hairline between groups, each with its keys at its end. */
+export function PaneMenuRows({ groups, onChoose }: { readonly groups: readonly (readonly PaneMenuItem[])[]; readonly onChoose: (item: PaneMenuItem) => void }): ReactNode {
+  return groups.map((group, index) => <React.Fragment key={group[0]!.id}>
+    {index > 0 ? <hr /> : null}
+    {group.map(item => <button key={item.id} type="button" role={role(item)} aria-checked={item.shown ?? item.checked} className="pane-menu__item" data-tone={item.tone} tabIndex={-1} disabled={item.disabled} title={item.hint}
+      aria-keyshortcuts={item.shortcut?.keys} aria-description={item.description}
+      onClick={() => onChoose(item)}>{item.icon}{item.shortcut || item.shown !== undefined
+        // A row with keys or a tick keeps its name in its own span, so the tick and the keys line up at the end.
+        ? <><span className="pane-menu__label">{item.content ?? item.label}</span><span className="pane-menu__end" aria-hidden="true">
+          {item.shown ? <Check size={14} /> : null}{item.shortcut ? <kbd>{item.shortcut.plain}</kbd> : null}</span></>
+        : item.content ?? item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}</button>)}
+  </React.Fragment>)
+}
 
 /**
  * The pane header's "…" menu: everything that acts on this thread but does not earn a button of
@@ -51,7 +91,7 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className, but
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    list.current?.querySelector<HTMLElement>(ITEM)?.focus()
+    firstMenuItem(list.current)?.focus()
     const dismiss = (event: PointerEvent): void => {
       const target = event.target as Node
       if (!list.current?.contains(target) && !button.current?.contains(target)) setOpen(false)
@@ -75,21 +115,8 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className, but
       {icon ?? <MoreHorizontal size={16} aria-hidden="true" />}{text}
     </button>
     {open ? <div ref={list} className="pane-menu__list" role="menu" aria-label={label}
-      onKeyDown={event => {
-        if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); close(true); return }
-        const entries = [...(list.current?.querySelectorAll<HTMLElement>(ITEM) ?? [])]
-        const index = entries.indexOf(document.activeElement as HTMLElement)
-        const next = event.key === 'ArrowDown' ? index + 1 : event.key === 'ArrowUp' ? index - 1
-          : event.key === 'Home' ? 0 : event.key === 'End' ? entries.length - 1 : null
-        if (next === null) return
-        event.preventDefault()
-        entries[(next + entries.length) % entries.length]?.focus()
-      }}>
-      {shown.map((group, index) => <React.Fragment key={group[0]!.id}>
-        {index > 0 ? <hr /> : null}
-        {group.map(item => <button key={item.id} type="button" role={item.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={item.checked} className="pane-menu__item" data-tone={item.tone} tabIndex={-1} disabled={item.disabled} title={item.hint}
-          onClick={() => { close(true); item.run() }}>{item.icon}{item.content ?? item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}</button>)}
-      </React.Fragment>)}
+      onKeyDown={event => menuKeyDown(list.current, event, close)}>
+      <PaneMenuRows groups={shown} onChoose={item => { close(true); item.run() }} />
     </div> : null}
   </div>
 }

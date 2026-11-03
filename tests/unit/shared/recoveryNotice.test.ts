@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { recoveryNoticeSchema, recoveryNoticesSchema } from '../../../src/shared/recoveryNotice'
+import { pastePermissionNoticeCodeSchema, recoveryNoticeEventSchema, recoveryNoticeSchema, recoveryNoticesSchema } from '../../../src/shared/recoveryNotice'
 
 const ALL_CODES = [
   { code: 'SETTINGS_RECOVERED' },
@@ -48,4 +48,12 @@ describe('recoveryNoticesSchema', () => {
       recoveryNoticesSchema.parse([...ALL_CODES, { code: 'SETTINGS_RECOVERED' }]),
     ).toThrow()
   })
+})
+
+it.each([true, false])('carries a cleared=%s event without accepting private detail or non-permission dismissals', cleared => {
+  expect(recoveryNoticeEventSchema.parse({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared }))
+    .toEqual({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared })
+  expect(recoveryNoticeEventSchema.safeParse({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared, text: 'private' }).success).toBe(false)
+  expect(pastePermissionNoticeCodeSchema.safeParse('AUTOMATION_PERMISSION_REQUIRED').success).toBe(true)
+  expect(pastePermissionNoticeCodeSchema.safeParse('HISTORY_RECOVERED').success).toBe(false)
 })

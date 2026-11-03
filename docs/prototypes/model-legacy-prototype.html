@@ -1,0 +1,250 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Claude Code's and Codex's model menus list every model the provider ever named, with the retired ones
+  marked Unavailable (Fable 5.1 three times on Zach's laptop: `fable`, plus the retired `claude-fable-5-1` and
+  `claude-fable-5-1[1m]`). Zach wants the newest model of each line at the top, older ones in a collapsed Legacy
+  section, unavailable ones gone, and a one-line note in a thread whose model was moved. How should Legacy open?
+
+  Three variants on ?variant=a|b|c (the bar at the top, or the arrow keys):
+   a  Disclosure.  The list ends with a Legacy row and its count. A press opens the older models in place, under it.
+   b  Step.        The list ends with "Legacy models ›". A press shows them alone under a back control, the way
+                   OpenCode's model sources open today.
+   c  Switch.      Latest | Legacy under the search line swaps the whole list.
+  In all three, search finds legacy models too, a starred legacy model sits at the top with the newest (Owl's
+  favourites, ADR-0147), and a provider that is not connected lists nothing and says so.
+
+  The iPhone mock is the thread's model menu: a native menu with a Legacy submenu. The iPhone has no favourites.
+  The thread mock shows the note a moved thread carries.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - newest models and Legacy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.235 0.018 280); --surface: oklch(0.26 0.019 280); --surface-raised: oklch(0.305 0.021 280);
+  --surface-overlay: oklch(0.33 0.022 280); --sidebar: oklch(0.205 0.016 282);
+  --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 272); --text-muted: oklch(0.72 0.014 265); --text-faint: oklch(0.675 0.012 270);
+  --border: oklch(0.42 0.03 270); --hairline: color-mix(in srgb, var(--border) 60%, transparent);
+  --accent: oklch(0.79 0.13 220); --accent-text: oklch(0.86 0.09 215); --accent-surface: oklch(0.4 0.06 230);
+  --hover: color-mix(in srgb, var(--accent-surface) 70%, transparent); --selected: oklch(0.35 0.04 262);
+  --star: oklch(0.83 0.15 85);
+  --provider-claude: #e3b58e; --provider-codex: #d7dbe1;
+  --shadow: 0 16px 48px rgb(0 0 0 / 60%);
+  --ios-menu: rgb(40 40 44 / 96%); --ios-sep: rgb(255 255 255 / 12%); --ios-text: #fff; --ios-faint: rgb(235 235 245 / 60%);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --surface-raised: oklch(0.955 0.006 85);
+  --surface-overlay: oklch(0.945 0.007 85); --sidebar: oklch(0.955 0.008 85);
+  --text: oklch(0.235 0.014 75); --text-2: oklch(0.36 0.014 75); --text-muted: oklch(0.5 0.014 75); --text-faint: oklch(0.535 0.015 78);
+  --border: oklch(0.86 0.012 80); --accent: oklch(0.52 0.13 235); --accent-text: oklch(0.42 0.1 235);
+  --accent-surface: oklch(0.9 0.04 235); --selected: oklch(0.92 0.02 250); --star: oklch(0.62 0.15 70);
+  --provider-claude: #b4642f; --provider-codex: #3c4048; --shadow: 0 16px 40px rgb(0 0 0 / 18%);
+  --ios-menu: rgb(242 242 247 / 97%); --ios-sep: rgb(60 60 67 / 18%); --ios-text: #000; --ios-faint: rgb(60 60 67 / 60%);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--text); font: 14px/1.4 var(--font-ui); }
+.bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px;
+  background: #111; color: #eee; font-size: 13px; border-bottom: 1px solid #333; }
+.bar button { font: inherit; color: #eee; background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: #0a5e8a; border-color: #2a8fc8; }
+.bar b { margin-right: 4px; }
+.bar .sep { width: 1px; height: 20px; background: #444; margin: 0 4px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; padding: 20px; max-width: 1180px; margin: 0 auto; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px; } }
+h2 { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
+.explain { color: var(--text-muted); font-size: 13px; margin: 0 0 12px; max-width: 62ch; }
+
+/* Desktop menu */
+.menu { display: grid; grid-template-columns: 52px 1fr; width: min(380px, 100%); height: 440px; background: var(--surface-overlay);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.rail { background: var(--surface-raised); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+.rail button { height: 40px; border: 0; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; display: grid; place-items: center; font: 600 14px var(--font-ui); }
+.rail button[aria-selected='true'] { background: var(--selected); color: var(--text); }
+.mark-claude { color: var(--provider-claude); } .mark-codex { color: var(--provider-codex); }
+.panel { display: flex; flex-direction: column; min-width: 0; }
+.search { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--hairline); color: var(--text-faint); }
+.search input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--text); font: inherit; }
+.seg { display: flex; gap: 4px; padding: 8px 10px 0; }
+.seg button { flex: 1; font: 500 13px var(--font-ui); padding: 5px; border-radius: 7px; border: 1px solid var(--hairline); background: transparent; color: var(--text-muted); cursor: pointer; }
+.seg button[aria-pressed='true'] { background: var(--selected); color: var(--text); border-color: var(--border); }
+.list { flex: 1; overflow: auto; padding: 6px; }
+.row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.row:hover { background: var(--hover); }
+.row[aria-selected='true'] { background: var(--selected); }
+.row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row small { color: var(--text-faint); font-size: 12px; }
+.star { color: var(--text-faint); font-size: 14px; width: 18px; text-align: center; }
+.star.on { color: var(--star); }
+.check { color: var(--accent-text); width: 14px; }
+.legacy-head { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 6px; padding: 8px 10px; border: 0; border-top: 1px solid var(--hairline); border-radius: 0 0 8px 8px;
+  background: transparent; color: var(--text-muted); font: 500 13px var(--font-ui); cursor: pointer; text-align: left; }
+.legacy-head:hover { color: var(--text); }
+.legacy-head .count { margin-left: auto; color: var(--text-faint); }
+.group { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); padding: 10px 10px 4px; }
+.step { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--hairline); }
+.step button { font: 500 13px var(--font-ui); background: transparent; border: 0; color: var(--accent-text); cursor: pointer; padding: 0; }
+.step b { margin-left: 4px; } .step span { margin-left: auto; color: var(--text-faint); font-size: 12px; }
+.note { padding: 8px 12px 10px; border-top: 1px solid var(--hairline); color: var(--text-muted); font-size: 12px; }
+.empty { color: var(--text-muted); padding: 14px 10px; font-size: 13px; }
+
+/* iPhone */
+.phone { width: 320px; max-width: 100%; height: 600px; border-radius: 42px; border: 10px solid #000; background: var(--canvas); position: relative; overflow: hidden; margin: 0 auto; }
+.phone .thread { position: absolute; inset: 40px 12px 70px; color: var(--text-2); font-size: 13px; }
+.phone .chip { position: absolute; left: 14px; bottom: 18px; display: flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); border: 1px solid var(--border); font-size: 13px; cursor: pointer; }
+.ios-menu { position: absolute; left: 12px; bottom: 60px; width: 250px; background: var(--ios-menu); backdrop-filter: blur(20px); border-radius: 14px; overflow: hidden; color: var(--ios-text); font: 15px -apple-system, system-ui, sans-serif; box-shadow: 0 10px 40px rgb(0 0 0 / 35%); max-height: 470px; overflow-y: auto; }
+.ios-menu .h { font-size: 12px; color: var(--ios-faint); padding: 8px 14px 4px; }
+.ios-menu button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-top: 0.5px solid var(--ios-sep); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ios-menu .tick { width: 16px; font-weight: 700; }
+.ios-menu .chev { margin-left: auto; color: var(--ios-faint); transition: transform .2s; }
+.ios-menu .open .chev { transform: rotate(90deg); }
+.ios-menu .sub { background: rgb(127 127 127 / 10%); }
+.ios-menu .sub button { padding-left: 38px; }
+
+/* Thread note */
+.transcript { background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; padding: 16px; max-width: 640px; }
+.msg { margin: 0 0 12px; color: var(--text-2); }
+.msg.user { margin-left: auto; width: fit-content; max-width: 80%; background: var(--surface-raised); padding: 8px 12px; border-radius: 12px; color: var(--text); }
+.moved { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: 12.5px; margin: 14px 0; }
+.moved::before, .moved::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }
+.stack { display: grid; gap: 28px; }
+</style>
+</head>
+<body>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <b>Legacy:</b>
+  <button data-variant="a">a · Disclosure</button>
+  <button data-variant="b">b · Step</button>
+  <button data-variant="c">c · Switch</button>
+  <span class="sep"></span>
+  <button id="star" aria-pressed="true">Sonnet 5 starred</button>
+  <button id="offline" aria-pressed="false">Claude Code not connected</button>
+  <button id="theme" aria-pressed="false">Light</button>
+</div>
+<main>
+  <div class="stack">
+    <section>
+      <h2>Desktop: composer model menu</h2>
+      <p class="explain" id="variant-explain"></p>
+      <div class="menu" id="menu"></div>
+    </section>
+    <section>
+      <h2>Desktop and iPhone: a thread whose model was moved</h2>
+      <p class="explain">The thread was on Opus 5.5 with 1M context, which Claude Code no longer lists. On Sotto's next start the thread moves to the newest Opus and this line marks where. It is part of the thread's history and says nothing again.</p>
+      <div class="transcript">
+        <p class="msg">Done. The fixture now covers the empty branch, and the suite passes.</p>
+        <div class="moved" role="note">Claude Code no longer offers Opus 5.5 with 1M context, so this thread now uses Opus 5.5.</div>
+        <p class="msg user">Now add the same for the Codex adapter.</p>
+      </div>
+      <p class="explain" style="margin-top:10px">Settings roles and New threads start with move the same way, with no note: the row just shows the new model.</p>
+    </section>
+  </div>
+  <section>
+    <h2>iPhone: thread model menu</h2>
+    <p class="explain">A native menu. Legacy is a submenu, closed until pressed. Tap the chip.</p>
+    <div class="phone">
+      <div class="thread">
+        <p class="msg">Done. The fixture now covers the empty branch.</p>
+        <div class="moved" role="note">Claude Code no longer offers Opus 5.5 with 1M context, so this thread now uses Opus 5.5.</div>
+      </div>
+      <div class="ios-menu" id="ios" hidden></div>
+      <div class="chip" id="chip"><span class="mark-claude">✳</span><span id="chip-name">Opus 5.5</span></div>
+    </div>
+  </section>
+</main>
+<script>
+const CATALOG = {
+  claude: { name: 'Claude Code', mark: '✳',
+    latest: ['Default (recommended)', 'Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5', 'Fable 5.1'],
+    legacy: ['Fable 5', 'Opus 5', 'Sonnet 5', 'Opus 4.8', 'Opus 4.7', 'Opus 4.6', 'Sonnet 4.6', 'Haiku 4.5'] },
+  codex: { name: 'Codex', mark: '◎',
+    latest: ['GPT-6.1-Sol', 'GPT-6.1 Terra', 'GPT-6-Astra', 'GPT-6-Luna'],
+    legacy: ['GPT-6-Sol', 'GPT-5.6-Sol', 'GPT-5.6-Terra', 'GPT-5.6-Luna'] },
+}
+const EXPLAIN = {
+  a: 'a · Disclosure. The newest model of each line, then a Legacy row with its count. A press opens the older models in place.',
+  b: 'b · Step. The newest models, then "Legacy models ›", which shows the older ones alone under a back control, as OpenCode’s model sources do.',
+  c: 'c · Switch. Latest and Legacy under the search line swap the whole list.',
+}
+const state = { variant: new URLSearchParams(location.search).get('variant') || 'a', provider: 'claude', chosen: 'Opus 5.5', query: '', legacyOpen: false, legacyTab: false, starred: true, offline: false, iosOpen: false, iosLegacy: false }
+const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content }
+const isStarred = (p, m) => state.starred && p === 'claude' && m === 'Sonnet 5'
+function row(p, m, legacy) {
+  const chosen = m === state.chosen
+  return `<button class="row" role="option" aria-selected="${chosen}" data-model="${m}"><span class="check">${chosen ? '✓' : ''}</span><span class="name">${m}</span>${legacy && isStarred(p, m) ? '<small>Legacy</small>' : ''}<span class="star ${isStarred(p, m) ? 'on' : ''}">${isStarred(p, m) ? '★' : '☆'}</span></button>`
+}
+function renderMenu() {
+  const menu = document.getElementById('menu'); const v = state.variant; const p = state.provider; const c = CATALOG[p]
+  const offline = state.offline && p === 'claude'
+  const words = state.query.toLowerCase().split(/\s+/).filter(Boolean)
+  const match = m => words.every(w => m.toLowerCase().includes(w))
+  // A starred legacy model sits at the top, with the newest.
+  const top = [...c.latest, ...c.legacy.filter(m => isStarred(p, m))]
+  const older = c.legacy.filter(m => !isStarred(p, m))
+  let body = ''
+  if (offline) body = `<div class="list"><p class="empty">Claude Code is not connected. Connect it in Settings › Providers to choose a model.</p></div>`
+  else if (words.length) {
+    const a = top.filter(match), b = older.filter(match)
+    body = `<div class="list" role="listbox">${a.map(m => row(p, m, c.legacy.includes(m))).join('')}${b.length ? `<div class="group">Legacy</div>${b.map(m => row(p, m, true)).join('')}` : ''}${!a.length && !b.length ? '<p class="empty">No matching models.</p>' : ''}</div>`
+  } else if (v === 'a') {
+    body = `<div class="list" role="listbox">${top.map(m => row(p, m, c.legacy.includes(m))).join('')}
+      <button class="legacy-head" id="legacy-toggle" aria-expanded="${state.legacyOpen}"><span>${state.legacyOpen ? '⌄' : '›'}</span>Legacy<span class="count">${older.length} models</span></button>
+      ${state.legacyOpen ? older.map(m => row(p, m, true)).join('') : ''}</div>`
+  } else if (v === 'b') {
+    body = state.legacyOpen
+      ? `<div class="step"><button id="legacy-back">‹ ${c.name}</button><b>Legacy</b><span>${older.length} models</span></div><div class="list" role="listbox">${older.map(m => row(p, m, true)).join('')}</div>`
+      : `<div class="list" role="listbox">${top.map(m => row(p, m, c.legacy.includes(m))).join('')}<button class="legacy-head" id="legacy-toggle"><span></span>Legacy models<span class="count">${older.length} ›</span></button></div>`
+  } else {
+    body = `<div class="seg"><button id="tab-latest" aria-pressed="${!state.legacyTab}">Latest</button><button id="tab-legacy" aria-pressed="${state.legacyTab}">Legacy · ${older.length}</button></div>
+      <div class="list" role="listbox">${(state.legacyTab ? older : top).map(m => row(p, m, c.legacy.includes(m))).join('')}</div>`
+  }
+  const note = p === 'claude' ? 'This thread stays with Claude Code.' : 'Choosing a Codex model starts a new thread.'
+  menu.replaceChildren(el(`<div class="rail" role="tablist">${['claude', 'codex'].map(id => `<button role="tab" data-provider="${id}" aria-selected="${id === p}" class="mark-${id}" title="${CATALOG[id].name}">${CATALOG[id].mark}</button>`).join('')}</div>
+    <div class="panel"><div class="search">⌕<input id="q" placeholder="Search ${c.name} models" value="${state.query}"></div>${body}<p class="note">${note}</p></div>`))
+  document.getElementById('variant-explain').textContent = EXPLAIN[v]
+  document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', b.dataset.variant === v))
+  const q = document.getElementById('q'); q.oninput = () => { state.query = q.value; renderMenu(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length) }
+}
+function renderIos() {
+  const ios = document.getElementById('ios'); ios.hidden = !state.iosOpen
+  document.getElementById('chip-name').textContent = state.chosen
+  if (!state.iosOpen) return
+  const c = CATALOG.claude
+  const item = (m, sub) => `<button data-ios="${m}"><span class="tick">${m === state.chosen ? '✓' : ''}</span>${m}</button>`
+  ios.replaceChildren(el(`<div class="h">Claude Code</div>${c.latest.map(m => item(m)).join('')}
+    <div class="${state.iosLegacy ? 'open' : ''}"><button id="ios-legacy"><span class="tick"></span>Legacy<span class="chev">›</span></button></div>
+    ${state.iosLegacy ? `<div class="sub">${c.legacy.map(m => item(m, true)).join('')}</div>` : ''}`))
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, .chip'); if (!t) { if (state.iosOpen && !e.target.closest('.ios-menu')) { state.iosOpen = false; renderIos() } return }
+  if (t.dataset.variant) { state.variant = t.dataset.variant; state.legacyOpen = false; state.legacyTab = false; history.replaceState(null, '', `?variant=${t.dataset.variant}`) }
+  else if (t.dataset.provider) { state.provider = t.dataset.provider; state.legacyOpen = false; state.legacyTab = false; state.query = '' }
+  else if (t.dataset.model) state.chosen = t.dataset.model
+  else if (t.id === 'legacy-toggle') state.legacyOpen = !state.legacyOpen
+  else if (t.id === 'legacy-back') state.legacyOpen = false
+  else if (t.id === 'tab-latest') state.legacyTab = false
+  else if (t.id === 'tab-legacy') state.legacyTab = true
+  else if (t.id === 'star') { state.starred = !state.starred; t.setAttribute('aria-pressed', state.starred) }
+  else if (t.id === 'offline') { state.offline = !state.offline; t.setAttribute('aria-pressed', state.offline) }
+  else if (t.id === 'theme') { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : ''; t.setAttribute('aria-pressed', light) }
+  else if (t.id === 'chip') { state.iosOpen = !state.iosOpen; state.iosLegacy = false }
+  else if (t.id === 'ios-legacy') state.iosLegacy = !state.iosLegacy
+  else if (t.dataset.ios) { state.chosen = t.dataset.ios; state.iosOpen = false }
+  renderMenu(); renderIos()
+})
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input')) return
+  const order = ['a', 'b', 'c']; const i = order.indexOf(state.variant)
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { state.variant = order[(i + (e.key === 'ArrowRight' ? 1 : 2)) % 3]; state.legacyOpen = false; state.legacyTab = false; history.replaceState(null, '', `?variant=${state.variant}`); renderMenu() }
+})
+renderMenu(); renderIos()
+</script>
+</body>
+</html>

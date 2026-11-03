@@ -46,6 +46,21 @@ describe('HotkeyManager primary shortcut', () => {
     expect(active.size).toBe(0)
   })
 
+  it('lets the primary go on standby and takes it back, whatever a suspension or replace does meanwhile', () => {
+    const { active, adapter } = createAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'darwin')
+    manager.replace('Control+Shift+Space')
+    manager.standby(true)
+    expect(active.has('Control+Shift+Space')).toBe(false)
+    manager.suspend(true)
+    manager.suspend(false)
+    expect(manager.replace('Control+Alt+Space')).toEqual({ ok: true })
+    expect(active.size).toBe(0)
+    expect(manager.current()).toBe('Control+Alt+Space')
+    manager.standby(false)
+    expect([...active.keys()]).toEqual(['Control+Alt+Space'])
+  })
+
   it('keeps Linux settings without claiming a global shortcut or Escape', () => {
     const { adapter } = createAdapter()
     const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'linux')
@@ -124,11 +139,19 @@ describe('HotkeyManager cancellable-session Escape', () => {
     const manager = new HotkeyManager(adapter, vi.fn(), vi.fn())
 
     for (const status of ['requesting-permission', 'listening', 'processing'] as const) {
-      syncEscapeForWidgetSnapshot(manager, { status, cancellable: true })
+      expect(syncEscapeForWidgetSnapshot(manager, { status, cancellable: true })).toBe(true)
       expect(active.has('Escape')).toBe(true)
-      syncEscapeForWidgetSnapshot(manager, { status, cancellable: false })
+      expect(syncEscapeForWidgetSnapshot(manager, { status, cancellable: false })).toBe(false)
       expect(active.has('Escape')).toBe(false)
     }
+  })
+
+  it('answers that Escape is not held when another app already has it, so the widget keeps its cancel button', () => {
+    const { active, adapter } = createAdapter((accelerator) => accelerator !== 'Escape')
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn())
+
+    expect(syncEscapeForWidgetSnapshot(manager, { status: 'listening', cancellable: true })).toBe(false)
+    expect(active.has('Escape')).toBe(false)
   })
 
   it('registers Escape only after listening begins and invokes cancellation', () => {

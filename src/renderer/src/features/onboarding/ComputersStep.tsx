@@ -68,7 +68,8 @@ export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsCh
           <p className="tt-paragraph"><Trans>Sotto lists the computers on your tailnet and the hosts in your SSH configuration, and sets Sotto up on the one you choose.</Trans></p>
         </div>
       )}
-      <Button ref={addButton} variant={hosts.length > 0 ? 'secondary' : 'primary'} disabled={!bridge} onClick={() => setAdding(true)}>
+      {/* Most people use one computer, so the filled button is the footer's Skip for now (#1824). */}
+      <Button ref={addButton} variant="secondary" disabled={!bridge} onClick={() => setAdding(true)}>
         <Plus aria-hidden="true" size={17} />
         {hosts.length > 0 ? t`Add another computer` : t`Add a computer`}
       </Button>

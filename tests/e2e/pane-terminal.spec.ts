@@ -51,11 +51,12 @@ test('a pane opens its own terminal below the composer, keeps it running while h
 
     const pane = page.locator('.thread-pane').first()
     const threadId = (await pane.getAttribute('data-thread-id'))!
-    const toggle = pane.locator('[data-pane-terminal-toggle]')
-    await expect(toggle).toHaveAccessibleName('Terminal drawer')
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    // The drawer's symbol is in the pane's header (ADR-0182), pressed while it is open, with its keys.
+    const toggle = pane.getByRole('button', { name: 'Terminal drawer', exact: true })
+    const drawerShown = (): Promise<string | null> => toggle.getAttribute('aria-pressed')
+    expect(await drawerShown()).toBe('false')
+    await expect(toggle).toHaveAttribute('aria-keyshortcuts', 'Control+J')
     await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     const drawer = page.locator('.pane-terminal')
     // Opening starts a shell by itself: no empty "Start terminal" step.
     await expect(drawer.getByRole('tab', { selected: true })).toBeVisible()
@@ -110,7 +111,7 @@ test('a pane opens its own terminal below the composer, keeps it running while h
     await drawer.getByRole('button', { name: /^Close / }).click()
     await drawer.getByRole('button', { name: 'End terminal' }).click()
     await expect(drawer).toHaveCount(0)
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(await drawerShown()).toBe('false')
     await expect.poll(() => drawerSessions(page, threadId, 'drawer')).toEqual([])
   } finally {
     await closeSotto(launched)

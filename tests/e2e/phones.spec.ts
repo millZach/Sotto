@@ -105,17 +105,16 @@ test('Phones: sets up through the checklist, pairs a phone with a code, and clos
     const pairedAt = await page.evaluate(async () => (await window.sotto!.phones!.get()).phones.find(phone => phone.name === 'Zach’s iPhone')!.pairedAt)
     await expect(row).toContainText(`Paired ${new Date(pairedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`)
     await expect(row).toContainText('Not connected')
-    await expect(row.getByRole('switch', { name: 'Can answer: let Zach’s iPhone answer questions and permissions' })).toHaveAttribute('aria-checked', 'false')
+    // Pairing by the code shown is what lets it answer, so the row has no switch for it (ADR-0033).
+    await expect(row).toContainText('Reads and replies. Can answer questions and permissions.')
+    await expect(row.getByRole('switch')).toHaveCount(0)
     const phone = new SocketHostService({ url: base, token: paired.token, expectedHostId: paired.hostId })
     phones.push(phone)
-    expect((await phone.connect()).capabilities.mayAnswer).toBe(false)
+    expect((await phone.connect()).capabilities.mayAnswer).toBe(true)
     await expect(row).toContainText('· Connected')
     await capture('paired', row)
 
-    // Can answer writes the owner's grant; Remove asks first.
-    await row.getByRole('switch', { name: 'Can answer: let Zach’s iPhone answer questions and permissions' }).click()
-    await expect(row).toContainText('Reads and replies. Can answer questions and permissions.')
-    expect((await phone.connect()).capabilities.mayAnswer).toBe(true)
+    // Remove asks first, and is what takes the phone's answers away.
     await row.getByRole('button', { name: 'Remove Zach’s iPhone' }).click()
     const dialog = page.getByRole('dialog', { name: 'Remove Zach’s iPhone?' })
     await expect(dialog.getByRole('button', { name: 'Keep phone' })).toBeFocused()

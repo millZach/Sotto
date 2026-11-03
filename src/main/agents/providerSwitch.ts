@@ -18,7 +18,7 @@ import { sameSnapshot } from './sameSnapshot'
 import { isUsageProviderId, reportsUsageLimits, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import { unavailableProviderQuota } from './providerQuota'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ShortTextTarget, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -91,7 +91,7 @@ export class ConfiguredProviderHost implements AgentHost {
       const handler = host.profileRefusalHandler?.(threadId)
       return handler ? [handler] : []
     })
-    return async (reason: string): Promise<void> => { await Promise.allSettled(handlers.map(async handler => handler(reason))) }
+    return async (reason: string, history?: boolean): Promise<void> => { await Promise.allSettled(handlers.map(async handler => handler(reason, history))) }
   }
   readonly concurrentProviders = true
   private legacyProjectProvider: ProviderId | undefined
@@ -101,6 +101,10 @@ export class ConfiguredProviderHost implements AgentHost {
   private registrationLoad: Promise<void> | undefined
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
+  /** The live-session set the coordinator last named, handed to each provider as it connects; undefined until it names one. */
+  private liveSessions: readonly string[] | undefined
+  /** The settled threads the caller last named, handed to each provider as it connects. */
+  private settled: readonly string[] | undefined
   private readonly slots = new Map<ProviderId, Slot>()
   /** Each provider's models as last named, and the catalog last published from them. */
   private readonly namedModels = new Map<ProviderId, { source: AgentModel[]; connected: boolean; models: AgentModel[] }>()
@@ -482,7 +486,9 @@ export class ConfiguredProviderHost implements AgentHost {
       for (const listener of this.usageListeners) listener(projected)
     }) : undefined
     this.publish()
+    if (this.liveSessions) this.options.hosts[id].keepSessionsLive?.(this.liveSessions)
     if (this.observed) this.options.hosts[id].observeThreads?.(this.observed)
+    if (this.settled) this.options.hosts[id].useSettledThreads?.(this.settled)
     const pending = (async () => {
       try {
         const snapshot = await this.options.hosts[id].connect()
@@ -650,6 +656,12 @@ export class ConfiguredProviderHost implements AgentHost {
     if (!id || this.slots.get(id)!.status.connection !== 'connected') return null
     return await this.options.hosts[id].writeShortText?.(threadId, prompt, signal) ?? null
   }
+  /** The chosen model's own provider writes or nothing does (ADR-0026, ADR-0173), and only while it is connected. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const model = resolveModel(this.aggregate(false).models, this.resolveModelId(target.modelId))
+    if (!model?.providerId || !model.ready || this.slots.get(model.providerId)!.status.connection !== 'connected') return null
+    return await this.options.hosts[model.providerId].writeShortTextOn?.({ ...target, modelId: nativeEntityId(model.providerId, 'model', model.id) }, prompt, signal) ?? null
+  }
   providerForThread(threadId: string): ProviderId | undefined {
     try { return this.owner(threadId) } catch { return undefined }
   }
@@ -765,10 +777,18 @@ export class ConfiguredProviderHost implements AgentHost {
     if (!model?.providerId || !model.ready || this.slots.get(model.providerId)!.status.connection !== 'connected') return
     return this.options.hosts[model.providerId].startThreadSession?.(threadId, { ...draft, modelId: nativeEntityId(model.providerId, 'model', model.id) })
   }
+  useSettledThreads(ids: readonly string[]): void {
+    this.settled = [...ids]
+    for (const [id, slot] of this.slots) if (slot.wanted) this.options.hosts[id].useSettledThreads?.(ids)
+  }
   observeThreads(ids: readonly string[]): void {
     this.observed = [...ids]
     // SottoThreadHost independently maps only the bindings belonging to its adapter.
     for (const [id, slot] of this.slots) if (slot.wanted) this.options.hosts[id].observeThreads?.(ids)
+  }
+  keepSessionsLive(ids: readonly string[]): void {
+    this.liveSessions = [...ids]
+    for (const [id, slot] of this.slots) if (slot.wanted) this.options.hosts[id].keepSessionsLive?.(ids)
   }
   disconnect(provider?: ProviderId): void {
     for (const id of provider ? [provider] : providerIdSchema.options) {

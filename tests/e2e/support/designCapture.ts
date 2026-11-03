@@ -109,7 +109,15 @@ export async function pageBoundProblems(page: Page): Promise<string[]> {
         const label = element.getAttribute('aria-label') || (element.textContent || '').trim().slice(0, 30) || 'control'
         problems.push(element.tagName.toLowerCase() + '-' + label + '-clipped')
       }
-      if (element.scrollWidth > element.clientWidth + tolerance || element.scrollHeight > element.clientHeight + tolerance) {
+      // A decoration drawn round a control on purpose is not its content: the light that runs round Stop while a turn
+      // runs sits a few pixels outside the button (an absolutely placed, aria-hidden span). It is set aside while the
+      // control's own content is measured, then put back as it was.
+      const decorations = [...element.querySelectorAll('[aria-hidden="true"]')].filter(part => getComputedStyle(part).position === 'absolute')
+      const shown = decorations.map(part => part.style.getPropertyValue('display'))
+      for (const part of decorations) part.style.setProperty('display', 'none')
+      const overflowing = element.scrollWidth > element.clientWidth + tolerance || element.scrollHeight > element.clientHeight + tolerance
+      decorations.forEach((part, index) => { if (shown[index]) part.style.setProperty('display', shown[index]); else part.style.removeProperty('display') })
+      if (overflowing) {
         const label = element.getAttribute('aria-label') || (element.textContent || '').trim().slice(0, 30) || 'control'
         problems.push(element.tagName.toLowerCase() + '-' + label + '-content-clipped')
       }
@@ -166,8 +174,11 @@ export async function assertFocusPresentation(locator: Locator): Promise<void> {
   }
   expect(await locator.evaluate((element: unknown) => (globalThis as unknown as { document: { activeElement: unknown } }).document.activeElement === element)).toBe(true)
   expect(await locator.evaluate((element: unknown) => (element as { matches: (selector: string) => boolean }).matches(':focus-visible'))).toBe(true)
+  // A switch rings its track, not the row of words beside it, as macOS does (global.css, October 28, 2026).
   const outline = await locator.evaluate((element: unknown) => {
-    const computed = (globalThis as unknown as { getComputedStyle: (target: unknown) => { outlineWidth: string; outlineStyle: string; outlineColor: string } }).getComputedStyle(element)
+    const host = element as { classList: { contains: (name: string) => boolean }; querySelector: (selector: string) => unknown }
+    const target = host.classList.contains('tt-toggle') ? host.querySelector('.tt-toggle__track') ?? element : element
+    const computed = (globalThis as unknown as { getComputedStyle: (target: unknown) => { outlineWidth: string; outlineStyle: string; outlineColor: string } }).getComputedStyle(target)
     return { width: computed.outlineWidth, style: computed.outlineStyle, color: computed.outlineColor }
   })
   expect(outline.width).toBe('3px')

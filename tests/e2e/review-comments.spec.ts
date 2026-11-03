@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Review comments (#270) in the real window: lines picked in Changes, a comment written under them, the chip on
@@ -65,7 +65,7 @@ test('a review comment goes from Changes to the composer and out with the next p
     await openThreads(page)
     await page.evaluate(() => document.fonts.ready)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tab', { name: 'Changes', exact: true }).click()
     // Files start collapsed to their heads by default (Settings > Git & worktrees); the comment starts from opening one.

@@ -1,12 +1,19 @@
 import { deferred, createBridge, createController, shell, NavigationProbe, openPage, renderApp } from '../../fixtures/renderer/appHarness'
 import React from 'react'
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { App } from '../../../src/renderer/src/App'
 import { AppProvider, createProductionDictationController, useApp, type AppControllerFactory, type AppControllerFactoryBindings } from '../../../src/renderer/src/state/AppContext'
 import { type SottoBridge } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import type { RecoveryNotice, RecoveryNoticeEvent } from '../../../src/shared/recoveryNotice'
+import { RecoveryNoticeCenter } from '../../../src/main/storage/recoveryNoticeCenter'
+import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
+import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
+import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { setPromptText } from './helpers/promptEditor'
 
 it.each(['unmount', 'blur'] as const)('shows dictionary save failures after Settings closes (%s)', async trigger => {
   const pending = deferred<AppSettings>()
@@ -272,6 +279,105 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it.each([
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', 'close'],
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', 'escape'],
+    ['AUTOMATION_PERMISSION_REQUIRED', 'close'],
+    ['AUTOMATION_PERMISSION_REQUIRED', 'escape'],
+  ] as const)('dismisses %s with %s and ignores a replay of the same cause', async (code, action) => {
+    let notify!: (notice: RecoveryNoticeEvent) => void
+    const bridge = createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code }]),
+      onRecoveryNotice: listener => { notify = listener; return () => undefined },
+    })
+    renderApp(bridge)
+    const text = await screen.findByText(/copied the transcript instead of pasting it/i)
+    const dismiss = within(text.closest('.tt-toast')!).getByRole('button', { name: 'Dismiss' })
+    if (action === 'close') await userEvent.click(dismiss)
+    else if (action === 'escape') {
+      dismiss.focus()
+      await userEvent.keyboard('{Escape}')
+    }
+    expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+    expect(bridge.dismissPastePermissionNotice).toHaveBeenCalledWith(code)
+    act(() => notify({ code }))
+    expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', false],
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', true],
+    ['AUTOMATION_PERMISSION_REQUIRED', false],
+    ['AUTOMATION_PERMISSION_REQUIRED', true],
+  ] as const)('keeps %s across outside interaction and shows a later failure after recovery, dismissed=%s', async (code, dismissed) => {
+    const notices = new RecoveryNoticeCenter()
+    notices.publish({ code })
+    const bridge = createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: async () => notices.list(),
+      onRecoveryNotice: listener => notices.subscribe(listener),
+      dismissPastePermissionNotice: vi.fn(async code => { notices.clear(code); return { ok: true as const } }),
+    })
+    renderApp(bridge)
+    const text = await screen.findByText(/copied the transcript instead of pasting it/i)
+    fireEvent.pointerDown(document.body)
+    fireEvent.blur(window)
+    expect(text).toBeVisible()
+    expect(bridge.dismissPastePermissionNotice).not.toHaveBeenCalled()
+    if (dismissed) {
+      await userEvent.click(within(text.closest('.tt-toast')!).getByRole('button', { name: 'Dismiss' }))
+      act(() => notices.publish({ code }))
+      expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+    }
+    act(() => notices.resolve(code))
+    expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+    act(() => notices.publish({ code }))
+    expect(screen.getByText(/copied the transcript instead of pasting it/i)).toBeVisible()
+  })
+
+  it('does not revive a resolved permission notice when the initial list arrives late', async () => {
+    const pending = deferred<readonly RecoveryNotice[]>()
+    let notify!: (notice: RecoveryNoticeEvent) => void
+    const bridge = createBridge({
+      listRecoveryNotices: () => pending.promise,
+      onRecoveryNotice: listener => { notify = listener; return () => undefined },
+    })
+    const { result } = renderHook(() => useApp(), {
+      wrapper: ({ children }) => <AppProvider bridge={bridge} createController={createController}>{children}</AppProvider>,
+    })
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    act(() => notify({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true }))
+    await act(async () => pending.resolve([{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }]))
+    expect(result.current.recoveryNotices).toEqual([])
+  })
+
+  it('clears only paste permission notices when the next prompt is sent', async () => {
+    const bridge = createBridge({ listRecoveryNotices: async () => [
+      { code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }, { code: 'AUTOMATION_PERMISSION_REQUIRED' }, { code: 'HISTORY_RECOVERED' },
+    ] })
+    const state = threadsStateFixture()
+    state.host.threads.forEach(thread => { thread.requests = [] })
+    const command = vi.fn(async () => state)
+    const store = new ThreadDraftStore(command)
+    const row = describeThreads(state, Date.now()).find(thread => thread.thread.id === 'grok-previews')!
+    render(<AppProvider bridge={bridge} createController={createController}>
+      <ThreadComposer row={row} state={state} command={command} store={store} onSend={() => undefined} />
+      <App />
+    </AppProvider>)
+    await screen.findByText(/copied the transcript instead of pasting it.*Automatic paste needs Sotto allowed in System Settings/i)
+    const prompt = screen.getByRole('textbox', { name: 'Prompt' })
+    setPromptText(prompt, 'Keep working')
+    fireEvent.keyDown(prompt, { key: 'Enter' })
+    await waitFor(() => expect(command).toHaveBeenCalled())
+    expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Sotto started with an empty history/)).toBeVisible()
+    expect(bridge.dismissPastePermissionNotice).toHaveBeenCalledTimes(2)
+    store.flushAll()
+  })
+
+  it.each([
     ['ACCESSIBILITY_PERMISSION_REQUIRED', 'accessibility', 'Accessibility'],
     ['AUTOMATION_PERMISSION_REQUIRED', 'automation', 'Automation'],
   ] as const)('opens the macOS pane a %s notice is about', async (code, pane, paneName) => {
@@ -292,6 +398,7 @@ describe('Sotto application onboarding integration', () => {
       button.focus()
       await userEvent.setup().keyboard('{Enter}')
       expect(openSystemSettings).toHaveBeenCalledExactlyOnceWith(pane)
+      expect(screen.getByText(/copied the transcript instead of pasting it/i)).toBeVisible()
     } finally {
       delete window.sotto
     }

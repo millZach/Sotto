@@ -5,11 +5,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { StoreWorker, StoreWorkerOptions, WorkerMessage } from '../../src/main/agents/storeWorker'
-import { READ_PIECE_RECORDS } from '../../src/main/agents/storeWorkerProtocol'
+import { READ_PIECE_RECORDS, type WireWrite } from '../../src/main/agents/storeWorkerProtocol'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
-import type { AgentActivity } from '../../src/shared/agentActivity'
+import { certifyActivityView, cloneActivitySnapshot } from '../../src/main/agents/activitySnapshots'
+import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../src/shared/agentActivity'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
+import { CertifyingProviderHost } from '../fixtures/certifyingProviderHost'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { readsArrived, readsInFlight, storedIn } from '../fixtures/storeWriterEquivalence'
 import { builtStoreWorker } from '../fixtures/storeWorker'
@@ -21,6 +24,14 @@ import { builtStoreWorker } from '../fixtures/storeWorker'
  * each test waits for the read itself (`readsArrived`), never for time.
  */
 const THREAD = 'session-workshop'
+
+/** Publishes as the adapters do, certified, and answers a read of a thread with the very lists it holds, as the switch does. */
+class ReadingProvider extends CertifyingProviderHost {
+  async refreshThread(): Promise<AgentHostSnapshot> {
+    certifyActivityView(this.state, this.state.threads)
+    return cloneActivitySnapshot(this.state)
+  }
+}
 const DOCS = 'session-docs'
 const cleanup: Array<() => Promise<void>> = []
 
@@ -38,13 +49,14 @@ describe('a stored thread read back on the store worker', () => {
    * A workspace whose first run saved `saved` for the workshop thread, reopened over the worker with a provider that has
    * not read it, so the thread is stored. Every observation its provider hears is kept with what the thread held then.
    */
-  async function stored(saved: AgentActivity[], history: () => boolean = () => true, options: { timing?: StoreWorkerOptions['timing']; threads?: number } = {}) {
+  async function stored(saved: AgentActivity[], history: () => boolean = () => true,
+    options: { timing?: StoreWorkerOptions['timing']; threads?: number; provider?: FakeProviderHost; onMain?: boolean } = {}) {
     const directory = await mkdtemp(join(tmpdir(), 'sotto-read-back-'))
     cleanup.push(async () => {
       if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-read-back-')) throw new Error('Unexpected test directory')
       await rm(directory, { recursive: true, force: true })
     })
-    const provider = new FakeProviderHost()
+    const provider = options.provider ?? new FakeProviderHost()
     // More stored threads beside the workshop, each with a record of its own.
     for (let index = 0; index < (options.threads ?? 0); index++) {
       provider.state.threads.push({ id: `session-more-${index}`, projectId: 'project', title: `More ${index}`, modelId: 'fake:model', status: 'idle', messages: [], requests: [],
@@ -56,7 +68,8 @@ describe('a stored thread read back on the store worker', () => {
     await first.connect()
     first.disconnect(); await first.privacyChanged(); first.dispose()
     for (const thread of provider.state.threads) delete thread.activities
-    const host = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined, options.timing ? { path: worker.path, timing: options.timing } : worker.path)
+    const host = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined,
+      options.onMain ? null : options.timing ? { path: worker.path, timing: options.timing } : worker.path)
     cleanup.push(async () => { host.disconnect(); await host.close().catch(() => undefined) })
     const told: { ids: readonly string[]; activities: string[] | undefined }[] = []
     provider.observeThreads = ids => {
@@ -66,7 +79,7 @@ describe('a stored thread read back on the store worker', () => {
     await host.initialize()
     await host.connect()
     const store = (host as unknown as { threadStore: { readonly worker: StoreWorker | undefined } }).threadStore
-    expect(store.worker).toBeDefined()
+    expect(store.worker === undefined).toBe(options.onMain === true)
     expect(shown(host)!.activities).toBeUndefined()
     const disk = (threadId = THREAD) => {
       const reader = new ThreadStore(join(directory, 'threads.sqlite'), undefined, null)
@@ -258,6 +271,90 @@ describe('a stored thread read back on the store worker', () => {
     expect(shownRecords[1]).toMatchObject({ sequence: 1, output: 'Changed' })
     expect(shownRecords.at(-1)).toMatchObject({ id: 'late', sequence: many.length })
     expect(f.provider.observed).toEqual([THREAD])
+  })
+
+  it('reads a stored thread no window looks at on the worker when its provider publishes a record, and saves it as what changed', async () => {
+    const saved = Array.from({ length: READ_PIECE_RECORDS + 20 }, (_, index) => record(`r${index}`, index))
+    const f = await stored(saved)
+    f.host.observeThreads([DOCS])
+    const read = vi.spyOn(ThreadStore.prototype, 'readActivities')
+    const wire = vi.spyOn(f.store.worker! as unknown as { wire(write: unknown, preserved: () => readonly string[]): WireWrite }, 'wire')
+    // A turn its provider runs out of view: the list it holds, one record longer.
+    f.provider.state.threads[0]!.activities = [...structuredClone(saved), record('turn', 0)]
+    f.provider.emit()
+    // The record waits for the list, read on the worker (#1645).
+    expect(readsInFlight(f.host).get(THREAD)?.held).toHaveLength(1)
+    expect(shown(f.host)!.activities).toBeUndefined()
+    await readsArrived(f.host)
+    expect(read).not.toHaveBeenCalled()
+    const ids = [...saved.map(item => item.id), 'turn']
+    expect(shown(f.host)!.activities!.map(item => item.id)).toEqual(ids)
+    expect(shown(f.host)!.activities!.at(-1)).toMatchObject({ id: 'turn', sequence: saved.length })
+    // Its next save sends the worker the one record that changed since the list it read, not the list whole.
+    await f.host.flush()
+    await f.writes.confirmed()
+    const entries = wire.mock.results.flatMap(({ value }) => {
+      const write = value as WireWrite
+      return write.kind === 'activities' ? write.entries : write.kind === 'activity-list' ? [write.entry] : []
+    }).filter(entry => entry.threadId === THREAD)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ base: expect.any(Number) as number, ids })
+    expect('changed' in entries[0]! ? entries[0].changed.map(item => item.id) : undefined).toEqual(['turn'])
+    expect(f.disk().map(item => [item.id, item.sequence])).toEqual(ids.map((id, sequence) => [id, sequence]))
+  })
+
+  /**
+   * A thread at the record limit nobody looks at: its provider publishes the list moved on by one, and a read of it brings
+   * the same certified list before the store worker's list arrives. What the store keeps is what it kept when such a list
+   * was read on main at once, merge for merge (#1645).
+   */
+  it('merges what waited for a record\'s read as main merged it, a read\'s whole, at the record limit', async () => {
+    const saved = Array.from({ length: MAX_AGENT_ACTIVITIES }, (_, index) => record(`r${index + 1}`, index))
+    const run = async (onMain: boolean) => {
+      const provider = new ReadingProvider()
+      const f = await stored(saved, () => true, { provider, onMain })
+      f.host.observeThreads([DOCS])
+      const reads = onMain ? undefined : holdReads(f.store)
+      provider.state.threads[0]!.activities = [record('r0', 0), ...saved.slice(0, -1)]
+      provider.emitActivity()
+      await f.host.refreshThread(THREAD)
+      if (reads) {
+        expect(readsInFlight(f.host).get(THREAD)?.held).toHaveLength(2)
+        reads.release()
+      }
+      await readsArrived(f.host)
+      await f.host.flush()
+      await f.writes.confirmed()
+      return f.disk().map(item => [item.id, item.sequence])
+    }
+    const onMain = await run(true), onWorker = await run(false)
+    expect(onWorker).toEqual(onMain)
+    // The read merged again: the oldest record the publication's merge let go came back, as it did on main.
+    expect(onMain).toHaveLength(MAX_AGENT_ACTIVITIES)
+    expect(onMain.at(-1)).toEqual(['r1', MAX_AGENT_ACTIVITIES + 1])
+  })
+
+  // The switch cuts the list short after its first piece; the read lost with the worker is finished on main from this run's
+  // store, before the switch lets reads go, as a window's is.
+  it('keeps what a record\'s read brings through Keep local history turning off while the list is on its way', async () => {
+    let history = true
+    const saved = Array.from({ length: READ_PIECE_RECORDS + 1 }, (_, index) => record(`r${index}`, index))
+    const f = await stored(saved, () => history)
+    f.host.observeThreads([DOCS])
+    f.provider.state.threads[0]!.activities = [...structuredClone(saved), record('turn', 0)]
+    f.provider.emit()
+    expect(readsInFlight(f.host).get(THREAD)?.held).toHaveLength(1)
+    // The switch follows at once, while the list's second piece is still to come.
+    history = false
+    await f.host.privacyChanged()
+    await readsArrived(f.host)
+    // This run's store holds them now; looked at, the thread reads them back from it.
+    f.host.observeThreads([THREAD])
+    await readsArrived(f.host)
+    expect(shown(f.host)!.activities?.map(item => item.id)).toEqual([...saved.map(item => item.id), 'turn'])
+    f.host.disconnect()
+    await f.host.close()
+    expect(f.disk()).toEqual([])
   })
 
   it('reads on main when the worker goes between the pieces of a list', async () => {

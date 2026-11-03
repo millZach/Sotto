@@ -164,6 +164,16 @@ describe('desktop remote host management over a real socket', () => {
     expect(scheduled).toEqual([])
   })
 
+  it('answers the window\'s read of a remote thread it observes from the copy the observation brought (#996)', async () => {
+    await add()
+    const thread = await remoteThread()
+    const client = desktopWindowClient('desktop-test')
+    const reads = vi.spyOn(SocketHostService.prototype, 'readThreadDetail')
+    await fixture.router.command({ type: 'observe-threads', threadIds: [thread] }, client)
+    expect((await fixture.router.threadDetail(thread))?.threadId).toBe(thread)
+    expect(reads).not.toHaveBeenCalled()
+  })
+
   it('saves, pairs itself, selects, sends only to the remote host and revokes on Forget', async () => {
     const remote = await add()
     expect(fixture.manager.get().hosts[0]!.phase).toBe('connected')
@@ -287,8 +297,11 @@ describe('desktop remote host management over a real socket', () => {
     expect(fixture.host.pairing.verifyToken(fixture.credentials.get('remote-host:' + remote.id))).not.toBe(clientId)
   })
   it('refuses to add a host already saved, under the same route or another, and leaves the saved one connected', async () => {
+    fixture.featuresUsed.length = 0
     const first = await add()
+    expect(fixture.featuresUsed).toEqual(['add-host'])
     await expect(add()).rejects.toThrow('forge is already saved as Forge fixture. Nothing was saved.')
+    expect(fixture.featuresUsed).toEqual(['add-host'])
     const second = connection('forge-again')
     await fixture.manager.command({ type: 'add', host: second })
     expect(fixture.manager.get().adding).toMatchObject({ id: second.id, phase: 'error', error: expect.stringContaining('This is the same host as Forge fixture') })

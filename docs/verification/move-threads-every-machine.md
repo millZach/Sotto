@@ -22,7 +22,7 @@ and the 820x560 minimum, with nothing out of bounds and text at 4.5:1 or better 
 - "Watcher's proposal from the user's words…": Sotto's line, "Watcher proposes moving 2 threads to forge. Nothing moves
   until you press Move.", then the preview with both threads Watcher named ticked and the one that stays without a box,
   saying why. From the keyboard, Space unticked one, Tab reached **Move 1 thread**, and Enter moved only the other: the
-  line became "You asked to move 1 thread to forge. Sotto reports its move here.", the boxes went, and the move's card followed.
+  line became "You chose 1 of the threads Watcher proposed moving to forge.", the boxes went, and the move's card followed under its own line. (Changed October 30 in part 4: after part 3b's review it read the same as the move's own line, shown twice.)
 
 | Screenshot | What it shows |
 | --- | --- |

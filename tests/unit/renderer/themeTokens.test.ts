@@ -21,8 +21,9 @@ import {
   type PaintOptions,
   type Rgba,
 } from '../../fixtures/renderer/themeTokenResolver'
-import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
+import { PAINTED_TEXT_PAIRS, paintedContrast, placeholderApartFromText, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 import { visionDistance } from '../../fixtures/renderer/colourVision'
+import { scaleSteps } from '../../fixtures/renderer/scaleSteps'
 
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
 const tokenBlocks = parseTokenBlocks(tokensCss)
@@ -68,6 +69,8 @@ describe('main-window theme tokens', () => {
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(declarations, pair), `${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
     }
+    // The composer's placeholder reads as a hint: dimmer than typed text, not the same ink.
+    expect(placeholderApartFromText(declarations), 'placeholder against typed text').toBeGreaterThanOrEqual(1.2)
   })
 
   it.each(combinations)('%s mode of %s keeps the tinted effort word readable in every colourway', (mode, id) => {
@@ -276,6 +279,8 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/threadsChrome.css',
       'src/renderer/src/agents/workingThreadsLine.css',
       'src/renderer/src/agents/restartStopped.css',
+      'src/renderer/src/agents/settleUndo.css',
+      'src/renderer/src/agents/markup.css',
       'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/features/settings/hostDevices.css',
       'src/renderer/src/features/settings/gitSettings.css',
@@ -328,6 +333,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/providers.css',
       'src/renderer/src/agents/opencodeSources.css',
       'src/renderer/src/agents/ownServers.css',
+      'src/renderer/src/agents/serverMark.css',
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/hostUpdates.css',
       'src/renderer/src/features/updates/updateAll.css',
@@ -345,6 +351,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/components/listeningBars.css',
       'src/renderer/src/features/dictate/dictate.css',
       'src/renderer/src/features/usage/usage.css',
+    'src/renderer/src/features/council/council.css',
       'src/renderer/src/features/performance/mainActivity.css',
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',
@@ -359,6 +366,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/tools/tools.css',
       'src/renderer/src/tools/toolsRail.css',
       'src/renderer/src/tools/paneTerminal.css',
+      'src/renderer/src/popup/popup.css',
     ]
     for (const path of owned) {
       const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
@@ -373,9 +381,15 @@ describe('main-window theme tokens', () => {
     expect(sheets.length).toBeGreaterThan(60)
     // The floating widget keeps its capsule until Zach decides its shape; it is the one sheet this rule leaves alone.
     const undecided = new Set([join(root, 'widget', 'widget.css')])
+    // Corners are written as steps of the scale (ADR-0169), so each is read at the size its step draws.
+    const steps = scaleSteps(tokensCss)
+    const drawn = (value: string): string => value.replace(/var\((--tt-radius-[a-z]+)\)/gu, (step, name: string) => {
+      const size = steps.get(name)
+      return size === undefined ? step : drawn(size)
+    })
     const capsules: string[] = []
     for (const path of sheets) {
-      const css = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+      const css = drawn(readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, ''))
       expect(css.match(/\b9{3,}px|--tt-radius-pill/gu) ?? [], relative(process.cwd(), path)).toEqual([])
       if (undecided.has(path)) continue
       // A corner of 50 pixels or more, or a corner at least half a rule's own height on anything but a square, rounds
@@ -393,5 +407,36 @@ describe('main-window theme tokens', () => {
       }
     }
     expect(capsules).toEqual([])
+  })
+
+  it('writes labels in sentence case: no renderer stylesheet turns words into capitals', () => {
+    const root = join(process.cwd(), 'src/renderer/src')
+    const sheets = (readdirSync(root, { recursive: true }) as string[]).filter(name => name.endsWith('.css')).map(name => join(root, name))
+    const capitals = sheets.filter(path => /text-transform:\s*uppercase/u.test(readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')))
+    expect(capitals.map(path => relative(process.cwd(), path))).toEqual([])
+  })
+
+  it('draws no status edge down a card: its words and buttons say what it needs (ADR-0110, #1830)', () => {
+    const cards = [
+      ['src/renderer/src/agents/requests/requests.css', ['agent-request', 'prototype-ready', 'thread-questions']],
+      ['src/renderer/src/agents/requests/requestDraftRecovery.css', ['request-recovery']],
+      ['src/renderer/src/agents/activity.css', ['thread-lifted']],
+      ['src/renderer/src/agents/clientUpdates.css', ['client-updates']],
+      ['src/renderer/src/agents/providers.css', ['provider-detail__error']],
+      ['src/renderer/src/agents/agents.css', ['agent-error', 'agent-notice']],
+    ] as const
+    const edges: string[] = []
+    for (const [path, names] of cards) {
+      const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+      for (const [, selector = '', body = ''] of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+        // The rule's own subject is the card: its last compound selector names the class or a modifier of it, not a part.
+        const subjects = selector.split(',').map(part => part.trim().split(/\s+|>|\+|~/u).filter(Boolean).at(-1) ?? '')
+        if (!subjects.some(subject => names.some(name => new RegExp(`\\.${name}(?:--[\\w-]+)?(?![\\w-])`, 'u').test(subject)))) continue
+        if (/(?:^|[;\s])(?:border-left|border-inline-start)(?:-color|-width|-style)?\s*:/u.test(body) || /(?:^|[;\s])border-color\s*:/u.test(body)) {
+          edges.push(`${path}: ${selector.trim()}`)
+        }
+      }
+    }
+    expect(edges).toEqual([])
   })
 })

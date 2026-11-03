@@ -2,10 +2,11 @@ import SwiftUI
 import UIKit
 import SottoCore
 
-// The Watcher tab (1B, ADR-0073 amended October 11, 2026): Watcher on the computer that runs it, with its Conversation
-// and the threads it Watches. Zach's picks: one card of what Watcher did for each reply, a row per thread (2B); provider
+// The Watcher tab (1B, ADR-0073 amended October 11, 2026): Watcher's conversation on the computer that runs it, full
+// screen, with no bar over it and no Watched pane (amended November 1, 2026: the threads it watches carry the owl in
+// Threads). Zach's picks: one card of what Watcher did for each reply, a row per thread (2B); provider
 // logos with the quiet owl (3B); a thread's own question or permission card answered here, as the user's own answer to
-// that thread (4B); the keyboard's own microphone key for dictation (7A).
+// that thread (4B); dictation from the box's own mic (ADR-0174), where pick 7A left it to the keyboard's mic key.
 
 /// A card in Watcher's page opened in the request sheet, with where its answer goes.
 struct ReviewedCard: Identifiable {
@@ -17,73 +18,48 @@ struct ReviewedCard: Identifiable {
 struct WatcherView: View {
     @EnvironmentObject var model: AppModel
     let hostID: String
-    @State private var section = Pane.conversation
-    /// Counts presses on the bar's owl, each of which takes the open pane to its top, where Watcher's hero is.
-    @State private var toTop = 0
-    /// The bar has slid away as the user reads down the page; it comes back as they go up (#1278).
-    @State private var barAway = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    /// Counts presses on the Watcher tab while Watcher's page shows, each of which takes the conversation to its top, where
+    /// Watcher's hero is (`MainTabs.reselect`).
+    @Environment(\.pageTop) private var toTop
     @State private var stopPreview: WatcherStopPreview?
-    /// Counts confirmed stops, so the view that carries the alert can give the destructive act a warning buzz.
+    /// Counts presses on Stop Watcher’s threads and confirmed stops, so the view that carries the alert gives the press a
+    /// tap and the destructive act a warning buzz.
+    @State private var stopPresses = 0
     @State private var stopsConfirmed = 0
     @State private var reviewing: ReviewedCard?
-    enum Pane: Hashable { case conversation, watched }
 
     var body: some View {
-        Group {
-            switch section {
-            case .conversation: WatcherConversationPane(hostID: hostID, toTop: toTop, slideBar: slideBar) { reviewing = $0 }
-            case .watched: WatchedPane(hostID: hostID, toTop: toTop, slideBar: slideBar, stopAll: prepareStop)
+        // Watcher opens straight on its conversation, full screen, as any thread does (Zach, November 1, 2026): no bar
+        // over it and no Watched pane beside it.
+        WatcherConversationPane(hostID: hostID, toTop: toTop, stopAll: prepareStop) { reviewing = $0 }
+            .pageGround()
+            .navigationTitle("Watcher")
+            .toolbar(.hidden, for: .navigationBar)
+            .onAppear { model.watcherOnScreen = true }
+            .onDisappear { model.watcherOnScreen = false }
+            // Another computer's Watcher opens on its own conversation, with nothing of this one's open over it.
+            .onChange(of: hostID) { _, _ in stopPreview = nil; reviewing = nil }
+            .sheet(item: $reviewing) { card in
+                RequestSheet(place: card.place, request: card.request).requestSheetDetents()
             }
-        }
-        // The bar keeps its place in the layout while it is away, so the page never jumps as it goes and comes back: it
-        // only slides, up past the screen's top edge.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            let away = barAway
-            WatcherBar(hostID: hostID, section: $section) { slideBar(false); toTop += 1 }
-                .readingWidth()
-                .visualEffect { content, proxy in content.offset(y: away ? -proxy.frame(in: .global).maxY : 0) }
-                .accessibilityHidden(away)
-        }
-        // While the bar is away, glass under the status bar keeps the page's words from running into the clock.
-        .overlay(alignment: .top) {
-            Color.clear.frame(height: 0)
-                .background { Color.clear.glass(in: Rectangle()).ignoresSafeArea(edges: .top) }
-                .opacity(barAway ? 1 : 0)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-        .pageGround()
-        .navigationTitle("Watcher")
-        .toolbar(.hidden, for: .navigationBar)
-        .onAppear { model.watcherOnScreen = true; barAway = false }
-        .onDisappear { model.watcherOnScreen = false }
-        // Another computer's Watcher opens on its own Conversation, with nothing of this one's open over it.
-        .onChange(of: hostID) { _, _ in section = .conversation; stopPreview = nil; reviewing = nil; barAway = false }
-        .onChange(of: section) { _, _ in barAway = false }
-        .onChange(of: voiceOver) { _, on in if on { barAway = false } }
-        .sheet(item: $reviewing) { card in
-            RequestSheet(place: card.place, request: card.request)
-                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
-        }
-        // Stop all asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26 draws a
-        // confirmation dialog as a menu from the page and leaves its Cancel out, so this is an alert.
-        .alert(WatcherWords.stopQuestion(stopPreview?.targets.count ?? 0),
-               isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
-               presenting: stopPreview) { preview in
-            Button(WatcherWords.stopButton(preview.targets.count), role: .destructive) {
-                stopsConfirmed += 1
-                Task { await model.confirmWatcherStop(preview, on: hostID) }
+            // Stop Watcher’s threads asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26
+            // draws a confirmation dialog as a menu from the page and leaves its Cancel out, so this is an alert.
+            .alert(WatcherWords.stopQuestion(stopPreview?.targets.count ?? 0),
+                   isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
+                   presenting: stopPreview) { preview in
+                Button(WatcherWords.stopButton(preview.targets.count), role: .destructive) {
+                    stopsConfirmed += 1
+                    Task { await model.confirmWatcherStop(preview, on: hostID) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { preview in
+                Text(stopMessage(preview))
             }
-            Button("Cancel", role: .cancel) {}
-        } message: { preview in
-            Text(stopMessage(preview))
-        }
-        .sensoryFeedback(.warning, trigger: stopsConfirmed)
+            .sensoryFeedback(.impact(weight: .medium), trigger: stopPresses)
+            .sensoryFeedback(.warning, trigger: stopsConfirmed)
     }
 
-    /// What stays, then each thread Stop all would stop and where it runs: "Fix login test, Claude Code on Laptop".
+    /// What stays, then each thread the stop would stop and where it runs: "Fix login test, Claude Code on Laptop".
     private func stopMessage(_ preview: WatcherStopPreview) -> String {
         let threads = preview.targets.map { target -> String in
             let computer = model.computerName(target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
@@ -93,15 +69,10 @@ struct WatcherView: View {
         return ([String(localized: "Threads you started or took over keep going, and so does Watcher."), ""] + threads).joined(separator: "\n")
     }
 
-    /// Slides the bar away, or back. Under Reduce Motion it goes and comes back without sliding, and with VoiceOver on it
-    /// stays, where VoiceOver can always reach the switch.
-    private func slideBar(_ away: Bool) {
-        guard away != barAway, !(away && voiceOver) else { return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { barAway = away }
-    }
-
-    /// Stop all asks first: the computer says which threads it would stop, and nothing stops until the user confirms.
+    /// Stop Watcher’s threads, from Watcher's settings sheet, asks first: the computer says which threads it would stop,
+    /// and nothing stops until the user confirms.
     private func prepareStop() {
+        stopPresses += 1
         Task {
             guard let preview = await model.prepareWatcherStop(hostID) else { return }
             if preview.targets.isEmpty { model.feedback = String(localized: "Watcher has no threads of its own to stop. Nothing was stopped.") }
@@ -112,71 +83,16 @@ struct WatcherView: View {
 
 // MARK: - Header
 
-/// The slim bar pinned over Watcher's page in glass (#1275, Zach's pick A of
-/// `docs/prototypes/iphone-watcher-room-prototype.html`): the owl, which goes to the top of the page where Watcher's hero
-/// is, and Conversation | Watched. Watcher's name, state and computer scroll away with the page, in `WatcherHero`, so
-/// the conversation has the room, as a thread's title does on its page.
-private struct WatcherBar: View {
-    @EnvironmentObject var model: AppModel
-    /// Watched for Watcher's page, which publishes on its own store, not on the model.
-    @EnvironmentObject var watcherStore: WatcherStore
-    let hostID: String
-    @Binding var section: WatcherView.Pane
-    let toTop: () -> Void
-    var body: some View {
-        let page = model.watcherPage(hostID)
-        HStack(spacing: Space.s2) {
-            owl
-            SectionSwitch(section: $section, watched: page?.watched.count ?? 0)
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.top, Space.s1)
-        .padding(.bottom, Space.s2)
-        .background {
-            // Glass that reaches up under the status bar, rounded where it meets the page.
-            Color.clear
-                .glass(in: UnevenRoundedRectangle(bottomLeadingRadius: Radius.xl, bottomTrailingRadius: Radius.xl, style: .continuous))
-                .ignoresSafeArea(edges: .top)
-        }
-        // The bar as a whole, from the status bar to where its glass ends over the page, so a journey reads where the bar
-        // ends from the bar itself. VoiceOver still reads the owl and the switch.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("watcher-bar")
-    }
-    /// Once the hero has scrolled off, Watcher's state is the light on the owl, and VoiceOver reads it as the owl's value.
-    private var owl: some View {
-        let state = WatcherStatePill.state(model, hostID)
-        return Button(action: toTop) {
-            WatcherOwlMark(size: 22)
-                .foregroundStyle(Palette.ink)
-                .frame(width: 44, height: 44)
-                .background(Palette.fillSoft, in: Circle())
-                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
-                .overlay(alignment: .topTrailing) {
-                    Light(tone: state.tone, size: 7, breathing: state.tone == .accent)
-                        .padding(2)
-                        .background(Palette.raised, in: Circle())
-                        .offset(x: -1, y: 2)
-                }
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressStyle())
-        .accessibilityLabel(WatcherWords.toTop)
-        .accessibilityValue(state.word)
-        .accessibilityIdentifier("watcher-to-top")
-    }
-}
-
-/// Watcher's name, its state, its model and computer, and what it may do without asking, at the top of each of its
-/// panes, where they scroll away with the page as a thread's title does (#1275, #1276, pick A). The bar's owl brings
-/// them back.
+/// Watcher's name, its state, its model and computer, and the machines line, at the top of Watcher's conversation, where
+/// they scroll away with the page as a thread's title does (#1275, #1276, pick A). A press on the Watcher tab while
+/// Watcher shows brings them back.
 private struct WatcherHero: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     @Environment(\.dynamicTypeSize) private var typeSize
     let hostID: String
-    /// Where the bar's owl scrolls each pane to.
+    /// Where a press on the Watcher tab scrolls the conversation to.
     static let id = "watcher-hero"
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -195,12 +111,12 @@ private struct WatcherHero: View {
             }
             if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
             WatcherMachinesLine(hostID: hostID)
-            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil {
-                WatcherPermissionChip(hostID: hostID).padding(.top, Space.s1)
-            }
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.top, Space.s2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The page's top margin is the hero's own, so a press on the tab brings the page back to its top, clear of the
+        // fade under the status bar, not the hero up against it.
+        .padding(.top, Space.s4)
         .id(Self.id)
     }
     private var title: some View {
@@ -229,7 +145,7 @@ private struct WatcherHero: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 subtitleText
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.muted)
+                Image(systemName: "chevron.up.chevron.down").iconFont(9, weight: .semibold).foregroundStyle(Palette.muted)
                     .accessibilityHidden(true)
             }
         }
@@ -473,58 +389,6 @@ private struct WatcherStatePill: View {
     }
 }
 
-/// Conversation | Watched: two halves of one capsule, the chosen one raised.
-private struct SectionSwitch: View {
-    @Binding var section: WatcherView.Pane
-    let watched: Int
-    @Namespace private var knob
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var picks = 0
-    var body: some View {
-        HStack(spacing: 4) {
-            option(.conversation, String(localized: "Conversation", comment: "One of Watcher's two panes"), count: nil, id: "watcher-section-conversation")
-            option(.watched, String(localized: "Watched", comment: "One of Watcher's two panes: the threads it watches"), count: watched, id: "watcher-section-watched")
-        }
-        .padding(4)
-        .background(Palette.fillSoft, in: Capsule())
-        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-        .sensoryFeedback(.selection, trigger: picks)
-    }
-    private func option(_ value: WatcherView.Pane, _ title: String, count: Int?, id: String) -> some View {
-        let chosen = section == value
-        return Button {
-            picks += 1
-            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) { section = value }
-        } label: {
-            HStack(spacing: 6) {
-                Text(title).font(.sotto(.body, .semibold))
-                if let count { Text("\(count)").font(.sotto(.body)).foregroundStyle(Palette.muted) }
-            }
-            .lineLimit(1)
-            .foregroundStyle(chosen ? Palette.ink : Palette.muted)
-            .padding(.horizontal, Space.s3)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background {
-                if chosen {
-                    Capsule().fill(Palette.surface).overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                        .matchedGeometryEffect(id: "watcher-section-knob", in: knob)
-                }
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(PressStyle())
-        .accessibilityLabel(spoken(title, count: count))
-        .accessibilityAddTraits(chosen ? [.isSelected] : [])
-        .accessibilityIdentifier(id)
-    }
-    /// "Watched, 3 threads", for VoiceOver.
-    private func spoken(_ title: String, count: Int?) -> String {
-        guard let count else { return title }
-        let threads = count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
-        return String(localized: "\(title), \(threads)", comment: "For VoiceOver. The first %@ is a Watcher pane's name; the second a count of threads, such as 3 threads")
-    }
-}
-
 // MARK: - Conversation
 
 /// Where Watcher's conversation stands, kept outside SwiftUI's state so scrolling never redraws it. Frames are global.
@@ -532,10 +396,13 @@ private final class WatcherFollow {
     /// Whether this iOS says when the user lets go of the page, as iOS 18 and later do. iOS 17 can't, and keeps the page's
     /// end where it was as the page grows, so there where the page stands is decided as its end moves, as a thread's is.
     static let seesLetGo: Bool = { if #available(iOS 18.0, *) { return true } else { return false } }()
-    /// The bottom of the newest words, and of the page.
+    /// The bottom of the newest words, and of the page: under Watcher's working line and the user's follow-ups.
     var newest: CGFloat = 0
     var end: CGFloat = 0
-    /// The bottom of the header, and the top of the box.
+    /// The bottom of the last message or the words on their way, above what Watcher did for it: what following must leave
+    /// on screen. Nil on a page with neither.
+    var lastWords: CGFloat?
+    /// The bottom of the status bar, where the page's top shows, and the top of the box.
     var top: CGFloat = 0
     var dockTop: CGFloat = .greatestFiniteMagnitude
     /// Where each card waiting on the user sits, by the card's key.
@@ -559,14 +426,6 @@ private final class WatcherFollow {
     var missedFollow = false
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
-    /// Which way the user moves the page, for the bar (#1278).
-    var slide = WatcherBarSlide()
-    /// Until when the page moves for the app rather than the user: following new words, or going to the top. iOS 17
-    /// can't say when the user moves the page, so there a move outside these times is theirs.
-    var quietUntil = Date.distantPast
-    func quiet() { quietUntil = Date().addingTimeInterval(0.6) }
-    /// Whether the move the page just made was the user's.
-    var userMoved: Bool { WatcherFollow.seesLetGo ? userScrolling : Date() >= quietUntil }
     func settle() {
         let place = WatcherReaderPlace(newest: newest, end: end, top: top, dockTop: dockTop, cards: cards)
         held = place.heldCard
@@ -592,10 +451,32 @@ private extension View {
     }
 }
 
-/// What the conversation follows: the page's revision, and words of the user's own on their way.
+/// What the conversation follows: the page's revision, words of the user's own on their way, and what sits under the
+/// newest words at the page's end, Watcher's working line and the user's follow-ups, which change the page's end without
+/// a new revision.
 private struct WatcherTail: Equatable {
     let revision: Int
     let sending: Bool
+    let working: Bool
+    let followups: [WatcherPage.Followup]
+}
+
+/// How far the page's ground fades in under the status bar: clear at the page's top, where Watcher's hero meets the
+/// status bar, and whole once the page has moved 24 points, as on a tab's page (`SheetPage`). Published to the fade
+/// alone, so the conversation never redraws for it.
+private final class WatcherTopFade: ObservableObject {
+    @Published private(set) var amount: CGFloat = 0
+    /// `travelled` is how far the page has moved up from its top.
+    func moved(_ travelled: CGFloat) {
+        let next = min(1, max(0, travelled / 24))
+        if next != amount { amount = next }
+    }
+}
+
+/// The page's ground under the status bar, as much of it as the page's travel calls for.
+private struct WatcherStatusBarFade: View {
+    @ObservedObject var fade: WatcherTopFade
+    var body: some View { StatusBarFade().opacity(fade.amount) }
 }
 
 private struct WatcherConversationPane: View {
@@ -603,23 +484,31 @@ private struct WatcherConversationPane: View {
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
-    /// Presses on the bar's owl: each one scrolls the page to its top, to Watcher's hero.
+    /// Presses on the Watcher tab while Watcher shows: each one scrolls the page to its top, to Watcher's hero.
     let toTop: Int
-    /// Slides the bar away, or back, as the user reads down or goes up.
-    let slideBar: (Bool) -> Void
+    /// Stop Watcher’s threads, pressed in Watcher's settings sheet: Watcher's page asks first.
+    let stopAll: () -> Void
     let review: (ReviewedCard) -> Void
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var follow = WatcherFollow()
-    /// The height between the bar and the box, so a short conversation sits at the bottom with the hero still at the top.
+    /// The height between the status bar and the box, so a short conversation sits at the bottom with the hero still at
+    /// the top.
     @State private var visible: CGFloat = 0
+    /// How far the page's ground fades in under the status bar, held here without watching it: only the fade redraws.
+    @State private var topFade = WatcherTopFade()
     /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
     /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
     /// A message's photos, open full screen.
     @State private var viewing: OpenPhotos?
+    /// The page's end, just under Watcher's working line and the user's follow-ups, where following scrolls to,
+    /// `WatcherReaderPlace.endGap` above the box (`WatcherReaderPlace.followAim`).
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
+    /// Just under the newest words, where following scrolls to, `WatcherReaderPlace.newestGap` above the box, while what
+    /// sits between them and the page's end is too tall to show with them.
+    private static let newestEnd = "watcher-newest-end"
     /// A waiting card's place on the page, to scroll it whole above the box.
     private static func cardID(_ key: String) -> String { "watcher-needs-you-" + key }
 
@@ -630,58 +519,74 @@ private struct WatcherConversationPane: View {
         // The photos of Watcher's messages are its thread's, read through Watcher's page.
         let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
         let items = page.map { WatcherConversation.items($0) } ?? []
-        let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
-        // While a card waits on the user, the bar stays where it is (#1288).
-        let pinned = page?.needsYou.isEmpty == false
+        // Whether the page has words to follow, the conversation's or the user's on their way.
+        let hasWords = !items.isEmpty || sending != nil
+        // The message following must leave on screen, unless the user's words on their way come after it.
+        let lastMessage = sending == nil ? items.last(where: { if case .message = $0 { return true }; return false })?.id : nil
+        let working = model.online(hostID) && page?.working == true
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                    // In to the page's gutter, as on Watched, rather than the conversation's narrower margin.
-                    WatcherHero(hostID: hostID).padding(.horizontal, Space.gutter - Space.s4)
-                    Spacer(minLength: 0)
-                    notes(page)
-                    if !items.isEmpty || sending != nil {
-                        // The conversation and the words on their way, whose bottom is the newest words.
-                        VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                            ForEach(items) { item in
-                                Group {
-                                    switch item {
-                                    case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
-                                    case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
-                                    case .ownChange(let change): WatcherOwnChangeLine(change: change)
+                VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                        // In to the page's gutter, as a tab's page has it, rather than the conversation's narrower margin.
+                        WatcherHero(hostID: hostID).padding(.horizontal, Space.gutter - Space.s4)
+                        Spacer(minLength: 0)
+                        notes(page)
+                        if hasWords {
+                            // The conversation and the words on their way, whose bottom is the newest words.
+                            VStack(alignment: .leading, spacing: 0) {
+                                VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                                    ForEach(items) { item in
+                                        Group {
+                                            switch item {
+                                            case .message(let message):
+                                                WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
+                                                    .background { if item.id == lastMessage { reader { follow.lastWords = $0.maxY } } }
+                                            case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                                            case .ownChange(let change): WatcherOwnChangeLine(change: change)
+                                            }
+                                        }
+                                        .id(item.id)
+                                    }
+                                    if let sending {
+                                        SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID)
+                                            .background(reader { follow.lastWords = $0.maxY })
                                     }
                                 }
-                                .id(item.id)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(reader { follow.newest = $0.maxY })
+                                .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
+                                    model.quoteReply($0, into: model.watcherDraftKey(hostID))
+                                })
+                                // The place following scrolls to, under the newest words, taking no room on the page.
+                                Color.clear.frame(height: 0).id(Self.newestEnd).accessibilityHidden(true)
                             }
-                            if let sending { SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID) }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(reader { follow.newest = $0.maxY })
-                        .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
-                            model.quoteReply($0, into: model.watcherDraftKey(hostID))
-                        })
-                    }
-                    ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
-                        SetAsideCard(hostID: hostID, words: words)
-                    }
-                    if let page { cards(page) }
-                    if model.online(hostID), page?.working == true {
-                        HStack(spacing: Space.s2) {
-                            Light(tone: .accent, breathing: true)
-                            Text("Watcher is working").font(.sotto(.small, .semibold)).foregroundStyle(Palette.accentText)
+                        ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
+                            SetAsideCard(hostID: hostID, words: words)
                         }
-                        .accessibilityElement(children: .combine)
+                        if let page { cards(page) }
+                        if working {
+                            HStack(spacing: Space.s2) {
+                                Light(tone: .accent, breathing: true)
+                                Text("Watcher is working").font(.sotto(.small, .semibold)).foregroundStyle(Palette.accentText)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("watcher-working")
+                        }
+                        // What goes next, after Watcher's turn: a quiet line for each of the user's follow-ups (#1229, pick B).
+                        ForEach(page?.followups ?? []) { item in
+                            if let page { WatcherFollowupLine(hostID: hostID, item: item, page: page) }
+                        }
                     }
-                    // What goes next, after Watcher's turn: a quiet line for each of the user's follow-ups (#1229, pick B).
-                    ForEach(page?.followups ?? []) { item in
-                        if let page { WatcherFollowupLine(hostID: hostID, item: item, page: page) }
-                    }
-                    Color.clear.frame(height: 1).id(Self.end)
+                    // The page's end, right under its last line, taking no room on the page: following scrolls it
+                    // `WatcherReaderPlace.endGap` above the box, so the working line and the follow-ups show whole.
+                    Color.clear.frame(height: 0).id(Self.end).accessibilityHidden(true)
                         .background(reader { follow.end = $0.maxY })
                 }
+                // The top margin is the hero's own (`WatcherHero`).
                 .padding(.horizontal, Space.s4)
-                .padding(.top, Space.s4)
-                .padding(.bottom, Space.s4)
+                .padding(.bottom, WatcherReaderPlace.endGap)
                 .readingWidth()
                 .frame(maxWidth: .infinity, minHeight: visible, alignment: .topLeading)
                 .background(reader { frame in
@@ -691,12 +596,9 @@ private struct WatcherConversationPane: View {
                     let resized = abs(frame.height - follow.height) > 0.5
                     follow.height = frame.height
                     if resized { keepHeldCard(proxy, animated: false) } else if !WatcherFollow.seesLetGo { settle() }
-                    // How far the page has scrolled from its top, short of the bounce past its end, which would read as
-                    // going back up.
-                    let offset = min(follow.top - frame.minY, max(0, frame.height - (follow.dockTop - follow.top)))
-                    if let away = follow.slide.moved(to: offset, counts: !resized && follow.userMoved, pinned: pinned) {
-                        slideBar(away)
-                    }
+                    // The page's ground fades in under the status bar over the first 24 points the page moves from its
+                    // top, as on a tab's page, and is clear at its top, where the hero meets the status bar.
+                    topFade.moved(follow.top - frame.minY)
                 })
             }
             .watcherScrollAnchor(holdingCard: holdingCard)
@@ -712,38 +614,40 @@ private struct WatcherConversationPane: View {
                 settle()
                 guard follow.missedFollow else { return }
                 follow.missedFollow = false
-                if follow.following { toNewest(proxy, to: newest) } else { keepHeldCard(proxy, animated: true) }
+                if follow.following { toNewest(proxy, words: hasWords) } else { keepHeldCard(proxy, animated: true) }
             }
-            .background(barReader)
+            .background(topReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 WatcherDock(hostID: hostID, willSend: {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
-                }).readingWidth().background(dockReader(proxy, newest: newest))
+                }, stopAll: stopAll)
+                // It floats as a thread's reply box does, with the conversation running on under it.
+                .readingWidth().background(dockReader(proxy, words: hasWords))
             }
-            // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
-            // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,
-            // so scrolling to the end would leave the new words under the header on a small phone. A reader of earlier
-            // messages is left there, a reader on a card is left on it, where the page's change of height puts it back,
-            // and the user's own words are always shown as they send them (ADR-0051).
-            .onChange(of: WatcherTail(revision: page?.conversation.revision ?? 0, sending: sending != nil)) { before, after in
+            // New words, the user's own or Watcher's, and Watcher starting or ending a turn or the user's follow-ups coming
+            // and going under them, are scrolled into view above the box, for a reader who sees the newest words or the
+            // page's end (`WatcherReaderPlace.followAim`). A reader of earlier messages is left there, a reader on a card
+            // is left on it, where the page's change of height puts it back, and the user's own words are always shown
+            // as they send them (ADR-0051).
+            .onChange(of: WatcherTail(revision: page?.conversation.revision ?? 0, sending: sending != nil, working: working,
+                                      followups: page?.followups ?? [])) { before, after in
                 if after.sending && !before.sending { resumeFollowing() }
-                if follow.following { toNewest(proxy, to: newest) }
+                if follow.following { toNewest(proxy, words: hasWords) }
             }
             // The card the reader was on left the page, answered here or anywhere else: the page follows the newest words
             // again.
             .onChange(of: page?.needsYou.map(\.key) ?? []) { _, keys in
                 guard let held = follow.held, !keys.contains(held) else { return }
                 resumeFollowing()
-                toNewest(proxy, to: newest)
+                toNewest(proxy, words: hasWords)
             }
             .onChange(of: toTop) { _, _ in toHero(proxy) }
-            // A card that arrives with the bar away brings it back, without moving the page: the bar keeps its place in
-            // the layout while it is away. It stays until no card waits (#1288).
-            .onChange(of: pinned, initial: true) { _, waits in if waits { slideBar(false) } }
         }
-        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
+        // Where the page meets the status bar, its own ground fades in once it moves, as on a tab's page: no band.
+        .overlay(alignment: .top) { WatcherStatusBarFade(fade: topFade) }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .watcher(hostID: hostID)) }
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
@@ -756,7 +660,6 @@ private struct WatcherConversationPane: View {
         box.following = false
         setHoldingCard(false)
         let still = reduceMotion
-        box.quiet()
         withAnimation(still ? nil : .easeOut(duration: 0.35)) { scroll.scrollTo(WatcherHero.id, anchor: .top) }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: still ? 120_000_000 : 450_000_000)
@@ -787,9 +690,9 @@ private struct WatcherConversationPane: View {
                 .onChange(of: proxy.frame(in: .global)) { _, frame in moved(frame) }
         }
     }
-    /// The bottom of the header, which sits over the page's top. Where the page stands is decided where the user lets go
-    /// of it or the box moves; the header only says where the page's top is.
-    private var barReader: some View {
+    /// The bottom of the status bar, where the page's top shows. Where the page stands is decided where the user lets go
+    /// of it or the box moves; this only says where the page's top is.
+    private var topReader: some View {
         GeometryReader { proxy in
             let bottom = proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
             Color.clear
@@ -804,7 +707,7 @@ private struct WatcherConversationPane: View {
     }
     /// The top of the box, which moves when it changes height or the keyboard opens or closes. A reader who saw the newest
     /// words before it moved still sees them after, and a reader on a card still sees all of it.
-    private func dockReader(_ scroll: ScrollViewProxy, newest: String) -> some View {
+    private func dockReader(_ scroll: ScrollViewProxy, words: Bool) -> some View {
         GeometryReader { proxy in
             Color.clear
                 .onAppear { follow.dockTop = proxy.frame(in: .global).minY; updateVisible() }
@@ -812,7 +715,7 @@ private struct WatcherConversationPane: View {
                     let wasFollowing = follow.following
                     follow.dockTop = value
                     updateVisible()
-                    if wasFollowing { toNewest(scroll, to: newest) }
+                    if wasFollowing { toNewest(scroll, words: words) }
                     else if follow.held != nil { keepHeldCard(scroll, animated: true) }
                     else { settle() }
                 }
@@ -843,25 +746,35 @@ private struct WatcherConversationPane: View {
               let y = WatcherReaderPlace.anchor(card: frame, offset: box.heldOffset, top: box.top, dockTop: box.dockTop) else { return }
         withAnimation(still ? nil : .easeOut(duration: 0.25)) { scroll.scrollTo(cardID(key), anchor: UnitPoint(x: 0.5, y: y)) }
     }
-    /// Scrolls the newest words, `target`, to just above the box once the new layout is in, and once more after that
-    /// scroll has run, for words whose height settled after it. Requests made in the same moment scroll once, and only the
-    /// latest looks again. None scrolls while the user moves the page; the page owes it to them for when they let go.
-    private func toNewest(_ scroll: ScrollViewProxy, to target: String) {
+    /// Scrolls the page's end, with Watcher's working line and the user's follow-ups, to just above the box, or the newest
+    /// words where what sits under them is too tall to show with them (`WatcherReaderPlace.followAim`), once the new layout
+    /// is in, and once more after that scroll has run, for words whose height settled after it. Requests made in the same
+    /// moment scroll once, and only the latest looks again. None scrolls while the user moves the page; the page owes it to
+    /// them for when they let go. `words` says whether the page has words to follow.
+    private func toNewest(_ scroll: ScrollViewProxy, words: Bool) {
         let box = follow
         guard !box.userScrolling else { box.missedFollow = true; return }
         box.followRequests += 1
         let request = box.followRequests
         let still = reduceMotion
+        // Decided from where everything sits when it scrolls, so each look aims afresh. Before the box has been measured,
+        // the page's end goes to the box.
+        func aim() -> (target: String, anchor: UnitPoint) {
+            guard let found = WatcherReaderPlace.followAim(newest: words ? box.lastWords ?? box.newest : nil, end: box.end, top: box.top, dockTop: box.dockTop) else {
+                return (Self.end, .bottom)
+            }
+            return (found.mark == .newest ? Self.newestEnd : Self.end, UnitPoint(x: 0.5, y: found.y))
+        }
         Task { @MainActor in
             await Task.yield()
             guard box.followRequests == request else { return }
             guard !box.userScrolling else { box.missedFollow = true; return }
-            box.quiet()
-            withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: .bottom) }
+            let first = aim()
+            withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(first.target, anchor: first.anchor) }
             try? await Task.sleep(nanoseconds: still ? 120_000_000 : 360_000_000)
             if box.followRequests == request, box.following, !box.userScrolling {
-                box.quiet()
-                scroll.scrollTo(target, anchor: .bottom)
+                let again = aim()
+                scroll.scrollTo(again.target, anchor: again.anchor)
             }
         }
     }
@@ -877,11 +790,26 @@ private struct WatcherConversationPane: View {
             note(String(localized: "Watcher isn’t running on \(model.name(hostID)). Start it in Sotto on \(model.name(hostID)), then ask it here.",
                         comment: "Both %@ are the computer's name"))
         } else if let page, page.conversation.messages.isEmpty, model.watcherSending[hostID] == nil {
-            note(String(localized: "Ask Watcher to start, check on or stop your threads. It answers nothing for you."))
+            if page.replaced == true, let current = page.current { newWatcherNote(current) }
+            else { note(String(localized: "Ask Watcher to start, check on or stop your threads. It answers nothing for you.")) }
         } else if page == nil {
             note(model.online(hostID) ? model.watcherReadProblems[hostID] ?? String(localized: "Reading Watcher on \(model.name(hostID))…", comment: "%@ is the computer's name")
                  : String(localized: "Reconnect to \(model.name(hostID)) to read Watcher.", comment: "%@ is the computer's name"))
         }
+    }
+    /// A new Watcher's empty conversation, by New Watcher or another provider's model, as the desktop's note says it: the
+    /// model it is on, and where the last conversation went.
+    private func newWatcherNote(_ current: WatcherPage.Current) -> some View {
+        let name = CatalogEntry.model(model.watcherCatalog(hostID), id: current.modelId)?.name ?? current.modelId
+        return VStack(spacing: Space.s2) {
+            WatcherOwlMark(size: 28).foregroundStyle(Palette.ink).accessibilityHidden(true)
+            Text("New Watcher on \(name).", comment: "%@ is the model the new Watcher is on, such as GPT-6.1 Sol")
+                .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+            note(String(localized: "The last conversation is in Watcher history on \(model.name(hostID)).", comment: "%@ is the computer's name"))
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("watcher-new-note")
     }
     private func note(_ words: String) -> some View {
         Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
@@ -1028,7 +956,7 @@ private struct WatcherFollowupLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
             Image(systemName: "clock")
-                .font(.system(size: 13, weight: .semibold))
+                .iconFont(13, weight: .semibold)
                 .foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -1108,7 +1036,8 @@ private struct ReceiptCard: View {
             .accessibilityAddTraits(.isHeader)
             ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 44) }
-                ReceiptRow(row: row, computer: model.computerName(row.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for"),
+                let computer = model.computerName(row.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
+                ReceiptRow(row: row, place: model.placeLine(row.target.ref, provider: AgentNames.name(row.provider), computer: computer),
                            thread: model.thread(row.target.ref), watched: model.watchedByWatcher(row.target.ref))
             }
         }
@@ -1122,7 +1051,8 @@ private struct ReceiptCard: View {
 
 private struct ReceiptRow: View {
     let row: WatcherPage.Receipt
-    let computer: String
+    /// Where the thread runs: provider · project · computer.
+    let place: String
     /// The thread as this iPhone's list has it; nil when it isn't listed here, so the row doesn't open it.
     let thread: ThreadSummary?
     let watched: Bool
@@ -1151,8 +1081,7 @@ private struct ReceiptRow: View {
                 Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(WatcherWords.action(row.action)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                PlaceLine(providerID: row.provider, watched: watched,
-                          text: String(localized: "\(AgentNames.name(row.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
+                PlaceLine(providerID: row.provider, watched: watched, text: place)
                 if let words = WatcherWords.delivery(row) {
                     Text(words).font(.sotto(.small, .semibold))
                         .foregroundStyle(row.deliveryState == "failed" ? Palette.dangerText : Palette.warningText)
@@ -1167,7 +1096,7 @@ private struct ReceiptRow: View {
             }
             Spacer(minLength: Space.s2)
             if opens {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+                Image(systemName: "chevron.right").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                     .padding(.top, 8).accessibilityHidden(true)
             }
         }
@@ -1186,9 +1115,7 @@ private struct ReceiptRow: View {
         }
     }
     private var spoken: String {
-        var words = String(localized: "\(row.title), \(WatcherWords.action(row.action)), \(AgentNames.name(row.provider)) on \(computer)",
-                           comment: "For VoiceOver. The first %@ is a thread's title, the second what Watcher did, such as Started, the third the provider's name, the fourth the computer's name")
-            + WatchedWords.spoken(watched)
+        var words = "\(row.title), \(WatcherWords.action(row.action)), \(place)" + WatchedWords.spoken(watched)
         if let delivery = WatcherWords.delivery(row) { words += ", " + delivery }
         else if let thread { words += ", " + ThreadState(thread).words }
         return words
@@ -1213,7 +1140,7 @@ private struct WatcherOwnChangeLine: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13, weight: .semibold))
+                    .iconFont(13, weight: .semibold)
                     .foregroundStyle(Palette.warningText)
                     .accessibilityHidden(true)
                 words.fixedSize(horizontal: false, vertical: true)
@@ -1224,7 +1151,7 @@ private struct WatcherOwnChangeLine: View {
                 Button { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { open.toggle() } } label: {
                     HStack(spacing: 4) {
                         Text(WatcherWords.ownChangeToggle(count, open: open))
-                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: open ? "chevron.up" : "chevron.down").iconFont(11, weight: .semibold)
                             .accessibilityHidden(true)
                     }
                     .font(.sotto(.small, .semibold))
@@ -1262,7 +1189,7 @@ private struct WatcherOwnChangeLine: View {
             VStack(alignment: .leading, spacing: Space.s1) {
                 ForEach(change.files, id: \.self) { file in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: "doc").font(.system(size: 12)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                        Image(systemName: "doc").iconFont(12).foregroundStyle(Palette.muted).accessibilityHidden(true)
                         Text(file).font(.mono).foregroundStyle(Palette.ink).lineLimit(2).truncationMode(.middle)
                             .textSelection(.enabled)
                     }
@@ -1284,7 +1211,7 @@ private struct WatcherOwnChangeLine: View {
 // MARK: - Cards that wait on the user (4B)
 
 /// A question or permission in Watcher's page: a worker's own card, or Watcher's own. One-tap answers are made here and go
-/// to the thread that asked, as the user's own answer under this iPhone's Can answer: through the computer that runs
+/// to the thread that asked, as the user's own answer under this iPhone's answers grant: through the computer that runs
 /// Watcher for its own threads, or, for a thread on another computer this iPhone is paired with, to that computer, as
 /// the thread's own page would send it. Anything more opens the request sheet. Watcher answers nothing.
 private struct WatcherRequestCard: View {
@@ -1325,12 +1252,12 @@ private struct WatcherRequestCard: View {
         isPermission ? String(localized: "Permission", comment: "The tag on a card asking for permission")
             : String(localized: "Question", comment: "The tag on a card asking a question")
     }
-    private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
+    private var ask: String { isPermission ? RequestText.permissionAsk(request, provider: AgentNames.name(card.provider)) : (request.questions?.first?.question ?? request.text) }
     private var computer: String { model.name(hostID) }
-    /// "Claude Code on Laptop": the thread's provider and computer.
+    /// "Claude Code · Sotto · Laptop": the thread's provider, project and computer.
     private var whereItRuns: String {
         let computer = model.computerName(card.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
-        return String(localized: "\(AgentNames.name(card.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name")
+        return model.placeLine(card.target.ref, provider: AgentNames.name(card.provider), computer: computer)
     }
     private var reviewWords: String { isPermission ? String(localized: "Review permission") : String(localized: "Review question") }
     /// Watcher's own permissions are asked each time: it can't be given one that lasts.
@@ -1373,6 +1300,7 @@ private struct WatcherRequestCard: View {
                 .padding(.top, Space.s1)
             Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .padding(.top, Space.s3)
             if let command = request.context?.command, !command.isEmpty {
                 Text(command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
@@ -1383,6 +1311,7 @@ private struct WatcherRequestCard: View {
                     .padding(.top, Space.s2)
                     .accessibilityLabel("Command: \(command)")
             }
+            if isPermission { CompactPermissionDetails(context: request.context) }
             if asksEachTime {
                 Text("Watcher asks each time. It can’t be given lasting permission.")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
@@ -1498,8 +1427,8 @@ private struct WatcherRequestCard: View {
 
 // MARK: - Reply box
 
-/// Asking Watcher: the box floating over the conversation's end, as a thread's reply box does. The keyboard's own
-/// microphone key dictates into it.
+/// Asking Watcher: the box floating over the conversation's end, as a thread's reply box does, with the same mic
+/// (ADR-0174).
 private struct WatcherDock: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -1508,9 +1437,14 @@ private struct WatcherDock: View {
     @EnvironmentObject var draftStore: DraftStore
     let hostID: String
     let willSend: () -> Void
+    /// Stop Watcher’s threads, from the settings sheet the pill opens: Watcher's page asks first.
+    let stopAll: () -> Void
     @FocusState private var focused: Bool
     @State private var sent = 0
+    @State private var stopped = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Watched for which box listens, which changes only as dictation starts and stops.
+    @ObservedObject private var dictation = Dictation.shared
 
     var body: some View {
         VStack(spacing: Space.s2) {
@@ -1527,6 +1461,25 @@ private struct WatcherDock: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Space.s4)
             }
+            // Until Watcher's provider confirms a permission mode just chosen, what is still in force, as over a thread's box.
+            if let caption = model.watcherPermissionInForce(hostID) {
+                Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s3)
+                    .accessibilityIdentifier("watcher-permissions-in-force")
+            }
+            // A model, effort or speed chosen while Watcher works, which its computer keeps for Watcher's next turn: the
+            // chips show it, and this says when it starts.
+            if model.offersWatcherComposer(hostID), model.watcherPage(hostID)?.nextTurnOptions != nil {
+                Text("Watcher starts its next turn on this choice.").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s3)
+                    .accessibilityIdentifier("watcher-next-turn")
+            }
+            if model.watcherHandoverOffered(hostID) { WatcherHandoverStrip(hostID: hostID) }
             field
         }
         .padding(.horizontal, Space.s3)
@@ -1574,14 +1527,63 @@ private struct WatcherDock: View {
         let photos = model.photos(box), files = model.files(box)
         // Locked from the press of a message with photos or files until Watcher answers, so nothing typed meanwhile joins it.
         let preparing = model.preparingSends.contains(box.id)
-        let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
-        let canSend = model.canSendToWatcher(hostID)
-        // Send shows once the box holds something, as in a thread's reply box.
-        let written = !(model.drafts[model.watcherDraftKey(hostID)] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let stops = model.canStopWatcherTurn(hostID)
+        let key = model.watcherDraftKey(hostID)
+        let listening = dictation.key == key
+        // Send is always there, as in a thread's reply box, and lights once the box holds something.
+        let written = !(model.drafts[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !photos.isEmpty || !files.isEmpty
-        // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
-        // takes no steer (#1229, pick B); otherwise it sends as before.
+        // The card a thread's reply box is (Zach's pick A, November 1, 2026): photos and files above the words, and the
+        // row under them with the +, Watcher's settings as one pill, the mic and Send.
+        return ComposerCard(focus: { focused = true }) {
+            DraftAttachments(box: box)
+        } words: {
+            words(box: box, working: working, preparing: preparing)
+        } plus: {
+            if listening { ListeningLine() } else { AttachPhotosButton(box: box) }
+        } pill: {
+            if !listening, model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil { WatcherSettingsPill(hostID: hostID, stopAll: stopAll) }
+        } trailing: {
+            trailing(key: key, stops: stops, ready: written || preparing, preparing: preparing)
+        }
+        // The trace round the card at the top level Watcher's model offers: Max on Claude, where Ultracode is never Watcher's.
+        .effortTrace(model.offersWatcherManage(hostID) && model.watcherAtTopEffort(hostID), radius: ComposerMetrics.radius)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: stops)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
+    }
+
+    private func words(box: PhotoBox, working: Bool, preparing: Bool) -> some View {
+        TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .lineLimit(1...6)
+            .focused($focused)
+            // Words added from a reply put the caret after them, here (ADR-0129).
+            .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }
+            .accessibilityLabel("Ask Watcher")
+            .accessibilityIdentifier("watcher-reply")
+            .pasteAttaches(to: box)
+            .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
+            // Locked while the mic writes in it, as a thread's box is.
+            .disabled(preparing || dictation.key == model.watcherDraftKey(hostID))
+    }
+
+    /// The mic, then Send, which is always there; while Watcher's own turn can be stopped, Stop takes Send's place until
+    /// something is written. Sending while the mic listens stops it; the mic waits while a send's photos are made ready.
+    private func trailing(key: String, stops: Bool, ready: Bool, preparing: Bool) -> some View {
+        HStack(spacing: ComposerMetrics.gap) {
+            DictateButton(key: key, words: draft).disabled(preparing)
+            if stops { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if ready || !stops { sendButton(preparing: preparing).transition(.scale(scale: 0.6).combined(with: .opacity)) }
+        }
+    }
+
+    /// Sends to Watcher. While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues
+    /// when its provider takes no steer (#1229, pick B); otherwise it sends as before.
+    private func sendButton(preparing: Bool) -> some View {
+        let canSend = model.canSendToWatcher(hostID)
         let page = model.watcherPage(hostID)
         let current = page?.current
         let waitingOnCard = page.map { page in page.needsYou.contains(where: { page.isOwn($0) }) } ?? false
@@ -1589,147 +1591,301 @@ private struct WatcherDock: View {
         let queueing = waitingOnCard || (steering && current?.steers == false)
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
         let label = waitingOnCard ? String(localized: "Queue") : queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
-        // The + on its own beside a slim box, as in a thread's reply box: photos and files above the words, Send inside
-        // the box's end.
-        return HStack(alignment: .bottom, spacing: Space.s2) {
-            AttachPhotosButton(box: box)
-            VStack(alignment: .leading, spacing: 0) {
-                DraftAttachments(box: box)
-                HStack(alignment: .bottom, spacing: Space.s1) {
-                    TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
-                        .font(.sotto(.body))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(1...6)
-                        .focused($focused)
-                        // Words added from a reply put the caret after them, here (ADR-0129).
-                        .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }
-                        .padding(.vertical, ComposerMetrics.wordsPadding)
-                        .accessibilityLabel("Ask Watcher")
-                        .accessibilityIdentifier("watcher-reply")
-                        .pasteAttaches(to: box)
-                        .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
-                        .disabled(preparing)
-                    if written || preparing {
-                        // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
-                        Button { sent += 1; willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
-                            Group {
-                                if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
-                                else { Image(systemName: symbol).font(.system(size: 14, weight: .bold)) }
-                            }
-                            .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
-                            .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
-                            .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
-                            .pressArea(drawn: ComposerMetrics.button)
-                        }
-                        .buttonStyle(PressStyle())
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
-                        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
-                        .disabled(!canSend)
-                        .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
-                        .accessibilityIdentifier("watcher-send")
-                        .padding(.bottom, ComposerMetrics.buttonInset)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
-                    }
-                }
-                .padding(.leading, ComposerMetrics.wordsInset)
-                .padding(.trailing, ComposerMetrics.buttonInset)
-                .frame(minHeight: ComposerMetrics.height)
+        // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
+        return Button {
+            sent += 1; willSend(); focused = false
+            dictation.cancel(model.watcherDraftKey(hostID))
+            Task { await model.sendToWatcher(hostID) }
+        } label: {
+            Group {
+                if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
+                else { Image(systemName: symbol).font(.system(size: 15, weight: .bold)) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .composerSurface(in: shape)
+            .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
+            .composerDisc(canSend || preparing ? AnyShapeStyle(Palette.accent) : AnyShapeStyle(Palette.fillSoft))
         }
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
+        .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
+        .disabled(!canSend)
+        .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
+        .accessibilityIdentifier("watcher-send")
+    }
+
+    /// Stop on Watcher's own turn, the thread box's solid disc the size of Send. The threads Watcher started carry on.
+    private var stopButton: some View {
+        Button { stopped += 1; Task { await model.stopWatcherTurn(hostID) } } label: {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .frame(width: 12, height: 12)
+                .foregroundStyle(Palette.canvas)
+                .composerDisc(Palette.ink)
+        }
+        .buttonStyle(PressStyle())
+        .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
+        .disabled(model.watcherManaging.contains(AppModel.composerKey(hostID)))
+        .accessibilityLabel("Stop Watcher’s turn")
+        .accessibilityIdentifier("watcher-stop")
     }
 }
 
-// MARK: - What Watcher may do without asking (control A)
+/// Over a new Watcher's box, while the last one's handover is offered (ADR-0073, as the desktop's strip): sending starts
+/// the new Watcher with it, ahead of the user's words, and X puts it away, so the first message goes without it.
+private struct WatcherHandoverStrip: View {
+    @EnvironmentObject var model: AppModel
+    let hostID: String
+    var body: some View {
+        HStack(alignment: .center, spacing: Space.s2) {
+            Image(systemName: "arrow.turn.down.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                .accessibilityHidden(true)
+            Text("Sending starts the new Watcher with a handover of the last one.")
+                .font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { Task { await model.dismissWatcherHandover(hostID) } } label: {
+                Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.muted)
+                    .frame(width: 32, height: 32)
+                    .pressArea(drawn: 32)
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityLabel("Don’t hand over: start the new Watcher without it")
+            .accessibilityIdentifier("watcher-handover-dismiss")
+        }
+        .padding(.leading, Space.s4).padding(.trailing, Space.s1).padding(.vertical, Space.s1)
+        .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("watcher-handover")
+    }
+}
 
-/// Watcher's permissions in its hero, under its model and computer (#1276, pick A): a chip in this iPhone's own words,
-/// after the Threads composer's, that opens the four modes. A choice shows at once; until Watcher's provider confirms
-/// it, the chip's edge is dashed and the words beside it say what is still in force. A computer that refuses says why
-/// in its own words. It left the box so the conversation has the room, and so it no longer comes and goes as the box is
-/// written in.
-private struct WatcherPermissionChip: View {
+/// Watcher's model, effort, speed and permissions as one pill in its box's row, as a thread's box has them (ADR-0166,
+/// amended November 1, 2026), opening the same settings sheet with Stop Watcher’s threads and New Watcher as its last
+/// rows. The sheet lists every provider Watcher runs on, each closed until pressed; another provider's model starts a new
+/// Watcher. The model, effort and speed are held still, the sheet saying why, while Watcher works or a card of its own
+/// waits. A computer that takes only Watcher's permissions from this iPhone shows the shield alone.
+private struct WatcherSettingsPill: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
-    @State private var choosing = false
+    /// Stop Watcher’s threads: Watcher's page asks first, once this sheet has gone.
+    let stopAll: () -> Void
+    @State private var choosingPermission = false
     @State private var picks = 0
-    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var starts = 0
+    @State private var open = false
+    /// Permissions was pressed in the settings sheet: its own sheet opens once this one has gone.
+    @State private var permissionsNext = false
+    /// Stop Watcher’s threads was pressed in the settings sheet: its question is asked once this one has gone, since a
+    /// sheet still leaving can't have an alert put over it.
+    @State private var stopNext = false
 
     var body: some View {
-        let caption = model.watcherPermissionInForce(hostID)
-        let fixed = model.watcherPermissionFixed(hostID)
         Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: Space.s1) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
-            } else {
-                HStack(spacing: Space.s3) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
-            }
+            if model.offersWatcherComposer(hostID) { pill } else { permissionShield }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sheet(isPresented: $choosing) {
+        .sensoryFeedback(.selection, trigger: picks)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: starts)
+        .sheet(isPresented: $choosingPermission) {
             WatcherPermissionSheet(hostID: hostID) { mode in
                 picks += 1
-                choosing = false
+                choosingPermission = false
                 Task { await model.setWatcherPermission(mode, on: hostID) }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .sensoryFeedback(.selection, trigger: picks)
     }
 
-    private func chip(pending: Bool, fixed: Bool) -> some View {
+    private var catalog: [ThreadModel] { model.watcherCatalog(hostID) }
+    private var current: WatcherPage.Current? { model.watcherPage(hostID)?.current }
+    private var values: ThreadSettingValues? { model.watcherSettingValues(hostID) }
+    /// The model the pill reads: the one just chosen while the computer takes it, then Watcher's own.
+    private var shownModel: ThreadModel? { CatalogEntry.model(catalog, id: values?.model) }
+    private var held: String? { model.watcherSettingsHeld(hostID) }
+    private var efforts: [String] { WatcherSettings.efforts(shownModel) }
+    private var speeds: [ModelSpeed] { ThreadSettings.offeredSpeeds(shownModel, providerID: shownModel?.providerId ?? current?.provider) }
+    private var effortName: String? {
+        guard !efforts.isEmpty, let values else { return nil }
+        return values.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(values.effort)
+    }
+    /// The speed in force, Standard where the model offers no other.
+    private var speed: String {
+        guard let values, speeds.contains(where: { $0.id == values.speed }) else { return ThreadSettings.standard }
+        return values.speed
+    }
+
+    /// Chooses a value for Watcher and puts the sheet away.
+    private func choose(_ kind: ThreadSettingKind, _ value: String) {
+        picks += 1
+        open = false
+        Task { await model.chooseWatcherSetting(kind, value, on: hostID) }
+    }
+    private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        SettingOption(name: name, line: line, chosen: chosen, action: action)
+    }
+
+    /// The pill opens the settings sheet, as a thread's does.
+    private var pill: some View {
         let mode = model.watcherPermission(hostID)
-        let busy = model.watcherManaging.contains(AppModel.permissionKey(hostID))
-        let edge = StrokeStyle(lineWidth: 1, dash: pending ? [4, 3] : [])
-        return Button { choosing = true } label: {
-            HStack(spacing: 6) {
-                if busy { ProgressView().controlSize(.mini) } else {
-                    Image(systemName: "shield").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
-                }
-                Text(WatcherPermissions.name(mode)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
+        let modelName = shownModel?.name ?? current?.modelId ?? ""
+        return Button { open = true } label: {
+            ComposerPill(providerID: shownModel?.providerId ?? current?.provider, model: modelName, effort: effortName, speed: speed,
+                         shield: mode == "full-access" ? .full : WatcherPermissions.grants(mode) ? .grants : .asks,
+                         pending: model.watcherPermissionInForce(hostID) != nil)
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(String(localized: "Watcher’s settings"))
+        .accessibilityValue([modelName, effortName, speeds.isEmpty ? nil : ThreadSettings.speedName(speed, offered: speeds), WatcherPermissions.name(mode)]
+            .compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint(String(localized: "Opens Watcher’s model, effort, speed and permissions, and New Watcher"))
+        .accessibilityIdentifier("watcher-settings")
+        .sheet(isPresented: $open, onDismiss: {
+            if permissionsNext { permissionsNext = false; choosingPermission = true }
+            if stopNext { stopNext = false; stopAll() }
+        }) { sheet }
+    }
+
+    /// While the computer holds Watcher's model, effort and speed, why; then the models, Effort, Speed, Permissions (which
+    /// opens the four modes in Watcher's own words), Stop Watcher’s threads while Watcher watches any, and New Watcher.
+    private var sheet: some View {
+        let mode = model.watcherPermission(hostID)
+        let groups = current.map { WatcherSettings.groups($0, catalog: catalog, others: model.mayAnswer(hostID)) } ?? []
+        return ComposerSettingsSheet(title: String(localized: "Watcher’s settings"), current: shownModel,
+                                     groups: groups.map { ModelGroup(id: $0.providerID, name: $0.name, models: $0.models) },
+                                     modelsEnabled: held == nil, choose: { choose(.model, $0.id) }) {
+            if let held { Text(held) }
+        } foot: {
+            if groups.contains(where: { !$0.own }) {
+                Text("Another provider’s model starts a new Watcher. This conversation stays in Watcher history.")
             }
-            .font(.sotto(.small, .semibold))
-            .foregroundStyle(Palette.ink)
-            .padding(.horizontal, Space.s4)
-            .frame(minHeight: 44)
-            .background(Palette.fillSoft, in: Capsule())
-            .overlay(Capsule().strokeBorder(pending ? Palette.accent.opacity(0.7) : Palette.hairline, style: edge))
-            .contentShape(Capsule())
+        } settings: {
+            effortRow
+            speedRow
+            Button { permissionsNext = true; open = false } label: {
+                SettingRow(name: Text("Permissions", comment: "The field for the permission mode a new thread starts in."),
+                           value: WatcherPermissions.name(mode))
+            }
+            .buttonStyle(PressStyle())
+            .disabled(!model.canChangeWatcherPermission(hostID))
+            stopRow
+            newWatcherRow
+        }
+    }
+
+    @ViewBuilder private var effortRow: some View {
+        if let effortName, let values {
+            Menu {
+                ForEach(Array(efforts.enumerated()), id: \.element) { index, level in
+                    option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: efforts.count), chosen: level == values.effort) {
+                        choose(.effort, level)
+                    }
+                }
+            } label: {
+                SettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName)
+            }
+            .disabled(held != nil)
+        }
+    }
+
+    @ViewBuilder private var speedRow: some View {
+        if !speeds.isEmpty, values != nil {
+            SpeedMenu(speeds: speeds, speed: speed, providerID: shownModel?.providerId) { choose(.speed, $0) }
+                .disabled(held != nil)
+        }
+    }
+
+    /// Where the computer doesn't offer Watcher's model and effort from here, its permissions alone, as their shield: an
+    /// outline while Watcher asks first, half filled while it may act without asking, filled for Full access.
+    private var permissionShield: some View {
+        let mode = model.watcherPermission(hostID)
+        let full = mode == "full-access", grants = WatcherPermissions.grants(mode)
+        let fixed = model.watcherPermissionFixed(hostID)
+        return Button { choosingPermission = true } label: {
+            SettingChip(pending: model.watcherPermissionInForce(hostID) != nil) {
+                if model.watcherManaging.contains(AppModel.permissionKey(hostID)) { ProgressView().controlSize(.mini) } else {
+                    Image(systemName: full ? "shield.fill" : grants ? "shield.lefthalf.filled" : "shield")
+                        .iconFont(14, weight: .semibold)
+                        .foregroundStyle(full ? Palette.warningText : grants ? Palette.accentText : Palette.muted)
+                }
+            }
         }
         .buttonStyle(PressStyle())
         .disabled(!model.canChangeWatcherPermission(hostID))
+        .opacity(fixed ? 0.55 : 1)
         .accessibilityLabel("Watcher’s permissions")
         .accessibilityValue(WatcherPermissions.name(mode))
         .accessibilityHint(fixed ? WatcherPermissions.fixedHint : String(localized: "Opens what Watcher may do without asking"))
-        .opacity(fixed ? 0.55 : 1)
         .accessibilityIdentifier("watcher-permissions")
     }
 
-    @ViewBuilder private func captionText(_ caption: String?) -> some View {
-        if let caption {
-            Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                .paragraphDirection()
-                .accessibilityIdentifier("watcher-permissions-in-force")
+    /// Stop Watcher’s threads, in the danger ink, while Watcher watches any on a computer that takes it from this iPhone
+    /// (where Stop all stood on Watched until November 1, 2026). A press puts the sheet away, and once it has gone Watcher's
+    /// page asks first, naming each thread it would stop; nothing stops until the user confirms.
+    @ViewBuilder private var stopRow: some View {
+        if model.offersWatcherStop(hostID), model.watcherPage(hostID)?.watched.isEmpty == false {
+            let stopping = model.watcherStopping.contains(hostID)
+            Button { stopNext = true; open = false } label: {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Group {
+                        if stopping { ProgressView().controlSize(.mini) }
+                        else { Image(systemName: "stop.circle").font(.system(size: 14, weight: .semibold)) }
+                    }
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Stop Watcher’s threads").font(.sotto(.body)).foregroundStyle(Palette.dangerText)
+                        Text("Asks first. Threads you started keep going.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, Space.s2)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .disabled(!model.online(hostID) || stopping)
+            .opacity(!model.online(hostID) || stopping ? 0.5 : 1)
+            // Named by what a press does; the hint says it asks first, so the line under the name isn't read twice.
+            .accessibilityLabel(String(localized: "Stop Watcher’s threads"))
+            .accessibilityHint(String(localized: "Asks first, then stops the threads Watcher started"))
+            .accessibilityIdentifier("watcher-stop-all")
         }
     }
 
-    /// Beside the chip while Watcher works; the chip's hint says when it can change.
-    @ViewBuilder private func fixedText(_ shown: Bool) -> some View {
-        if shown {
-            Text(WatcherPermissions.fixed).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                .paragraphDirection()
-                .accessibilityIdentifier("watcher-permissions-fixed")
+    /// New Watcher (as the desktop's chip), the sheet's last row: a new Watcher at once on this one's model, effort,
+    /// speed and permissions, with a handover of this one offered over its box. Unavailable, it says why under it.
+    @ViewBuilder private var newWatcherRow: some View {
+        let why = model.newWatcherUnavailable(hostID)
+        Button { open = false; starts += 1; Task { await model.startNewWatcher(hostID) } } label: {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "square.and.pencil").font(.system(size: 14, weight: .semibold)).frame(width: 16).accessibilityHidden(true)
+                Text("New Watcher")
+                Spacer(minLength: 0)
+            }
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, Space.s3)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(why != nil)
+        .opacity(why != nil ? 0.5 : 1)
+        if let why {
+            Text(why).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Space.s3 + 16 + Space.s2)
+                .padding(.bottom, Space.s3)
         }
     }
 }
 
+// MARK: - What Watcher may do without asking (control A)
+
 /// The four modes, each with what Watcher does under it, the chosen one ticked; then what stays true in every mode. An
-/// iPhone without Can answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
+/// iPhone that can't answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
 private struct WatcherPermissionSheet: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -1744,9 +1900,17 @@ private struct WatcherPermissionSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: Space.s1) {
-                    Text(WatcherPermissions.title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
+                    // A sheet that can be dragged away has a button that closes it too (#1860), trailing, as Agents has.
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                        Text(WatcherPermissions.title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: Space.s2)
+                        Button("Done") { dismiss() }
+                            .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                            .keyboardShortcut(.cancelAction)
+                            .accessibilityIdentifier("watcher-permissions-done")
+                    }
                     Text(provider.map { String(localized: "Watcher on \(computer), on \($0)", comment: "The first %@ is the computer's name; the second is Watcher's provider, such as Codex") }
                          ?? String(localized: "Watcher on \(computer)", comment: "%@ is the computer's name"))
                         .font(.sotto(.small)).foregroundStyle(Palette.muted)
@@ -1772,7 +1936,9 @@ private struct WatcherPermissionSheet: View {
             .padding(.bottom, Space.s6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .accessibilityAction(.escape) { dismiss() }
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
     }
 
@@ -1788,7 +1954,7 @@ private struct WatcherPermissionSheet: View {
                 }
                 Spacer(minLength: Space.s2)
                 if chosen {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.accentText)
+                    Image(systemName: "checkmark").iconFont(15, weight: .semibold).foregroundStyle(Palette.accentText)
                         .accessibilityHidden(true)
                 }
             }
@@ -1800,419 +1966,18 @@ private struct WatcherPermissionSheet: View {
     }
 }
 
-// MARK: - Watched
+// MARK: - Watching
 
-/// How Watched's page moves, kept outside SwiftUI's state so scrolling never redraws it: which way the user moves it, for
-/// the bar (#1278).
-private final class WatchedMotion {
-    /// The page's visible part: the bottom of the bar, and the height down to the tab bar.
-    struct Room: Equatable {
-        var top: CGFloat = 0
-        var height: CGFloat = 0
-    }
-    var room = Room()
-    var height: CGFloat = 0
-    var slide = WatcherBarSlide()
-    /// The user is dragging the page or letting a flick run out, on iOS 18 and later.
-    var userScrolling = false
-    /// Until when the page moves for the app, going to the top. iOS 17 can't say when the user moves the page, so there
-    /// a move outside this time is theirs.
-    var quietUntil = Date.distantPast
-    func quiet() { quietUntil = Date().addingTimeInterval(0.6) }
-    var userMoved: Bool { WatcherFollow.seesLetGo ? userScrolling : Date() >= quietUntil }
-}
-
-/// The threads Watcher works with: on a computer whose watches last until the user stops them, what watching means,
-/// Watch a thread and Stop all, then each thread as a card that opens it, with what Watcher last did and Stop watching;
-/// on an older one, how many of how many it may, Stop all and the cards. Then the ones it no longer watches.
-private struct WatchedPane: View {
-    @EnvironmentObject var model: AppModel
-    /// Watched for Watcher's page, which publishes on its own store, not on the model.
-    @EnvironmentObject var watcherStore: WatcherStore
-    let hostID: String
-    /// Presses on the bar's owl: each one scrolls the page to its top, to Watcher's hero.
-    let toTop: Int
-    /// Slides the bar away, or back, as the user reads down or goes up.
-    let slideBar: (Bool) -> Void
-    let stopAll: () -> Void
-    @State private var stopPresses = 0
-    @State private var picking = false
-    @State private var motion = WatchedMotion()
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var body: some View {
-        ScrollViewReader { proxy in
-            list
-                .onUserScrolling { motion.userScrolling = $0 }
-                .background(GeometryReader { page in
-                    let frame = page.frame(in: .global)
-                    let room = WatchedMotion.Room(top: frame.minY + page.safeAreaInsets.top,
-                                                  height: frame.height - page.safeAreaInsets.top - page.safeAreaInsets.bottom)
-                    Color.clear
-                        .onAppear { motion.room = room }
-                        .onChange(of: room) { _, value in motion.room = value }
-                })
-                .onChange(of: toTop) { _, _ in
-                    motion.quiet()
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.35)) { proxy.scrollTo(WatcherHero.id, anchor: .top) }
-                }
-                // A card waiting on the user in the conversation keeps the bar here too, and brings it back if it was
-                // away when the card arrived (#1288).
-                .onChange(of: cardWaits, initial: true) { _, waits in if waits { slideBar(false) } }
-        }
-    }
-    /// Whether a card waits on the user in Watcher's conversation, which keeps the bar where it is.
-    private var cardWaits: Bool { model.watcherPage(hostID)?.needsYou.isEmpty == false }
-    /// Where Watched's page has scrolled, from its content's frame, for the bar.
-    private func moved(_ frame: CGRect) {
-        let resized = abs(frame.height - motion.height) > 0.5
-        motion.height = frame.height
-        let offset = min(motion.room.top - frame.minY, max(0, frame.height - motion.room.height))
-        if let away = motion.slide.moved(to: offset, counts: !resized && motion.userMoved, pinned: cardWaits) { slideBar(away) }
-    }
-    private var list: some View {
-        let page = model.watcherPage(hostID)
-        let manages = model.offersWatcherManage(hostID)
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                WatcherHero(hostID: hostID).padding(.top, Space.s4)
-                FeedbackBanner().padding(.top, Space.s3)
-                if let page {
-                    if manages { lead(page).padding(.top, Space.s4) } else { meterRow(page).padding(.top, Space.s4) }
-                    if page.watched.isEmpty {
-                        if !manages {
-                            Text("Watcher isn’t working with any threads now.").font(.sotto(.body)).foregroundStyle(Palette.muted)
-                                .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.vertical, Space.s6)
-                        }
-                    } else {
-                        VStack(spacing: Space.s3) {
-                            ForEach(page.watched, id: \.target.ref.id) { thread in
-                                let ref = thread.target.ref
-                                let stop: (() -> Void)? = manages ? { stopWatching(thread) } : nil
-                                WatchedCard(thread: thread, computer: computer(thread), listed: model.thread(ref),
-                                            doing: manages ? WatcherWords.doing(thread, in: page) : nil, stop: stop,
-                                            stopping: model.changingWatch(ref), canStop: model.canChangeWatch(ref))
-                            }
-                        }
-                        .padding(.top, Space.s4)
-                    }
-                    // Where watches last until the user stops them there is no count to fill; Watcher's limit is on
-                    // how many new threads it starts at once.
-                    if !manages {
-                        Text(WatcherWords.room(page)).font(.sotto(.small)).foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.top, Space.s3)
-                    }
-                    if !page.noLongerWatched.isEmpty {
-                        SectionHeading(String(localized: "No longer watched", comment: "A heading over the threads Watcher no longer watches"), count: page.noLongerWatched.count)
-                        VStack(spacing: 0) {
-                            ForEach(Array(page.noLongerWatched.enumerated()), id: \.element.target.ref.id) { index, thread in
-                                if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20) }
-                                LeftRow(thread: thread, computer: computer(thread), listed: model.thread(thread.target.ref) != nil)
-                            }
-                        }
-                        .sottoCard(.plain)
-                    }
-                } else {
-                    Text(model.online(hostID) ? model.watcherReadProblems[hostID] ?? String(localized: "Reading Watcher on \(model.name(hostID))…", comment: "%@ is the computer's name")
-                         : String(localized: "Reconnect to \(model.name(hostID)) to read Watcher.", comment: "%@ is the computer's name"))
-                        .font(.sotto(.body)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, Space.s7)
-                }
-            }
-            .padding(.horizontal, Space.gutter)
-            .padding(.bottom, Space.s8)
-            .readingWidth()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(GeometryReader { content in
-                Color.clear
-                    .onAppear { moved(content.frame(in: .global)) }
-                    .onChange(of: content.frame(in: .global)) { _, frame in moved(frame) }
-            })
-            // Once for the page, not once for each layout ViewThatFits builds, so one press plays one tap.
-            .sensoryFeedback(.impact(weight: .medium), trigger: stopPresses)
-        }
-        .refreshable { await model.readWatcher(hostID) }
-        // What a Stop watching press did, with Undo, over the tab bar.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            WatchToast(scope: nil, margin: EdgeInsets(top: 0, leading: Space.s3, bottom: Space.s2, trailing: Space.s3))
-        }
-        .sheet(isPresented: $picking) {
-            WatchPicker(hostID: hostID).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
-        }
-    }
-
-    private func computer(_ thread: WatcherPage.WatchedThread) -> String {
-        model.computerName(thread.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
-    }
-
-    private func stopWatching(_ thread: WatcherPage.WatchedThread) {
-        Task { await model.setWatched(thread.target.ref, false, title: thread.title) }
-    }
-
-    /// What watching means here, then Watch a thread, with Stop all beside it while Watcher has threads it started.
-    private func lead(_ page: WatcherPage) -> some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text(WatcherWords.watchedLead(page.watched.count, standing: page.watched.filter { page.standingWatch($0.target.ref) != nil }.count))
-                .font(.sotto(.body)).foregroundStyle(Palette.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .paragraphDirection()
-                .accessibilityIdentifier("watcher-watched-lead")
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: Space.s3) {
-                    watchButton
-                    stopButton(page)
-                }
-                VStack(alignment: .leading, spacing: Space.s3) {
-                    watchButton
-                    stopButton(page)
-                }
-            }
-        }
-    }
-
-    private var watchButton: some View {
-        Button { picking = true } label: {
-            HStack(spacing: Space.s2) {
-                WatcherOwlMark(size: 18).foregroundStyle(Palette.accentText).accessibilityHidden(true)
-                Text("Watch a thread")
-            }
-        }
-        .buttonStyle(PillButtonStyle(kind: .soft, wide: true))
-        .disabled(!model.online(hostID))
-        .accessibilityHint("Shows the threads Watcher could watch")
-        .accessibilityIdentifier("watcher-watch-a-thread")
-    }
-
-    private func meterRow(_ page: WatcherPage) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: Space.s3) {
-                meter(page)
-                Spacer(minLength: Space.s2)
-                stopButton(page)
-            }
-            VStack(alignment: .leading, spacing: Space.s3) {
-                meter(page)
-                stopButton(page)
-            }
-        }
-    }
-
-    /// "3 of 4 watched", with a cell for each thread Watcher may work with, from a computer that keeps no standing watches.
-    private func meter(_ page: WatcherPage) -> some View {
-        HStack(spacing: Space.s2) {
-            HStack(spacing: 3) {
-                ForEach(0..<max(page.inFlightLimit, 1), id: \.self) { cell in
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(cell < page.inFlight ? Palette.ink : Palette.ink.opacity(0.25))
-                        .frame(width: 5, height: 16)
-                }
-            }
-            .accessibilityHidden(true)
-            Text(WatcherWords.meter(page)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
-        }
-        .padding(.horizontal, Space.s4)
-        .frame(minHeight: 44)
-        .background(Palette.fillSoft, in: Capsule())
-        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Watched threads")
-        .accessibilityValue(WatcherWords.meter(page))
-        .accessibilityIdentifier("watcher-meter")
-    }
-
-    @ViewBuilder private func stopButton(_ page: WatcherPage) -> some View {
-        if model.offersWatcherStop(hostID) && !page.watched.isEmpty {
-            Button { stopPresses += 1; stopAll() } label: {
-                HStack(spacing: 6) {
-                    if model.watcherStopping.contains(hostID) { ProgressView().controlSize(.mini) }
-                    Text("Stop all")
-                }
-            }
-            .buttonStyle(PillButtonStyle(kind: .danger))
-            .disabled(!model.online(hostID) || model.watcherStopping.contains(hostID))
-            .accessibilityHint("Asks first, then stops the threads Watcher started")
-            .accessibilityIdentifier("watcher-stop-all")
-        }
-    }
-}
-
-/// A thread Watcher works with, as Threads draws a working card, with what Watcher last did with it. It opens the thread
-/// where this iPhone lists it. Where watching lasts until the user stops it, Stop watching sits at its foot.
-private struct WatchedCard: View {
-    @State private var stops = 0
-    let thread: WatcherPage.WatchedThread
-    let computer: String
-    let listed: ThreadSummary?
-    let doing: String?
-    /// Stops watching the thread, on a computer that takes it from this iPhone.
-    let stop: (() -> Void)?
-    let stopping: Bool
-    let canStop: Bool
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            opener
-            if let stop { foot(stop) }
-        }
-        .overlay(alignment: .bottom) { if running { Runner() } }
-        .sottoCard(running ? .working : .plain)
-    }
-    @ViewBuilder private var opener: some View {
-        if listed != nil {
-            NavigationLink(value: ThreadRoute(ref: thread.target.ref)) { summary }
-                .buttonStyle(PressStyle())
-                .accessibilityLabel(spoken)
-                .accessibilityHint("Opens the thread")
-                .accessibilityIdentifier("watched-\(thread.target.ref.id)")
-        } else {
-            summary.accessibilityElement(children: .ignore).accessibilityLabel(spoken)
-                .accessibilityIdentifier("watched-\(thread.target.ref.id)")
-        }
-    }
-    private var running: Bool { WatcherWords.working(thread) }
-    private var summary: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Space.s2) {
-                Light(tone: running ? .accent : thread.status == "error" ? .danger : .off, breathing: running)
-                Text(WatcherWords.status(thread)).font(.sotto(.caption, .semibold))
-                    .foregroundStyle(running ? Palette.accentText : thread.status == "error" ? Palette.dangerText : Palette.muted)
-                Spacer(minLength: Space.s2)
-                if running, let since = Words.date(listed?.summary?.runningTurnStartedAt) {
-                    ElapsedText(since: since).font(.sotto(.caption, .semibold).monospacedDigit()).foregroundStyle(Palette.muted)
-                }
-            }
-            .frame(minHeight: 18)
-            Text(verbatim: thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Space.s2)
-            PlaceLine(providerID: thread.provider, watched: true,
-                      text: String(localized: "\(AgentNames.name(thread.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
-                .padding(.top, Space.s1)
-            if let doing {
-                Text(doing).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                    .paragraphDirection()
-                    .padding(.top, Space.s2)
-            }
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.top, Space.s4)
-        .padding(.bottom, stop == nil ? Space.s4 : Space.s2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-    private func foot(_ stop: @escaping () -> Void) -> some View {
-        HStack(spacing: Space.s2) {
-            Spacer(minLength: 0)
-            Button {
-                stops += 1
-                stop()
-            } label: {
-                HStack(spacing: 6) {
-                    if stopping { ProgressView().controlSize(.mini) }
-                    Text("Stop watching")
-                }
-            }
-            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-            .sensoryFeedback(.impact(weight: .medium), trigger: stops)
-            .disabled(!canStop)
-            .accessibilityLabel("Stop watching \(thread.title)")
-            .accessibilityIdentifier("watched-stop-\(thread.target.ref.id)")
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.bottom, Space.s3)
-    }
-    private var spoken: String {
-        var words = String(localized: "\(thread.title), \(WatcherWords.status(thread)), \(AgentNames.name(thread.provider)) on \(computer)",
-                           comment: "For VoiceOver. The first %@ is a thread's title, the second its state, such as Working, the third the provider's name, the fourth the computer's name")
-            + WatchedWords.spoken(true)
-        if let doing { words += ". " + doing }
-        return words
-    }
-}
-
-/// Watch a thread: the threads this iPhone lists that Watcher could watch, as Threads orders them. A press watches one at
-/// once and closes the list; what it did is said with Undo.
-private struct WatchPicker: View {
-    @EnvironmentObject var model: AppModel
-    /// Watched for Watcher's page, which publishes on its own store, not on the model.
-    @EnvironmentObject var watcherStore: WatcherStore
-    @Environment(\.dismiss) private var dismiss
-    let hostID: String
-    var body: some View {
-        let rows = model.watchableThreads
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.s3) {
-                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text("Watch a thread").font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: Space.s2)
-                    Button("Cancel") { dismiss() }
-                        .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
-                        .keyboardShortcut(.cancelAction)
-                }
-                Text("Watcher on \(model.name(hostID)) keeps it going and brings you its questions and permissions, until you stop it.", comment: "%@ is the computer's name")
-                    .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                    .paragraphDirection()
-                if rows.isEmpty {
-                    Text("Every thread this iPhone can reach is watched already, or settled.").font(.sotto(.body)).foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.vertical, Space.s6)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                            if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4) }
-                            pickRow(row)
-                        }
-                    }
-                    .sottoCard(.plain)
-                }
-            }
-            .padding(.horizontal, Space.gutter)
-            .padding(.top, Space.s6)
-            .padding(.bottom, Space.s6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .presentationBackground { SheetBackdrop(wash: false) }
-        .presentationCornerRadius(Radius.xl)
-    }
-    private func pickRow(_ row: HostedThread) -> some View {
-        let place = Words.place(row)
-        return Button {
-            dismiss()
-            Task { await model.setWatched(row.ref, true, title: row.thread.title) }
-        } label: {
-            HStack(alignment: .center, spacing: Space.s3) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(row.thread.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    PlaceLine(providerID: row.thread.providerId, watched: false, text: place)
-                }
-                Spacer(minLength: Space.s2)
-                WatcherOwlMark(size: 18).foregroundStyle(Palette.accentText).accessibilityHidden(true)
-            }
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, Space.s3)
-            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressStyle())
-        .disabled(!model.canChangeWatch(row.ref))
-        .accessibilityLabel("Watch \(row.thread.title)")
-        .accessibilityValue(place)
-        .accessibilityIdentifier("watch-pick-\(row.ref.id)")
-    }
-}
-
-/// What the last Watch or Stop watching press did, for eight seconds, with Undo; over a thread's reply box for that
-/// thread (`scope`), or on Watched for any. It never takes focus: VoiceOver hears it, and Watch or Stop watching where the
-/// press was made is the way back once it has gone.
+/// What the last Watch or Stop watching press did, for eight seconds, with Undo, over that thread's reply box (`scope`).
+/// It never takes focus: VoiceOver hears it, and Watch on the thread's page is the way back once it has gone.
 struct WatchToast: View {
     @EnvironmentObject var model: AppModel
-    /// The thread whose page shows it; nil shows it for any thread.
-    let scope: ThreadRef?
-    /// Room around it, only while it shows.
-    var margin = EdgeInsets()
+    /// The thread whose page shows it.
+    let scope: ThreadRef
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         VStack(spacing: 0) {
-            if let notice = model.watchNotice, scope == nil || scope == notice.target {
+            if let notice = model.watchNotice, scope == notice.target {
                 HStack(spacing: Space.s3) {
                     WatcherOwlMark(size: 18).foregroundStyle(Palette.accentText).accessibilityHidden(true)
                     Text(notice.words).font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
@@ -2232,46 +1997,8 @@ struct WatchToast: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("watch-toast")
                 .task(id: notice.id) { UIAccessibility.post(notification: .announcement, argument: notice.words) }
-                .padding(margin)
             }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.85), value: model.watchNotice)
-    }
-}
-
-/// A thread Watcher no longer works with, and why.
-private struct LeftRow: View {
-    let thread: WatcherPage.WatchedThread
-    let computer: String
-    let listed: Bool
-    var body: some View {
-        if listed {
-            NavigationLink(value: ThreadRoute(ref: thread.target.ref)) { row }
-                .buttonStyle(PressStyle())
-                .accessibilityLabel(spoken)
-                .accessibilityHint("Opens the thread")
-        } else {
-            row.accessibilityElement(children: .ignore).accessibilityLabel(spoken)
-        }
-    }
-    private var row: some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            Light(tone: .off).padding(.top, 6)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: thread.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                PlaceLine(providerID: thread.provider, watched: false,
-                          text: WatcherWords.left(thread) + " · " + String(localized: "\(AgentNames.name(thread.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s3 + 2)
-        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-    private var spoken: String {
-        String(localized: "\(thread.title), \(WatcherWords.left(thread)), \(AgentNames.name(thread.provider)) on \(computer)",
-               comment: "For VoiceOver. The first %@ is a thread's title, the second why Watcher no longer watches it, the third the provider's name, the fourth the computer's name")
     }
 }

@@ -3,7 +3,7 @@ import { agentRuntimeModeSchema, agentSpeedSchema, providerIdSchema, type AgentS
 import { WATCHER_OUTCOMES, WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema } from './watcher'
 import { workerKindSchema } from './workerRoles'
 import { workerSystemSchema } from './workerMachine'
-import { swarmCountSchema, SWARM_ANGLES_MAX } from './workerSwarms'
+import { distinctSwarmBriefs, swarmCountSchema, SWARM_ANGLES_MAX } from './workerSwarms'
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread hands work to a thread it starts, through the scoped
@@ -40,7 +40,8 @@ export const delegateInputSchema = z.object({
   work: delegationWorkSchema.describe('The kind of work: building, ui, code-review, research or computer-use.'),
   brief: z.string().trim().min(1).max(DELEGATION_BRIEF_MAX).describe('What the delegated thread should do, in full: it sees nothing of this thread.'),
   count: swarmCountSchema.optional().describe('Angle workers in a swarm, in addition to its lead. Leave out for the existing single-worker start. A named count overrides the role; extras queue at the machine ceiling.'),
-  prompts: z.array(z.string().trim().min(1).max(DELEGATION_BRIEF_MAX)).min(1).max(SWARM_ANGLES_MAX).optional()
+  prompts: z.array(z.string().trim().min(1).max(DELEGATION_BRIEF_MAX)).min(1).max(SWARM_ANGLES_MAX)
+    .refine(distinctSwarmBriefs, 'Give each angle a distinct brief.').optional()
     .describe('One complete, distinct brief per angle, in count order. Leave out for the lead to plan the angles.'),
   thread: id.optional().describe('A thread this thread delegated to before, to send it another brief. Leave it out to start a new thread.'),
   provider: providerIdSchema.optional().describe('For a new thread: claude, codex, grok, muse or devin. Call read_delegation with no delegation to see what is ready.'),
@@ -137,11 +138,13 @@ export interface DelegationRead {
 export const DELEGATION_NEWS_MAX = 50
 export const delegationNewsSchema = z.object({
   source: z.literal('delegation'),
+  /** Completion of this swarm, including when every angle was refused and there are no delegated threads. */
+  swarmId: z.uuid().optional(),
   // heldMinutes: a background outcome released after its thread sat idle twenty minutes with its work never seen to end (#1263).
   items: z.array(z.object({ delegationId: z.uuid(), threadId: id, outcome: watcherOutcomeSchema, turnMessageId: id.optional(),
     heldMinutes: z.number().int().nonnegative().max(100_000_000).optional() }).strict())
-    .min(1).max(DELEGATION_NEWS_MAX),
-}).strict()
+    .max(DELEGATION_NEWS_MAX),
+}).strict().refine(news => news.items.length > 0 || news.swarmId !== undefined, 'News needs a delegation or a swarm.')
 export type DelegationNews = z.infer<typeof delegationNewsSchema>
 
 /**

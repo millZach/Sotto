@@ -105,9 +105,9 @@ test('forge’s phone access is turned on, checked, paired and turned off from t
     await expect(row.getByText(/Phones on, 1 paired/u)).toBeVisible()
     await capture(launched, 'paired', async () => { await phones.scrollIntoViewIfNeeded(); await expect(phones).toBeVisible() })
 
-    // Can answer is the owner's press, sent on to forge.
-    await phones.getByRole('switch', { name: 'Can answer: let Zach’s iPhone answer questions and permissions' }).click()
+    // Pairing by forge's code let the phone answer on forge, so its row has only Remove.
     await expect(phones.getByText('Reads and replies. Can answer questions and permissions.')).toBeVisible({ timeout: 30_000 })
+    await expect(phones.getByRole('switch')).toHaveCount(0)
 
     // Escape closes the dialog, and focus goes back to the button that opened it.
     await page.keyboard.press('Escape')

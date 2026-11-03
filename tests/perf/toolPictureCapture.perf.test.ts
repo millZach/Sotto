@@ -1,0 +1,145 @@
+// @vitest-environment node
+/**
+ * What a tool step's pictures cost the Codex and Cursor projections on Electron main, per update (ADR-0170, plan part 3).
+ *
+ * Every update of a running tool passes through its provider's projection while a thread works. A Codex Computer Use
+ * call, a Codex `view_image` and a Cursor tool may carry a picture. The projections are given `agentCaptures`, as the
+ * runtime gives them (part 7). With **Show every picture and video an agent makes** off, none of these pictures is hashed,
+ * read or kept: an agent shows a picture through `sotto_media` when the user asks. On, the store keeps the screenshot once
+ * by its digest and reads the viewed file off the update path. This times one update of each, with words alone and with a
+ * picture, with no capture, with the switch off and with it on, and counts what reached the store.
+ *
+ * The microseconds print every run and are asserted only under SOTTO_PERF_ASSERT=1; the counts are asserted always.
+ *
+ *   npx vitest run tests/perf/toolPictureCapture.perf.test.ts --maxWorkers=1 --disable-console-intercept
+ */
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
+import { CodexActivityProjection, codexItemSchema } from '../../src/main/agents/codexActivity'
+import { cursorActivities } from '../../src/main/agents/cursorActivity'
+import { agentCaptures, ThreadMediaStore, type MediaCapture, type MediaFileCapture } from '../../src/main/agents/threadMedia'
+import type { AgentActivity } from '../../src/shared/agentActivity'
+import type { AgentThread } from '../../src/shared/agents'
+import { pngHeader } from '../fixtures/stagedImages'
+
+const ROUNDS = 7
+const UPDATES = 2_000
+/** A screenshot-sized picture, 256 KiB, so a capture that hashes it again would show. */
+const SCREENSHOT = Buffer.concat([pngHeader(1280, 800), Buffer.alloc(256 * 1024 - 40, 7)])
+const DATA = SCREENSHOT.toString('base64')
+/** A stopwatch budget per update, in microseconds, under SOTTO_PERF_ASSERT=1: generous, since a hash of the picture is far over it. */
+const BUDGET_US = 40
+
+const folders: string[] = []
+afterAll(async () => { await Promise.all(folders.map(folder => rm(folder, { recursive: true, force: true }))) })
+async function store(): Promise<ThreadMediaStore> {
+  const folder = await mkdtemp(join(tmpdir(), 'sotto-tool-picture-perf-')); folders.push(folder)
+  const made = new ThreadMediaStore(folder); await made.load(); return made
+}
+/** Counts the calls that had something to do: a capture given pictures (an update with words alone passes none), or a file read. */
+function counted<T extends (first: never, ...rest: never[]) => unknown>(work: T): { work: T; calls: () => number } {
+  let calls = 0
+  const each = (first: unknown, ...rest: unknown[]): unknown => {
+    if (!Array.isArray(first) || first.length) calls += 1
+    return (work as unknown as (...args: unknown[]) => unknown)(first, ...rest)
+  }
+  return { work: each as unknown as T, calls: () => calls }
+}
+/** Median microseconds per update over `ROUNDS` rounds of `UPDATES`. */
+function perUpdate(update: () => void): number {
+  for (let index = 0; index < 200; index++) update()
+  const rounds: number[] = []
+  for (let round = 0; round < ROUNDS; round++) {
+    const start = process.hrtime.bigint()
+    for (let index = 0; index < UPDATES; index++) update()
+    rounds.push(Number(process.hrtime.bigint() - start) / 1_000 / UPDATES)
+  }
+  return rounds.sort((a, b) => a - b)[Math.floor(ROUNDS / 2)]!
+}
+const thread = (): AgentThread => ({ id: 't', projectId: 'p', title: 'T', modelId: 'm', status: 'running', requests: [], messages: [] })
+const round = (value: number): string => value.toFixed(2)
+
+describe('tool pictures per update (ADR-0170)', () => {
+  it('Codex: a Computer Use call and a view_image keep nothing, and an update costs about what it did', async () => {
+    const media = await store()
+    const capture = counted<MediaCapture>(media.capture)
+    const path = join(folders[0]!, 'viewed.png'); await writeFile(path, SCREENSHOT)
+    const captureFile = counted<MediaFileCapture>(media.captureFile)
+    const words = { id: 'cu', type: 'mcpToolCall', status: 'completed', server: 'node_repl', tool: 'js', arguments: { code: 'await sky.click()' }, result: { content: [{ type: 'text', text: 'Clicked.' }] } }
+    const shot = { ...words, arguments: { code: 'await nodeRepl.emitImage(await sky.screenshot())' }, result: { content: [{ type: 'text', text: 'Script completed' }, { type: 'image', data: DATA, mimeType: 'image/png' }] } }
+    const viewed = { id: 'view', type: 'imageView', path }
+    const context = { turnId: 'turn', phase: 'completed' as const }
+    const timed = (projection: CodexActivityProjection, item: unknown): number => {
+      const conversation = thread()
+      return perUpdate(() => projection.item(conversation, codexItemSchema.parse(item), context))
+    }
+    const off = new CodexActivityProjection(() => 1_000)
+    const switchedOff = agentCaptures({ capture: capture.work, captureFile: captureFile.work }, () => false)
+    const on = new CodexActivityProjection(() => 1_000, switchedOff.captureMedia, switchedOff.captureMediaFile)
+    const result = {
+      wordsOff: timed(off, words), shotOff: timed(off, shot), viewOff: timed(off, viewed),
+      wordsOn: timed(on, words), shotOn: timed(on, shot), viewOn: timed(on, viewed),
+    }
+    await media.idle()
+    console.info(`[perf] Codex per update, switch off, µs (no capture / capture): Computer Use words ${round(result.wordsOff)} / ${round(result.wordsOn)}, `
+      + `Computer Use screenshot ${round(result.shotOff)} / ${round(result.shotOn)}, view_image ${round(result.viewOff)} / ${round(result.viewOn)}; `
+      + `kept ${capture.calls()}, file reads ${captureFile.calls()}`)
+    // With the switch off, neither the screenshot nor the viewed file reached the store, however many updates came.
+    expect(capture.calls()).toBe(0)
+    expect(captureFile.calls()).toBe(0)
+    if (process.env.SOTTO_PERF_ASSERT === '1') for (const value of Object.values(result)) expect(value).toBeLessThan(BUDGET_US)
+
+    // On, each update of a finished step carries the picture to the store, which hashes it and keeps one copy.
+    const everyCapture = counted<MediaCapture>(media.capture), everyFile = counted<MediaFileCapture>(media.captureFile)
+    const switchedOn = agentCaptures({ capture: everyCapture.work, captureFile: everyFile.work }, () => true)
+    const every = new CodexActivityProjection(() => 1_000, switchedOn.captureMedia, switchedOn.captureMediaFile)
+    const conversation = thread()
+    const once = process.hrtime.bigint()
+    every.item(conversation, codexItemSchema.parse(shot), context)
+    const screenshotUs = Number(process.hrtime.bigint() - once) / 1_000
+    every.item(conversation, codexItemSchema.parse(viewed), context)
+    await media.idle()
+    const wordsEvery = timed(every, words)
+    console.info(`[perf] Codex, switch on: first Computer Use screenshot ${round(screenshotUs)} µs, an update with words alone ${round(wordsEvery)} µs; `
+      + `kept ${everyCapture.calls()}, file reads ${everyFile.calls()}`)
+    expect(everyCapture.calls()).toBeGreaterThanOrEqual(1)
+    expect(everyFile.calls()).toBeGreaterThanOrEqual(1)
+    if (process.env.SOTTO_PERF_ASSERT === '1') expect(wordsEvery).toBeLessThan(BUDGET_US)
+  })
+
+  it('Cursor: a tool\'s picture is kept by no update, and an update costs about what it did', async () => {
+    const media = await store()
+    const capture = counted<MediaCapture>(media.capture)
+    const place = { turnId: 'turn', cwd: '/repo', key: 'shot' }
+    const words = { sessionUpdate: 'tool_call_update', toolCallId: 'call', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Took a screenshot.' } }] }
+    const shot = { ...words, content: [...words.content, { type: 'content', content: { type: 'image', data: DATA, mimeType: 'image/png' } }] }
+    const timed = (update: Record<string, unknown>, work?: MediaCapture): number => {
+      let rows: AgentActivity[] = cursorActivities({ sessionUpdate: 'tool_call', toolCallId: 'call', title: 'screenshot', kind: 'other', status: 'pending' }, place, [], true, work)
+      // Each update projects against the rows the last one made, as the adapter's thread holds them.
+      return perUpdate(() => { rows = cursorActivities(update, place, rows, true, work) })
+    }
+    const given = agentCaptures({ capture: capture.work, captureFile: async () => [] }, () => false).captureMedia
+    const result = { wordsOff: timed(words), shotOff: timed(shot), wordsOn: timed(words, given), shotOn: timed(shot, given) }
+    await media.idle()
+    console.info(`[perf] Cursor per update, µs (off / on): words ${round(result.wordsOff)} / ${round(result.wordsOn)}, `
+      + `screenshot ${round(result.shotOff)} / ${round(result.shotOn)}; kept ${capture.calls()}`)
+    expect(capture.calls()).toBe(0)
+    if (process.env.SOTTO_PERF_ASSERT === '1') for (const value of Object.values(result)) expect(value).toBeLessThan(BUDGET_US)
+
+    // On, the first update that carries the picture keeps it; every later one finds it on the row and hashes nothing.
+    const everyCapture = counted<MediaCapture>(media.capture)
+    const every = agentCaptures({ capture: everyCapture.work, captureFile: async () => [] }, () => true).captureMedia
+    let rows: AgentActivity[] = cursorActivities({ sessionUpdate: 'tool_call', toolCallId: 'call', title: 'screenshot', kind: 'other', status: 'pending' }, place, [], true, every)
+    const once = process.hrtime.bigint()
+    rows = cursorActivities(shot, place, rows, true, every)
+    const firstUs = Number(process.hrtime.bigint() - once) / 1_000
+    const laterUs = perUpdate(() => { rows = cursorActivities(shot, place, rows, true, every) })
+    await media.idle()
+    console.info(`[perf] Cursor, switch on: first screenshot ${round(firstUs)} µs, each update after it ${round(laterUs)} µs; kept ${everyCapture.calls()}`)
+    expect(rows.at(-1)!.media).toHaveLength(1)
+    expect(everyCapture.calls()).toBe(1)
+    if (process.env.SOTTO_PERF_ASSERT === '1') expect(laterUs).toBeLessThan(BUDGET_US)
+  })
+})

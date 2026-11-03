@@ -1,11 +1,13 @@
 /** Child-process workload for nativeUsageWrites.perf.test.ts; synthetic archives only. */
 import assert from 'node:assert/strict'
-import { copyFile, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate as nextTask } from 'node:timers/promises'
 import { NativeUsage } from '../../src/main/agents/nativeUsage'
+import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { nativeUsageBenchTotals as totals } from './nativeUsageBenchTotals'
+import { usageLedgerBytes } from './usageLedgerFiles'
 
 type Archive = Record<string, { entries: Record<string, unknown> }>
 const [seed, threadsText, scenario] = process.argv.slice(2)
@@ -25,22 +27,26 @@ try {
     usage.claude('thread-0', { type: 'stream_event', event: { type: 'message_start', message: message('live', 0) } })
     await usage.flushed()
   }
-  // The baseline hands the store a copy of the ledger; later versions hand it the ledger already serialized, and later
-  // still already encoded, in pieces.
+  // The baseline hands the store a copy of the ledger; later versions hand it the ledger already serialized, then already
+  // encoded, in pieces, and later still each thread's ledger to a file of its own (#555). Every version writes through
+  // `AtomicJsonStore`, so its writes are counted there, ledger files only.
   type Serialized = string | readonly Uint8Array[]
-  const store = (usage as unknown as { store: { write(value: Archive): Promise<void>; writeSerialized?(text: Serialized): Promise<void> } }).store
-  const original = store.write.bind(store)
+  type Written = Archive | { id: string; ledger: Archive[string] }
+  const prototype = AtomicJsonStore.prototype as unknown as { write(value: unknown, compact?: string): Promise<void>; writeSerialized?(text: Serialized): Promise<void> }
+  const ledgerFile = (store: unknown): boolean => /(?:-usage\.json|[0-9a-f]{40}\.json)$/u.test((store as { filePath: string }).filePath)
   let writes = 0, entriesWritten = 0
-  const recordWrite = (value: Archive): void => {
+  const recordWrite = (value: Written): void => {
     writes++
-    for (const ledger of Object.values(value)) entriesWritten += Object.keys(ledger.entries).length
+    const ledgers = 'ledger' in value && 'id' in value ? [value.ledger as Archive[string]] : Object.values(value as Archive)
+    for (const ledger of ledgers) entriesWritten += Object.keys(ledger.entries).length
   }
-  store.write = value => { recordWrite(value); return original(value) }
-  if (store.writeSerialized) {
-    const writeSerialized = store.writeSerialized.bind(store)
-    store.writeSerialized = text => {
-      recordWrite(JSON.parse(typeof text === 'string' ? text : Buffer.concat(text).toString('utf8')) as Archive)
-      return writeSerialized(text)
+  const write = prototype.write
+  prototype.write = function (value, compact) { if (ledgerFile(this)) recordWrite(value as Written); return write.call(this, value, compact) }
+  if (prototype.writeSerialized) {
+    const writeSerialized = prototype.writeSerialized
+    prototype.writeSerialized = function (text) {
+      if (ledgerFile(this)) recordWrite(JSON.parse(typeof text === 'string' ? text : Buffer.concat(text).toString('utf8')) as Written)
+      return writeSerialized.call(this, text)
     }
   }
   const before = totals(usage.get('thread-0'))
@@ -67,7 +73,7 @@ try {
   if (scenario === 'turns') assert.equal(result.reduce((sum, view) => sum + (view.total?.output ?? 0), 0), outputBefore + 10_000)
   const reopened = new NativeUsage(root, 'claude'); await reopened.load(); await reopened.flushed()
   for (let i = 0; i < threads; i++) assert.deepEqual(totals(reopened.get(`thread-${i}`)), result[i])
-  const bytes = (await stat(join(root, 'claude-usage.json'))).size
+  const bytes = await usageLedgerBytes(root)
   console.log(JSON.stringify({ writes, entriesWritten, observedMs, drainedMs, cpuMs: (cpu.user + cpu.system) / 1000,
     heapBefore, heapAfterObservations, heapAfterDrain, archiveBytes: bytes, result }))
 } finally { await rm(root, { recursive: true, force: true }) }

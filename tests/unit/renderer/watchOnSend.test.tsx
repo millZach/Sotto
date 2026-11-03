@@ -60,7 +60,9 @@ function fakeBridge(initial: WatcherRoomState) {
 
 /** A new thread's composer, before its first send, with Watcher on or off and main answering each command. */
 function setup({ enabled = true, started = false, sendError = null as string | null, refusals = Number.POSITIVE_INFINITY, initial = room() } = {}) {
-  vi.mocked(useOptionalApp).mockReturnValue({ settings: DEFAULT_SETTINGS, update: { watcherEnabled: enabled } } as unknown as AppContextValue)
+  const dismissPastePermissionNotices = vi.fn()
+  vi.mocked(useOptionalApp).mockReturnValue({ settings: DEFAULT_SETTINGS, update: { watcherEnabled: enabled },
+    actions: { dismissPastePermissionNotices } } as unknown as AppContextValue)
   const state: AgentState = threadsStateFixture()
   state.hostId = HOST
   state.host.threads.forEach(thread => { thread.requests = [] })
@@ -90,7 +92,7 @@ function setup({ enabled = true, started = false, sendError = null as string | n
       <ThreadComposer row={row} state={state} command={command} store={store} onSend={vi.fn()} />
     </WatcherRoomProvider>
   }
-  return { state, command, store, bridge, composer, pane }
+  return { state, command, store, bridge, composer, pane, dismissPastePermissionNotices }
 }
 
 async function settle(): Promise<void> { await act(async () => { await Promise.resolve(); await Promise.resolve() }) }
@@ -141,6 +143,7 @@ describe('Watch on a new thread composer', () => {
     setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Build the footer')
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     await settle(); await settle()
+    expect(f.dismissPastePermissionNotices).toHaveBeenCalledTimes(1)
     expect(f.command.mock.calls.some(([request]) => request.type === 'manual-send')).toBe(true)
     expect(f.bridge.watchThread).toHaveBeenCalledWith({ target: { hostId: HOST, threadId: THREAD } })
     expect(watchOnSend.has(THREAD)).toBe(false)

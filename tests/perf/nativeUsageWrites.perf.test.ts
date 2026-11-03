@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { NativeUsage } from '../../src/main/agents/nativeUsage'
 import { sourceAt } from '../fixtures/baselineSource'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
+import { writeOneUsageFile } from '../fixtures/usageLedgerFiles'
 
 const BASE = '7b5fdb843c46ca9fbd21d0ea6acc6656d7f72def'
 const exec = promisify(execFile)
@@ -44,12 +45,14 @@ describe.skipIf(!PERF_BENCH)("isolated native usage archive writes (timing bench
           })
         }
         await seed.flushed()
+        // The ledgers as an earlier build kept them, in one file, which both versions read (#555).
+        const seedFile = await writeOneUsageFile(seedRoot)
         const rows: Record<string, Measurement[]> = { before: [], after: [] }
         // Fresh processes isolate heaps and module state; alternating order reduces warm filesystem bias.
         // The first pair is warm-up and is not included in medians.
         for (let run = 0; run < 4; run++) {
           for (const label of run % 2 ? ['after', 'before'] : ['before', 'after']) {
-            const { stdout } = await exec(process.execPath, [bundles[label]!, join(seedRoot, 'claude-usage.json'), String(threads), scenario], { maxBuffer: 1024 * 1024 })
+            const { stdout } = await exec(process.execPath, [bundles[label]!, seedFile, String(threads), scenario], { maxBuffer: 1024 * 1024 })
             const row = JSON.parse(stdout.trim()) as Measurement
             if (run) rows[label]!.push(row)
           }

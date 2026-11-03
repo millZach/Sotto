@@ -1,0 +1,794 @@
+# Cuts a Sotto Owl every night at midnight UTC (ADR-0072, November 1, 2026), with no computer of Zach's switched on.
+# It builds only when main has moved since the newest Owl and Gates (Windows), Package result and Desktop result all
+# passed on main's commit. Windows, the Mac and Linux are built from that one commit as one Owl version; each
+# installer is installed or opened on a fresh runner and must open its window; release:owl's checks then verify every
+# file. Only after all of that does the run publish the prerelease on millZach/Sotto-releases, then check that
+# saysotto.com links the new Owl, deploying the site once more if it does not (#1894).
+#
+# Started by hand it is a dry run unless publish is ticked: it builds and checks everything and publishes nothing,
+# whatever the skip rules say. Only main may publish.
+name: Sotto Owl nightly
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the Owl prerelease. Leave off for a dry run, which builds and checks every platform and publishes nothing. Only main publishes.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# One nightly at a time, whether scheduled or started by hand. A second waits rather than cancelling the first.
+concurrency:
+  group: owl-nightly
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    name: Decide whether tonight builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      publish: ${{ steps.decide.outputs.publish }}
+      version: ${{ steps.decide.outputs.version }}
+      source: ${{ steps.decide.outputs.source }}
+    steps:
+      - name: Check out this branch's history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+
+      # Reads main's commit, the newest Owl and its source from the public release feed, every Owl tag of the day,
+      # and the required checks on main's commit. The job token only lifts the public rate limit on those reads.
+      - name: Apply the skip rules and choose the version
+        id: decide
+        env:
+          PUBLISH: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+          SOTTO_RELEASE_CHECK_TOKEN: ${{ github.token }}
+        run: node scripts/owl-nightly.mjs decide
+
+  windows:
+    name: Package Sotto Owl (Windows x64)
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CI: 'true'
+      VERSION: ${{ needs.decide.outputs.version }}
+      SOURCE: ${{ needs.decide.outputs.source }}
+    steps:
+      - name: Check the version and source commit
+        shell: bash
+        run: |
+          if ! [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]; then echo "The source must be a full 40-character lower-case commit."; exit 1; fi
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-owl\.[1-9][0-9]{7}\.[1-9][0-9]*$ ]]; then
+            echo "The version must be a full Owl version, such as 0.1.44-owl.20261102.1."; exit 1
+          fi
+          echo "Packaging Sotto Owl $VERSION for Windows from $SOURCE."
+
+      - name: Check out this branch's history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the source commit, if this branch's history holds it
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA" 2> /dev/null; then
+            echo "The source $SOURCE is not in the history of $GITHUB_REF, the branch this run was started from. Nothing was built."
+            exit 1
+          fi
+          git checkout --quiet --detach "$SOURCE"
+
+      - name: Use a long temp path
+        shell: pwsh
+        run: |
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Electron 43 has no install script, so npm ci leaves node_modules/electron/dist empty.
+      - name: Download Electron
+        run: node node_modules/electron/install.js
+
+      # The installer check opens the NSIS installer with 7-Zip, which it finds in electron-builder's cache on the
+      # release PC. A fresh runner's cache may not hold it, so the check is pointed at the copy npm ci installed.
+      - name: Point the installer check at 7-Zip
+        shell: pwsh
+        run: |
+          $sevenZip = Join-Path $PWD 'node_modules\7zip-bin\win\x64\7za.exe'
+          if (Test-Path $sevenZip) { "SOTTO_7ZA_PATH=$sevenZip" >> $env:GITHUB_ENV }
+
+      # The same command and checks as the Windows Owl packaged by hand, pinned to tonight's version and commit. It
+      # refuses unless the checkout is clean and at the source, builds the x64 NSIS installer unsigned, as every Owl
+      # has been so far, and launches the unpacked app to check its resources, version and Owl features.
+      - name: Package and verify the Windows Owl
+        shell: bash
+        run: npm run package:owl -- --version "$VERSION" --source "$SOURCE"
+
+      # The installer, its blockmap and owl.yml are published. app.asar and the provenance are what release:owl
+      # checks them against before anything is published; they are never attached.
+      - name: Keep the Windows Owl
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-owl-windows-${{ needs.decide.outputs.version }}
+          path: |
+            release/Sotto-Owl-Setup-${{ needs.decide.outputs.version }}.exe
+            release/Sotto-Owl-Setup-${{ needs.decide.outputs.version }}.exe.blockmap
+            release/owl.yml
+            release/win-unpacked/resources/app.asar
+            out/build-provenance.json
+            release/owl-features-owl-package-status.json
+            release/owl-features-owl-package.png
+            release/owl-package-status.json
+            release/owl-package.png
+          if-no-files-found: error
+          retention-days: 14
+
+  mac:
+    name: Mac
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/owl-mac.yml
+    with:
+      version: ${{ needs.decide.outputs.version }}
+      source: ${{ needs.decide.outputs.source }}
+    # A called workflow sees its environment's secrets only when the caller inherits secrets. The signing secrets
+    # live in the owl-mac environment, which admits only main; the repository itself holds none.
+    secrets: inherit
+
+  linux:
+    name: Linux
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/owl-linux.yml
+    with:
+      version: ${{ needs.decide.outputs.version }}
+      source: ${{ needs.decide.outputs.source }}
+
+  # The release procedure builds this on forge. Here it is built the same way on a hosted Linux runner, socket
+  # contract first, so a paired Linux host has tonight's version to update to.
+  linux-host:
+    name: Package the Linux host archive
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CI: 'true'
+      VERSION: ${{ needs.decide.outputs.version }}
+      SOURCE: ${{ needs.decide.outputs.source }}
+    steps:
+      - name: Check the version and source commit
+        shell: bash
+        run: |
+          if ! [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]; then echo "The source must be a full 40-character lower-case commit."; exit 1; fi
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-owl\.[1-9][0-9]{7}\.[1-9][0-9]*$ ]]; then
+            echo "The version must be a full Owl version, such as 0.1.44-owl.20261102.1."; exit 1
+          fi
+
+      - name: Check out this branch's history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the source commit, if this branch's history holds it
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA" 2> /dev/null; then
+            echo "The source $SOURCE is not in the history of $GITHUB_REF, the branch this run was started from. Nothing was built."
+            exit 1
+          fi
+          git checkout --quiet --detach "$SOURCE"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the socket contract
+        run: npm run test:socket
+
+      # Refuses a checkout that is not clean and at the source, verifies the archive's bytes and starts the host.
+      - name: Package and verify the Linux host archive
+        run: npm run package:host:owl -- --version "$VERSION" --source "$SOURCE"
+
+      - name: Keep the Linux host archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-owl-linux-host-${{ needs.decide.outputs.version }}
+          path: |
+            release/Sotto-host-${{ needs.decide.outputs.version }}-linux-x64.tar.gz
+            release/Sotto-host-${{ needs.decide.outputs.version }}-linux-x64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  # The launch checks open what a user downloads, on a runner that never built it: the Windows installer installed
+  # silently, Sotto.app copied out of the disk image, the Linux tarball extracted. Each must open its window and
+  # report tonight's version on the Owl track. The checking tool comes from this run's commit; the app under test is
+  # the downloaded file.
+  launch-windows:
+    name: Launch check (Windows)
+    needs: [decide, windows]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.decide.outputs.version }}
+    steps:
+      - name: Check out the launch check
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: npm
+
+      - name: Install the launch check's dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download the Windows Owl
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-windows-${{ needs.decide.outputs.version }}
+          path: owl-windows
+
+      - name: Install the Windows Owl silently
+        shell: pwsh
+        run: |
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+-owl\.\d{8}\.\d+$') { throw 'The version is not a full Owl version.' }
+          $installer = Join-Path $PWD "owl-windows\release\Sotto-Owl-Setup-$env:VERSION.exe"
+          $folder = Join-Path $env:RUNNER_TEMP 'sotto-owl-installed'
+          $install = Start-Process -FilePath $installer -ArgumentList '/S', "/D=$folder" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "The Owl installer ended with exit code $($install.ExitCode). Nothing was published." }
+          if (-not (Test-Path (Join-Path $folder 'Sotto.exe'))) { throw 'The Owl installer finished without installing Sotto.exe. Nothing was published.' }
+          "OWL_APP=$folder" >> $env:GITHUB_ENV
+
+      - name: Open the installed Owl and wait for its window
+        shell: bash
+        run: node tools/verify-owl-package.mjs "$VERSION" --app "$OWL_APP" --out launch-check
+
+      - name: Keep the launch check's screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owl-launch-windows-${{ needs.decide.outputs.version }}
+          path: launch-check/
+          if-no-files-found: warn
+          retention-days: 14
+
+  launch-mac:
+    name: Launch check (Apple silicon)
+    needs: [decide, mac]
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.decide.outputs.version }}
+    steps:
+      - name: Check out the launch check
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: npm
+
+      - name: Install the launch check's dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download the Mac Owl
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-mac-${{ needs.decide.outputs.version }}
+          path: owl-mac
+
+      # Copies the app out of the disk image as a user drags it to Applications, then asks Gatekeeper about the copy.
+      - name: Copy Sotto.app out of the disk image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-owl\.[0-9]{8}\.[0-9]+$ ]]; then echo "The version is not a full Owl version."; exit 1; fi
+          mount="$RUNNER_TEMP/sotto-owl-disk-image"
+          app="$RUNNER_TEMP/sotto-owl-app"
+          mkdir -p "$mount" "$app"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "owl-mac/Sotto-Owl-$VERSION-arm64.dmg"
+          ditto "$mount/Sotto.app" "$app/Sotto.app"
+          hdiutil detach "$mount"
+          spctl --assess --type execute --verbose=2 "$app/Sotto.app"
+          echo "OWL_APP=$app" >> "$GITHUB_ENV"
+
+      - name: Open the Mac Owl and wait for its window
+        run: node tools/verify-owl-package.mjs "$VERSION" --app "$OWL_APP" --out launch-check
+
+      - name: Keep the launch check's screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owl-launch-mac-${{ needs.decide.outputs.version }}
+          path: launch-check/
+          if-no-files-found: warn
+          retention-days: 14
+
+  launch-linux:
+    name: Launch check (Linux x64)
+    needs: [decide, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.decide.outputs.version }}
+    steps:
+      - name: Check out the launch check
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: npm
+
+      - name: Install the launch check's dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install a virtual display and Electron's libraries
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0t64 libnss3 libgbm1 libasound2t64 \
+            libatk-bridge2.0-0t64 libxss1 libnotify4 libsecret-1-0
+
+      # As in the Linux Owl build, so the app starts with Chromium's whole sandbox rather than --no-sandbox.
+      - name: Let Chromium's sandbox start
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Download the Linux Owl
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-linux-${{ needs.decide.outputs.version }}
+          path: owl-linux
+
+      - name: Extract the tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-owl\.[0-9]{8}\.[0-9]+$ ]]; then echo "The version is not a full Owl version."; exit 1; fi
+          into="$RUNNER_TEMP/sotto-owl-app"
+          mkdir -p "$into"
+          tar -xzf "owl-linux/Sotto-Owl-$VERSION-linux-x64.tar.gz" -C "$into"
+          executable="$(find "$into" -mindepth 2 -maxdepth 2 -type f -name sotto)"
+          if [ "$(printf '%s\n' "$executable" | grep -c .)" -ne 1 ]; then echo "The tarball does not hold exactly one sotto executable."; exit 1; fi
+          echo "OWL_APP=$(dirname "$executable")" >> "$GITHUB_ENV"
+
+      - name: Open the Linux Owl and wait for its window
+        run: xvfb-run -a node tools/verify-owl-package.mjs "$VERSION" --app "$OWL_APP" --out launch-check
+
+      - name: Keep the launch check's screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owl-launch-linux-${{ needs.decide.outputs.version }}
+          path: launch-check/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # release:owl's checks, run where the Windows Owl was built so its provenance and build inputs compare as they do
+  # on the release PC: every file's version, source, size and digest, the Mac signature receipt, the Linux receipts
+  # and package contents, and both host archives. The verified files, the notes and the checksums are kept together.
+  assemble:
+    name: Verify and gather the release
+    needs: [decide, windows, mac, linux, linux-host, launch-windows, launch-mac, launch-linux]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.decide.outputs.version }}
+      SOURCE: ${{ needs.decide.outputs.source }}
+    steps:
+      - name: Check the version and source commit
+        shell: bash
+        run: |
+          if ! [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]; then echo "The source must be a full 40-character lower-case commit."; exit 1; fi
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-owl\.[1-9][0-9]{7}\.[1-9][0-9]*$ ]]; then
+            echo "The version must be a full Owl version, such as 0.1.44-owl.20261102.1."; exit 1
+          fi
+
+      # The nightly's own scripts come from this run's commit; the checkout they verify against is the source.
+      - name: Check out the nightly's scripts
+        uses: actions/checkout@v4
+        with:
+          path: tools
+          persist-credentials: false
+
+      - name: Check out this branch's history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the source commit, if this branch's history holds it
+        shell: bash
+        working-directory: source
+        run: |
+          if ! git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA" 2> /dev/null; then
+            echo "The source $SOURCE is not in the history of $GITHUB_REF. Nothing was published."
+            exit 1
+          fi
+          git checkout --quiet --detach "$SOURCE"
+
+      - name: Use a long temp path
+        shell: pwsh
+        run: |
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: tools/package-lock.json
+
+      - name: Install the scripts' dependencies
+        working-directory: tools
+        run: npm ci --ignore-scripts
+
+      - name: Download the Windows Owl
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-windows-${{ needs.decide.outputs.version }}
+          path: source
+
+      - name: Download the Mac Owl
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-mac-${{ needs.decide.outputs.version }}
+          path: source/release/owl-mac
+
+      - name: Download the Mac host archive
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-mac-host-${{ needs.decide.outputs.version }}
+          path: source/release/owl-mac-host
+
+      - name: Download the Linux Owl
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-linux-${{ needs.decide.outputs.version }}
+          path: source/release/owl-linux
+
+      - name: Download the Linux host archive
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-linux-host-${{ needs.decide.outputs.version }}
+          path: source/release/owl-linux-host
+
+      - name: Verify every platform's files and gather them
+        shell: bash
+        run: >-
+          node tools/scripts/owl-nightly.mjs assemble --root source --out release/owl-nightly
+          --mac-artifacts release/owl-mac --linux-artifacts release/owl-linux
+          --host-archive "release/owl-mac-host/Sotto-host-$VERSION-darwin-arm64.tar.gz"
+          --host-archive "release/owl-linux-host/Sotto-host-$VERSION-linux-x64.tar.gz"
+
+      - name: Keep the release
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-owl-nightly-${{ needs.decide.outputs.version }}
+          path: source/release/owl-nightly/
+          if-no-files-found: error
+          retention-days: 14
+
+  # Attesting needs write scopes, so it runs apart from building and runs nothing from a checkout. It attests every
+  # file the release will carry, then checks each attestation, so a dry run proves this step too.
+  attest:
+    name: Attest every release file
+    needs: [decide, assemble]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download the release
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-nightly-${{ needs.decide.outputs.version }}
+          path: owl-release
+
+      - name: Name the files to attest
+        id: files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd owl-release
+          sha256sum --check --strict SHA256SUMS.txt
+          mapfile -t assets < <(jq -r '.assets[]' release.json)
+          {
+            echo 'attest<<FILES'
+            for name in "${assets[@]}" SHA256SUMS.txt; do
+              if ! [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || [ ! -f "$name" ]; then echo "The release lists a file that is not here: $name" >&2; exit 1; fi
+              echo "owl-release/$name"
+            done
+            echo 'FILES'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest the release files
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.files.outputs.attest }}
+
+      - name: Check every attestation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILES: ${{ steps.files.outputs.attest }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" > /dev/null
+            echo "Attested: $(basename "$file")"
+          done <<< "$FILES"
+
+  # The only job that writes to millZach/Sotto-releases. The owl-release environment admits only main and holds the
+  # one token it needs. It runs nothing from a checkout.
+  publish:
+    name: Publish the Owl prerelease
+    needs: [decide, attest]
+    if: needs.decide.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: owl-release
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      published-at: ${{ steps.publish.outputs.published-at }}
+      tag: ${{ steps.publish.outputs.tag }}
+    env:
+      RELEASES: millZach/Sotto-releases
+    steps:
+      - name: Check the release token
+        shell: bash
+        env:
+          SOTTO_RELEASES_TOKEN: ${{ secrets.SOTTO_RELEASES_TOKEN }}
+        run: |
+          if [ -z "$SOTTO_RELEASES_TOKEN" ]; then
+            echo "The owl-release environment has no SOTTO_RELEASES_TOKEN, so the Owl cannot be published. Nothing was published."
+            echo "Add it as docs/release/releasing.md says, under Cutting a Sotto Owl build."
+            exit 1
+          fi
+
+      - name: Download the release
+        uses: actions/download-artifact@v4
+        with:
+          name: sotto-owl-nightly-${{ needs.decide.outputs.version }}
+          path: owl-release
+
+      - name: Check every file against its checksum and attestation
+        shell: bash
+        working-directory: owl-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha256sum --check --strict SHA256SUMS.txt
+          for name in $(jq -r '.assets[]' release.json) SHA256SUMS.txt; do
+            gh attestation verify "$name" --repo "$GITHUB_REPOSITORY" > /dev/null
+          done
+
+      # Never reuses a version: a tag already on the release repository, or a draft release a hand cut is still
+      # finishing, which holds no tag yet, stops it.
+      - name: Publish the prerelease
+        id: publish
+        shell: bash
+        working-directory: owl-release
+        env:
+          GH_TOKEN: ${{ secrets.SOTTO_RELEASES_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$(jq -r .tag release.json)"
+          title="$(jq -r .title release.json)"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-owl\.[0-9]{8}\.[0-9]+$ ]]; then echo "The release names no Owl tag."; exit 1; fi
+          if git ls-remote --exit-code --tags "https://github.com/$RELEASES.git" "refs/tags/$tag" > /dev/null; then
+            echo "$tag is already on $RELEASES, so tonight's Owl was not published. Nothing was published."; exit 1
+          fi
+          if gh release view "$tag" --repo "$RELEASES" > /dev/null 2>&1; then
+            echo "$RELEASES already has a release for $tag, perhaps a draft from a hand cut. Nothing was published."; exit 1
+          fi
+          mapfile -t assets < <(jq -r '.assets[]' release.json)
+          echo "published-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          gh release create "$tag" "${assets[@]}" --repo "$RELEASES" --title "$title" --prerelease --latest=false --notes-file owl-notes.md
+          gh release upload "$tag" SHA256SUMS.txt --repo "$RELEASES"
+
+      - name: Check what was published
+        shell: bash
+        working-directory: owl-release
+        env:
+          GH_TOKEN: ${{ secrets.SOTTO_RELEASES_TOKEN }}
+          TAG: ${{ steps.publish.outputs.tag }}
+        run: |
+          set -euo pipefail
+          view="$(gh release view "$TAG" --repo "$RELEASES" --json isPrerelease,isDraft,assets)"
+          if [ "$(jq -r '.isPrerelease and (.isDraft | not)' <<< "$view")" != true ]; then echo "$TAG is not a published prerelease."; exit 1; fi
+          expected="$( (jq -r '.assets[]' release.json; echo SHA256SUMS.txt) | sort)"
+          published="$(jq -r '.assets[].name' <<< "$view" | sort)"
+          if [ "$expected" != "$published" ]; then echo "$TAG does not carry exactly the verified files."; exit 1; fi
+          latest="$(gh api "repos/$RELEASES/releases/latest" --jq .tag_name)"
+          if [[ "$latest" == *-owl.* ]]; then echo "The Latest release is now $latest, an Owl. Make the newest stable Latest again."; exit 1; fi
+          mkdir ../published
+          gh release download "$TAG" --repo "$RELEASES" --dir ../published
+          (cd ../published && sha256sum --check --strict SHA256SUMS.txt)
+          {
+            echo "## Published $TAG"
+            echo
+            echo "https://github.com/$RELEASES/releases/tag/$TAG"
+            echo
+            echo "Every file downloaded again and matched its checksum. Latest is still $latest."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Publishing starts Deploy site on millZach/Sotto-releases, which can report success and leave saysotto.com on the
+  # previous builds (#1894). This waits for that run, checks the page links tonight's Owl for every platform, and if
+  # it does not after the page's ten-minute cache, gives Sotto-releases' main a fresh empty commit, deploys once more
+  # from main and checks again: on November 1 a deploy from a new commit was what took. A page still stale after that
+  # is a warning in the run's summary, never a failed night: the release itself is out.
+  site:
+    name: Check saysotto.com links the new Owl
+    needs: [decide, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: owl-release
+    permissions:
+      contents: read
+    env:
+      RELEASES: millZach/Sotto-releases
+      VERSION: ${{ needs.decide.outputs.version }}
+      PUBLISHED_AT: ${{ needs.publish.outputs.published-at }}
+      GH_TOKEN: ${{ secrets.SOTTO_RELEASES_TOKEN }}
+    steps:
+      - name: Wait for the site to link the new Owl
+        shell: bash
+        run: |
+          set -uo pipefail
+          site_links_owl() {
+            local page
+            page="$(curl -fsSL --max-time 30 "https://saysotto.com/?owl-nightly=$(date +%s)")" || return 1
+            for key in windows-owl mac-owl linux-owl linux-owl-tar; do
+              grep -qF "data-download=\"$key\" data-version=\"$VERSION\"" <<< "$page" || return 1
+            done
+          }
+          wait_for_site() {
+            for _ in $(seq 1 24); do site_links_owl && return 0; sleep 30; done
+            return 1
+          }
+          # The newest Deploy site run of an event started at or after a time, followed to its end.
+          follow_deploy() {
+            local id=''
+            for _ in $(seq 1 40); do
+              id="$(gh run list --repo "$RELEASES" --workflow deploy-site.yml --event "$1" --limit 10 --json databaseId,createdAt \
+                --jq "[.[] | select(.createdAt >= \"$2\")] | sort_by(.createdAt) | last | .databaseId // empty")"
+              [ -n "$id" ] && break
+              sleep 15
+            done
+            if [ -z "$id" ]; then echo "No Deploy site run started for the $1."; return 1; fi
+            gh run watch "$id" --repo "$RELEASES" --exit-status > /dev/null
+            echo "Deploy site run $id for the $1 ended $(gh run view "$id" --repo "$RELEASES" --json conclusion --jq .conclusion)."
+          }
+          follow_deploy release "$PUBLISHED_AT" || true
+          if wait_for_site; then
+            echo "saysotto.com links Owl $VERSION." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          echo "saysotto.com still links an earlier Owl. Deploying the site once more from a fresh commit on main (#1894)."
+          dispatched_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # An empty commit: main's own tree with main as its parent, moved onto main without forcing.
+          head="$(gh api "repos/$RELEASES/git/ref/heads/main" --jq .object.sha)"
+          tree="$(gh api "repos/$RELEASES/git/commits/$head" --jq .tree.sha)"
+          fresh="$(gh api "repos/$RELEASES/git/commits" -f message="Give the site deploy a fresh source commit for Sotto Owl $VERSION (#1894)" \
+            -f tree="$tree" -f "parents[]=$head" --jq .sha)"
+          gh api -X PATCH "repos/$RELEASES/git/refs/heads/main" -f sha="$fresh" -F force=false > /dev/null \
+            || echo "Could not move main onto a fresh commit; deploying from main as it is."
+          gh workflow run deploy-site.yml --repo "$RELEASES" --ref main
+          follow_deploy workflow_dispatch "$dispatched_at" || true
+          if wait_for_site; then
+            echo "saysotto.com links Owl $VERSION after one more deploy (#1894)." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          message="The Owl is published, but saysotto.com still links an earlier Owl after two deploys. Run Deploy site on $RELEASES from main by hand (#1894)."
+          echo "::warning title=saysotto.com is stale::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
+
+  report:
+    name: Report
+    needs: [decide, windows, mac, linux, linux-host, launch-windows, launch-mac, launch-linux, assemble, attest, publish, site]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Summarise the run
+        shell: bash
+        env:
+          DECIDED: ${{ needs.decide.result }}
+          BUILD: ${{ needs.decide.outputs.build }}
+          PUBLISH: ${{ needs.decide.outputs.publish }}
+          VERSION: ${{ needs.decide.outputs.version }}
+          SOURCE: ${{ needs.decide.outputs.source }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          {
+            echo "## Sotto Owl nightly: what happened"
+            echo
+            if [ "$DECIDED" != success ]; then
+              echo "The skip rules could not be applied ($DECIDED), so nothing was built or published. The decision job's log says why."
+            elif [ "$BUILD" != true ]; then
+              echo "No Owl tonight. The decision above says why."
+            else
+              [ "$PUBLISH" = true ] || echo "Dry run: nothing was published."
+              echo
+              echo "Owl $VERSION from \`$SOURCE\`."
+              echo
+              echo "| Step | Result |"
+              echo "| --- | --- |"
+              jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"' <<< "$RESULTS"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

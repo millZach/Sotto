@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { t } from '@lingui/core/macro'
-import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
+import type { AgentAttachmentHandle, AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
 import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
@@ -13,6 +13,8 @@ export interface RequestAnswer {
   readonly questionAnswers?: AgentQuestionAnswers
   readonly permissionChoice?: string
   readonly skipped?: true
+  /** Images dropped on the card, which go with the answer (ADR-0176). */
+  readonly attachments?: AgentAttachmentHandle[]
 }
 
 /** Skips a `skippable` question: the provider is told so and the turn goes on without an answer. */
@@ -88,12 +90,15 @@ export function blocksSending(question: StructuredQuestion, selection: QuestionS
   return progress === 'partial' || (progress === 'empty' && isRequired(question))
 }
 
-/** Every required question answered by its own ID, optional ones only when answered; null until then. */
-export function buildQuestionAnswers(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>): AgentQuestionAnswers | null {
+/**
+ * Every required question answered by its own ID, optional ones only when answered; null until then. `imagesIn` is the
+ * question images go in (ADR-0176): images answer it, so it never holds the form back, and main adds their note to it.
+ */
+export function buildQuestionAnswers(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>, imagesIn?: string): AgentQuestionAnswers | null {
   const answers: Record<string, { optionIds: string[]; text?: string }> = {}
   for (const question of questions) {
     const selection = selections[question.id]
-    if (blocksSending(question, selection)) return null
+    if (question.id !== imagesIn && blocksSending(question, selection)) return null
     if (!isAnswered(question, selection)) continue
     const text = selection!.text.trim()
     const useText = question.allowFreeText && text.length > 0 && (textOnly(question) || selection!.other)
@@ -105,8 +110,8 @@ export function buildQuestionAnswers(questions: readonly StructuredQuestion[], s
   return answers
 }
 
-export function structuredAnswer(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>): RequestAnswer | null {
-  const questionAnswers = buildQuestionAnswers(questions, selections)
+export function structuredAnswer(questions: readonly StructuredQuestion[], selections: Readonly<Record<string, QuestionSelection>>, imagesIn?: string): RequestAnswer | null {
+  const questionAnswers = buildQuestionAnswers(questions, selections, imagesIn)
   return questionAnswers === null ? null : { answer: '', questionAnswers }
 }
 
@@ -124,15 +129,17 @@ export function legacyPermissionAnswer(approved: boolean): RequestAnswer {
 }
 
 /** Title and body for a permission: the native tool context when present, otherwise the request text. */
-export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly cwd?: string; readonly details?: string } {
+export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly summary?: string; readonly target?: string; readonly cwd?: string; readonly details?: string } {
   const [first = '', ...rest] = request.text.split('\n')
   const context = request.context
   const restText = rest.join('\n').trim()
   const toolName = context?.toolName
-  const title = first.trim() || (toolName ? t({ message: `Use ${toolName}`, comment: 'A permission request\'s title: {toolName} is the tool the agent asks to use.' }) : t`Permission request`)
-  const command = context?.command ?? (restText && !context?.details ? restText : undefined)
+  const worded = context?.command ? t({ message: 'Run a command', comment: 'The heading of a card that asks to run a command.' }) : context?.action
+  const title = worded ?? (first.trim() || (toolName ? t({ message: `Use ${toolName}`, comment: 'A permission request\'s title: {toolName} is the tool the agent asks to use.' }) : t`Permission request`))
+  const command = context?.command ?? (restText && !context?.details && !context?.action ? restText : undefined)
   const details = context?.details && context.details.trim() !== command?.trim() ? context.details : undefined
-  return { title, ...(command ? { command } : {}), ...(context?.cwd ? { cwd: context.cwd } : {}), ...(details ? { details } : {}) }
+  return { title, ...(command ? { command } : {}), ...(context?.summary ? { summary: context.summary } : {}), ...(context?.target ? { target: context.target } : {}),
+    ...(context?.cwd ? { cwd: context.cwd } : {}), ...(details ? { details } : {}) }
 }
 
 /**

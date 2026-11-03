@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
+import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast, KeptHostPart, KeptPart } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
@@ -107,6 +107,30 @@ export function samePlainData(previous: unknown, next: unknown, depth = 0): bool
   return keys === 0
 }
 
+/**
+ * `whole` with its kept parts left out and named in `kept` (ADR-0028, October 30 kept parts): each part, at its top and in
+ * its `host` but the threads, that holds the same data as in `parts`. The parts around the threads are the drafts,
+ * receipts, deliveries, projects, providers, paired hosts and settings. Most of them do not change from one broadcast to
+ * the next, and they were resent whole on every one, up to seventeen a second while a reply streamed. A part is compared
+ * with `samePlainData`, identity first, so a part handed over unchanged costs one comparison.
+ */
+function withKeptParts(whole: AgentStateBroadcast, parts: { readonly top: Readonly<Record<string, unknown>>; readonly host: Readonly<Record<string, unknown>> }): AgentStateBroadcast {
+  const top: Record<string, unknown> = {}, host: Record<string, unknown> = {}
+  const kept: KeptPart[] = [], hostKept: KeptHostPart[] = []
+  for (const [key, value] of Object.entries(whole)) {
+    if (key === 'host') continue
+    if (Object.hasOwn(parts.top, key) && samePlainData(parts.top[key], value)) kept.push(key as KeptPart)
+    else top[key] = value
+  }
+  for (const [key, value] of Object.entries(whole.host)) {
+    if (key !== 'threads' && Object.hasOwn(parts.host, key) && samePlainData(parts.host[key], value)) hostKept.push(key as KeptHostPart)
+    else host[key] = value
+  }
+  if (hostKept.length) host.kept = hostKept
+  // The parts left out are absent: the page puts them back from the broadcast it holds before anything reads the state.
+  return { ...top, ...kept.length ? { kept } : {}, host } as unknown as AgentStateBroadcast
+}
+
 interface ThreadBase {
   readonly revision: number
   /**
@@ -119,6 +143,9 @@ interface ThreadBase {
   readonly overrides: ReadonlyMap<string, AgentThread>
   readonly order: readonly string[]
 }
+
+/** Records an answer lists whole, held under `revision` once `commit()` says the answer was delivered. */
+export interface ThreadRecordsSeed { readonly revision: number; readonly commit: () => void }
 
 /** The most records sent over a whole walk's before they are folded into a map of their own, which reads no thread. */
 const MAX_OVERRIDES = 64
@@ -204,6 +231,28 @@ export class ThreadRecordsBroadcast {
   /** The next broadcast lists every record: the window holds none it can measure from. */
   reset(): void { this.base = null; this.resets++ }
 
+  /**
+   * `threads`, which an answer lists whole, as the base the next broadcast is measured from once that answer is delivered
+   * (ADR-0028, November 1 amendment): the client holds them under the revision returned, so the broadcast after the answer
+   * carries only what changed since it rather than every record again. Committing voids any earlier send that has not
+   * become the base yet, as `reset()` does: the client read past it. Undefined, leaving everything as it was, when two
+   * records share an ID and cannot be told apart.
+   */
+  seed(threads: readonly AgentThread[]): ThreadRecordsSeed | undefined {
+    const revision = ++this.revision
+    const walked = walk(threads, revision, null)
+    if (!walked.unique) return undefined
+    return { revision, commit: () => { this.resets++; this.base = { revision, host: undefined, records: walked.records, overrides: NO_OVERRIDES, order: walked.order } } }
+  }
+  /** The revision of the broadcast the next is measured from, or null when the next lists every record. */
+  get baseRevision(): number | null { return this.base?.revision ?? null }
+
+  /**
+   * `threads` measured from what the window was last sent, as a broadcast would be, for a command's reply: nothing is
+   * made the base, so the next broadcast is measured from the same place and carries the same changes (#1330's shape).
+   */
+  peek(threads: readonly AgentThread[], host?: object): AgentThreadsBroadcast { return this.encode(threads, host).payload }
+
   /** Verifying mode: a broadcast read in part, against the whole walk from the same base. */
   private verifyPatched(threads: readonly AgentThread[], base: ThreadBase, payload: AgentThreadsBroadcast): void {
     this.verifiedEncodes++
@@ -280,6 +329,11 @@ export class AgentStateBroadcaster {
   private readonly revisions = new ModelCatalogRevisions()
   private readonly sent = new Map<string, number>()
   private readonly threads = new ThreadRecordsBroadcast()
+  /**
+   * The parts of the broadcast the next one's threads are measured from, as that broadcast was encoded, under its thread
+   * revision: the kept parts' base. It moves with the threads' base, and only to a broadcast delivered.
+   */
+  private parts: { readonly revision: number; readonly top: Readonly<Record<string, unknown>>; readonly host: Readonly<Record<string, unknown>> } | null = null
 
   /** Encodes `state` for the main window and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
@@ -294,11 +348,16 @@ export class AgentStateBroadcaster {
       return { revision, models: models as AgentModel[] }
     })
     const threads = this.threads.encode(state.host.threads, state.host)
-    const payload: AgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: threads.payload } }
+    const whole: AgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: threads.payload } }
+    // Measured from the broadcast the window last applied, which it holds the parts of: what did not change is left out.
+    const parts = this.parts
+    const payload = threads.payload.base !== null && parts?.revision === threads.payload.base ? withKeptParts(whole, parts) : whole
     const delivered = deliver(payload)
     if (delivered) {
       for (const [key, revision] of confirmed) this.sent.set(key, revision)
       threads.commit()
+      // The parts go with the threads' base: a read while this was delivered leaves neither.
+      this.parts = this.threads.baseRevision === threads.payload.revision ? { revision: threads.payload.revision, top: whole, host: whole.host } : null
     }
     return delivered
   }
@@ -310,7 +369,7 @@ export class AgentStateBroadcaster {
    *
    * An arrow property, so `registerAgentIpc` can be handed it on its own.
    */
-  readonly windowRead = (): void => { this.threads.reset() }
+  readonly windowRead = (): void => { this.threads.reset(); this.parts = null }
 
   /** The broadcasts whose threads were read only where their host's notes say they were replaced, and those verified (#925 step 6). */
   get threadEncodes(): { readonly patched: number; readonly verified: number } { return { patched: this.threads.patchedEncodes, verified: this.threads.verifiedEncodes } }
@@ -332,6 +391,19 @@ export class AgentStateBroadcaster {
    */
   readonly encodeReceipt = (state: AgentState): AgentCommandReceipt =>
     this.encode(state, (key, models): AgentModelCatalogRevision => ({ revision: this.revisionFor(key, models), omitted: true }))
+
+  /**
+   * A command's reply to a window that asked for its threads as changed thread records (ADR-0028, October 30 amendment): `encodeReceipt`'s,
+   * with the thread records that changed since the last broadcast the window was sent in place of every one. The window
+   * puts the whole array back from that broadcast's records; one that holds another broadcast reads the whole state.
+   * Nothing is recorded as sent, so the next broadcast is measured from the same broadcast and carries the same changes.
+   *
+   * An arrow property, so `registerAgentIpc` can be handed it on its own.
+   */
+  readonly encodeChangedThreadRecordsReceipt = (state: AgentState): AgentCommandChangedThreadRecordsReceipt => {
+    const receipt = this.encodeReceipt(state)
+    return { ...receipt, host: { ...receipt.host, threads: this.threads.peek(state.host.threads, state.host) } }
+  }
 
   /** `state` with `host.models` and every `host.clientHosts[].models` replaced by what `catalog` makes of it. */
   private encode<Catalog>(state: AgentState, catalog: (key: string, models: readonly AgentModel[]) => Catalog): EncodedState<Catalog> {

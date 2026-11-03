@@ -1,4 +1,5 @@
 import { setPromptText, promptText } from './helpers/promptEditor'
+import { ResponseStreamingProvider } from '../../../src/renderer/src/agents/responseStreaming'
 import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -713,7 +714,8 @@ describe('Thread transcript scrolling', () => {
       const live = liveAgentState(state)
       vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), responseStreaming }))
       const conversation = { receipts: new Map(keptInView.map(id => [id, []])), takeovers: new Map() } as unknown as WatcherConversation
-      render(keptInView.length ? <WatcherConversationContext.Provider value={conversation}><ThreadsView now={NOW} /></WatcherConversationContext.Provider> : <ThreadsView now={NOW} />)
+      const page = keptInView.length ? <WatcherConversationContext.Provider value={conversation}><ThreadsView now={NOW} /></WatcherConversationContext.Provider> : <ThreadsView now={NOW} />
+      render(<ResponseStreamingProvider value={responseStreaming}>{page}</ResponseStreamingProvider>)
       const transcript = screen.getByRole('log', { name: 'Thread transcript' })
       const update = (change: (thread: Thread) => Partial<Thread>): void => act(() => {
         live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews' ? { ...item, ...change(item) } : item) } })
@@ -765,6 +767,33 @@ describe('Thread transcript scrolling', () => {
       // Back at the end, the reply is followed again.
       scrollTo(end())
       write(13)
+      expect(transcript.scrollTop).toBe(end())
+      vi.unstubAllGlobals()
+    })
+
+    it('keeps a reader at the end there when the composer grows under the transcript and nothing in it changes (#1820)', () => {
+      // The composer's room is the transcript's bottom padding: a draft of several lines grows it, and only the transcript's
+      // own box hears of it, since its content keeps its size. jsdom has no ResizeObserver, so the test says what fires.
+      const observers: { readonly callback: () => void; readonly observed: Element[] }[] = []
+      vi.stubGlobal('ResizeObserver', class {
+        private readonly observed: Element[] = []
+        constructor(callback: () => void) { observers.push({ callback, observed: this.observed }) }
+        observe(element: Element): void { this.observed.push(element) }
+        disconnect(): void {}
+      })
+      const { transcript } = mountWith(answered())
+      let room = 0
+      const end = (): number => transcript.scrollHeight - VIEW
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) + (this === transcript ? room : 0) })
+      vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) + (this === transcript ? room : 0) - VIEW))) })
+      expect(transcript.scrollTop).toBe(end())
+      room = 2 * ROW
+      act(() => { for (const { callback, observed } of observers) if (observed.includes(transcript)) callback() })
+      expect(transcript.scrollTop).toBe(end())
+      // The transcript's own move to the end, heard only after the end moved on again, as a draft restored on opening a
+      // thread does before the move is heard, is followed there too rather than taken for the reader leaving the end.
+      room = 3 * ROW
+      fireEvent.scroll(transcript)
       expect(transcript.scrollTop).toBe(end())
       vi.unstubAllGlobals()
     })

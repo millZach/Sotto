@@ -202,6 +202,11 @@ export interface ShortTextPrompt {
   /** Internal routing purpose, never part of the model's prompt. */
   readonly purpose?: ShortTextPurpose
 }
+/** A model a side call runs on when there is no session to run it in (ADR-0173): the model chosen, and the folder it would work in. */
+export interface ShortTextTarget {
+  readonly modelId: string
+  readonly cwd?: string | undefined
+}
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
 export interface RestoredThreadHistory {
@@ -294,8 +299,11 @@ export interface AgentHost {
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
   useLaunchProfiles?(profiles: ThreadLaunchProfiles): void
   useWatcherTools?(tools: WatcherProfileTools): void
-  /** Capture the owned runtime before main checks identity. A refusal cannot close its replacement. */
-  profileRefusalHandler?(threadId: string): ((reason: string) => void | Promise<void>) | undefined
+  /**
+   * Capture the owned runtime before main checks identity. A refusal cannot close its replacement. `history` is true for an
+   * earlier Watcher conversation's refusal, which stops the runtime but is not the provider's error.
+   */
+  profileRefusalHandler?(threadId: string): ((reason: string, history?: boolean) => void | Promise<void>) | undefined
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
   /**
@@ -378,6 +386,11 @@ export interface AgentHost {
    * `signal` stops the client the call started, which is how a host shutdown leaves no child behind.
    */
   writeShortText?(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null>
+  /**
+   * The same side call on a provider's own client for what has no session yet (ADR-0173): a new thread before its first
+   * send, or Watcher's first message. Run on the model chosen, at its least effort, in the folder given or the home folder.
+   */
+  writeShortTextOn?(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null>
   /**
    * Record that a request was answered and which client answered it. Absent on hosts that keep no
    * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).
@@ -474,6 +487,22 @@ export interface AgentHost {
   /** Hand the adapter a way to ask what the event store already holds, before it reads a provider. */
   useThreadHistory?(source: ThreadHistorySource): void
   observeThreads?(threadIds: readonly string[]): void
+  /**
+   * The live-session set (CONTEXT.md), by the caller's IDs: the observed threads whose provider session must be running
+   * whether or not anyone types, because Sotto will send to them unasked or is waiting on them. The coordinator names it
+   * each time it calls `observeThreads`, just before: Watcher's watched threads, delegations, threads with a queued
+   * follow-up, threads with an outbox entry and a send's own thread. An adapter that takes it starts no session for a
+   * thread merely observed, starts one for each thread in it, and never reaps those. Until it first hears one, or when
+   * it does not take it, it starts a session for every observed thread, as before. Claude Code takes it (ADR-0016,
+   * November 1, 2026 amendment).
+   */
+  keepSessionsLive?(threadIds: readonly string[]): void
+  /**
+   * The threads the user has settled (CONTEXT.md, Settled), as a run begins, by the caller's IDs. An adapter may leave
+   * them out of work it does for every saved thread once, such as Codex catching a rollout up after an update, and do it
+   * when the thread is opened instead (#992, Zach's call on October 30).
+   */
+  useSettledThreads?(threadIds: readonly string[]): void
   /**
    * Early start (#769): start this thread's provider session now, the way its next action would, because the user began
    * typing in its composer. A thread whose native session has not started yet has none to start; with `draft` the

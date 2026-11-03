@@ -87,8 +87,9 @@ describe('DeepSeek Harness ACP adapter', () => {
     expect(request.kind).toBe('permission')
     expect(request.text).toContain('echo hi > out.txt')
     expect(request.text).toContain('workspace-write')
-    expect(request.text).toContain('The model’s reason: The fixture asks to cross.')
     expect(request.context?.command).toBe('echo hi > out.txt')
+    expect(request.context?.summary).toBe('Fixture command')
+    expect(request.context?.details).toBe('Sandbox it asks for: workspace-write\nThe model’s reason: The fixture asks to cross.')
     expect(request.permissionChoices?.map(choice => choice.id)).toEqual(['allow-once', 'reject-once'])
   })
 

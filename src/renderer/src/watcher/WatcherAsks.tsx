@@ -163,7 +163,7 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
         {...press(thread.id)}>{t({ message: 'Open', context: 'Open a thread' })}</button>
     </div>
     <WhatItSaid row={row} />
-    <AgentRequestCard ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={threadRequestBlocked(row, state)} draftOwner={owner}
+    <AgentRequestCard ownerId={thread.id} ownerTitle={thread.title} request={request} providerId={row.providerId} blocked={threadRequestBlocked(row, state)} draftOwner={owner}
       messageLinks={request.kind === 'question' ? messageLinks(thread.messages) : []}
       onWriteAnswer={() => answering.openAtRequest(thread.id, document.activeElement instanceof HTMLElement ? document.activeElement : null)}
       onSubmit={threadRequestSubmit(command, thread, request, true)}

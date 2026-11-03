@@ -7,9 +7,9 @@
  * stages one the way `npm run package:host` does. Nothing here touches the account's own ~/.ssh.
  */
 import { testCredentials } from '../fixtures/testCredentials'
+import { banner, freePort } from '../fixtures/loopbackSshd'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { connect, createServer } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -44,22 +44,6 @@ let spawnCount = 0, versionChecks = 0, forwardUrl = ''
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
 const descriptor = async (): Promise<{ pid: number; port: number; hostId: string; startedBy?: string } | undefined> => {
   try { return JSON.parse(await readFile(join(data, 'host-listener.json'), 'utf8')) as { pid: number; port: number; hostId: string; startedBy?: string } } catch { return undefined }
-}
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
-  const port = (server.address() as { port: number }).port
-  await new Promise<void>(done => server.close(() => done()))
-  return port
-}
-/** sshd has started listening once a TCP connection is answered with its banner. */
-async function banner(port: number): Promise<boolean> {
-  return new Promise(done => {
-    const socket = connect({ host: '127.0.0.1', port })
-    socket.setTimeout(1000, () => { socket.destroy(); done(false) })
-    socket.once('data', chunk => { socket.destroy(); done(chunk.toString('utf8').startsWith('SSH-')) })
-    socket.once('error', () => done(false))
-  })
 }
 /** The same layout as the host archive: host/index.js with zod beside it in node_modules. */
 async function stageInstall(): Promise<string> {

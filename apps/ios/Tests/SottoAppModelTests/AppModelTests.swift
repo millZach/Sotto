@@ -20,7 +20,7 @@ final class AppModelTests: XCTestCase {
         HostConnection.loseAcknowledgement = false
         HostConnection.shells = [:]; HostConnection.commandHandler = nil; HostConnection.folderHandler = nil
         HostConnection.stageHandler = nil; HostConnection.previewHandler = nil
-        HostConnection.receipts = [:]; HostConnection.features = ["host-folders"]
+        HostConnection.receipts = [:]; HostConnection.features = ["host-folders"]; HostConnection.settledPage = .null
         let host = "00000000-0000-4000-8000-000000000001"
         let pairing = try JSONDecoder().decode(Pairing.self, from: Data(#"{"v":1,"hostId":"\#(host)","clientId":"phone","token":"fixture"}"#.utf8))
         let saved = SavedComputer(address: "https://laptop.example.ts.net:8443", pairing: pairing, reportedName: "Laptop")
@@ -510,6 +510,75 @@ final class AppModelTests: XCTestCase {
         HostConnection.shell = try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: shell))
         return try HostConnection.shell.decode(Shell.self)
     }
+    /// The computer's shell with its one thread settled or not, listed or held back, and busy or not.
+    @MainActor private func shelfShell(settled: Bool, listed: Bool = true, busy: Bool = false) throws -> Shell {
+        var shell = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(HostConnection.shell)) as? [String: Any])
+        var host = try XCTUnwrap(shell["host"] as? [String: Any])
+        var threads = try XCTUnwrap((shell["heldThreads"] as? [[String: Any]]) ?? (host["threads"] as? [[String: Any]]))
+        if settled { threads[0]["workspaceSettledAt"] = "2026-11-02T12:00:00.000Z" } else { threads[0].removeValue(forKey: "workspaceSettledAt") }
+        host["threads"] = listed ? threads : []; shell["host"] = host
+        shell["heldThreads"] = threads; shell["busyThreadIds"] = busy ? ["t"] : []; shell["settledHeldBack"] = listed ? 0 : 1
+        HostConnection.shell = try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: shell))
+        return try HostConnection.shell.decode(Shell.self)
+    }
+    @MainActor func testUndoPressesTheOtherOneAndNeverGoesQuietWhenItCannot() async throws {
+        let (model, ref) = try fixture()
+        model.phase(.active); await model.waitForActivation()
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        _ = try shelfShell(settled: true)
+        await model.shelve(ref, .settle)
+        XCTAssertEqual(model.feedback, "Moved to Settled.")
+        XCTAssertEqual(model.shelfUndoOffered?.action, .restore)
+        _ = try shelfShell(settled: false)
+        await model.undoShelf()
+        XCTAssertEqual(connection.commands.last?["type"], .string("restore-thread"))
+        XCTAssertEqual(model.feedback, "Restored.")
+        XCTAssertEqual(model.shelfUndoOffered?.action, .settle)
+        // The computer can't take it yet: the press says why, and sends nothing.
+        var sent = connection.commands.count
+        try connection.push(.shell(shelfShell(settled: false, busy: true)))
+        let held = try XCTUnwrap(model.actionHeld(ref))
+        await model.undoShelf()
+        XCTAssertEqual(model.feedback, held)
+        XCTAssertEqual(connection.commands.count, sent)
+        // Restored on the desktop after a Settle here: Undo is no longer offered, and a press already on its way sends nothing.
+        model.feedback = nil
+        try connection.push(.shell(shelfShell(settled: false)))
+        _ = try shelfShell(settled: true)
+        await model.shelve(ref, .settle)
+        XCTAssertEqual(model.shelfUndoOffered?.action, .restore)
+        try connection.push(.shell(shelfShell(settled: false)))
+        XCTAssertNil(model.shelfUndoOffered)
+        sent = connection.commands.count
+        await model.undoShelf()
+        XCTAssertEqual(connection.commands.count, sent)
+        XCTAssertEqual(model.feedback, "Moved to Settled.", "The words stay; only Undo goes")
+        model.phase(.background)
+    }
+    @MainActor func testRestoringAThreadReadFromTheShelfMovesItToTheListAndOffersUndo() async throws {
+        let (_, ref) = try fixture()
+        HostConnection.features = ["host-folders", Wire.settledThreadsFeature]
+        _ = try shelfShell(settled: true, listed: false)
+        let threads = try XCTUnwrap(HostConnection.shell["heldThreads"])
+        HostConnection.settledPage = .object(["threads": threads, "next": .null])
+        let model = AppModel(keychain: TestKeychain.store)
+        model.phase(.active); await model.waitForActivation()
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        await model.readOlderSettled(show: .all, first: true)
+        XCTAssertEqual(model.olderSettledRows(show: .all).map(\.ref), [ref])
+        XCTAssertEqual(model.shelfAction(ref), .restore, "A row read from the computer offers Restore without a list entry")
+        _ = try shelfShell(settled: false)
+        await model.shelve(ref, .restore)
+        XCTAssertEqual(connection.commands.last?["type"], .string("restore-thread"))
+        XCTAssertEqual(model.feedback, "Restored.")
+        XCTAssertTrue(model.olderSettledRows(show: .all).isEmpty, "Its row is now the list's")
+        XCTAssertEqual(model.shelfUndoOffered?.action, .settle)
+        _ = try shelfShell(settled: true)
+        await model.undoShelf()
+        XCTAssertEqual(connection.commands.last?["type"], .string("settle-thread"))
+        XCTAssertEqual(model.feedback, "Moved to Settled.")
+        model.phase(.background)
+    }
     @MainActor private func modelWithMarker(_ marker: PendingOperation) throws -> AppModel {
         try TestKeychain.store.write([marker], account: ComputerStore.pendingAccount)
         return AppModel(keychain: TestKeychain.store)
@@ -569,6 +638,24 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.feedback, "Answer sent.")
         XCTAssertEqual(connection.operations.filter { $0 == "command" }.count, 1)
         XCTAssertEqual(connection.operations.filter { $0 == "receipt" }.count, 1)
+    }
+    /// The reply to a command is the shell after it. A second read sent the whole shell again, megabytes on a computer
+    /// with many threads, on the one socket every other message waits behind (November 2, 2026).
+    @MainActor func testAnAnswerReadsItsReceiptWithoutTheWholeShellAgain() async throws {
+        let (model, ref) = try fixture()
+        HostConnection.mayAnswer = true
+        _ = try changeShell(requests: [["id": "request", "kind": "permission", "text": "Read files?", "options": []]])
+        model.phase(.active); await model.waitForActivation()
+        let request = try XCTUnwrap(model.thread(ref)?.requests.first)
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        HostConnection.receipt = .object(["status": .string("completed"), "answerDelivered": .bool(true)])
+        await model.answer(request, in: ref, choice: "allow")
+        XCTAssertEqual(connection.operations.filter { $0 == "command" }.count, 1)
+        XCTAssertEqual(connection.operations.filter { $0 == "receipt" }.count, 1, "Its own receipt still confirms the answer")
+        XCTAssertEqual(connection.operations.filter { $0 == "shell" }.count, 0, "The reply already was the shell")
+        XCTAssertTrue(model.pending.isEmpty)
+        XCTAssertEqual(model.feedback, "Answer sent.")
+        model.phase(.background)
     }
     @MainActor func testReconnectReceiptCheckSurvivesANewerDisappearancePush() async throws {
         let (_, ref) = try fixture()

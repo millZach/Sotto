@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep 
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
 import { CHECK_MOVED_TO, CHECK_WORKTREE_FOLDER } from './checkWorktree'
+import { COUNCIL_WORKTREE_FOLDER } from '../council/councilFolders'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
 import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
@@ -233,12 +234,15 @@ const removalsQueued = new Map<string, number>()
  * The branch and time of the last removal of each folder in this process, until the folder is put back. A caller that
  * waited its turn behind that removal may hold a record made before the folder moved branch; this is the newer word.
  */
-const finishedRemovals = new Map<string, { readonly branch: string | undefined; readonly at: string }>()
-function reclaimedRecord(metadata: AgentWorktree, path: string, branch: string | undefined): AgentWorktree {
+const finishedRemovals = new Map<string, { readonly branch: string | undefined; readonly detachedCommit: string | undefined; readonly at: string }>()
+/** A reclaimed record on the branch the folder had, or, for a detached HEAD, on the commit it had, which restore checks out. */
+function reclaimedRecord(metadata: AgentWorktree, path: string, branch: string | undefined, detachedCommit?: string): AgentWorktree {
   const at = new Date().toISOString()
-  finishedRemovals.set(pathKey(path), { branch, at })
-  return { ...withCheckedOutBranch(metadata, branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: at }
+  const commit = branch ? undefined : detachedCommit
+  finishedRemovals.set(pathKey(path), { branch, detachedCommit: commit, at })
+  return { ...withCheckedOutBranch(metadata, branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: at, detachedCommit: commit }
 }
+const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u
 /** How many removals of this folder are running or waiting their turn; a test reads it to see one wait. */
 export function queuedRemovals(path: string): number { return removalsQueued.get(pathKey(path)) ?? 0 }
 async function removalTurn<T>(path: string, run: () => Promise<T>): Promise<T> {
@@ -304,10 +308,10 @@ export function withCheckedOutBranch(metadata: AgentWorktree, branch: string | u
   return { ...metadata, branch, ...(metadata.temporaryBranch && branch !== metadata.branch ? { temporaryBranch: false } : {}) }
 }
 
-function registeredWorktrees(output: string): Array<{ path: string; branch: string | undefined; locked: boolean; lockReason: string | undefined; prunable: boolean }> {
+function registeredWorktrees(output: string): Array<{ path: string; branch: string | undefined; head: string | undefined; detached: boolean; locked: boolean; lockReason: string | undefined; prunable: boolean }> {
   return output.split('\0\0').filter(Boolean).map(record => {
     const fields = record.split('\0')
-    return { path: fields.find(field => field.startsWith('worktree '))?.slice(9) ?? '', branch: fields.find(field => field.startsWith('branch '))?.slice(7),
+    return { path: fields.find(field => field.startsWith('worktree '))?.slice(9) ?? '', branch: fields.find(field => field.startsWith('branch '))?.slice(7), head: fields.find(field => field.startsWith('HEAD '))?.slice(5), detached: fields.includes('detached'),
       locked: fields.some(field => field === 'locked' || field.startsWith('locked ')), lockReason: fields.find(field => field.startsWith('locked '))?.slice(7), prunable: fields.some(field => field === 'prunable' || field.startsWith('prunable ')) }
   })
 }
@@ -354,10 +358,16 @@ const DEPENDENCY_FOLDER = /(^|\/)node_modules\/$/u
  * finishes. Plain words, because `git worktree list` shows them.
  */
 export const REMOVING_LOCK_REASON = 'Sotto is removing this folder'
+/** Why a folder on a detached HEAD stays: removing it would lose a commit only that folder's HEAD has. */
+const DETACHED_COMMIT_ON_NO_BRANCH = 'This folder has no branch checked out, and no branch or remote branch has its commit, so removing it would lose that commit. Create a branch at it first. Nothing was changed.'
+/** Remove worktree, Settle's question and Delete thread… ask for a branch; only a rule or a clear takes a detached folder. */
+const DETACHED_NEEDS_BRANCH = 'This folder has no branch checked out, so it goes only under a cleanup rule or when its thread is cleared. Switch it to a branch to remove it now. Nothing was changed.'
+/** A send to a thread whose folder was removed on a commit the repository has since lost. */
+const detachedCommitGone = (commit: string) => `This thread’s folder was removed on commit ${commit.slice(0, 7)}, which this repository no longer has, so Sotto cannot put it back. Nothing was changed. Continue the thread in a new worktree.`
 /** The lock reason while Sotto puts back a folder a removal left half done without Sotto's lock; a repair cut off resumes. */
 export const REPAIRING_LOCK_REASON = 'Sotto is repairing this folder'
-const HALF_REMOVED = 'Sotto started removing this worktree’s folder and did not finish, so Git cannot use it. The branch keeps its commits. Choose Refresh to finish removing it; sending to the thread then puts it back on its branch.'
-const PARTLY_REMOVED = 'This worktree’s folder was only partly removed, so Git cannot use it. The branch keeps its commits. Choose Refresh to put its missing files back from Git, then reinstall its dependencies if it had any.'
+const HALF_REMOVED = 'Sotto started removing this worktree’s folder and did not finish, so Git cannot use it. Nothing committed is lost. Choose Refresh to finish removing it; sending to the thread then puts it back on its branch or commit.'
+const PARTLY_REMOVED = 'This worktree’s folder was only partly removed, so Git cannot use it. Nothing committed is lost. Choose Refresh to put its missing files back from Git, then reinstall its dependencies if it had any.'
 /**
  * Kept beside Git's lock in the worktree's registration while Sotto removes it, and removed with it: the nested worktrees
  * whose registrations go too, which a removal finished later would otherwise have lost.
@@ -366,7 +376,7 @@ const REMOVAL_RECORD = 'sotto-removal.json'
 type NestedWorktree = { path: string; commonDirectory: string }
 /** A reason a removal or repair stopped that is already in plain words for the person reading it. */
 class RemovalKept extends Error {}
-const REPAIR_STOPPED = 'Sotto could not put back this worktree’s missing files, so Git cannot use it yet. The branch keeps its commits.'
+const REPAIR_STOPPED = 'Sotto could not put back this worktree’s missing files, so Git cannot use it yet. Nothing committed is lost.'
 const REPAIR_FAILED = `${REPAIR_STOPPED} Check that Sotto can write to the folder, then choose Refresh to try again.`
 /** A repair that stopped, in plain words: what kept it, when Sotto knows, and what to press. */
 function unfinishedRepair(cause: unknown): Error {
@@ -482,8 +492,11 @@ export class ThreadWorktrees {
       .then(listing => !registeredWorktrees(listing).some(entry => pathKey(entry.path) === pathKey(path)), () => false)
   }
 
-  /** Only the fresh token path this add started may be cleaned up after its own deadline. */
-  private async addWorktree(repositoryRoot: string, path: string, branch: string, args: string[], identity: RegistryIdentity): Promise<void> {
+  /**
+   * Only the fresh token path this add started may be cleaned up after its own deadline. `checkout` is what the add checks
+   * out: a branch's full ref, or the commit a detached folder is put back on.
+   */
+  private async addWorktree(repositoryRoot: string, path: string, checkout: string, args: string[], identity: RegistryIdentity): Promise<void> {
     await coordinateRegistry(identity, async () => {
       try { return await this.git(repositoryRoot, args) }
       catch (error) {
@@ -491,14 +504,14 @@ export class ThreadWorktrees {
         try {
           const entries = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z']))
           const entry = entries.find(item => pathKey(item.path) === pathKey(path))
-          if (entry && (entry.lockReason !== 'initializing' || (entry.branch && entry.branch !== `refs/heads/${branch}`))) throw new Error('The incomplete checkout is no longer initializing on its reserved branch.', { cause: error })
+          if (entry && (entry.lockReason !== 'initializing' || (entry.branch && entry.branch !== checkout))) throw new Error('The incomplete checkout is no longer the one this setup started.', { cause: error })
           if (entry) {
             const present = await lstat(path).then(() => true, (failure: NodeJS.ErrnoException) => { if (failure.code === 'ENOENT') return false; throw failure })
             if (present) {
               if (pathKey(await realpath(path)) !== pathKey(path) || !(await lstat(join(path, '.git'))).isFile()) throw new Error('The incomplete folder was replaced.', { cause: error })
               const common = (await this.git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()
               if (pathKey(common) !== pathKey(identity.common) || await this.outsideLink(path)) throw new Error('The incomplete folder was redirected.', { cause: error })
-              await this.verifyIncompleteCheckout(path, branch)
+              await this.verifyIncompleteCheckout(path, checkout)
             }
             await this.git(repositoryRoot, ['worktree', 'unlock', '--', path])
             await this.git(repositoryRoot, ['worktree', 'remove', '--force', '--', path])
@@ -510,13 +523,13 @@ export class ThreadWorktrees {
           // restore fill that folder, so retrying is all it needs.
           if (!(await this.emptiedAndUnregistered(repositoryRoot, path))) throw new Error('Worktree setup took too long. The incomplete folder was kept because it could not be safely removed. Move any local files out and restore the checkout before retrying.', { cause: cleanupError })
         }
-        throw new Error('Worktree setup took too long. Retry setup to continue on the same branch.', { cause: error })
+        throw new Error(`Worktree setup took too long. Retry setup to continue on the same ${checkout.startsWith('refs/heads/') ? 'branch' : 'commit'}.`, { cause: error })
       }
     })
   }
 
-  /** A killed reset may not have written the index. Compare present files with the branch itself. */
-  private async verifyIncompleteCheckout(path: string, branch: string): Promise<void> {
+  /** A killed reset may not have written the index. Compare present files with what was checked out, a branch's ref or a commit. */
+  private async verifyIncompleteCheckout(path: string, checkout: string): Promise<void> {
     const files: string[] = []
     const links = new Map<string, Buffer>()
     const visit = async (directory: string): Promise<void> => {
@@ -538,7 +551,7 @@ export class ThreadWorktrees {
     for (let offset = 0; offset < files.length; offset += 32) {
       const batch = files.slice(offset, offset + 32)
       // Read only these files, not the whole potentially huge branch tree. Paths are always literal.
-      const tree = await this.git(path, ['--literal-pathspecs', 'ls-tree', '-r', '-z', '--full-tree', `refs/heads/${branch}`, '--', ...batch])
+      const tree = await this.git(path, ['--literal-pathspecs', 'ls-tree', '-r', '-z', '--full-tree', checkout, '--', ...batch])
       const blobs = new Map(tree.split('\0').filter(Boolean).map(record => {
         const tab = record.indexOf('\t')
         const [mode, , hash] = record.slice(0, tab).split(' ')
@@ -746,7 +759,7 @@ export class ThreadWorktrees {
     return takeTurns(movedBranchPicks, identity.key, async () => {
       for (let attempt = 1; ; attempt++) {
         const branch = await this.freeBranch(repositoryRoot, name, basename(path))
-        try { await this.addWorktree(repositoryRoot, path, branch, ['worktree', 'add', '-b', branch, '--', path, baseCommit], identity); return branch }
+        try { await this.addWorktree(repositoryRoot, path, `refs/heads/${branch}`, ['worktree', 'add', '-b', branch, '--', path, baseCommit], identity); return branch }
         catch (error) {
           const takenMeanwhile = error instanceof Error && /already exists/u.test(error.message) && await this.git(repositoryRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false)
           if (!takenMeanwhile || attempt >= MOVED_BRANCH_ADD_ATTEMPTS) throw error
@@ -848,8 +861,11 @@ export class ThreadWorktrees {
     ])
     // The machine's check worktrees are the checks' own (#1312): the next check moves them, so no thread is offered one.
     const checks = await realpath(join(this.directory, CHECK_WORKTREE_FOLDER)).then(folder => pathKey(folder) + sep, () => undefined)
+    // A Council's snapshot is its own threads' (ADR-0177), removed when it is settled, so no other thread is offered one.
+    const councils = await realpath(join(this.directory, COUNCIL_WORKTREE_FOLDER)).then(folder => pathKey(folder) + sep, () => undefined)
     return { isGit: true, currentBranch: branch.trim() || null, branches: branches.split(/\r?\n/u).filter(Boolean),
-      worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable && !(checks && pathKey(entry.path).startsWith(checks)))
+      worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable && !(checks && pathKey(entry.path).startsWith(checks))
+        && !(councils && pathKey(entry.path).startsWith(councils)))
         .map(entry => ({ path: entry.path, branch: entry.branch?.replace(/^refs\/heads\//u, '') ?? null })) }
   }
 
@@ -928,9 +944,12 @@ export class ThreadWorktrees {
       // An existing checkout is reused on whatever branch it has (ADR-0014); inspect records it.
       return (await this.inspectWithin({ ...metadata, status: 'ready', error: undefined }, identity)).worktree
     }
-    if (!branch) throw new Error('The independent working-copy allocation is incomplete.')
+    if (!branch && !metadata.detachedCommit) throw new Error('The independent working-copy allocation is incomplete.')
     // An empty folder here, as a half-finished removal or a timed-out add on Windows leaves, is filled (ADR-0041).
     if (await reservedFolder(metadata.path) === 'occupied') throw new Error('The reserved working folder already exists but is not this thread’s Git worktree. Nothing was changed.')
+    // A folder removed on a detached HEAD comes back only on its commit, which restore above checks out, or says the
+    // repository no longer has.
+    if (!branch) throw new Error(`This thread’s folder was removed on commit ${metadata.detachedCommit!.slice(0, 7)}, and Sotto could not put it back. Nothing was changed. Continue the thread in a new worktree.`)
     // A worker started from a moved branch takes its name, or the next free `<name>-<n>`, only as its worktree is added:
     // the name its allocation read may have been taken since, by another start beside it.
     const moved = metadata.incomingRef && !metadata.checkoutBranch ? INCOMING_REF.exec(metadata.incomingRef)?.[1] : undefined
@@ -943,24 +962,28 @@ export class ThreadWorktrees {
       const taken = await this.addMovedWorktree(repositoryRoot, metadata.path, moved, baseCommit, identity)
       return (await this.inspectWithin({ ...metadata, branch: taken, status: 'ready', error: undefined }, identity)).worktree
     }
-    await this.addWorktree(repositoryRoot, metadata.path, branch, metadata.checkoutBranch ? ['worktree', 'add', '--', metadata.path, branch] : ['worktree', 'add', '-b', branch, '--', metadata.path, baseCommit], identity)
+    await this.addWorktree(repositoryRoot, metadata.path, `refs/heads/${branch}`, metadata.checkoutBranch ? ['worktree', 'add', '--', metadata.path, branch] : ['worktree', 'add', '-b', branch, '--', metadata.path, baseCommit], identity)
     return (await this.inspectWithin({ ...metadata, status: 'ready', error: undefined }, identity)).worktree
   }
 
   /**
-   * Puts back a checkout Sotto made and then lost, on the branch it recorded (ADR-0014). Best effort: a
-   * folder that is still there with anything in it, a thread with no recorded branch and a branch that no
-   * longer exists are all returned unchanged, so the caller reports the real problem. An empty folder Git
-   * no longer registers is filled like a missing one (ADR-0041). Never resets a branch, never removes a
-   * checkout, and never takes a branch another folder has.
+   * Puts back a checkout Sotto made and then lost, on the branch it recorded (ADR-0014), or, for a folder reclaimed on a
+   * detached HEAD, on the commit it recorded, detached (ADR-0041). Best effort: a folder that is still there with
+   * anything in it, a thread with neither a branch nor such a commit, and a branch or commit that no longer exists are
+   * all returned unchanged, so the caller reports the real problem. An empty folder Git no longer registers is filled
+   * like a missing one (ADR-0041). Never resets a branch, never removes a checkout, and never takes a branch another
+   * folder has.
    */
   async restore(recorded: AgentWorktree): Promise<AgentWorktree> {
-    if (recorded.mode !== 'independent' || !recorded.path || !recorded.repositoryRoot || !recorded.branch) return recorded
-    // A removal that stopped partway is settled first, on the branch the folder had; the folder is then put back like
-    // any reclaimed one.
+    if (recorded.mode !== 'independent' || !recorded.path || !recorded.repositoryRoot) return recorded
+    // A removal that stopped partway is settled first, on the branch or detached commit the folder had; the folder is
+    // then put back like any reclaimed one.
     const metadata = await this.resumeRemoval(recorded)
     const { path, repositoryRoot, branch } = metadata
-    if (!path || !repositoryRoot || !branch) return metadata
+    const commit = branch ? undefined : metadata.detachedCommit
+    if (!path || !repositoryRoot || !(branch || (commit && COMMIT_ID.test(commit)))) return metadata
+    // What the folder is put back on: its branch's ref, or its commit.
+    const checkout = branch ? `refs/heads/${branch}` : commit!
     const folder = await reservedFolder(path)
     // A removal Windows could only half finish leaves the reserved folder there, empty and unregistered.
     // Anything else at the path, a link or junction included, is not Sotto's to fill. An add that times out
@@ -972,11 +995,16 @@ export class ThreadWorktrees {
     catch { return metadata }
     if (pathKey(dirname(path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(path))) return metadata
     let identity: RegistryIdentity
-    try { identity = await this.registryIdentity(repositoryRoot, `refs/heads/${branch}`) }
-    catch { return metadata }
+    try { identity = await this.registryIdentity(repositoryRoot, branch ? checkout : `${checkout}^{commit}`) }
+    catch {
+      // A commit the repository no longer has cannot come back, which a send says rather than that the folder is missing.
+      if (!branch && await this.registryIdentity(repositoryRoot).then(() => true, () => false)) throw new Error(detachedCommitGone(checkout))
+      return metadata
+    }
     const refuseAnotherFolder = async () => {
       const entries = registeredWorktrees(await this.registry(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'], identity))
-      const occupant = entries.find(entry => entry.branch === `refs/heads/${branch}` && pathKey(entry.path) !== pathKey(path))
+      // A branch is checked out in one folder at a time; a commit can be checked out detached in any number of them.
+      const occupant = branch ? entries.find(entry => entry.branch === checkout && pathKey(entry.path) !== pathKey(path)) : undefined
       if (occupant) throw new Error(`The branch ${branch} is checked out in ${occupant.path}, so this thread’s folder cannot be put back on it. Nothing was lost or changed. Close that folder’s checkout or move it to another branch, then retry.`)
       return entries
     }
@@ -988,11 +1016,14 @@ export class ThreadWorktrees {
     await refuseAnotherFolder()
     await mkdir(allocationRoot, { recursive: true })
     if (pathKey(await realpath(allocationRoot)) !== pathKey(allocationRoot)) throw new Error('The reserved worktree parent folder was redirected. Nothing was changed.')
-    // No -b and no -B: the recorded branch is checked out as it stands, with its commits.
-    try { await this.addWorktree(repositoryRoot, path, branch, ['worktree', 'add', '--', path, branch], identity) }
-    catch (error) { throw new Error(`This thread’s working folder was missing and Sotto could not put it back on ${branch}. Nothing was lost; the branch still has its commits. ${error instanceof Error ? error.message : ''}`.trim(), { cause: error }) }
+    // No -b and no -B: the recorded branch is checked out as it stands, with its commits; a detached folder gets its commit.
+    try { await this.addWorktree(repositoryRoot, path, checkout, branch ? ['worktree', 'add', '--', path, branch] : ['worktree', 'add', '--detach', '--', path, checkout], identity) }
+    catch (error) {
+      const lost = branch ? `${branch}. Nothing was lost; the branch still has its commits.` : `commit ${checkout.slice(0, 7)}. Nothing was lost; the repository still has that commit.`
+      throw new Error(`This thread’s working folder was missing and Sotto could not put it back on ${lost} ${error instanceof Error ? error.message : ''}`.trim(), { cause: error })
+    }
     finishedRemovals.delete(pathKey(path))
-    return { ...metadata, status: 'ready', error: undefined, reclaimedAt: undefined }
+    return { ...metadata, status: 'ready', error: undefined, reclaimedAt: undefined, detachedCommit: undefined }
   }
 
   /**
@@ -1244,11 +1275,27 @@ export class ThreadWorktrees {
   }
 
   /**
+   * The commit a detached HEAD in `path` has checked out, when a local branch or remote-tracking ref has it too, so
+   * removing the folder loses nothing (ADR-0041). Undefined for a commit no branch has, which only the folder's own HEAD
+   * keeps from Git's garbage collection.
+   */
+  async keptDetachedCommit(path: string): Promise<string | undefined> {
+    const commit = (await this.git(path, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+    return COMMIT_ID.test(commit) && await this.onABranch(path, commit) ? commit : undefined
+  }
+
+  /** Whether a local branch or remote-tracking ref has `commit`; tags do not count. */
+  private async onABranch(cwd: string, commit: string): Promise<boolean> {
+    return !(await this.git(cwd, ['rev-list', '--max-count=1', commit, '--not', '--branches', '--remotes'])).trim()
+  }
+
+  /**
    * Removes this thread's own worktree folder and nothing else (ADR-0041). The branch keeps its
    * commits, the thread keeps its record, and `restore` puts the folder back on the next send. It
-   * refuses a folder that is not the registered checkout, one with no branch to come back on, one
-   * holding a link out of itself, and, for a rule acting alone, one with anything but dependencies
-   * among its ignored files. Uncommitted work goes only after the user's answer.
+   * refuses a folder that is not the registered checkout, one on a detached HEAD unless a rule or a
+   * clear asks and a branch or remote branch has its commit, one holding a link out of itself, and,
+   * for a rule acting alone, one with anything but dependencies among its ignored files. Uncommitted
+   * work goes only after the user's answer. A detached folder is put back on its commit.
    */
   async reclaim(metadata: AgentWorktree, options: WorktreeReclaimOptions = {}): Promise<AgentWorktree> {
     if (metadata.mode !== 'independent' || metadata.reused) throw new Error('Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.')
@@ -1259,7 +1306,11 @@ export class ThreadWorktrees {
     const resumed = await this.resumeRemoval(metadata)
     if (resumed.reclaimedAt) return resumed
     const { facts, identity } = await this.reclaimFactsWithin(metadata)
-    if (!facts.branch) throw new Error('This folder has no branch checked out, so Sotto could not put it back. Switch it to a branch first. Nothing was changed.')
+    // A detached HEAD whose commit a branch or remote branch has loses nothing with its folder, and comes back on that
+    // commit; only a rule or a clear takes one, since the user's own removal asks for a branch.
+    if (!facts.branch && !options.automatic) throw new Error(DETACHED_NEEDS_BRANCH)
+    const detachedCommit = facts.branch ? undefined : await this.keptDetachedCommit(facts.path)
+    if (!facts.branch && !detachedCommit) throw new Error(DETACHED_COMMIT_ON_NO_BRANCH)
     if (facts.outsideLink) throw new Error(`This folder contains a link to another folder (${facts.outsideLink}). Remove the link first so nothing outside the folder is touched. Nothing was changed.`)
     if (options.automatic && facts.ignored.length) throw new Error('This folder holds ignored files besides installed dependencies, so a rule leaves it alone.')
     if (!options.automatic && facts.ignored.length && !options.confirmedIgnored) throw new Error('This folder holds ignored files. Nothing was removed. Choose Remove worktree to review them.')
@@ -1288,6 +1339,9 @@ export class ThreadWorktrees {
         if (JSON.stringify(ignoredRows) !== JSON.stringify(facts.ignored) ||
           JSON.stringify(untrackedNow.split('\0').filter(Boolean).sort()) !== JSON.stringify(facts.untracked) ||
           Boolean(statusNow.length) !== facts.dirty) throw new Error('The files changed. Nothing was removed. Choose Remove worktree again to review them.')
+        // Asked last, just before the lock: the folder may have moved to another commit, or the last branch with its commit
+        // been deleted.
+        if (detachedCommit && await this.keptDetachedCommit(facts.path) !== detachedCommit) throw new Error(DETACHED_COMMIT_ON_NO_BRANCH)
         // Nothing is deleted until Git holds the folder locked for Sotto's removal: from here on, a removal cut off by a
         // crash, a quit or a file kept in use is one Sotto recognises and finishes (#1297). The checks above covered
         // submodules, nested work and uncommitted changes, which is what Git's own clean check would have asked about.
@@ -1299,7 +1353,7 @@ export class ThreadWorktrees {
       // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
       try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!, nestedWorktrees) }
       catch (error) { throw unfinishedRemoval(error) }
-      return this.withoutIncomingRef(reclaimedRecord(metadata, facts.path, facts.branch))
+      return this.withoutIncomingRef(reclaimedRecord(metadata, facts.path, facts.branch, detachedCommit))
     })
   }
 
@@ -1322,7 +1376,8 @@ export class ThreadWorktrees {
    * for Sotto's removal or reports prunable because its `.git` file is gone from a folder that is still there.
    *
    * Sotto's lock is the record that the removal was decided, by the user or by a rule under every check, so that removal
-   * is finished: the answer is reclaimed, on the branch Git has for the folder, and the next send puts it back. A folder
+   * is finished: the answer is reclaimed, on the branch or detached commit Git has for the folder, and the next send puts
+   * it back. A detached folder whose commit no branch has any more is left locked, with its commit, until one does. A folder
    * Git reports prunable without that lock, as a `git worktree remove` cut off before #1297 left it, carries no such
    * record, so nothing more of it is deleted: its `.git` file is written back and the tracked files missing from it are
    * put back from Git's index, the repair that was made by hand. A folder that cannot be settled is reported in plain words.
@@ -1338,7 +1393,7 @@ export class ThreadWorktrees {
       const afterRemoval = async (): Promise<AgentWorktree> => {
         const finished = finishedRemovals.get(pathKey(path))
         if (!finished || metadata.reclaimedAt || await reservedFolder(path).catch(() => 'occupied' as const) === 'occupied') return metadata
-        return { ...withCheckedOutBranch(metadata, finished.branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: finished.at }
+        return { ...withCheckedOutBranch(metadata, finished.branch), status: 'ready', error: undefined, dirty: undefined, reclaimedAt: finished.at, detachedCommit: finished.detachedCommit }
       }
       // Read from disk first, so an ordinary folder starts no Git process here.
       const folder = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (missing(error)) return undefined; throw error })
@@ -1361,7 +1416,7 @@ export class ThreadWorktrees {
       }
       let identity: RegistryIdentity
       try { identity = await this.registryIdentity(repositoryRoot) } catch { return metadata }
-      type Settle = { kind: 'finish'; branch: string | undefined; nested: NestedWorktree[] } | { kind: 'repair' }
+      type Settle = { kind: 'finish'; branch: string | undefined; detachedHead: string | undefined; nested: NestedWorktree[] } | { kind: 'repair' }
       const settle = await coordinateRegistry(identity, async (): Promise<Settle | undefined> => {
         const entry = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'])).find(item => pathKey(item.path) === pathKey(path))
         if (!entry) return undefined
@@ -1401,6 +1456,10 @@ export class ThreadWorktrees {
           } catch (error) { throw new Error(REPAIR_FAILED, { cause: error }) }
           return { kind: 'repair' }
         }
+        // A detached folder is finished only while a branch or remote branch has its commit. Until then Git's registration,
+        // which Sotto's lock keeps, holds the commit, and nothing more is removed.
+        const detachedHead = entry.detached ? entry.head : undefined
+        if (detachedHead && !await this.onABranch(repositoryRoot, detachedHead)) throw new Error(`Sotto started removing this worktree’s folder, which has no branch checked out, and no branch or remote branch has its commit ${detachedHead.slice(0, 7)} any more. Nothing more was removed. Create a branch at that commit, then choose Refresh to finish removing the folder.`)
         if (folder) {
           try { await writePointer() }
           catch (error) { throw unfinishedRemoval(error) }
@@ -1408,7 +1467,7 @@ export class ThreadWorktrees {
         const record = registration ? await readFile(join(registration, REMOVAL_RECORD), 'utf8').then(text => JSON.parse(text) as unknown, () => undefined) : undefined
         const listed = record && typeof record === 'object' && Array.isArray((record as { nestedWorktrees?: unknown }).nestedWorktrees) ? (record as { nestedWorktrees: unknown[] }).nestedWorktrees : []
         const nested = listed.filter((item): item is NestedWorktree => Boolean(item) && typeof (item as NestedWorktree).path === 'string' && typeof (item as NestedWorktree).commonDirectory === 'string')
-        return { kind: 'finish', branch: entry.branch?.startsWith('refs/heads/') ? entry.branch.slice('refs/heads/'.length) : undefined, nested }
+        return { kind: 'finish', branch: entry.branch?.startsWith('refs/heads/') ? entry.branch.slice('refs/heads/'.length) : undefined, detachedHead, nested }
       })
       if (!settle) return afterRemoval()
       if (settle.kind === 'repair') {
@@ -1420,7 +1479,8 @@ export class ThreadWorktrees {
       }
       try { await this.removeLocked(repositoryRoot, path, identity, settle.nested) }
       catch (error) { throw unfinishedRemoval(error) }
-      return this.withoutIncomingRef(reclaimedRecord(metadata, path, settle.branch ?? metadata.branch))
+      // A detached folder is reclaimed on the commit Git still records for it, whatever branch an older record names.
+      return this.withoutIncomingRef(reclaimedRecord(metadata, path, settle.detachedHead ? undefined : settle.branch ?? metadata.branch, settle.detachedHead))
     })
   }
 
@@ -1639,6 +1699,6 @@ export class ThreadWorktrees {
     if (pathKey(root.trim()) !== pathKey(path) || pathKey(common.trim()) !== pathKey(identity.common)) throw new Error('The working folder no longer belongs to the original repository.')
     await this.workingDirectory(metadata)
     // A folder that is there was not reclaimed, whatever the record last said.
-    return { identity, worktree: { ...withCheckedOutBranch(metadata, branch), status: 'ready', error: undefined, reclaimedAt: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal', ...(reclaiming ? ['--ignore-submodules=none'] : [])])).length > 0 } }
+    return { identity, worktree: { ...withCheckedOutBranch(metadata, branch), status: 'ready', error: undefined, reclaimedAt: undefined, detachedCommit: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal', ...(reclaiming ? ['--ignore-submodules=none'] : [])])).length > 0 } }
   }
 }

@@ -4,6 +4,25 @@ import { describe, expect, it, vi } from 'vitest'
 import { RecoveryNoticeCenter } from '../../../src/main/storage/recoveryNoticeCenter'
 
 describe('RecoveryNoticeCenter', () => {
+  it('logs observer failures without private error details and still notifies later observers', () => {
+    const log = vi.fn()
+    const center = new RecoveryNoticeCenter(log)
+    const listener = vi.fn()
+    center.subscribe(() => { throw new Error('private transcript in observer error') })
+    center.subscribe(listener)
+    center.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
+    center.clear('AUTOMATION_PERMISSION_REQUIRED')
+    center.resolve('AUTOMATION_PERMISSION_REQUIRED')
+    center.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
+    expect(listener.mock.calls).toEqual([
+      [{ code: 'AUTOMATION_PERMISSION_REQUIRED', cleared: false }],
+      [{ code: 'AUTOMATION_PERMISSION_REQUIRED', cleared: true }],
+      [{ code: 'AUTOMATION_PERMISSION_REQUIRED', cleared: false }],
+    ])
+    expect(center.list()).toEqual([{ code: 'AUTOMATION_PERMISSION_REQUIRED' }])
+    expect(log.mock.calls).toEqual(Array.from({ length: 3 }, () => ['recovery-notice-listener-failed']))
+  })
+
   it('retains and emits each safe recovery code once per launch', () => {
     const center = new RecoveryNoticeCenter()
     const listener = vi.fn()
@@ -23,7 +42,7 @@ describe('RecoveryNoticeCenter', () => {
     expect(listener.mock.calls).toEqual([
       [{ code: 'SETTINGS_RECOVERED' }],
       [{ code: 'HISTORY_RECOVERED' }],
-      [{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }],
+      [{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: false }],
     ])
     unsubscribe()
     center.publish({ code: 'SETTINGS_RECOVERED' })
@@ -38,5 +57,40 @@ describe('RecoveryNoticeCenter', () => {
     expect(Object.isFrozen(first)).toBe(true)
     expect(Object.isFrozen(first[0])).toBe(true)
     expect(center.list()).toEqual([{ code: 'SETTINGS_RECOVERED' }])
+  })
+
+  it('dismisses a notice for every subscriber and suppresses the same unresolved cause', () => {
+    const center = new RecoveryNoticeCenter()
+    const listener = vi.fn()
+    center.subscribe(listener)
+    center.publish({ code: 'SETTINGS_RECOVERED' })
+    center.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    center.clear('ACCESSIBILITY_PERMISSION_REQUIRED')
+    center.clear('ACCESSIBILITY_PERMISSION_REQUIRED')
+    center.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    expect(center.list()).toEqual([{ code: 'SETTINGS_RECOVERED' }])
+    expect(listener).toHaveBeenCalledTimes(3)
+    expect(listener).toHaveBeenLastCalledWith({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true })
+
+    const restarted = new RecoveryNoticeCenter()
+    restarted.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    expect(restarted.list()).toEqual([{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }])
+  })
+
+  it.each([false, true])('allows a new permission failure after recovery, dismissed=%s', dismissed => {
+    const center = new RecoveryNoticeCenter()
+    const listener = vi.fn()
+    center.subscribe(listener)
+    for (const code of ['ACCESSIBILITY_PERMISSION_REQUIRED', 'AUTOMATION_PERMISSION_REQUIRED'] as const) {
+      center.publish({ code })
+      if (dismissed) center.clear(code)
+      expect(center.hasUnresolved(code)).toBe(true)
+      center.resolve(code)
+      expect(center.hasUnresolved(code)).toBe(false)
+      expect(center.list()).not.toContainEqual({ code })
+      center.publish({ code })
+      expect(center.list()).toContainEqual({ code })
+      expect(listener).toHaveBeenLastCalledWith({ code, cleared: false })
+    }
   })
 })

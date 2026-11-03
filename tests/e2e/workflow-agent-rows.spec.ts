@@ -2,7 +2,7 @@ import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -67,7 +67,7 @@ test('a workflow is one roster row with a strip, and its page lists each of its 
     await openThreads(page)
     await page.evaluate(() => document.fonts.ready)
     await size(launched, 1600, 1000)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
 
     // Every agent working: the workflow is one row, and the chrome counts its six agents and the other one.

@@ -391,13 +391,15 @@ describe('Devin dispatch and decision boundaries', () => {
   })
 
   it('waits for its own history read to let go of a session before reopening it (#464)', async () => {
-    // Watched, so Sotto keeps reading the thread's history while its session changes hands.
+    // A thread its own process holds is read only for a dispatch no replay has confirmed yet (#992); the read is started
+    // here as that wait would start it, and it is still in flight when the session changes hands.
     await send(); await f.driver.completeTurn(threadId, 'Reply')
     await expect.poll(async () => (await thread()).status).toBe('idle')
-    // The next read waits before it takes the session, so it is still in flight when the session stops.
+    // The read waits before it takes the session, so it is still in flight when the session stops.
     const loads = async (): Promise<number> => (await f.driver.requests()).filter(record => record.method === 'session/load').length
     const before = await loads()
     await f.script({ holdLoad: true })
+    const reading = (f.adapter as unknown as { readHistory(id: string): Promise<void> }).readHistory(threadId).catch(() => undefined)
     await expect.poll(loads).toBeGreaterThan(before)
     await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, providerMode: 'bypass' })
     // Released, the read takes the session its thread just let go of, and holds it until released again.
@@ -410,6 +412,27 @@ describe('Devin dispatch and decision boundaries', () => {
     await writeFile(join(f.root, 'release-reply'), '')
     expect(await reopening).toBe('reopened')
     expect(await thread()).toMatchObject({ status: 'idle', providerMode: 'bypass' })
+    await reading
+  })
+
+  it('reads no history of an idle thread its own process holds, and reads a message typed in Devin when it next opens the thread (#992)', async () => {
+    await send(); await f.driver.completeTurn(threadId, 'Reply')
+    await expect.poll(async () => (await thread()).status).toBe('idle')
+    // Once a replay has confirmed the dispatch, an idle watched thread is not read again. Each read started five processes:
+    // `plugins list` and `mcp list`, a `devin acp` that replayed the whole session, and both lists again to revalidate.
+    await expect.poll(async () => (await f.adapter.snapshot()).threads.find(item => item.id === threadId)?.messages.some(m => m.role === 'user')).toBe(true)
+    const spawns = async (): Promise<number> => (await f.driver.requests()).filter(record => record.method === 'fixture/spawn').length
+    // Five polls, each due (the fixture reads every 20 ms) and awaited: a snapshot runs the poll and waits for its reads.
+    const settled = await spawns()
+    for (let poll = 0; poll < 5; poll++) { await new Promise(resolve => setTimeout(resolve, 30)); await f.adapter.snapshot() }
+    const started = await spawns() - settled
+    console.info(`idle held Devin thread: ${JSON.stringify({ polls: 5, processesStarted: started })}`)
+    expect(started).toBe(0)
+    // Released by Sotto, the session is Devin's again; a message typed there shows when Sotto opens the thread next.
+    f = await f.driver.restart()
+    await f.driver.typeInProvider(threadId, 'Typed in Devin')
+    f.host.observeThreads([threadId]); await f.host.connect()
+    await expect.poll(async () => (await thread()).messages.some(m => m.role === 'user' && m.text === 'Typed in Devin' && m.commandId === undefined)).toBe(true)
   })
 
   it('refuses a permission change while a turn is running, and leaves the recorded mode alone', async () => {

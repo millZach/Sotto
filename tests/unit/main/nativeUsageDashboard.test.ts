@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,7 +53,9 @@ describe('Owl native numeric projection', () => {
     const visited: UsageTokenObservation[] = []; usage.visitUsage('thread', row => visited.push(row)); expect(visited).toEqual([])
     expect(usage.get('thread')?.total).toMatchObject({ input: 35, output: 3, cached: 10, cacheWrite: 20, cacheWrite5m: 8, cacheWrite1h: 12 })
     await usage.flushed()
-    const ledger = JSON.parse(await readFile(join(root, 'claude-usage.json'), 'utf8')).thread
+    // The thread's ledger file, of the one thread here (#555).
+    const directory = join(root, 'claude-usage')
+    const ledger = JSON.parse(await readFile(join(directory, (await readdir(directory))[0]!), 'utf8')).ledger
     expect(Object.keys(ledger.entries['native-message-secret']).sort()).toEqual(['model', 'rate', 'tokens', 'usd'])
   })
   it('uses whole Claude replacements and hashes parent groups, preserving genuine dates through replay', async () => {

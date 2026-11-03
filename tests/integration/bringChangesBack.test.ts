@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { GitActions } from '../../src/main/agents/gitActions'
+import { CheckoutHeldRefusal } from '../../src/main/agents/checkoutMutations'
 import type { AgentThread } from '../../src/shared/agents'
 import { GitStatusReader } from '../../src/main/agents/gitStatus'
 import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_QUESTION_GONE, bringBackTarget } from '../../src/shared/bringChangesBack'
@@ -111,6 +112,26 @@ describe('bringing a thread’s commits back to the branch of the thread it bega
     expect(await readFile(join(project, 'work.txt'), 'utf8')).toBe('the parent is editing\n')
   })
 
+  it('names the thread whose work holds the folder where main is checked out, and nothing else when no thread holds it (#1866)', async () => {
+    const { f, childFolder, press, record, main } = await family()
+    await commitFile(childFolder, 'test.txt', 'mid-chunk\n', 'Test')
+    const before = main()
+    f.host.setPendingThreadWork(id => id === 'parent', () => 'failed-followups')
+    await press()
+    // A hold, in the guard's words with the bring-back's own "Nothing was brought back.", naming the thread that holds it.
+    expect(record()).toMatchObject({ status: 'refused', refusal: 'busy', heldBy: 'parent', checkedOut: 'project',
+      message: 'Thread "WAV preview stall" has queued follow-ups that did not send. Nothing was brought back. Resume or remove them, then try again.' })
+    expect(main()).toBe(before)
+    // A Git action holding that folder is no thread: the refusal keeps the words it has always had, and names none.
+    f.host.setPendingThreadWork(() => false)
+    const held = await f.host.acquireCheckoutMutation('parent')
+    try { await press() } finally { held() }
+    expect(record()).toMatchObject({ status: 'refused', refusal: 'busy', checkedOut: 'project',
+      message: 'A Git action is running in this folder. Nothing was changed. Wait for it to finish before changing this folder.' })
+    expect(record()!.heldBy).toBeUndefined()
+    expect(main()).toBe(before)
+  })
+
   it.each([
     ['made from another branch', { childBase: 'release' }],
     ['sharing the project folder', { childWorkingCopy: 'shared' as const }],
@@ -206,6 +227,22 @@ describe('bringing a thread’s commits back to the branch of the thread it bega
         await expect(f.host.bringChangesBack({ threadId: 'parent', actionId: randomUUID(), away: { moveId, from, target: 'main' } })).rejects.toThrow()
       }
     } finally { held() }
+    expect(git(project, 'for-each-ref', 'refs/sotto/incoming')).toBe('')
+    expect(main()).toBe(before)
+  })
+
+  it('refuses a branch from another machine while a thread holds the parent’s folder as a hold that names it, and lets the ref go (#1866)', async () => {
+    const { f, project, main } = await family()
+    const { elsewhere, from, land } = await arrival(project, f.root)
+    await commitFile(elsewhere, 'away.txt', 'from forge\n', 'Work done on forge')
+    const before = main()
+    f.host.setPendingThreadWork(id => id === 'parent', () => 'failed-followups')
+    const { moveId } = land()
+    const refusal = await f.host.bringChangesBack({ threadId: 'parent', actionId: randomUUID(), away: { moveId, from, target: 'main' } }).then(() => null, (error: unknown) => error)
+    // The folder is held before Git runs, so the press's own reply says so, with the thread that holds it, as a Git action's does.
+    expect(refusal).toBeInstanceOf(CheckoutHeldRefusal)
+    expect((refusal as CheckoutHeldRefusal).message).toBe('Thread "WAV preview stall" has queued follow-ups that did not send. Nothing was brought back. Resume or remove them, then try again.')
+    expect((refusal as CheckoutHeldRefusal).threadId).toBe('parent')
     expect(git(project, 'for-each-ref', 'refs/sotto/incoming')).toBe('')
     expect(main()).toBe(before)
   })

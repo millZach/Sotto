@@ -1,6 +1,6 @@
 import { focusedComposerField } from './promptSelection'
 import { Marked } from '../components/marks'
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useListedRows } from './unsentThreads'
@@ -25,15 +25,17 @@ import { ProviderUpgradeNotice, isRecoveredDraft } from './ProviderUpgradeNotice
 import { EmptyWorkspace, type CarriedDraft } from './EmptyWorkspace'
 import { HostUpdateControl } from './HostUpdates'
 import { THREAD_PROMPT_ID } from './ThreadComposer'
-import { hasDraftContent } from './threadDraftStore'
+import { hasDraftContent, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadPane } from './ThreadPane'
-import { ThreadPanes, focusInPane, type PaneLabel } from './ThreadPanes'
+import { samePaneWorld } from './paneWorld'
+import { ThreadPanes, focusInPane, type PaneChrome, type PaneLabel } from './ThreadPanes'
 import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
 import { SidebarChromeProvider } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
+import { useThreadSnoozes, useWakeWhenNeeded } from './threadSnooze'
 
 type Command = AgentConnection['command']
 
@@ -60,16 +62,60 @@ export interface ThreadPaneSlotProps {
 }
 export type ThreadPaneSlot = (props: ThreadPaneSlotProps) => ReactNode
 
+interface ShownPaneProps {
+  readonly row: ThreadRow
+  readonly state: AgentState
+  readonly command: Command
+  readonly store: ThreadDraftStore
+  readonly focused: boolean
+  readonly promptId: string
+  readonly error: string | null
+  readonly now: number | undefined
+  /**
+   * The page's clock. Parts of a pane work out what they say from the time as they draw (babysitting's "since"), and the
+   * page's clock redrew every pane each time it moved; it still does, so those parts are as fresh as before.
+   */
+  readonly clock: number
+  readonly chrome: PaneChrome
+  readonly onOpenBeside: (threadId: string) => void
+  readonly tools: boolean
+  readonly paneTerminal: ThreadsViewProps['paneTerminal']
+  readonly paneWorkingCopy: ThreadPaneSlot | undefined
+  readonly paneNotice: ThreadPaneSlot | undefined
+  readonly paneDrawer: ThreadPaneSlot | undefined
+}
+
+/** A pane is drawn again when its props change, its world as `samePaneWorld` reads it included; nothing else redraws it. */
+function samePaneProps(previous: ShownPaneProps, next: ShownPaneProps): boolean {
+  for (const key of Object.keys(next) as (keyof ShownPaneProps)[]) if (key !== 'state' && !Object.is(previous[key], next[key])) return false
+  return samePaneWorld(previous.state, next.state, next.row.thread.id)
+}
+
+/**
+ * One thread's pane in the workspace, behind a memo boundary (#993): an update that leaves its thread, the threads related
+ * to it and everything else it reads as they were does not draw it again, where every pane was drawn again for every word
+ * any thread streamed. Its slots are called here, inside the boundary, from the row and command they are given.
+ */
+const ShownPane = memo(function ShownPane({ row, state, command, store, focused, promptId, error, now, chrome, onOpenBeside, tools, paneTerminal, paneWorkingCopy, paneNotice, paneDrawer }: ShownPaneProps): ReactNode {
+  const threadId = row.thread.id
+  const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
+  // Every pane carries the same symbols, so nothing in the header comes or goes with focus (ADR-0182).
+  return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
+    promptId={promptId} error={error} onOpenBeside={() => onOpenBeside(threadId)} now={now}
+    workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} drawer={paneDrawer?.(slot)}
+    chrome={chrome} tools={tools} terminal={paneTerminal?.(slot) ?? false} />
+}, samePaneProps)
+
 export interface ThreadsViewProps {
   readonly now?: number | undefined
   /** The update control, seated at the end of the sidebar's foot where the app footer used to carry it. */
   readonly updateControl?: ReactNode
   /** One shared tools panel, rendered beside the thread panes. */
   readonly tools?: ThreadToolsSlot | undefined
-  /** Once, in the focused pane's header actions, before the every-pane actions (the tools panel's toggle). */
-  readonly focusedPaneActions?: ReactNode
-  /** In every pane's header actions, focused or not (the pane terminal drawer's own toggle). */
-  readonly paneActions?: ThreadPaneSlot | undefined
+  /** Each pane's header carries the Tools symbol, for the shared panel beside the panes (ADR-0182). */
+  readonly paneTools?: boolean | undefined
+  /** Whether a pane has its own Terminal drawer, and its header the symbol for it, focused or not. */
+  readonly paneTerminal?: ((props: ThreadPaneSlotProps) => boolean) | undefined
   /** The working-copy control in each pane's header, after the project title. */
   readonly paneWorkingCopy?: ThreadPaneSlot | undefined
   /** In each pane, directly above its composer. */
@@ -86,7 +132,7 @@ export interface ThreadsViewProps {
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = false, paneTerminal, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const { t } = useLingui()
   const words = useWordsRevision()
   const agents = useAgents()
@@ -133,7 +179,10 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const delegation = useOwlFeature('thread-delegation')
   const swarms = useOwlFeature('worker-swarms')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms), [state, sidebarRows, query, delegation, now, swarms, words]))
+  // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
+  const snoozes = useThreadSnoozes()
+  useWakeWhenNeeded(rows, snoozes)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -298,7 +347,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings', 'settings-providers')}><Trans>Open Settings</Trans></Button> : null}
     <PageWindowControls />
   </div>
-  const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
+  const grid = paneGridActions({ layout, focusedId, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
   gridRef.current = grid
 
   const localDraftPresent = focusedId !== null && hasDraftContent(store.draft(focusedId))
@@ -309,22 +358,17 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const recoveredDraft = isRecoveredDraft(state)
   const error = state.error ?? agents.error
   const split = paneIds.length >= 2
-  const renderPane = (threadId: string): ReactNode => {
+  const renderPane = (threadId: string, chrome: PaneChrome): ReactNode => {
     const row: ThreadRow | undefined = rowsById.get(threadId)
     if (row === undefined) return null
     const focused = threadId === focusedId
-    const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
-    // The focused pane's own actions come first: the header's actions sit at its right edge, so one that appears
-    // only on focus must not push the every-pane actions sideways under a pointer that is focusing the pane.
-    const focusedActions = focused ? focusedPaneActions : undefined
-    const everyPaneActions = paneActions?.(slot)
-    const actions = focusedActions || everyPaneActions ? <>{focusedActions}{everyPaneActions}</> : undefined
-    return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
-      promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenBeside={() => openBeside(threadId)} now={fixedNow}
-      workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
+    return <ShownPane row={row} state={state} command={command} store={store} focused={focused}
+      promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} now={fixedNow} clock={now} chrome={chrome}
+      onOpenBeside={openBeside} tools={paneTools} paneTerminal={paneTerminal}
+      paneWorkingCopy={paneWorkingCopy} paneNotice={paneNotice} paneDrawer={paneDrawer} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" onKeyDown={grid.onKeyDown} {...marks}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
@@ -333,7 +377,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive
       restartThreads={published?.host.threads} />
-    <section className="thread-workspace" data-room-backdrop="" aria-label={t`Thread workspace`}>
+    {/* A region for F6 only while it holds no pane: the empty page's New thread (ADR-0164). */}
+    <section className="thread-workspace" data-room-backdrop="" data-region="room" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}

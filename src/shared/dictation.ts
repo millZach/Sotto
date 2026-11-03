@@ -4,7 +4,12 @@ import type { WidgetPalette } from './themeBranding'
 export type DictationState =
   | { status: 'idle' }
   | { status: 'requesting-permission'; sessionId: string }
-  | { status: 'listening'; sessionId: string; startedAt: number; level: number }
+  /**
+   * `speaking` is whether the microphone is registering a voice (`SpeakingGate`), not its level: the level arrives
+   * about every 33 ms and only the meters read it, from the controller's live level, so the window and the widget are
+   * told of a change a few times a sentence rather than thirty times a second (#993).
+   */
+  | { status: 'listening'; sessionId: string; startedAt: number; speaking: boolean }
   | { status: 'processing'; sessionId: string; startedAt: number }
   | { status: 'success'; sessionId: string; text: string; output: 'pasted' | 'copied' }
   | { status: 'cancelled'; sessionId: string }
@@ -126,6 +131,13 @@ interface WidgetSnapshotMetadata {
   readonly reducedMotion: ReducedMotion
   readonly shortcut: string
   readonly cancellable: boolean
+  /**
+   * Set by main, never the renderer, while it holds Escape across every app to cancel
+   * (ADR-0178's polish round). The widget offers a cancel × whenever the dictation
+   * can be cancelled and Escape is not held: always on Linux, and on Windows or macOS
+   * when another app already holds the key.
+   */
+  readonly escapeClaimed?: true | undefined
 }
 
 /**
@@ -140,7 +152,8 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
         readonly status: 'listening'
         readonly sessionId: string
         readonly startedAt: number
-        readonly level: number
+        /** Whether a voice is heard, for the wave; the level itself never crosses to the widget (#993). */
+        readonly speaking: boolean
       }
     | {
         readonly status: 'processing'
@@ -173,7 +186,7 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
 export type DictationEvent =
   | { type: 'REQUESTED'; sessionId: string }
   | { type: 'STARTED'; sessionId: string; startedAt: number }
-  | { type: 'LEVEL_CHANGED'; sessionId: string; level: number }
+  | { type: 'SPEAKING_CHANGED'; sessionId: string; speaking: boolean }
   | { type: 'STOPPED'; sessionId: string }
   | {
       type: 'TRANSCRIBED'
@@ -221,21 +234,14 @@ export function reduceDictation(
         status: 'listening',
         sessionId: event.sessionId,
         startedAt: event.startedAt,
-        level: 0,
+        speaking: false,
       }
 
-    case 'LEVEL_CHANGED': {
-      if (
-        state.status !== 'listening' ||
-        state.sessionId !== event.sessionId ||
-        !Number.isFinite(event.level)
-      ) {
+    case 'SPEAKING_CHANGED':
+      if (state.status !== 'listening' || state.sessionId !== event.sessionId || state.speaking === event.speaking) {
         return state
       }
-
-      const level = Math.min(1, Math.max(0, event.level))
-      return level === state.level ? state : { ...state, level }
-    }
+      return { ...state, speaking: event.speaking }
 
     case 'STOPPED':
       if (state.status === 'processing' && state.sessionId === event.sessionId) {

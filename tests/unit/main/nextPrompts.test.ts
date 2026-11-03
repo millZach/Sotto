@@ -16,7 +16,7 @@ import { EXCHANGE_EXCERPT_CHARACTERS } from '../../../src/main/llm/threadTitle'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
-import { NEXT_PROMPT_READ, nextPromptEntrySchema, type NextPromptEntry } from '../../../src/shared/nextPrompt'
+import { NEXT_PROMPT_READ, NEXT_PROMPT_WATCHER_FIRST, NEXT_PROMPT_WATCHER_FIRST_CANCEL, nextPromptEntrySchema, type NextPrompt, type NextPromptEntry } from '../../../src/shared/nextPrompt'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { registerNextPromptIpc, windowNextPrompt } from '../../../src/main/agents/nextPromptIpc'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
@@ -24,7 +24,8 @@ import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
-import { deferred } from '../../fixtures/deferred'
+import { deferred, type Deferred } from '../../fixtures/deferred'
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 const REPLY = JSON.stringify({
   headline: 'The dark theme now meets contrast.',
@@ -125,7 +126,7 @@ describe('the generation guard', () => {
     const published: NextPromptEntry[] = []
     const log = vi.fn()
     const deps: NextPromptsDependencies = {
-      write: vi.fn(async () => REPLY), thread: () => thread,
+      write: vi.fn(async () => REPLY), thread: id => id === thread.id ? thread : undefined,
       publish: entry => { published.push(entry) }, log, defer: run => run(), ...patch,
     }
     return { prompts: new NextPrompts(deps), deps, published, log, set: (next: AgentThread) => { thread = next } }
@@ -331,19 +332,56 @@ describe('the Owl gate', () => {
     return answer
   }
 
-  it('builds next prompts only while the Owl feature is on, and only for this computer\'s own threads', async () => {
+  it('builds next prompts only while the Owl feature is on, on a desktop and on a headless host', async () => {
     await expect(built({})).resolves.toBeUndefined()
     await expect(built({ nextPromptEnabled: false })).resolves.toBeUndefined()
-    await expect(built({ nextPromptEnabled: true, runsAs: 'headless-host' })).resolves.toBeUndefined()
+    // A headless host builds its own, for the desktops that want them (ADR-0173).
+    await expect(built({ nextPromptEnabled: true, runsAs: 'headless-host' })).resolves.toBeInstanceOf(NextPrompts)
     await expect(built({ nextPromptEnabled: true })).resolves.toBeInstanceOf(NextPrompts)
   })
 
   it('registers no channel while off, and names each thread by its host for the window', () => {
     const ipc = { handle: vi.fn(), removeHandler: vi.fn() }
-    registerNextPromptIpc(ipc as never, undefined, () => 'host', () => [])
+    registerNextPromptIpc(ipc as never, false, undefined, () => 'host', () => [])
     expect(ipc.handle).not.toHaveBeenCalled()
-    registerNextPromptIpc(ipc as never, { list: () => [] }, () => 'host', () => [])
+    registerNextPromptIpc(ipc as never, true, { list: () => [] }, () => 'host', () => [])
     expect(ipc.handle).toHaveBeenCalledWith(NEXT_PROMPT_READ, expect.any(Function))
     expect(windowNextPrompt('host', { threadId: 'thread', afterUserMessageId: 'u1', prompt: null }).threadId).toBe(hostEntityKey('host', 'thread'))
+  })
+
+  it('stops the first-start box\'s side request once a newer ask, a cancel or quitting supersedes it, and answers nothing for it (ADR-0173)', async () => {
+    const { ipc, invoke, trustedSenders } = ipcRegistry()
+    const asks: { readonly modelId: string; readonly signal: AbortSignal | undefined; readonly answer: Deferred<NextPrompt | null> }[] = []
+    const cleanup = registerNextPromptIpc(ipc, true, { list: () => [] }, () => 'host', trustedSenders, undefined, (modelId: string, signal?: AbortSignal) => {
+      const answer = deferred<NextPrompt | null>()
+      asks.push({ modelId, signal, answer })
+      return answer.promise
+    })
+    const suggestion: NextPrompt = { headline: '', ghost: 'Check on the footer links thread', suggestions: [], answers: [] }
+    const first = invoke(NEXT_PROMPT_WATCHER_FIRST, ['claude:sonnet'])
+    await vi.waitFor(() => expect(asks).toHaveLength(1))
+    // Another model picked: the first model's provider is told to stop, and its late answer is not offered.
+    const second = invoke(NEXT_PROMPT_WATCHER_FIRST, ['codex:gpt-5.5'])
+    await vi.waitFor(() => expect(asks).toHaveLength(2))
+    expect(asks[0]!.signal?.aborted).toBe(true)
+    expect(asks[1]!.signal?.aborted).toBe(false)
+    asks[0]!.answer.resolve(suggestion)
+    await expect(first).resolves.toBeNull()
+    // The box closed, or Watcher started: the ask in flight stops.
+    await invoke(NEXT_PROMPT_WATCHER_FIRST_CANCEL)
+    expect(asks[1]!.signal?.aborted).toBe(true)
+    asks[1]!.answer.resolve(suggestion)
+    await expect(second).resolves.toBeNull()
+    // An ask nothing superseded is answered.
+    const third = invoke(NEXT_PROMPT_WATCHER_FIRST, ['claude:sonnet'])
+    await vi.waitFor(() => expect(asks).toHaveLength(3))
+    asks[2]!.answer.resolve(suggestion)
+    await expect(third).resolves.toEqual(suggestion)
+    // Quitting stops one still asking.
+    void invoke(NEXT_PROMPT_WATCHER_FIRST, ['claude:sonnet'])
+    await vi.waitFor(() => expect(asks).toHaveLength(4))
+    cleanup()
+    expect(asks[3]!.signal?.aborted).toBe(true)
+    asks[3]!.answer.resolve(null)
   })
 })

@@ -146,7 +146,7 @@ test('project folders hold several threads, settle and restore threads and proje
       await expect(page.getByRole('dialog', { name: 'New thread' })).toHaveCount(0)
       const projects = sidebar.getByRole('region', { name: 'Projects' })
       await projects.getByRole('button', { name: 'New thread', exact: true }).hover()
-      await projects.getByRole('button', { name: 'Rename New thread', exact: true }).click()
+      await projects.getByRole('button', { name: 'New thread', exact: true }).locator('.thread-nav__title').dblclick()
       await sidebar.getByLabel('Rename New thread').fill(name)
       await page.keyboard.press('Enter')
       await expect(sidebar.getByRole('button', { name, exact: true })).toBeVisible()

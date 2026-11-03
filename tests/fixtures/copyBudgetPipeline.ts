@@ -11,6 +11,7 @@ import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { routerBusyThreads } from '../../src/main/hosts/busyHost'
+import type { ProductEventRecorder } from '../../src/main/productEvents/threadEvents'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { HostUpdates } from '../../src/main/hosts/hostUpdate'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
@@ -26,7 +27,11 @@ function records(prefix: string, count: number): AgentActivity[] {
     sequence: position, kind: 'command', status: 'completed', title: `Synthetic command ${position}`, output: `${prefix}:${position}:`.padEnd(400, 'o') }))
 }
 
+/** Main always hands the coordinator a sender, so the budgets count what watching for product events costs an update. */
+export const QUIET_PRODUCT_EVENTS: ProductEventRecorder = { record: () => undefined, featureUsed: () => undefined }
+
 export interface CopyBudgetPipeline {
+  readonly workspace: WorkspaceHost
   readonly adapter: StreamingAdapter
   readonly control: AgentControl
   readonly streamIds: readonly string[]
@@ -51,7 +56,7 @@ export interface CopyBudgetPipeline {
  * on an older Sotto. `threads` in all, one of them streaming; `owl` turns on Watcher, Muse and the cheaper publish
  * windows, as an Owl build does. Every payload is generated.
  */
-export async function copyBudgetPipeline(root: string, threads: number, owl: boolean): Promise<CopyBudgetPipeline> {
+export async function copyBudgetPipeline(root: string, threads: number, owl: boolean, productEvents: ProductEventRecorder | null = QUIET_PRODUCT_EVENTS): Promise<CopyBudgetPipeline> {
   const registry = new ThreadRegistry(root)
   await registry.load()
   const at = '2026-10-15T12:00:00.000Z'
@@ -74,7 +79,7 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, owl, owl)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
-  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
+  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl, ...(productEvents ? { productEvents } : {}) })
   await control.start()
   await control.command({ type: 'connect' })
   const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
@@ -85,7 +90,7 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const service = new LocalHostService({ control, events: workspace, ...(watcher ? { watcher } : {}) })
   const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
-    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener) })
+    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener, { appends: true }) })
   const broadcaster = new AgentStateBroadcaster()
   const statePublisher = coalesceAgentStatePublishes(next => { broadcaster.send(next, () => true) })
   const detailPublisher = coalesceAgentThreadDetailPublishes(() => undefined, { beforeOpening: () => statePublisher.flush() })
@@ -129,6 +134,7 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
     if (watched.status !== 'ok') throw new Error(`Watcher did not watch the thread: ${JSON.stringify(watched)}`)
   } catch (error) { await stop(); throw error }
   return {
+    workspace,
     adapter, control, streamIds, parentId,
     broadcasts: () => broadcasts,
     resetCounts: () => { broadcasts = 0 },

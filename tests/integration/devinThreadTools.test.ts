@@ -97,7 +97,7 @@ describe('Devin thread tools', () => {
     await f.action(id, { type: 'mcp-permission', tool: `mcp__${VISUAL_MCP_SERVER}__visualize`, nameIn, input })
     await expect.poll(async () => (await thread(f, id)).requests.length).toBe(1)
     const request = (await thread(f, id)).requests[0]!
-    expect(request).toMatchObject({ kind: 'permission', text: 'Use Sotto’s visualize tool', context: { details: JSON.stringify(input) } })
+    expect(request).toMatchObject({ kind: 'permission', text: 'Use Sotto’s visualize tool', context: { details: 'title: How a send moves\nkind: diagram\nsource:\n  flowchart LR\n    A --> B' } })
     // Devin's own server-wide grant is not offered: each call is answered once.
     expect(request.permissionChoices?.map(choice => choice.id)).toEqual(['allow-once', 'deny-once'])
     expect(await decisions(f)).toEqual([])

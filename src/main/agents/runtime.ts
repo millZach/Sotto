@@ -1,3 +1,4 @@
+import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
@@ -7,8 +8,9 @@ import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
-import { nextPromptWriter } from '../llm/nextPrompt'
+import { nextPromptOpeningWriter, nextPromptWriter } from '../llm/nextPrompt'
 import { NextPrompts } from './nextPrompts'
+import { nextPromptProject } from './nextPromptProject'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { CodexAppServerHost, type CodexAdapterEvent } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
@@ -67,6 +69,7 @@ import { RestartResume } from './restartResume'
 import { LimitRestart } from './limitRestart'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
+import type { ProductEventRecorder } from '../productEvents/threadEvents'
 import { mayGrantLocally } from './authority'
 import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
 import type { HostMachineReport } from '../../shared/hostFacts'
@@ -97,6 +100,8 @@ export interface AgentRuntimeOptions {
   museEnabled?: boolean
   /** Immutable Owl feature answer; absent fails closed and leaves saved usage untouched. */
   usageEnabled?: boolean
+  /** Where this process's product events go (ADR-0179). Absent in tests and tools that send none. */
+  productEvents?: ProductEventRecorder
   /** The Owl list's answer for resuming threads after a restart (ADR-0076), read once by the process owner. Absent fails closed. */
   resumeAfterRestart?: boolean
   /**
@@ -161,12 +166,30 @@ export interface AgentRuntimeOptions {
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
    */
   attachAnyFile?: boolean
+  /** Images dropped on a question card go with the answer (ADR-0176): the `answer-images` Owl answer, read once at start. */
+  answerImages?: boolean
   /**
-   * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed, and a headless
-   * host builds none: only this computer's window shows them. `nextPromptChanged` hears each change, for the window.
+   * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex
+   * keep their tool results' pictures in the thread media store and the host answers `thread-media` reads. Absent fails
+   * closed: nothing is captured.
+   */
+  inlineMedia?: boolean
+  /**
+   * Whether **Show every picture and video an agent makes** is on (ADR-0170, part 7), read at each picture and each turn: this computer's
+   * Settings on the desktop. A headless host reads what its desktop last told it instead. Absent counts as on, its default.
+   */
+  showEveryAgentPicture?: () => boolean
+  /** The store itself, when the process owner built it for providers of its own as well (the desktop's native fixtures). */
+  threadMedia?: ThreadMediaStore
+  /**
+   * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed.
+   * `nextPromptChanged` hears each change: the desktop tells its window, and a headless host its desktops (ADR-0173).
+   * `nextPromptsWanted`, where given, is asked before each side call: a headless host asks only while a desktop that
+   * wants them, with its own switch on, is connected.
    */
   nextPromptEnabled?: boolean
   nextPromptChanged?: (entry: NextPromptEntry) => void
+  nextPromptsWanted?: () => boolean
   /**
    * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
@@ -264,23 +287,30 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
+  // Pictures in threads (ADR-0170): one store for this runtime, built only with the Owl feature on.
+  const threadMedia = options.host ? undefined : options.threadMedia ?? (options.inlineMedia === true ? new ThreadMediaStore(directory, { historyEnabled: options.historyEnabled }) : undefined)
+  // An image the user asked an agent to generate is always captured; anything else only while the switch is on. A headless
+  // host answers from what its desktop told it, kept further down, so this reads it when a picture comes.
+  let showEveryAgentPicture: () => boolean = options.showEveryAgentPicture ?? (() => true)
+  const showEvery = (): boolean => showEveryAgentPicture()
+  const captureMedia = threadMedia ? agentCaptures(threadMedia, showEvery) : {}
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
-    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
+    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}), ultracodeEffort: () => agentControl.configuration().claudeUltracodeEffort })),
-    grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true, ...limitStops })),
-    devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
+    grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia })),
+    devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory, captureMedia)),
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox, usageEnabled: options.usageEnabled === true, ...limitStops })),
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true,
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
-    cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
+    cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
     // DeepSeek Harness runs only the user's own model servers, whose record is this computer's in this phase, so a
     // headless host holds it back as OpenCode was held before its hosts slice (ADR-0138).
     deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
-      : new DeepSeekAcpHost(directory, { heldProviders: held, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
+      : new DeepSeekAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -302,6 +332,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
   if (options.threadStartsEnabled === true) agentHost.allowThreadStarts()
+  // The pictures and videos an agent shows when the user asks (ADR-0170, request-only), only with `inline-media` on.
+  if (threadMedia) agentHost.keepShownMedia(threadMedia)
+  // And what each turn writes in its folder, found when it ends, only while the switch is on (ADR-0170, part 7).
+  if (threadMedia) agentHost.keepWrittenMedia(threadMedia, showEvery)
   if (options.crossMachineEnabled === true) agentHost.allowBringBack()
   // A check takes the machine's one check worktree for its repository and installs packages first when they changed (#1312).
   if (options.crossMachineEnabled === true) agentHost.allowCheckWorktrees(options.checkInstaller)
@@ -355,14 +389,21 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       codex: new CodexSubscriptionClient(join(directory, 'reasoning', 'codex')),
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
-  // Next prompts (ADR-0132): when a turn ends, the thread's own provider is asked on the side what the user will type next.
-  // Built only for this computer's own threads, while the Owl feature is on; the switch is read for every turn.
-  const nextPrompts = options.nextPromptEnabled === true && options.runsAs !== 'headless-host' && !options.host ? new NextPrompts({
-    write: nextPromptWriter(shortTextWriter, options.writingSettings),
+  // Next prompts (ADR-0132, ADR-0173): when a turn ends, or a new thread is first shown, the thread's own provider is asked on
+  // the side what the user will type next. Built for the threads this process runs, on a desktop and on a headless host,
+  // while the Owl feature is on; the switch is read for every ask.
+  const nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
+  const nextPromptGate = <Input>(write: (threadId: string, input: Input, signal?: AbortSignal) => Promise<string | null>) =>
+    (threadId: string, input: Input, signal: AbortSignal): Promise<string | null> => options.nextPromptsWanted?.() === false ? Promise.resolve(null) : write(threadId, input, signal)
+  const nextPrompts = options.nextPromptEnabled === true && !options.host ? new NextPrompts({
+    write: nextPromptGate(nextPromptWriter(shortTextWriter, options.writingSettings)),
+    writeOpening: nextPromptGate(nextPromptOpeningWriter(shortTextWriter, options.writingSettings)),
+    project: thread => nextPromptProject(thread, agentControl.liveHost(), gitRun ?? runGitStatusCommand),
+    asking: () => options.nextPromptsWanted?.() !== false && options.settings().nextPromptSuggestions,
     thread: id => agentControl.liveThread(id),
     history: thread => agentControl.threadHistory(thread),
     historyEnabled: options.historyEnabled,
-    publish: entry => options.nextPromptChanged?.(entry),
+    publish: entry => { options.nextPromptChanged?.(entry); for (const listener of [...nextPromptListeners]) listener(entry) },
     log: event => options.logFailure?.('next-prompt-failed', event === 'next-prompt-failed error' ? 'failed' : 'unreadable'),
   }) : undefined
   // Restart stopped threads retires babysitting (ADR-0144): then no thread has Sotto's pull request tools, and the
@@ -372,6 +413,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
+    ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
     ...(options.threadStartsEnabled === true ? { threadStartsEnabled: true } : {}),
     ...(options.clearThreadsEnabled === true ? { clearThreadsEnabled: true } : {}),
@@ -385,6 +427,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
     ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
+    ...(options.answerImages === true ? { answerImages: true } : {}),
+    ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
@@ -404,6 +448,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The desktop defaults a desktop sent this host: the only new-thread default and roles its delegations use.
   const desktopDefaults = hostDelegation ? new DesktopDefaultsStore(directory) : undefined
   if (desktopDefaults) await desktopDefaults.load()
+  // What a desktop said of **Show every picture and video an agent makes**: it reaches this host's captures as a setting, grants nothing.
+  if (desktopDefaults && hostDelegation) {
+    const eligible = hostDelegation.capacityEligible ?? hostDelegation.counts
+    showEveryAgentPicture = () => desktopDefaults.showEveryAgentPicture(eligible)
+  }
   // Worker roles (#1041): Settings are read only when a start or a delegation asks for its role.
   const roles = options.workerRolesEnabled === true ? { roles: () => options.settings().workerRoles } : {}
   // Each provider's own sub-agents follow them too (#1042): the table is read when a thread on this computer launches,
@@ -455,10 +504,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {},
       ...branchMoves ? { branchMoves } : {} } : {}
+  const pullRequestState = options.worktreeCleanup?.pullRequestState
+  const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
-      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
+      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
       ...workerAdmission ? { swarms: { admission: workerAdmission, service: () => delegation,
         ceiling: workerCeiling } } : {},
@@ -558,7 +609,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const threadMoves = crossMachine && options.runsAs !== 'headless-host' && watcher && branchMoves
     ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher,
       news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {},
-      ...movesHere ? { here: { supportsThreadMove: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
+      ...movesHere ? { here: { supportsThreadMove: true, supportsThreadMoveKeep: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
   await threadMoves?.load()
   // A run that does not move threads, stable among them, still reads the record and keeps every move not finished fenced,
   // and its worktree kept: that thread may already work on another machine. Nothing steps, and nothing is shown.
@@ -578,8 +629,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
   const merged = options.worktreeCleanup?.pullRequestMerged
   const openPullRequests = options.worktreeCleanup?.openPullRequestBranches
-  const pullRequestState = options.worktreeCleanup?.pullRequestState
-  const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl:
   // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
@@ -770,7 +819,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+    // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
+    ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {
+      nextPromptListeners.add(listener)
+      return () => { nextPromptListeners.delete(listener) }
+    } } } : {}),
     ...workerAdmission ? { workerSwarms: true } : {},
+    ...threadMedia && desktopDefaults ? { everyAgentPicture: true } : {},
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     ...(projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
@@ -789,6 +844,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
+    ...(threadMedia ? { threadMedia: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),

@@ -193,6 +193,8 @@ enum Palette {
     static let canvas = ThemeRole(.canvas)
     static let surface = ThemeRole(.surface)
     static let raised = ThemeRole(.raised)
+    /// A step past `raised`, for what is drawn on a card, which is itself the raised surface.
+    static let overlay = ThemeRole(.overlay)
     static let ink = ThemeRole(.ink)
     static let muted = ThemeRole(.muted)
     static let border = ThemeRole(.border)
@@ -275,6 +277,25 @@ extension UIFont {
     }
 }
 
+/// An SF Symbol's size that grows with the text size, as a symbol does when it takes a text style, so an icon beside
+/// words keeps step with them (#1858). At the default text size it is the size given. Glyphs drawn inside a control
+/// or a tile of fixed size, such as Send, a close button or a row's round mark, keep a fixed font instead.
+private struct IconFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    private let weight: Font.Weight
+    init(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
+        self.weight = weight
+    }
+    func body(content: Content) -> some View { content.font(.system(size: size, weight: weight)) }
+}
+
+extension View {
+    func iconFont(_ size: CGFloat, weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> some View {
+        modifier(IconFont(size: size, weight: weight, relativeTo: style))
+    }
+}
+
 /// The spacing scale.
 enum Space {
     static let s1: CGFloat = 4
@@ -294,15 +315,17 @@ enum Space {
 /// At regular width, the iPhone Duo unfolded, a conversation keeps a reading width in the middle of the screen
 /// instead of running the width of it. At compact width it changes nothing.
 private struct ReadingWidth: ViewModifier {
+    var on = true
     @Environment(\.horizontalSizeClass) private var sizeClass
     static let width: CGFloat = 680
     func body(content: Content) -> some View {
-        let regular = sizeClass == .regular
+        let regular = on && sizeClass == .regular
         content.frame(maxWidth: regular ? Self.width : nil).frame(maxWidth: regular ? .infinity : nil)
     }
 }
 extension View {
-    func readingWidth() -> some View { modifier(ReadingWidth()) }
+    /// The reading width, or, `on: false`, the whole width, as the unfolded Duo's columns of cards take.
+    func readingWidth(on: Bool = true) -> some View { modifier(ReadingWidth(on: on)) }
 }
 
 enum Radius {
@@ -685,7 +708,8 @@ final class WashLoopView: LoopingView {
 // MARK: - A tab page that scrolls as one sheet
 
 /// A tab's page: the wash, the heading, its controls and the content all scroll together as one sheet, with no
-/// compact bar. Once the page moves, content fades out under the status bar so text never meets the clock.
+/// compact bar. Once the page moves, content fades out under the status bar so text never meets the clock. A second
+/// press on the page's tab scrolls it back to its top.
 /// Apply `.refreshable` and `.scrollDismissesKeyboard` to the page; the scroll view inside reads them.
 struct SheetPage<Content: View>: View {
     var warm = false
@@ -693,6 +717,9 @@ struct SheetPage<Content: View>: View {
     var washHeight: CGFloat = 520
     let content: Content
     @State private var fade: CGFloat = 0
+    @Environment(\.pageTop) private var topRequest
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     init(warm: Bool = false, washTone: Wash.Tone = .normal, washHeight: CGFloat = 520, @ViewBuilder content: () -> Content) {
         self.warm = warm
         self.washTone = washTone
@@ -701,23 +728,39 @@ struct SheetPage<Content: View>: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    content
-                }
-                .padding(.horizontal, Space.gutter)
-                .padding(.bottom, Space.s8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(alignment: .top) {
-                    // Reaches up under the status bar, so at rest the wash meets the top edge.
-                    Wash(warm: warm, tone: washTone, height: washHeight + 160).offset(y: -160)
-                }
-                .background(alignment: .top) {
-                    // How far the content has moved up from rest, read against the page's own top.
-                    GeometryReader { proxy in
-                        Color.clear.onChange(of: proxy.frame(in: .named("sheet-page")).minY) { _, top in travelled(top) }
+            ScrollViewReader { reader in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Color.clear.frame(height: 0).id(sheetPageTop)
+                        content
                     }
-                    .frame(height: 0)
+                    // The unfolded Duo's wide page keeps a wider margin, as its columns and reading width do.
+                    .padding(.horizontal, duo.sideways || duo == .upright ? Space.s6 : Space.gutter)
+                    .padding(.bottom, Space.s8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(alignment: .top) {
+                        // Reaches up under the status bar, so at rest the wash meets the top edge, and on the iPhone Duo
+                        // on under the strip beside the page, where the tabs stand, so the strip is the page's own.
+                        Wash(warm: warm, tone: washTone, height: washHeight + 160).offset(y: -160)
+                            .padding(.leading, -duo.strip.leading).padding(.trailing, -duo.strip.trailing)
+                    }
+                    .background(alignment: .top) {
+                        // How far the content has moved up from rest, read against the page's own top.
+                        GeometryReader { proxy in
+                            Color.clear.onChange(of: proxy.frame(in: .named("sheet-page")).minY) { _, top in travelled(top) }
+                        }
+                        .frame(height: 0)
+                    }
+                }
+                // On the Duo the page reaches every edge of the screen (Zach, November 1, 2026): the wash goes out sideways
+                // into the strip or the rail's column, and the page runs on under the status bar, where the fade over it
+                // keeps words off the clock, and under the home indicator, rather than stopping at the safe area and
+                // leaving a band of plain ground above and below it.
+                .scrollClipDisabled(duo.strip.leading + duo.strip.trailing > 0)
+                .clipShape(WiderRect(leading: duo.strip.leading, trailing: duo.strip.trailing,
+                                     vertical: duo.strip.leading + duo.strip.trailing > 0 ? 1000 : 0))
+                .onChange(of: topRequest) {
+                    withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(sheetPageTop, anchor: .top) }
                 }
             }
         }
@@ -732,21 +775,41 @@ struct SheetPage<Content: View>: View {
     }
 }
 
-/// The page's ground fading in under the status bar.
-private struct StatusBarFade: View {
+/// A rectangle reaching past its frame on either side by these widths, and no further up or down.
+private struct WiderRect: Shape {
+    let leading: CGFloat
+    let trailing: CGFloat
+    /// How far past its top and bottom edges it reaches too.
+    var vertical: CGFloat = 0
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: rect.minX - leading, y: rect.minY - vertical, width: rect.width + leading + trailing,
+                    height: rect.height + vertical * 2))
+    }
+}
+
+/// The scroll target at the very top of a `SheetPage`.
+private let sheetPageTop = "sheet-page-top"
+
+/// The page's ground fading in under the status bar: solid over the clock and clear 10 points below the status bar.
+/// A strip at the top of the safe area carries it as a background that reaches up through the status bar, so its
+/// height follows the status bar's without reading it. It used to take its height from the inset a `GeometryReader`
+/// read while ignoring the safe area itself, and scrolled text ran under the clock on every tab page (#1851). Watcher's
+/// page uses it too, where it meets the status bar.
+struct StatusBarFade: View {
     var body: some View {
-        GeometryReader { proxy in
-            PageGround()
-                .mask(LinearGradient(stops: [
-                    Gradient.Stop(color: .black, location: 0.62),
-                    Gradient.Stop(color: .clear, location: 1)
-                ], startPoint: .top, endPoint: .bottom))
-                .frame(height: proxy.safeAreaInsets.top + 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: 10)
+            .background {
+                PageGround()
+                    .mask(LinearGradient(stops: [
+                        Gradient.Stop(color: .black, location: 0.62),
+                        Gradient.Stop(color: .clear, location: 1)
+                    ], startPoint: .top, endPoint: .bottom))
+                    .ignoresSafeArea(edges: .top)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -813,6 +876,26 @@ extension View {
     func pageGround() -> some View {
         background { PageGround().ignoresSafeArea().accessibilityHidden(true) }
     }
+
+    /// A ground of the caller's behind a bar at the bottom of a sheet: clear `reach` points above the bar, solid from its
+    /// top down to the screen's edge, so what scrolls under the bar fades out before it reaches it (#1847). A page's reply
+    /// box has none: it floats over the conversation, as the desktop's composer does (Zach, October 31, 2026).
+    func dockFade<Ground: View>(reach: CGFloat = Space.s4, @ViewBuilder ground: () -> Ground) -> some View {
+        let fill = ground()
+        return background(alignment: .top) {
+            fill
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: reach)
+                        Rectangle()
+                    }
+                }
+                .padding(.top, -reach)
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
 }
 
 /// Frosted glass: a material with a translucent tint of the surface and a hairline highlight. Under Reduce
@@ -861,18 +944,17 @@ extension View {
     }
 }
 
-/// The reply box's ground, and its **+**'s, as in Messages: solid, a shade off the room, with a soft shadow under it so it
-/// floats over the conversation, and no edge. Under Glass on iOS 26 and later the system's Liquid Glass instead, which the
-/// **+** answers the touch with; before iOS 26 Glass gets the solid box too, since its frosted glass has an edge.
+/// The reply box's ground: solid, a shade off the room, with a soft shadow under it so it floats over the conversation,
+/// and no edge in any state. Under Glass on iOS 26 and later the system's Liquid Glass instead; before iOS 26 Glass gets
+/// the solid box too, since its frosted glass has an edge.
 struct ComposerSurface<S: InsettableShape>: ViewModifier {
     let shape: S
-    var interactive = false
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
     @ViewBuilder func body(content: Content) -> some View {
         if glass != nil, #available(iOS 26, *) {
-            content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)).interactive(interactive), in: shape)
+            content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)), in: shape)
         } else {
             content
                 // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
@@ -882,28 +964,54 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
     }
 }
 
-/// The reply box's measures, shared by a thread's and Watcher's: 38 points tall with one line, as in Messages.
+/// The reply box's measures, shared by a thread's and Watcher's: a card with the words on top and a row of round buttons
+/// inside it under them, as in Claude's iPhone app (Zach, November 1, 2026).
 enum ComposerMetrics {
-    static let height: CGFloat = 38
-    static let radius: CGFloat = height / 2
-    /// The words' room above and below; with one line of body text the box is at least `height`.
-    static let wordsPadding: CGFloat = 9
-    /// From the box's leading edge to the words.
-    static let wordsInset: CGFloat = 14
+    static let radius: CGFloat = 24
+    /// From the card's leading edge to the words, and above them.
+    static let wordsInset: CGFloat = 16
+    static let wordsTop: CGFloat = 12
+    /// Between the words and the row under them. The words take every press down to the row, and nothing in the row
+    /// takes one above it, so a press at the foot of the words types rather than opening the model pill (Zach, November
+    /// 1, 2026: it was 2 points, with the pill's press area reaching 5 more up into the words).
+    static let wordsGap: CGFloat = 12
     /// Around the photos and files above the words.
     static let attachmentsInset: CGFloat = 6
-    /// Send and Stop inside the box's end: their circle, and its gap to the box's edge.
-    static let button: CGFloat = 30
-    static let buttonInset: CGFloat = 4
-    /// Between Stop and Send: wide enough that each keeps all 44 points of its press area, so a press between them
-    /// neither stops a turn meant to be queued nor queues a reply meant to stop it.
-    static let buttonGap: CGFloat = 44 - button
+    /// The row's round buttons (+, the mic, Send and Stop) and the settings pill: how tall they are drawn.
+    static let button: CGFloat = 34
+    /// From the card's edge to the row.
+    static let rowInset: CGFloat = 8
+    /// Between the row's buttons: wide enough that each keeps all 44 points of its press area, so a press between Stop
+    /// and Send neither stops a turn meant to be queued nor queues a reply meant to stop it.
+    static let gap: CGFloat = 44 - button
 }
 
 extension View {
     /// The reply box's floating ground; see `ComposerSurface`.
-    func composerSurface<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
-        modifier(ComposerSurface(shape: shape, interactive: interactive))
+    func composerSurface<S: InsettableShape>(in shape: S) -> some View {
+        modifier(ComposerSurface(shape: shape))
+    }
+    /// A round button's face in the reply box's row: `fill` in a circle the row's height, pressed across 44 points.
+    func composerDisc<F: ShapeStyle>(_ fill: F) -> some View {
+        frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
+            .background(fill, in: Circle())
+            .rowPressArea()
+    }
+    /// A press area 44 points wide and tall for something drawn the reply box's row's height, reaching down from its top
+    /// edge rather than up, so it never takes a press meant for the words above the row. It takes no more room than it
+    /// is drawn.
+    func rowPressArea() -> some View {
+        let spare = 44 - ComposerMetrics.button
+        return frame(minWidth: 44, minHeight: 44, alignment: .top)
+            .contentShape(Rectangle())
+            .padding(.horizontal, -spare / 2)
+            .padding(.bottom, -spare)
+    }
+    /// The light round the reply box, whose corners are `radius`, at the top effort; see `EffortTraceLight`. Nothing is
+    /// drawn while `lit` is false.
+    func effortTrace(_ lit: Bool, radius: CGFloat) -> some View {
+        background { if lit { EffortTraceLight(radius: radius, halo: true) } }
+            .overlay { if lit { EffortTraceLight(radius: radius, halo: false) } }
     }
     /// A round button drawn smaller than 44 points that still takes a press across 44, without taking more room.
     func pressArea(drawn size: CGFloat) -> some View {
@@ -911,39 +1019,168 @@ extension View {
     }
 }
 
+/// The light that travels round the reply box while its thread, or Watcher, is at the top effort, as round the desktop's
+/// composer (ADR-0019, amended October 26 and November 1; `effortTrace.css`): a thin bright head on the box's edge, and a
+/// soft halo behind the box that spills onto the room, one lap every nine seconds. The iPhone has no colourway setting, so
+/// it wears the desktop's default, Ember, from the theme's warning role. The halo is a glow, so it follows the Glow slider
+/// and is not drawn at 0 (ADR-0051); the head is a line and stays. The lap runs in Core Animation (`TraceLoopView`), and
+/// stops under Reduce Motion, in the `--ui-still` journeys and while the app is not in front, resting past the top-left
+/// corner.
+struct EffortTraceLight: View {
+    let radius: CGFloat
+    /// The halo, drawn behind the box so the box covers its inner half; otherwise the head on the edge.
+    let halo: Bool
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlow) private var glow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
+    var body: some View {
+        if halo && !glow.shows {
+            EmptyView()
+        } else {
+            let warning = theme.rgb(.warning)
+            TraceLayers(radius: radius, halo: halo, color: warning, tip: halo ? warning : warning.mixed(with: theme.rgb(.ink), 0.4),
+                        strength: halo ? CGFloat(glow.alpha(0.55)) : 1, reach: halo ? CGFloat(glow.radius(9)) : 0,
+                        running: !reduceMotion && !DebugFlags.still && phase == .active)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// The trace's layers for SwiftUI.
+private struct TraceLayers: UIViewRepresentable {
+    let radius: CGFloat
+    let halo: Bool
+    let color: ThemeRGB
+    let tip: ThemeRGB
+    let strength: CGFloat
+    let reach: CGFloat
+    let running: Bool
+    func makeUIView(context: Context) -> TraceLoopView { TraceLoopView(frame: .zero) }
+    func updateUIView(_ view: TraceLoopView, context: Context) {
+        view.paint(radius: radius, halo: halo, color: color, tip: tip, strength: strength, reach: reach)
+        view.running = running
+    }
+}
+
+/// One of the trace's two lights as layers: a conic gradient, a long faint tail and a bright head, on a square that turns
+/// inside a layer that stretches it to the box's shape, so the light keeps an even pace along the long edges. The head is
+/// masked to a 1.5 point band on the box's edge; the halo to the soft shadow of a thin ring round it, whose explicit path
+/// Core Animation draws without an offscreen pass. Only the square's turn loops.
+final class TraceLoopView: LoopingView {
+    private let stretch = CALayer()
+    private let light = CAGradientLayer()
+    private let band = CAShapeLayer()
+    /// Where the head rests, in radians: past the top-left corner, as on the desktop.
+    private static let rest = -CGFloat.pi * 2 / 3
+    private var painted: (CGFloat, Bool, ThemeRGB, ThemeRGB, CGFloat, CGFloat)?
+    private var radius: CGFloat = 0
+    private var halo = false
+    private var reach: CGFloat = 0
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // The halo spills past the box on purpose.
+        clipsToBounds = false
+        stage.clipsToBounds = false
+        light.type = .conic
+        light.startPoint = CGPoint(x: 0.5, y: 0.5)
+        light.endPoint = CGPoint(x: 1, y: 0.5)
+        light.transform = CATransform3DMakeRotation(Self.rest, 0, 0, 1)
+        stretch.addSublayer(light)
+        stage.layer.addSublayer(stretch)
+        stage.layer.mask = band
+    }
+    required init?(coder: NSCoder) { fatalError("TraceLoopView is made in code") }
+    func paint(radius: CGFloat, halo: Bool, color: ThemeRGB, tip: ThemeRGB, strength: CGFloat, reach: CGFloat) {
+        // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
+        if let painted, painted == (radius, halo, color, tip, strength, reach) { return }
+        painted = (radius, halo, color, tip, strength, reach)
+        self.radius = radius
+        self.halo = halo
+        self.reach = reach
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        light.colors = [color.uiColor(0), color.uiColor(0), color.uiColor(0.35), color.uiColor(1), tip.uiColor(1), color.uiColor(0)].map(\.cgColor)
+        light.locations = [0, 0.7, 0.84, halo ? 0.93 : 0.95, 0.97, 1].map { NSNumber(value: $0) }
+        stage.alpha = strength
+        CATransaction.commit()
+        setNeedsLayout()
+    }
+    override func layoutStage() {
+        let side = max(bounds.height, 1)
+        // The halo's square reaches far enough past the box for its soft edge; the head's only needs the box's corners.
+        let cover = side * (halo ? 2.5 : 1.5)
+        stretch.frame = bounds
+        stretch.sublayerTransform = CATransform3DMakeScale(bounds.width / side, 1, 1)
+        light.bounds = CGRect(x: 0, y: 0, width: cover, height: cover)
+        light.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        band.frame = bounds
+        let edge = UIBezierPath(roundedRect: bounds, cornerRadius: radius)
+        if halo {
+            band.path = nil
+            band.fillColor = nil
+            band.shadowColor = UIColor.black.cgColor
+            band.shadowOpacity = 1
+            band.shadowOffset = .zero
+            band.shadowRadius = reach
+            band.shadowPath = edge.cgPath.copy(strokingWithWidth: 2, lineCap: .butt, lineJoin: .round, miterLimit: 10)
+        } else {
+            edge.append(UIBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), cornerRadius: max(0, radius - 1.5)))
+            band.path = edge.cgPath
+            band.fillRule = .evenOdd
+            band.fillColor = UIColor.black.cgColor
+            band.shadowOpacity = 0
+            band.shadowPath = nil
+        }
+    }
+    override var loopLayer: CALayer { light }
+    override func makeLoops() -> [String: CAAnimation] {
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = NSNumber(value: Double(Self.rest))
+        turn.toValue = NSNumber(value: Double(Self.rest + 2 * .pi))
+        turn.duration = 9
+        turn.repeatCount = .infinity
+        turn.timingFunction = CAMediaTimingFunction(name: .linear)
+        turn.isRemovedOnCompletion = false
+        return ["turn": turn]
+    }
+}
+
 // MARK: - Cards and glows
 
-/// How a card is lit. Needs you carries a warm glow, working a breathing accent halo, answered an accent glow.
+/// How a card is lit. Needs you carries a warm glow, and the Threads tab's working and answered cards an accent one; the
+/// other tones paint the card the same (ADR-0051, amended October 30, 2026).
 enum CardTone { case plain, needsYou, answered, working, online }
 
-/// A card's surface: radius 20, a hairline, a highlight along the top edge, and the glow its tone carries. Under Glass
-/// the card is the raised tint over the room, its tone a tint over that, and its glow shines through it.
+/// Whether a view sits on a sheet. A sheet's ground is the raised surface in dark, so a card on it steps up to the overlay
+/// surface to stay a step off what is behind it.
+private struct OnSheetKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var sottoOnSheet: Bool {
+        get { self[OnSheetKey.self] }
+        set { self[OnSheetKey.self] = newValue }
+    }
+}
+
+/// A card's surface, the desktop's card (ADR-0110): one fill a step off the room, with no outline, no highlight along its
+/// top and no gradient. That fill is the theme's raised surface, a step darker than the room by day and lighter by night,
+/// and the overlay surface on a sheet. A card that needs the user glows, and so do the Threads tab's working and answered
+/// cards, which that tab keeps as they were while it becomes the Duo's sidebar list (ADR-0051, amended October 30, 2026).
+/// Under Glass the card is the raised tint over the room.
 struct CardSurface: ViewModifier {
     let tone: CardTone
     var radius: CGFloat = Radius.lg
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlass) private var glass
-    @Environment(\.colorScheme) private var scheme
+    @Environment(\.sottoOnSheet) private var onSheet
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return content
             .background {
-                if let glass {
-                    shape.fill(glass.raised.fill)
-                        .overlay(shape.fill(LinearGradient(stops: [
-                            Gradient.Stop(color: toneTint, location: 0),
-                            Gradient.Stop(color: toneTint.opacity(0), location: 0.72)
-                        ], startPoint: .top, endPoint: .bottom)))
-                } else {
-                    shape.fill(LinearGradient(stops: [
-                        Gradient.Stop(color: top, location: 0),
-                        Gradient.Stop(color: theme.color(.surface), location: 0.72)
-                    ], startPoint: .top, endPoint: .bottom))
-                }
+                if let glass { shape.fill(glass.raised.fill) } else { shape.fill(theme.color(fill)) }
             }
             .clipShape(shape)
-            .overlay(shape.strokeBorder(ring, lineWidth: 1))
-            .overlay(shape.strokeBorder(LinearGradient(colors: [highlight, highlight.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.2)), lineWidth: 1))
             .background { glow }
     }
     @ViewBuilder private var glow: some View {
@@ -954,38 +1191,9 @@ struct CardSurface: ViewModifier {
         case .plain, .online: EmptyView()
         }
     }
-    /// What the glow fills the card's shape with: the surface, or nothing under Glass, where the card is see-through.
-    private var base: ThemeRGB? { glass == nil ? theme.rgb(.surface) : nil }
-    /// The tone's tint at the card's top, laid over the glass.
-    private var toneTint: Color {
-        switch tone {
-        case .plain: return .clear
-        case .needsYou: return theme.color(.warning).opacity(Tint.needsYou)
-        case .answered: return theme.color(.accent).opacity(Tint.answered)
-        case .working: return theme.color(.accent).opacity(Tint.working)
-        case .online: return theme.color(.accent).opacity(Tint.online)
-        }
-    }
-    private var top: Color {
-        switch tone {
-        case .plain: return theme.color(.surface)
-        case .needsYou: return theme.tinted(.surface, with: .warning, Tint.needsYou)
-        case .answered: return theme.tinted(.surface, with: .accent, Tint.answered)
-        case .working: return theme.tinted(.surface, with: .accent, Tint.working)
-        case .online: return theme.tinted(.surface, with: .accent, Tint.online)
-        }
-    }
-    private var ring: Color {
-        switch tone {
-        case .plain, .online: return theme.color(.hairline)
-        case .needsYou: return theme.color(.warning).opacity(0.3)
-        case .answered: return theme.color(.accent).opacity(0.45)
-        case .working: return theme.color(.accent).opacity(0.26)
-        }
-    }
-    private var highlight: Color {
-        scheme == .dark ? theme.color(.ink).opacity(0.1) : theme.color(.surface).opacity(0.95)
-    }
+    /// What the glow fills the card's shape with: the card's fill, or nothing under Glass, where the card is see-through.
+    private var base: ThemeRGB? { glass == nil ? theme.rgb(fill) : nil }
+    private var fill: ThemeRoleName { onSheet ? .overlay : .raised }
 }
 
 /// The switch the UI journeys use to measure what the looping animations cost: `--ui-still` stops every one of them.

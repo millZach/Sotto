@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // The native browser page beside a minimized theme editor, in the complete app.
@@ -102,7 +102,7 @@ test('shows the live page beside a minimized theme editor, and steps aside under
     await resize(launched, 820, 560)
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await panel.getByRole('tab', { name: 'Browser' }).click()
     const addressBar = panel.getByRole('textbox', { name: 'Address for a new page' })
@@ -124,13 +124,13 @@ test('shows the live page beside a minimized theme editor, and steps aside under
       // At the minimum width an open Tools panel has the sidebar's place, and with it the page links: Tools steps
       // aside for the trip to Settings and comes back with the editor.
       const toolsHidSidebar = !(await page.locator('.thread-nav').isVisible())
-      if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      if (toolsHidSidebar) await toggleTools(page)
       await openPage(page, 'Settings')
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       await page.getByRole('button', { name: 'Create theme', exact: true }).click()
       await expect(editor).toBeVisible()
       await openThreads(page)
-      if (toolsHidSidebar) await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      if (toolsHidSidebar) await toggleTools(page)
       await expect(viewportLocator).toBeVisible()
       // Expanded, the editor sends the page aside as any dialog does.
       await expect.poll(async () => (await hostViews(app)).length).toBe(0)

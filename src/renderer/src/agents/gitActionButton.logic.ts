@@ -133,7 +133,8 @@ export function defaultBranchQuestion(action: GitStackedAction, branch: string):
 }
 
 export interface GitNotice {
-  readonly tone: 'progress' | 'success' | 'error'
+  /** `held`: refused because something else holds the folder (#1823), which is no failure; nothing was changed. */
+  readonly tone: 'progress' | 'success' | 'error' | 'held'
   readonly title: string
   readonly detail?: string
   readonly cta?: { readonly kind: 'open_pr'; readonly label: string; readonly url: string } | { readonly kind: 'run_action'; readonly label: string; readonly action: GitStackedAction }

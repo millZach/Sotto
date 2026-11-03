@@ -17,6 +17,8 @@ import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { deferred, type Deferred } from '../../fixtures/deferred'
+import { randomUUID } from 'node:crypto'
+import { WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 
 const opened: { control: AgentControl; stop: () => Promise<void> }[] = []
 const removals: (() => Promise<void>)[] = []
@@ -349,6 +351,56 @@ describe('naming a thread from its first exchange', () => {
   })
 })
 
+describe('keeping a thread’s name current each hour (ADR-0026, November 1, 2026)', () => {
+  /** The sweep the coordinator runs on its own timer, run here by hand at a chosen time. */
+  const sweep = (control: AgentControl, at: number): void => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(at)
+    try { (control as unknown as { refreshTitles(): void }).refreshTitles() } finally { now.mockRestore() }
+  }
+  it('names a thread again from its first message and newest exchange once an hour has passed, never a name typed by hand', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(titled(f.control, threadId).title).toBe('Dark theme contrast'))
+    const thread = f.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    thread.messages = [...thread.messages, { id: 'second-prompt', role: 'user', text: 'Now add a light theme.', createdAt: at }, { id: 'second-reply', role: 'assistant', text: 'Added a light theme.', createdAt: at }]
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(4))
+    sweep(f.control, Date.now() + 10 * 60_000)
+    expect(f.titles).toHaveBeenCalledOnce()
+    f.titles.mockResolvedValueOnce('Light theme')
+    sweep(f.control, Date.now() + 61 * 60_000)
+    expect(f.titles).toHaveBeenCalledTimes(2)
+    expect(f.titles.mock.calls[1]![1]).toEqual({ opening: 'The palette is unreadable in dark mode.', prompt: 'Now add a light theme.', reply: 'Added a light theme.' })
+    await vi.waitFor(() => expect(titled(f.control, threadId).title).toBe('Light theme'))
+
+    await f.control.command({ type: 'rename-thread', threadId, title: 'Mine' })
+    thread.messages = [...thread.messages, { id: 'third-prompt', role: 'user', text: 'And a high-contrast one.', createdAt: at }, { id: 'third-reply', role: 'assistant', text: 'Done.', createdAt: at }]
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(6))
+    sweep(f.control, Date.now() + 3 * 60 * 60_000)
+    expect(f.titles).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves Watcher’s own thread its name', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    await f.host.setWatcherKind(threadId, 'watcher')
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(2))
+    const native = f.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    native.messages = [...native.messages, { id: 'second-prompt', role: 'user', text: 'How are the workers doing?', createdAt: at }, { id: 'second-reply', role: 'assistant', text: 'Both are working.', createdAt: at }]
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId).summary?.messageCount ?? titled(f.control, threadId).messages.length).toBe(4))
+    // Its first name is the first exchange's, as before; the hourly sweep adds nothing to it.
+    const asked = f.titles.mock.calls.length
+    sweep(f.control, Date.now() + 2 * 60 * 60_000)
+    expect(f.titles).toHaveBeenCalledTimes(asked)
+  })
+})
+
 describe('naming a thread from its first message while the first turn runs', () => {
   /** The thread's first message arrives while its turn is still running, as it does the moment it is sent. */
   function send(adapter: { state: { threads: AgentThread[] }; emit: () => void }, ...texts: string[]): void {
@@ -370,6 +422,84 @@ describe('naming a thread from its first message while the first turn runs', () 
     // A long run is never cut between the halves of an emoji.
     expect(firstMessageTitle(`${'x'.repeat(58)}😀yyy`)).toBe(`${'x'.repeat(58)}…`)
     expect(firstMessageTitle(' \n ')).toBeNull()
+  })
+
+  it.each(['watcher', 'watcher-history'] as const)('never names a %s from internal Watcher news', async kind => {
+    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS })
+    const threadId = workshop(f.control).id
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, wakeUp: true })
+    await f.host.setWatcherKind(threadId, 'watcher')
+    const native = f.adapters.codex.state.threads[0]!
+    native.messages.push({ id: 'news-reply', role: 'assistant', text: 'The worker is fixing the failed check.', createdAt: new Date().toISOString() })
+    native.status = 'idle'
+    f.adapters.codex.emit()
+    if (kind === 'watcher-history') await f.host.setWatcherKind(threadId, kind)
+    await f.control.command({ type: 'refresh', provider: 'codex' })
+    await f.control.closed()
+
+    for (const state of [f.control.get(), f.control.shell()]) {
+      const thread = state.host.threads.find(item => item.id === threadId)!
+      expect(thread.title).toBe('Workshop')
+      expect(thread.summary?.lastUser?.text ?? '').not.toContain('Sotto has news of watched threads')
+    }
+    expect(f.titles).not.toHaveBeenCalled()
+
+    await f.control.command({ type: 'regenerate-thread-title', threadId })
+    expect(f.titles).not.toHaveBeenCalled()
+  })
+
+  it('names the visible user exchange after internal Watcher news', async () => {
+    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null })
+    const threadId = workshop(f.control).id
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, wakeUp: true })
+    await f.host.setWatcherKind(threadId, 'watcher')
+    const native = f.adapters.codex.state.threads[0]!
+    native.messages.push({ id: 'news-reply', role: 'assistant', text: 'The worker is fixing the failed check.', createdAt: new Date().toISOString() })
+    native.status = 'idle'; f.adapters.codex.emit()
+    native.messages.push({ id: 'user-prompt', role: 'user', text: 'Check the sidebar spacing.', createdAt: new Date().toISOString() })
+    native.status = 'running'; f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh', provider: 'codex' })
+    native.messages.push({ id: 'user-reply', role: 'assistant', text: 'The spacing is fixed.', createdAt: new Date().toISOString() })
+    native.status = 'idle'; f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh', provider: 'codex' })
+    await f.control.closed()
+
+    expect(titled(f.control, threadId).title).toBe('Check the sidebar spacing.')
+    expect(f.titles.mock.calls).toEqual([[threadId, { prompt: 'Check the sidebar spacing.', reply: 'The spacing is fixed.' }]])
+  })
+
+  it.each(['watcher', 'watcher-history'] as const)('repairs an internal-news first-message title saved on a %s', async kind => {
+    const beforeConnect = (adapters: Awaited<ReturnType<typeof workspaceFixture>>['adapters']) => { adapters.codex.state.threads[0]!.title = 'Watcher' }
+    const f = await coordinator({ beforeConnect, writeThreadTitle: async () => null })
+    const threadId = workshop(f.control).id
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, wakeUp: true })
+    await f.host.setWatcherKind(threadId, 'watcher')
+    await f.host.renameThread(threadId, firstMessageTitle(WATCHER_WAKE_UP_PROMPT)!, 'first-message')
+    if (kind === 'watcher-history') await f.host.setWatcherKind(threadId, kind)
+    await savedForReopening(f)
+
+    const reopened = await coordinator({ root: f.root, beforeConnect, writeThreadTitle: async () => null })
+    for (const state of [reopened.control.get(), reopened.control.shell()]) {
+      const thread = state.host.threads.find(item => item.id === threadId)!
+      expect(thread.title).toBe('Watcher')
+      expect(thread.titledFromFirstMessage).toBeUndefined()
+      expect(thread.summary?.lastUser?.text ?? '').not.toContain('Sotto has news of watched threads')
+    }
+  })
+
+  it.each([false, true])('keeps a user-authored lookalike when the delivery was internal: %s', async wakeUp => {
+    const beforeConnect = (adapters: Awaited<ReturnType<typeof workspaceFixture>>['adapters']) => { adapters.codex.state.threads[0]!.title = 'Watcher' }
+    const f = await coordinator({ beforeConnect, writeThreadTitle: async () => null })
+    const threadId = workshop(f.control).id
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, ...(wakeUp ? { wakeUp: true } : {}) })
+    await f.host.setWatcherKind(threadId, 'watcher-history')
+    const title = firstMessageTitle(WATCHER_WAKE_UP_PROMPT)!
+    // An ordinary user message may name itself; a manual rename is theirs even if news was the first message.
+    await f.host.renameThread(threadId, title, wakeUp ? 'user' : 'first-message')
+    await savedForReopening(f)
+
+    const reopened = await coordinator({ root: f.root, beforeConnect, writeThreadTitle: async () => null })
+    expect(titled(reopened.control, threadId)).toMatchObject({ title, titleSource: wakeUp ? 'user' : 'default' })
   })
 
   it('names a thread from its first message as soon as it is sent, then takes the generated name when it lands', async () => {

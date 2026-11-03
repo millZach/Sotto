@@ -13,6 +13,7 @@ import { folderKey } from './NewThreadDialog'
 import { worktreeErrorWords } from './movedWorktreeWords'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { shownCount, shownLocalCount } from '../state/interfaceNumbers'
+import { settleOffers } from './settleUndo'
 import './workingCopy.css'
 
 /** Older threads carry no working-copy metadata and keep the folder they already use. */
@@ -35,6 +36,8 @@ export interface WorkingCopyFacts {
   readonly error?: string | undefined
   /** The folder was reclaimed; the branch stays and the next send puts the folder back. */
   readonly reclaimed?: boolean | undefined
+  /** The commit a folder reclaimed on a detached HEAD is put back on. */
+  readonly detachedCommit?: string | undefined
 }
 
 /** The project already names itself beside this label, so its own folder is called what it is. */
@@ -52,7 +55,7 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
     const directory = resolve()
     return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : i18n._(msg`Working folder`) }
   }
-  const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt) }
+  const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt), detachedCommit: worktree.detachedCommit }
   if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? i18n._(msg`Project folder`) : i18n._(msg`New worktree`) }
   if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: i18n._(msg`Worktree not ready`), error: worktreeErrorWords(worktree.error) }
   const directory = resolve()
@@ -149,7 +152,9 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
         {facts.directory ? <div><dt><Trans>Folder</Trans></dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
         {facts.branch ? <div><dt><Trans>Branch</Trans></dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
         {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt><Trans>Repository</Trans></dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
-        {facts.status === 'ready' && facts.reclaimed ? <div><dt><Trans>Status</Trans></dt><dd>{branch === undefined ? t`Folder removed. Sending to this thread puts it back on its branch.` : t({ message: `Folder removed. Sending to this thread puts it back on ${ph({ branch: leftToRight(branch) })}.`, comment: '{branch} is a Git branch name.' })}</dd></div> : null}
+        {facts.status === 'ready' && facts.reclaimed ? <div><dt><Trans>Status</Trans></dt><dd>{branch !== undefined ? t({ message: `Folder removed. Sending to this thread puts it back on ${ph({ branch: leftToRight(branch) })}.`, comment: '{branch} is a Git branch name.' })
+          : facts.detachedCommit ? t({ message: `Folder removed. Sending to this thread puts it back on commit ${ph({ commit: leftToRight(facts.detachedCommit.slice(0, 7)) })}.`, comment: '{commit} is the start of a Git commit ID.' })
+          : t`Folder removed. Sending to this thread puts it back on its branch.`}</dd></div> : null}
         {facts.status === 'ready' && !facts.reclaimed && facts.dirty !== undefined ? <div><dt><Trans>Changes</Trans></dt><dd>{facts.dirty ? t`Uncommitted changes` : t`No uncommitted changes`}</dd></div> : null}
         {/* A draft's worktree is not being prepared: it is made on first send (ADR-0027). */}
         {facts.status === 'pending' ? <div><dt><Trans>Status</Trans></dt><dd>{thread.nativeSessionStarted === false ? t`Created on first send. Choose the workspace and branch before sending.` : t`Preparing the working copy.`}</dd></div> : null}
@@ -278,6 +283,8 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
  * Settle a thread, then ask whether its own worktree should go with it (ADR-0041). The Settle press
  * settles at once, as it always has; the question is a separate one, answered by Keep folder or Escape.
  * With the on-settle rule turned on, a clean folder goes without the question and a dirty one still asks.
+ * Every Settle the user presses comes through here, so each one offers its Undo at the sidebar's foot (ADR-0167): once
+ * the question is answered, and only while the folder stayed, since Restore cannot bring a removed one back whole.
  */
 export function useSettleThread(command: AgentConnection['command'], fallbackFocusRef?: React.RefObject<HTMLElement | null>) {
   const app = useOptionalApp()
@@ -287,21 +294,28 @@ export function useSettleThread(command: AgentConnection['command'], fallbackFoc
   const [questions, setQuestions] = useState<readonly { thread: WorkingCopyThread; project: Pick<AgentProject, 'path'> | undefined; dirty: boolean }[]>([])
   const asking = questions[0]
   const nextQuestion = (): void => { setRemovalError(null); setQuestions(current => current.slice(1)) }
-  const settle = useCallback(async (thread: WorkingCopyThread, project: Pick<AgentProject, 'path'> | undefined): Promise<boolean> => {
+  const settle = useCallback(async (thread: WorkingCopyThread & Partial<Pick<AgentThread, 'title'>>, project: Pick<AgentProject, 'path'> | undefined): Promise<boolean> => {
     const result = await command({ type: 'settle-thread', threadId: thread.id })
     if (!result || result.error) return false
-    if (!isReclaimable(thread)) return true
+    const title = thread.title ?? t({ message: 'this thread', comment: 'Stands for a thread\'s name in "Settled this thread" when it has none.' })
+    if (!isReclaimable(thread)) { settleOffers.settled(thread.id, title); return true }
     const dirty = thread.worktree?.dirty === true
-    if (onSettleRule && !dirty) { void command({ type: 'reclaim-thread-worktree', threadId: thread.id }); return true }
+    if (onSettleRule && !dirty) {
+      // The rule takes a clean folder at once. The toast says so while it does, and offers Undo only should main refuse it.
+      settleOffers.settled(thread.id, title, { removing: true })
+      void command({ type: 'reclaim-thread-worktree', threadId: thread.id }).then(reclaimed => settleOffers.answered(thread.id, Boolean(reclaimed && !reclaimed.error)), () => settleOffers.answered(thread.id, false))
+      return true
+    }
+    settleOffers.settled(thread.id, title, { asking: true })
     setQuestions(current => current.some(question => question.thread.id === thread.id) ? current : [...current, { thread, project, dirty }])
     return true
-  }, [command, onSettleRule])
+  }, [command, onSettleRule, t])
   const dialog = asking ? <ReclaimWorktreeDialog key={asking.thread.id} facts={describeWorkingCopy(asking.thread, asking.project)} dirty={asking.dirty} title={t`Remove its worktree too?`} removalError={removalError} threadId={asking.thread.id} command={command} fallbackFocusRef={fallbackFocusRef}
-    onCancel={nextQuestion}
+    onCancel={() => { settleOffers.answered(asking.thread.id, false); nextQuestion() }}
     onConfirm={async preview => {
       setRemovalError(null)
       const result = await command({ type: 'reclaim-thread-worktree', threadId: asking.thread.id, withUncommittedChanges: asking.dirty || preview.dirty, confirmedIgnored: preview.ignored, confirmedItems: preview.items.map(({ path, fileCount }) => ({ path, fileCount })), confirmedRepositories: preview.repositories })
-      if (result && !result.error) return true
+      if (result && !result.error) { settleOffers.answered(asking.thread.id, true); return true }
       setRemovalError(result?.error ?? null)
       if (!asking.dirty && result?.error === RECLAIM_WORKTREE_NEEDS_CONFIRMATION) setQuestions(current => current.map(question => question.thread.id === asking.thread.id ? { ...question, dirty: true } : question))
       return false

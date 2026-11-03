@@ -278,3 +278,52 @@ describe('a branch name that holds Unicode isolates of its own', () => {
     expect(plainText(`${named} stays`)).toBe(`${named} stays`)
   })
 })
+
+// #1866: a press refused because another thread's work holds the folder where main is checked out reads as a hold, as the
+// Git action's does, names that thread in the host's words and offers to open it. Anything else keeps the words it had.
+describe('a refusal because another thread holds the folder where main is checked out', () => {
+  const docs: AgentThread = { ...parent, id: 'docs', title: 'Docs', worktree: undefined } as AgentThread
+  const words = 'Thread "Docs" is waiting for your answer. Nothing was brought back. Answer it, then try again.'
+  const held = (over: Partial<BringBack> = {}): BringBack => record({ actionId: '66666666-6666-4666-8666-666666666666', status: 'refused', refusal: 'busy', checkedOut: 'project', message: words, heldBy: 'docs', ...over })
+  function show(current: AgentThread) {
+    vi.stubGlobal('sotto', { agents: { gitChangedFiles: vi.fn(async () => ({ isRepository: true, files: [], truncated: false })) } })
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => ({ error: null } as AgentState))
+    render(<GitActionButton thread={current} threads={[parent, docs, current]} command={command} noticeSlot={null} />)
+    return { command }
+  }
+
+  it('reads On hold, not as a failure, in the host’s words, and opens the thread holding it', () => {
+    const { command } = show(child({ bringBack: held() }))
+    const hold = screen.getByRole('status', { name: 'On hold' })
+    expect(hold).toHaveTextContent(`On hold ${words}`)
+    expect(hold).not.toHaveTextContent('Nothing was brought to main.')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(within(hold).queryByRole('button', { name: 'Open WAV preview stall' })).toBeNull()
+    fireEvent.click(within(hold).getByRole('button', { name: 'Open Docs' }))
+    expect(sent(command)).toEqual([{ type: 'select-thread', threadId: 'docs' }])
+    // Escape puts it away as any outcome, and the offer comes back: nothing changed, so the press may be made again.
+    fireEvent.keyDown(hold, { key: 'Escape' })
+    expect(strip()).toBeInTheDocument()
+  })
+
+  it('offers to open the thread it began from when that is the one holding its folder, once', () => {
+    show(child({ bringBack: held({ heldBy: 'parent', message: 'Thread "WAV preview stall" is working in this folder. Nothing was brought back. Wait for it to finish before changing this folder.' }) }))
+    expect(within(screen.getByRole('status', { name: 'On hold' })).getAllByRole('button', { name: /^Open / }).map(button => button.textContent)).toEqual(['Open WAV preview stall'])
+  })
+
+  it('offers nothing to open for a thread this window does not list', () => {
+    show(child({ bringBack: held({ heldBy: 'host:22222222-2222-4222-8222-222222222222:elsewhere' }) }))
+    expect(screen.getByRole('status', { name: 'On hold' })).toHaveTextContent(words)
+    expect(screen.queryByRole('button', { name: /^Open / })).toBeNull()
+  })
+
+  it('keeps the words it had when an older host names no thread, and when a Git action holds the folder', () => {
+    const older = 'Thread "Docs" is waiting for your answer. Nothing was changed. Answer it, then try again.'
+    expect(outcome(held({ heldBy: undefined, message: older }), 'WAV preview stall')).toEqual({ tone: 'error', title: 'Nothing was brought to main.', body: older, openParent: false, commit: false })
+    const action = 'A Git action is running in this folder. Nothing was changed. Wait for it to finish before changing this folder.'
+    show(child({ bringBack: held({ heldBy: undefined, message: action }) }))
+    const alert = screen.getByRole('alert', { name: 'Nothing was brought to main.' })
+    expect(alert).toHaveTextContent(action)
+    expect(within(alert).queryByRole('button', { name: /^Open / })).toBeNull()
+  })
+})

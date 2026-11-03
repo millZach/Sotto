@@ -110,6 +110,24 @@ it('starts a watched thread again on the new client straight away', async () => 
   expect((await f.host.snapshot()).error).toBeUndefined()
 })
 
+// A thread only on screen is read from its transcript and keeps no CLI (ADR-0016, November 1, 2026 amendment), so after
+// an update it starts on the new client when the user next types or acts, while a thread kept live starts at once.
+it('starts a thread kept live again on the new client straight away, and leaves one only on screen stopped', async () => {
+  const f = await fixture(['kept', 'shown'])
+  f.adapter.keepSessionsLive(['kept'])
+  f.adapter.observeThreads(['kept', 'shown'])
+  const next = await update(f)
+
+  await f.adapter.clientUpdated()
+  await expect.poll(() => launchedFrom(f, 'kept')).toEqual([process.execPath, next])
+  await expect.poll(() => f.sessions!.stopped('shown')).toBe(true)
+  expect(await launchedFrom(f, 'shown')).toEqual([process.execPath])
+  expect(await thread(f, 'shown')).toMatchObject({ status: 'idle' })
+  expect((await thread(f, 'shown')).providerSessionOpen).toBeUndefined()
+  expect(await send(f, 'shown', 'One more thing')).toMatchObject({ accepted: true })
+  expect(await launchedFrom(f, 'shown')).toEqual([process.execPath, next])
+})
+
 it('does nothing while Claude Code is not connected', async () => {
   const f = await claudeFixture(undefined, 15_000)
   fixtures.push(f)

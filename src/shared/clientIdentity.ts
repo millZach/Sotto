@@ -188,7 +188,16 @@ function clientThread(thread: AgentThread, hostId: string, across?: DelegatingKe
     ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
     ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),
     // So is the thread one began from (#1028), so its note opens it.
-    ...(thread.startedFrom ? { startedFrom: keyedLinks(thread.startedFrom, own) } : {}) }
+    ...(thread.startedFrom ? { startedFrom: keyedLinks(thread.startedFrom, own) } : {}),
+    // And the thread holding the folder a bring-back was refused for (#1866), so the hold's Open finds it. The holder
+    // works on the same machine as that folder, so it is keyed by this thread's host, as a Git action's hold is.
+    ...(thread.bringBack?.heldBy !== undefined ? { bringBack: keyedHolder(thread.bringBack, own) } : {}),
+    ...(thread.broughtBack?.heldBy !== undefined ? { broughtBack: keyedHolder(thread.broughtBack, own) } : {}) }
+}
+
+/** A bring-back record with the thread holding its folder named as the window names threads. */
+function keyedHolder(record: NonNullable<AgentThread['bringBack']>, own: string): NonNullable<AgentThread['bringBack']> {
+  return record.heldBy === undefined ? record : { ...record, heldBy: hostEntityKey(own, record.heldBy) }
 }
 
 /** How a headless host keys a thread on another machine that delegated to one of its threads through a desktop (#1316 part 2). */

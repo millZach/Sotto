@@ -9,7 +9,7 @@ import process from 'node:process'
 import { URL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HOST_EXTERNAL_IMPORTS } from '../../../scripts/release-external-dependencies.mjs'
-import { checkedOwlHostVersion, safeHostTarInventory, verifyOwlHostArtifact } from '../../../scripts/owl-host-artifacts.mjs'
+import { checkedOwlHostVersion, hostArchiveTar, safeHostTarInventory, verifyOwlHostArtifact } from '../../../scripts/owl-host-artifacts.mjs'
 import { owlHostArguments, packageOwlHost } from '../../../scripts/package-owl-host.mjs'
 import { owlPublicationArguments, prepareOwlRelease } from '../../../scripts/release-owl.mjs'
 import { hostArchiveUsageExpected } from '../../../scripts/smoke-host-archive.mjs'
@@ -80,6 +80,13 @@ describe('explicit native Owl host package', () => {
 })
 
 describe('host bytes accepted for the same Owl publication', () => {
+  it('extracts with Windows\' own tar on Windows, whatever tar comes first on PATH, and the system tar elsewhere', () => {
+    // A hosted Windows runner puts Git's GNU tar first on PATH; the nightly verifies host archives there.
+    expect(hostArchiveTar('win32', { SystemRoot: 'C:\\Windows' })).toBe('C:\\Windows\\System32\\tar.exe')
+    expect(hostArchiveTar('win32', {})).toBe('C:\\Windows\\System32\\tar.exe')
+    expect(hostArchiveTar('linux', {})).toBe('tar')
+    expect(hostArchiveTar('darwin', {})).toBe('tar')
+  })
   it('extracts and verifies bytes independently of any receipt, without comparing desktop and host input hashes', async () => {
     const path = await archive(await directory())
     expect(await verifyOwlHostArtifact(path, { version, sourceCommit })).toMatchObject({ version, sourceCommit, platform: process.platform, arch: process.arch })

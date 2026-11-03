@@ -9,13 +9,14 @@ import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { DEFAULT_THREAD_SHORTCUTS, isPageShortcut, resolveThreadShortcut, type ThreadShortcutChoices, type ThreadShortcutId } from '../../../../shared/threadShortcuts'
 import { parseAccelerator, parseChord } from '../../agents/branchToolbar.logic'
-import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys } from '../../agents/threadShortcuts'
+import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys, SETTLE_UNDO_CHORD } from '../../agents/threadShortcuts'
 import { changesChord } from '../../tools/changesShortcut'
 import { pageChordHolder, pageShortcutShown, usePageShortcutGates } from '../../components/pageShortcuts'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
 import { useChordRecorder } from './useChordRecorder'
+import { useOwlFeature } from '../../state/owlFeature'
 import './dictationShortcuts.css'
 import './threadShortcuts.css'
 
@@ -25,12 +26,13 @@ export interface ThreadShortcutsSettingsProps {
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   /** Dictation's keys keep their own rows; this page's entry for them only points there. */
   readonly onOpenDictation?: (() => void) | undefined
+  /** A row of the page's own drawn under its lead and filter, before the thread shortcuts: the popup's (ADR-0181). */
+  readonly before?: ReactNode
 }
 
 /** What the application menu calls each chord it owns (`menuOwnedChords`), for naming it in a refusal. */
 const MENU_OWNER_NAMES: Readonly<Record<string, MessageDescriptor>> = {
   'ctrl+r': msg`Reload the window`,
-  'ctrl+shift+r': msg`Force reload the window`,
   'ctrl+shift+i': msg`Toggle developer tools`,
   'ctrl+w': msg`Close the window`,
   'mod+w': msg`Close the window`,
@@ -95,9 +97,10 @@ const UNSUPPORTED_KEY = msg`That key can’t be part of a shortcut here. Try a l
  * and dictation pointed to rather than repeated. Recording, messages and focus follow Dictation's rows; the
  * chords are T3's spelling, read from the window's keys — dictation stays the one global exception.
  */
-export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation }: ThreadShortcutsSettingsProps): ReactNode {
+export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, onOpenDictation, before }: ThreadShortcutsSettingsProps): ReactNode {
   const { t, i18n } = useLingui()
   const recorder = useChordRecorder(platform, false)
+  const popupOn = useOwlFeature('popup')
   const [filter, setFilter] = useState('')
   const [target, setTarget] = useState<ThreadShortcutId | null>(null)
   const [message, setMessage] = useState<RowMessage | null>(null)
@@ -156,6 +159,10 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     }
     if (sameThreadKeys(chord, 'mod+k', platform)) {
       return msg`Search transcripts already uses ${keys}. Pick other keys.`
+    }
+    // Undo after a Settle (ADR-0167), and every text field's own undo.
+    if (sameThreadKeys(chord, SETTLE_UNDO_CHORD, platform)) {
+      return msg`Undo already uses ${keys}. Pick other keys.`
     }
     // The application menu sees its accelerators before the window does, so these keys would never arrive.
     const menuOwned = menuOwnedChord(chord, platform)
@@ -319,18 +326,28 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
   )
 
   const dictationAccelerator = settings.hotkey
+  // With the popup on (ADR-0181) its shortcut works outside Sotto too, so dictation's is no longer the only one.
+  const global = popupOn ? <Trans>Global — works outside Sotto, as the popup’s does.</Trans> : <Trans>Global — the one set that works outside Sotto.</Trans>
   const fixedRows: ReactNode[] = [
     fixedRow(t`Dictation (press & hold)`, onOpenDictation
-      ? <><Trans>Global — the one set that works outside Sotto.</Trans>{' '}<button type="button" className="dictation-shortcuts__add tt-focusable" onClick={onOpenDictation}><Trans>Settings › Dictation</Trans></button></>
-      : <Trans>Global — the one set that works outside Sotto. Changed in Settings › Dictation.</Trans>, dictationAccelerator, 'dictation'),
+      ? <>{global}{' '}<button type="button" className="dictation-shortcuts__add tt-focusable" onClick={onOpenDictation}><Trans>Settings › Dictation</Trans></button></>
+      : <>{global} <Trans>Changed in Settings › Dictation.</Trans></>, dictationAccelerator, 'dictation'),
     fixedRow(t`Send the prompt`, <Trans>The composer’s own key. Shift+Enter adds a line.</Trans>, 'Enter', 'send'),
     fixedRow(t`Steer now`, <Trans>In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does.</Trans>, acceleratorOf('mod+enter'), 'steer'),
     fixedRow(t`Commit, use folder`, <Trans>Inside its dialog only.</Trans>, acceleratorOf('mod+enter'), 'commit'),
+    // The thread list's keys and F6 (ADR-0164): fixed, and each standing down for dictation's own.
+    fixedRow(t`Move in the thread list`, <Trans>The thread list is one Tab stop. Up and Down move through it, Home and End go to its ends, Right and Left open and close a folder, and Enter opens the thread.</Trans>, 'Down', 'thread-list'),
+    fixedRow(t`Open a thread’s menu`, <Trans>On a row in the thread list: Open, Open beside, Rename, Regenerate title, Watch and Settle. The menu key and a right-click open it too.</Trans>, 'Shift+F10', 'row-menu'),
+    fixedRow(t`Rename the thread`, <Trans>On a row in the thread list.</Trans>, 'F2', 'rename'),
+    fixedRow(t`Move between sidebar, pane and composer`, <Trans>Shift+F6 goes back. In a split it goes round every pane. A terminal keeps F6; Ctrl+Tab leaves it.</Trans>, 'F6', 'regions'),
     fixedRow(t`Search transcripts`, <Trans>Opens the Dictate room on its search, from any page.</Trans>, acceleratorOf('mod+k'), 'search'),
+    fixedRow(t`Undo a settle`, <Trans>While the toast at the sidebar’s foot offers Undo. A text field keeps these keys for its own typing.</Trans>, acceleratorOf(SETTLE_UNDO_CHORD), 'undo-settle'),
     fixedRow(t`Terminal search & text size`, <Trans>The terminal’s own keys, while a terminal holds them.</Trans>, acceleratorOf('mod+f'), 'terminal'),
-    ...(platform === 'darwin' ? [fixedRow(t`Settings`, <Trans>macOS’s own Settings chord, from the app menu.</Trans>, 'CommandOrControl+,', 'settings')] : []),
+    fixedRow(t`Settings`, platform === 'darwin'
+      ? <Trans>macOS’s own Settings chord, from the app menu.</Trans>
+      : <Trans>Opens Settings from any page.</Trans>, 'CommandOrControl+,', 'settings'),
   ]
-  const fixedMatches = query === '' || 'fixed dictation send steer search terminal settings'.includes(query)
+  const fixedMatches = query === '' || 'fixed dictation send steer search thread list arrows menu rename regions sidebar pane composer f6 undo settle terminal settings'.includes(query)
   const changedCount = GROUPS.flatMap(groupRows).filter(row => changed(row.id)).length
 
   return (
@@ -338,6 +355,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       <p className="tt-paragraph thread-shortcuts__lead"><Trans>Click a shortcut and press the new keys; let go to save. These keys work while Sotto is in front, and stand down in terminals and dialogs. Dictation’s keys always win a tie.</Trans></p>
       <input className="tt-input thread-shortcuts__filter" type="search" aria-label={t`Filter shortcuts`} placeholder={t`Filter by action or keys`} value={filter} onChange={event => setFilter(event.currentTarget.value)} />
       {notice !== null ? <p className="tt-paragraph thread-shortcuts__notice" role="status">{shownWords(notice)}</p> : null}
+      {before}
       {GROUPS.map(group => {
         const rows = groupRows(group).filter(matches)
         if (rows.length === 0) return null

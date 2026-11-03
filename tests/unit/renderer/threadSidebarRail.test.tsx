@@ -164,6 +164,29 @@ describe('the collapsed rail (ADR-0146)', () => {
     expect(document.activeElement).toBe(tile(rail, 'Streaming WAV stall'))
   })
 
+  it('opens the row menu from a tile that pops a card, where Open names no keys since Enter pops the card (ADR-0164)', () => {
+    owl(true, true)
+    const onOpen = vi.fn()
+    const rail = mountCollapsed(threadsStateFixture(), onOpen)
+    const approval = within(rail).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })
+    act(() => approval.focus())
+    act(() => { fireEvent.keyDown(approval, { key: 'F10', shiftKey: true }) })
+    const menu = within(rail).getByRole('menu', { name: 'Actions for Visual gate flake' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const open = within(menu).getByRole('menuitem', { name: 'Open' })
+    expect(open).not.toHaveAttribute('aria-keyshortcuts')
+    expect(within(menu).getByRole('menuitem', { name: 'Settle' })).toBeInTheDocument()
+    act(() => { fireEvent.click(open) })
+    expect(onOpen).toHaveBeenCalledWith('visual-gate')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(approval)
+    // A tile whose press opens its thread names Enter, as a row does.
+    const footer = tile(rail, 'Footer links')
+    act(() => footer.focus())
+    act(() => { fireEvent.keyDown(footer, { key: 'ContextMenu' }) })
+    expect(within(within(rail).getByRole('menu', { name: 'Actions for Footer links' })).getByRole('menuitem', { name: 'Open' })).toHaveAttribute('aria-keyshortcuts', 'Enter')
+  })
+
   it('edges nothing in the attention colour while nothing waits', () => {
     owl(true)
     const rail = mountCollapsed(calm(threadsStateFixture()))

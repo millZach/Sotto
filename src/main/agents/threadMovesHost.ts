@@ -7,8 +7,8 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { hostNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadTurnRunning } from '../../shared/threadActivity'
 import {
-  HOST_THREAD_MOVE_WORDS, hostThreadMoveRequestSchema, THREAD_MOVE_WORDS, threadMoveRefusal, type HostThreadMoveSource, type HostThreadMoveStart, type ThreadMoveLink,
-  type ThreadMoveSourceAnswer, type ThreadMoveStartAnswer,
+  HOST_THREAD_MOVE_WORDS, hostThreadMoveRequestSchema, THREAD_MOVE_WORDS, threadMoveRefusal, type HostThreadMoveSource, type HostThreadMoveStart, type ThreadMoveKeepAnswer,
+  type ThreadMoveLink, type ThreadMoveSourceAnswer, type ThreadMoveStartAnswer,
 } from '../../shared/threadMoves'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { readStrictJson } from '../storage/strictJsonFile'
@@ -21,7 +21,7 @@ import { watcherBackgroundWorkCount } from './watcherWakeUp'
 /** What a move asks of this machine's coordinator: its threads as they are, and its own commands. */
 export interface HostThreadMovesControl {
   watcherSnapshot(): AgentHostSnapshot
-  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' }>, guard: () => void): Promise<AgentState>
+  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' }>, guard: () => void): Promise<AgentState>
 }
 /** The new thread's link back to the thread it continues, on its own record. */
 export interface HostThreadMovesWorkspace {
@@ -60,6 +60,11 @@ const recordSchema = z.object({
   digest: z.string().regex(/^[a-f0-9]{64}$/u),
   /** The first prompt went. */
   sent: z.literal(true).optional(),
+  /**
+   * The desktop called the move off here with Keep it here (part 4): no start of it lands, and the thread made for it, if
+   * any, is stopped and settled. Recorded before anything is stopped, so it holds whatever happens after.
+   */
+  kept: z.literal(true).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type MoveRecord = z.infer<typeof recordSchema>
@@ -132,18 +137,60 @@ export class HostThreadMoves {
   get holdsSources(): boolean { return this.options.sources !== undefined }
 
   /** One `thread-move` request from a recorded desktop. A step that cannot run at all rejects, and the desktop asks again. */
-  async handle(raw: unknown, client: ClientIdentity): Promise<ThreadMoveStartAnswer | ThreadMoveSourceAnswer> {
+  async handle(raw: unknown, client: ClientIdentity): Promise<ThreadMoveStartAnswer | ThreadMoveSourceAnswer | ThreadMoveKeepAnswer> {
     const request = hostThreadMoveRequestSchema.parse(raw)
+    if (request.action === 'keep') {
+      if (!await this.load()) return refused('unreadable', HOST_THREAD_MOVE_WORDS.unreadable)
+      return this.queued(request.moveId, () => this.keep(request.moveId, client))
+    }
     if (request.action !== 'start') {
       if (!this.options.sources) throw new Error('This machine does not hold its threads for moves.')
       return this.options.sources.handle(request, client)
     }
     // Not a definite refusal: this machine cannot say whether it made a thread for the move, so the desktop keeps it fenced.
     if (!await this.load()) return refused('unreadable', HOST_THREAD_MOVE_WORDS.unreadable)
-    const before = this.running.get(request.moveId) ?? Promise.resolve()
-    const run = before.catch(() => undefined).then(() => this.start(request, client))
-    this.running.set(request.moveId, run)
-    try { return await run } finally { if (this.running.get(request.moveId) === run) this.running.delete(request.moveId) }
+    return this.queued(request.moveId, () => this.start(request, client))
+  }
+  /** Each move's steps one after the other, so a start and a keep of one move never interleave. */
+  private async queued<T>(moveId: string, step: () => Promise<T>): Promise<T> {
+    const before = this.running.get(moveId) ?? Promise.resolve()
+    const run = before.catch(() => undefined).then(step)
+    this.running.set(moveId, run)
+    try { return await run } finally { if (this.running.get(moveId) === run) this.running.delete(moveId) }
+  }
+  /**
+   * Keep it here (part 4, ADR-0105 decision 7, "Reconciling"): the move is called off here. Its record says so first, one
+   * made now for a move never started here, so no start of it ever lands; then any thread made for it is stopped and
+   * settled. Answers once that is done, and the same when asked again; a thread that will not settle yet fails the step,
+   * and the desktop asks again.
+   */
+  private async keep(moveId: string, client: ClientIdentity): Promise<ThreadMoveKeepAnswer> {
+    const stopping = (): void => { if (this.closed) throw new Error('Sotto is stopping.') }
+    stopping()
+    let record = this.records.get(moveId)
+    if (record && record.clientId !== client.clientId) return refused('move-differs', HOST_THREAD_MOVE_WORDS.moveDiffers) as ThreadMoveKeepAnswer
+    const at = new Date().toISOString()
+    if (!record) {
+      if (this.records.size >= HOST_THREAD_MOVES_MAX) return refused('full', HOST_THREAD_MOVE_WORDS.full) as ThreadMoveKeepAnswer
+      // Never started here: the record of the move, called off, is all there is, and it fences every later start.
+      await this.put({ moveId, clientId: client.clientId, threadId: randomUUID(), draftId: randomUUID(), digest: createHash('sha256').update(moveId).digest('hex'),
+        kept: true, createdAt: at, updatedAt: at })
+      return { type: 'kept', moveId, made: false }
+    }
+    if (!record.kept) { record = { ...record, kept: true, updatedAt: at }; await this.put(record) }
+    const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === record.threadId)
+    if (!thread) return { type: 'kept', moveId, made: false }
+    // Kept only once its turn has stopped: one still running fails the step, and the desktop asks again.
+    if (isThreadTurnRunning(thread)) {
+      const stopped = await this.options.control.commandFromMove({ type: 'interrupt', threadId: thread.id }, stopping)
+      const now = this.options.control.watcherSnapshot().threads.find(item => item.id === thread.id)
+      if (stopped.error || now !== undefined && isThreadTurnRunning(now)) throw new Error('The thread made for this move has not stopped yet.')
+    }
+    if (!thread.workspaceSettledAt) {
+      const settled = await this.options.control.commandFromMove({ type: 'settle-thread', threadId: thread.id }, stopping)
+      if (settled.error && !this.options.control.watcherSnapshot().threads.find(item => item.id === thread.id)?.workspaceSettledAt) throw new Error('The thread made for this move did not settle yet.')
+    }
+    return { type: 'kept', moveId, made: true }
   }
 
   private async start(request: HostThreadMoveStart, client: ClientIdentity): Promise<ThreadMoveStartAnswer> {
@@ -151,6 +198,8 @@ export class HostThreadMoves {
     stopping()
     const digest = identity(request)
     let record = this.records.get(request.moveId)
+    // Called off here with Keep it here: definite, since nothing more is ever made or sent for it.
+    if (record?.kept && record.clientId === client.clientId) return refused('kept', HOST_THREAD_MOVE_WORDS.kept)
     if (record && (record.clientId !== client.clientId || record.digest !== digest)) return refused('move-differs', HOST_THREAD_MOVE_WORDS.moveDiffers)
     const snapshot = this.options.control.watcherSnapshot()
     const model = resolveModel(snapshot.models, request.modelId)

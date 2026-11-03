@@ -7,8 +7,8 @@ import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { remoteCommandRefusal } from '../../../src/host/remoteCommands'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import type { HostOperation } from '../../../src/shared/hostProtocol'
-import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_OTHER_DESKTOP, BRING_BACK_UNSUPPORTED, bringBackNotConnected } from '../../../src/shared/bringChangesBack'
+import { protocolAgentStateSchema, type HostOperation } from '../../../src/shared/hostProtocol'
+import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_OTHER_DESKTOP, BRING_BACK_UNSUPPORTED, bringBackNotConnected, type BringBack } from '../../../src/shared/bringChangesBack'
 import type { BranchMoveReceipt } from '../../../src/shared/branchMoves'
 
 // Bringing changes back on a paired host (#1030): the host that holds both folders runs Git, a host without the feature
@@ -29,7 +29,7 @@ function remote(features: string[]) {
   const router = new DesktopHostRouter(emptyDesktopState)
   router.add(connection); router.select(REMOTE)
   const press: AgentCommand = { type: 'bring-changes-back', threadId: hostEntityKey(REMOTE, 'child'), actionId }
-  return { router, call, service, press }
+  return { router, call, service, press, state }
 }
 
 describe('bringing changes back on a paired host', () => {
@@ -55,6 +55,31 @@ describe('bringing changes back on a paired host', () => {
     expect(remoteCommandRefusal(yes, { mayAnswer: false, bringBack: true })).toBeNull()
     expect(remoteCommandRefusal({ ...yes, force: true } as unknown as AgentCommand, { mayAnswer: true, bringBack: true })).toBe('forbidden')
     expect(agentCommandSchema.safeParse({ ...yes, target: 'main' }).success).toBe(false)
+  })
+})
+
+// A press refused because another thread's work holds the folder where the target is checked out (#1866): the host names
+// that thread by its own ID, and the window, which keys threads by host, finds it under the same key.
+describe('a hold another thread caused, on a paired host', () => {
+  const refused = (over: Partial<BringBack> = {}): BringBack => ({ actionId, status: 'refused', target: 'main', branch: 'sotto/task', refusal: 'busy', checkedOut: 'project',
+    message: 'Thread "Docs" is waiting for your answer. Nothing was brought back. Answer it, then try again.', heldBy: 'docs', at: '2026-10-30T00:00:00.000Z', ...over })
+  /** The child's record as the window reads it, once the host's shell has come off the wire with it and the holder beside it. */
+  function windowRecord(record: BringBack): BringBack | undefined {
+    const { router, service, state } = remote(['bring-changes-back'])
+    const child = state.host.threads[0]!
+    const wire = protocolAgentStateSchema.parse({ ...state, host: { ...state.host, threads: [{ ...child, bringBack: record }, { ...child, id: 'docs', title: 'Docs' }] } })
+    Object.assign(service, { cached: wire })
+    try { return router.shell().host.threads.find(thread => thread.id === hostEntityKey(REMOTE, 'child'))?.bringBack } finally { router.dispose() }
+  }
+
+  it('names the thread holding the folder by this window’s key, and its words as the host wrote them', () => {
+    expect(windowRecord(refused())).toEqual({ ...refused(), heldBy: hostEntityKey(REMOTE, 'docs') })
+  })
+
+  it('keeps an older host’s refusal, which names no thread, as it was', () => {
+    const { heldBy: _named, ...older } = refused({ message: 'Thread "Docs" is waiting for your answer. Nothing was changed. Answer it, then try again.' })
+    void _named
+    expect(windowRecord(older)).toEqual(older)
   })
 })
 

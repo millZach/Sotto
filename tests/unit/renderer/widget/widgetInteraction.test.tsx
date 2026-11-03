@@ -30,8 +30,8 @@ describe('WidgetApp', () => {
     const { container } = render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'click', startedAt: 0, level: 0.4,
-          cancellable: true,
+          status: 'listening', sessionId: 'click', startedAt: 0, speaking: true,
+          cancellable: true, escapeClaimed: true,
         })}
         platform="win32" now={1_000}
         onToggle={onToggle}
@@ -48,9 +48,10 @@ describe('WidgetApp', () => {
     expect(onToggle).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    // Main holds Escape, so Escape cancels and the pill carries Stop alone.
+    expect(screen.queryByRole('button', { name: 'Cancel dictation' })).not.toBeInTheDocument()
     expect(onStop).toHaveBeenCalledTimes(2)
-    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onCancel).not.toHaveBeenCalled()
     expect(onToggle).not.toHaveBeenCalled()
   })
 
@@ -104,7 +105,7 @@ describe('WidgetApp', () => {
     const { container } = render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'drag', startedAt: 0, level: 0.4,
+          status: 'listening', sessionId: 'drag', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}
@@ -197,7 +198,7 @@ describe('WidgetApp', () => {
 
   it.each([
     ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'permission' })],
-    ['listening', snapshot({ status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.4 })],
+    ['listening', snapshot({ status: 'listening', sessionId: 'listening', startedAt: 0, speaking: true })],
     ['processing', snapshot({
       status: 'processing', sessionId: 'processing', startedAt: 0,
       stage: 'transcribing', progress: 0.5,

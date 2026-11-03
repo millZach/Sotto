@@ -24,9 +24,17 @@ export function failureUnseen(thread: Failed & Pick<AgentThread, 'failureSeen'>)
 
 /** The record of the thread's last turn: the one its provider names, otherwise the newest turn record. */
 export function lastTurnRecord(thread: Pick<AgentThread, 'activities' | 'lastTurn'>): AgentActivity | undefined {
-  const turns = (thread.activities ?? []).filter(record => record.kind === 'turn')
+  // Read from the end without copying: the server mark asks on every update of a running thread (ADR-0124).
+  const records = thread.activities ?? []
   const anchor = thread.lastTurn?.messageId ?? thread.lastTurn?.id
-  return (anchor === undefined ? undefined : turns.findLast(record => record.turnId === anchor)) ?? turns.at(-1)
+  let last: AgentActivity | undefined
+  for (let at = records.length - 1; at >= 0; at--) {
+    const record = records[at]!
+    if (record.kind !== 'turn') continue
+    if (anchor === undefined || record.turnId === anchor) return record
+    last ??= record
+  }
+  return last
 }
 
 /** The reason the thread's last turn failed, as its turn record says, or undefined when it says none. */

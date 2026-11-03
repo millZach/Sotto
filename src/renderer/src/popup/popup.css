@@ -1,0 +1,374 @@
+/* The popup (ADR-0181): one floating card in the theme's colours, set in Figtree, its prompt at the bottom and the
+   conversation growing upward above it. A port of Sotto Popup: the night behind the card is its faint accent glow and
+   three quiet stars, the owl marks it, and every colour is a theme role. The window is the card; around it is nothing. */
+
+html:has(> body.popup-page),
+body.popup-page {
+  background: transparent;
+}
+
+body.popup-page {
+  min-width: 0;
+  overflow: hidden;
+}
+
+body.popup-page #root {
+  height: 100vh;
+}
+
+.popup-card {
+  --popup-night: color-mix(in oklch, var(--tt-accent) 10%, transparent);
+  --popup-star: color-mix(in oklch, var(--tt-accent) 22%, transparent);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  height: 100vh;
+  padding: 8px 14px;
+  overflow: hidden;
+  border: 1px solid var(--tt-panel-border);
+  border-radius: var(--tt-radius-overlay);
+  background:
+    radial-gradient(1.2px 1.2px at 13% 15px, var(--popup-star) 99%, transparent),
+    radial-gradient(1px 1px at 29% 30px, var(--popup-star) 99%, transparent),
+    radial-gradient(1.4px 1.4px at 47% 11px, var(--popup-star) 99%, transparent),
+    radial-gradient(150px 110px at 45px 12px, var(--popup-night), transparent),
+    var(--tt-surface-elevated);
+  color: var(--tt-text);
+  font-family: var(--tt-font-ui);
+  font-size: var(--tt-type-body);
+  /* The card moves the window: dragging anywhere but a control or the words moves it, and its place is kept. */
+  -webkit-app-region: drag;
+}
+
+.popup-card :is(button, textarea, a, input, select, label, [role='listbox'], .popup-transcript, .agent-request) {
+  -webkit-app-region: no-drag;
+}
+
+/* The conversation: newest at the bottom, fading out under the card's top edge, scrolling once main stops the window
+   growing at its share of the screen. */
+.popup-transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, transparent 0, black 18px);
+}
+
+.popup-transcript__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 16px 4px 4px;
+}
+
+.popup-entry {
+  min-width: 0;
+  font-size: var(--tt-type-reading);
+  line-height: 1.5;
+  user-select: text;
+}
+
+.popup-entry--user {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--tt-text-muted);
+  font-weight: 500;
+}
+
+.popup-entry--user > svg {
+  flex: none;
+  color: var(--tt-accent-text);
+  transform: translateY(1px);
+}
+
+.popup-entry--user > p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.popup-entry--user.is-sending {
+  opacity: 0.7;
+}
+
+.popup-entry--reply {
+  color: var(--tt-text);
+}
+
+.popup-entry--reply > :first-child {
+  margin-top: 0;
+}
+
+.popup-status {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  font-size: var(--tt-type-small);
+}
+
+.popup-status__spark {
+  display: inline-block;
+  width: 14px;
+  color: var(--tt-accent);
+  text-align: center;
+  animation: popup-spark 2.4s steps(8) infinite;
+}
+
+.popup-status__words {
+  color: var(--tt-accent-text);
+  font-weight: 600;
+}
+
+.popup-status__hint {
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+}
+
+.popup-chrome {
+  flex: none;
+}
+
+.popup-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 7px 7px 7px 10px;
+  border-radius: var(--tt-radius-row);
+  background: var(--tt-warning-surface);
+  color: var(--tt-warning-text);
+  font-size: var(--tt-type-small);
+}
+
+.popup-notice > p {
+  flex: 1;
+  margin: 0;
+  padding-top: 1px;
+}
+
+/* The slash menu, between the conversation and the prompt. */
+.popup-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.popup-menu__item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: var(--tt-radius-row);
+  font-size: var(--tt-type-small);
+}
+
+.popup-menu__item[aria-selected='true'] {
+  background: var(--tt-accent-wash);
+}
+
+.popup-menu__name {
+  flex: none;
+  width: 110px;
+  color: var(--tt-text);
+  font-family: var(--tt-font-mono);
+}
+
+.popup-menu__item[aria-selected='true'] .popup-menu__name {
+  color: var(--tt-accent-text);
+}
+
+.popup-menu__words {
+  color: var(--tt-text-muted);
+}
+
+.popup-prompt {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.popup-prompt__field {
+  flex: 1;
+  min-width: 0;
+  max-height: calc(1.45em * 8);
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  field-sizing: content;
+  background: transparent;
+  color: var(--tt-text);
+  caret-color: var(--tt-accent);
+  font: inherit;
+  font-size: var(--tt-type-reading);
+  line-height: 1.45;
+}
+
+.popup-prompt__field::placeholder {
+  color: var(--tt-text-hint);
+  opacity: 1;
+}
+
+.popup-send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 1px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-control);
+  background: var(--tt-accent);
+  color: var(--tt-on-accent);
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+
+.popup-send:disabled {
+  background: color-mix(in oklch, var(--tt-text) 8%, transparent);
+  color: var(--tt-text-muted);
+}
+
+.popup-send.is-stop {
+  background: var(--tt-pill);
+  color: var(--tt-pill-ink);
+}
+
+/* The owl: 18 by 18 points drawn 1.5 to a point, crisp at every size. Its moon is muted, its eyes the accent. */
+.popup-owl {
+  flex: none;
+  width: 27px;
+  height: 27px;
+  margin-bottom: 1px;
+}
+
+.popup-owl__moon,
+.popup-owl__star {
+  fill: var(--tt-text-faint);
+}
+
+.popup-owl__eyes {
+  fill: var(--tt-accent);
+  opacity: 0.55;
+}
+
+.popup-owl.is-working .popup-owl__eyes {
+  opacity: 1;
+  animation: popup-owl-glance 4.8s steps(1) infinite;
+}
+
+.popup-owl.is-working .popup-owl__star {
+  fill: var(--tt-accent);
+  animation: popup-owl-star 1.2s steps(1) infinite;
+}
+
+.popup-footer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 24px;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+}
+
+.popup-footer__button,
+.popup-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--tt-radius-control);
+  background: transparent;
+  color: var(--tt-text-muted);
+  font: inherit;
+}
+
+.popup-icon {
+  justify-content: center;
+  width: 24px;
+  padding: 0;
+}
+
+.popup-notice .popup-icon {
+  width: 20px;
+  height: 20px;
+  color: inherit;
+}
+
+.popup-footer__button:hover:not(:disabled),
+.popup-icon:hover:not(:disabled) {
+  background: var(--tt-hover);
+  color: var(--tt-text);
+}
+
+.popup-footer__button:disabled {
+  opacity: 0.45;
+}
+
+.popup-target.is-watcher {
+  color: var(--tt-accent-text);
+}
+
+.popup-footer__where {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-footer__space {
+  flex: 1;
+}
+
+/* A question or permission the target waits on, at the conversation's foot. */
+.popup-transcript .agent-request {
+  margin: 0;
+}
+
+@keyframes popup-spark {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes popup-owl-glance {
+  0%, 30% { transform: none; }
+  31%, 55% { transform: translateX(-1px); }
+  56%, 80% { transform: translateX(1px); }
+  81%, 100% { transform: none; }
+}
+
+@keyframes popup-owl-star {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup-status__spark,
+  .popup-owl.is-working .popup-owl__eyes,
+  .popup-owl.is-working .popup-owl__star {
+    animation: none;
+  }
+
+  .popup-send {
+    transition: none;
+  }
+}
+
+:root[data-reduced-motion='on'] :is(.popup-status__spark, .popup-owl.is-working .popup-owl__eyes, .popup-owl.is-working .popup-owl__star) {
+  animation: none;
+}
+
+:root[data-reduced-motion='on'] .popup-send {
+  transition: none;
+}

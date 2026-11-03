@@ -1,5 +1,7 @@
 # A computer's new-thread defaults apply on every host
 
+October 30, 2026 amendment: [ADR-0033, October 30 amendment](0033-the-desktop-lets-paired-phones-reach-its-threads.md#october-30-amendment-pairing-a-phone-lets-it-answer). Decision 5's `remote-answer` record is now written when a phone pairs, so a paired phone may set any new-thread permission default, including ones that act without asking. The check itself is unchanged.
+
 ## Status
 
 Accepted October 11, 2026, by the owner's choice. It started as a bug report (#948): with a thread on the host forge

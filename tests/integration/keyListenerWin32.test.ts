@@ -8,6 +8,10 @@ import { keyListenerWin32Invocation } from '../../src/main/hotkeys/keyListenerWi
 
 const CS_PATH = join(__dirname, '../../native/key-listener/win32.cs')
 const LIVE = process.env.SOTTO_KEY_LISTENER_LIVE === '1'
+// 17 passing Windows CI samples took 4.65–22.54 s including shutdown. Keep about twice the slowest
+// whole test for startup; the earlier 10 s failures were killed before startup could be measured.
+// docs/perf/2026-11-03-git-worktree-tests.md records the samples and the profiling limits.
+const HELPER_START_MS = 45_000
 
 interface Helper {
   lines: string[]
@@ -77,20 +81,21 @@ function startHelper(acceptSynthetic: boolean): Helper {
 }
 
 describe.runIf(process.platform === 'win32')('Windows key listener helper', () => {
+  // Shutdown has its own 5 s deadline; leave another 5 s for protocol checks and scheduling.
   it('compiles, installs the hook, prints only protocol lines and exits when stdin closes', async () => {
     const helper = startHelper(false)
 
-    await helper.waitFor('permission granted', 10_000)
+    await helper.waitFor('permission granted', HELPER_START_MS)
     helper.send('keys F13')
     helper.send('request')
 
     expect(await helper.closeAndExit(5_000)).toBe(0)
     expect(helper.lines).toEqual(['permission granted'])
-  }, 20_000)
+  }, HELPER_START_MS + 10_000)
 
   it.runIf(LIVE)('reports a watched F13 sent with SendInput when synthetic input is accepted', async () => {
     const helper = startHelper(true)
-    await helper.waitFor('permission granted', 10_000)
+    await helper.waitFor('permission granted', HELPER_START_MS)
     helper.send('keys F13')
     // Give the writer thread time to apply `keys` before the injected key arrives.
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -110,5 +115,5 @@ describe.runIf(process.platform === 'win32')('Windows key listener helper', () =
     await helper.waitFor('up F13', 5_000)
     expect(await helper.closeAndExit(5_000)).toBe(0)
     expect(helper.lines).toEqual(['permission granted', 'down F13', 'up F13'])
-  }, 30_000)
+  }, HELPER_START_MS + 30_000)
 })

@@ -75,6 +75,20 @@ export function chordNeedsListener(chord: string, role: ShortcutRole): boolean {
   return role === 'hold' || chordTokens(chord).some((token) => token.toLowerCase() === 'fn') || !chordHasKey(chord)
 }
 
+/**
+ * The main shortcut may wait on standby only while another start-and-stop shortcut needs the key listener and none
+ * Electron can register could take the main slot instead (ADR-0097, decision 3).
+ */
+export function standbyAllowed(press: readonly string[]): boolean {
+  const extras = press.slice(1)
+  return extras.length > 0 && extras.every((chord) => chordNeedsListener(chord, 'press'))
+}
+
+/** The start-and-stop shortcut the widget names: the main one, or while it waits on standby the first that replaced it. */
+export function startShortcut(settings: { readonly hotkey: string; readonly hotkeyStandby?: boolean | undefined; readonly pressShortcuts: readonly string[] }): string {
+  return settings.hotkeyStandby === true ? settings.pressShortcuts[0] ?? settings.hotkey : settings.hotkey
+}
+
 function modifierOrder(platform: SottoPlatform): readonly string[] {
   return platform === 'darwin' ? darwinModifierOrder : platform === 'linux' ? linuxModifierOrder : win32ModifierOrder
 }
@@ -208,11 +222,13 @@ export function validateChord(
   )
   const duplicate = others.find(({ other }) => sameTokens(tokens, normalTokens(other, platform)))
   if (duplicate) return refuse('duplicate', `${rowNames[duplicate.role]} already uses ${keys}.`)
-  for (const { other } of others) {
+  // Only a hold of modifiers alone starts on the way down; a press of modifiers alone waits for its release and lets
+  // a longer chord through, so Fn and Fn+Space can both start and stop dictation.
+  for (const { role, other } of others) {
     const otherTokens = normalTokens(other, platform)
-    const [held, pressed] = modifierOnly(tokens) && properSubset(tokens, otherTokens)
+    const [held, pressed] = target.role === 'hold' && modifierOnly(tokens) && properSubset(tokens, otherTokens)
       ? [chord, other]
-      : modifierOnly(otherTokens) && properSubset(otherTokens, tokens) ? [other, chord] : []
+      : role === 'hold' && modifierOnly(otherTokens) && properSubset(otherTokens, tokens) ? [other, chord] : []
     if (held !== undefined && pressed !== undefined) {
       return refuse('overlap', `Holding ${chordInline(held, platform)} would start dictation every time you press ${chordInline(pressed, platform)}. Pick keys that don’t overlap.`)
     }

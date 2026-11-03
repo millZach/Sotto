@@ -290,6 +290,19 @@ msgstr "A color theme could not be imported; nothing was imported. {detail}"
 msgid "A contributed color theme is missing or outside the extension; nothing was imported."
 msgstr "A contributed color theme is missing or outside the extension; nothing was imported."
 
+#: src/main/council/councilIpc.ts
+msgid "A Council starts from a thread on this computer."
+msgstr "A Council starts from a thread on this computer."
+
+#: src/main/council/councilIpc.ts
+#: src/main/council/councilService.ts
+msgid "A Council starts from a thread on this computer. Choose one of this computer's threads. Nothing was started."
+msgstr "A Council starts from a thread on this computer. Choose one of this computer's threads. Nothing was started."
+
+#: src/main/council/councilService.ts
+msgid "A Council starts from an ordinary thread, not Watcher. Nothing was started."
+msgstr "A Council starts from an ordinary thread, not Watcher. Nothing was started."
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect."
 msgstr "A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect."
@@ -317,6 +330,14 @@ msgstr "A remote host address must use HTTPS."
 #: src/main/hosts/hostFailureWords.ts
 msgid "A remote host address must use HTTPS. Nothing was saved."
 msgstr "A remote host address must use HTTPS. Nothing was saved."
+
+#: src/main/council/councilService.ts
+msgid "A seat's model is not ready: its provider is not connected. Choose another model for it, then ask again. Nothing was started."
+msgstr "A seat's model is not ready: its provider is not connected. Choose another model for it, then ask again. Nothing was started."
+
+#: src/main/council/councilSnapshot.ts
+msgid "A submodule in the thread's folder has uncommitted changes, and a snapshot can't carry them. Commit them inside the submodule, then ask again. Nothing was started."
+msgstr "A submodule in the thread's folder has uncommitted changes, and a snapshot can't carry them. Commit them inside the submodule, then ask again. Nothing was started."
 
 #: src/main/omarchy/setup.ts
 msgid "A template was installed by hand, but its colours have not been rendered. Sotto leaves it alone."
@@ -409,6 +430,10 @@ msgstr "An agent sets a host up from a thread on this computer, which needs the 
 msgid "An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again."
 msgstr "An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again."
 
+#: src/main/tools/terminal.ts
+msgid "An image can’t be pasted into a terminal on another machine. Nothing was pasted."
+msgstr "An image can’t be pasted into a terminal on another machine. Nothing was pasted."
+
 #: src/main/omarchy/setup.ts
 msgid "An Omarchy palette was installed by hand. Sotto leaves it alone."
 msgstr "An Omarchy palette was installed by hand. Sotto leaves it alone."
@@ -437,6 +462,10 @@ msgstr "another version"
 #: src/main/tools/browser.ts
 msgid "Answer the request to open this page first."
 msgstr "Answer the request to open this page first."
+
+#: src/main/agents/nextPromptIpc.ts
+msgid "Ask for Watcher's first message from the main Sotto window."
+msgstr "Ask for Watcher's first message from the main Sotto window."
 
 #: src/main/tray/trayController.ts
 msgid "Auto-paste"
@@ -688,6 +717,10 @@ msgstr "Finish or resolve active and pending work before reverting."
 msgid "Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts."
 msgstr "Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts."
 
+#: src/main/council/councilSnapshot.ts
+msgid "Git could not take a snapshot of the thread's folder. Nothing was started. Ask the Council again."
+msgstr "Git could not take a snapshot of the thread's folder. Nothing was started. Ask the Council again."
+
 #: src/main/tools/checkpoints.ts
 msgid "Git history or staging changed after this checkpoint. Preserve those changes before reverting."
 msgstr "Git history or staging changed after this checkpoint. Preserve those changes before reverting."
@@ -887,8 +920,13 @@ msgstr "Open Phones in the main Sotto window."
 
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
+#: src/main/phones/ipc.ts
 msgid "Open Settings in the main Sotto window."
 msgstr "Open Settings in the main Sotto window."
+
+#: src/main/council/councilIpc.ts
+msgid "Open the Council in the main Sotto window."
+msgstr "Open the Council in the main Sotto window."
 
 #: src/main/agents/usageIpc.ts
 msgid "Open Usage in the main Sotto window."
@@ -1060,6 +1098,10 @@ msgstr "Settings…"
 msgid "Setup stopped before it finished. Try again, or remove it in Settings › Dictation."
 msgstr "Setup stopped before it finished. Try again, or remove it in Settings › Dictation."
 
+#: src/main/tray/trayController.ts
+msgid "Show popup"
+msgstr "Show popup"
+
 #: src/main/app/applicationMenu.ts
 #: src/main/tray/trayController.ts
 msgid "Show recent turn records"
@@ -1128,6 +1170,14 @@ msgstr "Sotto could not download {to} on {name}."
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto could not install {to} on {name}."
 msgstr "Sotto could not install {to} on {name}."
+
+#: src/main/popup/popup.ts
+msgid "Sotto could not open the popup's thread. Check its host's connection in Settings, then choose the thread again."
+msgstr "Sotto could not open the popup's thread. Check its host's connection in Settings, then choose the thread again."
+
+#: src/main/notifications/openNotificationThread.ts
+msgid "Sotto could not open this thread. Check its host's connection in Settings, then choose the thread again."
+msgstr "Sotto could not open this thread. Check its host's connection in Settings, then choose the thread again."
 
 #: src/main/omarchy/setup.ts
 msgid "Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again."
@@ -1241,6 +1291,10 @@ msgstr "Sotto follows the Omarchy theme."
 msgid "Sotto found a linked or special configuration file. It was left alone. Use a regular file, then try again."
 msgstr "Sotto found a linked or special configuration file. It was left alone. Use a regular file, then try again."
 
+#: src/main/hosts/hostedTerminals.ts
+msgid "Sotto has no SSH connection saved for this host, so nothing was started. Add the host in Settings > Hosts & phones, then try again."
+msgstr "Sotto has no SSH connection saved for this host, so nothing was started. Add the host in Settings > Hosts & phones, then try again."
+
 #: src/main/hosts/hostBootStart.ts
 msgid "Sotto is already changing whether the host on {host} starts at boot. Wait for it to finish."
 msgstr "Sotto is already changing whether the host on {host} starts at boot. Wait for it to finish."
@@ -1257,6 +1311,10 @@ msgstr "Sotto is already updating or changing the host on {name}. Nothing was ch
 msgid "Sotto is changing whether the host on {host} starts at boot. Nothing was changed. Wait for it to finish, then try again."
 msgstr "Sotto is changing whether the host on {host} starts at boot. Nothing was changed. Wait for it to finish, then try again."
 
+#: src/main/council/councilService.ts
+msgid "Sotto is closing. Nothing was changed."
+msgstr "Sotto is closing. Nothing was changed."
+
 #: src/main/hosts/desktopHosts.ts
 msgid "Sotto is closing. Nothing was checked."
 msgstr "Sotto is closing. Nothing was checked."
@@ -1268,6 +1326,10 @@ msgstr "Sotto is still connecting to {host}. Wait for it, or cancel it first."
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto is updating the host on {host}. Nothing was changed. Wait for the update to finish, then try again."
 msgstr "Sotto is updating the host on {host}. Nothing was changed. Wait for the update to finish, then try again."
+
+#: src/main/council/councilService.ts
+msgid "Sotto keeps {RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started."
+msgstr "Sotto keeps {RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started."
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto keeps connecting to {name}. If it still runs {from}, it shows here again."
@@ -1417,6 +1479,10 @@ msgstr "That address is not an Open VSX address."
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 msgstr "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 
+#: src/main/council/councilService.ts
+msgid "That Council is no longer here."
+msgstr "That Council is no longer here."
+
 #: src/main/tools/browser.ts
 msgid "That element changed. Use Region to comment on the saved screenshot, or capture it again."
 msgstr "That element changed. Use Region to comment on the saved screenshot, or capture it again."
@@ -1442,9 +1508,25 @@ msgstr "That model cannot set up a host. Choose a ready Claude Code, Codex or Gr
 msgid "That model is not ready on this computer. Choose another one. Nothing was started."
 msgstr "That model is not ready on this computer. Choose another one. Nothing was started."
 
+#: src/main/council/councilService.ts
+msgid "That model is not ready: its provider is not connected. Choose another. Nothing was changed."
+msgstr "That model is not ready: its provider is not connected. Choose another. Nothing was changed."
+
+#: src/main/council/councilService.ts
+msgid "That row has nothing to do now. Nothing was changed."
+msgstr "That row has nothing to do now. Nothing was changed."
+
 #: src/main/themes/ipc.ts
 msgid "That theme could not be exported."
 msgstr "That theme could not be exported."
+
+#: src/main/council/councilService.ts
+msgid "That thread has no folder Sotto can take a snapshot of. Nothing was started."
+msgstr "That thread has no folder Sotto can take a snapshot of. Nothing was started."
+
+#: src/main/council/councilService.ts
+msgid "That thread is not on this computer."
+msgstr "That thread is not on this computer."
 
 #: src/main/notifications/desktopNotifier.ts
 msgid "The agent finished on {computer}."
@@ -1629,6 +1711,10 @@ msgstr "The extension uses a compression method Sotto does not read."
 #: src/main/themes/openVsx.ts
 msgid "The extension uses a ZIP format Sotto does not read."
 msgstr "The extension uses a ZIP format Sotto does not read."
+
+#: src/main/council/councilService.ts
+msgid "The framing can change only after it is in and before the verdict, and only to something new. Nothing was changed."
+msgstr "The framing can change only after it is in and before the verdict, and only to something new. Nothing was changed."
 
 #. Stands in for a saved host’s name at the start of a sentence: “The host did not answer…”.
 #: src/main/hosts/desktopHosts.ts
@@ -1984,6 +2070,10 @@ msgstr "The pairing code could not be read from the host. Nothing was saved. Che
 msgid "The plugin folder is not a folder. Sotto left it alone."
 msgstr "The plugin folder is not a folder. Sotto left it alone."
 
+#: src/main/popup/popup.ts
+msgid "The popup's thread is no longer available. Choose another thread or start a new one."
+msgstr "The popup's thread is no longer available. Choose another thread or start a new one."
+
 #: src/main/omarchy/setup.ts
 msgid "The previous owl folder changed. Sotto left it alone. Restore it before trying again."
 msgstr "The previous owl folder changed. Sotto left it alone. Restore it before trying again."
@@ -2168,6 +2258,22 @@ msgstr "The thread {title} did not start working. {message} Nothing was changed 
 msgid "The thread could not start."
 msgstr "The thread could not start."
 
+#: src/main/notifications/openNotificationThread.ts
+msgid "The thread for this notification is no longer available. Choose another thread or start a new one."
+msgstr "The thread for this notification is no longer available. Choose another thread or start a new one."
+
+#: src/main/council/councilSnapshot.ts
+msgid "The thread's branch has characters in its name a snapshot cannot carry. Rename the branch, then ask again. Nothing was started."
+msgstr "The thread's branch has characters in its name a snapshot cannot carry. Rename the branch, then ask again. Nothing was started."
+
+#: src/main/council/councilSnapshot.ts
+msgid "The thread's folder is not a Git repository, so the Council has no snapshot to work in. Nothing was started."
+msgstr "The thread's folder is not a Git repository, so the Council has no snapshot to work in. Nothing was started."
+
+#: src/main/council/councilSnapshot.ts
+msgid "The thread's folder is not on a branch. Check out a branch, then ask the Council again. Nothing was started."
+msgstr "The thread's folder is not on a branch. Check out a branch, then ask the Council again. Nothing was started."
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "The threads to dismiss could not be read."
 msgstr "The threads to dismiss could not be read."
@@ -2305,6 +2411,10 @@ msgstr "This computer's OpenSSH is version {version}, which is too old. Sotto ne
 #: src/main/hosts/hostFailureWords.ts
 msgid "This computer's OpenSSH is version {version}, which is too old. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then reconnect."
 msgstr "This computer's OpenSSH is version {version}, which is too old. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then reconnect."
+
+#: src/main/council/councilService.ts
+msgid "This Council has stopped, so it takes no follow-up. Ask a new Council instead."
+msgstr "This Council has stopped, so it takes no follow-up. Ask a new Council instead."
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This device is no longer paired and could not pair again. Check the host, then connect again."
@@ -2536,6 +2646,14 @@ msgstr "This memory no longer exists. Refresh the inspector."
 msgid "This navigation is blocked. Only HTTP and HTTPS pages can open here."
 msgstr "This navigation is blocked. Only HTTP and HTTPS pages can open here."
 
+#: src/main/notifications/openNotificationThread.ts
+msgid "This notification is for another Watcher room. Open Sotto on its computer to read it."
+msgstr "This notification is for another Watcher room. Open Sotto on its computer to read it."
+
+#: src/main/notifications/openNotificationThread.ts
+msgid "This notification is for Watcher. Its conversation is in this room."
+msgstr "This notification is for Watcher. Its conversation is in this room."
+
 #: src/main/omarchy/setup.ts
 msgid "This Omarchy theme left Sotto’s colours unreadable. Choose another theme, then try again."
 msgstr "This Omarchy theme left Sotto’s colours unreadable. Choose another theme, then try again."
@@ -2635,6 +2753,22 @@ msgstr "This terminal is already reopening."
 #: src/main/tools/terminal.ts
 msgid "This terminal is still running; select it instead."
 msgstr "This terminal is still running; select it instead."
+
+#: src/main/tools/terminal.ts
+msgid "This terminal was closed while it was starting."
+msgstr "This terminal was closed while it was starting."
+
+#: src/main/hosts/hostedTerminals.ts
+msgid "This thread moved to another project. Open its terminal again."
+msgstr "This thread moved to another project. Open its terminal again."
+
+#: src/main/hosts/hostedTerminals.ts
+msgid "This thread’s host is not connected, so Sotto cannot tell where its terminal starts. Connect it in Settings > Hosts & phones, then try again."
+msgstr "This thread’s host is not connected, so Sotto cannot tell where its terminal starts. Connect it in Settings > Hosts & phones, then try again."
+
+#: src/main/tools/terminal.ts
+msgid "This thread’s terminal is on its host machine. Open it there."
+msgstr "This thread’s terminal is on its host machine. Open it there."
 
 #: src/main/tools/checkpointCapture.ts
 msgid "This tool request is invalid. Refresh the tools panel."
@@ -2801,6 +2935,10 @@ msgstr "Wait for the pending host request to finish."
 #: src/main/hosts/hostFailureWords.ts
 msgid "Wait for the pending host request to finish. Nothing was saved."
 msgstr "Wait for the pending host request to finish. Nothing was saved."
+
+#: src/main/council/councilService.ts
+msgid "Wait for the verdict and its fairness check before asking a follow-up."
+msgstr "Wait for the verdict and its fairness check before asking a follow-up."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."

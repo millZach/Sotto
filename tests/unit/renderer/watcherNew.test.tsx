@@ -136,16 +136,19 @@ describe('New Watcher in Watcher’s composer', () => {
     expect(button).toHaveAccessibleDescription(NEW_WATCHER_BUSY)
     // Still in the Tab order, so its reason can be heard.
     expect(button).not.toBeDisabled()
-    if (quiet) {
-      const pane = await watcherPane()
-      const controls = pane.querySelector('.thread-prompt__actions')!
-      expect([...controls.querySelectorAll('button')].map(control => control.getAttribute('aria-label'))).toEqual(['New Watcher', 'Stop agent', 'Queue prompt'])
-      expect(pane.querySelector('.thread-prompt__lead .thread-chip')).not.toBeNull()
-      expect(controls.querySelector('.thread-prompt__send')).toHaveClass('thread-prompt__disc')
-    }
     await user.click(button)
     expect(bridge.startNew).not.toHaveBeenCalled()
     expect(NEW_WATCHER_BUSY).toBe('Watcher is working. Stop its turn to start a new one.')
+  })
+
+  it('stands before the disc in Zach\'s composer, where the disc is Stop while Watcher works with nothing typed', async () => {
+    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running' })), vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: roomState('watcher-b') })), true)
+    await newButton()
+    const pane = await watcherPane()
+    const controls = pane.querySelector('.thread-prompt__actions')!
+    expect([...controls.querySelectorAll('button')].map(control => control.getAttribute('aria-label'))).toEqual(['New Watcher', 'Stop agent'])
+    expect(controls.querySelector('[data-face="stop"]')).toHaveClass('thread-prompt__disc')
+    expect(pane.querySelector('.thread-prompt__shield .thread-chip')).not.toBeNull()
   })
 
   it('is available while Watcher’s turn waits on a card of its own (#1735)', async () => {

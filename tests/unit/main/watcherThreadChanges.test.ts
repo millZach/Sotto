@@ -178,7 +178,7 @@ async function stack(threads = 7, observation: 'held' | 'led' = 'held') {
     await mkdir(directory, { recursive: true })
     // Led by the changes side: the whole side's coordinator tells the workspace nothing of what it looks at.
     const host = observation === 'led' && name === 'whole' ? new Proxy(workspace, { get(target, key) {
-      if (key === 'observeThreads') return () => undefined
+      if (key === 'observeThreads' || key === 'keepSessionsLive') return () => undefined
       const value = Reflect.get(target, key, target) as unknown
       return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value
     } }) as WorkspaceHost : workspace

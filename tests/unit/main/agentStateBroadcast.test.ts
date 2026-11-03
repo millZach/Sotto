@@ -31,6 +31,23 @@ function state(models: AgentModel[], clientHosts?: AgentClientHost[]): AgentStat
   })
 }
 
+/**
+ * Each payload of `sent` with its kept parts put back from the one before, as the page puts them back (ADR-0028, October 30
+ * kept parts): what each broadcast says, whether it carried a part or kept it.
+ */
+function putBack(sent: readonly AgentStateBroadcast[]): AgentStateBroadcast[] {
+  const whole: AgentStateBroadcast[] = []
+  for (const payload of sent) {
+    const previous = whole.at(-1) as unknown as (Record<string, unknown> & { host: Record<string, unknown> }) | undefined
+    const { kept, ...top } = payload as unknown as Record<string, unknown> & { kept?: string[] }
+    const { kept: hostKept, ...host } = payload.host as unknown as Record<string, unknown> & { kept?: string[] }
+    for (const key of kept ?? []) top[key] = previous![key]
+    for (const key of hostKept ?? []) host[key] = previous!.host[key]
+    whole.push({ ...top, host } as unknown as AgentStateBroadcast)
+  }
+  return whole
+}
+
 describe('AgentStateBroadcaster', () => {
   it('sends the catalog in full the first time and omits an unchanged repeat', () => {
     const broadcaster = new AgentStateBroadcaster()
@@ -106,10 +123,13 @@ describe('AgentStateBroadcaster', () => {
     // between full and omitted forever, since each would see the other's unrelated content as a change.
     send()
     send()
-    expect(sent[1]!.host.models).toEqual({ revision: 1, omitted: true })
-    expect(sent[1]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
-    expect(sent[2]!.host.models).toEqual({ revision: 1, omitted: true })
-    expect(sent[2]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
+    const whole = putBack(sent)
+    expect(whole[1]!.host.models).toEqual({ revision: 1, omitted: true })
+    expect(whole[1]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
+    expect(whole[2]!.host.models).toEqual({ revision: 1, omitted: true })
+    expect(whole[2]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
+    // Settled, the third keeps both: neither flips back to its catalog whole.
+    expect(sent[2]!.host.kept).toEqual(expect.arrayContaining(['models', 'clientHosts']))
   })
 
   it('names every catalog in a command receipt by the revision the broadcast uses, and lists no models', () => {
@@ -173,20 +193,20 @@ describe('AgentStateBroadcaster', () => {
     const broadcaster = new AgentStateBroadcaster()
     const hostA = 'aaaaaaaa-0000-4000-8000-000000000000'
     const hostB = 'bbbbbbbb-0000-4000-8000-000000000000'
-    const deliver = (): boolean => true
+    const all: AgentStateBroadcast[] = []
     const first = [model('gpt-5'), model('gpt-5-mini')], other = [model('grok-4')]
-    broadcaster.send(state(first, [clientHost(hostA, first), clientHost(hostB, other)]), deliver)
+    broadcaster.send(state(first, [clientHost(hostA, first), clientHost(hostB, other)]), payload => { all.push(payload); return true })
     // Equal catalogs in new arrays, then handed over by identity from one publish to the next, as a certified catalog is.
     // Two hosts compared in turn left the one remembered comparison for the second host, so the first host's catalog was
     // compared in full again on every publish.
     const kept = first.map(entry => ({ ...entry })), keptOther = other.map(entry => ({ ...entry }))
     const shell = (): AgentState => state(kept, [clientHost(hostA, kept), clientHost(hostB, keptOther)])
-    const sent: AgentStateBroadcast[] = []
-    broadcaster.send(shell(), payload => { sent.push(payload); return true })
+    broadcaster.send(shell(), payload => { all.push(payload); return true })
     compare.spy.mockClear()
-    for (let publish = 0; publish < 3; publish++) broadcaster.send(shell(), payload => { sent.push(payload); return true })
+    for (let publish = 0; publish < 3; publish++) broadcaster.send(shell(), payload => { all.push(payload); return true })
     expect(compare.spy).not.toHaveBeenCalled()
-    for (const payload of sent) {
+    // Every broadcast after the first names each catalog by its revision, carried or kept.
+    for (const payload of putBack(all).slice(1)) {
       expect(payload.host.models).toEqual({ revision: 1, omitted: true })
       expect(payload.host.clientHosts!.map(client => client.models)).toEqual([{ revision: 1, omitted: true }, { revision: 1, omitted: true }])
     }

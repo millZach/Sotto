@@ -142,10 +142,12 @@ final class ProtocolTests: XCTestCase {
         XCTAssertNoThrow(try Commands.interrupt(threadID: "t"))
         XCTAssertNoThrow(try Commands.loadEarlier(threadID: "t"))
         XCTAssertNoThrow(try Commands.prompt(threadID: "t", text: "Reply", draftID: UUID().uuidString))
-        // Host-local commands and permission changes are never built, and no command carries an unlisted field.
+        // A thread's settings change from its reply box (ADR-0166); the computer checks a mode that grants against this
+        // iPhone's answer policy. Host-local commands are never built, and no command carries an unlisted field.
+        XCTAssertNoThrow(try RemoteCommands.checked(.object(["type": .string("configure-thread"), "threadId": .string("t"), "providerMode": .string("bypass")])))
         for command: JSONValue in [
             .object(["type": .string("credential"), "slot": .string("reasoning"), "value": .string("key")]),
-            .object(["type": .string("configure-thread"), "threadId": .string("t"), "providerMode": .string("bypass")]),
+            .object(["type": .string("configure-thread"), "threadId": .string("t"), "title": .string("Renamed")]),
             .object(["type": .string("reclaim-thread-worktree"), "threadId": .string("t"), "withUncommittedChanges": .bool(true)]),
             .object(["type": .string("interrupt"), "threadId": .string("t"), "runtimeMode": .string("full-access")]),
         ] { XCTAssertThrowsError(try RemoteCommands.checked(command)) }

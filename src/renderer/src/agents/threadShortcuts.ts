@@ -7,6 +7,12 @@ import { chordClaimed, chordMatches, parseAccelerator, parseChord } from './bran
 /** The settings a thread chord is read from: its own row, and dictation's shortcuts, which always win a tie. */
 export type ThreadShortcutSettings = Pick<AppSettings, 'threadShortcuts' | 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
 
+/**
+ * Undo after a Settle (ADR-0167): Ctrl+Z, or Cmd+Z on a Mac, as everywhere an undo is offered. A fixed key, listed under
+ * Settings › Keyboard's Fixed & elsewhere and refused to every thread shortcut.
+ */
+export const SETTLE_UNDO_CHORD = 'mod+z'
+
 /** The chord a shortcut is set to (ADR-0133): the user's choice, its default, or null where the user removed it. No settings yet reads as defaults. */
 export function chosenThreadChord(settings: Pick<AppSettings, 'threadShortcuts'> | null | undefined, id: ThreadShortcutId): string | null {
   return resolveThreadShortcut(settings?.threadShortcuts ?? {}, id)
@@ -21,8 +27,17 @@ export function chosenThreadChord(settings: Pick<AppSettings, 'threadShortcuts'>
 export function claimedThreadChord(settings: ThreadShortcutSettings | null | undefined, id: ThreadShortcutId, platform: SottoPlatform): string | null {
   const chosen = chosenThreadChord(settings, id)
   if (chosen === null) return null
+  return fixedKeyFree(settings, chosen, platform) ? chosen : null
+}
+
+/**
+ * Whether none of dictation's shortcuts (the hotkey, an extra press or hold one) means these keys, so a key of Sotto's
+ * own may answer to them: a thread chord, or one of the fixed keys the user does not record, such as F6 between the
+ * regions and F2 and Shift+F10 on a thread row (ADR-0164). Dictation always wins a tie.
+ */
+export function fixedKeyFree(settings: ThreadShortcutSettings | null | undefined, chord: string, platform: SottoPlatform): boolean {
   const dictation = [settings?.hotkey, ...(settings?.pressShortcuts ?? []), ...(settings?.holdShortcuts ?? [])]
-  return dictation.every(accelerator => chordClaimed(chosen, accelerator, platform)) ? chosen : null
+  return dictation.every(accelerator => chordClaimed(chord, accelerator, platform))
 }
 
 /**

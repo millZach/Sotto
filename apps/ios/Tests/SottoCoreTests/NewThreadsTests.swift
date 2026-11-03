@@ -167,14 +167,14 @@ final class NewThreadsTests: XCTestCase {
         let full = NewThreadDefaults(permissionID: "full-access")
         XCTAssertEqual(NewThreads.startingPermission(value, defaults: full, mayAnswer: true), StartingPermission(id: "full-access", heldBack: false))
         XCTAssertEqual(NewThreads.startingPermission(value, defaults: full, mayAnswer: false), StartingPermission(id: "approval-required", heldBack: true),
-                       "Without Can answer the thread starts by asking, and says why")
+                       "Without an answers grant the thread starts by asking, and says why")
         XCTAssertEqual(NewThreads.startingPermission(value, defaults: NewThreadDefaults(permissionID: "auto"), mayAnswer: true),
                        StartingPermission(id: "approval-required", heldBack: false), "A mode this model doesn't offer leaves it asking")
         XCTAssertEqual(NewThreads.startingPermission(value, defaults: NewThreadDefaults(), mayAnswer: true),
                        StartingPermission(id: "approval-required", heldBack: false), "No default never selects a grant")
         let profiles = try model(#", "providerModes":[{"id":"bypass","name":"Bypass"},{"id":"plan","name":"Plan","allows":"nothing"},{"id":"safe","name":"Ask","allows":"nothing"}]"#)
         XCTAssertEqual(NewThreads.startingPermission(profiles, defaults: NewThreadDefaults(permissionID: "safe"), mayAnswer: false).id, "safe",
-                       "A mode that grants nothing applies without Can answer")
+                       "A mode that grants nothing applies without an answers grant")
     }
     func testWorkingCopyStartsSharedUnlessTheDefaultSaysOtherwise() {
         XCTAssertEqual(NewThreads.startingWorkingCopy(NewThreadDefaults()), .shared)

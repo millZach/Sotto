@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spark Cluster mark: prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --canvas: #121211; --surface: #1a1a18; --raised: #22221f; --border: #33332e;
+    --text: #ecebe4; --muted: #a3a296; --faint: #6d6c63; --accent: #e8c547; --off: #3a3a34;
+    --warn: #8a8a80;
+  }
+  :root[data-theme="light"] {
+    --canvas: #f6f5ef; --surface: #ffffff; --raised: #efeee6; --border: #dcdbd2;
+    --text: #1d1d1a; --muted: #5d5c54; --faint: #8f8e85; --accent: #a8820a; --off: #d6d5cc;
+    --warn: #8f8e85;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
+  header { display: flex; gap: 12px; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; flex: 1; }
+  button { font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button[aria-pressed="true"] { border-color: var(--accent); }
+  main { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; padding: 24px; }
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  section h2 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  section p { color: var(--muted); margin: 0 0 14px; font-size: 13px; }
+  .stage { background: var(--canvas); border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-height: 92px; display: flex; flex-direction: column; gap: 10px; justify-content: center; }
+
+  /* The mark: 2x2 pixel grid, one cell per Spark */
+  .mark { display: inline-grid; grid-template-columns: repeat(2, var(--px, 4px)); gap: var(--gap, 2px); vertical-align: middle; }
+  .mark i { width: var(--px, 4px); height: var(--px, 4px); background: var(--off); image-rendering: pixelated; }
+  .mark.idle i { background: var(--muted); opacity: .55; }
+  .mark.reading i { animation: fill 2.4s steps(1) infinite; }
+  .mark.reading i:nth-child(1) { animation-delay: 0s; }
+  .mark.reading i:nth-child(2) { animation-delay: .6s; }
+  .mark.reading i:nth-child(4) { animation-delay: 1.2s; }
+  .mark.reading i:nth-child(3) { animation-delay: 1.8s; }
+  @keyframes fill { 0% { background: var(--off); } 1% { background: var(--accent); } 100% { background: var(--accent); } }
+  .mark.reading i { animation-name: fillcycle; }
+  @keyframes fillcycle { 0%, 24% { background: var(--off); } 25%, 100% { background: var(--accent); } }
+  .mark.writing i { background: var(--off); }
+  .mark.writing i.on { background: var(--accent); }
+  .mark.down i { background: var(--warn); opacity: .35; }
+  .mark.down.blink i { animation: blink .5s steps(1) 1; }
+  @keyframes blink { 0% { opacity: .9; } 100% { opacity: .35; } }
+
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--raised); font-size: 12.5px; color: var(--muted); width: max-content; position: relative; }
+  .chip b { color: var(--text); font-weight: 500; }
+  .sep { color: var(--faint); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; }
+  .row.sel { background: var(--raised); }
+  .row .t { flex: 1; }
+  .row .s { color: var(--faint); font-size: 12px; }
+  .line { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .states { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .states div { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+
+  /* spark burst */
+  .burstwrap { position: relative; display: inline-block; }
+  .burst { position: absolute; left: 50%; top: 50%; pointer-events: none; }
+  .burst span { position: absolute; width: 2px; height: 2px; background: var(--accent); opacity: 0; }
+  .burst.go span { animation: fly .55s ease-out 1 forwards; }
+  @keyframes fly { 0% { opacity: 1; transform: translate(0,0); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+  .reply { color: var(--text); font-size: 13px; min-height: 20px; }
+
+  /* hover card */
+  .chip.hov:hover .card, .chip.hov:focus-visible .card { opacity: 1; transform: translateY(0); }
+  .card { position: absolute; left: 0; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; opacity: 0; transform: translateY(-3px); transition: opacity .12s, transform .12s; width: 230px; z-index: 2; font-size: 12.5px; color: var(--muted); }
+  .card dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 0; }
+  .card dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* composer accent */
+  .composer { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 10px 12px; color: var(--faint); position: relative; overflow: hidden; }
+  .composer.own::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent) 20%, var(--accent) 80%, transparent); opacity: .8; }
+
+  /* widget */
+  .widget { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: var(--raised); border: 1px solid var(--border); width: max-content; font-size: 12.5px; color: var(--muted); }
+  .wave { display: inline-flex; gap: 2px; align-items: center; height: 14px; }
+  .wave i { width: 2px; background: var(--muted); height: 4px; }
+
+  footer { padding: 0 24px 24px; color: var(--faint); font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { .mark i, .burst span { animation: none !important; } }
+  :root.still .mark i, :root.still .burst span { animation: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Spark Cluster mark</h1>
+  <button id="theme" aria-pressed="false">Light</button>
+  <button id="still" aria-pressed="false">Reduced motion</button>
+</header>
+<main>
+  <section>
+    <h2>1 · The mark</h2>
+    <p>One pixel per Spark, in the model chip and the thread row.</p>
+    <div class="stage">
+      <span class="chip"><span class="mark idle"><i></i><i></i><i></i><i></i></span>DeepSeek Harness <span class="sep">·</span> <b>Spark Cluster</b> <span class="sep">·</span> DeepSeek V4.1 Flash</span>
+      <div class="row sel"><span class="mark idle" style="--px:3px;--gap:1px"><i></i><i></i><i></i><i></i></span><span class="t">Speed up cleanup on the Sparks</span><span class="s">2m</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · The dots show what the cluster is doing</h2>
+    <p>Reading fills them one by one. Writing flickers at the speed words arrive. Not answering greys them and blinks once per retry.</p>
+    <div class="stage">
+      <div class="states">
+        <div><span class="mark idle" style="--px:5px"><i></i><i></i><i></i><i></i></span>Idle</div>
+        <div><span class="mark reading" style="--px:5px"><i></i><i></i><i></i><i></i></span>Reading the prompt</div>
+        <div><span class="mark writing" id="writing" style="--px:5px"><i></i><i></i><i></i><i></i></span>Writing · <span id="tps">38</span> words/s</div>
+        <div><span class="mark down" id="down" style="--px:5px"><i></i><i></i><i></i><i></i></span><span id="retry">Trying again (3 of 10)</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3 · A spark at the first word</h2>
+    <p>One burst when the reply starts after a long wait. Never loops.</p>
+    <div class="stage">
+      <div class="line"><span class="burstwrap"><span class="mark reading" id="m3" style="--px:5px"><i></i><i></i><i></i><i></i></span><span class="burst" id="burst"></span></span><span id="l3">Still waiting for Spark Cluster to start answering.</span></div>
+      <div class="reply" id="r3"></div>
+      <button id="replay3" style="width:max-content">Play again</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 · Speed on hover</h2>
+    <p>Hover or focus the chip.</p>
+    <div class="stage" style="min-height:150px;justify-content:flex-start">
+      <span class="chip hov" tabindex="0"><span class="mark writing" id="w4"><i></i><i></i><i></i><i></i></span><b>Spark Cluster</b> <span class="sep">·</span> DeepSeek V4.1 Flash
+        <span class="card"><dl><dt>First word after</dt><dd>41 s</dd><dt>Words per second</dt><dd id="tps4">38</dd><dt>Context used</dt><dd>183k of 256k</dd></dl></span>
+      </span>
+    </div>
+  </section>
+
+  <section>
+    <h2>5 · A “your hardware” accent</h2>
+    <p>A thin line in the theme accent along the composer, only on threads that run on your own server.</p>
+    <div class="stage">
+      <div class="composer own">Message Spark Cluster…</div>
+      <div class="composer">Message Claude Code…</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>6 · Cleanup on the Sparks</h2>
+    <p>The mark shows in the floating widget while your cluster cleans up dictation.</p>
+    <div class="stage">
+      <span class="widget"><span class="wave" id="wave"></span><span class="mark reading"><i></i><i></i><i></i><i></i></span>Cleaning up</span>
+    </div>
+  </section>
+</main>
+<footer>Colours stand in for the Citrine theme; in Sotto each comes from a --tt-* role. Prototype only.</footer>
+<script>
+  const root = document.documentElement;
+  const still = () => root.classList.contains('still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  theme.onclick = () => { const l = root.dataset.theme !== 'light'; root.dataset.theme = l ? 'light' : ''; theme.setAttribute('aria-pressed', l); };
+  document.getElementById('still').onclick = e => { e.target.setAttribute('aria-pressed', root.classList.toggle('still')); };
+
+  // writing flicker: cells light at a rate tied to words per second
+  function flicker(mark, tpsEl) {
+    const cells = [...mark.children]; let tps = 38;
+    const tick = () => {
+      tps = Math.max(20, Math.min(60, tps + (Math.random() - .5) * 6));
+      if (tpsEl) tpsEl.textContent = Math.round(tps);
+      cells.forEach(c => c.classList.toggle('on', still() ? true : Math.random() < .55));
+      setTimeout(tick, 1000 / (tps / 6));
+    };
+    tick();
+  }
+  flicker(writing, tps); flicker(w4, tps4);
+
+  // not answering: blink once per retry
+  let n = 3;
+  setInterval(() => { if (still()) return; down.classList.remove('blink'); void down.offsetWidth; down.classList.add('blink'); n = n % 10 + 1; retry.textContent = `Trying again (${n} of 10)`; }, 2200);
+
+  // first-word spark
+  const words = 'The cleanup model on Spark Cluster answers in about 900 ms at temperature 0.2.'.split(' ');
+  let timers = [];
+  function play3() {
+    timers.forEach(clearTimeout); timers = [];
+    m3.className = 'mark reading'; r3.textContent = ''; l3.textContent = 'Still waiting for Spark Cluster to start answering.';
+    burst.className = 'burst'; burst.innerHTML = '';
+    timers.push(setTimeout(() => {
+      m3.className = 'mark writing'; [...m3.children].forEach(c => c.classList.add('on'));
+      l3.textContent = 'Writing';
+      if (!still()) {
+        for (let i = 0; i < 8; i++) { const s = document.createElement('span'); const a = i / 8 * Math.PI * 2; s.style.setProperty('--dx', `${Math.cos(a) * 14}px`); s.style.setProperty('--dy', `${Math.sin(a) * 14}px`); burst.appendChild(s); }
+        requestAnimationFrame(() => burst.classList.add('go'));
+      }
+      words.forEach((w, i) => timers.push(setTimeout(() => { r3.textContent += (i ? ' ' : '') + w; if (i === words.length - 1) { m3.className = 'mark idle'; l3.textContent = 'Done'; } }, 90 * i)));
+    }, 2600));
+  }
+  replay3.onclick = play3; play3();
+
+  // widget wave
+  for (let i = 0; i < 9; i++) wave.appendChild(document.createElement('i'));
+  setInterval(() => { if (still()) return; [...wave.children].forEach(b => b.style.height = `${3 + Math.random() * 11}px`); }, 120);
+</script>
+</body>
+</html>

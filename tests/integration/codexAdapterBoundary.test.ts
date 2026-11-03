@@ -427,6 +427,8 @@ describe('Codex App Server provider adapter', () => {
     await f.script({ reject: 'turn/start', delay: { method: 'turn/start', ms: 3000 } })
     expect(await f.host.execute({ type: 'send', threadId, commandId: 'send', messageId: 'message', text: 'Rejected input' })).toEqual({ accepted: false, uncertain: true })
     await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))[threadId].origins.length).toBe(0)
+    // Looked at, so its rollout is read each second (#992).
+    f.host.observeThreads?.([threadId])
     const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
     await writeFile(join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`), JSON.stringify({
       timestamp: new Date().toISOString(), ordinal: 1, type: 'event_msg', payload: { type: 'user_message', message: 'Rejected input' },

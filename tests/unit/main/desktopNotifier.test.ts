@@ -92,10 +92,11 @@ describe('desktop notifier', () => {
 
   it('opens the thread once when pressed and swallows an open that throws', async () => {
     const { notifier, created, options } = setup({ open: vi.fn(() => { throw new Error('no window') }) })
-    await notifier.notify(alert())
+    const threadId = 'host:11111111-1111-4111-8111-111111111111:thread-with-a-question'
+    await notifier.notify(alert({ threadId }))
     expect(() => created[0]!.fire('click')).not.toThrow()
     expect(options.open).toHaveBeenCalledTimes(1)
-    expect(options.open).toHaveBeenCalledWith('local:t1')
+    expect(options.open).toHaveBeenCalledWith(threadId)
   })
 
   it('logs a failure once per run, and a show that throws is a failure', async () => {

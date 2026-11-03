@@ -339,6 +339,7 @@ msgid "A {width} by {height} page in Sotto’s browser with iOS Safari’s user 
 msgstr ""
 
 #: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
 msgid "A browser request is waiting for your answer"
 msgstr ""
 
@@ -354,7 +355,7 @@ msgstr ""
 msgid "A cloud iPhone session is running"
 msgstr ""
 
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
 msgid "A delegated thread needs you"
 msgstr ""
 
@@ -476,7 +477,7 @@ msgstr ""
 msgid "Agents"
 msgstr ""
 
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
 msgid "Agents are working"
 msgstr ""
 
@@ -523,8 +524,12 @@ msgid "An agent opens your app here when it tests it. You can also load a web bu
 msgstr ""
 
 #. Stands in for a thread's title, as in "Tools are pinned to another thread".
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
 msgid "another thread"
+msgstr ""
+
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "Anything running in this shell stopped. Its output stays here until you close it."
 msgstr ""
 
 #. A pull request's review approved it.
@@ -2102,6 +2107,11 @@ msgstr ""
 msgid "on {host}"
 msgstr ""
 
+#. {machine} is the name of a paired host, as in forge. Says which machine a terminal's shell runs on.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "on {machine}"
+msgstr ""
+
 #. {base} is the default Git branch, as in main.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Once it has one, this lists what stands between it and <0>{base}</0>."
@@ -2846,7 +2856,7 @@ msgid "Show whitespace changes"
 msgstr ""
 
 #. {pinnedTitle} is a thread's title.
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
 msgid "Showing {pinnedTitle}, pinned"
 msgstr ""
 
@@ -3145,6 +3155,11 @@ msgstr ""
 msgid "The command did not run. Sotto could not reach this thread’s terminals. Try again."
 msgstr ""
 
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "The connection to {machine} ended."
+msgstr ""
+
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The draft for this thread is not available."
@@ -3400,6 +3415,11 @@ msgstr ""
 msgid "This session"
 msgstr ""
 
+#. {machine} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/TerminalSurface.tsx
+msgid "This shell runs on {machine}"
+msgstr ""
+
 #. Stands in for a terminal's name, as in "End this terminal?".
 #: src/renderer/src/tools/TerminalSurface.tsx
 msgid "this terminal"
@@ -3451,6 +3471,15 @@ msgstr ""
 msgid "This thread will ask before opening, tapping or typing again"
 msgstr ""
 
+#. {host} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "This thread’s terminal is on {host}. Open it there."
+msgstr ""
+
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "This thread’s terminal is on the host machine. Open it there."
+msgstr ""
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "This turn changed no files."
 msgstr ""
@@ -3493,11 +3522,12 @@ msgstr ""
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
 msgid "Tools"
 msgstr ""
 
 #. {pinnedTitle} is a thread's title.
-#: src/renderer/src/tools/ToolsPanel.tsx
+#: src/renderer/src/tools/ToolsToggle.tsx
 msgid "Tools are pinned to {pinnedTitle}"
 msgstr ""
 

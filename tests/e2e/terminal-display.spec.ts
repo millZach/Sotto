@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, toggleTools } from './support/sottoLaunch'
 import { threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -64,7 +64,7 @@ process.stdin.on('data', data => { if(data.includes(3)) process.exit(0); });
     await page.reload()
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal', exact: true }).click()
@@ -96,7 +96,7 @@ process.stdin.on('data', data => { if(data.includes(3)) process.exit(0); });
     }
     await panel.getByRole('button', { name: 'Close tools panel', exact: true }).click()
     await expect(page.locator('.terminal-view canvas')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await expect(panel.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
     await expect.poll(async () => orangeCoverage(page, await panel.locator('.terminal-view').screenshot())).toBeGreaterThan(.98)
     // Losing the GPU must retain the screen and keyboard in the DOM fallback.

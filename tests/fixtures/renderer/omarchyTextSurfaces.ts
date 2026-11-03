@@ -5,6 +5,8 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['text-2', [...room, 'accent-wash', 'diff-hunk']],
   ['text-muted', [...room, 'error-surface', 'warning-surface', 'update-surface', 'diff-add', 'diff-remove']],
   ['text-faint', room],
+  // The popup's prompt placeholder (ADR-0181).
+  ['text-hint', ['surface-elevated']],
   ['sidebar-text', ['sidebar', 'sidebar-control', 'sidebar-row-hover', 'sidebar-row-active', 'sidebar-row-selected']],
   ['sidebar-text-muted', ['sidebar', 'sidebar-control', 'sidebar-row-hover', 'sidebar-row-active', 'sidebar-row-selected']],
   ['accent-text', [...room, 'accent-wash']],

@@ -2,4 +2,4 @@
    padding, so the wrapper adds none above it, only the row's foot under the button. The switch sits at the row's end, so
    the button lines up with the row's words at its start. */
 .settings-view .settings-rows > .thread-tips-setting { min-height: 0; padding: 0 0 17px; }
-.thread-tips-setting__again { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.thread-tips-setting__again { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }

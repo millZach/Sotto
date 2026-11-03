@@ -9,7 +9,8 @@ import { EMPTY_SUBAGENT_SUMMARY, type SubagentsBridge } from '../../../../src/sh
 import type { FilesBridge } from '../../../../src/shared/files'
 import type { BrowserBridge, BrowserEvent, BrowserPage, BrowserTask } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
-import { ToolsPanel, ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
+import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
+import { ToolsToggle } from '../../../../src/renderer/src/tools/ToolsToggle'
 import { MAX_RENDERED_MARKDOWN_LENGTH, trustedImageSource } from '../../../../src/renderer/src/tools/FilePreview'
 import { ToolsPanelStore, TOOL_SURFACES } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
@@ -34,17 +35,25 @@ function folders() {
   }
 }
 
+const hostedTerminal = vi.hoisted(() => ({ on: false }))
+vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../../src/renderer/src/state/owlFeature')>()
+  return { ...actual, useOwlFeature: (id: Parameters<typeof actual.useOwlFeature>[0]) => id === 'paired-host-terminal' ? hostedTerminal.on : actual.useOwlFeature(id) }
+})
+
 function setup(options: { focused?: string | null; bridge?: FilesBridge | undefined; state?: AgentState; inPane?: boolean; subagents?: SubagentsBridge; browser?: BrowserBridge; cloudBridge?: CloudIphoneBridge } = {}) {
   const { focused = 'visual-gate', state = threadsStateFixture(), inPane = false } = options
   const bridge = 'bridge' in options ? options.bridge : fakeFilesBridge(folders())
   const store = new ToolsPanelStore()
   const cloudStore = new CloudIphoneStore()
   const command = vi.fn()
-  // With `inPane`, the toggle sits in the focused pane's header, as the workspace places it.
+  // Tools is a symbol in a pane's header (ADR-0182). With `inPane`, it sits in the focused pane's header, as the workspace
+  // places it; without, it stands for the selected thread's.
+  const toolsSymbol = (threadId: string) => <ToolsToggle threadId={threadId} focused store={store} state={state} />
   const ui = (focusedThreadId: string | null) => <div className="thread-workspace__body">
     {inPane && focusedThreadId !== null
-      ? <section key={focusedThreadId} className="thread-pane" data-thread-id={focusedThreadId}><ToolsPanelToggle store={store} state={state} /></section>
-      : <ToolsPanelToggle store={store} state={state} />}
+      ? <section key={focusedThreadId} className="thread-pane" data-thread-id={focusedThreadId}>{toolsSymbol(focusedThreadId)}</section>
+      : toolsSymbol(state.activeThreadId ?? focusedThreadId ?? 'visual-gate')}
     <ToolsPanel focusedThreadId={focusedThreadId} state={state} command={command} files={bridge} subagents={options.subagents} browser={options.browser} store={store}
       cloudStore={cloudStore} cloudBridge={options.cloudBridge} />
   </div>
@@ -95,6 +104,10 @@ const phoneTask = (patch: Partial<BrowserTask> = {}): BrowserTask => browserTask
 })
 
 const panel = () => screen.getByRole('complementary', { name: 'Tools' })
+const toggle = () => screen.getByRole('button', { name: 'Tools' })
+async function pressTools(): Promise<void> {
+  await userEvent.click(toggle())
+}
 const tree = () => within(panel()).getByRole('tree')
 /** The working folder line; its folder names are separate spans so it wraps between them. */
 const getPath = (path: string): HTMLElement => {
@@ -115,7 +128,7 @@ describe('shared tools panel', () => {
       onChanged: vi.fn(() => () => undefined),
     }
     const { store, rerender, bridge } = setup({ inPane: true, subagents })
-    await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    await pressTools()
     await findPath('D:\\work\\workshop')
     await userEvent.click(within(panel()).getByRole('button', { name: /^Pin to / }))
     await userEvent.click(within(panel()).getByRole('tab', { name: 'Agents' }))
@@ -128,10 +141,9 @@ describe('shared tools panel', () => {
     await userEvent.click(within(panel()).getByRole('button', { name: 'Copy working folder path' }))
     expect(bridge?.copyPath).toHaveBeenCalledWith({ threadId: 'grok-previews', path: '', workspaceId: TOKEN_B })
     expect(within(panel()).queryByRole('button', { name: /^(Unpin from|Pin to) / })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Tools' })).not.toHaveAttribute('data-pinned-elsewhere')
-    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('title', 'Tools')
+    expect(toggle().getAttribute('aria-description')).toBeNull()
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    await pressTools()
     expect(await screen.findByText('Review Previews')).toBeVisible()
     expect(screen.queryByText('Review Workshop')).toBeNull()
     await userEvent.click(within(panel()).getByRole('tab', { name: 'Files' }))
@@ -162,13 +174,13 @@ describe('shared tools panel', () => {
     expect(store.getSnapshot().pinnedThreadId).toBe('visual-gate')
   })
 
-  it('opens from the toggle with the implemented surfaces and focuses the open one', async () => {
+  it('opens from the Tools symbol with the implemented surfaces and focuses the open one', async () => {
     const { store } = setup()
     expect(screen.queryByRole('complementary', { name: 'Tools' })).toBeNull()
     expect(screen.queryByRole('navigation', { name: 'Collapsed tools' })).toBeNull()
-    expect(screen.getAllByRole('button')).toEqual([screen.getByRole('button', { name: 'Tools' })])
-    await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
-    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByRole('button')).toEqual([toggle()])
+    await pressTools()
+    expect(store.getSnapshot().open).toBe(true)
     const rail = within(panel()).getByRole('tablist', { name: 'Tools' })
     expect(rail).toHaveAttribute('aria-orientation', 'vertical')
     const tabs = within(rail).getAllByRole('tab')
@@ -182,16 +194,17 @@ describe('shared tools panel', () => {
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
     expect(store.getSnapshot().open).toBe(false)
     expect(screen.queryByRole('navigation', { name: 'Collapsed tools' })).toBeNull()
-    expect(screen.getAllByRole('button')).toEqual([screen.getByRole('button', { name: 'Tools' })])
+    expect(screen.getAllByRole('button')).toEqual([toggle()])
   })
 
   it('shows working agents for the selected thread while closed without switching tabs', () => {
     const state = threadsStateFixture()
     state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, subagentSummary: { ...EMPTY_SUBAGENT_SUMMARY, total: 1, working: 1 } } : thread)
     const { store, rerender } = setup({ state, inPane: true })
-    const dot = () => document.querySelector('.tools-toggle__agents-dot')
+    // The Tools symbol wears the dot and says why.
+    const dot = () => document.querySelector('.tools-dot')
     expect(dot()).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAccessibleDescription('Agents are working')
+    expect(toggle()).toHaveAccessibleDescription('Agents are working')
     expect(store.getSnapshot()).toMatchObject({ open: false, surface: 'files' })
     act(() => store.pin('visual-gate'))
     rerender('grok-previews')
@@ -359,13 +372,28 @@ describe('shared tools panel', () => {
     expect(await within(tree()).findByRole('treeitem', { name: 'src' })).toBeInTheDocument()
   })
 
-  it('returns focus straight to the toggle when Close is activated, docked, pinned or overlaid', async () => {
+  it('opens and never closes on the press that focuses another pane, whose thread it then follows (ADR-0182)', () => {
+    const store = new ToolsPanelStore()
+    const state = threadsStateFixture()
+    render(<ToolsToggle threadId="grok-previews" focused={false} store={store} state={state} />)
+    act(() => store.setOpen(true))
+    const symbol = toggle()
+    expect(symbol).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.pointerDown(symbol)
+    fireEvent.click(symbol)
+    expect(store.getSnapshot().open).toBe(true)
+    // From the keyboard the pane took focus as Tab reached the symbol, so Enter shows or hides, as in a focused pane.
+    fireEvent.keyDown(symbol, { key: 'Enter' })
+    fireEvent.click(symbol)
+    expect(store.getSnapshot().open).toBe(false)
+  })
+
+  it('returns focus straight to the Tools symbol when Close is activated, docked, pinned or overlaid', async () => {
     const { store, rerender } = setup({ inPane: true })
-    const toggle = () => screen.getByRole('button', { name: 'Tools' })
     const closeFromKeyboard = (): void => {
       const button = within(panel()).getByRole('button', { name: 'Close tools panel' })
       button.focus()
-      // Enter activates a focused button as a click; focus must already be on the toggle when the panel unmounts.
+      // Enter activates a focused button as a click; focus must already be on the Tools symbol when the panel unmounts.
       fireEvent.click(button)
       expect(screen.queryByRole('complementary', { name: 'Tools' })).toBeNull()
       expect(toggle()).toHaveFocus()
@@ -389,15 +417,15 @@ describe('shared tools panel', () => {
     expect(toggle()).toHaveFocus()
   })
 
-  it('hands focus to a toggle the closing layout re-mounted, but never takes it from where the user went', async () => {
+  it('hands focus to a Tools symbol the closing layout re-mounted, but never takes it from where the user went', async () => {
     const { store, rerender } = setup({ inPane: true })
     act(() => store.setOpen(true))
     await findPath('D:\\work\\workshop')
     within(panel()).getByRole('button', { name: 'Close tools panel' }).focus()
     fireEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
-    // The panes re-lay out after closing and the header holding the toggle is replaced.
+    // The panes re-lay out after closing and the header holding the symbol is replaced.
     rerender('grok-previews')
-    expect(screen.getByRole('button', { name: 'Tools' })).toHaveFocus()
+    expect(toggle()).toHaveFocus()
 
     act(() => store.setOpen(true))
     within(panel()).getByRole('button', { name: 'Close tools panel' }).focus()
@@ -433,21 +461,17 @@ describe('shared tools panel', () => {
     expect(panel().querySelector('footer')!.textContent!.split(worktree)).toHaveLength(2)
   })
 
-  it('shows the pane\u2019s toggle as not its own while the panel is pinned to another thread', async () => {
+  it('shows the pane\u2019s Tools symbol as not its own while the panel is pinned to another thread', async () => {
     const { store, rerender } = setup({ inPane: true })
-    const toggle = () => screen.getByRole('button', { name: 'Tools' })
+    const row = () => [toggle().getAttribute('aria-pressed'), toggle().getAttribute('aria-description')]
     act(() => store.setOpen(true))
     await findPath('D:\\work\\workshop')
     await userEvent.click(within(panel()).getByRole('button', { name: 'Pin to Visual gate flake' }))
-    expect(toggle()).not.toHaveAttribute('data-pinned-elsewhere')
+    expect(await row()).toEqual(['true', null])
     rerender('grok-previews')
-    await waitFor(() => expect(toggle()).toHaveAttribute('data-pinned-elsewhere'))
-    expect(toggle()).toHaveAttribute('aria-pressed', 'true')
-    expect(toggle()).toHaveAttribute('aria-description', 'Showing Visual gate flake, pinned')
-    expect(toggle()).toHaveAttribute('title', 'Tools are pinned to Visual gate flake')
+    expect(await row()).toEqual(['true', 'Showing Visual gate flake, pinned'])
     await userEvent.click(within(panel()).getByRole('button', { name: 'Unpin from Visual gate flake' }))
-    expect(toggle()).not.toHaveAttribute('data-pinned-elsewhere')
-    expect(toggle()).not.toHaveAttribute('aria-description')
+    expect(await row()).toEqual(['true', null])
   })
 
   it('overlays the panes instead of shrinking them below a readable width, and Escape closes the overlay', async () => {
@@ -577,11 +601,11 @@ describe('shared tools panel', () => {
     expect(iphone).toHaveAccessibleDescription('A cloud iPhone session is running')
   })
 
-  it('expands the tool without losing the selected file, restores width and reopens from the header toggle', async () => {
+  it('expands the tool without losing the selected file, restores width and reopens from the Tools symbol', async () => {
     const { store } = setup({ inPane: true })
     const area = document.querySelector('.thread-workspace__body') as HTMLElement
     Object.defineProperty(area, 'clientWidth', { configurable: true, value: 1200 })
-    await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    await pressTools()
     await userEvent.click(await within(tree()).findByRole('treeitem', { name: 'README.md' }))
     const previous = panel().style.getPropertyValue('--tools-width')
     expect(previous).toBe('672px')
@@ -596,9 +620,9 @@ describe('shared tools panel', () => {
     expect(document.querySelector<HTMLElement>('.thread-pane')!.inert).toBe(false)
     await userEvent.click(within(panel()).getByRole('button', { name: 'Expand tools panel' }))
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close tools panel' }))
-    expect(screen.getByRole('button', { name: 'Tools' })).toHaveFocus()
+    expect(toggle()).toHaveFocus()
     expect(store.getSnapshot().expanded).toBe(false)
-    await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    await pressTools()
     expect(within(panel()).getByRole('region', { name: 'Preview of README.md' })).toBeInTheDocument()
   })
 
@@ -624,6 +648,19 @@ it('keeps a paired host\'s terminal, browser and test iPhone on the host without
   act(() => store.setSurface('iphone'))
   expect(screen.getByText('iPhone is on the host machine.')).toBeVisible()
   expect(terminals).not.toHaveBeenCalled(); expect(browser).not.toHaveBeenCalled()
+})
+
+it('opens a paired host\'s Terminal here on Owl, saying where, and keeps its browser and test iPhone on the host (ADR-0183)', async () => {
+  hostedTerminal.on = true
+  try {
+    const { store } = setup({ state: onForge() })
+    const terminals = vi.spyOn(store.terminals, 'activate').mockResolvedValue()
+    act(() => { store.setOpen(true); store.setSurface('terminal') })
+    await waitFor(() => expect(terminals).toHaveBeenCalled())
+    expect(screen.queryByText('Terminal is on the host machine.')).toBeNull()
+    act(() => store.setSurface('browser'))
+    expect(screen.getByText('Browser is on the host machine.')).toBeVisible()
+  } finally { hostedTerminal.on = false }
 })
 
 it('shows a paired host\'s Files as a local thread\'s, with "on forge" in the footer and no Show in folder (ADR-0025, October 5 amendment)', async () => {

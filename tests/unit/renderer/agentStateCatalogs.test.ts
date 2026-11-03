@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { deferred } from '../../fixtures/deferred'
-import { threadsStateFixture } from '../../fixtures/agentState'
+import { agentThread, threadsStateFixture } from '../../fixtures/agentState'
 import { describe, expect, it, vi } from 'vitest'
 import { wrapAgentBridge } from '../../../src/renderer/src/agents/agentStateCatalogs'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentModel, type AgentState, type AgentWireBridge } from '../../../src/shared/agents'
@@ -331,5 +331,149 @@ describe('wrapAgentBridge', () => {
       expect((await wrapAgentBridge(bridge).command(refresh)).host.models).toEqual([model('gpt-5')])
       expect(get).toHaveBeenCalledTimes(2)
     })
+  })
+})
+
+describe('a command reply asked for as changed thread records (ADR-0028, October 30 amendment)', () => {
+  const one = agentThread({ id: 'one', title: 'One' }), two = agentThread({ id: 'two', title: 'Two' })
+  const models = [model('m1')]
+  /** A broadcast or a reply's state, every catalog named by revision 1 once the first broadcast carried it. */
+  const wire = (threads: unknown, first = false): unknown => ({ ...fullState([]), host: { ...fullState([]).host, models: first ? { revision: 1, models } : { revision: 1, omitted: true }, threads } })
+  function page() {
+    const f = fakeBridge(async () => fullState(models))
+    const withChanges = vi.fn()
+    Object.assign(f.bridge, { commandWithChangedThreadRecords: withChanges })
+    return { ...f, withChanges, page: wrapAgentBridge(f.bridge) }
+  }
+
+  it('puts a reply\'s threads back from the broadcast the window holds, and moves nothing it holds', async () => {
+    const f = page()
+    let shown: AgentState | undefined
+    f.page.onState(state => { shown = state })
+    f.emit(wire({ revision: 1, base: null, changed: [one, two] }, true))
+    const changed = { ...two, status: 'running' as const }
+    f.withChanges.mockResolvedValue(wire({ revision: 2, base: 1, changed: [changed] }))
+    const reply = await f.page.command({ type: 'refresh' })
+    expect(f.bridge.command).not.toHaveBeenCalled()
+    expect(f.get).not.toHaveBeenCalled()
+    // The thread that did not change is the very record the broadcast gave; the changed one is the reply's.
+    expect(reply.host.threads[0]).toBe(shown!.host.threads[0])
+    expect(reply.host.threads[1]).toEqual(changed)
+    expect(reply.host.models).toBe(shown!.host.models)
+    // The next broadcast, measured from the same one, still applies: the reply moved nothing.
+    f.emit(wire({ revision: 3, base: 1, changed: [changed] }))
+    expect(shown!.host.threads.map(thread => thread.status)).toEqual([one.status, 'running'])
+    expect(f.get).not.toHaveBeenCalled()
+  })
+
+  it('reads the whole state for a reply measured from a broadcast this window does not hold', async () => {
+    // An earlier broadcast than the one held: a later one has replaced it, so the reply cannot be put back from it.
+    const f = page()
+    f.page.onState(() => undefined)
+    f.emit(wire({ revision: 9, base: null, changed: [one, two] }, true))
+    f.withChanges.mockResolvedValue(wire({ revision: 5, base: 4, changed: [] }))
+    const reply = await f.page.command({ type: 'refresh' })
+    expect(f.get).toHaveBeenCalledTimes(1)
+    expect(reply.host.threads).toEqual(fullState(models).host.threads)
+  })
+
+  it('waits for the broadcast a reply was measured from when the reply arrives first, and reads nothing (#1939)', async () => {
+    const f = page()
+    let shown: AgentState | undefined
+    f.page.onState(state => { shown = state })
+    f.emit(wire({ revision: 1, base: null, changed: [one, two] }, true))
+    // Main sent broadcast 2 and then measured the reply from it; on a busy computer the reply lands first.
+    const made = agentThread({ id: 'three', title: 'Three' })
+    const running = { ...made, status: 'running' as const }
+    f.withChanges.mockResolvedValue(wire({ revision: 3, base: 2, changed: [running] }))
+    let answered: AgentState | undefined
+    const reply = f.page.command({ type: 'refresh' }).then(state => { answered = state; return state })
+    await vi.waitFor(() => { expect(f.withChanges).toHaveBeenCalledTimes(1) })
+    await Promise.resolve()
+    expect(answered).toBeUndefined()
+    f.emit(wire({ revision: 2, base: 1, changed: [made], order: ['one', 'two', 'three'] }))
+    expect((await reply).host.threads.map(thread => [thread.id, thread.status])).toEqual([['one', one.status], ['two', two.status], ['three', 'running']])
+    expect(f.get).not.toHaveBeenCalled()
+    expect(shown!.host.threads.map(thread => thread.id)).toEqual(['one', 'two', 'three'])
+  })
+
+  it('reads the whole state when the broadcast an overtaking reply was measured from does not come, or a later one passes it', async () => {
+    vi.useFakeTimers()
+    try {
+      const f = page()
+      f.page.onState(() => undefined)
+      f.emit(wire({ revision: 1, base: null, changed: [one, two] }, true))
+      f.withChanges.mockResolvedValue(wire({ revision: 3, base: 2, changed: [] }))
+      const late = f.page.command({ type: 'refresh' })
+      await vi.advanceTimersByTimeAsync(999)
+      expect(f.get).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      await late
+      expect(f.get).toHaveBeenCalledTimes(1)
+
+      // A complete broadcast past the reply's base answers at once: the reply cannot be put back from it.
+      const passed = f.page.command({ type: 'refresh' })
+      await vi.advanceTimersByTimeAsync(0)
+      f.emit(wire({ revision: 4, base: null, changed: [one, two] }, true))
+      await passed
+      expect(f.get).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('marks, in an end-to-end run, how many replies it is still putting back, so a journey counts reads after them', async () => {
+    const root = { dataset: {} as Record<string, string> }
+    vi.stubGlobal('window', { sottoE2E: { scenario: 'success' } })
+    vi.stubGlobal('document', { documentElement: root })
+    try {
+      const f = page()
+      f.page.onState(() => undefined)
+      f.emit(wire({ revision: 1, base: null, changed: [one, two] }, true))
+      f.withChanges.mockResolvedValue(wire({ revision: 3, base: 2, changed: [] }))
+      const reply = f.page.command({ type: 'refresh' })
+      await vi.waitFor(() => { expect(root.dataset.agentRepliesPending).toBe('1') })
+      f.emit(wire({ revision: 2, base: 1, changed: [] }))
+      await reply
+      expect(root.dataset.agentRepliesPending).toBe('0')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('reads afresh for each reply it cannot put back, so a reply never takes a read begun before its command', async () => {
+    const f = page()
+    f.page.onState(() => undefined)
+    f.emit(wire({ revision: 9, base: null, changed: [one, two] }, true))
+    const reads = [deferred<AgentState>(), deferred<AgentState>()]
+    let asked = 0
+    f.get.mockImplementation(() => reads[asked++]!.promise)
+    f.withChanges.mockResolvedValueOnce(wire({ revision: 5, base: 4, changed: [] })).mockResolvedValueOnce(wire({ revision: 6, base: 4, changed: [] }))
+    const first = f.page.command({ type: 'refresh' })
+    await vi.waitFor(() => { expect(f.get).toHaveBeenCalledTimes(1) })
+    // A second reply arrives while the first's read is still on its way, after a command that made a thread.
+    const second = f.page.command({ type: 'refresh' })
+    await vi.waitFor(() => { expect(f.get).toHaveBeenCalledTimes(2) })
+    const made = agentThread({ id: 'three', title: 'Three' })
+    reads[0]!.resolve(fullState(models))
+    reads[1]!.resolve({ ...fullState(models), host: { ...fullState(models).host, threads: [one, two, made] } })
+    expect((await first).host.threads.map(thread => thread.id)).toEqual(fullState(models).host.threads.map(thread => thread.id))
+    expect((await second).host.threads.map(thread => thread.id)).toEqual(['one', 'two', 'three'])
+  })
+
+  it('hands back the whole list it holds when a reply it cannot put back finds no whole state either', async () => {
+    const f = page()
+    let shown: AgentState | undefined
+    f.page.onState(state => { shown = state })
+    f.emit(wire({ revision: 9, base: null, changed: [one, two] }, true))
+    f.get.mockRejectedValue(new Error('Synthetic unavailable state'))
+    f.withChanges.mockResolvedValue(wire({ revision: 5, base: 4, changed: [] }))
+    const reply = await f.page.command({ type: 'refresh' })
+    expect(f.get).toHaveBeenCalledTimes(2)
+    expect(reply.host.threads).toEqual(shown!.host.threads)
+  })
+
+  it('asks for the whole reply before it holds any broadcast', async () => {
+    const f = page()
+    vi.mocked(f.bridge.command).mockResolvedValue(wire([one]) as never)
+    await f.page.command({ type: 'refresh' })
+    expect(f.withChanges).not.toHaveBeenCalled()
+    expect(f.bridge.command).toHaveBeenCalledTimes(1)
   })
 })

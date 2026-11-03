@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { serialize } from 'node:v8'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AGENT_COMMAND, AGENT_GET, agentCommandReceiptSchema, type AgentCommandReceipt, type AgentState } from '../../../src/shared/agents'
+import { AGENT_COMMAND, AGENT_GET, agentCommandChangedThreadRecordsReceiptSchema, type AgentCommandChangedThreadRecordsReceipt, type AgentState } from '../../../src/shared/agents'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
@@ -59,13 +59,17 @@ describe('a command receipt', () => {
 
     const reply = await f.page.command(saveDraft('Keep this draft'))
     const [wire] = f.replies() as [Record<string, unknown>]
-    const onWire = agentCommandReceiptSchema.parse(wire)
+    const onWire = agentCommandChangedThreadRecordsReceiptSchema.parse(wire)
     expect(onWire.host.models).toEqual({ revision: 1, omitted: true })
     expect(onWire.host.clientHosts?.map(client => client.models)).toEqual([{ revision: 1, omitted: true }])
     // The one model this computer's agent setting starts threads on is a name for Settings > Providers, not a catalog entry.
     const agentModel = onWire.host.clientHosts?.[0]?.agentModelId
     expect(JSON.stringify(wire).replace(`"agentModelId":${JSON.stringify(agentModel)}`, '')).not.toContain('synthetic-model')
     expect(serialize(wire).length).toBeLessThan(10_000)
+    // Nor any thread record: a draft save changes none, so the page puts back the broadcast's own (ADR-0028, October 30).
+    expect(onWire.host.threads).toMatchObject({ base: expect.any(Number) as number, changed: [] })
+    expect(reply.host.threads).toHaveLength(f.seen[0]!.host.threads.length)
+    reply.host.threads.forEach((thread, index) => { expect(thread).toBe(f.seen[0]!.host.threads[index]) })
     // The page puts back the catalog the broadcast sent, without asking main for it.
     expect(f.gets()).toBe(0)
     expect(reply.host.models).toBe(f.seen[0]!.host.models)
@@ -88,7 +92,7 @@ describe('a command receipt', () => {
     const third = await f.page.command(saveDraft('Three'))
     expect(f.gets()).toBe(1)
     expect(third.host.models).toEqual(changed)
-    expect((f.replies() as AgentCommandReceipt[]).map(reply => reply.host.models)).toEqual(Array(3).fill({ revision: 2, omitted: true }))
+    expect((f.replies() as AgentCommandChangedThreadRecordsReceipt[]).map(reply => reply.host.models)).toEqual(Array(3).fill({ revision: 2, omitted: true }))
     // The broadcast that follows still carries revision 2 in full, since main never sent it, and the
     // window resolves it without a second recovery either way.
     f.broadcast()
@@ -117,7 +121,7 @@ describe('a command receipt', () => {
     expect(reply.error).toBeNull()
     expect(reply.configuration).toEqual(f.control.get().configuration)
     expect(reply.configuration).toMatchObject({ projectsDirectory: 'C:/Projects' })
-    expect((f.replies()[0] as AgentCommandReceipt).configuration).toEqual(reply.configuration)
+    expect((f.replies()[0] as AgentCommandChangedThreadRecordsReceipt).configuration).toEqual(reply.configuration)
     expect(f.gets()).toBe(0)
   })
 })

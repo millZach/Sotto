@@ -4,7 +4,7 @@
  * holds after applying one.
  */
 import { describe, expect, it } from 'vitest'
-import { applyAgentThreadDetailDelta, diffAgentThreadDetail, foldAgentThreadDetailUpdates, mergeAgentThreadDetailUpdates } from '../../../src/shared/agentThreadDetail'
+import { applyAgentThreadDetailDelta, diffAgentThreadDetail, foldAgentThreadDetailUpdates, mergeAgentThreadDetailUpdates, withAppendsWhole } from '../../../src/shared/agentThreadDetail'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentActivityDelta, AgentMessage, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
@@ -155,7 +155,7 @@ describe('folding updates a host holds for a client that reads slowly (#1089)', 
       expect(applyAgentThreadDetailDelta(start, folded as AgentThreadDetailDelta)).toEqual(stepped)
       // A record has at most a removal and then an upsert in the fold, however many deltas named it.
       const entries = new Map<string, number>()
-      for (const item of (folded as AgentThreadDetailDelta).activityDeltas) { const id = 'removed' in item ? item.id : item.record.id; entries.set(id, (entries.get(id) ?? 0) + 1) }
+      for (const item of (folded as AgentThreadDetailDelta).activityDeltas) { const id = 'record' in item ? item.record.id : item.id; entries.set(id, (entries.get(id) ?? 0) + 1) }
       expect(Math.max(...entries.values())).toBeLessThanOrEqual(2)
     }
   })
@@ -177,7 +177,7 @@ describe('a change at the end of a long thread', () => {
     Object.defineProperty(record, 'id', { enumerable: true, get: () => { reads.ids++; return `a${position}` } })
     return Object.freeze(record)
   })
-  const readsFor = (count: number): { ids: number; delta: AgentThreadDetailDelta } => {
+  const readsFor = (count: number): { ids: number; whole: number; delta: AgentThreadDetailDelta } => {
     const reads = { ids: 0 }
     const activities = counted(count, reads)
     Object.freeze(activities)
@@ -189,13 +189,124 @@ describe('a change at the end of a long thread', () => {
     reads.ids = 0
     const delta = diffAgentThreadDetail(base, { messages: base.messages, activities: next }, 2)!
     applyAgentThreadDetailDelta(base, delta)
-    return { ids: reads.ids, delta }
+    const ids = reads.ids
+    // What a socket client is sent instead: the grown record whole, found in the history the delta leads to.
+    reads.ids = 0
+    withAppendsWhole(delta, next)
+    return { ids, whole: reads.ids, delta }
   }
 
   it('reads the same few records with 200 records as with 2,000', () => {
     const short = readsFor(200), long = readsFor(2_000)
-    expect(long.delta.activityDeltas).toEqual([{ record: expect.objectContaining({ id: 'a1999', output: '1999 and more' }) }])
+    expect(long.delta.activityDeltas).toEqual([{ id: 'a1999', appendOutput: ' and more' }])
     expect(long.ids).toBe(short.ids)
     expect(long.ids).toBeLessThan(20)
+    expect(long.whole).toBe(short.whole)
+    expect(long.whole).toBeLessThan(5)
+  })
+})
+
+// A running command's record was sent whole for every chunk of output it grew by, so a 24 KB log crossed to the window as
+// about 750 KB (October 30). The window is sent what the output or text grew by; every other reader the record whole.
+describe('a record whose output or text only grew', () => {
+  const grows = (before: Partial<AgentActivity>, after: Partial<AgentActivity>) =>
+    diffAgentThreadDetail(base([], [record('build', before)]), { messages: [], activities: [record('build', after)] }, 5)!
+
+  it('is sent as what its output, its text or both grew by', () => {
+    expect(grows({ output: 'npm test\n' }, { output: 'npm test\n12 passed\n' }).activityDeltas).toEqual([{ id: 'build', appendOutput: '12 passed\n' }])
+    expect(grows({ text: 'Reading' }, { text: 'Reading the log' }).activityDeltas).toEqual([{ id: 'build', appendText: ' the log' }])
+    expect(grows({ output: 'a', text: 'b' }, { output: 'ab', text: 'bc' }).activityDeltas).toEqual([{ id: 'build', appendOutput: 'b', appendText: 'c' }])
+  })
+
+  it('is sent whole when anything else changed with it, or the output was rewritten, cut or begun', () => {
+    const wholeRecord = (before: Partial<AgentActivity>, after: Partial<AgentActivity>) =>
+      expect(grows(before, after).activityDeltas).toEqual([{ record: record('build', after) }])
+    wholeRecord({ output: 'a' }, { output: 'ab', status: 'completed' })
+    wholeRecord({ output: 'abc' }, { output: 'xbcd' })
+    wholeRecord({ output: 'abc' }, { output: 'ab' })
+    wholeRecord({}, { output: 'a' })
+    wholeRecord({ output: 'a' }, { output: 'ab', text: 'rewritten' })
+    // The signature tells these apart only by length; an append would leave the window with the old value at the new revision.
+    wholeRecord({ kind: 'plan', text: 'Next', steps: [{ text: 'Test A', status: 'pending' }] }, { kind: 'plan', text: 'Next step', steps: [{ text: 'Test B', status: 'pending' }] })
+    wholeRecord({ output: 'a', title: 'npm test' }, { output: 'ab', title: 'npm lint' })
+    wholeRecord({ output: 'a', changes: [{ path: 'a.ts', kind: 'edit' }] }, { output: 'ab', changes: [{ path: 'b.ts', kind: 'edit' }] })
+    wholeRecord({ output: 'a', command: 'npm test' }, { output: 'ab', command: 'npm lint' })
+    // A nested part rebuilt with the same values is no change.
+    const steps = (): AgentActivity['steps'] => [{ text: 'Test A', status: 'pending' }]
+    expect(grows({ kind: 'plan', text: 'Next', steps: steps() }, { kind: 'plan', text: 'Next step', steps: steps() }).activityDeltas).toEqual([{ id: 'build', appendText: ' step' }])
+  })
+
+  it('leaves the window holding the record it would have been sent whole, and every other record as it was', () => {
+    const held = base([], [record('one'), record('build', { output: 'a' })])
+    const delta = diffAgentThreadDetail(held, { messages: [], activities: [record('one'), record('build', { output: 'abc' })] }, 5)!
+    const applied = applyAgentThreadDetailDelta(held, delta)!
+    expect(applied.activities).toEqual([record('one'), record('build', { output: 'abc' })])
+    expect(applied.activities![0]).toBe(held.activities![0])
+    expect(held.activities![1]!.output).toBe('a')
+    // Many records at once take the other path through the apply; it gives the same answer.
+    const many = base([], Array.from({ length: 12 }, (_, index) => record(`r${index}`, { output: 'x' })))
+    const grown = many.activities!.map(item => ({ ...item, output: 'xy' }))
+    const manyDelta = diffAgentThreadDetail(many, { messages: [], activities: grown }, 5)!
+    expect(manyDelta.activityDeltas).toHaveLength(12)
+    expect(applyAgentThreadDetailDelta(many, manyDelta)!.activities).toEqual(grown)
+  })
+
+  it('cannot be applied to a detail that does not hold the record', () => {
+    const delta: AgentThreadDetailDelta = { threadId: 'workshop', baseRevision: 4, revision: 5, messageDeltas: [], activityDeltas: [{ id: 'build', appendOutput: 'b' }] }
+    expect(applyAgentThreadDetailDelta(base([], [record('one')]), delta)).toBeNull()
+  })
+
+  it('joins appends that wait together, and an append to the whole record waiting ahead of it', () => {
+    const first = { threadId: 'workshop', baseRevision: 1, revision: 2, messageDeltas: [], activityDeltas: [{ id: 'build', appendOutput: 'b' }] as AgentActivityDelta[] }
+    const second = { ...first, baseRevision: 2, revision: 3, activityDeltas: [{ id: 'build', appendOutput: 'c', appendText: 'Note' }] }
+    expect(mergeAgentThreadDetailUpdates(first, second)).toMatchObject({ revision: 3, activityDeltas: [{ id: 'build', appendOutput: 'bc', appendText: 'Note' }] })
+    const whole = { ...first, activityDeltas: [{ record: record('build', { output: 'ab' }) }] }
+    expect(mergeAgentThreadDetailUpdates(whole, second)).toMatchObject({ activityDeltas: [{ record: { id: 'build', output: 'abc', text: 'Note' } }] })
+    expect(foldAgentThreadDetailUpdates(first, second)).toMatchObject({ activityDeltas: [{ id: 'build', appendOutput: 'bc', appendText: 'Note' }] })
+    // A whole record after an append replaces it.
+    expect(mergeAgentThreadDetailUpdates(first, { ...second, activityDeltas: [{ record: record('build', { status: 'completed' }) }] }))
+      .toMatchObject({ activityDeltas: [{ record: { status: 'completed' } }] })
+  })
+
+  it('folds any run of appends, removals and whole records into one that applies to the same history', () => {
+    let seed = 7
+    const next = (): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 }
+    let appends = 0
+    for (let run = 0; run < 100; run++) {
+      const start = base([], [record('r0', { output: '' }), record('r1', { output: 'x' })])
+      let stepped = start
+      let folded: AgentThreadDetailUpdate | null = null
+      for (let revision = 5; revision < 13; revision++) {
+        const activities = stepped.activities!.flatMap(item => next() < 0.15 ? [] : [next() < 0.6 && item.output !== undefined
+          ? { ...item, output: item.output + String.fromCharCode(97 + Math.floor(next() * 26)) } : next() < 0.2 ? { ...item, title: 'at ' + revision } : item])
+        for (let count = Math.floor(next() * 2); count > 0; count--) {
+          const id = 'r' + Math.floor(next() * 6)
+          if (!activities.some(item => item.id === id)) activities.push(record(id, { output: '' }))
+        }
+        const delta = diffAgentThreadDetail({ ...stepped, revision: revision - 1 }, { messages: [], activities }, revision)
+        if (delta === null) break
+        appends += delta.activityDeltas.filter(item => !('record' in item) && !('removed' in item)).length
+        stepped = applyAgentThreadDetailDelta({ ...stepped, revision: revision - 1 }, delta)!
+        folded = folded === null ? delta : foldAgentThreadDetailUpdates(folded, delta)
+        expect(folded).not.toBeNull()
+      }
+      if (folded !== null) expect(applyAgentThreadDetailDelta({ ...start, revision: (folded as AgentThreadDetailDelta).baseRevision }, folded as AgentThreadDetailDelta)!.activities).toEqual(stepped.activities)
+    }
+    expect(appends).toBeGreaterThan(100)
+  })
+
+  it('is sent to any reader other than the window as the record whole, read from the history the delta takes it to', () => {
+    const held = base([], [record('one'), record('build', { output: 'a' })])
+    const now = [record('one'), record('build', { output: 'abc' })]
+    const delta = diffAgentThreadDetail(held, { messages: [], activities: now }, 5)!
+    const expanded = withAppendsWhole(delta, now)!
+    expect(expanded.activityDeltas).toEqual([{ record: record('build', { output: 'abc' }) }])
+    expect((expanded.activityDeltas[0] as { record: AgentActivity }).record).not.toBe(now[1])
+    expect(applyAgentThreadDetailDelta(held, expanded)).toEqual(applyAgentThreadDetailDelta(held, delta))
+    // A delta with no append in it is handed on as it is.
+    const plain: AgentThreadDetailDelta = { ...delta, activityDeltas: [{ id: 'one', removed: true }] }
+    expect(withAppendsWhole(plain, now)).toBe(plain)
+    // A history without the record cannot say it whole; the reader misses the update and reads the thread whole after it.
+    expect(withAppendsWhole(delta, [record('one')])).toBeNull()
   })
 })

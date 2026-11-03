@@ -39,7 +39,7 @@ import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './a
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine } from './watcherRequestNote'
@@ -1004,8 +1004,9 @@ export class MuseMspHost implements AgentHost {
     for (const id of this.observed) {
       if (!this.aliases[id]?.museSessionId) continue
       if (before.has(id) && this.loaded.has(id)) continue
-      void this.open(id).catch(() => {
-        if (generation === this.generation) { this.state.error = 'A Muse thread could not be loaded. Check the native client.'; this.emit() }
+      void this.open(id).catch((error: unknown) => {
+        // An earlier Watcher conversation in view is read only history: refusing to open it is not Muse failing.
+        if (generation === this.generation && !(error instanceof WatcherHistoryRefusal)) { this.state.error = 'A Muse thread could not be loaded. Check the native client.'; this.emit() }
       })
     }
   }

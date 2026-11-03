@@ -1,0 +1,864 @@
+[
+  {
+    "track": "stable",
+    "1600x1000": {
+      "presses": 51,
+      "reached": true,
+      "stops": [
+        {
+          "name": "workshop 3 threads",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open Visual gate flake beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Open Grok voice previews beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "sotto-site 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Open Footer links beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "notes 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in notes",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project notes",
+          "sidebar": true
+        },
+        {
+          "name": "Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Open Weekly note beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settled 4 threads",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    },
+    "820x560": {
+      "presses": 51,
+      "reached": true,
+      "stops": [
+        {
+          "name": "workshop 3 threads",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open Visual gate flake beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Open Grok voice previews beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "sotto-site 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Open Footer links beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "notes 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in notes",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project notes",
+          "sidebar": true
+        },
+        {
+          "name": "Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Open Weekly note beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settled 4 threads",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    }
+  },
+  {
+    "track": "owl",
+    "1600x1000": {
+      "presses": 53,
+      "reached": true,
+      "stops": [
+        {
+          "name": "Open Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open to answer the approval in Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "workshop 3 threads",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open Visual gate flake beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Open Grok voice previews beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "sotto-site 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Open Footer links beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "notes 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in notes",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project notes",
+          "sidebar": true
+        },
+        {
+          "name": "Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Open Weekly note beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settled 4 threads",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    },
+    "820x560": {
+      "presses": 53,
+      "reached": true,
+      "stops": [
+        {
+          "name": "Open Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open to answer the approval in Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "workshop 3 threads",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project workshop",
+          "sidebar": true
+        },
+        {
+          "name": "Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open Visual gate flake beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Open Grok voice previews beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Grok voice previews",
+          "sidebar": true
+        },
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "sotto-site 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project sotto-site",
+          "sidebar": true
+        },
+        {
+          "name": "Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Open Footer links beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Footer links",
+          "sidebar": true
+        },
+        {
+          "name": "notes 1 thread",
+          "sidebar": true
+        },
+        {
+          "name": "New thread in notes",
+          "sidebar": true
+        },
+        {
+          "name": "Settle project notes",
+          "sidebar": true
+        },
+        {
+          "name": "Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Open Weekly note beside",
+          "sidebar": true
+        },
+        {
+          "name": "Rename Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Regenerate title for Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Watch Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settle Weekly note",
+          "sidebar": true
+        },
+        {
+          "name": "Settled 4 threads",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    }
+  }
+]

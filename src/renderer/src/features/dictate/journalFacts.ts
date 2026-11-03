@@ -211,6 +211,8 @@ export interface JournalStats {
   readonly streak: number
   /** The longest run of days with dictation in the last year. */
   readonly longestStreak: number
+  /** Whether the records hold dictation on two different days, whenever they were; until then the column says what it will show (#1834). */
+  readonly dictatedOnTwoDays: boolean
   /** Thirteen weeks, a column a week from Sunday, today's week last; days after today are left out. */
   readonly calendar: ReadonlyArray<ReadonlyArray<CalendarCell | null>>
   readonly calendarDays: number
@@ -219,6 +221,21 @@ export interface JournalStats {
   /** App names for the chips, busiest first. Records without an app are left out. */
   readonly chips: readonly string[]
   readonly month: { readonly words: number; readonly savedMinutes: number; readonly busiestHour: number | null }
+}
+
+/**
+ * Whether dictation with words in it falls on two different days. Records are newest first, so this stops at the first
+ * record from a day other than the newest one's: the work is that day's records, however long the history.
+ */
+function dictatedOnTwoDays(records: readonly DictationRecord[]): boolean {
+  let first: number | undefined
+  for (const record of records) {
+    if (record.words <= 0 || !Number.isFinite(record.createdAt)) continue
+    const day = startOfDay(record.createdAt)
+    if (first === undefined) first = day
+    else if (day !== first) return true
+  }
+  return false
 }
 
 /** How far back the longest streak looks. */
@@ -317,6 +334,7 @@ export function journalStats(records: readonly DictationRecord[], now: number, t
     speed,
     streak,
     longestStreak,
+    dictatedOnTwoDays: dictatedOnTwoDays(records),
     calendar,
     calendarDays,
     where,

@@ -1,3 +1,5 @@
+import type { SshTerminalHost } from './sshTerminal'
+import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { msg, t } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
@@ -259,10 +261,18 @@ export class DesktopHosts {
   private readonly heldProviders: HeldProviders
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
+    /** That the user began adding a host (ADR-0179). */
+    featureUsed?: (feature: 'add-host') => void;
     /** `museEnabled` is Muse's answer alone, from before the held set; `heldProviders` wins, and neither holds every one. */
     watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     /** Work across machines (#1310): each host's socket reads its own threads' delegations only where this is on. */
     crossMachineEnabled?: boolean;
+    /** Told when the user sends a host away, by its own ID, so that shells over SSH to it end (ADR-0183). */
+    onHostLeft?: (hostId: string) => void;
+    /** Whether this desktop wants its hosts' next prompts now (ADR-0173), present only while its `next-prompt` Owl answer is on. */
+    nextPromptsWanted?: () => boolean;
+    /** This desktop's answer for its hosts' product events (ADR-0179). */
+    productEventAnswer?: () => ProductEventPermission;
     /** This desktop relays hosts' delegations to This computer (#1316), only while Work across machines and Watcher run. */
     relaysDelegation?: boolean;
     /**
@@ -676,6 +686,11 @@ export class DesktopHosts {
     this.held.delete(id)
     this.options.router.remove(held)
   }
+  /** A saved host as a shell over SSH needs it, found by the host's own ID (ADR-0183). */
+  terminalHost(hostId: string): SshTerminalHost | undefined {
+    const host = this.saved.find(item => item.hostId === hostId)
+    return host && { target: host.target, identityFile: host.identityFile, sshPort: host.sshPort }
+  }
   /** A saved host as a provider job needs it. */
   jobHost(id: string): ProviderJobHost | undefined {
     const host = this.saved.find(item => item.id === id)
@@ -938,6 +953,7 @@ export class DesktopHosts {
     const previous = slot === 'dialog' ? this.adding : this.setupAttempt
     if (previous) await this.cancelAdd(previous.id)
     const host: SavedHost = { ...input }
+    this.options.featureUsed?.('add-host')
     if (slot === 'dialog') this.adding = host; else this.setupAttempt = host
     this.status.set(host.id, { ...this.fields(host), phase: 'connecting' })
     this.emit()
@@ -1540,7 +1556,7 @@ export class DesktopHosts {
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
-      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), ...(this.options.productEventAnswer ? { productEventAnswer: this.options.productEventAnswer } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
@@ -1577,7 +1593,8 @@ export class DesktopHosts {
     if (from && this.updates?.busy(host.id)) throw new MoveWaits()
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
       refreshRequestAnswer: (decisionId, target) => socket.refreshRequestAnswer(decisionId, target),
-      detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: (ids, shown) => socket.observe(ids, shown),
+      detail: id => socket.windowDetail(id), preview: request => socket.attachmentPreview(request), media: request => socket.threadMedia(request),
+      mediaPart: async request => { const part = await socket.threadMediaPart(request); return part && { mimeType: part.mimeType, sizeBytes: part.sizeBytes, bytes: Buffer.from(part.data, 'base64') } }, observe: (ids, shown) => socket.observe(ids, shown),
       activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
@@ -1949,6 +1966,9 @@ export class DesktopHosts {
   private async disconnect(id: string, keepRetry = false): Promise<void> {
     if (!keepRetry) { this.clearRetry(id); this.releaseHeld(id); await this.admins.close(id) }
     this.clearReturn(id)
+    // A host the user sent away takes its threads with it, and shells nobody can reach must not stay open there (ADR-0183).
+    const leaving = keepRetry ? undefined : this.saved.find(item => item.id === id)?.hostId
+    if (leaving) this.options.onHostLeft?.(leaving)
     const active = this.live.get(id)
     this.live.delete(id)
     // A move to the tailnet under way still has the SSH connection it is leaving, which goes too.

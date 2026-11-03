@@ -56,45 +56,22 @@ describe('dictation reducer', () => {
 
     expect(
       reduceDictation(requested, { type: 'STARTED', sessionId: 'current', startedAt: 250 }),
-    ).toEqual({ status: 'listening', sessionId: 'current', startedAt: 250, level: 0 })
+    ).toEqual({ status: 'listening', sessionId: 'current', startedAt: 250, speaking: false })
     expect(
       reduceDictation(requested, { type: 'STARTED', sessionId: 'stale', startedAt: 250 }),
     ).toBe(requested)
   })
 
-  it('changes only a matching listening level and clamps finite values', () => {
+  it('changes only a matching listening session\'s speaking gate, and leaves an unchanged one as it was', () => {
     const listening = startListening()
-    const middle = reduceDictation(listening, {
-      type: 'LEVEL_CHANGED',
-      sessionId: 'current',
-      level: 0.4,
-    })
+    expect(listening).toMatchObject({ speaking: false })
+    const heard = reduceDictation(listening, { type: 'SPEAKING_CHANGED', sessionId: 'current', speaking: true })
 
-    expect(middle).toEqual({ ...listening, level: 0.4 })
-    expect(
-      reduceDictation(middle, { type: 'LEVEL_CHANGED', sessionId: 'current', level: -5 }),
-    ).toEqual({ ...listening, level: 0 })
-    expect(
-      reduceDictation(middle, { type: 'LEVEL_CHANGED', sessionId: 'current', level: 12 }),
-    ).toEqual({ ...listening, level: 1 })
-    expect(
-      reduceDictation(middle, { type: 'LEVEL_CHANGED', sessionId: 'stale', level: 0.8 }),
-    ).toBe(middle)
-    expect(
-      reduceDictation(middle, { type: 'LEVEL_CHANGED', sessionId: 'current', level: 0.4 }),
-    ).toBe(middle)
+    expect(heard).toEqual({ ...listening, speaking: true })
+    expect(reduceDictation(heard, { type: 'SPEAKING_CHANGED', sessionId: 'stale', speaking: false })).toBe(heard)
+    expect(reduceDictation(heard, { type: 'SPEAKING_CHANGED', sessionId: 'current', speaking: true })).toBe(heard)
+    expect(reduceDictation(heard, { type: 'SPEAKING_CHANGED', sessionId: 'current', speaking: false })).toEqual(listening)
   })
-
-  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
-    'ignores the non-finite listening level %s',
-    (level) => {
-      const listening = startListening()
-
-      expect(
-        reduceDictation(listening, { type: 'LEVEL_CHANGED', sessionId: 'current', level }),
-      ).toBe(listening)
-    },
-  )
 
   it('stops only a matching listening session and preserves startedAt', () => {
     const listening = startListening('current', 123)
@@ -258,7 +235,7 @@ describe('dictation reducer', () => {
       },
       {
         state: processing,
-        event: { type: 'LEVEL_CHANGED', sessionId: 'current', level: 0.2 },
+        event: { type: 'SPEAKING_CHANGED', sessionId: 'current', speaking: true },
       },
       {
         state: { status: 'success', sessionId: 'current', text: 'done', output: 'copied' },

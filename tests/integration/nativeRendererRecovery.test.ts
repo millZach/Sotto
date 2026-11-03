@@ -105,7 +105,7 @@ function activeSnapshot(
     return { status, sessionId: 'lost-session', ...metadata }
   }
   if (status === 'listening') {
-    return { status, sessionId: 'lost-session', startedAt: 100, level: 0.4, ...metadata }
+    return { status, sessionId: 'lost-session', startedAt: 100, speaking: true, ...metadata }
   }
   return {
     status,
@@ -212,7 +212,7 @@ describe('native recovery after the main renderer is lost', () => {
         status: 'listening',
         sessionId: 'next-session',
         startedAt: 200,
-        level: 0.2,
+        speaking: true,
         theme: 'dark',
         palette: DEFAULT_WIDGET_PALETTE,
         reducedMotion: 'on',

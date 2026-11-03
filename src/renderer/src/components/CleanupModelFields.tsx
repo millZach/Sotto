@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { OpenRouterModelList } from '../../../shared/contracts'
+import { isOpenRouterPreset } from '../../../shared/openRouterModel'
 import type { OwnServer, OwnServersBridge } from '../../../shared/ownModelServers'
 import type { OwnCleanupChoice, OwnCleanupMeasured, OwnCleanupMeasureResult, OwnServerCleanupBridge } from '../../../shared/ownServerCleanup'
 import type { AppSettings, LlmMode, SettingsPatch } from '../../../shared/settings'
@@ -33,10 +34,16 @@ function failureCopy(reason: 'http' | 'network' | 'timeout'): string {
 export function matchModels(models: readonly Model[], query: string): Model[] {
   const words = query.toLowerCase().split(/\s+/u).filter(Boolean)
   if (words.length === 0) return [defaultModel(), ...models].slice(0, MAX_ROWS)
-  return models.filter(model => {
+  const matches = models.filter(model => {
     const text = `${model.name} ${model.id}`.toLowerCase()
     return words.every(word => text.includes(word))
   }).slice(0, MAX_ROWS)
+  const preset = query.trim()
+  if (isOpenRouterPreset(preset)) {
+    const exact = models.find(model => model.id === preset) ?? { id: preset, name: preset.slice('@preset/'.length) }
+    return [exact, ...matches.filter(model => model.id !== preset)].slice(0, MAX_ROWS)
+  }
+  return matches
 }
 
 /** The models of every server added without a key, by server, whose model, server name or model ID holds every word typed. */
@@ -55,7 +62,8 @@ type Measuring = { readonly state: 'idle' } | { readonly state: 'measuring' } | 
 
 /**
  * Settings → Cleanup's model and mode (Owl `cleanup-model`, ADR-0122). The model is a search box over OpenRouter's
- * text models, read when the box first opens; Default is Sotto's own choice. The mode is how OpenRouter picks a host.
+ * text models and presets, read when the box first opens; Default is Sotto's own choice. The mode picks a host for
+ * ordinary models; presets keep their own routing and reasoning settings.
  */
 export function CleanupModelFields({ settings, onSave, onListModels, ownServers, ownCleanup }: {
   readonly settings: Pick<AppSettings, 'llmModel' | 'llmMode'> & Partial<Pick<AppSettings, 'llmOwnModel'>>
@@ -86,6 +94,7 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
 
   // With the feature off the saved own model is kept and ignored, as main ignores it.
   const ownChoice = ownOn ? settings.llmOwnModel ?? null : null
+  const preset = ownChoice === null && isOpenRouterPreset(settings.llmModel)
   const ownServer = ownChoice === null ? undefined : servers?.find(server => server.id === ownChoice.server)
   const ownModel = ownChoice === null ? undefined : ownServer?.models.find(model => model.id === ownChoice.model)
   const chosen: Option = ownChoice !== null
@@ -93,7 +102,7 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
     : settings.llmModel === null ? defaultModel()
       : models?.find(model => model.id === settings.llmModel) ?? { id: settings.llmModel, name: settings.llmModel }
   // Only a whole list can say a model is gone; one cut short may hold it on a page not read.
-  const gone = ownChoice === null && settings.llmModel !== null && models !== null && complete && !models.some(model => model.id === settings.llmModel)
+  const gone = ownChoice === null && !preset && settings.llmModel !== null && models !== null && complete && !models.some(model => model.id === settings.llmModel)
   const ownGone = ownChoice !== null && servers !== null && ownModel === undefined
   const ownKeyed = ownServer?.keyed === true
   const tuning = ownChoice === null ? undefined : measured.find(item => item.server === ownChoice.server && item.model === ownChoice.model)?.tuning
@@ -205,7 +214,7 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
           aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-describedby={descriptionId}
           {...(open && matches[active] ? { 'aria-activedescendant': optionId(active) } : {})}
           value={open ? query : chosen.name}
-          placeholder={open ? t`Search models` : undefined}
+          placeholder={open ? t`Search models or paste @preset/…` : undefined}
           onClick={() => { if (!open) show() }} onBlur={close}
           onChange={event => show(event.currentTarget.value)}
           onKeyDown={onKeyDown} />
@@ -249,7 +258,8 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
       measuring={measuring.state === 'measuring'}
       canMeasure={!ownGone && !ownKeyed}
       onMeasure={() => { void measure(ownChoice) }} />}
-    {ownChoice !== null ? null : <Field label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} description={t`How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.`}>
+    {preset ? <p className="tt-field__description tt-paragraph"><Trans>Provider and reasoning settings come from this preset.</Trans></p> : null}
+    {ownChoice !== null || preset ? null : <Field label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} description={t`How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.`}>
       <SegmentedControl setting="cleanup-mode" label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}
         options={[{ value: 'default', label: t({ message: 'Default', comment: 'The cleanup model or mode Sotto chooses itself' }) }, { value: 'nitro', label: 'Nitro' }, { value: 'floor', label: 'Floor' }]} />
     </Field>}

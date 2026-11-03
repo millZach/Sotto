@@ -388,6 +388,16 @@ export function threadDescriber(): ThreadDescriber {
   }
 }
 
+/**
+ * One thread's row from the same inputs `describeThreads` reads, for a pane that answers another thread's request: a
+ * delegated thread's card in the pane of the thread that delegated it, which must name the same provider as its own pane.
+ */
+export function describeThread(state: AgentState, thread: AgentThread, now: number): ThreadRow {
+  const { host } = state
+  return describe(thread, { project: host.projects.find(project => project.id === thread.projectId), models: hostForThread(host, thread).models,
+    hostName: host.name, connected: isThreadProviderConnected(host, thread) }, now, false)
+}
+
 /** A row matches when the query appears anywhere in it: title, project, provider, sentence or your last message. */
 function matchesThreadQuery(row: ThreadRow, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase()
@@ -445,8 +455,14 @@ export interface ProjectFolder {
   readonly activityAt: number
 }
 
+/** Asleep at `now` (ADR-0175): snoozed until later, and not waiting on the user, since a thread that needs you wakes. */
+export const isSnoozed = (row: ThreadRow, snoozes: ReadonlyMap<string, number> | undefined, now: number): boolean =>
+  row.state !== 'needs' && (snoozes?.get(row.thread.id) ?? 0) > now
+
 export interface WorkspaceOrganization {
   readonly open: readonly ProjectFolder[]
+  /** Open threads the user snoozed until a later time (ADR-0175; Owl only), under their projects. */
+  readonly snoozed?: readonly ProjectFolder[]
   readonly settled: readonly ProjectFolder[]
   /** The Needs you queue over every row, search or none (ADR-0135). */
   readonly needsYou: NeedsYouQueue
@@ -603,6 +619,32 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
   }
 }
 
+const NOTHING_HELD: ReadonlyMap<string, string> = new Map()
+
+/**
+ * The open folders with each held thread's row put back where it stood, for the held gap (ADR-0167): a Settle pressed with
+ * the pointer over the list leaves its row's place empty until the pointer leaves, so nothing slides under it. Settling
+ * changes no row's activity, so a row put back by activity lands in its own place, and a folder the settle emptied, or
+ * moved down by taking its latest thread, stands where it stood. A folder's counts stay those of its open rows. Only a
+ * thread settled by itself is held, never one whose project was settled; one still open (its settle on its way, or
+ * already restored) is left where it is. `placed` names each row put back with its folder.
+ */
+export function holdSettledRows(open: readonly ProjectFolder[], settled: readonly ProjectFolder[], held: ReadonlySet<string>): { readonly open: readonly ProjectFolder[]; readonly placed: ReadonlyMap<string, string> } {
+  if (held.size === 0) return { open, placed: NOTHING_HELD }
+  const back = settled.filter(item => !item.settled).flatMap(item => item.rows.filter(row => row.settledBy === 'thread' && held.has(row.thread.id)).map(row => ({ row, home: item })))
+  if (back.length === 0) return { open, placed: NOTHING_HELD }
+  const folders = new Map(open.map(item => [item.id, item]))
+  const placed = new Map<string, string>()
+  for (const { row, home } of back) {
+    const base = folders.get(home.id) ?? { ...home, rows: [], working: 0, needs: 0, activityAt: Number.NaN }
+    const rows = [...base.rows, row].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+    const activityAt = Number.isFinite(row.activityAt) && (!Number.isFinite(base.activityAt) || row.activityAt > base.activityAt) ? row.activityAt : base.activityAt
+    folders.set(home.id, { ...base, rows, activityAt })
+    placed.set(row.thread.id, home.id)
+  }
+  return { open: [...folders.values()].sort(byActivity), placed }
+}
+
 /**
  * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
  * Settled holds whole settled projects plus individually settled threads under their own project.
@@ -612,7 +654,7 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
  * that delegated to it, whose row says when it waits on you. The Needs you queue is described from the same rows
  * before the search narrows them, so searching never changes it (ADR-0135).
  */
-export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false, snoozes?: ReadonlyMap<string, number>): WorkspaceOrganization {
   const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
   const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId), swarms) : undefined
   const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
@@ -628,6 +670,7 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
   }
   const ids = new Set([...projects.keys(), ...threadsByProject.keys()])
   const open: ProjectFolder[] = []
+  const snoozed: ProjectFolder[] = []
   const settled: ProjectFolder[] = []
   for (const id of ids) {
     const project = projects.get(id)
@@ -638,12 +681,15 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
       if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
       continue
     }
-    const openRows = shown.filter(row => row.settledBy === null)
+    const unsettled = shown.filter(row => row.settledBy === null)
+    const asleep = snoozes?.size ? unsettled.filter(row => isSnoozed(row, snoozes, now)) : []
+    const openRows = asleep.length ? unsettled.filter(row => !asleep.includes(row)) : unsettled
     const settledRows = shown.filter(row => row.settledBy !== null)
     const emptyOpen = needle === '' && (all.length === 0 || id === activeProjectId) && openRows.length === 0
-    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false))
+    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length && !asleep.length)) open.push(folder(id, project, openRows, false))
+    if (asleep.length) snoozed.push(folder(id, project, asleep, false))
     if (settledRows.length) settled.push(folder(id, project, settledRows, false))
   }
   const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
-  return { open: ordered(open), settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
+  return { open: ordered(open), ...snoozes?.size ? { snoozed: ordered(snoozed) } : {}, settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
 }

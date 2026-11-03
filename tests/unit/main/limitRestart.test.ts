@@ -151,6 +151,58 @@ describe('restarting threads a usage limit stopped', () => {
     await expect.poll(f.saved).toEqual([])
   })
 
+  it.each([undefined, new Date(START + 60_000).toISOString()])('drops a restart when Watcher becomes read-only history, with reset %s', async reset => {
+    const f = await fixture({ threads: [thread('watcher', { kind: 'watcher' })] })
+    f.update('watcher', limitStop('watcher', reset))
+    expect(f.restart.scheduled('watcher')).toBeDefined()
+    f.update('watcher', { kind: 'watcher-history' })
+    expect(f.restart.publish(f.host.threads[0]!).scheduledRestart).toBeUndefined()
+    expect(f.live()).toEqual([])
+    await expect.poll(f.saved).toEqual([])
+  })
+
+  describe.each([
+    ['settled', { settledAt: new Date(START).toISOString() }],
+    ['marked settled', { settledOverride: 'settled' as const }],
+    ['archived', { archivedAt: new Date(START).toISOString() }],
+  ])('a %s thread', (_name, closed) => {
+    it.each([undefined, new Date(START + 60_000).toISOString()])('keeps no restart after a fresh limit stop, with reset %s', async reset => {
+      const f = await fixture({ threads: [thread('fresh'), thread('prior')] })
+      f.update('prior', limitStop('prior', reset))
+      expect(f.restart.scheduled('prior')).toBeDefined()
+      // Closed before the failure, or in the same update as a new failed turn: neither can restart.
+      f.update('fresh', closed)
+      f.update('fresh', limitStop('fresh', reset))
+      f.update('prior', { ...limitStop('prior', reset, 'prior-2'), ...closed })
+      expect(['fresh', 'prior'].map(id => f.restart.scheduled(id))).toEqual([undefined, undefined])
+      expect(f.live()).toEqual([])
+      await expect.poll(f.saved).toEqual([])
+      f.update('fresh', { archivedAt: undefined, settledAt: undefined, settledOverride: 'active' })
+      expect(f.restart.scheduled('fresh')).toBeUndefined()
+    })
+  })
+
+  it.each([undefined, new Date(START + 60_000).toISOString()])('does not recreate a restart for Watcher history with background work when a sibling stops, with reset %s', async reset => {
+    const backgroundWork = [{ id: 'job', kind: 'command', status: 'running' }] as unknown as AgentThread['backgroundWork']
+    // History is read first, so its own cleanup cannot hide a record created by the sibling afterwards.
+    const f = await fixture({ threads: [thread('history', { kind: 'watcher-history', status: 'idle',
+      lastTurn: { id: 'history-1', status: 'completed' }, backgroundWork }), thread('worker')] })
+    f.update('worker', limitStop('worker', reset))
+    expect(f.restart.scheduled('history')).toBeUndefined()
+    expect(f.restart.scheduled('worker')).toBeDefined()
+    await expect.poll(f.saved).toEqual([expect.objectContaining({ threadId: 'worker' })])
+  })
+
+  it('removes a saved no-reset card for an earlier Watcher conversation on startup', async () => {
+    const f = await fixture({
+      threads: [thread('watcher', { ...limitStop('watcher'), kind: 'watcher-history' })],
+      saved: { version: 1, threads: [{ threadId: 'watcher', provider: 'claude', stoppedAt: new Date(START).toISOString(), restarts: 0 }] },
+    })
+    expect(f.restart.publish(f.host.threads[0]!).scheduledRestart).toBeUndefined()
+    expect(f.live()).toEqual([])
+    await expect.poll(f.saved).toEqual([])
+  })
+
   it('leaves a thread the user sent to after the stop to them, and schedules it again only when that turn stops at the limit too', async () => {
     const f = await fixture({ threads: [thread('a'), thread('b')] })
     const reset = new Date(START + 60 * 60_000).toISOString()
@@ -178,6 +230,26 @@ describe('restarting threads a usage limit stopped', () => {
     await expect.poll(async () => (await f.saved() as { threadId: string; sent?: boolean }[]).find(item => item.threadId === 'a')?.sent).toBe(true)
     release(); await f.restart.settled()
     expect(f.delivered.map(item => item.threadId)).toEqual(['a', 'b'])
+  })
+
+  it.each([
+    ['settled', { settledAt: new Date(START).toISOString() }],
+    ['archived', { archivedAt: new Date(START).toISOString() }],
+  ])('records a delivered restart when its thread is %s while delivery is in flight', async (_name, closed) => {
+    let entered!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    const f = await fixture({ deliver: async () => { entered(); await held } })
+    f.update('workshop', limitStop('workshop', new Date(START + 60_000).toISOString()))
+    const fired = f.fire()
+    await started
+    f.update('workshop', closed)
+    release(); await fired
+    expect(f.delivered.map(item => item.threadId)).toEqual(['workshop'])
+    expect(f.restart.scheduled('workshop')).toBeUndefined()
+    expect(f.told).toEqual([{ provider: 'claude', threadIds: ['workshop'] }])
+    await f.restart.close()
+    expect(await f.saved()).toEqual([{ threadId: 'workshop', provider: 'claude', stoppedAt: new Date(START).toISOString(), restarts: 1, sent: true }])
   })
 
   it('reads the clock again each minute, so a computer asleep past the reset restarts within a minute of waking', async () => {

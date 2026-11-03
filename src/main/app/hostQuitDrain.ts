@@ -6,11 +6,17 @@ export interface HostQuitHandles {
   localRuntime?: AsyncClose & { prepareForShutdown?(): Promise<void> }
   desktopHosts?: AsyncClose
   phoneAccess?: AsyncClose
+  /** Let apps on this computer connect's loopback listener (ADR-0180). */
+  localApps?: AsyncClose
   hostSetup?: AsyncClose
   hostSetupTools?: AsyncClose
   visualTools?: AsyncClose
+  mediaTools?: AsyncClose
   pullRequestTools?: AsyncClose
   delegationTools?: AsyncClose
+  tellWatcherTools?: AsyncClose
+  /** The Council (ADR-0177), the desktop's own: it lets go of the coordinator before the runtime closes. */
+  council?: { close(): void }
   providerJobs?: { close(): void }
   hostUpdates?: { dispose(): void }
   hostBoot?: { dispose(): void }
@@ -44,16 +50,17 @@ export function registerHostQuitDrain(app: Parameters<typeof registerQuitDrain>[
     stopPublishing()
     // Closing the local runtime drains a worktree cleanup sweep in progress before its host closes (ADR-0041).
     // Remove phone access before closing the host it serves (ADR-0033).
-    await handles.phoneAccess?.close().catch(phoneFailed)
+    await Promise.all([handles.phoneAccess?.close().catch(phoneFailed), handles.localApps?.close().catch(() => undefined)])
     // A setup running now ends as Stop setup would, before the hosts it checks and adds close.
     await handles.hostSetup?.close().catch(() => undefined)
     handles.providerJobs?.close()
     handles.hostUpdates?.dispose()
     handles.hostBoot?.dispose()
     handles.hostPhones?.close()
+    handles.council?.close()
     const results = await Promise.allSettled([
       handles.desktopHosts?.close(), closeLocal(),
-      handles.hostSetupTools?.close(), handles.visualTools?.close(), handles.pullRequestTools?.close(), handles.delegationTools?.close(),
+      handles.hostSetupTools?.close(), handles.visualTools?.close(), handles.mediaTools?.close(), handles.pullRequestTools?.close(), handles.delegationTools?.close(), handles.tellWatcherTools?.close(),
       closeCloud(),
     ])
     handles.hostRouter?.dispose()

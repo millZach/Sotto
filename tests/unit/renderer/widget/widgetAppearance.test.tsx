@@ -1,7 +1,7 @@
 import React from 'react'
 import { readFileSync } from 'node:fs'
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -11,63 +11,36 @@ import {
 import { type WidgetSnapshot } from '../../../../src/shared/dictation'
 import { APP_ICON_BRAND, APP_ICON_BRAND_ATTRIBUTE, themeBrand, widgetPaletteFor } from '../../../../src/shared/themeBranding'
 import { DEFAULT_THEME_ID } from '../../../../src/shared/themes/library'
+import { bareOwlFill } from '../../../../src/renderer/src/components/SottoMark'
 import { setWindowSize, setupWidgetTests, snapshot } from '../../../fixtures/renderer/widgetHarness'
 
 setupWidgetTests()
 
 describe('WidgetApp', () => {
 
-  it('waves the recording bars only while the voice registers, and settles them on silence', () => {
+  it('waves the recording bars while dictation hears a voice, and settles them when it does not', () => {
+    // Whether a voice is heard is the dictation controller's speaking gate (speakingGate.test.ts); the widget is told
+    // when it opens or closes, never each level (#993), and holds no timer of its own.
     vi.useFakeTimers()
-    const listening = (level: number): WidgetSnapshot =>
-      snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level })
+    const listening = (speaking: boolean): WidgetSnapshot =>
+      snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, speaking })
     const { container, rerender } = render(
-      <WidgetApp snapshot={listening(0.004)} platform="win32" now={0} />,
+      <WidgetApp snapshot={listening(false)} platform="win32" now={0} />,
     )
-    const show = (level: number): void => {
-      rerender(<WidgetApp snapshot={listening(level)} platform="win32" now={0} />)
-    }
     const bars = screen.getByTestId('listening-bars')
     expect(bars).toHaveAttribute('aria-hidden', 'true')
     expect(bars.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
-    // A silence-floor level never starts the wave.
     expect(bars).not.toHaveAttribute('data-speaking')
 
-    // Speech opens the gate immediately.
-    show(0.06)
+    rerender(<WidgetApp snapshot={listening(true)} platform="win32" now={0} />)
     expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // Inside the hysteresis band the wave simply holds; nothing is scheduled.
-    show(0.015)
-    act(() => vi.advanceTimersByTime(5_000))
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // Below the release threshold the wave still rides out the hold, so a gap
-    // between words keeps it running, and a real pause settles it.
-    show(0.004)
-    act(() => vi.advanceTimersByTime(300))
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-    act(() => vi.advanceTimersByTime(25))
+    rerender(<WidgetApp snapshot={listening(false)} platform="win32" now={0} />)
     expect(bars).not.toHaveAttribute('data-speaking')
+    expect(vi.getTimerCount()).toBe(0)
 
-    // A voiced frame inside the hold cancels the settle outright.
-    show(0.05)
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-    show(0)
-    act(() => vi.advanceTimersByTime(200))
-    show(0.05)
-    act(() => vi.advanceTimersByTime(5_000))
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // Out-of-range and non-finite levels are clamped, never trusted raw.
-    show(Number.NaN)
-    act(() => vi.advanceTimersByTime(400))
-    expect(bars).not.toHaveAttribute('data-speaking')
-    show(2)
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // The level reaches CSS only through that one attribute: no inline
+    // The gate reaches CSS only through that one attribute: no inline
     // heights, no meter, no per-bar state.
+    rerender(<WidgetApp snapshot={listening(true)} platform="win32" now={0} />)
     expect(container.querySelector('[style]')).toBeNull()
     expect(screen.queryByRole('meter')).not.toBeInTheDocument()
     expect([...bars.querySelectorAll('.widget-bars__bar')].every(
@@ -75,29 +48,9 @@ describe('WidgetApp', () => {
     )).toBe(true)
   })
 
-  it('drops a pending bar settle when the widget unmounts mid-hold', () => {
-    vi.useFakeTimers()
-    const { rerender, unmount } = render(
-      <WidgetApp
-        snapshot={snapshot({ status: 'listening', sessionId: 'hold', startedAt: 0, level: 0.4 })}
-        platform="win32" now={0}
-      />,
-    )
-    expect(screen.getByTestId('listening-bars')).toHaveAttribute('data-speaking', 'true')
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({ status: 'listening', sessionId: 'hold', startedAt: 0, level: 0 })}
-        platform="win32" now={0}
-      />,
-    )
-    expect(vi.getTimerCount()).toBe(1)
-    unmount()
-    expect(vi.getTimerCount()).toBe(0)
-  })
-
   it.each([
     ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'mark', cancellable: true })],
-    ['listening', snapshot({ status: 'listening', sessionId: 'mark', startedAt: 0, level: 0.4, cancellable: true })],
+    ['listening', snapshot({ status: 'listening', sessionId: 'mark', startedAt: 0, speaking: true, cancellable: true })],
     ['processing', snapshot({
       status: 'processing', sessionId: 'mark', startedAt: 0, stage: 'transcribing',
       progress: 0.5, cancellable: true,
@@ -117,13 +70,60 @@ describe('WidgetApp', () => {
     // Purely decorative: the live regions already carry the spoken status.
     expect(glyph).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('.widget-capsule')?.firstElementChild).toBe(glyph)
-    // The mark wears the painted theme half: its accent tile and a readable glyph.
+    // The capsule is already a shape, so the owl goes without its tile and
+    // wears the tile's colour from the painted theme half.
     const brand = themeBrand(fern.dark, 'dark')
-    expect(glyph.querySelector('rect')).toHaveAttribute('fill', brand.tile)
-    expect(glyph.querySelector('path[fill-rule="evenodd"]')).toHaveAttribute('fill', brand.glyph)
+    expect(glyph.querySelector('rect')).toBeNull()
+    expect(glyph.querySelector('path[fill-rule="evenodd"]')).toHaveAttribute('fill', brand.tile)
     expect([...glyph.querySelectorAll('circle')].map((circle) => circle.getAttribute('fill')))
-      .toEqual([brand.glyph, brand.glyph])
+      .toEqual([brand.tile, brand.tile])
     release()
+  })
+
+  it('moves the owl only while its Owl feature is on, and tells the stylesheet what the dictation is doing (ADR-0178)', () => {
+    const listeningFor = (speaking: boolean): WidgetSnapshot => snapshot({ status: 'listening', sessionId: 'owl', startedAt: 0, speaking, cancellable: true })
+    const listening = listeningFor(true)
+    const { container, rerender } = render(<WidgetApp snapshot={listening} platform="darwin" now={1_000} />)
+    expect(screen.getByTestId('widget-glyph').querySelector('svg')).not.toHaveAttribute('data-living')
+    rerender(<WidgetApp snapshot={listening} platform="darwin" now={1_000} livingOwl />)
+    const owl = screen.getByTestId('widget-glyph').querySelector('svg[data-living]')
+    expect(owl).not.toBeNull()
+    expect(owl).toHaveAttribute('aria-hidden', 'true')
+    // The parts the stylesheet moves; the shell says the voice is heard.
+    for (const part of ['pose', 'hop', 'bob', 'breath', 'lid', 'pupil', 'glow', 'sad', 'happy', 'hole']) {
+      expect(container.querySelector(`.widget-owl__${part}`)).not.toBeNull()
+    }
+    expect(container.querySelector('.widget-shell')).toHaveAttribute('data-speaking', 'true')
+    rerender(<WidgetApp snapshot={listeningFor(false)} platform="darwin" now={1_000} livingOwl />)
+    expect(container.querySelector('.widget-shell')).not.toHaveAttribute('data-speaking')
+    const css = readFileSync('src/renderer/src/widget/widget.css', 'utf8')
+    // Reduced motion holds the owl still.
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.widget-shell\[data-status\]\[data-tone\] \.widget-owl \* \{\s*animation: none;\s*transition: none;/)
+    expect(css).toContain(":root[data-reduced-motion='on'] .widget-shell[data-status][data-tone] .widget-owl *")
+    // The holds come after every state rule, so at equal specificity they win.
+    expect(css.lastIndexOf('.widget-shell[data-status][data-tone] .widget-owl *')).toBeGreaterThan(css.lastIndexOf(':not([data-speaking]) .widget-owl__pupil'))
+    // The owl breathes and blinks only while dictation is under way, so a waiting error holds still.
+    expect(css).not.toMatch(/^\.widget-owl__(breath|lid) \{[^}]*animation:/m)
+  })
+
+  it('paints the tile-less owl in a colour that reads on the capsule', () => {
+    // A strong accent reads on the surface, so the owl wears the tile's colour.
+    expect(bareOwlFill({ tile: '#4057d6', glyph: '#ffffff' }, '#ffffff')).toBe('#4057d6')
+    // A pale accent on a light capsule would vanish, so the owl wears the glyph, which was chosen to read on the tile.
+    expect(bareOwlFill({ tile: '#f5e663', glyph: '#1a1a19' }, '#ffffff')).toBe('#1a1a19')
+    // An unreadable surface keeps the tile.
+    expect(bareOwlFill({ tile: '#f5e663', glyph: '#1a1a19' }, '')).toBe('#f5e663')
+  })
+
+  it('springs the capsule open from the hovered pill when a click on it started the dictation', () => {
+    const idle = snapshot({ status: 'idle' })
+    const { container, rerender } = render(<WidgetApp snapshot={idle} platform="darwin" now={0} />)
+    fireEvent.mouseEnter(screen.getByTestId('widget-sliver'))
+    rerender(<WidgetApp snapshot={snapshot({ status: 'listening', sessionId: 'hover', startedAt: 0, speaking: false })} platform="darwin" now={0} />)
+    expect(container.querySelector('.widget-capsule')).toHaveAttribute('data-from', 'hover')
+    rerender(<WidgetApp snapshot={idle} platform="darwin" now={0} />)
+    rerender(<WidgetApp snapshot={snapshot({ status: 'listening', sessionId: 'key', startedAt: 0, speaking: false })} platform="darwin" now={0} />)
+    expect(container.querySelector('.widget-capsule')).not.toHaveAttribute('data-from')
   })
 
   it('wears the app icon on the half the default theme paints, and gives the attribute back on release', () => {
@@ -134,7 +134,7 @@ describe('WidgetApp', () => {
 
     const release = applyRootPresentation({ theme: 'light', palette: split, reducedMotion: 'system' }, false)
     expect(root.dataset.brand).toBe(APP_ICON_BRAND_ATTRIBUTE)
-    render(<WidgetApp snapshot={snapshot({ status: 'listening', sessionId: 'icon', startedAt: 0, level: 0.4 })} platform="win32" now={1_000} />)
+    render(<WidgetApp snapshot={snapshot({ status: 'listening', sessionId: 'icon', startedAt: 0, speaking: true })} platform="win32" now={1_000} />)
     const mark = screen.getByTestId('widget-glyph').querySelector('svg')
     expect(mark).toHaveAttribute('data-tile', APP_ICON_BRAND.tile)
     expect(mark).toHaveAttribute('data-glyph', APP_ICON_BRAND.glyph)
@@ -158,7 +158,7 @@ describe('WidgetApp', () => {
     const { container, rerender } = render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'announced', startedAt: 0, level: 0.2,
+          status: 'listening', sessionId: 'announced', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}
@@ -219,7 +219,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'vertical', startedAt: 0, level: 0.4,
+          status: 'listening', sessionId: 'vertical', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}

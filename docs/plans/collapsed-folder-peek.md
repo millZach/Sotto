@@ -13,7 +13,7 @@ Picked by Zach on October 24, 2026, from `docs/prototypes/collapsed-folder-peek-
 - Resting on a closed project folder (fine pointer) or focusing its toggle shows its threads as a preview after a short intent delay; sweeping across the sidebar shows nothing. Leaving puts the preview away after a short grace; moving into the preview keeps it.
 - The preview never changes which folders are open. Opening a thread from the preview leaves its folder closed.
 - Preview rows are the folder's rows in the folder's order, with the same states, clocks and actions as an opened folder's rows.
-- Keyboard: ArrowDown from a folder toggle steps into the preview; arrows move; Enter opens (Open beside's chord opens beside, as a row does); Escape puts the preview away, returns focus to the toggle, and stays away until focus leaves the folder.
+- Keyboard: ArrowDown from a folder toggle steps into the preview once it shows, and the arrows walk it as rows of the thread list, on out of it (ADR-0164, which also makes Right open the folder for real); Enter opens (Open beside's chord opens beside, as a row does); Left or Escape puts the preview away, returns focus to the toggle, and stays away until focus leaves the folder.
 - No preview for an open folder, an empty folder, while searching (search opens folders), or from touch, where a tap toggles the folder as today.
 - Light, dark and reduced motion hold; the preview follows the existing theme roles and row type.
 - With the Owl feature off, the sidebar behaves exactly as before.

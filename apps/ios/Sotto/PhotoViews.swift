@@ -3,6 +3,8 @@ import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
 import AVFoundation
+import AVKit
+import ImageIO
 import SottoCore
 
 // MARK: Sent photos
@@ -11,7 +13,9 @@ import SottoCore
 /// memory while the app runs. Nothing is written to disk. A photo that has scrolled away before its turn on
 /// the computer comes is never fetched.
 @MainActor final class PhotoPreviews: ObservableObject {
-    struct Key: Hashable { let ref: ThreadRef; let messageID: String; let attachmentID: String }
+    /// A sent photo by its message and attachment; an agent's picture (ADR-0170) by its step, with `attachmentID` its
+    /// handle's ID and `messageID` the step's.
+    struct Key: Hashable { let ref: ThreadRef; let messageID: String; let attachmentID: String; var activityID: String? = nil }
     private final class Box { let image: CGImage; init(_ image: CGImage) { self.image = image } }
     private let thumbnails: NSCache<NSString, Box> = {
         let cache = NSCache<NSString, Box>(); cache.countLimit = 150; cache.totalCostLimit = 64 * 1024 * 1024; return cache
@@ -24,8 +28,10 @@ import SottoCore
     private var opened: (key: Key, image: CGImage)?
     private var openingFull: [Key: Task<CGImage?, Never>] = [:]
 
-    private static func name(_ ref: ThreadRef, _ attachmentID: String) -> NSString { "\(ref.id)/\(attachmentID)" as NSString }
-    func cached(_ key: Key) -> CGImage? { thumbnails.object(forKey: Self.name(key.ref, key.attachmentID))?.image }
+    private static func name(_ ref: ThreadRef, _ attachmentID: String, activityID: String? = nil) -> NSString {
+        (activityID.map { "\(ref.id)/\($0)/\(attachmentID)" } ?? "\(ref.id)/\(attachmentID)") as NSString
+    }
+    func cached(_ key: Key) -> CGImage? { thumbnails.object(forKey: Self.name(key.ref, key.attachmentID, activityID: key.activityID))?.image }
     /// Keeps the thumbnails of a reply this iPhone just sent under their staged IDs, which its message's photos
     /// carry, so the thread draws them without asking the computer for them.
     func keep(_ photos: [DraftPhoto], ref: ThreadRef) {
@@ -43,11 +49,11 @@ import SottoCore
         if let hit = cached(key) { return hit }
         if let running = loading[key] { return await running.value }
         let task = Task { [weak self] () -> CGImage? in
-            let data = await model.sentPhoto(key.ref, messageID: key.messageID, attachmentID: key.attachmentID) {
+            let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID) {
                 (self?.shown[key] ?? 0) > 0
             }
             guard let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }
-            self?.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID), cost: image.bytesPerRow * image.height)
+            self?.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID, activityID: key.activityID), cost: image.bytesPerRow * image.height)
             return image
         }
         loading[key] = task
@@ -61,7 +67,7 @@ import SottoCore
         if let opened, opened.key == key { return opened.image }
         if let running = openingFull[key] { return await running.value }
         let task = Task { [weak self] () -> CGImage? in
-            guard let data = await model.sentPhoto(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, wanted: {
+            guard let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID, wanted: {
                 (self?.viewed[key] ?? 0) > 0
             }), let image = await PhotoPipeline.image(data, edge: PhotoPipeline.screenEdge) else { return nil }
             self?.opened = (key, image)
@@ -92,10 +98,22 @@ struct SentPhotoButtons: View {
     }
 }
 
-/// The photos of one message in a thread: what a press opens full screen.
+/// The photos of one message in a thread, or the pictures of one run of steps: what a press opens full screen.
 struct OpenPhotos: Identifiable {
-    let ref: ThreadRef; let messageID: String; let photos: [Attachment]; var index: Int
-    var id: String { messageID }
+    struct Item: Identifiable {
+        let key: PhotoPreviews.Key; let name: String
+        /// An agent's picture's callouts (ADR-0170, part 6), its size in pixels, and who placed them.
+        var callouts: [Activity.Media.Callout] = []
+        var size: MarkupSize? = nil
+        var by: String? = nil
+        var id: String { (key.activityID ?? "") + "/" + key.attachmentID }
+    }
+    let ref: ThreadRef; let id: String; let items: [Item]; var index: Int
+    init(ref: ThreadRef, messageID: String, photos: [Attachment], index: Int) {
+        self.ref = ref; self.id = messageID; self.index = index
+        self.items = photos.map { Item(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: $0.id), name: $0.name) }
+    }
+    init(ref: ThreadRef, id: String, items: [Item], index: Int) { self.ref = ref; self.id = id; self.items = items; self.index = index }
 }
 
 /// One sent photo in the thread, at its own shape. It shows a placeholder until its thumbnail arrives.
@@ -107,9 +125,12 @@ struct SentPhotoView: View {
     @State private var image: CGImage?
     @State private var missing = false
     var body: some View {
+        // A photo already in memory takes its own shape on its first layout, so a row made again as it scrolls back into
+        // view keeps its height rather than growing from the placeholder under the reader.
+        let shown = image ?? previews.cached(key)
         Group {
-            if let image {
-                Image(decorative: image, scale: 1).resizable().scaledToFill()
+            if let shown {
+                Image(decorative: shown, scale: 1).resizable().scaledToFill()
             } else {
                 ZStack {
                     Rectangle().fill(Palette.raised)
@@ -118,7 +139,7 @@ struct SentPhotoView: View {
                 }
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: Self.size(shown).width, height: Self.size(shown).height)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear { previews.appeared(key) }
         .onDisappear { previews.disappeared(key) }
@@ -128,34 +149,59 @@ struct SentPhotoView: View {
         }
     }
     /// At most 220 by 240 points, at the photo's own shape once it is known.
-    private var size: CGSize {
+    private static func size(_ image: CGImage?) -> CGSize {
         guard let image, image.width > 0, image.height > 0 else { return CGSize(width: 160, height: 160) }
         let scale = min(220 / Double(image.width), 240 / Double(image.height))
         return CGSize(width: max(60, Double(image.width) * scale), height: max(60, Double(image.height) * scale))
     }
 }
 
-/// A message's photos full screen, one at a time; swipe for the others.
+/// A message's photos full screen, one at a time; swipe for the others. Given the reply box they would go to, and on a
+/// computer that shows its agents' pictures, Mark up opens the one shown in the mark-up editor (ADR-0170, part 5).
 struct PhotoViewer: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var previews: PhotoPreviews
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State var opened: OpenPhotos
+    /// The reply box a marked copy goes into: the thread's, or Watcher's.
+    var box: PhotoBox? = nil
+    @State private var marking: MarkupTarget?
+    @State private var markRefusal: String?
+    /// The pictures the pages on screen are showing, the same images, so Mark up opens the one shown and fetches nothing.
+    @State private var shown: [PhotoPreviews.Key: CGImage] = [:]
+    @State private var closeAfterMarking = false
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Button("Done") { dismiss() }.fontWeight(.semibold).frame(minHeight: 44)
                 Spacer()
-                if opened.photos.count > 1 { Text("\(opened.index + 1) of \(opened.photos.count)").foregroundStyle(Palette.muted) }
-            }.padding(.horizontal, 20).foregroundStyle(Palette.ink)
-            TabView(selection: $opened.index) {
-                ForEach(Array(opened.photos.enumerated()), id: \.element.id) { index, photo in
-                    FullPhoto(key: PhotoPreviews.Key(ref: opened.ref, messageID: opened.messageID, attachmentID: photo.id), name: photo.name).tag(index)
+                if opened.items.count > 1 { Text("\(opened.index + 1) of \(opened.items.count)").foregroundStyle(Palette.muted) }
+                if let box, model.showsAgentPictures(box.hostID) {
+                    Button("Mark up") { markUp(box) }.fontWeight(.semibold).frame(minHeight: 44).padding(.leading, 12)
+                        .accessibilityIdentifier("photo-mark-up")
                 }
-            }.tabViewStyle(.page(indexDisplayMode: opened.photos.count > 1 ? .always : .never))
-            Text(opened.photos[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
+            }.padding(.horizontal, 20).foregroundStyle(Palette.ink)
+            if let markRefusal {
+                Text(markRefusal).font(.sotto(.small)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+                    .padding(.horizontal, 20).paragraphDirection()
+            }
+            TabView(selection: $opened.index) {
+                ForEach(Array(opened.items.enumerated()), id: \.element.id) { index, item in
+                    FullPhoto(key: item.key, name: item.name, callouts: item.callouts) { shown[item.key] = $0 }.tag(index)
+                }
+            }.tabViewStyle(.page(indexDisplayMode: opened.items.count > 1 ? .always : .never))
+            Text(opened.items[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
                 .lineLimit(1).truncationMode(.middle).padding(.horizontal, 20).padding(.vertical, 12)
+            // The agent's callouts on the picture shown (ADR-0170, part 6), listed by their numbers under it.
+            if let item = opened.items[safe: opened.index], !item.callouts.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Callouts from \(item.by ?? "")").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                        .accessibilityAddTraits(.isHeader)
+                    CalloutNotes.Bounded(callouts: item.callouts, height: 160)
+                }
+                .padding(.horizontal, 20).padding(.bottom, 12)
+            }
         }
         .background(Palette.canvas)
         // A full-screen cover sits above the root's own cover, so it covers itself while Sotto isn't in front,
@@ -166,6 +212,22 @@ struct PhotoViewer: View {
             }
         }
         .accessibilityAction(.escape) { dismiss() }
+        .onChange(of: opened.index) { _, _ in markRefusal = nil }
+        .fullScreenCover(item: $marking, onDismiss: { if closeAfterMarking { dismiss() } }) { target in
+            MarkupEditor(target: target) { closeAfterMarking = true }
+        }
+    }
+
+    /// Opens the picture shown in the editor, the image its page already holds, unless its reply can't take it. It asks
+    /// the computer for nothing (ADR-0170, decision 18).
+    private func markUp(_ box: PhotoBox) {
+        if let refusal = model.markedCopyRefusal(box) { markRefusal = refusal; return }
+        guard let item = opened.items[safe: opened.index] else { return }
+        guard let image = shown[item.key] else {
+            markRefusal = String(localized: "This picture is still loading. Try again in a moment.")
+            return
+        }
+        marking = MarkupTarget(image: image, name: item.name, box: box, callouts: item.callouts, calloutsBy: item.by)
     }
 }
 
@@ -174,12 +236,18 @@ private struct FullPhoto: View {
     @EnvironmentObject var previews: PhotoPreviews
     let key: PhotoPreviews.Key
     let name: String
+    /// The agent's callouts on it (part 6), drawn over the picture where it sits.
+    var callouts: [Activity.Media.Callout] = []
+    /// Tells the viewer which image this page shows, and nil once it goes.
+    var showing: (CGImage?) -> Void = { _ in }
+    @Environment(\.sottoTheme) private var theme
     @State private var image: CGImage?
     @State private var missing = false
     var body: some View {
         ZStack {
             if let image {
                 Image(image, scale: 1, label: Text("Photo: \(name)")).resizable().scaledToFit()
+                    .overlay { if !callouts.isEmpty { CalloutLayer(callouts: callouts, image: image, fills: false, theme: theme) } }
             } else if missing {
                 Text("This photo couldn’t be loaded from \(model.name(key.ref.hostID)). Nothing was lost. Try again when it’s connected.", comment: "%@ is the computer’s name.")
                     .multilineTextAlignment(.center).foregroundStyle(Palette.muted).padding(32)
@@ -188,8 +256,8 @@ private struct FullPhoto: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { previews.viewerOpened(key) }
-        .onDisappear { previews.viewerClosed(key) }
-        .task(id: key) { image = await previews.full(key, model: model); missing = image == nil && !Task.isCancelled }
+        .onDisappear { previews.viewerClosed(key); showing(nil) }
+        .task(id: key) { image = await previews.full(key, model: model); missing = image == nil && !Task.isCancelled; showing(image) }
     }
 }
 
@@ -281,7 +349,7 @@ private struct DraftPhotoView: View {
 
 // MARK: Choosing photos
 
-/// The reply box's + button: Photo library, Camera and Files (ADR-0131). When the box can't take photos, or files, those
+/// The reply box's + button, the first in its row: Photo library, Camera and Files (ADR-0131). When the box can't take photos, or files, those
 /// choices stay in the menu, unavailable, with the reason beneath them. A thread's box and Watcher's work the same way.
 /// Whatever goes into the box, from here, a paste or the share sheet, answers with the same tap.
 struct AttachPhotosButton: View {
@@ -307,12 +375,10 @@ struct AttachPhotosButton: View {
                 if let fileReason { Text(fileReason) }
             }
         } label: {
-            // A circle of its own beside the box, as in Messages, the box's height when it holds one line; it takes a
-            // press across 44 points.
-            Image(systemName: "plus").fontWeight(.semibold).frame(width: ComposerMetrics.height, height: ComposerMetrics.height)
+            // The first of the row's round buttons, inside the box; it takes a press across 44 points.
+            Image(systemName: "plus").fontWeight(.semibold)
                 .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
-                .composerSurface(in: Circle(), interactive: true)
-                .pressArea(drawn: ComposerMetrics.height)
+                .composerDisc(Palette.fillSoft)
         }
         .accessibilityLabel(String(localized: "Attach photos or files"))
         .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))
@@ -401,5 +467,312 @@ struct CameraPicker: UIViewControllerRepresentable {
             shown.wrappedValue = false
         }
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { shown.wrappedValue = false }
+    }
+}
+
+// MARK: An agent's pictures
+
+/// The pictures a run of steps made or looked at (ADR-0170), as tiles two across under the run, whether it is open or
+/// folded: a press opens them full screen. Each tile reads its picture from the computer when it first shows, and the
+/// thumbnail is made here, as a sent photo's is.
+struct AgentPictures: View {
+    let ref: ThreadRef
+    let steps: [Activity]
+    /// Who wrote the steps, the thread's provider: the viewer names a picture's callouts as theirs.
+    var by: String? = nil
+    let open: (OpenPhotos) -> Void
+    private var items: [OpenPhotos.Item] {
+        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { picture in
+            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: AgentPictures.title(of: step),
+                            callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
+        } }
+    }
+    /// The GIFs among the pictures, by their key's ID: each plays in its tile when asked.
+    private var gifs: Set<String> {
+        Set(steps.flatMap { step in (step.media ?? []).filter { $0.mimeType == "image/gif" }.map { step.id + "/" + $0.id } })
+    }
+    /// A step's name: the computer's words, or this iPhone's for the step Sotto makes for a turn's written files.
+    static func title(of step: Activity) -> String {
+        step.id.hasPrefix("sotto-written-")
+            ? String(localized: "Pictures and videos it wrote", comment: "The step that holds the pictures and videos an agent wrote in its folder during a turn.")
+            : step.title
+    }
+    /// A video a step's turn wrote (ADR-0170, part 4), by its step and its handle.
+    private struct WrittenVideo: Identifiable {
+        let step: Activity; let video: Activity.Media
+        var id: String { step.id + "/" + video.id }
+    }
+    /// The videos the steps' turns wrote, each played in its own tile.
+    private var videos: [WrittenVideo] {
+        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
+    }
+    var body: some View {
+        let items = self.items
+        let gifs = self.gifs
+        let videos = self.videos
+        // A step still making an image shows the owl at the easel in its picture's place.
+        let making = steps.filter(\.makingImage)
+        if !items.isEmpty || !videos.isEmpty || !making.isEmpty {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    AgentPictureCell(item: item, gif: gifs.contains(item.id), number: index + 1, count: items.count) {
+                        open(OpenPhotos(ref: ref, id: "pictures-" + (steps.first?.id ?? ""), items: items, index: index))
+                    }
+                }
+                ForEach(Array(videos.enumerated()), id: \.element.id) { index, item in
+                    AgentVideoTile(ref: ref, step: item.step, video: item.video, number: index + 1, count: videos.count)
+                }
+                ForEach(making) { step in OwlEaselTile(startedAt: step.startedAt) }
+            }
+            .padding(.vertical, Space.s2)
+        }
+    }
+}
+
+/// The owl at the easel (ADR-0170) in the tile of an image a step is still making. It draws twelve frames a second only
+/// while it is on screen and the app is in front, holds one still frame under Reduce Motion, and is gone, timeline and
+/// all, the moment the picture lands.
+private struct OwlEaselTile: View {
+    let startedAt: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var shown = false
+    @State private var began: Date?
+    var body: some View {
+        let still = reduceMotion || !shown || scenePhase != .active
+        Rectangle().fill(Palette.raised)
+            .aspectRatio(1.5, contentMode: .fit)
+            .overlay {
+                GeometryReader { box in
+                    TimelineView(.animation(minimumInterval: 1 / OwlEasel.framesPerSecond, paused: still)) { context in
+                        scene(in: box.size, at: reduceMotion ? nil : context.date)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("Making the image", comment: "A tile standing in for an image an agent is still making."))
+            .onAppear { shown = true; if began == nil { began = startedAt.flatMap(Stamp.date) ?? Date() } }
+            .onDisappear { shown = false }
+    }
+
+    /// One frame sized to the tile: the scene's rows fill its height and its columns its width. `at` nil is the still frame.
+    private func scene(in size: CGSize, at date: Date?) -> some View {
+        let grid = OwlEasel.grid(width: Double(size.width), height: Double(max(1, size.height)))
+        let seconds = date.map { max(0, $0.timeIntervalSince(began ?? $0)) } ?? 0
+        let frame = OwlEasel.frame(cols: grid.cols, rows: grid.rows, progress: date == nil ? 0.5 : OwlEasel.progress(seconds: seconds), seconds: seconds)
+        let font = Font.system(size: max(1, grid.fontSize), design: .monospaced)
+        return ZStack {
+            Text(verbatim: frame.sketch).foregroundStyle(Palette.muted)
+            Text(verbatim: frame.paint).foregroundStyle(Palette.accent)
+        }
+        .font(font)
+        .lineSpacing(0)
+        .fixedSize()
+        .frame(width: size.width, height: size.height)
+    }
+}
+
+/// One of an agent's pictures in its grid: a press opens the viewer. A GIF (ADR-0170, part 4) shows its first frame still
+/// and has a button of its own that plays it in the tile until it is pressed again or scrolls away.
+private struct AgentPictureCell: View {
+    let item: OpenPhotos.Item
+    let gif: Bool
+    let number: Int
+    let count: Int
+    let open: () -> Void
+    @State private var playing = false
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Button(action: open) { AgentPictureTile(key: item.key, playing: gif && playing, callouts: item.callouts, size: item.size) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Open picture \(number) of \(count), from \(item.name)", comment: "%1$lld of %2$lld pictures an agent's steps made; %3$@ names the step."))
+                .accessibilityValue(item.callouts.isEmpty ? Text(verbatim: "") : Text("Callouts: \(item.callouts.count)", comment: "How many numbered boxes with notes an agent placed on a picture."))
+            if gif {
+                Button { playing.toggle() } label: {
+                    Image(systemName: playing ? "pause.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Palette.muted)
+                        .padding(Space.s2).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(playing ? Text("Stop GIF \(number)", comment: "%lld is the place of an agent's GIF among the pictures of one run.")
+                                            : Text("Play GIF \(number)", comment: "%lld is the place of an agent's GIF among the pictures of one run."))
+            }
+        }
+        .onDisappear { playing = false }
+    }
+}
+
+/// A GIF's frames at tile size and how long each shows, decoded off the main actor; at most 300 frames, each at most
+/// 480 points on its longer side, so a large GIF stays small in memory. Never changed once made, so it crosses tasks freely.
+private struct GIFFrames: @unchecked Sendable {
+    let images: [CGImage]; let delays: [Double]
+    var duration: Double { delays.reduce(0, +) }
+    init?(data: Data) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let count = min(CGImageSourceGetCount(source), 300)
+        let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 480, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary
+        var images: [CGImage] = [], delays: [Double] = []
+        for index in 0..<count {
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, index, options) else { continue }
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+            let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+            let delay = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double) ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
+            images.append(image); delays.append(max(0.02, delay))
+        }
+        guard images.count > 1 else { return nil }
+        self.images = images; self.delays = delays
+    }
+    /// The frame showing `seconds` into the loop.
+    func frame(at seconds: Double) -> CGImage {
+        var left = seconds.truncatingRemainder(dividingBy: duration)
+        for (index, delay) in delays.enumerated() { if left < delay { return images[index] }; left -= delay }
+        return images[images.count - 1]
+    }
+}
+
+/// A video an agent wrote (ADR-0170, part 4), in a tile the size of a picture's. It is fetched from its computer only when
+/// it is tapped, plays only then, and pauses the moment it scrolls away. One larger than this iPhone fetches says it
+/// plays on the desktop.
+private struct AgentVideoTile: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    let step: Activity
+    let video: Activity.Media
+    let number: Int
+    let count: Int
+    @State private var player: AVPlayer?
+    @State private var progress: Double?
+    @State private var problem: Problem?
+    @State private var shown = false
+    private enum Problem { case tooLarge, unplayable }
+    var body: some View {
+        Rectangle().fill(Palette.raised)
+            .aspectRatio(1.5, contentMode: .fit)
+            .overlay {
+                if let player { VideoPlayer(player: player) }
+                else if let problem {
+                    Text(problem == .tooLarge
+                         ? String(localized: "Too large to play on this iPhone. Play it on the desktop.", comment: "On a tile of a video an agent wrote that is over the size this iPhone fetches.")
+                         : String(localized: "Could not play. The file may have changed or been removed on its computer. Ask the agent to write it again.", comment: "On a tile of a video an agent wrote that could not be fetched or played."))
+                        .font(.footnote).foregroundStyle(Palette.muted).multilineTextAlignment(.center).padding(Space.s2)
+                } else if let progress { ProgressView(value: progress).padding(Space.s3) }
+                else {
+                    Button(action: start) {
+                        Image(systemName: "play.circle.fill").font(.largeTitle).foregroundStyle(Palette.muted)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Play video \(number) of \(count), from \(AgentPictures.title(of: step))", comment: "%1$lld of %2$lld videos an agent's steps wrote; %3$@ names the step."))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .onAppear { shown = true }
+            // Scrolled away, it pauses at once; its fetch, if any, stops asking for parts.
+            .onDisappear { shown = false; player?.pause() }
+    }
+    private func start() {
+        guard AgentVideos.playsHere(sizeBytes: video.sizeBytes ?? 0) else { problem = .tooLarge; return }
+        progress = 0
+        Task {
+            let outcome = await model.agentVideo(ref, activityID: step.id, mediaID: video.id, progress: { progress = $0 }, wanted: { shown })
+            progress = nil
+            guard case .file(let url) = outcome else { problem = .unplayable; return }
+            let made = AVPlayer(url: url)
+            player = made
+            if shown { made.play() }
+        }
+    }
+}
+
+/// One of an agent's pictures as a tile, three by two, filled. It shows a placeholder until its thumbnail arrives, and
+/// says so when the computer no longer keeps it.
+private struct AgentPictureTile: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var previews: PhotoPreviews
+    let key: PhotoPreviews.Key
+    /// A GIF asked to play: its whole bytes are fetched and its frames drawn in the tile, from the first.
+    var playing = false
+    /// The agent's callouts (ADR-0170, part 6), drawn over the picture where it sits in the tile, and the picture's size.
+    var callouts: [Activity.Media.Callout] = []
+    var size: MarkupSize? = nil
+    @Environment(\.sottoTheme) private var theme
+    @State private var image: CGImage?
+    @State private var missing = false
+    @State private var frames: GIFFrames?
+    @State private var began = Date()
+    var body: some View {
+        Rectangle().fill(Palette.raised)
+            .aspectRatio(1.5, contentMode: .fit)
+            .overlay {
+                if playing, let frames {
+                    TimelineView(.animation) { context in
+                        let frame = Image(decorative: frames.frame(at: context.date.timeIntervalSince(began)), scale: 1).resizable()
+                        // Fitted like its still picture when it has callouts, so the boxes stay on it as it plays.
+                        if callouts.isEmpty { frame.scaledToFill() } else { frame.scaledToFit() }
+                    }
+                } else if let image {
+                    // A picture with callouts shows whole, at its own shape, so every box lands on it (ADR-0170, part 6).
+                    if callouts.isEmpty { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+                    else { Image(decorative: image, scale: 1).resizable().scaledToFit() }
+                }
+                else if missing { Image(systemName: "photo").font(.title2).foregroundStyle(Palette.muted) }
+                else { ProgressView() }
+            }
+            .overlay { if image != nil || (playing && frames != nil), !callouts.isEmpty, let size { CalloutLayer(callouts: callouts, size: size, fills: false, unit: true, theme: theme) } }
+            .overlay(alignment: .topLeading) {
+                if !callouts.isEmpty {
+                    Text(verbatim: "\(callouts.count)").font(.sotto(.small, .bold)).foregroundStyle(ThemeRole(.onAccent))
+                        .padding(.horizontal, 7).padding(.vertical, 1).background(Palette.accent, in: Capsule()).padding(6)
+                        .accessibilityHidden(true)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .onAppear { previews.appeared(key) }
+            // A tile that scrolls away lets go of its picture; the shared cache keeps the thumbnail for its return.
+            .onDisappear { previews.disappeared(key); image = nil }
+            .task(id: key) {
+                if image == nil { image = previews.cached(key) }
+                guard image == nil else { return }
+                let read = await previews.thumbnail(key, model: model)
+                // A read that ends after the tile left draws nothing into it.
+                guard !Task.isCancelled else { return }
+                image = read; missing = read == nil
+            }
+            .task(id: playing) {
+                guard playing else { frames = nil; return }
+                let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID, wanted: { playing })
+                guard !Task.isCancelled, let data else { return }
+                let decoded = await Task.detached { GIFFrames(data: data) }.value
+                guard !Task.isCancelled, playing else { return }
+                began = Date(); frames = decoded
+            }
+    }
+}
+
+/// An agent's callouts (ADR-0170, part 6) over a picture laid out in the frame the layer fills: whole inside it, as
+/// the viewer and a tile with callouts show it, or cut to it. With `unit`, as on a tile, the lines and pins keep a fixed
+/// size on screen; without it they are a share of the picture.
+private struct CalloutLayer: View {
+    let callouts: [Activity.Media.Callout]
+    let size: MarkupSize
+    let fills: Bool
+    var unit = false
+    let theme: ThemeSwatch
+    init(callouts: [Activity.Media.Callout], size: MarkupSize, fills: Bool, unit: Bool = false, theme: ThemeSwatch) {
+        self.callouts = callouts; self.size = size; self.fills = fills; self.unit = unit; self.theme = theme
+    }
+    init(callouts: [Activity.Media.Callout], image: CGImage, fills: Bool, theme: ThemeSwatch) {
+        self.init(callouts: callouts, size: MarkupSize(width: Double(image.width), height: Double(image.height)), fills: fills, theme: theme)
+    }
+    var body: some View {
+        Canvas { context, frame in
+            let placed = Callouts.placement(of: size, inWidth: frame.width, height: frame.height, fills: fills)
+            context.translateBy(x: placed.x, y: placed.y)
+            context.scaleBy(x: placed.scale, y: placed.scale)
+            CalloutDrawing.draw(callouts, size: size, accent: theme.rgb(.accent).color, onAccent: theme.rgb(.onAccent).color,
+                                unit: unit ? 1 / placed.scale : nil, in: &context)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

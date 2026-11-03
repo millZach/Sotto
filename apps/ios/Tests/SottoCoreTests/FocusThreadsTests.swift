@@ -174,6 +174,11 @@ final class FocusThreadsTests: XCTestCase {
         XCTAssertEqual(own.questions.map(\.id), ["h/top"])
         XCTAssertEqual(own.asking(own.questions[0]).id, "h/top")
         XCTAssertEqual(own.requestCount, 1)
+        // A delegated thread is marked by its top's row while it shows, whether or not it still asks.
+        XCTAssertEqual(rows.rowID(for: ThreadRef(hostID: "h", threadID: "grandchild")), "h/top")
+        let answered = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, try thread("child", #", "delegatedBy":"top""#), try thread("grandchild", #", "delegatedBy":"child""#)])])
+        XCTAssertEqual(answered.rowID(for: ThreadRef(hostID: "h", threadID: "grandchild")), "h/top")
+        XCTAssertEqual(answered.rowID(for: ThreadRef(hostID: "h", threadID: "top")), "h/top")
     }
     func testASettledThreadWithADelegatedThreadWaitingOnYouStaysInNeedsYou() throws {
         let top = try thread("top", #", "workspaceSettledAt":"2026-10-21""#)

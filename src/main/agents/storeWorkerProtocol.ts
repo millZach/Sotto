@@ -50,13 +50,14 @@ export type WireWrite =
   | (Extract<ThreadStoreWrite, { kind: 'history-off' }> & { readonly preserved: readonly string[] })
 
 /**
- * A stored thread's activity read back for a window (step 3 of docs/plans/store-worker.md): the worker reads it behind every
- * write posted before it, parses each row and checks it against the schema, and answers with its first piece; main asks
- * for each piece after that (`read-more`). Reads count apart from writes.
+ * A stored thread's activity read back (step 3 of docs/plans/store-worker.md): the worker reads it behind every write posted
+ * before it, parses each row and checks it against the schema, and answers with its first piece; main asks for each piece
+ * after that (`read-more`). Reads count apart from writes. The worker keeps the list it read as the thread's list at
+ * `version`, so the thread's next save can be sent as what changed since it (#1645).
  */
 export type WorkerRequest =
   | { readonly kind: 'write'; readonly id: number; readonly write: WireWrite }
-  | { readonly kind: 'read-activities'; readonly read: number; readonly threadId: string }
+  | { readonly kind: 'read-activities'; readonly read: number; readonly threadId: string; readonly version: number }
   | { readonly kind: 'read-more'; readonly read: number }
   | { readonly kind: 'stop' }
 

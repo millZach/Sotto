@@ -1,14 +1,24 @@
 #!/bin/sh
 # Creates only disposable simulators and keeps results/screenshots beside the native build.
+# Name a phone, small or large, to run only that one; CI gives each its own job. With no name, both run in turn.
 set -eu
+phone=${1:-both}
+case "$phone" in
+    small | large | both) ;;
+    *)
+        echo "verify-ui.sh: there is no phone called $phone. Name small or large, or nothing for both." >&2
+        exit 2
+        ;;
+esac
 cd "$(dirname "$0")/.."
 mkdir -p .build-ui
 run_dir=$(mktemp -d .build-ui/run-XXXXXX)
 xcrun simctl list runtimes --json > .build-ui/runtimes.json
 xcrun simctl list devicetypes --json > .build-ui/devicetypes.json
 xcrun simctl help ui > "$run_dir/simctl-ui-help.txt" 2>&1
-python3 - <<'PY' > .build-ui/devices.tsv
+python3 - "$phone" <<'PY' > .build-ui/devices.tsv
 import json
+import sys
 from pathlib import Path
 runtimes = json.loads(Path('.build-ui/runtimes.json').read_text())['runtimes']
 runtime = max((r for r in runtimes if r.get('isAvailable') and r['identifier'].startswith('com.apple.CoreSimulator.SimRuntime.iOS-')),
@@ -17,6 +27,8 @@ types = json.loads(Path('.build-ui/devicetypes.json').read_text())['devicetypes'
 # Both are compatible with the iOS 26 runtime. SE exercises the 375-point width;
 # Pro Max exercises a large phone without prescribing a screenshot pixel scale.
 for slug, name in [('small', 'iPhone SE (3rd generation)'), ('large', 'iPhone 16 Pro Max')]:
+    if sys.argv[1] not in (slug, 'both'):
+        continue
     device = next(d for d in types if d['name'] == name)
     print(slug, device['identifier'], runtime['identifier'], sep='\t')
 PY
@@ -58,10 +70,12 @@ while IFS="$(printf '\t')" read -r size device_type runtime; do
     status=0
     xcodebuild -project Sotto.xcodeproj -scheme Sotto -configuration Debug -sdk iphonesimulator \
         -destination "platform=iOS Simulator,id=$device_id" -derivedDataPath .build-native \
-        -resultBundlePath "$result" -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test || status=$?
+        -resultBundlePath "$result" -parallel-testing-enabled NO -skip-testing:SottoUITests/PerformanceJourneyTests ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test || status=$?
     if [ -d "$result" ]; then
         xcrun xcresulttool export attachments --path "$result" --output-path "$run_dir/$size-attachments"
         xcrun xcresulttool get test-results summary --path "$result" > "$run_dir/$size-summary.json"
+        # Each journey's time, readable without a Mac. A journey's result never rests on this report.
+        xcrun xcresulttool get test-results tests --path "$result" > "$run_dir/$size-tests.json" || echo "Could not write the $size phone's journey times."
     fi
     cleanup
     device_id=''

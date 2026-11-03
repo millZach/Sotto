@@ -8,7 +8,7 @@ import sharp from 'sharp'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { forceDomTerminalRenderer, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -62,7 +62,7 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
   await openThreads(page)
   await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
   await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Tools', exact: true }).click()
+  await toggleTools(page)
   return { folder, panel: page.getByRole('complementary', { name: 'Tools' }) }
 }
 

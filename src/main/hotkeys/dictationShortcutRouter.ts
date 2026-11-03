@@ -51,6 +51,8 @@ export interface DictationShortcutRouter {
   record(): Promise<KeyRecordResult>
   cancelRecord(): void
   permission(): KeyListenerPermission
+  /** The key listener is running with its grant, so the shortcuts that need it work. */
+  listening(): boolean
   requestPermission(): Promise<KeyListenerPermission>
   /** The screen locked or the computer slept: cancel a hold this router started and forget every held key. */
   interrupt(): void
@@ -152,13 +154,14 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
     },
     onExit() {
       matcher.reset()
+      deps.pushPermission(permission())
       // The page can still record when the helper dies or never gets ready.
       if (recording !== null) finishRecord({ kind: 'unavailable' })
     },
   })
 
   const watchMatcher = (): void => {
-    if (!suspended) listener.watch(matcher.watchedTokens())
+    if (!suspended) listener.watch(matcher.watchedTokens(), matcher.keyChords())
   }
 
   // 'unsupported' means the listener cannot run here (no helper), never just "not macOS".
@@ -326,7 +329,7 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
         }
       }, { canStart: deps.canStart })
       if (recording === null) watchMatcher()
-      else listener.watch(matcher.watchedTokens())
+      else listener.watch(matcher.watchedTokens(), matcher.keyChords())
       return { ok: true }
     },
 
@@ -362,6 +365,8 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
     },
 
     permission,
+
+    listening: () => listener.ready() && listener.permission() === 'granted',
 
     // A lock or a sleep ends a recording too, and the old matcher's reset cancels a hold this router started.
     interrupt() {

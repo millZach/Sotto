@@ -2,6 +2,8 @@
 
 ## Status
 
+Amended October 31, 2026, by [ADR-0172](0172-zachs-composer-is-the-only-composer-and-its-effort-word-offers-a-level.md) decision 5: the composer's effort offer may suggest Ultracode for work that splits across agents. Only the user's press picks it, as decision 6 has it.
+
 Accepted October 26, 2026, at Zach's request. It goes straight to stable, Zach's call; it is not an Owl feature. The look was chosen from a prototype, kept as the tag `prototype/ultracode-effort`: variant A of the effort card (Ultracode as the next stop after Max) and variant A of the setting (a list). It replaces the line in `docs/agent-control.md` that said Ultracode was not offered because the adapter could not confirm workflow availability; decision 5 says what Sotto does about that instead.
 
 ## Context

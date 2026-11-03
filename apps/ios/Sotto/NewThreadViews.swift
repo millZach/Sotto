@@ -8,6 +8,7 @@ struct NewThreadSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     let opened: (ThreadRef) -> Void
     private enum Step: Equatable { case computer, project, folders, options }
     @State private var step = Step.computer
@@ -54,41 +55,61 @@ struct NewThreadSheet: View {
         }
         .foregroundStyle(Palette.ink)
         .background { NewThreadBackground() }
+        .environment(\.sottoOnSheet, true)
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(busy)
-        .onAppear { model.creationFeedback = nil }
+        .onAppear { model.creationFeedback = nil; startOnTheOnlyComputer() }
         .onChange(of: modelID) { _, _ in resetOptions() }
     }
 
     // MARK: Header, steps and footer
 
     private var header: some View {
-        ZStack {
-            Text("New thread").font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
-                .accessibilityAddTraits(.isHeader)
-            HStack {
-                if step == .computer {
-                    cancelButton
-                    Spacer(minLength: Space.s2)
-                } else {
-                    Button { back() } label: {
-                        HStack(spacing: Space.s1) {
-                            Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold)).accessibilityHidden(true)
-                            Text("Back")
-                        }
-                    }
-                    .buttonStyle(PillButtonStyle(kind: .ghost))
-                    .disabled(busy)
-                    .accessibilityLabel("Back")
-                    .accessibilityHint("Returns to the step before.")
-                    Spacer(minLength: Space.s2)
-                    cancelButton
+        Group {
+            if typeSize.isAccessibilitySize {
+                // At the largest sizes the title takes its own line under Back and Cancel: centred between them, it ran
+                // into both ("CancelNew thread").
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    headerButtons
+                    headerTitle.padding(.horizontal, Space.s3)
+                }
+            } else {
+                ZStack {
+                    headerTitle
+                    headerButtons
                 }
             }
         }
         .frame(minHeight: 48)
         .padding(.horizontal, Space.s2)
         .padding(.top, Space.s3)
+    }
+
+    private var headerTitle: some View {
+        Text("New thread").font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var headerButtons: some View {
+        HStack {
+            if step == .computer {
+                cancelButton
+                Spacer(minLength: Space.s2)
+            } else {
+                Button { back() } label: {
+                    HStack(spacing: Space.s1) {
+                        Image(systemName: "chevron.left").iconFont(14, weight: .semibold).accessibilityHidden(true)
+                        Text("Back")
+                    }
+                }
+                .buttonStyle(PillButtonStyle(kind: .ghost))
+                .disabled(busy)
+                .accessibilityLabel("Back")
+                .accessibilityHint("Returns to the step before.")
+                Spacer(minLength: Space.s2)
+                cancelButton
+            }
+        }
     }
 
     private var cancelButton: some View {
@@ -220,7 +241,7 @@ struct NewThreadSheet: View {
                     ForEach(model.projects(hostID)) { project in
                         Button { projectID = project.id; folder = nil; chooseOptions() } label: {
                             PickRow(title: project.title, detail: projectDetail(project)) {
-                                Image(systemName: "folder").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
+                                Image(systemName: "folder").iconFont(17, weight: .medium).foregroundStyle(Palette.accentText)
                             }
                         }
                         .buttonStyle(PressStyle())
@@ -229,7 +250,7 @@ struct NewThreadSheet: View {
                     }
                     Button { go(.folders, forward: true) } label: {
                         PickRow(title: String(localized: "Browse another folder"), detail: String(localized: "Folders on \(computerName)", comment: "%@ is the computer's name.")) {
-                            Image(systemName: "folder.badge.plus").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
+                            Image(systemName: "folder.badge.plus").iconFont(17, weight: .medium).foregroundStyle(Palette.accentText)
                         }
                     }
                     .buttonStyle(PressStyle())
@@ -300,11 +321,20 @@ struct NewThreadSheet: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             FieldBox(label: String(localized: "Model", comment: "The field for the model a new thread uses."), value: chosenModel.map(modelName) ?? String(localized: "Choose a model"), identifier: "new-thread-model") {
+                let lineup = ModelLineup.split(models)
                 Picker("Model", selection: $modelID) {
                     if chosenModel == nil {
                         Text("Saved model unavailable — choose a model").tag(modelID).selectionDisabled(true)
                     }
-                    ForEach(models) { value in Text(modelName(value)).tag(value.id) }
+                    ForEach(lineup.latest) { value in Text(modelName(value)).tag(value.id) }
+                }
+                // Older models of each line wait in a closed submenu (ADR-0171).
+                if !lineup.legacy.isEmpty {
+                    Menu("Legacy") {
+                        Picker("Legacy", selection: $modelID) {
+                            ForEach(lineup.legacy) { value in Text(modelName(value)).tag(value.id) }
+                        }
+                    }
                 }
             }
             if let chosenModel, let efforts = chosenModel.reasoningEfforts, !efforts.isEmpty {
@@ -342,7 +372,7 @@ struct NewThreadSheet: View {
             FieldNote(text: String(localized: "\(computerName) hasn’t let this iPhone answer, so this thread starts by asking.", comment: "%@ is the computer's name."), warm: true)
                 .accessibilityIdentifier("new-thread-permission-held-back")
         } else if !mayAnswer {
-            FieldNote(text: String(localized: "This iPhone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Hosts & phones."))
+            FieldNote(text: String(localized: "\(computerName) hasn’t let this iPhone answer, so this thread starts by asking.", comment: "%@ is the computer's name."))
         }
     }
 
@@ -384,6 +414,15 @@ struct NewThreadSheet: View {
     private func go(_ next: Step, forward: Bool) {
         self.forward = forward
         withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.44, dampingFraction: 0.86)) { step = next }
+    }
+
+    /// With one computer able to take the thread, the sheet opens on its projects: a first step with one live row decided
+    /// nothing (#1856). The computer's chip still opens the list.
+    private func startOnTheOnlyComputer() {
+        let online = model.computers.filter { model.online($0.hostID) }
+        guard step == .computer, hostID.isEmpty, online.count == 1, let only = online.first else { return }
+        hostID = only.hostID
+        step = .project
     }
 
     private func chooseComputer(_ id: String) {
@@ -490,20 +529,25 @@ private struct PickRow<Leading: View>: View {
     var chevron = true
     @ViewBuilder let leading: () -> Leading
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        // At the largest sizes the line under a choice wraps: on one line "Can’t be reached right now" was cut to
+        // "Can’t be re…d right now". A long path still loses its middle once it runs past three lines.
+        let large = typeSize.isAccessibilitySize
         HStack(spacing: Space.s3) {
-            leading().frame(width: 24).accessibilityHidden(true)
+            leading().frame(minWidth: 24).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                    .lineLimit(2).multilineTextAlignment(.leading)
+                    .lineLimit(large ? 4 : 2).multilineTextAlignment(.leading)
                 if let detail {
-                    Text(detail).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
+                    Text(detail).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(large ? 3 : 1).truncationMode(.middle)
+                        .multilineTextAlignment(.leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if chevron {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+                Image(systemName: "chevron.right").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                     .accessibilityHidden(true)
             }
         }
@@ -525,7 +569,7 @@ private struct Crumb: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
+                Image(systemName: symbol).iconFont(13, weight: .medium).accessibilityHidden(true)
                 Text(text).lineLimit(1).truncationMode(.middle)
             }
         }
@@ -566,7 +610,7 @@ private struct FieldBoxLabel: View {
                 Text(value).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+            Image(systemName: "chevron.up.chevron.down").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
@@ -635,6 +679,10 @@ private struct ComputerFolderPicker: View {
     @State private var path = ""
     @State private var loading = false
     @State private var problem: String?
+    /// The last read failed, rather than finding a folder missing or unreadable, so reading it again may work.
+    @State private var failed = false
+    /// The folder the last read asked for, which Try again reads again.
+    @State private var lastTarget: JSONValue?
     @State private var requestID = UUID()
     private enum Field: Hashable { case path, filter }
     @FocusState private var focusedField: Field?
@@ -649,8 +697,16 @@ private struct ComputerFolderPicker: View {
                     ProgressView("Reading folders…").font(.sotto(.small)).frame(maxWidth: .infinity).padding(.vertical, Space.s3)
                 }
                 if let problem {
-                    Text(problem).font(.sotto(.small)).foregroundStyle(Palette.warningText).fixedSize(horizontal: false, vertical: true)
-                        .paragraphDirection()
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        Text(problem).font(.sotto(.small)).foregroundStyle(Palette.warningText).fixedSize(horizontal: false, vertical: true)
+                            .paragraphDirection()
+                        // An error that says to try again has a button that does (#1862).
+                        if failed {
+                            Button("Try again") { read(lastTarget) }
+                                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                                .accessibilityIdentifier("folders-try-again")
+                        }
+                    }
                 }
                 if let listing, !loading, problem == nil { folders(listing) }
             }
@@ -746,7 +802,7 @@ private struct ComputerFolderPicker: View {
 
     private func read(_ path: JSONValue?) { focusedField = nil; Task { await load(path) } }
     private func load(_ target: JSONValue?) async {
-        let current = UUID(); requestID = current; loading = true; problem = nil
+        let current = UUID(); requestID = current; loading = true; problem = nil; failed = false; lastTarget = target
         defer { if requestID == current { loading = false } }
         do {
             let result = try await model.folders(hostID, path: target)
@@ -756,7 +812,7 @@ private struct ComputerFolderPicker: View {
             case .missing: problem = String(localized: "This folder doesn’t exist. Nothing was added. Go Home or enter another path.")
             case .unreadable: problem = String(localized: "This folder can’t be read. Nothing was added. Go Home or choose another folder.")
             }
-        } catch { if requestID == current { problem = error.localizedDescription } }
+        } catch { if requestID == current { problem = error.localizedDescription; failed = true } }
     }
 }
 
@@ -765,14 +821,14 @@ private struct FolderRow: View {
     let folder: HostFolder
     var body: some View {
         HStack(spacing: Space.s3) {
-            Image(systemName: "folder").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
-                .frame(width: 24).accessibilityHidden(true)
+            Image(systemName: "folder").iconFont(17, weight: .medium).foregroundStyle(Palette.accentText)
+                .frame(minWidth: 24).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: folder.name).font(.sotto(.body)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
                 if folder.git { Text("Git repository").font(.sotto(.caption)).foregroundStyle(Palette.muted) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+            Image(systemName: "chevron.right").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)

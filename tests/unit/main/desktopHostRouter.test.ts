@@ -9,7 +9,7 @@ import { hostRequestSchema, hostVersionMismatch, type HostOperation } from '../.
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
-import { desktopWindowClient } from '../../../src/main/agents/hostService'
+import { desktopPopupClient, desktopWindowClient } from '../../../src/main/agents/hostService'
 import { BABYSITTING_RETIRED } from '../../../src/main/agents/babysitting'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
@@ -30,6 +30,23 @@ function fixture(hostId: string, kind: 'local' | 'remote') {
     service: { shell: () => state, subscribe: () => () => undefined, command }, detail, observe, preview: () => null }
   return { state, command, detail, observe, connection }
 }
+describe('where a paired host\'s thread opens its terminal (ADR-0183)', () => {
+  it('answers from what the host last published, and asks it nothing', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads = [{ ...remote.state.host.threads[0]!, workingDirectory: '/worktrees/thread' }]
+    router.add(remote.connection)
+    expect(router.hostedThreadFolders(hostEntityKey(REMOTE, 'thread'))).toEqual({ hostId: REMOTE, projectId: hostEntityKey(REMOTE, 'project'), workingDirectory: '/worktrees/thread', projectFolder: '/repo' })
+    expect(remote.command).not.toHaveBeenCalled()
+  })
+  it('has no answer for a thread it does not hold, a host it does not know, or this computer', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote'), local = fixture(LOCAL, 'local')
+    router.add(remote.connection); router.add(local.connection)
+    expect(router.hostedThreadFolders(hostEntityKey(REMOTE, 'gone'))).toBeUndefined()
+    expect(router.hostedThreadFolders(hostEntityKey('33333333-3333-4333-8333-333333333333', 'thread'))).toBeUndefined()
+    expect(router.hostedThreadFolders(hostEntityKey(LOCAL, 'thread'))).toBeUndefined()
+    expect(router.hostedThreadFolders('thread')).toBeUndefined()
+  })
+})
 function unsupportedComposer() {
   const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
   remote.state.activeThreadId = 'thread'; remote.state.draftThreadId = 'thread'
@@ -193,6 +210,40 @@ describe('desktop host routing', () => {
     expect(router.shell().error).toBeNull()
     expect(publish).not.toHaveBeenCalled()
     router.dispose()
+  })
+
+  it('names the thread holding a refused Git command\'s folder by this window\'s key, on that reply alone (#1823)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const words = 'Thread "Task" is waiting for your answer. Nothing was changed. Answer it, then try again.'
+    for (const [entry, hostId] of [[local, LOCAL], [remote, REMOTE]] as const) {
+      entry.command.mockResolvedValueOnce({ ...entry.state, error: words, checkoutHold: { threadId: 'holder' } })
+      const refused = await router.command({ type: 'git-action', threadId: hostEntityKey(hostId, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())
+      expect(refused.checkoutHold).toEqual({ threadId: hostEntityKey(hostId, 'holder') })
+      expect(refused.error).toContain('Nothing was changed.')
+      expect(agentStateSchema.parse(refused).checkoutHold).toEqual({ threadId: hostEntityKey(hostId, 'holder') })
+    }
+    // Held by Sotto itself, the hold names no thread; a refusal that is no hold names none either.
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Sotto is pulling this folder. Nothing was changed. Try again in a moment.', checkoutHold: {} })
+    expect((await router.command({ type: 'git-action', threadId: hostEntityKey(LOCAL, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())).checkoutHold).toEqual({})
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Push failed.' })
+    expect((await router.command({ type: 'git-action', threadId: hostEntityKey(LOCAL, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())).checkoutHold).toBeUndefined()
+    router.dispose()
+  })
+
+  it('names the thread holding a refused bring-back\'s folder by this window\'s key, on this computer and a paired host (#1866)', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const held = { actionId: randomUUID(), status: 'refused', target: 'main', branch: 'sotto/task', refusal: 'busy', heldBy: 'holder', at: '2026-10-30T00:00:00.000Z',
+      message: 'Thread "Docs" is working in this folder. Nothing was brought back. Wait for it to finish before changing this folder.' } as const
+    for (const entry of [local, remote]) entry.state.host.threads = [{ ...entry.state.host.threads[0]!, bringBack: held, broughtBack: { ...held, from: 'away' } }]
+    router.add(local.connection); router.add(remote.connection)
+    try {
+      for (const hostId of [LOCAL, REMOTE]) {
+        const thread = agentStateSchema.parse(router.shell()).host.threads.find(item => item.id === hostEntityKey(hostId, 'thread'))
+        expect(thread?.bringBack).toEqual({ ...held, heldBy: hostEntityKey(hostId, 'holder') })
+        expect(thread?.broughtBack?.heldBy).toBe(hostEntityKey(hostId, 'holder'))
+      }
+    } finally { router.dispose() }
   })
 
   it('names the host in its no-provider refusal by the name this computer saved it under (#459)', async () => {
@@ -632,6 +683,28 @@ describe('desktop host routing', () => {
       expect([router.windowShows(here), router.windowShows(there), router.windowShows(other)]).toEqual([false, false, true])
       router.remove(REMOTE)
       expect(router.windowShows(other)).toBe(false)
+    } finally { router.dispose() }
+  })
+  it('keeps the popup\'s observed threads apart from the window\'s: each host hears both, and only the window\'s count as shown (ADR-0181)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) router.add(f.connection)
+    try {
+      const here = hostEntityKey(LOCAL, 'thread'), there = hostEntityKey(REMOTE, 'thread'), mine = hostEntityKey(REMOTE, 'popup')
+      await router.command({ type: 'observe-threads', threadIds: [here, there] }, desktopWindowClient())
+      remote.observe.mockClear(); local.command.mockClear()
+      await router.command({ type: 'observe-threads', threadIds: [mine] }, desktopPopupClient())
+      // A remote host is sent every client's threads at once; this computer's host is told nothing for a client with none there.
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread', 'popup'])
+      expect(local.command).not.toHaveBeenCalled()
+      // The popup's thread is not one the window shows, and the window's panes are as they were.
+      expect([router.windowShows(here), router.windowShows(there), router.windowShows(mine)]).toEqual([true, true, false])
+      // The window changing its panes keeps the popup's thread observed on its host.
+      await router.command({ type: 'observe-threads', threadIds: [here] }, desktopWindowClient())
+      expect(remote.observe).toHaveBeenLastCalledWith(['popup'])
+      // Hidden, the popup observes nothing, and the host is left with the window's threads alone.
+      await router.command({ type: 'observe-threads', threadIds: [] }, desktopPopupClient())
+      expect(remote.observe).toHaveBeenLastCalledWith([])
+      expect(router.windowShows(here)).toBe(true)
     } finally { router.dispose() }
   })
   it('says a window is behind another app only to a host that lists failure-seen, whose observe takes the field (ADR-0092)', async () => {

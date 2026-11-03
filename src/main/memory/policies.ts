@@ -75,9 +75,24 @@ export class PolicyStore {
   }
 
   /**
-   * The user's switch for one paired client: revokes every remote-answer record that names it, then,
-   * when allowed, writes a new one. Both the headless host's admin path and the desktop's Phones page
-   * call this, so a client never carries two records that disagree.
+   * Writes a remote-answer record for this client unless one already grants it or an always-confirm boundary holds it.
+   * A phone the owner paired by code may answer (ADR-0033): pairing writes the record, and every start writes it again
+   * for a paired phone whose record is missing, revoked or expired, so Remove is the only way to take it away. Returns
+   * whether it wrote one.
+   */
+  ensureRemoteAnswers(clientId: string, note: string, at = new Date().toISOString()): boolean {
+    timestampSchema.parse(at)
+    const active = this.remoteAnswerRecords(clientId).filter(record => !isInactiveAt(record, at))
+    // A grant that will expire is not enough: only Remove may take a paired phone's answers away.
+    if (active.some(record => (record.effect === 'allow' && record.expiresAt === null) || record.effect === 'always-confirm')) return false
+    this.grantRemoteAnswers(clientId, note)
+    return true
+  }
+
+  /**
+   * Sets one paired client's answers: revokes every remote-answer record that names it, then, when allowed, writes a
+   * new one. A headless host's `--allow-answers` and `--deny-answers` call this for a desktop, and removing a phone
+   * calls it to revoke, so a client never carries two records that disagree.
    */
   setRemoteAnswers(clientId: string, allowed: boolean, note: string): void {
     for (const record of this.list({ scope: remoteAnswerScope(clientId) })) {
@@ -94,12 +109,7 @@ export class PolicyStore {
   mayGrant(client: ClientIdentity, at = new Date().toISOString()): ClientGrantResult {
     if (client.transport === 'ipc') return { allowed: true, reason: 'local-window' }
     timestampSchema.parse(at)
-    // Authorization reads only policies: never memories or memories_fts, including joins and subqueries.
-    const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
-      WHERE action = 'remote-answer' AND scope = ? AND resource = ?
-      ORDER BY grantedAt DESC, id DESC`).all(remoteAnswerScope(client.clientId), client.clientId)
-    const records = rows.map(row => policyRecordSchema.parse(row))
-    return this.grantVerdict(records, at)
+    return this.grantVerdict(this.remoteAnswerRecords(client.clientId), at)
   }
 
   /**
@@ -109,14 +119,19 @@ export class PolicyStore {
    */
   remoteAnswersRevoked(clientId: string, at = new Date().toISOString()): boolean {
     timestampSchema.parse(at)
-    const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
-      WHERE action = 'remote-answer' AND scope = ? AND resource = ?
-      ORDER BY grantedAt DESC, id DESC`).all(remoteAnswerScope(clientId), clientId)
-    const records = rows.map(row => policyRecordSchema.parse(row))
+    const records = this.remoteAnswerRecords(clientId)
     if (this.grantVerdict(records, at).reason !== 'unpaired') return false
     if (records.some(record => record.effect === 'always-confirm' && !isInactiveAt(record, at))) return false
     const newest = records[0]!
     return newest.revokedAt !== null && Date.parse(newest.revokedAt) <= Date.parse(at)
+  }
+
+  /** Every remote-answer record that names this client, newest first. */
+  private remoteAnswerRecords(clientId: string): PolicyRecord[] {
+    // Authorization reads only policies: never memories or memories_fts, including joins and subqueries.
+    return this.memoryStore.database().prepare(`SELECT * FROM policies
+      WHERE action = 'remote-answer' AND scope = ? AND resource = ?
+      ORDER BY grantedAt DESC, id DESC`).all(remoteAnswerScope(clientId), clientId).map(row => policyRecordSchema.parse(row))
   }
 
   private grantVerdict(records: readonly PolicyRecord[], at: string): ClientGrantResult {

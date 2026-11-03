@@ -76,7 +76,7 @@ const Skill = Node.create({
 const ghostKey = new PluginKey<string | null>('next-prompt-ghost')
 
 /**
- * The next prompt's ghost (ADR-0132): words drawn after the text in placeholder ink, with a Tab keycap, that are not part
+ * The next prompt's ghost (ADR-0132): words drawn after the text in suggestion ink (nextPrompt.css), with a Tab keycap, that are not part
  * of the draft. The composer sets them; nothing here takes them, and the draft's text never holds them.
  */
 const Ghost = Extension.create({

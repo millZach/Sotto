@@ -38,6 +38,8 @@ export type HarnessOptions = {
   /** Whether OpenRouter transcribes with no key saved (ADR-0160); unset counts as no. */
   readonly openRouterKeyMissing?: NonNullable<DictationControllerDependencies['openRouterKeyMissing']>
   readonly transcribedWith?: NonNullable<DictationControllerDependencies['transcribedWith']>
+  /** The clock's own timers rather than the harness's manual ones, for a test that moves a fake clock. */
+  readonly clockTimers?: boolean
 }
 
 export function createHarness(options: HarnessOptions = {}) {
@@ -73,6 +75,7 @@ export function createHarness(options: HarnessOptions = {}) {
   const addHistory = vi.fn(options.addHistory ?? (async () => []))
   const retainOutput = vi.fn()
   const publishWidgetState = vi.fn(options.publishWidgetState ?? (() => undefined))
+  const publishLevel = vi.fn<(level: number) => void>()
   const timers = new Map<number, () => void>()
   let nextTimer = 1
   const setTimer = vi.fn((callback: () => void) => {
@@ -92,6 +95,7 @@ export function createHarness(options: HarnessOptions = {}) {
     addHistory,
     retainOutput,
     publishWidgetState,
+    publishLevel,
     ...(polishTranscript === undefined ? {} : { polishTranscript }),
     ...(options.cuePlayer === undefined ? {} : { cuePlayer: options.cuePlayer }),
     ...(options.platform === undefined ? {} : { platform: options.platform }),
@@ -100,8 +104,7 @@ export function createHarness(options: HarnessOptions = {}) {
     ...(options.transcribedWith === undefined ? {} : { transcribedWith: options.transcribedWith }),
     now: options.now ?? (() => 1_000),
     createId: () => ids.shift() ?? 'later-session',
-    setTimer,
-    clearTimer,
+    ...(options.clockTimers === true ? {} : { setTimer, clearTimer }),
   }
   return {
     addHistory,
@@ -117,6 +120,7 @@ export function createHarness(options: HarnessOptions = {}) {
       for (const callback of pending) callback()
     },
     polishTranscript,
+    publishLevel,
     publishWidgetState,
     recorder,
     recorders,

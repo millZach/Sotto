@@ -22,22 +22,23 @@
 /* When the scene steps away, it fades out, and then it is gone. */
 .watcher-scene[data-leaving] { opacity: 0; }
 .watcher-scene[data-leaving] .watcher-scene__owl { pointer-events: none; }
-.watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; pointer-events: auto; }
+.watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: var(--tt-radius-control); background: transparent; pointer-events: auto; }
 .watcher-scene__owl:hover { background: color-mix(in srgb, var(--tt-text) 7%, transparent); }
 /* A thread owl's name and what its thread is doing, above it, while the pointer rests on it. */
 .watcher-scene__tip { position: absolute; z-index: 5; display: flex; flex-direction: column; gap: 1px; max-width: 240px; padding: 6px 10px 7px;
-  border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: 0 10px 30px -12px var(--tt-shadow-color);
-  color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.35; pointer-events: none; transform: translate(-50%, calc(-100% - 6px)); }
+  border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row); background: var(--tt-surface-elevated); box-shadow: 0 10px 30px -12px var(--tt-shadow-color);
+  color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; pointer-events: none; transform: translate(-50%, calc(-100% - 6px)); }
 /* An owl just under the header shows its tip below it, so the tip never covers the header. */
 .watcher-scene__tip[data-below] { transform: translate(-50%, 6px); }
 .watcher-scene__tip b { overflow: hidden; color: var(--tt-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 /* The scene's inks, read and never seen: the text colour for its ink and the accent for its accent; on its borders the
    other colours the conversation's words take, the secondary tier and links at rest and pointed at, which with the text
-   set how strong the column's ink may go (ADR-0126), and the muted tier the glass composer writes in; on its outline
+   set how strong the column's ink may go (ADR-0126), and the muted tier the glass composer writes in; as its text
+   decoration the hint tier its prompt's placeholder takes; on its outline
    the composer's card, which sets how thick the glass must be; and the glyph face. */
 .watcher-scene__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
   color: var(--tt-text); background-color: var(--tt-accent); border-top-color: var(--tt-text-2); border-right-color: var(--tt-link); border-bottom-color: var(--watcher-link-hover);
-  border-left-color: var(--tt-text-muted); outline-color: var(--tt-card); font-family: var(--tt-font-mono); }
+  border-left-color: var(--tt-text-muted); text-decoration-color: var(--tt-text-hint); outline-color: var(--tt-card); font-family: var(--tt-font-mono); }
 
 /* ---------- The column over the scene ---------- */
 /* The user's pick on October 23, 2026 (variant D of docs/prototypes/watcher-floating-composer-prototype.html, ADR-0126):
@@ -63,7 +64,7 @@
 .watcher-pane .message-scrubber__tick::before { box-shadow: 0 0 1px 1px var(--tt-canvas), 0 0 3px 1px var(--tt-canvas), 0 0 6px 2px var(--tt-canvas); }
 /* Watcher's composer is frosted glass: the card's colour, partly clear, over the scene and the words passing under it,
    blurred, with no edge in any state (ADR-0110). It is never thinner than lets every word on it keep 4.5:1 over pure
-   white or pure black, whatever a picture in the conversation puts under it: the scene works that out from the theme
+   white or pure black: the scene works that out from the theme
    and sets --watcher-glass on the pane (72% at least; about 80 to 91% in the built-in themes), and until it has, the
    card is 92%, which holds for every built-in theme. This is the one composer that is not solid (ADR-0084, amended by
    ADR-0126); asking for less transparency makes it solid again. */

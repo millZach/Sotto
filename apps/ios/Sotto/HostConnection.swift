@@ -43,6 +43,8 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     /// The last model catalog this connection was sent whole. It is kept as frames arrive, so every shell is
     /// read against the catalog that was current at its place in the socket, and a reconnect empties it.
     private var catalog = ModelCatalogCache()
+    /// The thread records this connection's last shell push carried, which the next push's changed records go back on.
+    private var threadRecords = ThreadRecordsCache()
     private var received = 0
     private var deadlines: [String: Task<Void, Never>] = [:]
     private var session = ""
@@ -157,7 +159,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
     func disconnect() {
         generation = UUID(); liveness = LivenessProgress(); received = 0; answeredPing = nil; reader?.cancel(); reader = nil
-        catalog = ModelCatalogCache()
+        catalog = ModelCatalogCache(); threadRecords = ThreadRecordsCache()
         heartbeat?.cancel(); heartbeat = nil
         socket?.cancel(with: .goingAway, reason: nil); socket = nil; session = ""
         let waiting = pending; pending.removeAll()
@@ -217,15 +219,20 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private func receive(_ frame: IncomingFrame) {
         received += 1
         switch frame {
-        case .reply(let id, let data, let carried):
+        case .reply(let id, let data, let carried, let records):
             if let carried { catalog.hold(carried) }
+            // The records a hello or a shell read listed whole, which the next push is measured from.
+            if let records { threadRecords.hold(records) }
             finish(id: id, result: .success(Received(Reply(data: data, catalog: catalog), sequence: received)))
         case .refusal(let id, let failure): finish(id: id, result: .failure(HostRefusal(failure: failure)))
         case .shell(let shell):
             catalog.hold(shell)
             // A shell naming a catalog this connection was never sent: start again rather than show no models.
             guard let restored = catalog.whole(shell) else { disconnect(); onDisconnect?(); return }
-            onPush?(.shell(restored), received)
+            // A push measured from thread records this connection does not hold: start again rather than show threads
+            // missing. The new connection's hello lists every one.
+            guard let whole = threadRecords.whole(restored) else { disconnect(); onDisconnect?(); return }
+            onPush?(.shell(whole), received)
         default: onPush?(frame, received)
         }
     }

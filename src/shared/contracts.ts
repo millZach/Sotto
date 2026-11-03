@@ -6,7 +6,7 @@ import type { DictationRecord } from './dictationRecord'
 import type { FinishedDictation, HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
-import type { RecoveryNotice } from './recoveryNotice'
+import type { PastePermissionNoticeCode, RecoveryNotice, RecoveryNoticeEvent } from './recoveryNotice'
 import type { SpeechModelOption, SpeechModelStatus } from './speechModel'
 import type { SottoPlatform } from './platform'
 import { widgetPaletteSchema } from './themeBranding'
@@ -26,6 +26,7 @@ const widgetMetadataSchema = {
   reducedMotion: z.enum(['system', 'on']),
   shortcut: z.string().min(1).max(128),
   cancellable: z.boolean(),
+  escapeClaimed: z.literal(true).optional(),
 } as const
 
 export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUnion('status', [
@@ -42,7 +43,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
       status: z.literal('listening'),
       sessionId: boundedSessionId,
       startedAt: z.number().finite().nonnegative(),
-      level: z.number().finite().min(0).max(1),
+      speaking: z.boolean(),
       ...widgetMetadataSchema,
     })
     .strict(),
@@ -263,7 +264,7 @@ export const openRouterKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
 
-/** OpenRouter's text models, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
+/** OpenRouter's text models and active presets, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
 export const openRouterModelListSchema = z.discriminatedUnion('ok', [
   /** `complete` is false when the read stopped before OpenRouter's last page. */
   z.object({ ok: z.literal(true), complete: z.boolean(), models: z.array(z.object({ id: z.string().min(1).max(128), name: z.string().max(200) }).strict()).max(5_000) }).strict(),
@@ -360,7 +361,8 @@ export type HotkeyChangeResult =
   | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; message?: string | undefined }>
 
 /** Every dictation shortcut at once; `press[0]` is `settings.hotkey`. */
-export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[] }>
+/** `standby`: put the main shortcut on standby, or bring it back; left out, it stays as it is. */
+export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[]; standby?: boolean | undefined }>
 
 /** A refused change names the chord that failed when one did; the previous shortcuts stay in force. */
 export type DictationShortcutsResult =
@@ -397,6 +399,7 @@ export type OutputImageRequest = z.infer<typeof outputImageRequestSchema>
 
 export interface SottoBridge {
   readonly usage?: import('./usageDashboard').UsageBridge
+  readonly productEvents?: import('./productEvents').ProductEventsBridge
   /** Delegation between threads (ADR-0081), present only while the Owl list turns it on. */
   readonly delegations?: import('./delegation').DelegationsBridge
   /** Every machine's check queue (#1312), present only while Watcher and Work across machines are both on, as the machines line is. */
@@ -407,6 +410,10 @@ export interface SottoBridge {
   readonly threadMoves?: import('./threadMoves').ThreadMovesBridge
   /** Next prompts after a finished turn (ADR-0132), present only while the `next-prompt` Owl feature is on and this computer runs threads. */
   readonly nextPrompt?: import('./nextPrompt').NextPromptBridge
+  /** The Council (ADR-0177), present only while the `council` Owl feature is on and this computer runs threads. */
+  readonly council?: import('./council').CouncilBridge
+  /** The popup's shortcut for Settings, and what `/open` asks the window to show (ADR-0181): only while the `popup` Owl feature is on. */
+  readonly popup?: import('./popup').PopupShortcutBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
   /** Signing Cursor in and out on this computer (ADR-0128), present only while Cursor's Owl feature is on. */
@@ -430,6 +437,8 @@ export interface SottoBridge {
   readonly watcher?: import('./watcherRoom').WatcherBridge
   readonly hosts?: import('./hosts').HostsBridge
   readonly phones?: import('./phones').PhonesBridge
+  /** Let apps on this computer connect (ADR-0180); main answers it only while the `local-apps` Owl feature is on. */
+  readonly localApps?: import('./localApps').LocalAppsBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
   readonly terminal?: import('./terminal').TerminalBridge
   readonly browser?: import('./browser').BrowserBridge
@@ -444,7 +453,8 @@ export interface SottoBridge {
   readonly platform: SottoPlatform
 
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
-  onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe
+  onRecoveryNotice(listener: (notice: RecoveryNoticeEvent) => void): Unsubscribe
+  dismissPastePermissionNotice(code: PastePermissionNoticeCode): Promise<CommandResult>
 
   getSettings(): Promise<AppSettings>
   updateSettings(patch: SettingsPatch): Promise<AppSettings>
@@ -516,6 +526,8 @@ export interface SottoBridge {
   onUpdateStatus(listener: (status: UpdateStatus) => void): Unsubscribe
   /** The application menu's "Check for Updates…": the window runs the same check its own control would. */
   onUpdateCheckRequested(listener: () => void): Unsubscribe
+  /** The application menu's Settings… (Cmd+, on a Mac, Ctrl+, elsewhere): the window opens Settings. */
+  onSettingsRequested(listener: () => void): Unsubscribe
 
   getStartup(): Promise<StartupState>
   setStartup(enabled: boolean): Promise<StartupState>
@@ -539,11 +551,16 @@ export interface SottoBridge {
   quitApp(): Promise<void>
 }
 
+/** Main passes this to the widget's renderer while the `living-widget-owl` Owl feature is on (ADR-0178). */
+export const LIVING_OWL_RENDERER_ARGUMENT = '--sotto-living-owl'
+
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
   readonly platform: SottoPlatform
   /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */
   readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge
+  /** The living owl (ADR-0178), present only while its Owl feature is on. */
+  readonly livingOwl?: true
 
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
   onWidgetVisibilityChange(listener: (visibility: WidgetVisibilityPayload) => void): Unsubscribe
@@ -560,6 +577,8 @@ declare global {
   interface Window {
     sotto?: SottoBridge
     sottoWidget?: SottoWidgetBridge
+    /** The popup's window alone (ADR-0181). */
+    sottoPopup?: import('./popup').PopupBridge
     /** Present only when the non-packaged main process admits SOTTO_E2E. */
     sottoE2E?: SottoE2EBridge
     /**

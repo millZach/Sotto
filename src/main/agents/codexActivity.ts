@@ -1,6 +1,8 @@
+import { picturesIn, rasterTypeOf, type MediaCapture, type MediaFileCapture } from './threadMedia'
 import { createHash } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
@@ -15,6 +17,9 @@ const displayFields: Readonly<Record<string, readonly string[]>> = {
   collabAgentToolCall: ['tool', 'prompt', 'model', 'senderThreadId', 'receiverThreadIds', 'agentsStates'],
   subAgentActivity: ['kind', 'agentThreadId', 'agentPath', 'model'],
   webSearch: ['query'], contextCompaction: [],
+  imageGeneration: ['result', 'savedPath', 'revisedPrompt', 'failure'],
+  // `view_image`: the picture file Codex looked at, by path (codex-cli 0.166.0).
+  imageView: ['path'],
 }
 /**
  * Codex's Computer Use runs as MCP tool calls: `cua_repl`, or the general `node_repl` JavaScript tool with its
@@ -33,11 +38,14 @@ function isComputerUse(server: unknown, args: unknown): boolean {
  * that the app is closed: a running app may have restarted and replaced its pipe. The
  * sandbox texts are Windows Codex's own; "trusted Node process exited" also names other crashes, so it counts as
  * the sandbox's doing only outside Full access, where the advice to switch can be right.
+ * The helper also stops when Chrome is not exposing the page's address (#2062). That sentence is read only at the start
+ * of a line: a read's output holds the page's own words, and a page that quotes it, such as that issue, is no failure.
  */
 export function computerUseNeeds(text: string | undefined, sandboxed: boolean): string | undefined {
   if (!text) return undefined
   if (/windows sandbox failed/iu.test(text) || sandboxed && /trusted Node process exited unexpectedly/iu.test(text)) return 'Computer Use cannot run in this thread\'s sandbox. Nothing was changed. Switch the thread to Full access to use it.'
   if (/native pipe/iu.test(text)) return 'Computer Use connection is unavailable. Open Codex if it is closed. Keep it open and try again. If this continues, restart Sotto when your other threads are idle.'
+  if (/^Computer Use has been stopped for this turn because it could not determine the current browser URL/mu.test(text)) return 'Computer Use stopped because it could not read this page\'s address from the browser. This can happen while a dialog is open or a large page is loading. Its last step may already have worked, so check the page, close any dialog and try again.'
   return undefined
 }
 export const codexItemSchema = z.preprocess(value => {
@@ -47,7 +55,12 @@ export const codexItemSchema = z.preprocess(value => {
   // Native item variants reuse field names with different shapes (imageGeneration.result
   // is a string). Unsupported presentation must not break the shared transport or retain its payload.
   const keys = fields === undefined ? ['id', 'type'] : ['id', 'type', 'status', 'durationMs', ...fields]
-  const kept = Object.fromEntries(keys.filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]]))
+  const kept: Record<string, unknown> = Object.fromEntries(keys.filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]]))
+  // A generated image's `result` is its base64 bytes, read once for its handle (ADR-0170) under a name of its own.
+  if (item.type === 'imageGeneration' && Object.hasOwn(kept, 'result')) {
+    if (typeof kept.result === 'string' && kept.result) kept.imageData = kept.result
+    delete kept.result
+  }
   // The call's arguments are not kept; only whether it is Codex's Computer Use survives.
   return item.type === 'mcpToolCall' && isComputerUse(item.server, item.arguments) ? { ...kept, computerUse: true } : kept
 }, z.object({
@@ -63,6 +76,8 @@ export const codexItemSchema = z.preprocess(value => {
   contentItems: z.array(z.unknown()).nullish(), error: z.object({ message: z.string() }).nullish(),
   query: z.string().optional(), computerUse: z.literal(true).optional(),
   kind: z.string().optional(), agentThreadId: z.string().optional(), agentPath: z.string().optional(),
+  imageData: z.string().optional(), savedPath: z.string().nullish(), revisedPrompt: z.string().nullish(), path: z.string().optional(),
+  failure: z.object({ type: z.string() }).nullish().catch(null),
 }))
 type Item = z.infer<typeof codexItemSchema>
 /**
@@ -79,6 +94,8 @@ const codexActivityId = (turnId: string, itemId: string): string => `codex-activ
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
 /** How many of one agent's assignments a conversation remembers having opened, so a reread recognises them. */
 const OPENED_KEPT = 200
+/** How many picture files that held no picture the projection remembers having read, so a replay reads none again. */
+const FILES_REMEMBERED = 1_000
 /** How many messages held live a conversation remembers the time of. */
 const MESSAGES_TIMED = 200
 /** Multi-agent v2 addresses agents by path: `/root` is the thread Sotto drives and `/root/review/tests` a child of `review`. */
@@ -141,7 +158,22 @@ export class CodexActivityProjection {
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
   /** The array `put` last installed on each thread. While the thread still holds it, it is in sequence order with one record per ID. */
   private readonly installed = new WeakMap<ActivityConversation, readonly AgentActivity[]>()
-  constructor(private readonly now: () => number = Date.now) {}
+  /**
+   * `capture` keeps a tool result's pictures in the thread media store and answers their handles (ADR-0170); absent while
+   * the `inline-media` Owl feature is off, when a row carries none.
+   */
+  /**
+   * Picture files read or being read for a step, by thread and activity, so a replay reads one no second time, while a
+   * fork reading the same item reads its own. A read that found a picture leaves its key, since the record then holds
+   * the handle; one that found none keeps it, at most `FILES_REMEMBERED`, so a missing file is not looked for again.
+   */
+  private readonly reading = new Set<string>()
+  /**
+   * `capture` keeps a tool result's or a generated image's pictures (ADR-0170); `captureFile` reads one Codex saved to a
+   * file, after which `changed` names the thread whose record gained it.
+   */
+  constructor(private readonly now: () => number = Date.now, private readonly capture?: MediaCapture,
+    private readonly captureFile?: MediaFileCapture, private readonly changed?: (threadId: string) => void) {}
 
   anchor(thread: ActivityConversation, turnId: string, messageId: string): void {
     const anchors = this.turnAnchors.get(thread) ?? new Map<string, string>()
@@ -217,6 +249,41 @@ export class CodexActivityProjection {
     return bounded
   }
 
+  /**
+   * A finished generated image's picture (ADR-0170): its bytes when the item carries them, else the file Codex saved it
+   * to, read off the update path and added to the record when it lands. A record that holds it already reads nothing.
+   */
+  private generated(thread: ActivityConversation, activity: AgentActivity, previous: AgentActivity | undefined, item: Item): void {
+    if (previous?.media) { activity.media = previous.media; return }
+    if (!this.capture) return
+    const mimeType = item.imageData ? rasterTypeOf(Buffer.from(item.imageData.slice(0, 24), 'base64')) : undefined
+    const media = item.imageData && mimeType ? this.capture([{ mimeType, data: item.imageData }], 'generated') : []
+    if (media.length) { activity.media = media; return }
+    if (item.savedPath) this.readFile(thread, activity.id, item.savedPath, 'generated')
+  }
+
+  /**
+   * Reads the picture file a step names, once, off the update path, and adds its handle to the record when it lands: a
+   * generated image Codex saved, or one `view_image` looked at. A record that holds a picture by then keeps its own.
+   */
+  private readFile(thread: ActivityConversation, activityId: string, path: string, source: AgentActivityMedia['source']): void {
+    const key = `${thread.id}\n${activityId}`
+    if (!this.captureFile || this.reading.has(key)) return
+    this.reading.add(key)
+    void this.captureFile(path, source).catch(() => []).then(found => {
+      if (!found.length) {
+        // Remembered in the order tried: past the limit the oldest is forgotten.
+        if (this.reading.size > FILES_REMEMBERED) this.reading.delete(this.reading.values().next().value!)
+        return
+      }
+      this.reading.delete(key)
+      const current = thread.activities?.find(record => record.id === activityId)
+      if (!current || current.media) return
+      this.put(thread, { ...current, media: found })
+      this.changed?.(thread.id)
+    })
+  }
+
   item(thread: ActivityConversation, item: Item, context: Context, senderPath = ROOT_PATH): void {
     if (item.type === 'subAgentActivity') { this.subAgentActivity(thread, item, context, senderPath); return }
     const kinds: Record<string, [AgentActivity['kind'], string]> = {
@@ -225,6 +292,10 @@ export class CodexActivityProjection {
       dynamicToolCall: ['tool', item.tool ?? 'Tool'], reasoning: ['reasoning', REASONING_SUMMARY_TITLE],
       plan: ['plan', 'Plan'], collabAgentToolCall: ['subagent', item.tool ?? 'Subagent'],
       webSearch: ['tool', 'Web search'], contextCompaction: ['compaction', 'Context compacted'],
+      // A generated image is a step only while its picture can be kept (ADR-0170): `inline-media` gives the capture.
+      // So is a picture `view_image` looked at, which Codex names only by its file.
+      ...this.capture ? { imageGeneration: ['tool', item.revisedPrompt?.trim() ? `Image: ${item.revisedPrompt.trim().split(/\r?\n/u)[0]}` : 'Image'] as [AgentActivity['kind'], string],
+        imageView: ['tool', 'View image'] as [AgentActivity['kind'], string] } : {},
     }
     const kind = kinds[item.type]
     if (!kind) return
@@ -265,9 +336,28 @@ export class CodexActivityProjection {
     if (item.type === 'webSearch') activity.text = item.query
     const output = contentText(item.result?.content ?? item.contentItems)
     if (output !== undefined) activity.output = output
+    // A finished tool's pictures (ADR-0170). A row that already holds them keeps them, so a replay hashes nothing again.
+    if (this.capture && (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall') && status !== 'running') {
+      const media = previous?.media ?? this.capture(picturesIn(item.result?.content ?? item.contentItems), 'tool')
+      if (media.length) activity.media = media
+    }
+    if (item.type === 'imageGeneration') {
+      activity.generates = 'image'
+      if (status === 'failed' && item.failure) activity.error = item.failure.type === 'usageLimitExceeded'
+        ? 'Codex reached its image limit, so no image was made. Try again when the limit resets.' : 'Codex could not make the image. Ask for it again to try once more.'
+      if (status === 'completed') this.generated(thread, activity, previous, item)
+    }
+    if (item.type === 'imageView' && item.path) {
+      activity.changes = [{ path: item.path, kind: 'read' }]
+      // Read once the step is done, and only a path Codex resolved: a relative one would be read against Sotto's folder.
+      // A record that holds the picture keeps it (`put` keeps the previous record's fields), so a replay reads nothing.
+      if (!previous?.media && status !== 'running' && status !== 'failed' && isAbsolute(item.path)) this.readFile(thread, id, item.path, 'tool')
+    }
     // A Computer Use call that failed for a known reason says what to do, above Codex's own words.
     const needs = item.computerUse ? computerUseNeeds([item.error?.message, output].filter(Boolean).join('\n'), thread.runtimeMode !== 'full-access') : undefined
     if (needs) activity.error = [needs, item.error?.message].filter(Boolean).join('\n')
+    // A failure that is the call's whole output goes under Sotto's words too, rather than above them in a code block.
+    if (needs && !item.error && output && !output.trim().includes('\n')) { activity.error = `${needs}\n${output.trim()}`; delete activity.output }
     if (item.type === 'collabAgentToolCall') {
       if (item.prompt != null) activity.text = item.prompt
       const ids = [...new Set([...(item.receiverThreadIds ?? []), ...Object.keys(item.agentsStates ?? {})])]

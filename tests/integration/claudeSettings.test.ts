@@ -166,9 +166,12 @@ it('leaves the coordinator\'s saved intent in place when the CLI never answers, 
   const outbox = async (): Promise<unknown[]> => (JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { outbox: unknown[] }).outbox
   try {
     await control.start(); await control.command({ type: 'connect' })
-    // Connecting ends the thread's CLI and the coordinator does not open a thread to change its settings (#318),
-    // so the window opens it, and the change goes to the CLI that starts.
+    // Connecting ends the thread's CLI and the coordinator does not open a thread to change its settings (#318). Opening
+    // it in a pane starts no CLI either (ADR-0016, November 1 amendment), so the user types in it, which starts one
+    // (ADR-0057), and the change goes to that CLI.
     await control.command({ type: 'observe-threads', threadIds: [id] })
+    await control.command({ type: 'start-thread-session', threadId: id })
+    await expect.poll(() => control.get().host.threads.find(value => value.id === id)?.providerSessionOpen).toBe(true)
     await f.liveSettings.silence()
     const unconfirmed = await control.command({ type: 'configure-thread', threadId: id, reasoningEffort: 'high' })
     expect(unconfirmed.error).toContain('did not confirm')
@@ -176,7 +179,8 @@ it('leaves the coordinator\'s saved intent in place when the CLI never answers, 
     expect(events).toEqual(['claude-settings-unconfirmed'])
     // The coordinator's saved intent is still there, waiting for the thread to report the change.
     expect(await outbox()).toEqual([expect.objectContaining({ type: 'configure-thread', threadId: id, options: { reasoningEffort: 'high' } })])
-    // Refreshing starts the thread's CLI with the change it was left carrying, and that reconciles the intent.
+    // Refreshing starts the thread's CLI with the change it was left carrying, since a thread with an outbox entry keeps a
+    // live session, and that reconciles the intent.
     await f.liveSettings.answer()
     await control.command({ type: 'refresh' })
     await expect.poll(() => control.get().host.threads.find(value => value.id === id)?.reasoningEffort).toBe('high')
@@ -191,7 +195,8 @@ it('leaves the coordinator\'s saved intent in place when the CLI never answers, 
 it('reaches a CLI the window started just before the press, once it is up, rather than the launch arguments it started with', async () => {
   const { f, id, events } = await fixture(false)
   const started = await launches(f)
-  // The window opening the thread starts its CLI, and the press comes in while that start is still in flight.
+  // A start is in flight when the press comes in: here the one an observation makes for a caller that names no
+  // live-session set, as the window's did before November 1, 2026.
   f.host.observeThreads?.([id])
   const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })
   expect(result.accepted).toBe(true)

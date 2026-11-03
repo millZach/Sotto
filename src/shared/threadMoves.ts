@@ -119,6 +119,12 @@ export const threadMoveCardSchema = z.object({
   waiting: z.literal(true).optional(),
   /** Which machine it waits on, by its name: the one it goes to, or the host its thread is on. */
   waitingOn: machineName.optional(),
+  /** The user pressed Keep it here (part 4): the move waits for the machine to call it off, then ends as `kept`. */
+  keeping: z.literal(true).optional(),
+  /** Keep it here is offered now: the move waits on a machine, with nothing under way and not already ending (part 4). */
+  keepable: z.literal(true).optional(),
+  /** The machine was asked to start the new thread but its answer never came, so it may have made one. */
+  startAsked: z.literal(true).optional(),
   /** Whether Watcher watches the new thread now. */
   watched: z.literal(true).optional(),
   /** When the user confirmed it, where the card goes in Watcher's conversation; and when it last changed. */
@@ -158,6 +164,8 @@ export type ThreadMovesView = z.infer<typeof threadMovesViewSchema>
  */
 export const threadMoveAnswerRequestSchema = z.union([
   z.object({ cardId: z.uuid(), answer: z.enum(['move', 'keep']) }).strict(),
+  /** Keep it here on a move that waits on a machine not answering (part 4, ADR-0105 decision 7, "Reconciling"). */
+  z.object({ moveId: z.uuid(), answer: z.literal('keep-here') }).strict(),
   z.object({ proposalId: z.uuid(), answer: z.literal('move'), threadIds: z.array(id).min(1).max(THREAD_MOVE_THREADS_MAX) }).strict(),
   z.object({ proposalId: z.uuid(), answer: z.literal('dismiss') }).strict(),
 ])
@@ -229,6 +237,19 @@ export const THREAD_MOVE_WORDS = {
   sourceAway: (machine: string): string => `${capital(machine)} isn’t connected, so its threads can’t move now. Connect it, then try again. Nothing was moved.`,
   /** The source's machine runs a Sotto that cannot hold its threads for a move. */
   olderSource: (machine: string): string => `${capital(machine)} needs a newer Sotto before its threads can move. Update it from the Threads page, then try again. Nothing was moved.`,
+  /**
+   * Keep it here (part 4, Zach's picks of October 30): the move waits for the machine to call it off, and the thread takes
+   * no sends until it does.
+   */
+  keeping: (machine: string): string => `You chose to keep this thread here. Sotto asks ${machine} to call the move off, and to stop and settle the new thread if it made one, as soon as ${machine} answers. This thread takes no sends until then. Nothing was lost.`,
+  /** The move was called off: kept here, or on the host the thread is on. */
+  kept: (machine: string, made: boolean, from = 'This computer'): string => made
+    ? `You kept this thread on ${from}. Sotto stopped and settled the new thread on ${machine}, and this thread takes sends again.`
+    : `You kept this thread on ${from}. Nothing was made on ${machine}, and this thread takes sends again.`,
+  /** Keep it here on a move that no longer waits, or never could be called off. */
+  notWaiting: 'That move isn’t waiting on its machine any more, so there is nothing to keep here. Nothing changed.',
+  /** The machine runs a Sotto that cannot call a move off. */
+  olderKeep: (machine: string): string => `${capital(machine)} needs a newer Sotto before a move to it can be called off. Update it from the Threads page, then press Keep it here again. Nothing was moved.`,
   /** A card that asked first is no longer this run's: Sotto restarted, or the card was answered. */
   noCard: 'That move isn’t waiting for an answer any more. Nothing was moved.',
   /** A press on Watcher's proposal that is no longer open. */
@@ -396,14 +417,19 @@ export const hostThreadMoveSourceSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('release'), moveId: branchMoveIdSchema, link: moveLinkSchema.optional() }).strict(),
 ])
 export type HostThreadMoveSource = z.infer<typeof hostThreadMoveSourceSchema>
-export const hostThreadMoveRequestSchema = z.discriminatedUnion('action', [hostThreadMoveStartSchema, ...hostThreadMoveSourceSchema.options])
+/**
+ * Keep it here, asked of the machine a move goes to (part 4, `thread-move-keep`): it fences the move's ID so no start of it
+ * ever lands, and stops and settles any thread it made for it. Asked again, it answers the same.
+ */
+export const hostThreadMoveKeepSchema = z.object({ action: z.literal('keep'), moveId: branchMoveIdSchema }).strict()
+export const hostThreadMoveRequestSchema = z.discriminatedUnion('action', [hostThreadMoveStartSchema, ...hostThreadMoveSourceSchema.options, hostThreadMoveKeepSchema])
 export type HostThreadMoveRequest = z.infer<typeof hostThreadMoveRequestSchema>
 /**
  * Why a host refuses a start. Each is definite, the host holds no thread and no record for the move, except `move-differs`,
  * where it holds another start under that ID, and `unreadable`, where it cannot read its own record and so cannot say: the
  * desktop keeps those moves fenced and asks again later.
  */
-export const THREAD_MOVE_REFUSALS = ['unknown-project', 'model-unavailable', 'move-differs', 'failed', 'full', 'unreadable'] as const
+export const THREAD_MOVE_REFUSALS = ['unknown-project', 'model-unavailable', 'move-differs', 'failed', 'full', 'unreadable', 'kept'] as const
 /** The refusals that do not prove the host made no thread for the move. */
 export const THREAD_MOVE_UNDECIDED: ReadonlySet<string> = new Set(['move-differs', 'unreadable'])
 export const threadMoveRefusalSchema = z.object({ type: z.literal('refused'), reason: z.enum(THREAD_MOVE_REFUSALS), message: words }).strict()
@@ -417,6 +443,15 @@ export const threadMoveStartAnswerSchema = z.union([
   threadMoveRefusalSchema,
 ])
 export type ThreadMoveStartAnswer = z.infer<typeof threadMoveStartAnswerSchema>
+/**
+ * The answer to `keep`: the move is called off here, `made` saying whether a thread had been made for it, which is now
+ * stopped and settled; or a refusal, which, `move-differs` and `unreadable` alike, proves nothing.
+ */
+export const threadMoveKeepAnswerSchema = z.union([
+  z.object({ type: z.literal('kept'), moveId: branchMoveIdSchema, made: z.boolean() }).strict(),
+  threadMoveRefusalSchema,
+])
+export type ThreadMoveKeepAnswer = z.infer<typeof threadMoveKeepAnswerSchema>
 /**
  * Why a host refuses a step for one of its own threads. `not-movable` is definite and says why in the thread's own words:
  * nothing is fenced. `unknown-move` answers a step for a move it does not hold, never held or let go of already;
@@ -448,6 +483,8 @@ export const HOST_THREAD_MOVE_WORDS = {
   grantGone: 'This machine no longer lets that computer answer here, so it starts nothing that acts without asking. Nothing was sent.',
   full: 'This machine holds the records of 10,000 moves already, so it takes no more. Nothing was made. Move the thread to another machine.',
   unreadable: 'This machine could not read its record of moves, so it starts none until it can. Nothing was made. Restart Sotto on this machine, then try again.',
+  /** A start of a move the desktop called off here with Keep it here (part 4). */
+  kept: 'This move was called off on this machine, so it starts nothing here. Nothing was made.',
   /** A step for a thread here that asks about a move this machine does not hold. */
   unknownMove: 'This machine holds no thread for that move. Nothing changed.',
   /** The thread here is held for another move, or another desktop holds that move. */
@@ -460,6 +497,8 @@ export interface ThreadMoveHost {
   readonly supportsThreadMove: boolean
   /** The host lists `thread-move-source`: its own threads can be a move's source. */
   readonly supportsThreadMoveSource?: boolean | undefined
+  /** The host lists `thread-move-keep`: it calls off a move it was asked to start (Keep it here, part 4). */
+  readonly supportsThreadMoveKeep?: boolean | undefined
   threadMove(request: HostThreadMoveRequest): Promise<unknown>
 }
 

@@ -15,10 +15,12 @@ const indexIn = steps => name => {
 const inPackage = indexIn(packageJob.steps), inPacman = indexIn(pacman.steps)
 
 describe('Sotto Owl for Linux workflow (ADR-0099)', () => {
-  it('runs only by hand, one build per version, and is named for what it builds', () => {
+  it('runs only by hand or from the nightly, one build per version, and is named for what it builds', () => {
     expect(workflow.name).toBe('Sotto Owl for Linux')
-    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
+    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch', 'workflow_call'])
     expect(Object.keys(workflow.on.workflow_dispatch.inputs).sort()).toEqual(['source', 'version'])
+    expect(Object.keys(workflow.on.workflow_call.inputs).sort()).toEqual(['source', 'version'])
+    expect(workflow.on.workflow_call.secrets).toBeUndefined()
     expect(workflow.concurrency).toEqual({ group: 'owl-linux-${{ inputs.version }}', 'cancel-in-progress': false })
     expect(Object.keys(workflow.jobs)).toEqual(['package', 'pacman', 'attest'])
   })

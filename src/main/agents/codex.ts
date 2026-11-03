@@ -1,3 +1,4 @@
+import type { MediaCapture, MediaFileCapture } from './threadMedia'
 import { preserveLegacyAliases } from './legacyAliases'
 import { sameMessageContent } from '../../shared/threadEvents'
 import { browserCodexConfig, type BrowserAgentTools } from './browserAgentServer'
@@ -21,20 +22,21 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
+import { markLegacyModels } from '../../shared/modelLineup'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { verifyFileMentions } from './promptFiles'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { findExecutable, nativeEnvironment, writeWithCodexExec } from './subscriptionCodex'
 import { withCliPath } from './cliLookup'
-import { CodexSessionLogWatcher, promptDigest, textOf, wordsOf } from './codexSessionLog'
+import { CodexSessionLogWatcher, promptDigest, RolloutPositionFiles, textOf, wordsOf } from './codexSessionLog'
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest } from './codexRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -51,7 +53,7 @@ import type { WatcherLaunchProfile, ThreadLaunchProfiles, WorkerRoleSource } fro
 import { CodexRoleFiles, codexTakesRoles, malformedCodexRole, narrowerMode, type CodexRoleFilesEvent } from './subagentRoles'
 import { capRuntimeMode, subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
@@ -255,6 +257,10 @@ type ModelList = AgentHostSnapshot['models']
 export type CodexAdapterEvent = 'codex-role-malformed' | 'codex-notification-unreadable' | CodexRoleFilesEvent
 
 export interface CodexAppServerHostOptions {
+  /** Keeps a tool result's pictures and answers their handles (ADR-0170); absent while `inline-media` is off. */
+  captureMedia?: MediaCapture
+  /** Reads an image Codex generated and saved only to a file (ADR-0170); absent while `inline-media` is off. */
+  captureMediaFile?: MediaFileCapture
   /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
   usageEnabled?: boolean
   /**
@@ -289,10 +295,10 @@ export class CodexAppServerHost implements AgentHost {
   profileRefusalHandler(id: string) {
     const generation = this.generation, runtime = this.runtimes.get(id)
     if (!runtime) return undefined
-    return (reason: string): void => {
+    return (reason: string, history = false): void => {
       if (generation !== this.generation || this.runtimes.get(id) !== runtime) return
       try { this.watcherProfiles.get(id)?.revoke(reason) } catch { /* Cleanup failure never keeps the process alive. */ }
-      this.stopUnverifiedProfile(id, reason)
+      this.stopUnverifiedProfile(id, reason, !history)
     }
   }
   private async checkLaunchProfile(id: string): Promise<WatcherLaunchProfile | undefined> {
@@ -310,7 +316,7 @@ export class CodexAppServerHost implements AgentHost {
       if (generation !== this.generation) throw new Error('Codex connection changed.', { cause: error })
       const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.')
       try { this.watcherProfiles.get(id)?.revoke(refusal.message) } catch { /* Revocation failure never keeps the process alive. */ }
-      this.stopUnverifiedProfile(id, refusal.message)
+      this.stopUnverifiedProfile(id, refusal.message, !(refusal instanceof WatcherHistoryRefusal))
       throw refusal
     }
   }
@@ -339,13 +345,14 @@ export class CodexAppServerHost implements AgentHost {
     }
     return configuration
   }
-  private stopUnverifiedProfile(id: string, reason: string): void {
+  /** `providerError` is false for an earlier Watcher conversation, whose refusal says nothing about Codex itself. */
+  private stopUnverifiedProfile(id: string, reason: string, providerError = true): void {
     const runtime = this.runtimes.get(id)
     if (runtime) { this.runtimeLost(id, runtime); this.endServer(runtime.server) }
     this.live.delete(id); this.runningTurns.delete(id)
     for (const [key, pending] of this.requests) if (pending.sessionId === id) this.removeRequest(key)
     const thread = this.threads.get(id)
-    this.state.error = reason
+    if (providerError) this.state.error = reason
     if (thread) {
       if (thread.lastTurn?.status === 'running') {
         thread.lastTurn = { ...thread.lastTurn, status: 'failed' }
@@ -420,6 +427,12 @@ export class CodexAppServerHost implements AgentHost {
   private readonly histories = new Set<string>()
   /** Watched set: the threads the coordinator asked for. Their sessions are resumed eagerly, never reaped. */
   private readonly observed = new Set<string>()
+  /** Threads whose app-server did anything since the rollout poll's last tick: a command, a start, or a notification. */
+  private readonly workedSinceTick = new Set<string>()
+  /** Where each thread's rollout was read to, kept between runs (#992). */
+  private readonly rolloutPositions: RolloutPositionFiles
+  /** The threads the user had settled as this run began; unknown until the caller says. */
+  private settled: ReadonlySet<string> | undefined
   private readonly reaper: SessionReaper
   private readonly resuming = new Map<string, Promise<void>>()
   private readonly opening = new Map<string, Promise<void>>()
@@ -438,7 +451,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly terminalTurns = new Set<string>()
   private readonly turnDates = new Map<string, string>()
   private readonly fileSummaries = new Map<string, string>()
-  private activity = new CodexActivityProjection()
+  private activity: CodexActivityProjection
   private readonly completedMessages = new Set<string>()
   private readonly requests = new Map<string, HeldRequest>()
   private readonly inFlightRequestIds = new Set<string>()
@@ -494,6 +507,7 @@ export class CodexAppServerHost implements AgentHost {
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true, compact: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
+    this.activity = new CodexActivityProjection(undefined, options.captureMedia, options.captureMediaFile, id => { this.changed(id); this.emit() })
     this.usageEnabled = options.usageEnabled === true
     this.roleFiles = new CodexRoleFiles(join(options.userDataPath, 'codex-roles'), runtimePolicy, event => options.logEvent?.(event))
     this.usage = new NativeUsage(options.userDataPath, 'codex', options.usageEnabled)
@@ -512,6 +526,7 @@ export class CodexAppServerHost implements AgentHost {
     // Compact: it holds an identity for every turn of every thread, and is rewritten whole.
     this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'codex-threads.json'), preserveLegacyAliases(aliasesSchema.parse), () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
+    this.rolloutPositions = new RolloutPositionFiles(join(options.userDataPath, 'codex-rollouts'))
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
       ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
@@ -538,6 +553,23 @@ export class CodexAppServerHost implements AgentHost {
    * reply the thread's app-server still owes Sotto (a late one included, since it can still be applied) all hold a
    * session open.
    */
+  /**
+   * The rollouts the poll's tick reads: those of the threads a window or Watcher looks at, those working, and those whose
+   * app-server did anything since the last tick, so a turn begun and ended between two ticks is read too.
+   */
+  private rolloutsInUse(): ReadonlySet<string> {
+    const inUse = new Set<string>()
+    for (const [id, alias] of Object.entries(this.aliases)) {
+      if (alias.kind !== 'personal' && (this.observed.has(id) || this.workedSinceTick.has(id) || this.busy(id))) inUse.add(alias.codexThreadId)
+    }
+    this.workedSinceTick.clear()
+    return inUse
+  }
+  /** The thread's app-server did something: the reaper hears of it, and the rollout poll's next tick reads its rollout. */
+  private worked(id: string): void {
+    this.reaper.touch(id)
+    this.workedSinceTick.add(id)
+  }
   private busy(id: string): boolean {
     const thread = this.threads.get(id)
     return this.dispatching.has(id) || this.creating.has(id) || this.runningTurns.has(id) || this.unconfirmedDispatchSessionIds.has(id)
@@ -674,7 +706,8 @@ export class CodexAppServerHost implements AgentHost {
           cursors.add(cursor)
         }
       } while (cursor)
-      return { version, models }
+      // Older models of a line go under Legacy in every menu (ADR-0171).
+      return { version, models: markLegacyModels(models) }
     } catch { return { version, models: undefined } }
   }
   /**
@@ -737,7 +770,7 @@ export class CodexAppServerHost implements AgentHost {
         server.write({ method: 'initialized' })
       } catch (error) {
         this.endServer(server)
-        if (error instanceof WatcherProfileRefusal) { this.state.error = error.message; this.emit(); throw error }
+        if (error instanceof WatcherProfileRefusal) { if (!(error instanceof WatcherHistoryRefusal)) this.state.error = error.message; this.emit(); throw error }
         throw new SessionUnavailable(error)
       }
       if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
@@ -909,9 +942,16 @@ export class CodexAppServerHost implements AgentHost {
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) if (alias.kind !== 'personal') this.providerSessionIds.set(alias.codexThreadId, id)
     this.threads.clear(); this.threadChanges.markAll(); this.histories.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear(); this.readsBeforeSend.clear(); this.turnsListSupported = true
-    this.activity = new CodexActivityProjection(); this.completedMessages.clear(); this.fileSummaries.clear()
+    this.activity = new CodexActivityProjection(undefined, this.options.captureMedia, this.options.captureMediaFile, id => { this.changed(id); this.emit() }); this.completedMessages.clear(); this.fileSummaries.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
-    this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
+    this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs,
+      // Each second reads only the rollouts of the threads in use; every other thread's is read from its saved position
+      // when it is opened or sent to (#992).
+      inUse: () => this.rolloutsInUse(), positions: this.rolloutPositions,
+      // A rollout with no saved position, as every one has after the update that began saving them, is caught up once in
+      // the background for an unsettled thread; a settled one waits until it is opened (Zach's call, October 30).
+      catchUp: codexThreadId => { const id = this.sessionId(codexThreadId); return !id || !this.settled?.has(id) },
+      onMessage: (id, message) => {
       const sessionId = this.sessionId(id)
       if (sessionId) {
         this.touch(sessionId)
@@ -955,11 +995,14 @@ export class CodexAppServerHost implements AgentHost {
       await Promise.all([...this.observed].filter(id => this.aliases[id] && this.aliases[id]!.kind !== 'personal').map(id => this.open(id).catch(error => {
         // A thread whose own app-server would not start fails alone; its next action tries again.
         if (error instanceof SessionUnavailable) { this.ensureThread(id).status = 'error'; return }
+        // An earlier Watcher conversation in view stays unopened; the rest of Codex connects as usual.
+        if (error instanceof WatcherHistoryRefusal) return
         if (!(error instanceof Rejected) || error.missingThreadId !== this.aliases[id]!.codexThreadId) throw error
         // An unavailable saved thread must not take the whole provider offline.
         // Its alias remains intact; never replace the native session implicitly.
       })))
-      await this.watcher.poll(); this.watcher.start()
+      // The threads in use, and any still catching up to a rollout with no saved position; the others wait to be opened.
+      await this.pollSessionLogs(); this.watcher.start()
       this.emit(); return this.snapshot()
     } catch (error) { if (generation === this.generation) this.disconnect(); throw error }
   }
@@ -1118,7 +1161,11 @@ export class CodexAppServerHost implements AgentHost {
       },
     }
   }
-  async pollSessionLogs(): Promise<void> { await this.watcher?.poll() }
+  /**
+   * Reads what the poll's tick reads: the rollouts of the threads in use. Another thread's rollout could only fill the
+   * messages that wait for it to be opened, and opening reads it, from where it was last read (#992).
+   */
+  async pollSessionLogs(): Promise<void> { await this.watcher?.pollInUse() }
   async snapshot(): Promise<AgentHostSnapshot> {
     await this.pollSessionLogs()
     const pending = new Set([...Object.keys(this.aliases).filter(id => this.aliases[id]!.pendingSettings), ...this.unconfirmedDispatchSessionIds])
@@ -1138,11 +1185,16 @@ export class CodexAppServerHost implements AgentHost {
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias) return null
+    return this.writeShortTextOn({ modelId: alias.modelId, cwd: alias.cwd }, prompt, signal)
+  }
+  /** The same on the model chosen, for what has no session yet (ADR-0173). */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (!this.state.connected) return null
     const executable = this.options.executable ?? await findExecutable()
     if (!executable) return null
-    const effort = sideWritingEffort(this.state.models, alias.modelId)
+    const effort = sideWritingEffort(this.state.models, target.modelId)
     return writeWithCodexExec({ ...prompt, executable, prefixArgs: this.options.args ?? [], codexHome: this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
-      model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(alias.cwd), timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
+      model: target.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(target.cwd ?? homedir()), timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   /**
    * Read the thread back from Codex. The read before a send first asks only for the newest turn
@@ -1271,11 +1323,16 @@ export class CodexAppServerHost implements AgentHost {
    * Take the watched set as given. A thread that has left it keeps its session until the reaper finds it
    * idle; a thread that has entered it has its session resumed now.
    */
+  useSettledThreads(sessionIds: readonly string[]): void { this.settled = new Set(sessionIds) }
   observeThreads(sessionIds: readonly string[]): void {
     const generation = this.generation
     const watched = new Set(sessionIds.filter(id => this.aliases[id]?.kind !== 'personal'))
+    const before = new Set(this.observed)
     this.observed.clear(); for (const id of watched) this.observed.add(id)
     this.log.observe([...this.observed])
+    // A thread coming into view reads its rollout to the end at once, from where it was left, even when its session is
+    // still running and opening it reads nothing more (#992).
+    if (this.state.connected) for (const id of this.observed) if (this.aliases[id] && !before.has(id)) void this.watcher?.pollThread(this.aliases[id]!.codexThreadId).catch(() => undefined)
     if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => {
       if (generation !== this.generation) return
       this.ensureThread(id).status = 'error'; this.emit()
@@ -1294,7 +1351,7 @@ export class CodexAppServerHost implements AgentHost {
     if (this.aliases[id]) { await this.open(id); return }
     if (!draft || this.creating.has(id)) return
     await this.runtimeServer(id)
-    this.reaper.touch(id)
+    this.worked(id)
   }
   /** Opening a thread resumes it and reads its turns once, when Sotto holds no history for it. */
   private open(id: string): Promise<void> {
@@ -1320,7 +1377,7 @@ export class CodexAppServerHost implements AgentHost {
     await this.checkLaunchProfile(id)
     if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (!this.aliases[id]) return Promise.resolve()
-    this.reaper.touch(id)
+    this.worked(id)
     if (this.live.has(id)) return Promise.resolve()
     const pending = this.resuming.get(id)
     if (pending) return pending
@@ -1716,7 +1773,7 @@ export class CodexAppServerHost implements AgentHost {
       developerInstructions = await this.projectInstructions(cwd, request.threadId)
       server = await this.runtimeServer(request.threadId)
     } catch (error) { this.creating.delete(request.threadId); throw error }
-    this.reaper.touch(request.threadId)
+    this.worked(request.threadId)
     // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
     const { configuration, roles } = await this.newThreadSetup(request.threadId, request.reasoningEffort, request.runtimeMode ?? 'auto-accept-edits')
     try {
@@ -1741,7 +1798,7 @@ export class CodexAppServerHost implements AgentHost {
           createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
         this.providerSessionIds.set(response.thread.id, request.threadId); this.recordLoadedRoles(request.threadId, roles.widest)
         await this.persist(); this.creating.delete(request.threadId); this.ensureThread(request.threadId); this.live.add(request.threadId)
-        this.reaper.touch(request.threadId); this.watcher?.observe(response.thread.id); this.emit()
+        this.worked(request.threadId); this.watcher?.observe(response.thread.id); this.emit()
       }, () => { this.creating.delete(request.threadId); this.stopSession(request.threadId) }, server)
     } catch (error) {
       this.creating.delete(request.threadId)
@@ -1821,7 +1878,7 @@ export class CodexAppServerHost implements AgentHost {
         let server: CodexProcess
         try { server = await this.runtimeServer(command.threadId) }
         catch (error) { this.creating.delete(command.threadId); throw error }
-        this.reaper.touch(command.threadId)
+        this.worked(command.threadId)
         const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits')
         const speed = speedAfterChange(command)
         const tier = this.serviceTier(command.modelId, speed)
@@ -1841,7 +1898,7 @@ export class CodexAppServerHost implements AgentHost {
             createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId); this.recordLoadedRoles(command.threadId, roles.widest)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
-          this.reaper.touch(command.threadId)
+          this.worked(command.threadId)
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
         }, () => { this.creating.delete(command.threadId); this.stopSession(command.threadId) }, server, watcherGuard)
       } else {
@@ -1855,7 +1912,7 @@ export class CodexAppServerHost implements AgentHost {
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
         // Lazy sessions: an action on a thread that was never opened, or whose session the reaper stopped,
         // resumes it here before the command proceeds.
-        this.reaper.touch(id); await this.resume(id)
+        this.worked(id); await this.resume(id)
         if (command.type === 'compact-thread') {
           const thread = this.ensureThread(id)
           if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('The thread is working or needs an answer before compaction.')
@@ -2166,7 +2223,7 @@ export class CodexAppServerHost implements AgentHost {
       if (owner) { this.touch(owner.id); this.changed(owner.id); this.emit(true) }
       return
     }
-    this.touch(id); this.reaper.touch(id)
+    this.touch(id); this.worked(id)
     const compactAlias = this.aliases[id]!
     if (compactionPending(compactAlias.compaction)) {
       if (frame.method === 'item/completed' && params.item?.type === 'contextCompaction') {
@@ -2259,6 +2316,7 @@ export class CodexAppServerHost implements AgentHost {
   private reset(): void {
     this.publisher.cancel()
     this.reaper.dispose()
+    this.workedSinceTick.clear()
     this.skillsRevision++; this.loadedSkillCwds.clear()
     this.provider = undefined; this.runtimes.clear(); this.launching.clear(); this.outdated.clear()
     if (this.outdatedTimer) { clearImmediate(this.outdatedTimer); this.outdatedTimer = undefined }

@@ -171,10 +171,10 @@ test('an older host shows a pill on the Threads page, fails an update with its o
       const box = await layout()
       expect(box.pillWidth).toBeLessThanOrEqual(30)
       expect(box.headerRight).toBeLessThanOrEqual(box.pillLeft + 0.5)
-      // The last pane keeps clear of the window controls and the pill's mark and nothing more: its layout controls, and the
-      // title before them, move over by the mark's room alone.
+      // The last pane keeps clear of the window controls and the pill's mark and nothing more: its header's controls, and
+      // the title before them, move over by the mark's room alone.
       const inset = await page.locator(`section.thread-pane[data-thread-id="${threads[1]}"]`).evaluate(element =>
-        element.getBoundingClientRect().right - element.querySelector('.thread-pane__controls')!.getBoundingClientRect().right - 12)
+        element.getBoundingClientRect().right - element.querySelector('.thread-workspace__actions')!.getBoundingClientRect().right - 24)
       expect(inset).toBeLessThanOrEqual(116 + 38 + 1)
     }, [[1600, 1000], [1280, 800]])
     await page.locator(`section.thread-pane[data-thread-id="${threads[1]}"]`).getByRole('button', { name: 'Close Move finished renders pane' }).click()

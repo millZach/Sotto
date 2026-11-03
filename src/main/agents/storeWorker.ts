@@ -64,15 +64,21 @@ interface Pending { readonly id: number; readonly write: ThreadStoreWrite; reado
 /** A write the worker went without answering, handed back in the order posted; `started` says whether it had begun it. */
 export interface UnansweredWrite { readonly write: ThreadStoreWrite; readonly started: boolean; readonly settle: (result: StoreWorkerResult) => void }
 
-/** The list last sent for one thread, so the next can go as what changed. */
+/** The list last sent for one thread, or read back from the worker, so the next can go as what changed. */
 interface SentList { readonly version: number; readonly list: readonly AgentActivity[]; readonly records: ReadonlyMap<string, AgentActivity> }
 
 export class StoreWorker {
   private readonly pending = new Map<number, Pending>()
   /** Stored threads' activity being read back, each heard once: its records, that they could not be read, or lost. */
-  private readonly reads = new Map<number, { readonly settle: (result: ActivityReadBack) => void; readonly records: AgentActivity[] }>()
+  private readonly reads = new Map<number, { readonly settle: (result: ActivityReadBack) => void; readonly records: AgentActivity[]; readonly threadId: string; readonly version: number }>()
   private nextRead = 1
   private readonly sent = new Map<string, SentList>()
+  /**
+   * The read whose list becomes each thread's last sent once it arrives whole (#1645). The worker keeps the list it read
+   * under the read's version; a write posted after the read that changes what the worker keeps for the thread lets the read
+   * go, so main never sends changes to a list the worker has replaced.
+   */
+  private readonly bases = new Map<string, number>()
   private nextId = 1
   private nextVersion = 1
   private gone = false
@@ -132,9 +138,11 @@ export class StoreWorker {
   read(threadId: string, settle: (result: ActivityReadBack) => void): void {
     if (this.gone || this.stopping) { settle({ lost: true }); return }
     const read = this.nextRead++
-    this.reads.set(read, { settle, records: [] })
+    const version = this.nextVersion++
+    this.reads.set(read, { settle, records: [], threadId, version })
+    this.bases.set(threadId, read)
     this.port.ref()
-    this.port.postMessage({ kind: 'read-activities', read, threadId } satisfies WorkerRequest)
+    this.port.postMessage({ kind: 'read-activities', read, threadId, version } satisfies WorkerRequest)
   }
 
   /** Whether the worker has begun this write, so what it commits may already show to main's reads. */
@@ -210,6 +218,11 @@ export class StoreWorker {
     }
     this.reads.delete(answer.read)
     this.unrefIfIdle()
+    if (this.bases.get(read.threadId) === answer.read) {
+      this.bases.delete(read.threadId)
+      // The records main holds now are the worker's, copied: the next save sends the ones that changed (`list`).
+      if (answer.activities !== undefined) this.sent.set(read.threadId, { version: read.version, list: read.records, records: new Map(read.records.map(record => [record.id, record])) })
+    }
     read.settle(answer.activities === undefined ? { unreadable: true } : { activities: read.records })
   }
 
@@ -232,8 +245,8 @@ export class StoreWorker {
     this.unrefIfIdle()
     const failed = new Set(answer.failed)
     // A list that did not commit is sent whole next time, so the worker never rebuilds from one it lacks.
-    for (const threadId of failed) this.sent.delete(threadId)
-    if (answer.error !== undefined && failed.size === 0) this.sent.clear()
+    for (const threadId of failed) this.sendWholeNext(threadId)
+    if (answer.error !== undefined && failed.size === 0) this.sendAllWholeNext()
     const error = answer.error === undefined ? undefined : Object.assign(new Error(answer.error.message), { name: answer.error.name })
     pending.settle({ outcome: { failed, ...(error === undefined ? {} : { error }), ...(answer.removed === undefined ? {} : { removed: answer.removed }), ...(answer.memory ? { memory: true } : {}) } })
   }
@@ -254,7 +267,7 @@ export class StoreWorker {
     const applying = Atomics.load(this.control, CONTROL.APPLYING)
     const unanswered = [...this.pending.values()].sort((a, b) => a.id - b.id)
     this.pending.clear()
-    this.sent.clear()
+    this.sendAllWholeNext()
     if (!wasGone) {
       try { this.port.close() } catch { /* Already closed. */ }
       void this.worker.terminate().catch(() => undefined)
@@ -265,15 +278,27 @@ export class StoreWorker {
     this.readsLost()
   }
 
+  /** This thread's next list goes whole: neither the list last sent nor a read on its way is a base for it any more. */
+  private sendWholeNext(threadId: string): void {
+    this.sent.delete(threadId)
+    this.bases.delete(threadId)
+  }
+
+  /** Every thread's next list goes whole. */
+  private sendAllWholeNext(): void {
+    this.sent.clear()
+    this.bases.clear()
+  }
+
   /** The write as it crosses: activity lists as what changed since the last sent. */
   private wire(write: ThreadStoreWrite, preserved: () => readonly string[]): WireWrite {
     switch (write.kind) {
       case 'activities': return { kind: 'activities', entries: write.entries.map(entry => this.list(entry)) }
       case 'activity-list': return { kind: 'activity-list', flushed: write.flushed, entry: this.list(write) }
-      case 'history-off': this.sent.clear(); return { ...write, preserved: preserved() }
-      case 'history-on': this.sent.clear(); return write
-      case 'activities-released': this.sent.delete(write.threadId); return write
-      case 'forget': for (const threadId of write.threadIds) this.sent.delete(threadId); return write
+      case 'history-off': this.sendAllWholeNext(); return { ...write, preserved: preserved() }
+      case 'history-on': this.sendAllWholeNext(); return write
+      case 'activities-released': this.sendWholeNext(write.threadId); return write
+      case 'forget': for (const threadId of write.threadIds) this.sendWholeNext(threadId); return write
       default: return write
     }
   }
@@ -281,6 +306,8 @@ export class StoreWorker {
   private list(entry: ActivityListEntry): WireActivityEntry {
     const { threadId, activities, epoch } = entry
     const version = this.nextVersion++
+    // The worker replaces what it holds for the thread with this list, so a read on its way is not a base any more.
+    this.bases.delete(threadId)
     const last = this.sent.get(threadId)
     // Only a certified list, frozen and owned whole, is known to be unchanged by being the same list: an array that is not
     // may have had records replaced, removed or reordered where it is, so it is read again each time.

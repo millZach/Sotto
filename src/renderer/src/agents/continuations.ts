@@ -5,6 +5,7 @@ import { hostForThread, PROVIDER_LABELS, type AgentMessage, type AgentModel, typ
 import { continuePermission, continueProviderRefusal, type ContinuePermission, type ContinueWorkingCopy } from '../../../shared/continueThread'
 import { limitStopOf, type LimitStop } from '../../../shared/limitStops'
 import { resolveModel } from '../../../shared/modelCatalog'
+import { modelInForce } from '../../../shared/modelLineup'
 import { useOwlFeature } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import type { LaterWords } from './interfaceWords'
@@ -96,7 +97,8 @@ export function providerDefaults(state: AgentState, models: readonly AgentModel[
   const providers = [...new Set(models.flatMap(model => model.providerId ? [model.providerId] : []))]
   return providers.flatMap(provider => {
     const own = models.filter(model => model.providerId === provider)
-    const chosen = own.find(model => model.id === state.configuration.newThreadModelId) ?? newestModelsFirst(own)[0]
+    const chosenId = modelInForce(own, state.configuration.newThreadModelId)
+    const chosen = own.find(model => model.id === chosenId) ?? newestModelsFirst(own)[0]
     return chosen ? [chosen] : []
   })
 }

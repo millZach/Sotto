@@ -1,3 +1,4 @@
+import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { createServer, type Server } from 'node:net'
 import { hostname as osHostname } from 'node:os'
 import { join } from 'node:path'
@@ -23,7 +24,8 @@ import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResu
  *
  * Pairing codes are issued here, from the Phones page, and nowhere else. The listener's administrative
  * routes are off: the desktop administers it in-process, so no admin token exists on disk or on the wire.
- * A phone's answers count only after the owner turns on Can answer for it, which writes the policy record.
+ * Pairing a phone by a code the owner showed writes the policy record that lets its answers count, and each start writes
+ * it again for any paired phone without one; Remove revokes it (ADR-0004).
  *
  * A headless host runs the same phone access over its own host service (ADR-0050). It shares the host's pairing
  * store, so a phone and a desktop pair with one set of clients, and the desktop it is connected to administers it
@@ -39,7 +41,7 @@ export type PhoneAccessEvent =
   | 'phone-access-on' | 'phone-access-failed' | 'phone-access-start-failed' | 'phone-access-close-failed'
   | 'phone-access-record-unreadable' | 'phone-access-record-write-failed' | 'phone-access-pairing-unreadable'
   | 'phone-access-phones-unreadable' | 'phone-access-phones-write-failed'
-  | 'phone-access-listener-failed' | 'phone-access-listener-close-failed' | 'phone-access-policy-revoke-failed'
+  | 'phone-access-listener-failed' | 'phone-access-listener-close-failed' | 'phone-access-policy-grant-failed' | 'phone-access-policy-revoke-failed'
   | 'phone-access-serve-status-failed' | 'phone-access-serve-not-enabled' | 'phone-access-serve-denied' | 'phone-access-serve-failed' | 'phone-access-serve-remove-failed'
 
 export interface PhoneAccessTailscale {
@@ -51,12 +53,15 @@ export interface PhoneAccessTailscale {
 
 export interface PhoneAccessPolicy {
   mayGrant(client: ClientIdentity): { readonly allowed: boolean }
+  ensureRemoteAnswers(clientId: string, note: string): boolean
   setRemoteAnswers(clientId: string, allowed: boolean, note: string): void
 }
 
 type Listener = Awaited<ReturnType<typeof startSocketServer>>
 
 export interface PhoneAccessOptions {
+  /** That the user asked for a code to add a phone (ADR-0179). */
+  readonly featureUsed?: (feature: 'add-phone') => void
   /** The desktop's user data folder: `paired-clients.json` and `phone-access.json` live here. */
   readonly directory: string
   /** The local host's service, or nothing when the local host is off. */
@@ -91,7 +96,7 @@ export interface PhoneAccessOptions {
    * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
    */
-  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves'>
+  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
@@ -117,7 +122,7 @@ const servePortOf = (record: PhoneAccessRecord): PhoneAccessServePort => record.
 const onPort = (record: Omit<PhoneAccessRecord, 'servePort'>, servePort: PhoneAccessServePort): PhoneAccessRecord =>
   servePort === 8443 ? record : { ...record, servePort }
 
-const ANSWERS_NOTE = 'The user turned on Can answer for this paired phone on the Phones page.'
+const ANSWERS_NOTE = 'The user paired this phone with a code from the Phones page, which lets it answer.'
 const WAITING = { status: 'waiting' } as const
 
 export class PhoneAccess {
@@ -178,6 +183,7 @@ export class PhoneAccess {
       try { this.phoneIds = new Set(await this.phoneStore.read()) }
       catch { this.phoneIds = new Set(); this.options.log?.('phone-access-phones-unreadable') }
     }
+    this.answerPairedPhones()
     this.settingsChanged()
     await this.queue
   }
@@ -185,6 +191,28 @@ export class PhoneAccess {
   /** The paired clients that are phones (see `phoneIds`). */
   private paired() {
     return this.pairing.list().filter(client => !this.phoneIds || this.phoneIds.has(client.clientId))
+  }
+
+  /** Whether this client paired through phone access: a phone, and not a desktop paired with the same host. */
+  isPhone(clientId: string): boolean {
+    // Until the phones' record is read, `paired()` counts every client, desktops too, so nothing is known to be a phone.
+    if (!this.pairingReady || (this.phoneStore && !this.phoneIds)) return false
+    return this.paired().some(client => client.clientId === clientId)
+  }
+
+  /**
+   * Gives every paired phone the record that lets it answer, where it has none: a phone paired before pairing granted
+   * answers, or one whose record was revoked when Can answer was a switch. Pairing is the grant now, and Remove the only
+   * revocation (ADR-0033), so this runs at every start and writes nothing for a phone already answering.
+   */
+  private answerPairedPhones(): void {
+    const policy = this.options.policy
+    if (!policy || !this.pairingReady || (this.phoneStore && !this.phoneIds)) return
+    for (const client of this.paired()) this.grantAnswers(policy, client.clientId)
+  }
+
+  private grantAnswers(policy: PhoneAccessPolicy, clientId: string): void {
+    try { policy.ensureRemoteAnswers(clientId, ANSWERS_NOTE) } catch { this.options.log?.('phone-access-policy-grant-failed') }
   }
 
   private async rememberPhones(): Promise<void> {
@@ -247,6 +275,7 @@ export class PhoneAccess {
         if (this.phase !== 'on' || !this.phonesWanted() || this.listenerStopped || !this.pairingReady) throw new Error('Turn on Let phones connect first, then show a pairing code.')
         this.cancelCode()
         const code = this.pairing.issuePairingCode()
+        this.options.featureUsed?.('add-phone')
         this.code = code
         this.codeTimer = setTimeout(() => { if (this.code === code) { this.code = null; this.publish() } }, Math.max(0, Date.parse(code.expiresAt) - Date.now()))
         this.codeTimer.unref?.()
@@ -255,14 +284,6 @@ export class PhoneAccess {
       case 'cancel-code':
         this.cancelCode()
         break
-      case 'set-can-answer': {
-        const policy = this.options.policy
-        if (!policy) throw new Error('Permission policies are unavailable on this computer, so a phone cannot be allowed to answer. Nothing was changed.')
-        if (!this.paired().some(client => client.clientId === command.clientId)) throw new Error('That phone is no longer paired. Nothing was changed.')
-        policy.setRemoteAnswers(command.clientId, command.allowed, ANSWERS_NOTE)
-        this.listener?.refreshCapabilities()
-        break
-      }
       case 'remove':
         if (!this.pairingReady) throw new Error('Paired phones could not be read. Nothing was changed. Restart Sotto and try again.')
         // Only a phone: a desktop paired with the same host is removed from that desktop, by Forget.
@@ -320,6 +341,7 @@ export class PhoneAccess {
   private async loadPairing(): Promise<boolean> {
     if (this.pairingReady) return true
     try { await this.pairing.load(); this.pairingReady = true } catch { this.options.log?.('phone-access-pairing-unreadable') }
+    this.answerPairedPhones()
     return this.pairingReady
   }
 
@@ -364,6 +386,10 @@ export class PhoneAccess {
 
   /** How many paired clients hold an open socket on the listener now, phones and desktops alike. */
   peers(): number { return this.listenerStopped ? 0 : this.listener?.peers() ?? 0 }
+  /** Whether a desktop on the tailnet listener wants the host's next prompts now (ADR-0173). */
+  nextPromptsWanted(): boolean { return !this.listenerStopped && (this.listener?.nextPromptsWanted() ?? false) }
+  /** What each desktop on the tailnet listener has answered for this host's product events (ADR-0179). */
+  productEventAnswers(): ProductEventPermission[] { return this.listenerStopped ? [] : this.listener?.productEventAnswers() ?? [] }
 
   private async reconcile(): Promise<void> {
     if (this.phase === 'cleanup-failed' || this.listenerStopped) {
@@ -555,6 +581,8 @@ export class PhoneAccess {
       name: () => this.computerName(),
       mayAnswer: (client: ClientIdentity) => this.options.policy?.mayGrant(client).allowed ?? false,
       onPaired: (clientId: string) => {
+        // In the same turn the pairing answer is written in, so the hello the phone opens with already says it may answer.
+        if (this.options.policy) this.grantAnswers(this.options.policy, clientId)
         this.cancelCode()
         if (this.phoneIds) { this.phoneIds.add(clientId); void this.rememberPhones() }
         this.publish()

@@ -121,7 +121,7 @@ describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', 
   it('reads the main start time once at construction and keeps it across publication', async () => {
     expect(readStat).toHaveBeenCalledOnce()
     await shell.start()
-    shell.publish({ status: 'listening', sessionId: 's', startedAt: 1, level: 0,
+    shell.publish({ status: 'listening', sessionId: 's', startedAt: 1, speaking: false,
       theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'F9', cancellable: true })
     shell.place('left')
     expect(JSON.parse(readFileSync(statePath, 'utf8'))).toMatchObject({ pid: process.pid, pidStart: 12345678 })
@@ -182,7 +182,7 @@ describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', 
     vi.useFakeTimers()
     await shell.start()
     await vi.advanceTimersByTimeAsync(50)
-    shell.publish({ status: 'listening', sessionId: 's', startedAt: 1, level: 0,
+    shell.publish({ status: 'listening', sessionId: 's', startedAt: 1, speaking: false,
       theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'F9', cancellable: true })
     expect(JSON.parse(readFileSync(statePath, 'utf8')).state).toBe('listening')
     const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn(() => exitSource.emit('exit')) })

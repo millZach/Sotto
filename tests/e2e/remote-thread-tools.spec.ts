@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path'
 import { expect, test, type ElectronApplication } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const SHOTS = evidenceDirectory('artifacts/remote-thread-tools')
@@ -82,7 +82,11 @@ test('a thread on a paired host shows its files, changes and agents in Tools', a
       return state.host.threads.find(thread => thread.id === state.activeThreadId)?.title ?? null
     }), { timeout: 15_000 }).toBe('New thread')
 
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
+    // The Terminal symbol stays in the header, greyed, and says where this thread's terminal is (ADR-0182).
+    const drawerSymbol = page.locator('.thread-pane[data-focused]').getByRole('button', { name: 'Terminal drawer', exact: true })
+    await expect(drawerSymbol).toHaveAttribute('aria-disabled', 'true')
+    await expect(drawerSymbol).toHaveAttribute('title', 'This thread’s terminal is on forge. Open it there.')
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const footer = panel.locator('.tools-panel__foot')
 

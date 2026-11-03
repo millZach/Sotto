@@ -74,7 +74,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       await expect.poll(async () => (await f.service.hostFacts!()).runningThreads).toBe(0)
     })
 
-    it('observes provider takeover without inventing a Sotto command for native user input', async () => {
+    it('observes provider takeover without inventing a Sotto command for native user input', withFixtureSkip(skips.takeoverWhileHeld), async () => {
       await send()
       await f.driver.typeInProvider(threadId, 'Typed in the provider')
       await expect.poll(() => thread().messages.some(message => message.role === 'user' && message.text === 'Typed in the provider' && message.commandId === undefined)).toBe(true)
@@ -124,7 +124,8 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       f = await f.driver.restart()
       await command({ type: 'observe-threads', threadIds: [threadId] })
       await command({ type: 'connect', provider: f.provider })
-      await expect.poll(() => thread().messages).toEqual(before)
+      // A turn the restart stopped is sent Sotto's resume note once its provider is back (ADR-0076), before or after this reads.
+      await expect.poll(() => thread().messages.filter(message => !message.wakeUp)).toEqual(before)
       expect(f.service.state().hostId).toBe(identity)
       expect(thread().id).toBe(threadId)
     })

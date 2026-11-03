@@ -8,6 +8,7 @@ import { createAgentControl } from './agentControlFixture'
 import { testCredentials } from './testCredentials'
 import { watcherRecordFixture, centerHostId, centerTime } from './watcher'
 import { workspaceFixture } from './workspaceFixture'
+import { savedAgentsState, withoutWatcherFile } from './savedWatcher'
 
 /** Real same-branch persistence with synthetic providers/credentials, never a personal profile. */
 export async function owlProfileRoundTrip(profile: string) {
@@ -48,6 +49,7 @@ export async function owlProfileRoundTrip(profile: string) {
   agents.threadDrafts.push({ threadId: 'retired', draftId: '99999999-9999-4999-8999-999999999999', text: 'Synthetic parked Watcher history draft',
     attachments: [], requestId: null, updatedAt: centerTime })
   await writeFile(join(profile, 'agents.json'), JSON.stringify(agents))
+  await withoutWatcherFile(profile)
   await settings.update({ hotkey: 'Control+Alt+O', autoPaste: false, historyEnabled: true })
   await credentials.set('formatting', 'synthetic-profile-key')
 
@@ -61,7 +63,7 @@ export async function owlProfileRoundTrip(profile: string) {
       threads: control.get().host.threads.map(thread => ({ id: thread.id, kind: thread.kind, title: thread.title })) }
     await control.privacyChanged(); control.dispose(); await control.privacyChanged(); await fixture.stop()
     const currentSettings = await loadedSettings.get(); await loadedSettings.save(currentSettings)
-    const persistedAgents = JSON.parse(await readFile(join(profile, 'agents.json'), 'utf8'))
+    const persistedAgents = await savedAgentsState(profile)
     const persistedWorkspace = JSON.parse(await readFile(join(profile, 'workspace.json'), 'utf8'))
     const db = new DatabaseSync(join(profile, 'threads.sqlite'))
     const messages = db.prepare('SELECT thread_id, message_id, role, text, created_at FROM messages ORDER BY thread_id, message_id').all()

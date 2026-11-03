@@ -150,10 +150,26 @@ describe('JournalStats', () => {
     expect(column).toHaveTextContent('your busiest hour')
   })
 
+  it('is one sentence under Your numbers until there are two days of dictation (#1834)', () => {
+    const { rerender } = render(<JournalStats stats={journalStats([], NOW, 40)} typingWpm={40} />)
+    const column = screen.getByRole('complementary', { name: 'Your dictation' })
+    expect(within(column).getAllByRole('heading').map(heading => heading.textContent)).toEqual(['Your numbers'])
+    expect(column).toHaveTextContent(/^Your numbersWords, speed, streak and where your words went show here once you have dictated on two days\.$/u)
+    // Two dictations on one day are still one day.
+    rerender(<JournalStats stats={journalStats([record(0, 9, 10, 60), record(0, 14, 30, 60, 'Slack')], NOW, 40)} typingWpm={40} />)
+    expect(within(column).getAllByRole('heading').map(heading => heading.textContent)).toEqual(['Your numbers'])
+    rerender(<JournalStats stats={journalStats([record(0, 9, 10, 60), record(1, 9, 10, 60)], NOW, 40)} typingWpm={40} />)
+    expect(within(column).getByRole('heading', { name: 'Today' })).toBeVisible()
+    expect(within(column).queryByRole('heading', { name: 'Your numbers' })).toBeNull()
+    // A day more than a year back still counts: the threshold is two days of records, whenever they were.
+    rerender(<JournalStats stats={journalStats([record(0, 9, 10, 60), record(400, 9, 10, 60)], NOW, 40)} typingWpm={40} />)
+    expect(within(column).getByRole('heading', { name: 'Today' })).toBeVisible()
+  })
+
   it('says plainly what it cannot show yet', () => {
-    render(<JournalStats stats={journalStats([record(0, 9, 10, 0)], NOW, 40)} typingWpm={40} />)
+    render(<JournalStats stats={journalStats([record(0, 9, 10, 0), record(1, 9, 10, 0)], NOW, 40)} typingWpm={40} />)
     expect(screen.getByText('Your speed shows here once you have dictated on two days.')).toBeVisible()
     expect(screen.getByText('No app noted yet. Sotto notes the app it pastes into.')).toBeVisible()
-    expect(screen.getByRole('heading', { name: '1-day streak' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '2-day streak' })).toBeVisible()
   })
 })

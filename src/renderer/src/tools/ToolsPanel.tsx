@@ -3,7 +3,7 @@ import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
@@ -13,11 +13,11 @@ import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
 import type { DelegatedRosterSource } from './DelegatedThreads'
 import { delegatedBelow, openDelegatedThread } from './delegatedRoster'
-import { delegatedThreadsBelow } from '../../../shared/delegation'
 import { useDelegationsEnabled } from '../agents/delegations'
 import type { AgentContinueOptions } from './AgentContinue'
 import { useThreadStarts } from '../agents/ThreadStart'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
+import { TOOLS_PANEL_ID } from './ToolsToggle'
 import { offersBabysitting } from '../agents/babysitting'
 import { useRestartStopped } from '../agents/RestartStopped'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -36,7 +36,7 @@ import { useOwlFeature } from '../state/owlFeature'
 import { IPhoneSurface } from './IPhoneSurface'
 import { PhonePlayer } from './PhonePlayer'
 import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
-import { useBrowserTasks, useThreadBrowser } from './browserStore'
+import { useThreadBrowserTasks, useThreadBrowser } from './browserStore'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { ChangesSurface } from './ChangesSurface'
 import { PullRequestSurface } from './PullRequestSurface'
@@ -57,7 +57,6 @@ import {
 import './tools.css'
 import './toolsRail.css'
 
-const TOOLS_PANEL_ID = 'sotto-tools-panel'
 const FEEDBACK_MS = 1_600
 const RESIZE_STEP = 24
 const OVERLAY_GUTTER = 48
@@ -104,61 +103,9 @@ function workspaceArea(panel: HTMLElement | null): HTMLElement | null {
   return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-player') && !child.classList.contains('browser-player-pill') && !child.classList.contains('phone-player')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
 }
 
+/** Back to the Tools symbol in the focused pane's header, the pane whose thread the panel follows (ADR-0182). */
 function focusToggle(): void {
-  document.querySelector<HTMLElement>(`[aria-controls="${TOOLS_PANEL_ID}"]`)?.focus()
-}
-
-/**
- * Opens and closes the shared tools panel. Place it in a pane header; it never changes the focused thread.
- * In a pane whose thread is not the one the panel is pinned to, it gives up its pressed look and says whose files are open.
- * Its dot means this pane's own thread has agents working or a browser request waiting, never a pinned thread's;
- * the browser player can be closed, shrunk, hidden or showing another pane's thread, so a waiting request still
- * appears here (#331).
- */
-export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly store?: ToolsPanelStore; readonly state?: AgentState | undefined }): ReactNode {
-  const { t } = useLingui()
-  const chrome = useToolsPanelChrome(store)
-  const agents = useOptionalAgents()
-  const agentState = state ?? agents?.state ?? null
-  const button = useRef<HTMLButtonElement>(null)
-  const [paneThreadId, setPaneThreadId] = useState<string | null>(null)
-  // The header the toggle sits in belongs to one pane's thread.
-  useLayoutEffect(() => { setPaneThreadId(button.current?.closest('[data-thread-id]')?.getAttribute('data-thread-id') ?? null) })
-  // A panel closed from the keyboard hands focus here, including to a toggle the resulting layout change re-mounted.
-  useLayoutEffect(() => {
-    const element = button.current
-    if (!element || !store.togglePendingFocus()) return
-    const active = document.activeElement
-    if (active === element) return
-    if (active === null || active === document.body || !active.isConnected) element.focus()
-    else store.clearToggleFocus()
-  }, [chrome.open, store])
-  const pinned = chrome.pinnedThreadId
-  const delegation = useDelegationsEnabled()
-  const selectedThreadId = paneThreadId ?? agentState?.activeThreadId
-  // The threads this pane's thread delegated (ADR-0081; Owl only) count as its agents: working, or waiting on you.
-  const below = delegation && agentState && selectedThreadId ? delegatedBelow(agentState.host.threads, selectedThreadId) : { needs: 0, working: 0 }
-  const workingAgents = (agentState?.host.threads.find(thread => thread.id === selectedThreadId)?.subagentSummary?.working ?? 0) > 0 || below.working > 0
-  const browserTasks = useBrowserTasks(store.browser)
-  // This pane's own thread, never the pin: a pin shows in another pane's Tools, not by lighting every pane's dot (#331).
-  const browserWaiting = browserTasks.some(task => task.threadId === selectedThreadId && task.pendingAction !== null)
-  // While Tools is pinned to a roster's thread and this pane shows that thread or one it delegated, a delegated thread
-  // waiting on you there still marks this toggle: answering one, Tools stays on the roster where others may wait. The
-  // pin lights nothing else here (#331).
-  const rosterOwner = delegation && agentState && pinned !== null && selectedThreadId && selectedThreadId !== pinned
-    && delegatedThreadsBelow(agentState.host.threads, pinned).includes(selectedThreadId) ? pinned : undefined
-  const delegatedWaiting = (rosterOwner !== undefined && agentState ? delegatedBelow(agentState.host.threads, rosterOwner) : below).needs > 0
-  const pinnedElsewhere = chrome.open && (chrome.surface !== 'agents' || delegation) && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
-  const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? t({ message: 'another thread', comment: 'Stands in for a thread\'s title, as in "Tools are pinned to another thread".' }) : null
-  const tools = t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })
-  // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
-  return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
-    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedTitle === null ? null : t({ message: `Showing ${pinnedTitle}, pinned`, comment: '{pinnedTitle} is a thread\'s title.' }), delegatedWaiting ? t`A delegated thread needs you` : null, workingAgents ? t`Agents are working` : null, browserWaiting ? t`A browser request is waiting for your answer` : null].filter(Boolean).join('. ') || undefined}
-    title={pinnedTitle === null ? tools : t({ message: `Tools are pinned to ${pinnedTitle}`, comment: '{pinnedTitle} is a thread\'s title.' })}
-    onClick={() => store.toggle()}>
-    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="tt-visually-hidden">{tools}</span>
-    {workingAgents || browserWaiting || delegatedWaiting ? <span className="tools-toggle__agents-dot" data-needs={delegatedWaiting || undefined} aria-hidden="true" /> : null}
-  </button>
+  (document.querySelector<HTMLElement>(`.thread-pane[data-focused] [aria-controls="${TOOLS_PANEL_ID}"]`) ?? document.querySelector<HTMLElement>(`[aria-controls="${TOOLS_PANEL_ID}"]`))?.focus()
 }
 
 /**
@@ -242,7 +189,7 @@ function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined
   /** The delegated threads below the Agents thread (ADR-0081; Owl only). */
   delegated?: { readonly needs: number; readonly working: number }): Partial<Record<ToolSurfaceId, string>> {
   const { t } = useLingui()
-  const tasks = useBrowserTasks(store.browser)
+  const tasks = useThreadBrowserTasks(store.browser, thread?.id ?? null)
   const cloudSession = useCloudSession(thread?.id ?? null, cloudStore)
   const live: Partial<Record<ToolSurfaceId, string>> = {}
   if (thread) {
@@ -382,13 +329,17 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     return () => { covered.current.forEach((element, index) => { element.inert = previous[index] ?? false }); covered.current = [] }
   }, [open, chrome.expanded])
 
-  // Files, Changes and Agents read a paired host's thread on that host. Its terminal, browser and test iPhone stay on
-  // that machine, so nothing here starts them for it.
+  // Files, Changes and Agents read a paired host's thread on that host. Its browser and test iPhone stay on that machine,
+  // so nothing here starts them for it; its terminal runs over SSH where that is on (ADR-0183; Owl only).
+  const hostedTerminal = useOwlFeature('paired-host-terminal')
   const threadId = thread?.id
   const localThreadId = thread?.remoteHost ? undefined : thread?.id
   // Files lists the working folder on every surface, since the footer's path and its actions read it,
   // and refreshes when its own surface comes back.
   const onFiles = chrome.surface === 'files'
+  // The surface shown, not its reads: Files lists the folder on every surface, so a read says nothing of who looked.
+  const shownTool = open && (onFiles || chrome.surface === 'changes') ? chrome.surface : undefined
+  useEffect(() => { if (shownTool === 'files' || shownTool === 'changes') window.sotto?.productEvents?.toolOpened(shownTool) }, [shownTool])
   useEffect(() => {
     if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(filesFor, threadId)
   }, [open, threadId, onFiles, filesFor, store])
@@ -403,8 +354,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   }, [open, threadId, chrome.surface, changesFor, store, diffSettingsKnown])
   // Terminal sessions live in main; showing the surface only lists them again.
   useEffect(() => {
-    if (open && localThreadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, localThreadId)
-  }, [open, localThreadId, chrome.surface, terminalBridge, store])
+    const terminalThread = hostedTerminal ? threadId : localThreadId
+    if (open && terminalThread !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, terminalThread)
+  }, [open, localThreadId, threadId, hostedTerminal, chrome.surface, terminalBridge, store])
   useEffect(() => {
     if (open && localThreadId !== undefined && (chrome.surface === 'browser' || chrome.surface === 'iphone')) void store.browser.activate(browserBridge, localThreadId)
   }, [open, localThreadId, chrome.surface, browserBridge, store])
@@ -436,7 +388,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     [delegationOn, command, state, focusedThreadId, openFromRoster])
   // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
   // the "Float the browser over the thread" control's own condition, computed once for the surface below.
-  const browserTasks = useBrowserTasks(store.browser)
+  const browserTasks = useThreadBrowserTasks(store.browser, thread?.id ?? null)
   const focusedBrowser = useThreadBrowser(store.browser, focusedThreadId)
 
   const player = <>
@@ -516,14 +468,14 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
     babysit={babysitShown && offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
       ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
-  // Files, Changes and Agents are read from a paired host; its terminal, browser and test iPhone are on that machine.
-  else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
+  // Files, Changes and Agents are read from a paired host; its browser and test iPhone are on that machine, and so is its terminal off Owl.
+  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
     rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation} />
   else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
-  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
+  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} machine={hostName} />
   // A paired host pushes no change events: the Changes bridge for its thread asks it on a timer while Changes shows it.
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesFor} platform={platform} onStatus={showStatus}
     onOpenFile={path => { store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
@@ -531,7 +483,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
 
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line
   // of chrome, its work and the working-copy footer; CSS draws the rail on the panel's outer edge.
-  return <>{player}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
+  // A region F6 visits after the panes while it is open (ADR-0164).
+  return <>{player}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" data-region="tools" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
     style={{ '--tools-width': `${Math.round(width)}px` } as React.CSSProperties} onKeyDown={onKeyDown}>
     <div className="tools-panel__sheet">
       <div className="tools-panel__resize" role="separator" aria-orientation="vertical" aria-label={t`Resize tools panel`} tabIndex={chrome.expanded ? -1 : 0}

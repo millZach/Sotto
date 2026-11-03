@@ -7,7 +7,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
+import { appRooms, roomFor, RoomTabFace, useCouncilRoom, useRoomSwitch } from '../components/AppShell'
 import { pageShortcutFor, usePageShortcutLabels } from '../components/pageShortcuts'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
@@ -74,7 +74,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
 
 /**
  * The room switch, drawn from the one room definition (`appRooms`): Dictate | Threads, with Watcher's owl between
- * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
+ * them while its gate is on and the Council left of the owl while its Owl feature is and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
  * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
@@ -83,7 +83,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
-  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
+  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn(), council: useCouncilRoom() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   const { t } = useLingui()
   if (rooms.length < 2) return null
@@ -231,6 +231,11 @@ export interface SidebarFrameProps {
   readonly onProjectAdded?: ((projectId: string) => void) | undefined
   /** A line directly under the search, above the list: the Threads sidebar's Needs attention count. */
   readonly afterSearch?: ReactNode
+  /**
+   * What stands just above the foot: the Threads sidebar's settle toast (ADR-0167). Open, it is in the column's own flow,
+   * so it covers no row; on the collapsed rail it stands beside the rail's foot.
+   */
+  readonly toast?: ReactNode
 }
 
 /**
@@ -238,7 +243,7 @@ export interface SidebarFrameProps {
  * list, and the foot. The top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
  * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
-export function SidebarFrame({ state, command, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title, children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch }: SidebarFrameProps): ReactNode {
+export function SidebarFrame({ state, command, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title, children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch, toast }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
   const { t } = useLingui()
   const heading = title === undefined ? t`Threads` : title
@@ -250,7 +255,8 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const sky = useReleaseTrack() === 'owl' && !size.collapsed
   const railOn = useOwlFeature('sidebar-rail')
   const watcherOn = useWatcherEnabled()
-  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
+  // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
+  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
     {sky ? <OwlSky /> : null}
@@ -261,7 +267,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
       <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label={t`Collapse sidebar`} title={t`Collapse sidebar`} onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
     </SidebarTop>
     <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />
-      <input className="tt-input tt-focusable" type="search" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
+      <input className="tt-input tt-focusable" type="search" data-region-entry="2" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); onQuery('') } }} />
       {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label={t`Clear search`} title={t`Clear search`} onClick={() => onQuery('')}><X size={14} aria-hidden="true" /></button> : null}
     </label>
@@ -271,6 +277,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
     {notice}
     <div className="thread-nav__scroll">{children}</div>
+    {size.collapsed ? null : toast}
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>
     {size.collapsed ? <div className="thread-nav__rail">
@@ -278,18 +285,22 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
       {railOn && watcherOn ? <RailWatcher /> : null}
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
+      {toast}
       {foot ?? <SidebarFoot />}
     </div> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>
 }
 
-/** Settle project, or Restore project once settled, on a folder head in the sidebar. */
+/**
+ * Settle project, or Restore project once settled, on a folder head in the sidebar. The pointer's: the folder's menu
+ * says the same in words for the keyboard (ADR-0164), so it is out of the Tab order.
+ */
 export function ProjectSettleAction({ projectId, title, settled, disabled, command }: {
   readonly projectId: string; readonly title: string; readonly settled: boolean; readonly disabled: boolean
   readonly command: AgentConnection['command']
 }): ReactNode {
   const { t } = useLingui()
   return settled
-    ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Restore project ${title}`} title={t`Restore project`} disabled={disabled} onClick={() => void command({ type: 'restore-project', projectId })}><ArchiveRestore size={16} aria-hidden="true" /></button>
-    : <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Settle project ${title}`} title={t`Settle project`} disabled={disabled} onClick={() => void command({ type: 'settle-project', projectId })}><Archive size={16} aria-hidden="true" /></button>
+    ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Restore project ${title}`} title={t`Restore project`} disabled={disabled} onClick={() => void command({ type: 'restore-project', projectId })}><ArchiveRestore size={16} aria-hidden="true" /></button>
+    : <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Settle project ${title}`} title={t`Settle project`} disabled={disabled} onClick={() => void command({ type: 'settle-project', projectId })}><Archive size={16} aria-hidden="true" /></button>
 }

@@ -28,11 +28,14 @@ export function WatchHeaderToggle({ threadId, title }: { readonly threadId: stri
   return <button className="watch-toggle tt-focusable" {...toggle}><WatcherOwl size={15} /><span className="watch-toggle__text"><Trans context="Put a thread under Watcher's watch">Watch</Trans></span></button>
 }
 
-/** The owl among a sidebar row's actions, pressed while Watcher watches the thread. */
+/**
+ * The owl among a sidebar row's actions, pressed while Watcher watches the thread. Like the row's other actions it is
+ * the pointer's: the row's menu says Watch in words for the keyboard (ADR-0164), so it is out of the Tab order.
+ */
 export function WatchRowToggle({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
   const toggle = useWatchToggle(threadId, title)
   if (toggle === null) return null
-  return <button className="thread-nav__action watch-row-toggle tt-focusable" {...toggle}><WatcherOwl size={16} /></button>
+  return <button className="thread-nav__action watch-row-toggle tt-focusable" tabIndex={-1} {...toggle}><WatcherOwl size={16} /></button>
 }
 
 /** The owl at the end of a row in All threads, pressed while Watcher watches it; the row's last stop. */

@@ -1,5 +1,6 @@
 import { MAX_ACTIVITY_TEXT, mergeAgentActivities, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { acpToolMedia, rawOutputText, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, settledThinking, thinkingSettledAs, type AcpThinking } from './thinkingActivity'
 
 type Context = { turnId: string; afterMessageId?: string | undefined; cwd: string }
@@ -17,13 +18,14 @@ const GROK_THINKING: AcpThinking = {
 /**
  * Grok's activity for one update, live or read from its history. A thought (`agent_thought_chunk`) streams into one
  * Thinking row per stream: Grok gives a thought and the reply that follows it the same `streamStartMs` in `_meta`, and
- * its history keeps both, so the row a live thought made is the row a read of history finds.
+ * its history keeps both, so the row a live thought made is the row a read of history finds. With `capture`, the thread
+ * media store's, given only with the Owl feature `inline-media` on, a tool's pictures become handles (ADR-0170).
  */
 export function grokActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false,
-  stream: { promptId?: string | undefined; streamStartMs?: number | undefined } = {}): AgentActivity[] {
+  stream: { promptId?: string | undefined; streamStartMs?: number | undefined } = {}, capture?: MediaCapture): AgentActivity[] {
   const key = stream.streamStartMs === undefined ? undefined : `${stream.promptId ?? context.turnId}-${stream.streamStartMs}`
   return acpThinkingActivities(GROK_THINKING, update, { turnId: context.turnId, afterMessageId: context.afterMessageId, key }, previous, live,
-    () => grokWork(update, context, previous, live))
+    () => grokWork(update, context, previous, live, capture))
 }
 
 /**
@@ -52,7 +54,7 @@ export function keepStreamedThinking(history: readonly AgentActivity[], shown: r
   })
 }
 
-function grokWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
+function grokWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean, capture: MediaCapture | undefined): AgentActivity[] {
   let truncated = false
   const bounded = (value: string) => { if (value.length > MAX_ACTIVITY_TEXT) truncated = true; return value.slice(0, MAX_ACTIVITY_TEXT) }
   if (['subagent_spawned', 'subagent_progress', 'subagent_finished'].includes(String(update.sessionUpdate)) && typeof update.subagent_id === 'string') {
@@ -104,7 +106,7 @@ function grokWork(update: Record<string, unknown>, context: Context, previous: r
     ...(startedAt ? { startedAt, timingSource: 'observed' as const } : {}),
     ...(typeof input?.command === 'string' ? { command: bounded(input.command) } : {}),
     ...(update.rawInput !== undefined ? { text: bounded(JSON.stringify(update.rawInput)) } : {}),
-    ...(texts?.length ? { output: bounded(texts.join('\n')) } : update.rawOutput !== undefined ? { output: bounded(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) } : {}),
+    ...(texts?.length ? { output: bounded(texts.join('\n')) } : update.rawOutput !== undefined ? { output: bounded(rawOutputText(update.rawOutput)) } : {}),
     ...(Number.isInteger(output?.exitCode ?? output?.exit_code) ? { exitCode: (output?.exitCode ?? output?.exit_code) as number } : {}),
-    ...(changes?.length || locations.length ? { changes: (changes?.length ? changes : locations).slice(0, 200) } : {}), ...(truncated || (changes?.length ?? 0) > 200 || locations.length > 200 ? { truncated: true } : {}) }]
+    ...(changes?.length || locations.length ? { changes: (changes?.length ? changes : locations).slice(0, 200) } : {}), ...acpToolMedia(capture, update.content, old), ...(truncated || (changes?.length ?? 0) > 200 || locations.length > 200 ? { truncated: true } : {}) }]
 }

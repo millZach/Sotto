@@ -7,6 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
+import { PaneMenu } from '../../../src/renderer/src/agents/PaneMenu'
 import { ThreadPane } from '../../../src/renderer/src/agents/ThreadPane'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
@@ -27,7 +28,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => {
 const THREAD = 'grok-previews'
 
 /** One idle thread of the fixture, on its own, with a provider that can compact and a place to open beside. */
-function mount({ beside = true, state = threadsStateFixture(), patch }: { readonly beside?: boolean; readonly state?: AgentState; readonly patch?: Partial<AgentState['host']['threads'][number]> } = {}) {
+function mount({ beside = true, state = threadsStateFixture(), patch, workspace = false, terminal = false }: { readonly beside?: boolean; readonly state?: AgentState; readonly patch?: Partial<AgentState['host']['threads'][number]>; readonly workspace?: boolean; readonly terminal?: boolean } = {}) {
   if (patch) Object.assign(state.host.threads.find(thread => thread.id === THREAD)!, patch)
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, compact: true }
@@ -36,7 +37,7 @@ function mount({ beside = true, state = threadsStateFixture(), patch }: { readon
   const command = live.command
   const row = describeThreads(state, E2E_THREADS_NOW).find(item => item.thread.id === THREAD)!
   const onOpenBeside = vi.fn()
-  render(<ThreadPane row={row} state={state} command={command} store={new ThreadDraftStore(command)} focused promptId="prompt" error={null} onOpenBeside={beside ? onOpenBeside : undefined} />)
+  render(<ThreadPane row={row} state={state} command={command} store={new ThreadDraftStore(command)} focused promptId="prompt" error={null} onOpenBeside={beside ? onOpenBeside : undefined} tools={workspace} terminal={terminal} />)
   const head = (): HTMLElement => document.querySelector('.thread-workspace__head')!
   return { command, onOpenBeside, head, requests: (): AgentCommand[] => command.mock.calls.map(([request]) => request) }
 }
@@ -48,14 +49,14 @@ describe('the pane header’s More menu', () => {
   it('lists what the beta offers, in groups, with nothing about the hidden voice coordinator', () => {
     const view = mount()
     const menu = openPaneMenu(view.head())
-    expect(paneMenuItems(menu)).toEqual(['Rename', 'Regenerate title', 'Open beside', 'Compact context', 'Settle'])
-    // Three groups: naming the thread, its context, and where it rests.
-    expect(menu.querySelectorAll('hr')).toHaveLength(2)
+    expect(paneMenuItems(menu)).toEqual(['Open beside', 'Rename', 'Compact context', 'Settle'])
+    // Four groups: the layout (ADR-0163), naming the thread, its context, and where it rests.
+    expect(menu.querySelectorAll('hr')).toHaveLength(3)
   })
 
   it('leaves Open beside out where the caller has nowhere to put a second pane', () => {
     const view = mount({ beside: false })
-    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Rename', 'Regenerate title', 'Compact context', 'Settle'])
+    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Rename', 'Compact context', 'Settle'])
   })
 
   it('runs the item chosen and closes, and closes on Escape or a pointer outside without running anything', () => {
@@ -89,6 +90,56 @@ describe('the pane header’s More menu', () => {
     const view = mount()
     fireEvent.click(within(openPaneMenu(view.head())).getByRole('menuitem', { name: 'Open beside' }))
     expect(view.onOpenBeside).toHaveBeenCalledOnce()
+  })
+})
+
+describe('a row that shows or hides something', () => {
+  it('is a checkbox item, ticked while it holds, as a sidebar row’s Watch is', () => {
+    const run = vi.fn()
+    render(<PaneMenu groups={[[{ id: 'watch', label: 'Watch', shown: true, run }]]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const row = screen.getByRole('menuitemcheckbox', { name: 'Watch' })
+    expect(row).toHaveAttribute('aria-checked', 'true')
+    expect(row.querySelector('.pane-menu__end svg')).not.toBeNull()
+  })
+})
+
+describe('the pane header’s Tools and Terminal symbols (ADR-0182)', () => {
+  const names = (head: HTMLElement): (string | null)[] => [...head.querySelectorAll('.thread-workspace__actions > *')].map(control => control.getAttribute('aria-label') ?? control.textContent)
+
+  it('stand after Watch and before the menu, which lists neither', () => {
+    const view = mount({ workspace: true, terminal: true })
+    const actions = names(view.head())
+    expect(actions.slice(-3)).toEqual(['Tools', 'Terminal drawer', ''])
+    const tools = within(view.head()).getByRole('button', { name: 'Tools' })
+    expect(tools).toHaveAttribute('aria-pressed', 'false')
+    const drawer = within(view.head()).getByRole('button', { name: 'Terminal drawer' })
+    expect(drawer).toHaveAttribute('aria-pressed', 'false')
+    expect(paneMenuItems(openPaneMenu(view.head()))).toEqual(['Open beside', 'Rename', 'Compact context', 'Settle'])
+  })
+
+  it('are not there beside Watcher, which has neither Tools nor a drawer', () => {
+    const view = mount()
+    expect(within(view.head()).queryByRole('button', { name: 'Tools' })).toBeNull()
+    expect(within(view.head()).queryByRole('button', { name: 'Terminal drawer' })).toBeNull()
+  })
+
+  it('say where the terminal is on a thread on a paired host, opening nothing', () => {
+    const view = mount({ workspace: true, patch: { remoteHost: true, hostLabel: 'forge' } })
+    const drawer = within(view.head()).getByRole('button', { name: 'Terminal drawer' })
+    expect(drawer).toHaveAttribute('aria-disabled', 'true')
+    expect(drawer).toHaveAccessibleDescription('This thread’s terminal is on forge. Open it there.')
+    expect(drawer).toHaveAttribute('title', 'This thread’s terminal is on forge. Open it there.')
+    expect(view.head()).not.toHaveAttribute('data-terminal-drawer')
+    fireEvent.click(drawer)
+    expect(document.querySelector('.pane-terminal')).toBeNull()
+    expect(drawer).not.toHaveAttribute('aria-pressed')
+  })
+
+  it('shows the full name on hover', () => {
+    const title = 'A long thread name that the header has to cut off as the pane narrows'
+    const view = mount({ patch: { title } })
+    expect(within(view.head()).getByRole('heading', { name: title })).toHaveAttribute('title', title)
   })
 })
 
@@ -161,7 +212,7 @@ describe('the manual composer', () => {
     expect(view.requests()).toContainEqual({ type: 'configure-thread-working-copy', threadId: THREAD, workingCopy: 'shared' })
   })
 
-  it('keeps the full toolbar under an answer even when the quiet pill is enabled', () => {
+  it('draws Zach\'s composer under an answer too, with the branch controls in the pane header', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     const thread = state.host.threads.find(item => item.id === THREAD)!
@@ -171,12 +222,11 @@ describe('the manual composer', () => {
     thread.status = 'running'
     const view = mount({ state })
     const toolbar = screen.getByRole('group', { name: 'Branch toolbar' })
-    expect(document.querySelector('.thread-prompt')).not.toHaveAttribute('data-quiet')
-    expect(view.head()).not.toContainElement(toolbar)
-    expect(document.querySelector('.thread-workspace__compose')).toContainElement(toolbar)
+    expect(document.querySelector('.thread-prompt')).toHaveAttribute('data-quiet')
+    expect(view.head()).toContainElement(toolbar)
   })
 
-  it('keeps quiet Stop after the split chip and before the round Send, with the shield at the start of the pill', () => {
+  it('draws Zach\'s composer: the prompt above, permissions before the model, and the disc as Stop while a turn runs with nothing typed', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     state.host.capabilities.configureThread = true
@@ -185,14 +235,18 @@ describe('the manual composer', () => {
     thread.requests = []
     state.host.models.find(model => model.id === thread.modelId)!.runtimeModes = ['approval-required', 'full-access']
     mount({ state })
+    const form = document.querySelector('form.thread-prompt')!
+    expect(form.querySelector('.thread-prompt__lead')).toBeNull()
     const shield = screen.getByRole('combobox', { name: 'Thread permissions' })
+    const model = form.querySelector('.model-picker__trigger')!
+    // In the footer, in the order the eye and Tab take them: permissions, the model, then the disc.
+    expect(shield.closest('.thread-prompt__shield')).not.toBeNull()
+    expect(shield.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const actions = form.querySelector('.thread-prompt__actions')!
+    expect([...actions.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Stop agent'])
     const stop = screen.getByRole('button', { name: 'Stop agent' })
-    const send = screen.getByRole('button', { name: 'Queue prompt' })
-    expect(shield.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(stop.parentElement).toHaveClass('thread-prompt__actions')
-    expect(send).toHaveClass('thread-prompt__disc')
-    // The shield stands at the pill's start, after attach (ADR-0161).
-    expect(shield.closest('.thread-prompt__lead')).not.toBeNull()
+    expect(stop).toHaveClass('thread-prompt__disc')
+    expect(stop).toHaveAttribute('data-face', 'stop')
+    expect(screen.queryByRole('button', { name: 'Queue prompt' })).toBeNull()
   })
 })

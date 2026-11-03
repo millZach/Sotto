@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
 import { asActivityPublication, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
 import { ThreadChangesPublisher, ThreadMap, threadChangesBetween, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges,
   type ThreadChangeSet } from './threadChanges'
@@ -142,6 +142,10 @@ export class SottoThreadHost implements AgentHost {
   }
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
+  /** Undefined until the coordinator names a live-session set; an adapter that never hears one keeps its old rule. */
+  private liveSessions: readonly string[] | undefined
+  /** The settled threads the caller last named, handed on again when the adapter connects. */
+  private settled: readonly string[] | undefined
   /** Per Sotto thread with no binding yet: the session ID an early start used, which its first send then reserves. */
   private readonly unbound = new Map<string, string>()
 
@@ -228,7 +232,9 @@ export class SottoThreadHost implements AgentHost {
   useWorkerRoles(roles: WorkerRoleSource): void { this.inner.useWorkerRoles?.(roles) }
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
+    if (this.liveSessions) this.keepSessionsLive(this.liveSessions)
     if (this.observed) this.observeThreads(this.observed)
+    if (this.settled) this.useSettledThreads(this.settled)
     return this.read(() => this.inner.connect())
   }
 
@@ -312,6 +318,11 @@ export class SottoThreadHost implements AgentHost {
     const binding = this.registry.byThread(threadId)
     if (!binding || binding.provider !== this.provider) return null
     return this.inner.writeShortText(binding.sessionId, prompt, signal)
+  }
+
+  /** A side call with no thread behind it (ADR-0173) is this adapter's own: nothing to look up. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    return await this.inner.writeShortTextOn?.(target, prompt, signal) ?? null
   }
 
   /** Bindings for newly discovered threads reach disk before the coordinator can persist a reference to them. */
@@ -519,12 +530,27 @@ export class SottoThreadHost implements AgentHost {
     for (const [threadId, id] of this.unbound) if (id === sessionId) return threadId
     return undefined
   }
-  observeThreads(threadIds: readonly string[]): void {
-    this.observed = [...threadIds]
-    this.inner.observeThreads?.(threadIds.flatMap(threadId => {
+  useSettledThreads(threadIds: readonly string[]): void {
+    this.settled = [...threadIds]
+    this.inner.useSettledThreads?.(threadIds.flatMap(threadId => {
       const binding = this.registry.byThread(threadId)
       return binding?.provider === this.provider ? [binding.sessionId] : []
     }))
+  }
+  observeThreads(threadIds: readonly string[]): void {
+    this.observed = [...threadIds]
+    this.inner.observeThreads?.(this.ownSessions(threadIds))
+  }
+  keepSessionsLive(threadIds: readonly string[]): void {
+    this.liveSessions = [...threadIds]
+    this.inner.keepSessionsLive?.(this.ownSessions(threadIds))
+  }
+  /** The native session IDs of those of these threads bound to this adapter's provider. */
+  private ownSessions(threadIds: readonly string[]): string[] {
+    return threadIds.flatMap(threadId => {
+      const binding = this.registry.byThread(threadId)
+      return binding?.provider === this.provider ? [binding.sessionId] : []
+    })
   }
 
   disconnect(): void { this.unbound.clear(); this.inner.disconnect() }

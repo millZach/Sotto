@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GrokAcpHost } from '../../src/main/agents/grok'
-import { object } from '../../src/main/agents/claudeProtocol'
 
 describe("requires SOTTO_PHASE3_GROK_LIVE=1", () => {
   it.skipIf(process.env.SOTTO_PHASE3_GROK_LIVE !== '1')('Grok native requested effort confirmation uses no model calls', async () => {
@@ -33,8 +32,7 @@ describe("requires SOTTO_PHASE3_GROK_LIVE=1", () => {
         await expect.poll(async () => {
           const thread = (await host.snapshot()).threads[0]!
           for (const request of thread.requests) {
-            const details = request.context?.details ? object(JSON.parse(request.context.details)) : undefined
-            const allow = request.kind === 'permission' && details?.command === 'echo SOTTO_GROK_TOOL_OK'
+            const allow = request.kind === 'permission' && request.context?.command === 'echo SOTTO_GROK_TOOL_OK'
             await host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: request.id, answer: '', approved: allow })
           }
           return thread.status

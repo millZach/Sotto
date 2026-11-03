@@ -361,6 +361,8 @@ describe('ComputersStep', () => {
     const { bridge } = hostsFixture([])
     const user = userEvent.setup()
     render(<ComputersStep heading={<div />} bridge={bridge} />)
+    // Most people use one computer: the filled button is the footer's Skip for now, and adding one is secondary (#1824).
+    expect(await screen.findByRole('button', { name: 'Add a computer' })).toHaveClass('tt-button--secondary')
     await user.click(await screen.findByRole('button', { name: 'Add a computer' }))
     expect(screen.getByRole('dialog', { name: 'Add a computer (stub)' })).toBeVisible()
   })
@@ -480,5 +482,30 @@ describe('Onboarding forward button labels', () => {
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
     expect(screen.getByRole('heading', { name: 'One shortcut from speech to text' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible()
+  })
+
+  it('fills Skip for now on the optional steps after dictation, and leaves it secondary where the step’s own press comes first (#1824)', async () => {
+    const user = userEvent.setup()
+    // No agents connected and no computers added: neither task has started.
+    vi.mocked(useOptionalAgents).mockReturnValue(null)
+    render(<Onboarding {...base} microphoneState="idle" hostsBridge={hostsFixture([]).bridge} />)
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    // The microphone's own test is the expected press.
+    expect(screen.getByRole('heading', { name: 'Check your microphone' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toHaveClass('tt-button--secondary')
+    expect(screen.getByRole('button', { name: 'Test microphone' })).toHaveClass('tt-button--primary')
+    for (const heading of ['Choose a speech model', 'One shortcut from speech to text', 'Your coding agents']) {
+      await user.click(screen.getByRole('button', { name: /^(Skip for now|Continue)$/u }))
+      expect(screen.getByRole('heading', { name: heading })).toBeVisible()
+    }
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toHaveClass('tt-button--primary')
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }))
+    expect(screen.getByRole('heading', { name: 'Choose a project folder' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toHaveClass('tt-button--primary')
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }))
+    expect(screen.getByRole('heading', { name: 'Run agents on another computer' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toHaveClass('tt-button--primary')
+    expect(await screen.findByRole('button', { name: 'Add a computer' })).toHaveClass('tt-button--secondary')
   })
 })

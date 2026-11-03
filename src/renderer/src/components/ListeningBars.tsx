@@ -1,21 +1,9 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react'
-import { SEGMENT_SILENCE_RMS, SEGMENT_SILENCE_SECONDS } from '../audio/audioRecorder'
+import React, { type ReactNode } from 'react'
+import { useSpeakingGate } from '../audio/speakingGate'
 import './listeningBars.css'
 
 /** The listening visualizer's fixed column count; CSS staggers their motion. */
 const LISTENING_BAR_COUNT = 7
-/**
- * Voice gating for the visualizer, derived from the recorder's own silence
- * segmentation so the wave and the recorder agree on what counts as a pause:
- * the silence floor releases the gate, twice it attacks, and the hold sits
- * just past the gap the recorder treats as a real pause.
- */
-const SPEAKING_ON_LEVEL = SEGMENT_SILENCE_RMS * 2
-const SPEAKING_OFF_LEVEL = SEGMENT_SILENCE_RMS
-const SPEAKING_HOLD_MS = SEGMENT_SILENCE_SECONDS * 1_000 + 20
-function safeLevel(level: number): number {
-  return Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0
-}
 
 /**
  * The recording visualizer: seven bars that rise and fall on a staggered CSS
@@ -23,19 +11,17 @@ function safeLevel(level: number): number {
  * reads as "I hear you" rather than merely "a session is open". Silence settles
  * the bars to their resting height.
  *
- * The gate is hysteretic — it opens above SPEAKING_ON_LEVEL and only closes
- * below the lower SPEAKING_OFF_LEVEL, then only after SPEAKING_HOLD_MS of quiet
- * — so a voice wavering at the boundary and the ordinary gaps between words
- * both leave the wave running. Only the container carries the decision, as one
- * data attribute; the bars themselves stay purely CSS-driven.
+ * Whether a voice is heard is `SpeakingGate`'s decision (`audio/speakingGate.ts`):
+ * dictation hands it over already made, as `speaking`, so the window and the
+ * widget hear of the gate rather than of every level (#993); the microphone test
+ * hands over its own level and the bars gate it the same way. Only the container
+ * carries the decision, as one data attribute; the bars themselves stay purely
+ * CSS-driven.
  *
  * The visualizer stays out of the accessibility tree: the live regions already
  * announce the listening state.
  */
-export function ListeningBars({
-  level,
-  holdSpeaking = false,
-}: {
+export function ListeningBars(props: { readonly speaking: boolean } | {
   readonly level: number
   /**
    * The microphone test keeps the stream open to show live input. Hold the
@@ -43,35 +29,14 @@ export function ListeningBars({
    */
   readonly holdSpeaking?: boolean
 }): ReactNode {
-  const bounded = safeLevel(level)
-  const [speaking, setSpeaking] = useState(() => holdSpeaking || bounded >= SPEAKING_ON_LEVEL)
-  const settleTimerRef = useRef<number | null>(null)
+  return 'speaking' in props ? <Bars speaking={props.speaking} /> : <GatedBars level={props.level} hold={props.holdSpeaking ?? false} />
+}
 
-  useEffect(() => {
-    if (holdSpeaking || bounded >= SPEAKING_ON_LEVEL) {
-      if (settleTimerRef.current !== null) {
-        window.clearTimeout(settleTimerRef.current)
-        settleTimerRef.current = null
-      }
-      setSpeaking(true)
-      return
-    }
-    // Inside the hysteresis band the current state simply holds, and one
-    // pending settle is never restarted: the hold measures from the last
-    // voiced frame, not from the latest quiet one.
-    if (bounded > SPEAKING_OFF_LEVEL || !speaking || settleTimerRef.current !== null) return
-    settleTimerRef.current = window.setTimeout(() => {
-      settleTimerRef.current = null
-      setSpeaking(false)
-    }, SPEAKING_HOLD_MS)
-  }, [bounded, holdSpeaking, speaking])
+function GatedBars({ level, hold }: { readonly level: number; readonly hold: boolean }): ReactNode {
+  return <Bars speaking={useSpeakingGate(level, hold)} />
+}
 
-  useEffect(() => () => {
-    if (settleTimerRef.current === null) return
-    window.clearTimeout(settleTimerRef.current)
-    settleTimerRef.current = null
-  }, [])
-
+function Bars({ speaking }: { readonly speaking: boolean }): ReactNode {
   return (
     <span
       className="widget-bars"

@@ -11,6 +11,7 @@ import { storedClaudeOrigins } from '../fixtures/claudeOrigins'
 import { nativeUsageBoundary } from '../fixtures/nativeUsageBoundary'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { savedUsageLedgers } from '../fixtures/usageLedgerFiles'
 
 const artifacts = evidenceDirectory('artifacts/review-389/electron')
 
@@ -38,7 +39,8 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
   }
   const events = async () => (await readFile(join(root, 'events.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { event: string })
   const writes = async () => (await events()).filter(row => row.event === 'usage-write').length
-  const archive = async () => JSON.parse(await readFile(join(profile, 'claude-usage.json'), 'utf8')) as Record<string, { view: ThreadUsage; entries: Record<string, unknown> }>
+  // Each thread's saved ledger, from the file it has of its own (#555).
+  const archive = async () => await savedUsageLedgers(profile) as Record<string, { view: ThreadUsage; entries: Record<string, unknown> }>
   const bridgeUsage = (id: string) => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === threadId)?.usage, id)
   const archiveUsage = async () => {
     const ledgers = Object.values(await archive())

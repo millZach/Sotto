@@ -1,14 +1,18 @@
 // @vitest-environment node
+import * as fs from 'node:fs/promises'
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { WATCHER_RECORD_FILE } from '../../../src/main/agents/watcherRecordFile'
 import { inactiveLocalHost, requireLocalHistoryCleanup } from '../../../src/main/hosts/inactiveLocalHost'
 import { emptyWatcherRecord } from '../../../src/shared/watcher'
 import { randomUUID } from 'node:crypto'
 import { RequestDraftService } from '../../../src/main/agents/requestDrafts'
 import { draft } from '../../fixtures/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
+
+vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fs>() }))
 
 it('leaves saved workspace data intact and constructs no provider or thread store when local hosting is off', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-local-off-'))
@@ -89,3 +93,27 @@ it.each([false, true])('keeps answer copies untouched when inactive ownership me
     await runtime.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+it('reads Watcher\u2019s ownership from its own file, and leaves it unreadable when that file cannot be looked at (review)', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-local-off-'))
+  try {
+    const watcher = emptyWatcherRecord()
+    watcher.current = { target: { hostId: randomUUID(), threadId: 'watcher' }, projectId: 'project', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
+    await writeFile(join(directory, 'agents.json'), '{}')
+    await writeFile(join(directory, WATCHER_RECORD_FILE), JSON.stringify({ watcher }))
+    await writeFile(join(directory, 'workspace.json'), JSON.stringify({ snapshot: { threads: [] } }))
+    const runtime = await inactiveLocalHost(directory)
+    expect(runtime.agentHost.watcherThreadIds!()).toEqual(['watcher'])
+    await runtime.close()
+    // A failure other than a missing file is not read as a store without Watcher: what it owns stays unreadable.
+    const stat = fs.stat
+    vi.spyOn(fs, 'stat').mockImplementation(async (path, ...rest) => {
+      if (String(path).endsWith(WATCHER_RECORD_FILE)) throw Object.assign(new Error('Synthetic access failure'), { code: 'EACCES' })
+      return stat(path, ...rest as [])
+    })
+    const refused = await inactiveLocalHost(directory)
+    expect(() => refused.agentHost.watcherThreadIds!()).toThrow('could not be read')
+    await refused.close()
+  } finally { vi.restoreAllMocks(); await rm(directory, { recursive: true, force: true }) }
+})
+

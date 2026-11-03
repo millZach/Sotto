@@ -25,7 +25,7 @@
 
 /* Above a composer he answers a click on his own pixels only, so the room around him still lets the transcript under it be
    selected. The press never takes focus (Lardo.tsx). */
-.thread-monitor[data-creature='lardo'] .lardo__body path { pointer-events: visiblePainted; cursor: pointer; }
+.thread-monitor[data-creature='lardo'] .lardo__body path { pointer-events: visiblePainted; cursor: default; }
 
 /* What he throws: drawn over the window, catching nothing, for the two seconds of a tantrum. Nothing shows until its
    beat, and reduced motion never mounts any of it. The bite is the room showing through the composer's top edge; the

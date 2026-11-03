@@ -163,6 +163,22 @@ describe('Sotto thread interface', () => {
     expect(f.inner.observed).toEqual(['session-workshop'])
   })
 
+  it('forwards the live-session set by session IDs, and names it again before the observation when it connects', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    f.host.keepSessionsLive([snapshot.threads[0]!.id, 'unknown'])
+    expect(f.inner.live).toEqual(['session-workshop'])
+    f.host.observeThreads([snapshot.threads[0]!.id])
+    f.host.disconnect()
+    const order: string[] = []
+    const keep = f.inner.keepSessionsLive.bind(f.inner), observe = f.inner.observeThreads.bind(f.inner)
+    f.inner.keepSessionsLive = ids => { order.push('live'); keep(ids) }
+    f.inner.observeThreads = ids => { order.push('observe'); observe(ids) }
+    await f.host.connect()
+    expect(order).toEqual(['live', 'observe'])
+    expect(f.inner.live).toEqual(['session-workshop'])
+  })
+
   it.each(['send', 'answer', 'interrupt'] as const)('rejects an unknown Sotto ID for %s', async type => {
     const f = await fixture()
     await f.host.connect()

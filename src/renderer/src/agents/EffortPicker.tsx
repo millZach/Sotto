@@ -5,6 +5,7 @@ import { useLingui } from '@lingui/react/macro'
 import { wordsOf } from './interfaceWords'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { useReducedMotion } from '../state/reducedMotion'
+import { isTopEffort } from '../../../shared/topEffort'
 import { ULTRACODE } from '../../../shared/ultracode'
 import './effortPicker.css'
 
@@ -295,9 +296,8 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   // Named apart from the card's own `shown`, which is the option under the thumb rather than the level set.
   const level = value
   const top = choices.length > 1 && choices[choices.length - 1]?.id === level
-  // The composer's trace lights at the top, and at Max where a level such as Ultracode sits past it (Zach, October 26).
-  // A model that reports one level has no highest level, so a lone Max is not lit either.
-  const trace = top || (choices.length > 1 && level === 'max' && choices.some(option => option.id === 'max'))
+  // The composer's trace lights at the top, and on Claude at Max with Ultracode past it.
+  const trace = isTopEffort(choices.map(option => option.id), level)
   const still = useReducedMotion()
   const arriving = useArrival(top, still)
   useLayoutEffect(() => {

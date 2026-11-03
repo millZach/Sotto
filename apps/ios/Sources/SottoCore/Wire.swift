@@ -156,7 +156,16 @@ public struct Shell: Decodable, Equatable, Sendable {
     public let followups: [Followup]?
     /// Queued replies the queue has taken from their delivery, by draft. Older hosts send none.
     public let followupReceipts: [DeliveryReceipt]?
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher }
+    /// Thread settings changes the provider never gave a result for, which the computer keeps (ADR-0166). Read item by item.
+    public var unconfirmedSettings: ThreadList<UnconfirmedSetting>? = nil
+    /// The thread records a shell push carried beside a state whose own list is empty, from a host that sends this
+    /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
+    /// which puts the whole list back (`ThreadRecordsCache`).
+    public var threadRecords: ChangedThreadRecords? = nil
+    /// How many settled threads the computer's list leaves out, from a host that sends this phone only threads that are
+    /// not settled (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
+    public let settledHeldBack: Int?
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, settledHeldBack }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -171,6 +180,8 @@ public struct Shell: Decodable, Equatable, Sendable {
         followups = try c.decodeIfPresent([Followup].self, forKey: .followups)
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
+        unconfirmedSettings = c.tolerant(ThreadList<UnconfirmedSetting>.self, .unconfirmedSettings)
+        settledHeldBack = try c.decodeIfPresent(Int.self, forKey: .settledHeldBack)
     }
     public func validate(hostID: String) throws {
         guard hostId == hostID, host.hostId == hostID,
@@ -178,7 +189,8 @@ public struct Shell: Decodable, Equatable, Sendable {
     }
 }
 public struct HostSnapshot: Decodable, Equatable, Sendable {
-    public let hostId: String?; public let name: String; public let threads: [ThreadSummary]
+    /// `threads` is a `var` only so the connection can put back the records a push left out (`ThreadRecordsCache`).
+    public let hostId: String?; public let name: String; public var threads: [ThreadSummary]
     public let projects: [Project]; public let providers: [Provider]?
     /// Always whole once a shell leaves `HostConnection`: a catalog the host named by revision is put back there.
     public var models: [ThreadModel]?
@@ -186,6 +198,9 @@ public struct HostSnapshot: Decodable, Equatable, Sendable {
     /// of a shell when this connection was already sent that revision whole.
     public let modelsRevision: Int?
     public let capabilities: ProviderCapabilities
+    /// From a host that offers `provider-mode-lists`, each distinct list of provider modes in `models`, which a model names
+    /// by its place here. Nil once a shell leaves `HostConnection`, its lists put back on each model.
+    public var providerModeLists: [[ThreadModel.ProviderMode]]? = nil
 }
 public struct Project: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let title: String; public let workspaceSettledAt: String?
@@ -197,12 +212,24 @@ public struct ProviderCapabilities: Decodable, Equatable, Sendable {
     public let projects: Bool?; public let threads: Bool?
     /// Whether the provider takes a message into a running turn, and compacts a thread's context when asked.
     public let steer: Bool?; public let compact: Bool?
+    /// Whether a thread's settings change in place, and whether a started thread's model and effort do too, or only its
+    /// permissions. Older computers send neither, and their threads' chips stay off the reply box (ADR-0166).
+    public var configureThread: Bool? = nil
+    public var configureThreadModel: Bool? = nil
 }
 public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let hostId: String?; public let projectId: String; public let title: String
     public let providerId: String?; public let status: String; public let requests: [AgentRequest]
     /// The thread's model in its computer's catalog (`host.models`), which says whether it takes photos.
     public let modelId: String?
+    /// What the thread runs with besides its model, for the reply box's chips (ADR-0166): its effort, Sotto's permission
+    /// mode or its provider's own, and its speed (`speed`, null at Standard, or the older `fastMode`). Older computers
+    /// may send none of them.
+    public var reasoningEffort: String? = nil
+    public var runtimeMode: String? = nil
+    public var providerMode: String? = nil
+    public var speed: String? = nil
+    public var fastMode: Bool? = nil
     public let earlierAvailable: Bool?; public let archivedAt: String?; public let summary: Summary?
     public let workspaceSettledAt: String?; public let settledAt: String?; public let settledOverride: String?
     public let backgroundWork: [BackgroundWork]?; public let compaction: Compaction?
@@ -223,6 +250,8 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// How many monitors the thread's provider runs. Never work on its own (`ThreadState`), but its end can move a
     /// delegated thread's outcome from Background work to Answered, so the Agents sheet reads again (ADR-0103).
     public var monitoring: MonitorCount? = nil
+    /// Sotto moved the thread off a model its provider stopped offering (ADR-0171). Older computers never send it.
+    public var modelMoved: ModelMoved? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
@@ -340,6 +369,22 @@ private extension KeyedDecodingContainer {
     }
 }
 
+/// Sotto moved a thread off a model its provider stopped offering (ADR-0171): the two models' names and when. The thread's
+/// page draws one line after the last message written before then.
+public struct ModelMoved: Decodable, Equatable, Sendable {
+    public let from: String; public let to: String; public let at: String
+    public init(from: String, to: String, at: String) { self.from = from; self.to = to; self.at = at }
+    /// The message the line follows: the last one written at or before the move. Nil when none was, so the line leads.
+    public func anchor(in messages: [Message], date: (String) -> Date? = Stamp.date) -> String? {
+        guard let moment = date(at) else { return messages.last?.id }
+        return messages.last(where: { message in message.createdAt.flatMap(date).map { $0 <= moment } ?? false })?.id
+    }
+    /// The line's words, with the thread's provider named: "Claude Code no longer offers …, so this thread now uses …."
+    public func words(provider: String) -> String {
+        String(localized: "\(provider) no longer offers \(from), so this thread now uses \(to).", bundle: .module,
+               comment: "A note in a thread: its model was retired by the provider (first), and Sotto moved it to another (third).")
+    }
+}
 public struct ThreadDetail: Decodable, Sendable {
     public let threadId: String; public let revision: Int; public let messages: [Message]; public let earlierAvailable: Bool?
     public let activities: [Activity]?
@@ -352,7 +397,32 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public let startedAt: String?; public let changes: [Change]?
     /// The message this step came after, when the host says. Hosts that send activity summaries leave it out.
     public let afterMessageId: String?
+    /// The pictures this step made or looked at (ADR-0170): handles only. A tile reads one's bytes with `thread-media`
+    /// when it shows, from a computer that lists that feature.
+    public var media: [Media]? = nil
+    /// "image" when the step makes an image (ADR-0170): while it runs with no picture yet, its tile plays the owl at the
+    /// easel. Older computers never send it.
+    public var generates: String? = nil
+    /// Whether the step is making an image that has not landed: it runs and holds no picture yet.
+    public var makingImage: Bool { generates == "image" && status == "running" && (media ?? []).isEmpty }
     public struct Change: Decodable, Equatable, Sendable { public let path: String; public let kind: String }
+    /// One picture's handle: its place in the step, its type, and its size when the computer read it.
+    public struct Media: Decodable, Identifiable, Equatable, Sendable {
+        public let id: String; public let kind: String; public let mimeType: String
+        public let width: Int?; public let height: Int?; public let name: String; public let source: String
+        /// Its size in bytes; a video's decides whether this iPhone fetches it to play (`AgentVideos.playsHere`).
+        public let sizeBytes: Int?
+        /// The numbered boxes with notes the agent placed on this picture when it showed it (ADR-0170, part 6).
+        /// Computers before part 6 never send them.
+        public var callouts: [Callout]? = nil
+        /// One callout: its number among the step's, its box as shares of the picture's width and height from its top
+        /// left, and its note.
+        public struct Callout: Decodable, Identifiable, Equatable, Sendable {
+            public let n: Int; public let x: Double; public let y: Double; public let w: Double; public let h: Double; public let note: String
+            public var id: Int { n }
+            public init(n: Int, x: Double, y: Double, w: Double, h: Double, note: String) { self.n = n; self.x = x; self.y = y; self.w = w; self.h = h; self.note = note }
+        }
+    }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {
         if let command, !command.isEmpty { return command }
@@ -376,7 +446,11 @@ public struct Attachment: Decodable, Identifiable, Equatable, Sendable {
     public var hasPreview: Bool { preview != nil }
 }
 public struct DeliveryReceipt: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String }
-public struct Delivery: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String; public let status: String }
+public struct Delivery: Decodable, Equatable, Sendable {
+    public let threadId: String; public let draftId: String; public let status: String
+    /// A delivery the user set aside, which no longer waits to go. Older computers never send it.
+    public var setAside: Bool? = nil
+}
 public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     public let id: String; public let kind: String; public let text: String; public let options: [RequestOption]
     public let questions: [Question]?; public let permissionChoices: [PermissionChoice]?; public let context: RequestContext?; public let delivery: String?
@@ -439,7 +513,13 @@ public struct Question: Decodable, Equatable, Identifiable, Sendable {
     public let multiSelect: Bool; public let allowFreeText: Bool; public let required: Bool?; public let unavailableReason: String?
 }
 public struct PermissionChoice: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let kind: String; public let description: String? }
-public struct RequestContext: Decodable, Equatable, Sendable { public let toolName: String?; public let command: String?; public let cwd: String?; public let details: String? }
+public struct RequestContext: Decodable, Equatable, Sendable {
+    public let toolName: String?; public let command: String?; public let cwd: String?; public let details: String?
+    /// The asking model's own words for what it asks (ADR-0185). Sotto writes none, and a computer from before it sends none.
+    public let summary: String?
+    /// What a request that is not a command does, and the path or address it acts on.
+    public let action: String?; public let target: String?
+}
 
 public enum Wire {
     public static let maximumFrameBytes = 16 * 1024 * 1024

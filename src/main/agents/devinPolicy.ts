@@ -8,7 +8,9 @@ import { DEVIN_CLI_VERSION, DevinRefusal } from './devinRpc'
 import { BROWSER_MCP_SERVER } from './browserAgentServer'
 import { PULL_REQUEST_MCP_SERVER } from './pullRequestTools'
 import { VISUAL_MCP_SERVER } from './visualTools'
+import { MEDIA_MCP_SERVER } from './mediaTools'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
+import { TELL_WATCHER_MCP_SERVER } from '../../shared/tellWatcher'
 
 // This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
 // the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
@@ -33,7 +35,7 @@ export interface DevinProfile { readonly path: string; readonly allows: DevinAll
  * Every other MCP tool keeps the `mcp__*` ask; a more specific allow wins over it in Devin's own precedence. A server that
  * is not on this list, such as the host setup tools, which Devin is not offered, is asked about as before.
  */
-export const DEVIN_SOTTO_SERVERS: readonly string[] = [BROWSER_MCP_SERVER, VISUAL_MCP_SERVER, PULL_REQUEST_MCP_SERVER, DELEGATE_MCP_SERVER]
+export const DEVIN_SOTTO_SERVERS: readonly string[] = [BROWSER_MCP_SERVER, VISUAL_MCP_SERVER, MEDIA_MCP_SERVER, PULL_REQUEST_MCP_SERVER, DELEGATE_MCP_SERVER, TELL_WATCHER_MCP_SERVER]
 const SOTTO_TOOLS = DEVIN_SOTTO_SERVERS.map(server => `mcp__${server}__*`)
 
 const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string[]; ask: string[] } => ({
