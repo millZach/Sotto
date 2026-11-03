@@ -27,6 +27,9 @@ const COMMAND_WORDS: Readonly<Record<SlashCommand, ReturnType<typeof msg>>> = {
   thread: msg`Go back to the thread`,
 }
 
+const HISTORY_UNAVAILABLE = msg`Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again.`
+const THREADS_UNAVAILABLE = msg`Sotto could not read the threads. Reopen the popup and try again.`
+
 /** Main's answer to a command, or null when none came: the popup reads only whether it was refused, and why. */
 type Reply = { readonly error: string | null } | null
 
@@ -81,10 +84,13 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     let live = true
     void (async () => {
       const state = await bridge.shell().catch(() => null)
-      if (!live || state === null) return
+      if (!live) return
+      if (state === null) { setNotice(THREADS_UNAVAILABLE); return }
+      setNotice(current => current === THREADS_UNAVAILABLE ? null : current)
       setShell(state)
       const room = bridge.watcher ? await bridge.watcher().catch(() => null) : null
       if (!live) return
+      if (bridge.watcher && room === null) { setNotice(THREADS_UNAVAILABLE); return }
       const current = room?.status === 'ok' ? room.state.current : null
       const watcherThread = current ? threadForTarget(state, current.target) : undefined
       setWatcher(watcherThread && room?.status === 'ok' ? { threadId: watcherThread.id, handover: room.state.handover != null } : null)
@@ -107,13 +113,19 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
   // Main lets go of the observation each time the popup hides, so each show observes again and reads what it missed,
   // keeping what it holds on screen until the read lands.
   const observed = useRef<string | null>(null)
+  const readDetail = useCallback((id: string): void => {
+    void bridge.threadDetail(id).then(read => {
+      if (observed.current !== id) return
+      if (read !== null) { setDetail(nextPopupDetail(null, read)); setNotice(current => current === HISTORY_UNAVAILABLE ? null : current) }
+    }, () => { if (observed.current === id) setNotice(HISTORY_UNAVAILABLE) })
+  }, [bridge])
   useEffect(() => {
     observed.current = threadId
     pinned.current = true
     void bridge.command({ type: 'observe-threads', threadIds: threadId === null ? [] : [threadId] }).catch(() => undefined)
-    if (threadId === null) return
-    void bridge.threadDetail(threadId).then(read => { if (observed.current === threadId && read !== null) setDetail(nextPopupDetail(null, read)) }, () => undefined)
-  }, [bridge, threadId, shown])
+    if (threadId !== null) readDetail(threadId)
+    return () => { observed.current = null }
+  }, [bridge, threadId, shown, readDetail])
   // The record the show's read found, until main pushes a newer one.
   useEffect(() => {
     const record = threadId === null ? undefined : shell?.host.threads.find(item => item.id === threadId)
@@ -125,10 +137,10 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     setDetail(held => {
       const next = nextPopupDetail(held, update)
       if (next !== null) return next
-      void bridge.threadDetail(update.threadId).then(read => { if (observed.current === update.threadId && read !== null) setDetail(nextPopupDetail(null, read)) }, () => undefined)
+      readDetail(update.threadId)
       return held
     })
-  }), [bridge])
+  }), [bridge, readDetail])
 
   const shownDetail = detail?.threadId === threadId ? detail : null
   const messages = useMemo(() => shownMessages(shownDetail?.messages ?? []), [shownDetail])
@@ -228,7 +240,7 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
         if (refused !== null) { failed(refused); remember({ threadId: null }); return }
         // Observed again now main has it: the first observation may have reached main before the thread did.
         await command({ type: 'observe-threads', threadIds: [id] })
-        void bridge.threadDetail(id).then(read => { if (observed.current === id && read !== null) setDetail(nextPopupDetail(null, read)) }, () => undefined)
+        readDetail(id)
       } else if (target === 'thread' && current !== null) remember({ projectId: current.projectId })
       const reply = await command({ type: queue ? 'queue-followup' : 'manual-send', threadId: id, draftId: crypto.randomUUID(), text })
       if (reply === null) failed(msg`Sotto didn’t confirm the prompt. It is back in the box; check the thread before you send it again.`)

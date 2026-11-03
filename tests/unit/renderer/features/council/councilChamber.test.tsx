@@ -14,6 +14,8 @@ import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 import { threadsStateFixture, withThread } from '../../../../fixtures/agentState'
 import { councilFixture, row } from './chamberFixtures'
+import { deferred } from '../../../../fixtures/deferred'
+import type { CouncilBridge, CouncilView as CouncilRecord } from '../../../../../src/shared/council'
 
 vi.mock('../../../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../../src/renderer/src/state/AppContext')>(),
@@ -60,6 +62,34 @@ function withLayout(width = 1020, height = 380): { readonly asked: () => number;
 }
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.reducedMotion; vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
+
+describe('the Council page’s reads', () => {
+  it('shows the pending list read, then a safe failure instead of keeping it pending', async () => {
+    withLayout()
+    provide()
+    const pending = deferred<CouncilRecord[]>()
+    const bridge: CouncilBridge = {
+      read: () => pending.promise, onChanged: () => () => undefined,
+      estimate: async () => ({ messages: 0, words: 0, tools: 0, characters: 0, parts: 1 }),
+      command: vi.fn(),
+    }
+    render(<CouncilView bridge={bridge} />)
+    expect(screen.getByText('Reading the Councils…')).toHaveAttribute('role', 'status')
+    await act(async () => { pending.reject(new Error('ENOENT /private/councils.json')) })
+    expect(screen.getByText('Sotto could not read the Councils. Nothing was changed. Open the page again.')).toBeInTheDocument()
+    expect(screen.queryByText('Reading the Councils…')).toBeNull()
+    expect(document.body).not.toHaveTextContent('/private/')
+  })
+
+  it('replaces Council preparation with the agent read failure', async () => {
+    withLayout()
+    provide()
+    vi.mocked(useOptionalAgents).mockReturnValue({ ...agentContextFixture(null, vi.fn(async () => null)), error: 'Agent controls are unavailable. Reopen Sotto to reconnect.' })
+    render(<CouncilView bridge={{ read: async () => [], estimate: vi.fn(), command: vi.fn(), onChanged: () => () => undefined }} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Agent controls are unavailable. Reopen Sotto to reconnect.')
+    expect(screen.queryByText('Preparing the Council…')).toBeNull()
+  })
+})
 
 describe('the chamber’s motion', () => {
   it('keeps fairness nods at 8 frames per second when poses lag and thread words keep arriving', () => {

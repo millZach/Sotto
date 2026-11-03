@@ -1,6 +1,6 @@
 import { cloudIphoneBridgeFixture, cloudStatus } from '../../fixtures/renderer/cloudIphoneBridge'
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { i18n } from '@lingui/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,7 @@ import { CloudIphoneStore } from '../../../src/renderer/src/tools/cloudIphoneSto
 import type { CloudIphoneStatus } from '../../../src/shared/cloudIphone'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
+import { deferred } from '../../fixtures/deferred'
 
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
@@ -42,6 +43,32 @@ function setup(initial: CloudIphoneStatus = status(), update: (patch: Record<str
 }
 
 describe('Settings > Cloud iPhone', () => {
+  it('waits for status before showing an empty history or usage', async () => {
+    const pending = deferred<ToolsResult<CloudIphoneStatus>>()
+    const bridge = fakeBridge(status())
+    vi.mocked(bridge.status).mockReturnValue(pending.promise)
+    render(<CloudIphoneSettings settings={DEFAULT_SETTINGS} onUpdateSettings={async () => true} bridge={bridge} store={new CloudIphoneStore()} />)
+    expect(screen.getByText('Reading Cloud iPhone status…')).toBeInTheDocument()
+    expect(screen.queryByText('No sessions yet.')).toBeNull()
+    expect(screen.queryByRole('meter')).toBeNull()
+    await act(async () => { pending.resolve(ok(status())) })
+    expect(screen.getByText('No sessions yet.')).toBeInTheDocument()
+    expect(screen.getByRole('meter')).toHaveAttribute('aria-valuenow', '38')
+  })
+
+  it.each(['refused', 'rejected'])('ends the pending status on a %s read without exposing its cause', async failure => {
+    const bridge = fakeBridge(status())
+    vi.mocked(bridge.status).mockImplementation(async () => {
+      if (failure === 'rejected') throw new Error('ENOENT /private/cloud-iphone.json')
+      return { ok: false, error: { code: 'unavailable', message: 'ENOENT /private/cloud-iphone.json' } } as ToolsResult<CloudIphoneStatus>
+    })
+    render(<CloudIphoneSettings settings={DEFAULT_SETTINGS} onUpdateSettings={async () => true} bridge={bridge} store={new CloudIphoneStore()} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cloud iPhone status could not be read. Reopen Settings and try again.')
+    expect(screen.queryByText('Reading Cloud iPhone status…')).toBeNull()
+    expect(screen.queryByText('No sessions yet.')).toBeNull()
+    expect(document.body).not.toHaveTextContent('/private/')
+  })
+
   it('groups its rows under run.cloud, Spending and Recent sessions, as Git groups its own', async () => {
     setup()
     await screen.findByLabelText('Key')
