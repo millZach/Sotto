@@ -35,6 +35,12 @@ function folders() {
   }
 }
 
+const hostedTerminal = vi.hoisted(() => ({ on: false }))
+vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../../src/renderer/src/state/owlFeature')>()
+  return { ...actual, useOwlFeature: (id: Parameters<typeof actual.useOwlFeature>[0]) => id === 'paired-host-terminal' ? hostedTerminal.on : actual.useOwlFeature(id) }
+})
+
 function setup(options: { focused?: string | null; bridge?: FilesBridge | undefined; state?: AgentState; inPane?: boolean; subagents?: SubagentsBridge; browser?: BrowserBridge; cloudBridge?: CloudIphoneBridge } = {}) {
   const { focused = 'visual-gate', state = threadsStateFixture(), inPane = false } = options
   const bridge = 'bridge' in options ? options.bridge : fakeFilesBridge(folders())
@@ -642,6 +648,19 @@ it('keeps a paired host\'s terminal, browser and test iPhone on the host without
   act(() => store.setSurface('iphone'))
   expect(screen.getByText('iPhone is on the host machine.')).toBeVisible()
   expect(terminals).not.toHaveBeenCalled(); expect(browser).not.toHaveBeenCalled()
+})
+
+it('opens a paired host\'s Terminal here on Owl, saying where, and keeps its browser and test iPhone on the host (ADR-0183)', async () => {
+  hostedTerminal.on = true
+  try {
+    const { store } = setup({ state: onForge() })
+    const terminals = vi.spyOn(store.terminals, 'activate').mockResolvedValue()
+    act(() => { store.setOpen(true); store.setSurface('terminal') })
+    await waitFor(() => expect(terminals).toHaveBeenCalled())
+    expect(screen.queryByText('Terminal is on the host machine.')).toBeNull()
+    act(() => store.setSurface('browser'))
+    expect(screen.getByText('Browser is on the host machine.')).toBeVisible()
+  } finally { hostedTerminal.on = false }
 })
 
 it('shows a paired host\'s Files as a local thread\'s, with "on forge" in the footer and no Show in folder (ADR-0025, October 5 amendment)', async () => {

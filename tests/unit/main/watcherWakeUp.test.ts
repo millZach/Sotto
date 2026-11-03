@@ -7,7 +7,7 @@ import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCH
 import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
-import { foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
+import { foldWatcherEvents, foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
 import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore } from '../../../src/main/agents/watcherOutcomes'
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
@@ -2486,4 +2486,38 @@ it('keeps telling the new Watcher of a thread the last one worked on for a reque
   expect(f.record.requests[0]!.watcher).toEqual(last.target)
   f.checks('failed'); f.wakes.observe(); await f.advance(5_000)
   expect(f.delivered.flatMap(news => news.events).some(event => event.kind === 'evidence-changed' && event.target.threadId === centerTarget.threadId)).toBe(true)
+})
+
+describe('a thread’s message for Watcher (#2059)', () => {
+  const told = (id: string, threadId = 't1', opened = false) => ({ id, kind: 'thread-told' as const, requestId: opened ? '11111111-1111-4111-8111-111111111111' : WATCHER_UNWATCHED_REQUEST_ID, target: { hostId: 'h', threadId },
+    generation: 0, observedAt: '2026-11-02T21:40:00.000Z', told: { words: 'Synthetic words', opened } })
+  it('names no requestId when it opened none and no request watches the thread', () => {
+    const text = watcherNewsText({ source: 'watcher', watcher: { hostId: 'h', threadId: 'w' }, events: [told('e1')], omitted: 0 })
+    expect(text).toContain('Sotto opened no request for this')
+    expect(text).not.toContain('Use requestId')
+  })
+  it('names the request it opened', () => {
+    const text = watcherNewsText({ source: 'watcher', watcher: { hostId: 'h', threadId: 'w' }, events: [told('e1', 't1', true)], omitted: 0 })
+    expect(text).toContain('Use requestId 11111111-1111-4111-8111-111111111111 for what it asks.')
+  })
+  it('is what stays when news runs out of room', () => {
+    const big = Array.from({ length: 200 }, (_, at) => ({ id: `n${at}`, kind: 'turn-finished' as const, requestId: '22222222-2222-4222-8222-222222222222', target: { hostId: 'h', threadId: `other-${at}` }, generation: 0, observedAt: '2026-11-02T21:40:00.000Z', turnId: `${at}` }))
+    const text = watcherNewsText({ source: 'watcher', watcher: { hostId: 'h', threadId: 'w' }, events: [...big, told('e1')], omitted: 0 })
+    expect(text).toContain('Synthetic words')
+  })
+  it('survives a takeover of its thread, before and after, and two stay two', () => {
+    const takeover = { id: 'x', kind: 'taken-over' as const, requestId: '33333333-3333-4333-8333-333333333333', target: { hostId: 'h', threadId: 't1' }, generation: 0, observedAt: '2026-11-02T21:40:00.000Z' }
+    expect(foldWatcherEvents([told('e1')], [takeover]).map(event => event.id)).toEqual(['e1', 'x'])
+    expect(foldWatcherEvents([takeover], [told('e1')]).map(event => event.id)).toEqual(['x', 'e1'])
+    expect(foldWatcherEvents([told('e1')], [told('e2')]).map(event => event.id)).toEqual(['e1', 'e2'])
+  })
+  it('quotes what a finished turn said once another turn has begun, and nothing from before its own user message', () => {
+    const user = (id: string, createdAt: string) => ({ id, role: 'user' as const, text: 'Synthetic ask', createdAt })
+    const reply = (id: string, text: string, createdAt: string) => ({ id, role: 'assistant' as const, text, createdAt })
+    const messages = [user('u1', '2026-11-02T21:40:14.000Z'), reply('a1', 'Watcher: Zach asks you to start a thread', '2026-11-02T21:40:47.000Z'), reply('a2', 'A later turn', '2026-11-02T21:43:30.000Z')]
+    expect(watcherReplyBefore({ messages }, '2026-11-02T21:40:50.000Z')).toContain('"Watcher: Zach asks you to start a thread"')
+    expect(watcherReplyBefore({ messages: [reply('a0', 'Earlier', '2026-11-02T21:39:00.000Z'), user('u1', '2026-11-02T21:40:14.000Z')] }, '2026-11-02T21:40:50.000Z')).toBeUndefined()
+    expect(watcherReplyBefore({ messages: [] }, '2026-11-02T21:40:50.000Z')).toBeUndefined()
+    expect(watcherReplyBefore({ messages }, 'not a time')).toBeUndefined()
+  })
 })

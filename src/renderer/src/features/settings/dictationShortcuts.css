@@ -1,9 +1,9 @@
 /* Settings › Dictation shortcuts (Variant C, compact): each row lies down like a Field, its chips at the right edge. */
-.settings-rows > .dictation-shortcuts { padding: 0; }
-/* Same rhythm and edges as the other Settings rows: no inset, 18px between rules. */
-.dictation-shortcuts > * { padding: 18px 0; }
+.settings-view .settings-rows > .dictation-shortcuts { padding: 0; }
+/* Same rhythm and edges as the other Settings rows, including Keyboard's nested rows. */
+.dictation-shortcuts > * { padding: 17px 0; }
 .dictation-shortcuts > :not(.dictation-shortcuts__row) { padding: 12px 0; }
-.dictation-shortcuts > * + * { border-top: 1px solid var(--tt-hairline); }
+.dictation-shortcuts > * + * { border-top: 2px solid var(--tt-card-inset); }
 
 .dictation-shortcuts__row {
   display: grid;

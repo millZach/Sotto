@@ -5,22 +5,31 @@ import { hideDrawerFromInside, PaneTerminalDrawer } from '../tools/PaneTerminalD
 import { usePaneTerminalShortcut } from '../tools/PaneTerminalToggle'
 import { paneTerminalTarget } from '../tools/paneTerminalShortcut'
 import { paneTerminalChromeStore } from '../tools/paneTerminalStore'
+import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from './AgentContext'
 import { ThreadsView, type ThreadPaneSlot, type ThreadPaneSlotProps, type ThreadToolsSlot, type ThreadsViewProps } from './ThreadsView'
 import { ThreadWorkingCopy, ThreadWorkingCopyNotice } from './ThreadWorkingCopy'
+import { threadMachineName } from '../tools/TerminalSurface'
 
 // The pane slots are made once, here rather than inline, so each pane's memo boundary sees the same slot on every update
 // and redraws only for what the slot is handed (#993).
 const tools: ThreadToolsSlot = props => <ToolsPanel {...props} />
-// A thread on a paired host keeps its terminal on that machine, as Tools says, so its pane has no drawer.
-const paneTerminal = ({ row }: ThreadPaneSlotProps): boolean => !row.thread.remoteHost
 const paneWorkingCopy: ThreadPaneSlot = ({ row, command }) => <ThreadWorkingCopy thread={row.thread} project={row.project} command={command} />
 const paneNotice: ThreadPaneSlot = ({ row, command, focusPrompt }) => <ThreadWorkingCopyNotice key={`working-copy-${row.thread.id}`} thread={row.thread} project={row.project} command={command} onRecovered={focusPrompt} />
-const paneDrawer: ThreadPaneSlot = ({ row }) => row.thread.remoteHost ? null : <PaneTerminalDrawer key={`terminal-drawer-${row.thread.id}`} threadId={row.thread.id} thread={row.thread} project={row.project} />
+/** A thread on a paired host has a drawer only where its shell can run over SSH (ADR-0183; Owl only). Otherwise its pane says where its terminal is. */
+const localPaneTerminal = ({ row }: ThreadPaneSlotProps): boolean => row.thread.remoteHost !== true
+const everyPaneTerminal = (): boolean => true
+const paneDrawerFor = (hosted: boolean): ThreadPaneSlot => ({ row, state }) => row.thread.remoteHost && !hosted ? null : <PaneTerminalDrawer key={`terminal-drawer-${row.thread.id}`} threadId={row.thread.id} thread={row.thread} project={row.project}
+  machine={row.thread.remoteHost ? threadMachineName(state, row.thread) : undefined} />
+const LOCAL_DRAWER = paneDrawerFor(false)
+const HOSTED_DRAWER = paneDrawerFor(true)
 
 /** Connect the shared tools surface, each pane's actual working copy and its own terminal drawer to the workspace. */
 export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateControl'>): ReactNode {
   const { command, state } = useAgents()
+  const hostedTerminal = useOwlFeature('paired-host-terminal')
+  const paneTerminal = hostedTerminal ? everyPaneTerminal : localPaneTerminal
+  const paneDrawer = hostedTerminal ? HOSTED_DRAWER : LOCAL_DRAWER
   const chrome = useToolsPanelChrome()
   const panes = useRef<readonly string[]>([])
   const mounted = useRef(true)

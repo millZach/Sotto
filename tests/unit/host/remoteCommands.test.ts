@@ -177,7 +177,7 @@ describe('remote command allow-list', () => {
       'thread-move',
       // The desktop relay's answer to an ask the host pushed, and news of a relayed delegation's outcome (#1316): only on a
       // listener that offers delegation-relay, from a recorded desktop whose hello accepted it. Neither answers or grants anything.
-      'delegation-relay-answer', 'delegation-relay-news',
+      'delegation-relay-answer', 'delegation-relay-news', 'watcher-tell-answer',
       // The name the relaying desktop saved for this host, kept as words for the away refusal (Zach, October 27, 2026).
       'delegation-relay-name',
       // A delegation on this host for a thread on another machine, asked by a recorded desktop on a listener that offers

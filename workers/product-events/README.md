@@ -4,7 +4,7 @@ A Cloudflare Worker that takes `POST /batch` from Sotto's sender, checks each ev
 
 It is not packaged with the app and is deployed by hand. It bundles `src/main/productEvents/schema.ts` and the public model list, so it needs this repository's `npm ci` before it builds, and there is no second list to keep level. Its tests are `tests/unit/workers/`, which run the real `schema.sql` over `node:sqlite`.
 
-An hourly sweep removes each event before it is 90 days old, and tries again whatever PostHog did not take. Cloudflare's own D1 backups, which cannot be turned off, can restore a removed row for a further 7 days on the Free plan and 30 on a paid one.
+An hourly sweep removes each event before it is 90 days old, and tries again whatever PostHog did not take. A batch PostHog refuses for what it holds (400, 413 or 422) is passed over until the next hour, so newer events still go, and it stays due until the sweep. Any other failure stops that hour's tries, since newer events would fail too. Cloudflare's own D1 backups, which cannot be turned off, can restore a removed row for a further 7 days on the Free plan and 30 on a paid one.
 
 ## Try it on this computer
 
@@ -26,6 +26,8 @@ npx wrangler@4 deploy
 ```
 
 A new database would need `npx wrangler@4 d1 create sotto-product-events`, its ID in `wrangler.jsonc`, and `npx wrangler@4 d1 execute sotto-product-events --remote --file schema.sql`.
+
+`schema.sql` only creates what is missing and does not change a table that exists, so a later change to the table needs its own `ALTER TABLE`, run on the live database. A `--local` database made before `forward_due` existed answers 503 to every post: delete `.wrangler` and run `schema.sql` again.
 
 **Do not set `POSTHOG_KEY` until the release with the notice is out.** Without it, events stop at the copy in D1. Setting it later sends only what arrives after that: a row kept before there was a key is never forwarded. When that release ships:
 

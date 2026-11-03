@@ -6,6 +6,8 @@ Accepted October 31, 2026, by Zach's picks on `docs/prototypes/inline-media-prot
 
 **Amended November 1, 2026: request-only** (below). An agent's pictures and videos now show only when the user asked for them: decisions 3, 10, 11 and 12 no longer capture on their own, and `sotto_media`'s show_in_thread is how an agent shows one.
 
+**Amended November 2, 2026: the capture switch (part 7)** (below). **Show every picture and video an agent makes**, on by default, brings back what R1 took away; off, R1 holds as written.
+
 **Amended November 2, 2026: callouts (part 6)** (below), by Zach's picks on `docs/prototypes/inline-media-callouts-prototype.html`.
 
 Amends [ADR-0031](0031-images-are-staged-once-and-carried-by-handle.md): a second store, kept the same way, holds the pictures an agent made. Leaves [ADR-0056](0056-an-agent-can-draw-a-visual-in-its-thread.md)'s visuals as they are.
@@ -90,6 +92,16 @@ Zach's picks on November 2, on `docs/prototypes/inline-media-callouts-prototype.
 
 **21. The editor keeps them unless asked not to.** The mark-up editor draws a picture's callouts under the user's marks and lists them above the user's own, with **Show**, which hides them while marking, and **Keep the callouts in the copy**, both on. A copy made while both are on has them drawn on it at the picture's size, under the marks, as the editor showed them; with them kept, **Add to reply** works before the user has drawn anything. A callout hidden by **Show** is never in the copy, so **Keep** follows it. On the iPhone the same two switches are under the picture, as **Show callouts** and **Keep the callouts in the copy**.
 
+## The capture switch (part 7), November 2, 2026
+
+Zach, on November 2: "we should have a switch on settings that keeps Sotto posting all videos and images a model generates like it does now, or if that setting is off, you then ask the model and it uses the MCP tool to embed the images." He picked **Everything, as before Nov 1** for what it shows and on as its default, in its own pull request after part 6.
+
+**22. A switch says whether Sotto shows pictures on its own.** **Show every picture and video an agent makes**, in Settings → Threads under **What agents can do without asking**, behind `inline-media`, on by default. On, a thread shows what decisions 3, 10, 11 and 12 captured: a tool result's picture, a picture Codex's `view_image` looked at, and the picture and video files a turn wrote, listed once when it ends. Off, R1 holds: only an image the user asked to be generated, and what an agent names to `show_in_thread`. `show_in_thread` and its rule, only when the user asked, are the same either way, and an image generated still shows either way. This supersedes R1 as the default; R2 and R3 stand.
+
+**23. It counts from the next picture and the next turn.** The projections are given `agentCaptures` and ask the switch at each picture; the workspace asks it when a turn is sent and again when it ends. Tiles already on records stay, in either direction. Nothing goes looking for what was skipped, but a step Sotto reads again from its provider's history passes through the same captures: with the switch on, a step skipped while it was off can gain its tile that way, as any step read again did before request-only. A turn sent while the switch is off lists nothing at its end, since no start was kept; one under way when it goes off lists nothing either.
+
+**24. A headless host follows the desktop that last told it.** The host keeps its own threads' pictures, so the switch has to reach it: it travels in the **desktop defaults**, sent only to a host that lists the new desktop feature `every-agent-picture`, since an older host refuses a field it does not know and with it the new-thread default. The host keeps it across restarts, so a turn running with no desktop connected still follows it. It is a setting and grants nothing, so it counts for any paired, recorded desktop, as the worker ceiling does, with or without an answers grant. A host no desktop has told shows every picture. A host from before this part knows no switch and stays request-only until it updates; turning the switch on here can't bring its pictures back. The iPhone has no switch: it shows what its computer kept.
+
 ## Consequences
 
 - A thread's pictures cost disk, at most 1 GiB, while history is kept. Deleting a thread does not let its pictures go at once; they go as newer ones take their place, or all at once when history is turned off.
@@ -100,7 +112,9 @@ Zach's picks on November 2, on `docs/prototypes/inline-media-callouts-prototype.
 - A Codex item that names its image only by `fileId`, Codex's own attachment store, with neither bytes nor `savedPath`, shows the step without a picture: Sotto has no documented way to read that store.
 - Every later part of the plan (generated images, other providers, written files and video, mark up, callouts) adds sources and actions to these handles and tiles, not a new path for bytes. Part 4's videos are the one exception to the store: they are read from where they were written, by handle, and never copied.
 - A video a turn wrote is gone from its tile once the agent writes over it, moves it or deletes it, and a turn that wrote more than eight pictures and videos shows its newest eight.
-- Since the request-only amendment, a thread shows an agent's picture only when the agent calls show_in_thread or generates an image. An agent that ignores its instructions can still show a picture unasked, but only by naming it on purpose, one call at a time; nothing is shown as a side effect of a tool.
+- With the switch on, the default, every turn's end costs one listing of its folder's picture and video files, and each picture a tool hands back is hashed once; with it off they cost nothing. Part 4's and part 3's benchmarks hold both (`writtenMediaTurnEnd.perf.test.ts`, `toolPictureCapture.perf.test.ts`).
+- With the switch on, an agent that also calls show_in_thread on a picture it wrote shows it twice, under two steps.
+- With the switch off, a thread shows an agent's picture only when the agent calls show_in_thread or generates an image. An agent that ignores its instructions can still show a picture unasked, but only by naming it on purpose, one call at a time; nothing is shown as a side effect of a tool.
 - A marked copy is a new attachment: the agent sees the marks, never the marks as data, and once it is sent it is a sent image like any other. Marks can't be taken back off a copy already added; Undo works only while the editor is open.
 - Mark up adds nothing to a thread until it is opened: no state, no reads and no work on the update path.
 - An agent places callouts only in the call that shows the picture. To move one or add another, it shows the picture again with the callouts it wants, which is a new step; the first step keeps its own.

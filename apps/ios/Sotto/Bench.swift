@@ -1,7 +1,8 @@
+import SwiftUI
+import SottoCore
 #if DEBUG && os(iOS)
 import Darwin
 import UIKit
-import SottoCore
 
 /// The app's half of the iPhone benchmarks (`Scripts/bench.sh`, `docs/perf/2026-10-31-iphone-benchmarks.md`). It runs
 /// only in the UI fixture with `--bench-threads`, and only when `SOTTO_BENCH_FILE` names its report.
@@ -11,7 +12,9 @@ import SottoCore
 /// `launch` to the first frame showing every thread, `list-scroll` down the list and back, `open` the long thread as a
 /// notification opens it, `thread-scroll` up through it and back, `stream` a reply into it, then `finished`. Each phase
 /// lasts until the screen is quiet, and records its frames, hitches, CPU time, memory and what the probes counted.
-/// With `--bench-journey launch` it stops after the first. It reads and changes nothing the app shows.
+/// With `--bench-journey launch` it stops after the first. With `--bench-journey look` it opens the long thread and
+/// photographs the page at fixed distances above its end (`look`), so two builds can be held to the same look. It
+/// reads and changes nothing the app shows.
 @MainActor final class BenchDriver {
     private static var running: BenchDriver?
 
@@ -19,7 +22,7 @@ import SottoCore
         guard running == nil, let path = ProcessInfo.processInfo.environment["SOTTO_BENCH_FILE"], !path.isEmpty else { return }
         let driver = BenchDriver(model: model, report: URL(fileURLWithPath: path), chunks: chunks, long: long)
         running = driver
-        driver.begin(all: journey == "all")
+        driver.begin(journey: journey)
     }
     /// The laptop's whole list has been applied: the next Threads body draws it.
     static func listApplied() { running?.waiting.insert("first-list") }
@@ -52,7 +55,7 @@ import SottoCore
         self.model = model; self.report = report; self.chunks = chunks; self.long = long
     }
 
-    private func begin(all: Bool) {
+    private func begin(journey: String) {
         BenchProbe.onBody = { name in MainActor.assumeIsolated { BenchDriver.running?.body(name) } }
         let link = CADisplayLink(target: FrameTarget(self), selector: #selector(FrameTarget.tick(_:)))
         link.add(to: .main, forMode: .common)
@@ -64,13 +67,14 @@ import SottoCore
             sampler = BenchSampler(output: URL(fileURLWithPath: arguments[index + 1]))
             sampler?.start(phase: phase)
         }
-        Task { await journey(all: all) }
+        Task { await self.journey(journey) }
     }
 
-    private func journey(all: Bool) async {
+    private func journey(_ kind: String) async {
         guard await until({ self.marks["first-list"] != nil }) else { return finish("no-list") }
         await quiet()
-        guard all else { return finish(nil) }
+        if kind == "look" { return await look() }
+        guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
         scrolled(await scroll(up: false))
@@ -94,7 +98,51 @@ import SottoCore
         mark("stream-done")
         phaseNotes["wallMs"] = (CACurrentMediaTime() - started) * 1000
         await quiet()
+
+        // Back to the list, as Back and a swipe back go: the Threads page comes into sight again under the thread and lets
+        // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back, or whose page
+        // never comes back drawn as it stands, fails: its stale-frame count would say nothing.
+        next("back")
+        guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+        guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+        await quiet()
         finish(nil)
+    }
+
+    /// Opens the long thread and photographs the page at its end's distances: inside the latest turns, which are made at
+    /// open, at their edge, and among the earlier turns, made as they scroll in. Its end is left out, as the working
+    /// line there glows, and so is the bar. Each photo is the report's name and the distance (`look-1-1500.png`).
+    private func look() async {
+        next("open")
+        model?.alertOpened = long
+        guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
+        await quiet()
+        next("look")
+        for distance in [1_500, 5_000, 10_000] as [CGFloat] {
+            guard let view = Self.pageScroller() else { return finish("no-page") }
+            let bottom = view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: max(-view.adjustedContentInset.top, bottom - distance)), animated: false)
+            await quiet()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            snap("\(Int(distance))", page: view)
+            // Back to the end, so each distance is reached from there as the one before it was.
+            let end = view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: end), animated: false)
+            await quiet()
+        }
+        finish(nil)
+    }
+
+    /// The window as drawn below the bar, written beside the report. The bar is left out: its Working light breathes.
+    private func snap(_ name: String, page: UIScrollView) {
+        guard let window = page.window else { return }
+        let top = page.convert(CGPoint(x: 0, y: page.bounds.minY + page.adjustedContentInset.top), to: window).y
+        let area = CGRect(x: 0, y: top, width: window.bounds.width, height: window.bounds.height - top)
+        let image = UIGraphicsImageRenderer(bounds: area).image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let file = URL(fileURLWithPath: report.deletingPathExtension().path + "-" + name + ".png")
+        try? image.pngData()?.write(to: file, options: .atomic)
     }
 
     /// Extra numbers for the phase now running, kept in its summary.
@@ -183,6 +231,54 @@ import SottoCore
         }
         windows.filter { !$0.isHidden }.forEach(visit)
         return best
+    }
+
+    /// The navigation stack with a thread open on it.
+    private static func threadNavigation() -> UINavigationController? {
+        func visit(_ controller: UIViewController) -> UINavigationController? {
+            if let navigation = controller as? UINavigationController, navigation.viewControllers.count > 1 { return navigation }
+            for child in controller.children { if let found = visit(child) { return found } }
+            return controller.presentedViewController.flatMap(visit)
+        }
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        return windows.lazy.compactMap { $0.rootViewController.flatMap(visit) }.first
+    }
+
+    // The Threads page's hold (`ThreadsView.held`). The page is in the window while any of it can show: from the start of
+    // a push over it to that push's end, and again from the start of a pop. Each turn of the main run loop that ends with
+    // the page in the window and drawn from its held list, after Core Animation's commit, counts as `page.stale_frames`:
+    // a frame that could have shown an old row. A hold taken while the page is still in the window counts as
+    // `page.held_in_window`.
+    private var pageHeld = false
+    private var pageInWindow = false
+    private var staleWatch: CFRunLoopObserver?
+
+    static func pageDrawn(held: Bool) { running?.pageHeld = held }
+    static func pageHolding() {
+        guard let running else { return }
+        BenchProbe.count("page.holds")
+        if running.pageInWindow { BenchProbe.count("page.held_in_window") }
+    }
+    static func pageWindow(_ inWindow: Bool) { running?.pageMoved(inWindow) }
+    private func pageMoved(_ inWindow: Bool) {
+        pageInWindow = inWindow
+        guard inWindow else {
+            if let staleWatch { CFRunLoopRemoveObserver(CFRunLoopGetMain(), staleWatch, .commonModes) }
+            staleWatch = nil
+            return
+        }
+        guard staleWatch == nil else { return }
+        BenchProbe.count("page.shown")
+        // Core Animation commits the frame before the run loop waits, at order 2,000,000; this runs after it.
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+            MainActor.assumeIsolated { BenchDriver.running?.checkPage() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        staleWatch = observer
+    }
+    /// Every turn while the page is in the window, so a hold taken later while it still shows is caught too.
+    private func checkPage() {
+        if pageInWindow && pageHeld { BenchProbe.count("page.stale_frames") }
     }
 
     private func body(_ name: String) {
@@ -475,6 +571,78 @@ final class BenchSampler: @unchecked Sendable {
         if let base = info.dli_fbase { result["base"] = String(UInt(bitPattern: base), radix: 16) }
         if let symbol = info.dli_sname { result["symbol"] = String(cString: symbol) }
         return result
+    }
+}
+#endif
+
+extension View {
+    /// Counts, for the benchmarks, each change to the environment that reaches this view, as the body `Environment<name>`:
+    /// any value set anywhere above it, made anew on a redraw rather than kept, has every text below it checked again.
+    /// Outside a benchmark run it adds nothing; in a build without `DEBUG` it is not there.
+    func benchEnvironment(_ name: StaticString) -> some View {
+        #if DEBUG && os(iOS)
+        background { if BenchProbe.enabled { EnvironmentProbe(name: name) } }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG && os(iOS)
+/// Reads the whole environment, so SwiftUI runs its body again whenever any value in it changes, and counts each run.
+private struct EnvironmentProbe: View {
+    let name: StaticString
+    @Environment(\.self) private var environment
+    var body: some View {
+        let _ = BenchProbe.body(name)
+        Color.clear.accessibilityHidden(true)
+    }
+}
+#endif
+
+/// The Threads page's hold (`ThreadsView.held`), told to the benchmarks. Outside a benchmark run each does nothing; in a
+/// build without `DEBUG` each is empty.
+enum BenchPage {
+    /// The page drew, from its held list or the model's.
+    @MainActor static func drawn(held: Bool) {
+        #if DEBUG && os(iOS)
+        BenchDriver.pageDrawn(held: held)
+        #endif
+    }
+    /// The page is about to hold its list.
+    @MainActor static func holding() {
+        #if DEBUG && os(iOS)
+        BenchDriver.pageHolding()
+        #endif
+    }
+}
+
+extension View {
+    /// Tells the benchmarks when this page enters and leaves the window. Outside a benchmark run it adds nothing; in a
+    /// build without `DEBUG` it is not there.
+    func benchPageWindow() -> some View {
+        #if DEBUG && os(iOS)
+        background { if BenchProbe.enabled { PageWindowProbe() } }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG && os(iOS)
+private struct PageWindowProbe: UIViewRepresentable {
+    func makeUIView(context: Context) -> WindowWatcher {
+        let view = WindowWatcher()
+        view.isUserInteractionEnabled = false
+        view.isAccessibilityElement = false
+        return view
+    }
+    func updateUIView(_ view: WindowWatcher, context: Context) {}
+    final class WindowWatcher: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            BenchDriver.pageWindow(window != nil)
+        }
     }
 }
 #endif
