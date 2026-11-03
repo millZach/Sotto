@@ -1,7 +1,19 @@
 /* global AudioWorkletProcessor, registerProcessor */
 
 class SottoAudioCaptureProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super()
+    this.stopped = false
+    this.port.onmessage = ({ data }) => {
+      if (data !== 'stop') return
+      this.stopped = true
+      this.port.onmessage = null
+      this.port.close()
+    }
+  }
+
   process(inputs) {
+    if (this.stopped) return false
     const channels = inputs[0]
     if (channels?.length) {
       let frameCount = 0

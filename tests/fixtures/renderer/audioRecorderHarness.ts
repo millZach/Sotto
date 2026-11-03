@@ -16,7 +16,10 @@ export class FakeNode implements AudioNodeAdapter {
 }
 
 export class FakeWorkletNode extends FakeNode implements AudioWorkletNodeAdapter {
-  readonly port = { onmessage: null as ((event: { data: unknown }) => void) | null }
+  readonly port = {
+    onmessage: null as ((event: { data: unknown }) => void) | null,
+    postMessage: vi.fn(),
+  }
 }
 
 export class FakeContext implements AudioContextAdapter {

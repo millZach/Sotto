@@ -56,7 +56,10 @@ export interface GainNodeAdapter extends AudioNodeAdapter {
 }
 
 export interface AudioWorkletNodeAdapter extends AudioNodeAdapter {
-  port: { onmessage: ((event: { data: unknown }) => void) | null }
+  port: {
+    onmessage: ((event: { data: unknown }) => void) | null
+    postMessage(message: 'stop'): void
+  }
 }
 
 export interface MediaStreamTrackAdapter {
@@ -550,6 +553,9 @@ export class AudioRecorder {
     if (worklet !== undefined) {
       this.safely(() => {
         worklet.port.onmessage = null
+        // Disconnection alone leaves a processor returning true alive when
+        // the shared context resumes. Its stop handler also closes the port.
+        worklet.port.postMessage('stop')
       })
       this.safely(() => worklet.disconnect())
     }
