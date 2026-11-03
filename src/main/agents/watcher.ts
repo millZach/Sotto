@@ -1338,9 +1338,10 @@ export class WatcherService implements WatcherControlHooks {
     // knows only the linked ones, the branch's and the babysat ones, so Watcher still looks for others the thread opened.
     // A record may be out of date, so GitHub was asked before this check (`askBeforeSettle`, #2019), and what it said ended holds nothing.
     for (const owner of [thread, ...delegated]) for (const url of this.openPullRequests(owner)) {
+      const identity = `${owner === thread ? 'Thread' : 'Delegated thread'} “${owner.title}” (${owner.id})`
+      if (!this.options.pullRequestState) refuse('THREAD_BUSY', `${identity} has an open pull request, ${url}. Wait for it to merge or close before settling. Nothing was settled.`)
       if (this.settleReadEnded(url)) continue
       const read = this.settleReads.get(pullRequestKey(url) ?? url)
-      const identity = `${owner === thread ? 'Thread' : 'Delegated thread'} “${owner.title}” (${owner.id})`
       if (read?.state === 'unread') refuse('THREAD_BUSY', `${identity} has an unread pull request, ${url}: Sotto could not read it from GitHub and last saw it open. Nothing was settled. ${read.retryAt ? `GitHub is limiting requests. Try again ${retryWords(read.retryAt, Date.now())}.` : 'Reconnect GitHub and try again.'}`, true)
       if (read?.state === 'open' && Date.now() - read.observedAt < 60_000) refuse('THREAD_BUSY', `${identity} has a confirmed-open pull request, ${url}: GitHub just confirmed it is open. Wait for it to merge or close before settling. Nothing was settled.`)
       refuse('THREAD_BUSY', `${identity} has a stale-open pull request, ${url}: Sotto’s record says open, without a fresh GitHub read. Read it again before settling. Nothing was settled.`, true)
@@ -1375,8 +1376,8 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * What GitHub said when a settle last asked about a pull request Sotto's records hold open, by its key (#2019): it merged
    * or closed, open with its read time, or unread with GitHub's retry time. Kept for the check as the settle goes as well as the one it is
-   * admitted by, and for a thread on a paired host, whose records this computer cannot move. In memory only. Merged is final;
-   * the rest stand only until the next settle asks again.
+   * admitted by, and for a thread on a paired host, whose records this computer cannot move. In memory only, capped at 1,000
+   * entries. Merged answers are reused until evicted; the rest stand only until the next settle asks again.
    */
   private readonly settleReads = new Map<string, { state: 'open' | 'merged' | 'closed' | 'unread'; observedAt: number; retryAt?: number }>()
   /**
@@ -1390,6 +1391,8 @@ export class WatcherService implements WatcherControlHooks {
     const ask = this.options.pullRequestState
     const thread = this.owningThread(target.hostId, target.threadId)
     if (!thread) return
+    const master = this.view().current
+    if (!master) refuse('NOT_CURRENT_WATCHER', 'Open Watcher before settling a thread.')
     const descendants = this.settlesWith(thread)
     const heads = [thread, ...descendants].map(item => ({ id: item.id, title: item.title, head: nativeHead(item) }))
     const blocking = descendants.filter(item => this.settleBlockingField(item))
@@ -1397,7 +1400,7 @@ export class WatcherService implements WatcherControlHooks {
       const input = { target: { hostId: target.hostId, threadId: child.id }, limit: 1, includeActivities: false, requireFresh: true as const }
       try {
         const read = target.hostId === this.hostId() ? await this.readThread(input)
-          : watcherToolSchemas.read_thread.output.parse(await this.remote!.read(target.hostId, { master: this.view().current!, ...this.adoptOn(target.hostId), call: { name: 'read_thread', input } }))
+          : watcherToolSchemas.read_thread.output.parse(await this.remote!.read(target.hostId, { master, ...this.adoptOn(target.hostId), call: { name: 'read_thread', input } }))
         return read.status !== 'ok' ? child : undefined
       } catch { return child }
     }))
@@ -1415,6 +1418,7 @@ export class WatcherService implements WatcherControlHooks {
         this.options.host.notePullRequestState(observation)
       } catch (error) { this.settleReads.set(prKey, { state: 'unread', observedAt: Date.now(), ...error instanceof GitHubRateLimited ? { retryAt: error.retryAt } : {} }) }
     }))
+    while (this.settleReads.size > 1_000) this.settleReads.delete(this.settleReads.keys().next().value!)
     return () => {
       for (const before of heads) {
         const live = this.owningThread(target.hostId, before.id)
@@ -6021,7 +6025,8 @@ ${operation.draftId}`)
       if (message) { message.text = Buffer.from(message.text).subarray(0, 32 * 1024).toString('utf8'); result.truncated = true }
     }
     if (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BOUND) refuse('HISTORY_UNAVAILABLE', 'This thread’s read exceeds the bounded response size. Read fewer messages.')
-    if (result.lastPosition !== null) await this.options.control.updateWatcher(record => {
+    // Settlement's refresh-only probe does not deliver these messages to Watcher.
+    if (!input.requireFresh && result.lastPosition !== null) await this.options.control.updateWatcher(record => {
       record.reads = record.reads.filter(item => key(item.target) !== key(input.target)); record.reads.push({ target: input.target,
         position: { historyEpoch: read.historyEpoch, afterPosition: result.lastPosition! }, readAt: now() })
     })

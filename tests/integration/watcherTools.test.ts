@@ -1106,6 +1106,26 @@ it('refuses settle_thread while its last turn still reads running, or while a th
   expect(await settle()).toMatchObject({ status: 'ok' })
 })
 
+it.each([false, true])('leaves Watcher read markers untouched when a descendant refuses settlement (already read: %s)', async alreadyRead => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  await f.finish(first.target.threadId)
+  const child = randomUUID(), target = { hostId: first.target.hostId, threadId: child }
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: child, projectId: f.project.id, modelId: f.model.id,
+    title: 'Synthetic busy child', workingCopy: 'shared' })).error).toBeNull()
+  await f.workspace.host.setDelegatedBy(child, first.target.threadId)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: child, draftId: randomUUID(), text: 'Synthetic unseen work' })).error).toBeNull()
+  if (alreadyRead) {
+    expect(await f.call('read_thread', { target })).toMatchObject({ status: 'ok' })
+    await f.control.updateWatcher(record => { record.reads.find(item => item.target.threadId === child)!.readAt = '2026-01-01T00:00:00.000Z' })
+  }
+  const reads = structuredClone(f.control.watcherRecord().reads)
+  expect(reads.some(item => item.target.threadId === child)).toBe(alreadyRead)
+  expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target }))
+    .toMatchObject({ status: 'refused', code: 'BACKGROUND_WORK_RUNNING' })
+  expect(f.control.watcherRecord().reads).toEqual(reads)
+})
+
 it.each(['completed', 'busy', 'cached', 'disconnected', 'new-turn', 'writer-turn'] as const)('refreshes only blocking descendants before settlement: %s', async outcome => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
@@ -1139,6 +1159,7 @@ it.each(['completed', 'busy', 'cached', 'disconnected', 'new-turn', 'writer-turn
       return commandFromWatcher(command, origin)
     })
   }
+  const reads = structuredClone(f.control.watcherRecord().reads)
   const pending = f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })
   if (outcome === 'new-turn') {
     await entered.promise
@@ -1148,6 +1169,7 @@ it.each(['completed', 'busy', 'cached', 'disconnected', 'new-turn', 'writer-turn
     release.resolve()
   }
   const result = await pending
+  expect(f.control.watcherRecord().reads).toEqual(reads)
   expect(refresh.mock.calls.map(([id]) => id)).toEqual([child])
   expect(result).toMatchObject(outcome === 'completed' ? { status: 'ok' } : { status: 'refused', code: outcome === 'busy' ? 'BACKGROUND_WORK_RUNNING'
     : outcome === 'new-turn' || outcome === 'writer-turn' ? 'TARGET_CHANGED' : 'HISTORY_UNAVAILABLE' })

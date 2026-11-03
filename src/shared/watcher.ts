@@ -304,7 +304,7 @@ export const watcherToolSchemas = {
     // `evidence` is the desktop's alone (#1191): slim, its default, gives each pull request's summary instead of every fact.
     input: z.object({ target: watcherThreadTargetSchema, position: watcherPositionSchema.optional(),
       limit: z.number().int().min(1).max(WATCHER_MESSAGES_MAX).default(WATCHER_MESSAGES_MAX), includeActivities: z.boolean().default(false),
-      // Settlement needs a provider read, never cached history. Older hosts refuse the unknown key safely.
+      // Settlement's refresh-only probe needs a provider read without advancing Watcher's read marker. Older hosts refuse the unknown key safely.
       requireFresh: z.literal(true).optional(),
       evidence: watcherDetailSchema.optional() }).strict(),
     output: boundedRead(result({ target: watcherThreadTargetSchema, messages: z.array(z.object({ id, position: counter, role: z.enum(['user', 'assistant']),
