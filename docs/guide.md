@@ -1268,7 +1268,7 @@ Codex and Claude Code make their own copy of the conversation up to that reply, 
 
 ## The Council
 
-In Sotto Owl, the **Council** page, in the sidebar's page links, puts one question from a thread to two to five panelists and a chair, each an ordinary thread on its own provider ([ADR-0177](adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md)). It is for judgment calls; Sotto never convenes one unasked, and it uses no key.
+In Sotto Owl, the **Council** page, in the room switch just left of Watcher's owl, puts one question from a thread to two to five panelists and a chair, each an ordinary thread on its own provider ([ADR-0177](adr/0177-the-council-puts-one-question-to-threads-on-several-providers.md)). It is for judgment calls; Sotto never convenes one unasked, and it uses no key.
 
 **Asking.** Choose a thread on this computer and write the question. The seats start from Settings → Council, and you can change any of them for this Council alone. Before you press **Ask the Council**, the page says how many threads it starts, which providers read the thread's conversation, roughly how much and in how many parts, and how long a stage waits for a thread. It warns when a seat's model holds less than the conversation, where a thread on that model has told Sotto its context window. Each panelist and the chair get the whole conversation as quoted history, every message in full with its tool calls named and their output left out, so a request or a yes in it is never taken as one for them.
 
