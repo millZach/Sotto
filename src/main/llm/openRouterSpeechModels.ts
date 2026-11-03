@@ -1,5 +1,6 @@
 import type { CloudSpeechModelList } from '../../shared/contracts'
 import { CLOUD_SPEECH_SCORES, defaultCloudSpeechModel, rankCloudSpeechModels, type ListedSpeechModel } from '../../shared/cloudSpeechModels'
+import { networkReason } from './networkReason'
 
 const SPEECH_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modalities=transcription'
 const ZDR_ENDPOINTS_URL = 'https://openrouter.ai/api/v1/endpoints/zdr'
@@ -8,15 +9,12 @@ const ID = /^[\w.\-/:~]{1,128}$/u
 /** A list read this recently is used again rather than read anew, so each dictation does not ask OpenRouter for it. */
 const FRESH_MS = 10 * 60_000
 
+export type OpenRouterSpeechModelsEvent = `openrouter-speech-models-${'http' | 'invalid-response' | 'network' | 'timeout'}`
+
 export interface OpenRouterSpeechModelsDependencies {
   readonly fetchFn?: typeof fetch
   readonly now?: () => number
-}
-
-function failure(error: unknown, signal: AbortSignal): CloudSpeechModelList {
-  const cause: unknown = signal.aborted ? signal.reason : error
-  const timedOut = typeof cause === 'object' && cause !== null && 'name' in cause && cause.name === 'TimeoutError'
-  return { ok: false, reason: timedOut ? 'timeout' : 'network' }
+  readonly log?: (event: OpenRouterSpeechModelsEvent) => void
 }
 
 /**
@@ -28,12 +26,14 @@ function failure(error: unknown, signal: AbortSignal): CloudSpeechModelList {
 export class OpenRouterSpeechModels {
   private readonly fetchFn: typeof fetch
   private readonly now: () => number
+  private readonly log: OpenRouterSpeechModelsDependencies['log']
   private last: { readonly at: number; readonly list: Extract<CloudSpeechModelList, { ok: true }> } | null = null
   private reading: Promise<CloudSpeechModelList> | null = null
 
   constructor(dependencies: OpenRouterSpeechModelsDependencies = {}) {
     this.fetchFn = dependencies.fetchFn ?? globalThis.fetch.bind(globalThis)
     this.now = dependencies.now ?? Date.now
+    this.log = dependencies.log
   }
 
   /** The ranked list; `fresh` reads it again even when the kept one is recent, as Settings does when it opens. */
@@ -68,10 +68,12 @@ export class OpenRouterSpeechModels {
         this.fetchFn(SPEECH_MODELS_URL, { method: 'GET', signal }),
         this.fetchFn(ZDR_ENDPOINTS_URL, { method: 'GET', signal }),
       ])
-      if (!models.ok || !zdr.ok) return this.last?.list ?? { ok: false, reason: 'http' }
-      const modelBody = await models.json() as { data?: unknown }
-      const zdrBody = await zdr.json() as { data?: unknown }
-      if (!Array.isArray(modelBody.data) || !Array.isArray(zdrBody.data)) return this.last?.list ?? { ok: false, reason: 'http' }
+      if (!models.ok || !zdr.ok) { this.log?.('openrouter-speech-models-http'); return this.last?.list ?? { ok: false, reason: 'http' } }
+      const [modelBody, zdrBody] = await Promise.all([
+        models.json() as Promise<{ data?: unknown }>,
+        zdr.json() as Promise<{ data?: unknown }>,
+      ])
+      if (!Array.isArray(modelBody.data) || !Array.isArray(zdrBody.data)) { this.log?.('openrouter-speech-models-invalid-response'); return this.last?.list ?? { ok: false, reason: 'http' } }
       const zeroRetention = new Set<string>()
       for (const endpoint of zdrBody.data as unknown[]) {
         const id = typeof endpoint === 'object' && endpoint !== null ? (endpoint as { model_id?: unknown }).model_id : undefined
@@ -96,7 +98,9 @@ export class OpenRouterSpeechModels {
       this.last = { at: this.now(), list }
       return list
     } catch (error: unknown) {
-      return this.last?.list ?? failure(error, signal)
+      const reason = networkReason(error, signal)
+      this.log?.(`openrouter-speech-models-${error instanceof SyntaxError ? 'invalid-response' : reason}`)
+      return this.last?.list ?? { ok: false, reason }
     }
   }
 }
