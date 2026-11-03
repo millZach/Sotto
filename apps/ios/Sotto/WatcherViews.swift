@@ -1626,7 +1626,7 @@ private struct WatcherDock: View {
         let listening = dictation.key == key
         // Send is always there, as in a thread's reply box, and lights once the box holds something.
         let written = model.watcherBoxHoldsAnything(hostID)
-        // Small by a thread's box's rule (ADR-0180): Watcher has a conversation or is working, nothing is being written,
+        // Small by a thread's box's rule (ADR-0184): Watcher has a conversation or is working, nothing is being written,
         // and no line over the box speaks of the settings.
         let page = model.watcherPage(hostID)
         let small = (page?.conversation.messages.isEmpty == false || working) && !DebugFlags.replyBoxStaysFull && !typeSize.isAccessibilitySize && !focused && !written

@@ -954,7 +954,7 @@ enum ComposerMetrics {
     /// Between the row's buttons: wide enough that each keeps all 44 points of its press area, so a press between Stop
     /// and Send neither stops a turn meant to be queued nor queues a reply meant to stop it.
     static let gap: CGFloat = 44 - button
-    /// The small reply box (ADR-0180): where the words start in its row, past the +, and the room they leave for the mic
+    /// The small reply box (ADR-0184): where the words start in its row, past the +, and the room they leave for the mic
     /// and for Send or Stop. It never shows Stop and Send side by side: both together mean something is written.
     static let smallWordsLeading: CGFloat = rowInset + button + gap + 2
     static let smallWordsTrailing: CGFloat = rowInset + button * 2 + gap * 2
@@ -1001,7 +1001,7 @@ extension View {
         background { if lit { EffortTraceLight(radius: radius, halo: true).padding(.top, top) } }
             .overlay { if lit { EffortTraceLight(radius: radius, halo: false).padding(.top, top) } }
     }
-    /// A press on the conversation puts the keyboard away when `empty` says the reply box holds nothing (ADR-0180). A press
+    /// A press on the conversation puts the keyboard away when `empty` says the reply box holds nothing (ADR-0184). A press
     /// that means something else, on a link or a button, goes there instead, since a parent's tap yields to its children.
     /// Reads nothing until pressed, so it adds no work to the page.
     func tapPutsAwayKeyboard(when empty: @escaping () -> Bool) -> some View {
