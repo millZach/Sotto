@@ -75,6 +75,13 @@ struct MainTabs: View {
         if case .column(let leading, let width) = place, leading == side { return width }
         return 0
     }
+    private func railOnLeft(_ place: RailPlace) -> Bool {
+        switch place {
+        case .strip(let trailing, _): return !trailing
+        case .column(let leading, _): return leading
+        case .bottom: return false
+        }
+    }
     private func railPlace(_ duo: DuoLayout) -> RailPlace {
         switch duo {
         case .none: return .bottom
@@ -177,7 +184,7 @@ struct MainTabs: View {
         .onChange(of: threadPath) { _, path in if case .folded = duo { foldedOnList = path.isEmpty && tab == .threads } }
         .onChange(of: tab) { _, chosen in if case .folded = duo { foldedOnList = threadPath.isEmpty && chosen == .threads } }
         // The to-do list unrolls over whatever page shows, beside the Duo's rail and under any other iPhone's bar or heading.
-        .overlay { ToDoScroll(top: duo == .none ? Space.s8 + Space.s2 : Space.s2, wide: duo != .none)
+        .overlay { ToDoScroll(top: duo == .none ? Space.s8 + Space.s2 : Space.s2, wide: duo != .none, fromLeading: railOnLeft(place))
             .padding(.leading, railColumn(place, leading: true))
             .padding(.trailing, railColumn(place, leading: false)) }
         // The page's ground runs on under the Duo's strip and rail, so the rail stands on the page's own ground and the

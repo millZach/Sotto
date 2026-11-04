@@ -2612,8 +2612,8 @@ struct RailAsk: Equatable {
         self.preparePhoto = preparePhoto
         self.receiptSleep = receiptSleep
         self.photoLoadLimit = photoLoadLimit
-        #if DEBUG && os(iOS)
         toDoStore.send = { [weak self] request, hostID in try await self?.sendToDo(request, to: hostID) }
+        #if DEBUG && os(iOS)
         if ProcessInfo.processInfo.arguments.contains("--ui-fixture") {
             loadUIFixture()
             return
@@ -2865,8 +2865,6 @@ struct RailAsk: Equatable {
         return pages.compactMap { page in page.url(on: endpoint).map { PrototypePageLink(page: page, url: $0) } }
     }
     private func connectionEnded(_ hostID: String, problem: String, retrying: Bool) {
-        // Its list goes with it, and comes back whole with the next hello.
-        toDoStore.forget(hostID: hostID)
         let since = retryingSince[hostID] ?? Date()
         if retrying, active, wasOnline.contains(hostID), (retryAttempts[hostID] ?? 0) < Self.quietRetries,
            Date().timeIntervalSince(since) < Self.quietRetryWindow {
@@ -2909,6 +2907,9 @@ struct RailAsk: Equatable {
         if let existing = connections[hostID] { return existing }
         let made = HostConnection()
         made.onLiveness = { [weak self] in self?.retryAttempts[hostID] = nil; self?.retryingSince[hostID] = nil }
+        // However a connection ends, its computer's list goes with it, with any check-off still waiting, and comes back
+        // whole with the next hello. A computer that no longer offers one sends none.
+        made.onClosed = { [weak self] in self?.toDoStore.forget(hostID: hostID) }
         made.onPush = { [weak self] frame, sequence in self?.push(frame, from: hostID, sequence: sequence) }
         made.onDisconnect = { [weak self] in
             guard let self else { return }

@@ -1,85 +1,6 @@
 import SwiftUI
 import SottoCore
 
-/// The iPhone's side of the to-do list (ADR-0188). It outlives whatever shows it, because the five seconds a check-off waits go
-/// on through rolling up and moving to another page: nothing reaches the computer that holds the item until they end, and an
-/// app that goes away in those seconds leaves the item unchecked, which loses nothing.
-@MainActor final class ToDoStore: ObservableObject {
-    @Published private(set) var book = ToDoBook()
-    @Published private(set) var open = false
-    /// The last press failed. Rolling up reads it.
-    @Published private(set) var failed = false
-    /// What was new when the list opened, or came while it stood open: marked until it rolls up, though the badge is quiet.
-    @Published private(set) var marked: Set<String> = []
-    /// Carries a press to the computer that holds the item. Set once, by the model.
-    var send: ((ToDoRequest, String) async throws -> Void)?
-    private var holds: [String: Task<Void, Never>] = [:]
-    private var askedSeen: Set<String> = []
-
-    func take(hostID: String, items: [ToDoItem]) {
-        for key in book.take(hostID: hostID, items: items) { holds.removeValue(forKey: key)?.cancel() }
-        if open { noteSeen() }
-    }
-    func forget(hostID: String) {
-        for key in book.forget(hostID: hostID) { holds.removeValue(forKey: key)?.cancel() }
-    }
-    func toggle() { if open { rollUp() } else { unroll() } }
-    func unroll() { open = true; noteSeen() }
-    func rollUp() { open = false; failed = false; marked = []; askedSeen = [] }
-    /// The list's last row going rolls it up, once its press has an answer. A list opened empty stays, for adding to.
-    func rowsChanged(from before: Int, to now: Int) { if open && before > 0 && now == 0 { rollUp() } }
-    /// Opening quiets the badge on each computer, and so does anything that comes while it stands open.
-    private func noteSeen() {
-        let fresh = book.rows.filter { !$0.item.seen }
-        marked.formUnion(fresh.map(\.id))
-        for hostID in Set(fresh.filter { !askedSeen.contains($0.id) }.map(\.hostID)) {
-            askedSeen.formUnion(fresh.filter { $0.hostID == hostID }.map(\.id))
-            Task { try? await send?(.seen, hostID) }
-        }
-    }
-    /// Takes it off in five seconds, unless Undo comes first.
-    func check(_ row: ToDoRow) {
-        guard holds[row.id] == nil else { return }
-        failed = false
-        book.hold(row.id)
-        holds[row.id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: ToDoWire.undoSeconds * 1_000_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.book.sending(row.id)
-            do { try await self.send?(.check(id: row.item.id, didNotWork: nil), row.hostID) } catch {
-                guard !Task.isCancelled else { return }
-                self.book.release(row.id)
-                self.holds[row.id] = nil
-                self.fail()
-            }
-        }
-    }
-    func undo(_ row: ToDoRow) {
-        guard !row.sending else { return }
-        holds.removeValue(forKey: row.id)?.cancel()
-        book.release(row.id)
-    }
-    /// It did not work: the user's words go at once, since they asked to send them. False leaves the words to send again.
-    func didNotWork(_ row: ToDoRow, words: String) async -> Bool {
-        failed = false
-        do { try await send?(.check(id: row.item.id, didNotWork: words), row.hostID); return true } catch { fail(); return false }
-    }
-    func add(_ title: String) async -> Bool {
-        guard let host = book.firstHost else { return false }
-        failed = false
-        do { try await send?(.add(title: title), host); return true } catch { fail(); return false }
-    }
-    /// A press that failed says so, even with the list rolled up by then.
-    private func fail() { failed = true; if !open { unroll() } }
-}
-
-/// One of a prototype's pages, and where it opens on the computer that serves it.
-struct PrototypePageLink: Identifiable {
-    let page: RequestPage
-    let url: URL
-    var id: String { page.token }
-}
-
 /// The list's icon, wherever it stands: a tile on the Duo's rail, in a page's heading, or in a thread's bar. It shows only
 /// where a connected computer keeps a list.
 struct ToDoIcon: View {
@@ -134,9 +55,12 @@ struct ToDoScroll: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// How far down the page the paper starts, under whatever bar or heading stands there.
     let top: CGFloat
+    /// Beside the Duo's rail, as wide as it needs and against the rail; on any other iPhone, the width of the page.
     let wide: Bool
+    /// The Duo's rail stands on the left, so the list opens from there.
+    var fromLeading = false
     var body: some View {
-        ZStack(alignment: wide ? .topTrailing : .top) {
+        ZStack(alignment: wide ? (fromLeading ? .topLeading : .topTrailing) : .top) {
             if toDos.open {
                 Color.clear.contentShape(Rectangle()).onTapGesture { toDos.rollUp() }
                     .accessibilityHidden(true)
@@ -177,7 +101,6 @@ private struct RollReveal: ViewModifier, Animatable {
 
 private struct ToDoSheet: View {
     @EnvironmentObject var toDos: ToDoStore
-    @State private var title = ""
     var body: some View {
         let count = toDos.book.left
         VStack(alignment: .leading, spacing: 0) {
@@ -193,15 +116,16 @@ private struct ToDoSheet: View {
             }
             if toDos.failed {
                 Text("Sotto could not change your list. Try again.").font(.sotto(.small)).foregroundStyle(Palette.warningText)
+                    .paragraphDirection()
                     .padding(.horizontal, Space.s4).padding(.top, Space.s2)
                     .accessibilityIdentifier("to-do-failure")
             }
             Divider().overlay(Palette.hairline).padding(.top, Space.s2)
             HStack(spacing: Space.s2) {
-                TextField("Add your own", text: $title)
+                TextField("Add your own", text: $toDos.draft)
                     .font(.sotto(.small))
                     .submitLabel(.done)
-                    .onSubmit(add)
+                    .onSubmit { Task { await toDos.addDraft() } }
                     .padding(.horizontal, Space.s3).frame(minHeight: 38)
                     .background(Palette.canvas, in: RoundedRectangle(cornerRadius: 10))
                     .accessibilityIdentifier("to-do-add")
@@ -210,6 +134,7 @@ private struct ToDoSheet: View {
                         .frame(minHeight: 44).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("to-do-roll-up")
             }
             .padding(.horizontal, Space.s3).padding(.top, Space.s1).padding(.bottom, Space.s4)
@@ -218,12 +143,15 @@ private struct ToDoSheet: View {
         .background(Palette.raised, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
+        // Over the page, as a sheet is: VoiceOver stays inside it, and its escape gesture rolls it up.
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) { toDos.rollUp() }
         .accessibilityIdentifier("to-do-scroll")
     }
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
             if toDos.book.rows.isEmpty {
-                Text("Nothing left to do.").font(.sotto(.small)).foregroundStyle(Palette.muted).padding(Space.s3)
+                Text("Nothing left to do.").font(.sotto(.small)).foregroundStyle(Palette.muted).paragraphDirection().padding(Space.s3)
             }
             ForEach(toDos.book.rows) { row in
                 ToDoRowView(row: row)
@@ -231,13 +159,6 @@ private struct ToDoSheet: View {
             }
         }
         .padding(.horizontal, Space.s2)
-    }
-    private func add() {
-        let words = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ToDoWire.titleMax))
-        guard !words.isEmpty else { return }
-        title = ""
-        // A failure gives the words back to send again, unless the user has moved on to writing others.
-        Task { if await !toDos.add(words), title.isEmpty { title = words } }
     }
 }
 

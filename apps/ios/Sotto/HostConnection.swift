@@ -15,6 +15,8 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     var onPush: ((IncomingFrame, Int) -> Void)?
     var onDisconnect: (() -> Void)?
     var onLiveness: (() -> Void)?
+    /// This connection ended, by any path: a lost socket, the app going to the background, a refresh or a new connect.
+    var onClosed: (() -> Void)?
     /// The address the last connect reached, which can be phone access's other port rather than the saved one. A
     /// question's pages open there (ADR-0085).
     private(set) var reached: HostEndpoint?
@@ -166,6 +168,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         let waiting = pending; pending.removeAll()
         deadlines.values.forEach { $0.cancel() }; deadlines.removeAll()
         waiting.values.forEach { $0.resume(throwing: ClientError.disconnected) }
+        onClosed?()
     }
     func call(_ operation: [String: JSONValue], id: String = UUID().uuidString) async throws -> JSONValue {
         try await call(operation, as: JSONValue.self, id: id)

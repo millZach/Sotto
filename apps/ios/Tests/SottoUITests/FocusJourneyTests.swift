@@ -568,6 +568,48 @@ import UIKit
     func testAThreadWithPicturesStaysAtItsEnd() { picturesStayAtTheEnd(streaming: false) }
     func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
 
+    /// ADR-0188 on an iPhone with no rail: the icon stands in each page's heading and a thread's bar, its badge is loud
+    /// until the list opens, the list unrolls, a check-off waits with Undo, and a press outside rolls it up.
+    func testToDoListStandsInEveryPageAndAChecksOffWithUndo() {
+        launch(Self.fixture + ["--ui-to-dos"])
+        let icon = byID("to-do-icon")
+        XCTAssertTrue(icon.waitForExistence(timeout: 10), "The icon stands in the Threads heading")
+        XCTAssertEqual(icon.label, "To-do, 3 to do, 1 new.")
+        capture("to-do-badge")
+        icon.tap()
+        XCTAssertTrue(byID("to-do-scroll").waitForExistence(timeout: 5), "A press unrolls the list")
+        XCTAssertTrue(app.staticTexts["Hand test links on a paired host"].exists)
+        capture("to-do-open")
+        XCTAssertEqual(icon.label, "To-do, 3 to do.", "Opening the list quiets the count")
+        app.buttons["Show the steps"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["1. Open a thread on the studio Mac"].waitForExistence(timeout: 2), "A to-do's steps fold open")
+        byID("to-do-check-soundtrack").tap()
+        let undo = byID("to-do-undo")
+        XCTAssertTrue(undo.waitForExistence(timeout: 2), "A check-off offers Undo")
+        capture("to-do-undo")
+        undo.tap()
+        XCTAssertTrue(byID("to-do-check-soundtrack").waitForExistence(timeout: 2), "Undo takes it back")
+        byID("to-do-check-soundtrack").tap()
+        XCTAssertTrue(byID("to-do-undo").waitForExistence(timeout: 2))
+        byID("to-do-did-not-work").firstMatch.tap()
+        XCTAssertTrue(byID("to-do-note").waitForExistence(timeout: 2), "It didn\u{2019}t work stands on the one a thread waits on")
+        app.buttons["Cancel"].firstMatch.tap()
+        byID("to-do-roll-up").tap()
+        XCTAssertFalse(byID("to-do-scroll").waitForExistence(timeout: 2), "Roll up rolls it up")
+        XCTAssertTrue(byID("to-do-icon").exists, "A check-off waiting goes on through rolling up")
+        let gone = NSPredicate(format: "label == %@", "To-do, 2 to do.")
+        wait(for: [XCTNSPredicateExpectation(predicate: gone, object: icon)], timeout: 10)
+        app.tab("Settings").tap()
+        XCTAssertTrue(byID("to-do-icon").waitForExistence(timeout: 5), "It stands in the Settings heading")
+        app.tab("Threads").tap()
+        let thread = row("drives")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        XCTAssertTrue(byID("to-do-icon").waitForExistence(timeout: 5), "It stands in a thread's bar")
+        capture("to-do-thread-bar")
+    }
+
     private func picturesStayAtTheEnd(streaming: Bool) {
         launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []))
         let thread = row("drives")
@@ -2660,47 +2702,5 @@ private extension XCUIElement {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
         return false
-    }
-
-    /// ADR-0188 on an iPhone with no rail: the icon stands in each page's heading and a thread's bar, its badge is loud
-    /// until the list opens, the list unrolls, a check-off waits with Undo, and a press outside rolls it up.
-    func testToDoListStandsInEveryPageAndAChecksOffWithUndo() {
-        launch(Self.fixture + ["--ui-to-dos"])
-        let icon = byID("to-do-icon")
-        XCTAssertTrue(icon.waitForExistence(timeout: 10), "The icon stands in the Threads heading")
-        XCTAssertEqual(icon.label, "To-do, 3 to do, 1 new.")
-        capture("to-do-badge")
-        icon.tap()
-        XCTAssertTrue(byID("to-do-scroll").waitForExistence(timeout: 5), "A press unrolls the list")
-        XCTAssertTrue(app.staticTexts["Hand test links on a paired host"].exists)
-        capture("to-do-open")
-        XCTAssertEqual(icon.label, "To-do, 3 to do.", "Opening the list quiets the count")
-        app.buttons["Show the steps"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["1. Open a thread on the studio Mac"].waitForExistence(timeout: 2), "A to-do's steps fold open")
-        byID("to-do-check-soundtrack").tap()
-        let undo = byID("to-do-undo")
-        XCTAssertTrue(undo.waitForExistence(timeout: 2), "A check-off offers Undo")
-        capture("to-do-undo")
-        undo.tap()
-        XCTAssertTrue(byID("to-do-check-soundtrack").waitForExistence(timeout: 2), "Undo takes it back")
-        byID("to-do-check-soundtrack").tap()
-        XCTAssertTrue(byID("to-do-undo").waitForExistence(timeout: 2))
-        byID("to-do-did-not-work").firstMatch.tap()
-        XCTAssertTrue(byID("to-do-note").waitForExistence(timeout: 2), "It didn\u{2019}t work stands on the one a thread waits on")
-        app.buttons["Cancel"].firstMatch.tap()
-        byID("to-do-roll-up").tap()
-        XCTAssertFalse(byID("to-do-scroll").waitForExistence(timeout: 2), "Roll up rolls it up")
-        XCTAssertTrue(byID("to-do-icon").exists, "A check-off waiting goes on through rolling up")
-        let gone = NSPredicate(format: "label == %@", "To-do, 2 to do.")
-        wait(for: [XCTNSPredicateExpectation(predicate: gone, object: icon)], timeout: 10)
-        app.tab("Settings").tap()
-        XCTAssertTrue(byID("to-do-icon").waitForExistence(timeout: 5), "It stands in the Settings heading")
-        app.tab("Threads").tap()
-        let thread = row("drives")
-        reveal(thread)
-        thread.tap()
-        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
-        XCTAssertTrue(byID("to-do-icon").waitForExistence(timeout: 5), "It stands in a thread's bar")
-        capture("to-do-thread-bar")
     }
 }
