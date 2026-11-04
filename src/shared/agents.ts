@@ -20,7 +20,7 @@ import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import { bringBackAwaySchema, bringBackSchema, worktreeMadeFromSchema } from './bringChangesBack'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
-import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
 export const AGENT_GET = 'sotto:agents:get'
@@ -1585,6 +1585,8 @@ export interface AgentBridge {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, with its checks and what the surface may do; null when the thread has none. */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of a thread's repository, read on a press; null where it has no GitHub remote. */
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /** One folder's subfolders on a named host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersClientRequest): Promise<HostFoldersResult>
   chooseProjectDirectory?(): Promise<string | null>

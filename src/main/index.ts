@@ -1237,7 +1237,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
     mediaPart: async request => { const found = await agentControl.threadMediaVideo(request); return found && { mimeType: found.handle.mimeType, sizeBytes: found.handle.sizeBytes, bytes: found.bytes } },
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
-    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
+    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request), gitPullRequestList: request => agentControl.gitPullRequestList(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
     // The main window applies appends: a running command's output crosses as its new lines (ADR-0025, October 30 amendment).

@@ -1550,6 +1550,9 @@ export async function startSocketServer(options: SocketServerOptions) {
         const readId = read && !isPullRequestLimited(read) ? confirmations.read(peer.client.clientId, request.request.threadId, read.url, read.headId) : undefined
         return read && readId ? { ...read, readId } : read
       }
+      case 'git-pull-request-list':
+        if (!service.gitPullRequestList) throw new Refusal('invalid_request')
+        try { return await service.gitPullRequestList(request.request) } catch (error) { throw new Refusal('unavailable', undefined, pullRequestReadFailureOf(error)) }
       // A receipt for the merge, close or auto-merge this client is about to send (#1691). Pairing is enough to ask: it is
       // evidence of a second step, not a grant, and answers no permission.
       case 'pull-request-confirmation': {

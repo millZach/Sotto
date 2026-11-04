@@ -1598,7 +1598,7 @@ export class DesktopHosts {
       mediaPart: async request => { const part = await socket.threadMediaPart(request); return part && { mimeType: part.mimeType, sizeBytes: part.sizeBytes, bytes: Buffer.from(part.data, 'base64') } }, observe: (ids, shown) => socket.observe(ids, shown),
       activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
-      gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
+      gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request), gitPullRequestList: request => socket.gitPullRequestList(request),
       confirmPullRequestAction: request => socket.pullRequestConfirmation(request),
       hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(), keepsClientOutcomes: () => socket.keepsClientOutcomes(), offersBabysitting: () => socket.supportsBabysitting,
       // A question's pages are served by the host's own listener, which this computer reaches where its socket does (ADR-0085).

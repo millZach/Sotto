@@ -65,7 +65,7 @@ import { BRING_BACK_FROM_DESKTOP, BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BA
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, pullRequestAddress, pullRequestKey, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestPress, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, pullRequestAddress, pullRequestKey, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestPress, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, wordlessReasoningSummary, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
@@ -1868,6 +1868,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     const branch = branchPullRequestUrl(current)
     return this.detailOf(view, link?.source ?? null, branch !== undefined && pullRequestKey(branch) === key)
+  }
+  /**
+   * The open pull requests of the repository a thread's folder belongs to, read through gh when the Pull request surface's
+   * list is opened or refreshed. Null where the folder has no GitHub remote. Nothing in it is kept on the record.
+   */
+  async listThreadRepositoryPullRequests(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    await this.initialize()
+    const service = this.pullRequestsOrRefuse()
+    this.thread(request.threadId)
+    try { return await service.list(this.threadRepositoryFolder(request.threadId, 'pull requests')) }
+    catch (error) { if (error instanceof GitPullRequestLimited) return { limited: { retryAt: new Date(error.retryAt).toISOString() } }; throw error }
   }
   private detailOf(view: GitPullRequestView, linked: GitPullRequestLinkSource | null, branch: boolean): GitPullRequestDetail {
     return { ...view, linked, branch }

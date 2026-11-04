@@ -531,7 +531,7 @@ const withOutcome = (reading: ProviderClientUpdate, before: ProviderClientUpdate
 /** Owns manual commands and durable dispatch intent across all host adapters. */
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'bring-changes-back', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
@@ -2571,6 +2571,11 @@ export class AgentControl {
   gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     if (!this.dependencies.host.readThreadPullRequest) throw new Error('Pull requests are unavailable on this host.')
     return this.dependencies.host.readThreadPullRequest(request)
+  }
+  /** The open pull requests of a thread's repository, read when the Pull request surface's list is opened or refreshed. */
+  gitPullRequestList(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    if (!this.dependencies.host.listThreadRepositoryPullRequests) throw new Error('Pull requests are unavailable on this host.')
+    return this.dependencies.host.listThreadRepositoryPullRequests(request)
   }
   /**
    * One picture a thread's record names (ADR-0170), fetched when its tile comes into view rather than pushed with any

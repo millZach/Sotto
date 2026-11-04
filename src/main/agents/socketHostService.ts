@@ -16,7 +16,7 @@ import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
+import { gitPullRequestListResultSchema, gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
 import { fileLinkPreviewSchema, fileListingSchema, filePreviewSchema, filesResultSchema, type FileLinkPreview, type FileLinkRequest, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
 import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
@@ -1430,6 +1430,10 @@ export class SocketHostService implements HostService {
   async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitPullRequestResultSchema, await this.call({ op: 'git-pull-request', request }))
+  }
+  async gitPullRequestList(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    if (!this.features.includes('git-pull-request-list')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    return this.read(gitPullRequestListResultSchema, await this.call({ op: 'git-pull-request-list', request }))
   }
   /** The host lists `pull-request-confirmation`: it takes a merge, close or auto-merge only with its own confirmation receipt (#1691). */
   get supportsPullRequestConfirmation(): boolean { return this.features.includes('pull-request-confirmation') }

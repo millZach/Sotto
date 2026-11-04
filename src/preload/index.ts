@@ -63,7 +63,7 @@ import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, gitChangedFilesSchema } from '../shared/gitChangedFiles'
-import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, gitPullRequestResultSchema } from '../shared/gitPullRequests'
+import { AGENT_GIT_PULL_REQUEST, AGENT_GIT_PULL_REQUEST_LIST, gitPullRequestListRequestSchema, gitPullRequestListResultSchema, gitPullRequestRequestSchema, gitPullRequestResultSchema } from '../shared/gitPullRequests'
 import { AGENT_HOST_FOLDERS, hostFoldersClientRequestSchema, hostFoldersResultSchema } from '../shared/hostFolders'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
@@ -375,6 +375,7 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     gitRefs: (request: import('../shared/gitRefs').GitRefsRequest) => invokeParsed(renderer, AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema.parse(request)),
     gitChangedFiles: (request: import('../shared/gitChangedFiles').GitChangedFilesRequest) => invokeParsed(renderer, AGENT_GIT_CHANGED_FILES, gitChangedFilesSchema, gitChangedFilesRequestSchema.parse(request)),
     gitPullRequest: (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
+    gitPullRequestList: (request: import('../shared/gitPullRequests').GitPullRequestListRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST_LIST, gitPullRequestListResultSchema, gitPullRequestListRequestSchema.parse(request)),
     hostFolders: (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, startHandoverResultSchema, agentThreadDetailRequestSchema.parse(threadId)),

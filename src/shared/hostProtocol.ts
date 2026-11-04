@@ -9,7 +9,7 @@ import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, agentMimeTypeSchema, agen
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
-import { gitPullRequestRequestSchema, pullRequestConfirmationRequestSchema, type GitPullRequestReadFailure } from './gitPullRequests'
+import { gitPullRequestListRequestSchema, gitPullRequestRequestSchema, pullRequestConfirmationRequestSchema, type GitPullRequestReadFailure } from './gitPullRequests'
 import { hostFoldersRequestSchema } from './hostFolders'
 import { fileLinkRequestSchema, fileListRequestSchema, fileRequestSchema } from './files'
 import { gitReviewRequestSchema } from './gitChanges'
@@ -144,7 +144,9 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `git-refs` request with a page of a thread's branches for the branch picker. `git-changed-files`: the
  * host answers the `git-changed-files` request with a thread's changed files for the commit dialog.
  * `git-pull-request`: the host answers the `git-pull-request` request with one of a thread's pull requests,
- * read through gh, for the Pull request surface and its dialogs. `attachment-staging`: the host keeps an image a client
+ * read through gh, for the Pull request surface and its dialogs. `git-pull-request-list`: the host answers the
+ * `git-pull-request-list` request with the open pull requests of a thread's repository, read through gh on a press, for the
+ * Pull request surface. `attachment-staging`: the host keeps an image a client
  * sends once and answers with its handle (`stage-attachment`), and hands a staged image back by digest
  * (`attachment-content`); drafts and commands carry the handle (ADR-0031). `host-folders`: the host answers the
  * `host-folders` request with one folder's subfolders on the host machine, for the Add project dialog's folder browser.
@@ -375,7 +377,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * hello and whenever the list changes. `to-do-request` is a press on it. To desktops and phones, and listed only while its
  * `to-do-list` Owl feature is on.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'to-dos'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'to-dos'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -598,6 +600,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('git-changed-files'), request: gitChangedFilesRequestSchema }).strict(),
   /** One of a thread's pull requests, read through gh for the Pull request surface; read on request (ADR-0027). */
   z.object({ ...base, op: z.literal('git-pull-request'), request: gitPullRequestRequestSchema }).strict(),
+  /** The open pull requests of a thread's repository, read through gh on a press, for the Pull request surface. */
+  z.object({ ...base, op: z.literal('git-pull-request-list'), request: gitPullRequestListRequestSchema }).strict(),
   /** A confirmation receipt for one merge, close or auto-merge the client is about to send (`pull-request-confirmation`, #1691). */
   z.object({ ...base, op: z.literal('pull-request-confirmation'), request: pullRequestConfirmationRequestSchema }).strict(),
   /** An image for a draft on this host, sent once; the answer is its handle (ADR-0031). */

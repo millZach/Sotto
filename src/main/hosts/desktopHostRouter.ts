@@ -30,7 +30,7 @@ import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type Host
 import { NEW_THREAD_DEFAULT_FIELDS } from '../../shared/newThreadDefaults'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { needsConfirmationReceipt, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
+import { needsConfirmationReceipt, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
 import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
@@ -65,6 +65,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /**
    * The host's confirmation receipt for one merge, close or auto-merge, by the host's own IDs, or null from a host that
    * takes the press without one (#1691). Absent on this computer, whose window's confirmation is the confirmation.
@@ -1358,6 +1359,12 @@ export class DesktopHostRouter {
     if (!connection.gitPullRequest) throw new Error(t`Pull requests are unavailable on this host.`)
     if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read its pull requests.`)
     return connection.gitPullRequest({ ...request, threadId: id! })
+  }
+  async gitPullRequestList(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.gitPullRequestList) throw new Error(t`Pull requests are unavailable on this host.`)
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read its pull requests.`)
+    return connection.gitPullRequestList({ ...request, threadId: id! })
   }
   /** The words of a started thread's handover, read on the thread's own host when the user asks to read them (#1028). */
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {

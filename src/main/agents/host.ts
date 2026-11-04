@@ -11,7 +11,7 @@ import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopyS
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestLink, GitPullRequestPress, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestLink, GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestPress, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { SubagentRole } from '../../shared/workerRoles'
@@ -440,6 +440,8 @@ export interface AgentHost {
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
   /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
   readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of the thread's repository through `gh`, read on a press. */
+  listThreadRepositoryPullRequests?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /**
    * A press on the Pull request surface; answers with what happened, in T3's words. `matchHeadCommit` is the head a paired
    * client's confirmation receipt was given on, which a merge or an auto-merge holds GitHub to (#1691).

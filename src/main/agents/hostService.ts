@@ -11,7 +11,7 @@ import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentCon
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
 import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
@@ -305,6 +305,8 @@ export interface HostService {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of a thread's repository, read on a press, for the Pull request surface. */
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /** One folder's subfolders on this host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
   /** A folder's entries in a thread's working copy, for Files (ADR-0025, October 5 amendment). */
@@ -406,6 +408,8 @@ export interface LocalHostControl {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /** The open pull requests of a thread's repository, read on a press, for the Pull request surface. */
+  gitPullRequestList?(request: GitPullRequestListRequest): Promise<GitPullRequestListRead>
   /** The threads some client shows now, for the finished-unread mark (ADR-0046); true when a mark was cleared. */
   showThreads?(threadIds: readonly string[]): boolean
 }
@@ -652,6 +656,10 @@ export class LocalHostService implements HostService {
   gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     if (!this.control.gitPullRequest) return Promise.reject(new Error('Pull requests are unavailable on this host.'))
     return this.control.gitPullRequest(request)
+  }
+  gitPullRequestList(request: GitPullRequestListRequest): Promise<GitPullRequestListRead> {
+    if (!this.control.gitPullRequestList) return Promise.reject(new Error('Pull requests are unavailable on this host.'))
+    return this.control.gitPullRequestList(request)
   }
   // The folder browser reads this machine, not the coordinator, so it goes straight to the filesystem
   // rather than through `LocalHostControl`.

@@ -165,6 +165,10 @@ export const gitPullRequestDetailSchema = z.object({
    */
   files: z.array(gitPullRequestFileSchema).max(GIT_PULL_REQUEST_FILES_MAX).optional(),
   changedFiles: z.number().int().nonnegative().optional(),
+  /** Every line it adds and removes, across all its files, and who opened it. Absent from a host that did not read them. */
+  additions: z.number().int().nonnegative().optional(),
+  deletions: z.number().int().nonnegative().optional(),
+  author: z.string().max(100).optional(),
   /**
    * The commit the pull request's head is on, as GitHub said. A host binds the confirmation receipt it gives a paired
    * client to the head of the reading that client names by `readId` (#1691). Absent when GitHub did not say.
@@ -217,6 +221,43 @@ export type PullRequestConfirmationRequest = z.infer<typeof pullRequestConfirmat
 export const pullRequestConfirmationSchema = z.object({ confirmation: z.uuid(), expiresAt: z.string().max(64) }).strict()
 export type PullRequestConfirmation = z.infer<typeof pullRequestConfirmationSchema>
 export const AGENT_GIT_PULL_REQUEST = 'sotto:agents:git-pull-request'
+
+/** The most open pull requests one read of a repository lists, the most recently updated first; `total` says how many there are. */
+export const GIT_PULL_REQUEST_LIST_MAX = 50
+/**
+ * One open pull request in a repository's list, in the words one line of it needs. `checks` is GitHub's own rollup of its
+ * head's checks: all passed, one failing, some still running, or none reported. Nothing here is kept on a record.
+ */
+export const gitPullRequestListItemSchema = z.object({
+  number: z.number().int().positive(),
+  url: gitPullRequestUrlSchema,
+  title: z.string().max(500),
+  draft: z.boolean(),
+  author: z.string().max(100).nullable(),
+  headBranch: z.string().max(512),
+  updatedAt: z.string().max(64).nullable(),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  changedFiles: z.number().int().nonnegative(),
+  checks: z.enum(['passed', 'failing', 'running', 'none']),
+  reviewDecision: z.enum(['approved', 'changes_requested', 'review_required']).nullable(),
+})
+export type GitPullRequestListItem = z.infer<typeof gitPullRequestListItemSchema>
+/** What the Pull request surface's list shows: the repository, how many it has open, and the most recently updated of them. */
+export const gitPullRequestListSchema = z.object({
+  repository: z.string().max(512),
+  total: z.number().int().nonnegative(),
+  pullRequests: z.array(gitPullRequestListItemSchema).max(GIT_PULL_REQUEST_LIST_MAX),
+})
+export type GitPullRequestList = z.infer<typeof gitPullRequestListSchema>
+export const gitPullRequestListRequestSchema = z.object({ threadId: id }).strict()
+export type GitPullRequestListRequest = z.infer<typeof gitPullRequestListRequestSchema>
+export const gitPullRequestListResultSchema = z.union([gitPullRequestListSchema, gitPullRequestLimitedSchema]).nullable()
+/** What a list read answers: the list, a rate-limit refusal, or null when the thread's folder has no GitHub remote. */
+export type GitPullRequestListRead = GitPullRequestList | GitPullRequestLimited | null
+/** Whether a list read was held back by GitHub's rate limit rather than answered. */
+export const isPullRequestListLimited = (read: GitPullRequestListRead): read is GitPullRequestLimited => read !== null && 'limited' in read
+export const AGENT_GIT_PULL_REQUEST_LIST = 'sotto:agents:git-pull-request-list'
 
 /** The URL of the pull request on the branch a thread's folder is on, as the host last read it. */
 export function branchPullRequestUrl(thread: { readonly worktree?: { readonly git?: { readonly pullRequest?: { readonly url: string } | null } | undefined } | undefined }): string | undefined {

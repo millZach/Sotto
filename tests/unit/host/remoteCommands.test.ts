@@ -114,7 +114,7 @@ describe('remote command allow-list', () => {
   it('decides every host request: reads and the session, commands through their own list, sign-in and Usage requests', () => {
     expect([...REMOTE_SIGN_IN_OPERATIONS]).toEqual(['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'])
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
-    const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
+    const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
       // An attached file in parts (ADR-0131): staging, the same trust as an image's, which pairing gives.
       'stage-file-part',
