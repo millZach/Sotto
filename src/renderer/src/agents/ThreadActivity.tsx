@@ -563,8 +563,9 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const last = thread.messages.at(-1)
   // A reply from before this turn began, such as the one above a Watcher news turn, is not being written now.
   const replyId = last?.role === 'assistant' && !isVisualMessage(last) && !(turn?.startedAt && Date.parse(last.createdAt) < Date.parse(turn.startedAt)) ? last.id : undefined
-  // Read again only when the turn's steps or its newest reply change, not for each word of a reply streaming in.
-  const now = useMemo(() => workingNow(steps, replyId), [steps, replyId, i18n.locale]) // eslint-disable-line react-hooks/exhaustive-deps -- The words are in the interface language.
+  // Read again only when the turn's steps or its newest reply change, not for each word of a reply streaming in, or when
+  // the interface language does, since the words are in it.
+  const now = useMemo(() => workingNow(steps, replyId), [steps, replyId, i18n.locale])
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
