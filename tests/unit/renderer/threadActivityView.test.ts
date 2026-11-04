@@ -4,8 +4,8 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns,
-  statusText, timingNote, turnHeadline, heldLabel, HELD_AFTER_MS,
+  activityLabel, activityLineCounts, changesLineCounts, diffLineCounts, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, recordsLineCounts, splitTurns,
+  statusText, timingNote, turnChanges, turnHeadline, heldLabel, HELD_AFTER_MS, workSummary,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
 const at = '2026-09-12T10:00:00.000Z'
@@ -14,6 +14,57 @@ let sequence = 0
 const record = (patch: Partial<AgentActivity> & Pick<AgentActivity, 'id'>): AgentActivity =>
   ({ turnId: 't1', sequence: sequence++, kind: 'command', status: 'completed', title: 'Command', ...patch })
 const turn = (patch: Partial<AgentActivity> = {}): AgentActivity => record({ id: `turn-${patch.turnId ?? 't1'}`, kind: 'turn', title: 'Turn', ...patch })
+
+describe('a finished turn\'s record', () => {
+  const edit = (id: string, diff: string | undefined, patch: Partial<AgentActivity> = {}): AgentActivity =>
+    record({ id, kind: 'file-change', title: 'Edit', changes: [{ path: `${id}.ts`, kind: 'update', ...(diff === undefined ? {} : { diff }) }], ...patch })
+
+  it('says what the turn did from what it reported', () => {
+    expect(workSummary([record({ id: 'c1' }), record({ id: 'c2' }), record({ id: 't1', kind: 'tool', title: 'Read' }), record({ id: 't2', kind: 'tool', title: 'Grep' }), record({ id: 't3', kind: 'tool', title: 'Read' })]))
+      .toBe('Ran 2 commands, used Read and Grep')
+    expect(workSummary([record({ id: 'p', kind: 'plan', title: 'Plan', steps: [{ text: 'a', status: 'completed' }, { text: 'b', status: 'pending' }] })])).toBe('Plan 1 of 2 done')
+  })
+
+  it('names two tools and counts the rest, and counts tools it has no short name for', () => {
+    const tools = ['Read', 'Grep', 'Glob', 'WebFetch'].map(title => record({ id: title, kind: 'tool', title }))
+    expect(workSummary(tools)).toBe('Used Read, Grep and 2 more')
+    expect(workSummary([record({ id: 'x', kind: 'tool', title: 'mcp__sotto_browser__browser_open' })])).toBe('Used Browser open')
+    expect(workSummary([record({ id: 'y', kind: 'tool', title: 'Tool' }), record({ id: 'z', kind: 'tool', title: 'Tool' })])).toBe('Used 2 tools')
+    expect(workSummary([record({ id: 'w', kind: 'tool', title: 'A name far too long to sit on the line' })])).toBe('Used 1 tool')
+  })
+
+  it('leaves out thinking and files, and says nothing of a failed step', () => {
+    expect(workSummary([record({ id: 'r', kind: 'reasoning', title: 'Thinking' }), edit('e', '+a')])).toBe('')
+    expect(workSummary([record({ id: 'c', status: 'failed' })])).toBe('Ran 1 command')
+  })
+
+  it('counts a diff\'s lines as they are drawn, without its file header', () => {
+    expect(diffLineCounts('--- a/x.ts\n+++ b/x.ts\n@@ -1,2 +1,2 @@\n keep\n-old\n+new\n+more')).toEqual({ added: 2, removed: 1 })
+    // Claude and Grok report an edit as its whole before and after text.
+    expect(diffLineCounts('--- before\none\ntwo\n+++ after\nthree')).toEqual({ added: 1, removed: 2 })
+    expect(diffLineCounts('+++plus\n---minus')).toEqual({ added: 1, removed: 1 })
+  })
+
+  it('has no count when any part of it cannot be known', () => {
+    expect(activityLineCounts(edit('a', '+x\n-y'))).toEqual({ added: 1, removed: 1 })
+    expect(activityLineCounts(edit('b', undefined))).toBeNull()
+    expect(activityLineCounts(edit('c', '+x', { status: 'failed' }))).toBeNull()
+    expect(activityLineCounts(edit('d', '+x', { cut: { diffs: [{ index: 0, bytes: 900 }] } }))).toBeNull()
+    expect(recordsLineCounts([edit('e', '+x'), edit('f', '+y\n-z'), record({ id: 'g' })])).toEqual({ added: 2, removed: 1 })
+    expect(recordsLineCounts([edit('e', '+x'), edit('h', undefined)])).toBeNull()
+    expect(recordsLineCounts([record({ id: 'g' })])).toBeNull()
+  })
+
+  it('adds up every edit of a file, and each file, only when all of them can say', () => {
+    const group = (records: AgentActivity[]) => [{ key: 'k', turnId: 't1', anchorMessageId: null, records }]
+    const whole = turnChanges(group([edit('a', '+x'), { ...edit('b', '+y\n-z'), changes: [{ path: 'a.ts', kind: 'update', diff: '+y\n-z' }] }, edit('c', '+w')]))
+    expect(whole.map(change => change.lines)).toEqual([{ added: 2, removed: 1 }, { added: 1, removed: 0 }])
+    expect(changesLineCounts(whole)).toEqual({ added: 3, removed: 1 })
+    const partial = turnChanges(group([edit('a', '+x'), edit('b', undefined)]))
+    expect(partial[1]!.lines).toBeUndefined()
+    expect(changesLineCounts(partial)).toBeUndefined()
+  })
+})
 
 describe('placing activity in the transcript', () => {
   const messages = [message('u1', 'user'), message('a1'), message('u2', 'user'), message('a2')]

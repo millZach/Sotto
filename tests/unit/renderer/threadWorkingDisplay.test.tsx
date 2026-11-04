@@ -108,17 +108,17 @@ describe('what a finished turn changed', () => {
       activity({ id: 'test', command: 'npm test' }),
     ] }))
     // The count is readable without opening the turn's work.
-    const summary = within(transcript).getByRole('button', { name: 'Changed 2 files' })
-    expect(within(transcript).getByRole('button', { name: 'Worked for 30s · 3 steps' })).toHaveAttribute('aria-expanded', 'false')
+    const summary = within(transcript).getByRole('button', { name: 'Changed 2 files, 3 lines added, 2 lines removed' })
+    expect(within(transcript).getByRole('button', { name: 'Worked for 30s · 3 steps · Ran 1 command' })).toHaveAttribute('aria-expanded', 'false')
 
     fireEvent.click(summary)
     const files = within(transcript).getByRole('list', { name: 'Changed 2 files' })
     const items = [...files.querySelectorAll(':scope > li')]
     expect(items.map(item => item.querySelector('code')!.textContent)).toEqual(['src/voice.ts', 'src/new.ts'])
     // Every diff the turn reported for a file, not just the last one.
-    expect(items[0]!.textContent).toContain('-old')
-    expect(items[0]!.textContent).toContain('+third')
-    expect(items[1]!.textContent).toContain('+fresh')
+    expect(items[0]!.textContent).toContain('old')
+    expect(items[0]!.textContent).toContain('third')
+    expect(items[1]!.textContent).toContain('fresh')
   })
 
   it('says nothing when a turn changed no files', () => {

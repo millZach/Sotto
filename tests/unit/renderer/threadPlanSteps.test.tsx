@@ -48,11 +48,27 @@ describe('a plan a provider reported', () => {
       ] }),
     ] }))
     fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 1 step so far' }))
-    const row = within(transcript).getByRole('button', { name: /^Plan, 1 of 3 done/u })
-    fireEvent.click(row)
+    // The running turn's plan starts open, so opening the steps shows it.
+    expect(within(transcript).getByRole('button', { name: /^Plan, 1 of 3 done/u })).toHaveAttribute('aria-expanded', 'true')
     const steps = within(transcript).getByRole('list', { name: 'Plan, 1 of 3 done' })
     expect([...steps.querySelectorAll('li')].map(step => [step.dataset.status, step.textContent])).toEqual([
       ['completed', 'Read the failing testDone'], ['running', 'Fix the adapterIn progress'], ['pending', 'Run the suiteTo do'],
     ])
+    // A done step has its tick and the others their rings, so the three never read alike.
+    expect(steps.querySelectorAll('.thread-activity__step-done')).toHaveLength(1)
+    expect(steps.querySelectorAll('.thread-activity__step-mark')).toHaveLength(2)
+  })
+
+  it('keeps the plan above the newest rows however many follow it', () => {
+    const { transcript } = mount(stateWith({ status: 'running', activities: [
+      lifecycle({ status: 'running', startedAt: iso(-5_000) }),
+      activity({ id: 'plan', kind: 'plan', title: 'Plan', status: 'running', steps: [{ text: 'Fix the adapter', status: 'running' }] }),
+      ...Array.from({ length: 9 }, (_, index) => activity({ id: `c${index}`, command: `step ${index}` })),
+    ] }))
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 10 steps so far' }))
+    const rows = within(transcript).getByTestId('thread-activity-live').querySelector('.thread-activity__rows')!
+    expect(rows.firstElementChild).toHaveTextContent('Plan')
+    expect(within(transcript).getByRole('button', { name: 'Show 3 earlier' })).toBeVisible()
+    expect(within(transcript).getByRole('button', { name: /step 8\b/u })).toBeVisible()
   })
 })

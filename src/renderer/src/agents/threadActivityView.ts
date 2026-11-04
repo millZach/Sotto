@@ -327,6 +327,17 @@ export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: s
   return (thread.activities ?? []).filter(record => record.turnId === turnId && !isTurnRecord(record) && record.status === 'running').sort(bySequence).at(-1)
 }
 
+/** The plan as it stands: the newest plan record of a turn that has steps. */
+const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)
+
+/** How far a plan has got, "3 of 7 done", when the turn has a plan to measure by; empty when it has none. */
+export function planProgress(steps: readonly AgentActivity[]): string {
+  const plan = newestPlan(steps)?.steps
+  if (!plan) return ''
+  const done = plan.filter(step => step.status === 'completed').length, total = plan.length
+  return t({ message: `${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`, comment: 'A plan\'s steps: 2 of 5 done.' })
+}
+
 /**
  * How long one action holds the turn before the thread says so. Below this, nothing is shown.
  *
@@ -720,6 +731,103 @@ export function groupSummary(records: readonly AgentActivity[]): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
+/** How many lines a change added and removed, as its diff shows them. */
+export interface LineCounts { readonly added: number; readonly removed: number }
+
+const addCounts = (a: LineCounts, b: LineCounts): LineCounts => ({ added: a.added + b.added, removed: a.removed + b.removed })
+
+/**
+ * The added and removed lines of a reported diff, counted as `displayDiff` draws them, so the count and the diff a press opens
+ * agree. A unified diff's own file header is not a line of the file.
+ */
+export function diffLineCounts(diff: string): LineCounts {
+  const lines = displayDiff(diff).split('\n')
+  let added = 0, removed = 0
+  for (let at = 0; at < lines.length; at++) {
+    const line = lines[at]!
+    if (line.startsWith('--- ') && lines[at + 1]?.startsWith('+++ ')) { at++; continue }
+    if (line.startsWith('+')) added++
+    else if (line.startsWith('-')) removed++
+  }
+  return { added, removed }
+}
+
+const recordCounts = new WeakMap<AgentActivity, LineCounts | null>()
+
+/**
+ * The lines a file-change record added and removed, or null when Sotto cannot say all of it: a file with no reported diff, a
+ * diff its host sent cut (only its start), or a change that did not go through. A partial count would read as the whole one, so
+ * there is none. Records are shared across updates, so each one's diffs are read once.
+ */
+export function activityLineCounts(record: AgentActivity): LineCounts | null {
+  if (record.kind !== 'file-change' || record.status === 'failed') return null
+  let counts = recordCounts.get(record)
+  if (counts === undefined) {
+    const changes = activityChanges(record)
+    counts = changes.length && changes.every((change, index) => change.diff && !changeDiffIsCut(record, index))
+      ? changes.map(change => diffLineCounts(change.diff!)).reduce(addCounts) : null
+    recordCounts.set(record, counts)
+  }
+  return counts
+}
+
+/** The lines every file change in the records added and removed, or null when any of them cannot say. */
+export function recordsLineCounts(records: readonly AgentActivity[]): LineCounts | null {
+  let total: LineCounts | null = null
+  for (const record of records) {
+    if (record.kind !== 'file-change' || record.status === 'failed') continue
+    const counts = activityLineCounts(record)
+    if (counts === null) return null
+    total = total === null ? counts : addCounts(total, counts)
+  }
+  return total
+}
+
+/** Assistive tech's words for a line count: the marks on screen are not words. */
+export function spokenLineCounts({ added, removed }: LineCounts): string {
+  return [
+    added ? plural(added, { one: `${{ lineCount: shownCount(added) }} line added`, other: `${{ lineCount: shownCount(added) }} lines added` }) : '',
+    removed ? plural(removed, { one: `${{ lineCount: shownCount(removed) }} line removed`, other: `${{ lineCount: shownCount(removed) }} lines removed` }) : '',
+  ].filter(Boolean).join(', ')
+}
+
+/** A tool's name without the MCP server's prefix: "mcp__sotto_browser__browser_open" reads as "Browser open". */
+const shortToolName = (title: string): string => toolName(title.replace(/^mcp__.+?__/u, ''))
+/** A name longer than this would take the line over, so the line counts the tools instead. */
+const TOOL_NAME_LIMIT = 24
+
+/** Which tools a turn used, by name where the provider gives short ones: "used Read and Grep", "used Read, Grep and 3 more". */
+function toolsPart(records: readonly AgentActivity[]): string {
+  const tools = records.length
+  if (!tools) return ''
+  const names = [...new Set(records.map(record => shortToolName(record.title)))]
+  if (names.slice(0, 2).some(name => name === 'Tool' || name.length > TOOL_NAME_LIMIT)) return plural(tools, { one: `used ${{ toolCount: shownCount(tools) }} tool`, other: `used ${{ toolCount: shownCount(tools) }} tools` })
+  const first = names[0]!, second = names[1]
+  if (second === undefined) return t({ message: `used ${first}`, comment: 'One part of a list of what a turn did, starting lowercase; {first} is a tool\'s name, such as Read.' })
+  const more = names.length - 2
+  if (more === 0) return t({ message: `used ${first} and ${second}`, comment: 'One part of a list of what a turn did, starting lowercase; {first} and {second} are tools\' names.' })
+  return t({ message: `used ${first}, ${second} and ${{ more: shownCount(more) }} more`, comment: 'One part of a list of what a turn did, starting lowercase; {first} and {second} are tools\' names.' })
+}
+
+/**
+ * What a finished turn did, after its line's count of steps: "Ran 5 commands, used Read and Grep, plan 3 of 7 done". Counts and
+ * names the provider reported, nothing estimated. The files it changed have their own line beside it, and a thought did nothing
+ * to anything, so neither is here; a turn that did nothing else has no words.
+ */
+export function workSummary(records: readonly AgentActivity[]): string {
+  const steps = records.filter(isStep)
+  const commands = steps.filter(record => record.kind === 'command').length
+  const actions = steps.filter(record => record.kind === 'subagent').length
+  const progress = planProgress(steps)
+  const did = [
+    commands ? plural(commands, { one: `ran ${{ commandCount: shownCount(commands) }} command`, other: `ran ${{ commandCount: shownCount(commands) }} commands` }) : '',
+    toolsPart(steps.filter(record => record.kind === 'tool')),
+    actions ? plural(actions, { one: `${{ actionCount: shownCount(actions) }} agent action`, other: `${{ actionCount: shownCount(actions) }} agent actions` }) : '',
+    progress ? t({ message: `plan ${progress}`, comment: 'One part of a list of what a turn did, starting lowercase; {progress} is how far its plan got, such as 3 of 7 done.' }) : '',
+  ].filter(Boolean).join(', ')
+  return did.charAt(0).toUpperCase() + did.slice(1)
+}
+
 /** The record and change a turn's diff came from, when its host sent the diff cut (ADR-0025, October 18 amendment). */
 export interface TurnDiffSource { readonly record: AgentActivity; readonly index: number }
 
@@ -727,6 +835,10 @@ export interface TurnChange {
   readonly path: string
   /** How the file was first touched: a file created then edited still reads as created. */
   readonly verb: string
+  /** The same, as the provider named it, so a line can put the verb and the file in one sentence (`changeLeadKind`). */
+  readonly kind: string
+  /** The lines every diff of the file added and removed, absent when any part of the file cannot say (`activityLineCounts`). */
+  readonly lines?: LineCounts
   /** Every diff reported for the path, in the order they happened. */
   readonly diffs: readonly string[]
   /** Beside `diffs`, where each cut diff came from; only a change with a cut diff has it. */
@@ -745,13 +857,15 @@ export function changeDiffIsCut(record: AgentActivity, index: number): boolean {
 
 /** Every file a turn changed, first touched first, so a finished turn can say what it left behind. */
 export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChange[] {
-  const files = new Map<string, { path: string; verb: string; diffs: string[]; sources?: (TurnDiffSource | undefined)[] }>()
+  const files = new Map<string, { path: string; verb: string; kind: string; diffs: string[]; lines?: LineCounts; sources?: (TurnDiffSource | undefined)[] }>()
+  const unsure = new Set<string>()
   const seenByPath = new Map<string, Set<string>>()
   const records = groups.flatMap(group => [...group.records]).sort(bySequence)
   for (const record of records) {
     if (record.kind !== 'file-change') continue
     for (const [index, change] of activityChanges(record).entries()) {
-      const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), diffs: [] }
+      const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), kind: change.kind, diffs: [] }
+      if (!change.diff || changeDiffIsCut(record, index)) unsure.add(change.path)
       const seenDiffs = seenByPath.get(change.path) ?? new Set<string>()
       seenByPath.set(change.path, seenDiffs)
       // A cut diff is only its start, so two edits that open alike are told apart by how long each was whole.
@@ -759,6 +873,7 @@ export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChan
       if (change.diff && seen && !seenDiffs.has(seen)) {
         seenDiffs.add(seen)
         file.diffs.push(change.diff)
+        file.lines = addCounts(file.lines ?? { added: 0, removed: 0 }, diffLineCounts(change.diff))
         if (changeDiffIsCut(record, index)) {
           file.sources ??= file.diffs.slice(0, -1).map(() => undefined)
           file.sources.push({ record, index })
@@ -767,7 +882,20 @@ export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChan
       files.set(change.path, file)
     }
   }
+  for (const path of unsure) delete files.get(path)?.lines
   return [...files.values()]
+}
+
+/** Every changed file's lines together, or undefined when any file cannot say. */
+export function changesLineCounts(changes: readonly TurnChange[]): LineCounts | undefined {
+  if (!changes.length || changes.some(change => change.lines === undefined)) return undefined
+  return changes.map(change => change.lines!).reduce(addCounts)
+}
+
+/** The verb a file's own row would lead with, for a line that names that one file. */
+export const changeLeadKind = (kind: string): ActivityLeadKind => {
+  const verb = changeVerbOf(kind)
+  return verb === 'created' || verb === 'deleted' || verb === 'wrote' || verb === 'moved' ? verb : 'edited'
 }
 
 /** How long a cut diff was whole: its own size when the host cut it, else the size of the tool input it is drawn from. */

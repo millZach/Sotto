@@ -105,7 +105,7 @@ describe('Watcher’s replies to news', () => {
     expect(document.querySelector('[data-message-id="news-reply-2"] header button')).toBeNull()
     // The running turn's steps fold under the working line, which the transcript draws after the messages.
     expect(inOrder(['got your permission', 'CI went green'])).toBe(true)
-    expect(document.body.textContent).not.toContain('Read thread')
+    expect(screen.queryByRole('button', { name: /^Read thread/u })).not.toBeInTheDocument()
   })
 
   it('shows nothing for a finished news turn with no reply and no lifecycle record', () => {
@@ -136,7 +136,7 @@ describe('Watcher working on news before its first reply', () => {
     const before = drawnMessages()
     const reply = document.querySelector('[data-message-id="answer-2"]')!.textContent
     view.rerender(list(messages, [...activities, ...news], true, false))
-    expect(screen.getByRole('button', { name: 'Worked for 27s · 2 steps' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: /^Worked for 27s · 2 steps/u })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
     expect(document.querySelector('[data-message-id="answer-2"]')!.textContent).toBe(reply)
     // The same elements stay, so the window's scroll anchoring holds the reader's place.
@@ -144,7 +144,7 @@ describe('Watcher working on news before its first reply', () => {
     expect([...during.keys()]).toEqual([...before.keys()])
     for (const [id, element] of before) expect(during.get(id), id).toBe(element)
     // The news turn's work folds under the working line, so the conversation still ends on your answer.
-    expect(document.body.textContent).not.toContain('Read thread')
+    expect(screen.queryByRole('button', { name: /^Read thread/u })).not.toBeInTheDocument()
     // It ends with no reply: the conversation is as it was.
     view.rerender(list(messages, [...activities, ...news.map(item => ({ ...item, status: 'completed' as const, completedAt: clock('59:55.000') }))], false, false))
     const after = drawnMessages()
@@ -158,7 +158,7 @@ describe('Watcher working on news before its first reply', () => {
     expect(document.querySelector('[data-message-id="news-reply-2"] header button')).toHaveTextContent('After news · 7.3s')
     view.rerender(list(shown, [...records, ...news], true))
     expect(document.querySelector('[data-message-id="news-reply-2"] header button')).toHaveTextContent('After news · 7.3s')
-    expect(document.body.textContent).not.toContain('Read thread')
+    expect(screen.queryByRole('button', { name: /^Read thread/u })).not.toBeInTheDocument()
   })
 
   it('still draws your own turn live while Watcher works on it', () => {
@@ -190,7 +190,7 @@ describe('Watcher working on news before its first reply', () => {
           context={{ ...finished, liveTurn: 'you-2', running: true }} streamText={streamText} speaker="watcher" />)
         expect(screen.queryByRole('button', { name: 'Worked for 27s' })).not.toBeInTheDocument()
         view.rerender(list(messages, [...activities, ...news], true, streamText))
-        expect(screen.getByRole('button', { name: 'Worked for 27s · 2 steps' })).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.getByRole('button', { name: /^Worked for 27s · 2 steps/u })).toHaveAttribute('aria-expanded', 'false')
         finishedReply('answer-2', 'Sent it the merge.')
       })
 
@@ -202,7 +202,7 @@ describe('Watcher working on news before its first reply', () => {
         const view = render(list(messages, [...activities, left], false, streamText))
         const before = drawnMessages()
         view.rerender(list(messages, [...activities, left, lifecycle('news-4', 50, 'running', '59:50.000')], true, streamText))
-        expect(screen.getByRole('button', { name: 'Worked for 27s · 3 steps' })).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.getByRole('button', { name: /^Worked for 27s · 3 steps/u })).toHaveAttribute('aria-expanded', 'false')
         finishedReply('answer-2', 'Sent it the merge.')
         for (const [id, element] of before) expect(drawnMessages().get(id), id).toBe(element)
       })
@@ -284,7 +284,7 @@ describe('Watcher working on news before its first reply', () => {
         const before = drawnMessages()
         view.rerender(list([...messages, opening], [...activities, ...news], true, streamText))
         finishedReply('answer-2', 'Sent it the merge.')
-        expect(screen.getByRole('button', { name: 'Worked for 27s · 2 steps' })).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.getByRole('button', { name: /^Worked for 27s · 2 steps/u })).toHaveAttribute('aria-expanded', 'false')
         for (const [id, element] of before) expect(drawnMessages().get(id), id).toBe(element)
       })
     })

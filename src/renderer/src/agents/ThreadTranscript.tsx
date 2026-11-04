@@ -25,6 +25,7 @@ import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles } from './ThreadActivity'
+import { Fold, FOLD_MS } from './Fold'
 import { BrowserLinesStore } from './browserLine'
 import { OwnServerTurnContext, TurnFailureReason, useOwnServerTurns } from './OwnServerTurn'
 import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
@@ -66,7 +67,7 @@ import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, 
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
 import { shownWords, type LaterWords } from './interfaceWords'
 import { shownCount } from '../state/interfaceNumbers'
-import { compactionOf, isStep, liveTurnId, newsWorkLabel, placeActivities, splitTurns, stepsLabel, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
+import { compactionOf, isStep, liveTurnId, newsWorkLabel, placeActivities, splitTurns, stepsLabel, turnChanges, workHeadline, workSummary, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
 /** No message is left behind while no fork card is open. */
@@ -142,10 +143,12 @@ function QuestionWords({ text }: { readonly text: string }): ReactNode {
  * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
  * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, steps, delegated, open, setOpen, turn, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
+function TurnWork({ headline, steps, did, delegated, open, setOpen, turn, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
   readonly headline: string; readonly turn?: AgentActivity | undefined; readonly changes: readonly TurnChange[]
   /** How many steps the fold holds, after the headline ("Worked for 2m 04s · 12 steps"). */
   readonly steps: number
+  /** What those steps did, after their count ("· Ran 5 commands, used Read"). */
+  readonly did: string
   /** The turn's delegated work in a few words, after the headline, so a closed fold still says what it holds. */
   readonly delegated?: ReactNode
   /**
@@ -165,6 +168,8 @@ function TurnWork({ headline, steps, delegated, open, setOpen, turn, failed, cha
   // The fold opens before the reply is looked for, because a closed fold does not draw its replies.
   const seek = (messageId: string): void => {
     flushSync(() => setOpen(true))
+    // The fold goes straight to its height, so the reply is found where it will stay.
+    body.current?.parentElement?.getAnimations?.().forEach(animation => animation.finish())
     const message = [...body.current?.querySelectorAll<HTMLElement>('.thread-message[data-message-id]') ?? []].find(element => element.dataset.messageId === messageId)
     if (!message) return
     message.tabIndex = -1
@@ -176,12 +181,12 @@ function TurnWork({ headline, steps, delegated, open, setOpen, turn, failed, cha
       onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
       <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
         onClick={event => { onDisclosure(event.currentTarget); setOpen(!open); setStepsOpen(!open) }}>
-        <span id={`${bodyId}-headline`} className="thread-work__headline">{headline}{steps ? ` · ${stepsLabel(steps)}` : null}{delegated}</span>
+        <span id={`${bodyId}-headline`} className="thread-work__headline">{headline}{steps ? ` · ${stepsLabel(steps)}` : null}{did ? ` · ${did}` : null}{delegated}</span>
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
       <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />
       <TurnFailureReason turn={turn} />
-      {open ? <div id={bodyId} ref={body} className="thread-work__body">{children}</div> : null}
+      <Fold open={open}><div id={bodyId} ref={body} className="thread-work__body">{children}</div></Fold>
     </section>
     {lifted.map(({ message, questions }) => {
       const time = clockLabel(Date.parse(message.createdAt))
@@ -373,8 +378,8 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
         {work}<ChevronRight className="thread-activity__chevron" size={13} aria-hidden="true" />
       </button> : null}</header>
     {work ? <TurnFailureReason turn={lifecycle} /> : null}
-    {work && workOpen && activity ? <div id={workId} className="thread-message__work-body">
-      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div> : null}
+    {work && activity ? <Fold open={workOpen}><div id={workId} className="thread-message__work-body">
+      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div></Fold> : null}
     {writing && !streamText
       ? <p className="thread-message__writing tt-paragraph" role="status">{t`Writing a reply…`}</p>
       : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />}
@@ -495,7 +500,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={groups.reduce((count, group) => count + group.records.filter(isStep).length, 0)} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={groups.reduce((count, group) => count + group.records.filter(isStep).length, 0)} did={workSummary(groups.flatMap(group => group.records))} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
@@ -1039,12 +1044,16 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (element === null) return
     const before = control.getBoundingClientRect().top
     following.current = false
-    requestAnimationFrame(() => {
+    // What it opens slides for a moment, so the control is held for all of it, and the end-follow answers only once it has its height.
+    const until = performance.now() + FOLD_MS
+    const hold = (): void => {
       const current = scroller.current
       if (current === null || !control.isConnected) return
       current.scrollTop += control.getBoundingClientRect().top - before
+      if (performance.now() < until) { requestAnimationFrame(hold); return }
       following.current = current.scrollHeight - current.scrollTop - current.clientHeight <= FOLLOW_SLACK_PX
-    })
+    }
+    requestAnimationFrame(hold)
   }, [])
   // Show where it asked takes the reader up to an earlier reply, so the end-follow lets go before the fold grows.
   const onSeek = useCallback((message: HTMLElement): void => {

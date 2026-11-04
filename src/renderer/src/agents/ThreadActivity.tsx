@@ -1,6 +1,6 @@
 import React, { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
-  ArrowDownUp, Bot, Brain, Camera, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MousePointerClick,
+  ArrowDownUp, Bot, Brain, Camera, Check, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MousePointerClick,
   MoveHorizontal, Play, Pointer, Scaling, Shrink, Smartphone, Square, SquareTerminal, Wrench, type LucideIcon,
 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
@@ -11,8 +11,8 @@ import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
-  activityChanges, activityInput, activityLabel, agentStatusLabel, changeDiffIsCut, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, type ActivityGroup, type ActivityNode, type TurnChange,
+  activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
+  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
   activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
@@ -28,6 +28,7 @@ import {
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
 } from './browserLine'
 import { useOwlFeature } from '../state/owlFeature'
+import { Fold } from './Fold'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -105,9 +106,27 @@ export function foldOnEscape(open: boolean, fold: (summary: HTMLElement) => void
   }
 }
 
+/** A change's added and removed lines, "+24 −8". Green and red are the success and error roles, as Changes draws them. */
+export function LineCountMarks({ counts, spoken = true }: {
+  readonly counts: LineCounts | null | undefined
+  /** False where the name around it already says them. */
+  readonly spoken?: boolean
+}): ReactNode {
+  if (!counts || (!counts.added && !counts.removed)) return null
+  return <span className="thread-lines">
+    <span dir="ltr" aria-hidden="true">
+      {counts.added ? <span className="thread-lines__added">+{shownCount(counts.added)}</span> : null}
+      {counts.added && counts.removed ? ' ' : null}
+      {counts.removed ? <span className="thread-lines__removed">−{shownCount(counts.removed)}</span> : null}
+    </span>
+    {spoken ? <span className="tt-visually-hidden">, {spokenLineCounts(counts)}</span> : null}
+  </span>
+}
+
 /**
- * What a finished turn left behind. The count stays in view while the work is folded, because the files
- * a turn changed are what a reader comes back for; the diffs are the ones the provider reported.
+ * What a finished turn left behind, beside its line: one file by its verb and name, several by their count, each with the lines
+ * it added and removed. It stays in view while the work is folded, because the files a turn changed are what a reader comes back
+ * for; the diffs are the ones the provider reported.
  */
 export function TurnChangedFiles({ changes, onDisclosure }: {
   readonly changes: readonly TurnChange[]
@@ -121,15 +140,21 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
   const views = new Map(useActivityBodies(sources, open).map(view => [view.sent, view]))
   if (!changes.length) return null
   const count = changes.length
-  const label = plural(count, { one: `Changed ${{ files: shownCount(count) }} file`, other: `Changed ${{ files: shownCount(count) }} files` })
+  const only = count === 1 ? changes[0]! : undefined
+  const onlyName = only ? only.path.split(/[\\/]/u).filter(Boolean).at(-1) ?? only.path : ''
+  const label = only ? spokenActivity(changeLeadKind(only.kind), { lead: '', subject: onlyName })
+    : plural(count, { one: `Changed ${{ files: shownCount(count) }} file`, other: `Changed ${{ files: shownCount(count) }} files` })
   return <div className="thread-changes" data-expanded={open || undefined} onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     <button type="button" className="thread-changes__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
       onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
       <FilePen className="thread-activity__icon" size={14} strokeWidth={1.8} aria-hidden="true" />
-      <span>{label}</span>
+      <span className="thread-changes__words">{only
+        ? <ActivityWords kind={changeLeadKind(only.kind)} label={{ lead: '', subject: onlyName, mono: true }} subjectClass="thread-changes__file" plain />
+        : label}</span>
+      <LineCountMarks counts={changesLineCounts(changes)} />
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    {open ? <ul id={bodyId} className="thread-changes__list" aria-label={label}>
+    <Fold open={open}><ul id={bodyId} className="thread-changes__list" aria-label={label}>
       {changes.map(change => <li key={change.path}>
         <p className="thread-activity__fact">{change.verb} <code>{change.path}</code></p>
         {change.diffs.map((diff, index) => {
@@ -139,7 +164,7 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
           return <CutCode key={index} view={view} kind="diff" text={displayDiff(whole)} language="diff" cut />
         })}
       </li>)}
-    </ul> : null}
+    </ul></Fold>
   </div>
 }
 
@@ -207,7 +232,7 @@ function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
   const done = steps.filter(step => step.status === 'completed').length, total = steps.length
   return <ol className="thread-activity__steps" aria-label={t`Plan, ${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`}>
     {steps.map((step, index) => <li key={`${index}:${step.text}`} data-status={step.status}>
-      <span className="thread-activity__step-mark" aria-hidden="true" />
+      {step.status === 'completed' ? <Check className="thread-activity__step-done" size={13} strokeWidth={2.2} aria-hidden="true" /> : <span className="thread-activity__step-mark" aria-hidden="true" />}
       <span className="thread-activity__step-text">{step.text}</span>
       <span className="tt-visually-hidden">{Object.hasOwn(STEP_LABELS, step.status) ? t(STEP_LABELS[step.status]!) : step.status}</span>
     </li>)}
@@ -270,14 +295,16 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   </div>
 }
 
-const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, onDisclosure }: {
+const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, startOpen = false, onDisclosure }: {
   readonly node: ActivityNode; readonly connected: boolean; readonly provider: string
   /** The group heading already says the outcome is unknown; the row keeps it for assistive tech only. */
   readonly quietUnknown: boolean
+  /** The running turn's plan: it starts open, because its checklist is what says how far along the turn is. */
+  readonly startOpen?: boolean
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(startOpen)
   const detailId = useId()
   const { record, children } = node
   const count = children.length
@@ -289,7 +316,8 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running'
   const expandable = hasDetails(record) || children.length > 0
-  const spoken = [spokenActivity(activityLeadKind(record), label), label.preview,
+  const lines = activityLineCounts(record)
+  const spoken = [spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = label.subject
   const body = <>
@@ -299,6 +327,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
+      <LineCountMarks counts={lines} spoken={false} />
       {running ? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" /> : null}
       {quietUnknown && record.status === 'unknown' ? null : status}
       {running && connected && record.startedAt ? <> <Elapsed startedAt={record.startedAt} /></> : null}
@@ -311,12 +340,12 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
       ? <button type="button" className="thread-activity__toggle tt-focusable" aria-expanded={open} aria-controls={open ? detailId : undefined} aria-label={spoken}
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
-    {open ? <div id={detailId} className="thread-activity__open">
+    <Fold open={open}><div id={detailId} className="thread-activity__open">
       {hasDetails(record) ? <ActivityDetails record={record} provider={provider} connected={connected} /> : null}
       {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={t({ message: `Steps in ${subject}`, comment: '{subject} is the name of the action the steps belong to.' })}>
         {children.map(child => <ActivityRow key={child.record.id} node={child} connected={connected} provider={provider} quietUnknown={quietUnknown} onDisclosure={onDisclosure} />)}
       </ul> : null}
-    </div> : null}
+    </div></Fold>
   </li>
 })
 
@@ -330,26 +359,14 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
 export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
   const [choice, setChoice] = useState<boolean | null>(null)
-  const [showAll, setShowAll] = useState(false)
   const listId = useId()
   const stepsOpen = useStepsOpen()
-  const quiet = useOwlFeature('quiet-browser')
   const expanded = choice ?? (live || stepsOpen)
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
-  // Work done for a subagent or tool sits under it, and on Owl a run of calls to Sotto's browser is one line (ADR-0154).
-  const nodes: readonly ActivityNode[] = expanded ? nestActivities(group.records) : []
-  // Within a transcript a line stands for its whole turn, and the group hears only of its own turn's lines; a view outside
-  // one reads its own records.
-  const shared = useTurnBrowserLines(quiet ? group.turnId : null)
-  const records = group.records
-  const lines = useMemo(() => !quiet ? null : shared ? shared.lines : turnBrowserLines(browserLinesByTurn(records), group.turnId),
-    [quiet, shared, records, group.turnId])
-  const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
-  const earlier = live && expanded && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
-  const rows = earlier ? shown.slice(-LIVE_ROWS) : shown
+  const lineCounts = recordsLineCounts(group.records)
   const canFold = !live && group.records.length > 0
-  const name = [headline, summary].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
+  const name = [headline, summary, lineCounts ? spokenLineCounts(lineCounts) : ''].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
   // A failed turn's own group is where a press that opens the thread at its failed turn lands.
   return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined}
     data-turn-outcome={group.turn?.status === 'failed' ? 'failed' : undefined}
@@ -359,19 +376,47 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       {headline ? <span className="thread-activity__headline">{headline}</span> : null}
       {summary ? <span className="thread-activity__counts">{summary}</span> : null}
+      <LineCountMarks counts={lineCounts} spoken={false} />
     </button> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
       <CircleAlert className="thread-activity__chevron" size={14} aria-hidden="true" /><span className="thread-activity__headline">{headline}</span>
     </p> : null}
     <TurnFailureReason turn={group.turn} />
-    {rows.length ? <ul id={listId} className="thread-activity__rows">
-      {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
-        onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
-      {rows.map(item => item.run
-        ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
-        : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />)}
-    </ul> : null}
+    <Fold open={expanded}><ActivityGroupRows id={listId} group={group} live={live} connected={connected} provider={provider} onDisclosure={onDisclosure} outcome={outcome} /></Fold>
   </section>
 })
+
+/**
+ * A group's rows, drawn only while they show. A running turn shows its newest six, with its plan open above them wherever it
+ * was first reported: the checklist is where the reader sees how far along the turn is, so newer rows never push it away.
+ */
+function ActivityGroupRows({ id, group, live, connected, provider, onDisclosure, outcome }: {
+  readonly id: string
+} & Pick<ActivityGroupViewProps, 'group' | 'live' | 'connected' | 'provider' | 'onDisclosure' | 'outcome'>): ReactNode {
+  const [showAll, setShowAll] = useState(false)
+  const quiet = useOwlFeature('quiet-browser')
+  const records = group.records
+  // Work done for a subagent or tool sits under it, and on Owl a run of calls to Sotto's browser is one line (ADR-0154).
+  const nodes = useMemo(() => nestActivities(records), [records])
+  // Within a transcript a line stands for its whole turn, and the group hears only of its own turn's lines; a view outside
+  // one reads its own records.
+  const shared = useTurnBrowserLines(quiet ? group.turnId : null)
+  const lines = useMemo(() => !quiet ? null : shared ? shared.lines : turnBrowserLines(browserLinesByTurn(records), group.turnId),
+    [quiet, shared, records, group.turnId])
+  const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
+  const plan = live ? shown.findLast(item => item.node?.record.kind === 'plan' && item.node.record.steps?.length) : undefined
+  const others = plan ? shown.filter(item => item !== plan) : shown
+  const earlier = live && !showAll ? Math.max(0, others.length - LIVE_ROWS) : 0
+  const row = (item: ActivityItem): ReactNode => item.run
+    ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
+    : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} startOpen={item === plan} onDisclosure={onDisclosure} />
+  if (!shown.length) return null
+  return <ul id={id} className="thread-activity__rows">
+    {plan ? row(plan) : null}
+    {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
+      onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
+    {(earlier ? others.slice(-LIVE_ROWS) : others).map(row)}
+  </ul>
+}
 
 /** How long a turn on one of the user's own servers waits with nothing from it before its line says it is still waiting. */
 export const STILL_WAITING_MS = 30_000
@@ -484,9 +529,9 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
-    opened: open ? <div id={stepsId} className="thread-activity-live__steps">
+    opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
-    </div> : null,
+    </div></Fold>,
     onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); setStepsOpen(!open) },
     onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }); foldedTurns.add(turnId) }),
   }
@@ -579,7 +624,7 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
       <span className="thread-browser__words"><Words words={headline} /> <span className="thread-browser__detail" data-failed={lastFailed || undefined}>· <Words words={detail} /></span></span>
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    {open ? <ol id={listId} className="thread-browser__steps" aria-label={said}>
+    <Fold open={open}><ol id={listId} className="thread-browser__steps" aria-label={said}>
       {run.steps.map(step => {
         const unfinished = stepUnfinished(step, !going)
         const StepIcon = unfinished ? CircleAlert : STEP_ICONS[step.verb]
@@ -588,7 +633,7 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
           <span className="thread-browser__step"><Words words={sentenceWords(browserStepWords(step, !going))} /></span>
         </li>
       })}
-    </ol> : null}
+    </ol></Fold>
   </Tag>
 }
 

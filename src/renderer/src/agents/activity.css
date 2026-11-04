@@ -4,7 +4,10 @@
 
 .thread-activity { margin: 0 0 24px; }
 /* A finished turn folds its work to one line above the final reply, with a rule between the two. */
-.thread-work { margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
+.thread-work { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; margin: 0 0 20px; border-bottom: 1px solid var(--threads-field-border); }
+/* The fold's line and what the turn changed share a row; everything else takes a row of its own. */
+.thread-work > :not(.thread-work__summary, .thread-changes) { flex: 0 0 100%; min-width: 0; }
+.thread-work__headline { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-message + .thread-work { margin-top: -8px; }
 .thread-work__summary {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; margin: 0 0 8px -6px; padding: 0 8px 0 6px;
@@ -14,6 +17,12 @@
 .thread-work__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
 .thread-work__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-work__body { padding: 8px 0 4px; }
+/* What a disclosure opens. It holds its children's margins in, so they do not jump when the slide ends. */
+.thread-fold { display: flow-root; flex: 0 0 100%; min-width: 0; }
+/* A change's added and removed lines, in Changes' inks. */
+.thread-lines { flex: none; font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thread-lines__added { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
+.thread-lines__removed { color: var(--tt-error-text); }
 .thread-work__body > .thread-activity:last-child { margin-bottom: 12px; }
 /* A question a folded reply asked, quoted under the fold so it is read; its words say the reply wanted the user. */
 .thread-lifted { display: grid; justify-items: start; gap: 6px; margin: -6px 0 24px; padding: 12px 16px; border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); }
@@ -91,13 +100,15 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__open > .thread-activity__details:last-child { margin-bottom: 12px; }
 .thread-activity__open > .thread-activity__details:not(:last-child) { margin-bottom: 6px; }
 .thread-activity__change { display: grid; gap: 6px; min-width: 0; }
-/* A plan reads as a checklist: a mark per step, done steps quietened and struck through. */
+/* A plan reads as a checklist with three different marks: a tick and quiet words for done, the running accent and full-strength
+   words for the step in progress, a hollow ring for what is to come. Done steps stay as easy to read again as the rest. */
 .thread-activity__steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--tt-type-body); }
 .thread-activity__steps li { display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: baseline; gap: 8px; color: var(--tt-text-2); }
-.thread-activity__step-mark { width: 11px; height: 11px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; }
+.thread-activity__step-mark { width: 11px; height: 11px; margin-left: 1px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; align-self: center; }
+.thread-activity__step-done { align-self: center; color: var(--tt-text-muted); }
 .thread-activity__steps li[data-status='running'] .thread-activity__step-mark { border-color: var(--tt-activity); background: var(--tt-activity); }
-.thread-activity__steps li[data-status='completed'] .thread-activity__step-mark { border-color: var(--tt-text-muted); background: var(--tt-text-muted); }
-.thread-activity__steps li[data-status='completed'] .thread-activity__step-text { color: var(--tt-text-muted); text-decoration: line-through; }
+.thread-activity__steps li[data-status='running'] .thread-activity__step-text { color: var(--tt-text); }
+.thread-activity__steps li[data-status='completed'] .thread-activity__step-text { color: var(--tt-text-muted); }
 .thread-activity__step-text { min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__agents { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--tt-type-body); }
 .thread-activity__agents li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
@@ -203,14 +214,16 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 .thread-activity__rows > .thread-browser > .thread-browser__steps { margin-left: 30px; }
 
 /* What a finished turn changed, beside its folded work. */
-.thread-changes { margin: -4px 0 8px; }
+.thread-changes { display: contents; }
 .thread-changes__summary {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; margin-left: -6px; padding: 0 8px 0 6px;
-  border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); text-align: left;
+  display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 32px; margin: 0 0 8px; padding: 0 8px 0 6px;
+  border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-body); text-align: left;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-changes__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
 .thread-changes__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
+.thread-changes__words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-changes__file { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .thread-changes__list { display: grid; gap: 10px; margin: 4px 0 10px; padding: 0 0 0 20px; list-style: none; min-width: 0; }
 .thread-changes__list li { display: grid; gap: 6px; min-width: 0; }
 .thread-changes__list .rich-code { margin: 0; }
