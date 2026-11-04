@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TeamService, type TeamCredentials, type TeamTailscale } from '../../src/main/teams/teams'
 import { REMOTE_COMMANDS } from '../../src/host/remoteCommands'
 import { agentCommandSchema } from '../../src/shared/agents'
-import { TEAM_ANSWERS_PER_BURST, TEAM_ANSWERS_PER_DAY, TEAM_BURST_MS, TEAM_LINK_LIFETIME_MS, TEAM_ROUTE, TEAM_WIRE_COMMANDS, parseTeamCode, type TeamThreadFact } from '../../src/shared/teams'
+import { TEAM_ANSWERS_PER_BURST, TEAM_ANSWERS_PER_DAY, TEAM_BURST_MS, TEAM_LINK_LIFETIME_MS, TEAM_RELISTEN_MS, TEAM_ROUTE, TEAM_WIRE_COMMANDS, parseTeamCode, type TeamThreadFact } from '../../src/shared/teams'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -32,9 +32,10 @@ class Tailnet {
   }
 }
 
-function tailscale(net: Tailnet, dnsName: string): TeamTailscale & { served: Map<number, number> } {
+function tailscale(net: Tailnet, dnsName: string, up: () => boolean = () => true): TeamTailscale & { served: Map<number, number>; checks: () => number } {
   const served = new Map<number, number>()
-  return { served, status: async () => ({ state: 'running', dnsName, hostName: dnsName.split('.')[0]! }), serveStatus: async () => ({}),
+  let checks = 0
+  return { served, checks: () => checks, status: async () => { checks++; return up() ? { state: 'running', dnsName, hostName: dnsName.split('.')[0]! } : { state: 'not-running' } }, serveStatus: async () => ({}),
     serve: async (port, loopback) => { served.set(port, loopback); net.ports.set(`${dnsName}:${port}`, loopback); return { ok: true } },
     unserve: async port => { served.delete(port); net.ports.delete(`${dnsName}:${port}`); return true } }
 }
@@ -43,12 +44,12 @@ const memoryCredentials = (): TeamCredentials => {
   return { available: () => true, get: slot => values.get(slot) ?? '', set: async (slot, value) => { if (value) values.set(slot, value); else values.delete(slot) } }
 }
 
-async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly keepHistory?: boolean; readonly fetch?: typeof fetch } = {}) {
+async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly keepHistory?: boolean; readonly fetch?: typeof fetch; readonly up?: () => boolean } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-teams-'))
   const write = vi.fn(overrides.write ?? (async () => `${name} says hello`))
   const threads = vi.fn(() => overrides.threads ?? FACTS)
   const dnsName = overrides.dnsName ?? `${name}.tail1.ts.net`
-  const ts = tailscale(net, dnsName), events: string[] = []
+  const ts = tailscale(net, dnsName, overrides.up), events: string[] = []
   const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: ts, threads, projects: () => [{ key: 'h1 sotto', title: 'Sotto', machine: null }], write, anchor: () => 'message-1',
     keepHistory: () => overrides.keepHistory !== false, openExternal: async () => undefined, hostname: () => name, fetch: overrides.fetch ?? net.fetchFor(name), log: event => { events.push(event) }, ...overrides.now ? { now: overrides.now } : {} })
   await service.start()
@@ -131,6 +132,65 @@ describe('linking', () => {
     const wrong = { command: 'redeem-code', code: 'WRONG234', name: 'guess', address: 'https://guess.tail1.ts.net:8445/', token: 'x'.repeat(30) }
     for (let at = 0; at < 5; at++) expect((await raw(zach, wrong)).json).toEqual({ status: 'refused', reason: 'code-rejected' })
     expect(zach.service.get().code).toBeNull()
+  })
+
+  it('comes back when Tailscale comes up after Sotto started, and asks nobody but Tailscale until then', async () => {
+    let up = true
+    const net = new Tailnet(), zach = await computer(net, 'zach', { up: () => up }), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    // Sotto starts at login, before Tailscale has connected.
+    await zach.service.close()
+    up = false
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await zach.service.start()
+      expect(zach.service.get()).toMatchObject({ listening: false, problem: 'tailscale-off' })
+      const atStart = zach.ts.checks()
+      await vi.advanceTimersByTimeAsync(TEAM_RELISTEN_MS * 3)
+      expect(zach.ts.checks()).toBeGreaterThan(atStart)
+      expect(zach.service.get().listening).toBe(false)
+      expect(net.sent).toEqual([])
+      up = true
+      await vi.advanceTimersByTimeAsync(TEAM_RELISTEN_MS)
+      await vi.waitFor(() => expect(zach.service.get()).toMatchObject({ listening: true, problem: null }))
+      expect(zach.ts.served.size).toBe(1)
+      // Back up, it stops asking.
+      const once = zach.ts.checks()
+      await vi.advanceTimersByTimeAsync(TEAM_RELISTEN_MS * 3)
+      expect(zach.ts.checks()).toBe(once)
+      expect(net.sent).toEqual([])
+    } finally { vi.useRealTimers() }
+    // The teammate's ask, which had nothing to reach, is answered now.
+    expect(await settled(drake.service, asked(drake.service.ask({ ask: 'working-on', words: '' }, 'd1')))).toMatchObject({ state: 'answered', answer: 'zach says hello' })
+  })
+
+  it('checks nothing with no link and no code', async () => {
+    let up = false
+    const net = new Tailnet()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const zach = await computer(net, 'zach', { up: () => up })
+      await vi.advanceTimersByTimeAsync(TEAM_RELISTEN_MS * 3)
+      expect(zach.ts.checks()).toBe(0)
+      up = true
+      await vi.advanceTimersByTimeAsync(TEAM_RELISTEN_MS)
+      expect(zach.ts.checks()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('stops looking for Tailscale once Sotto quits', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    await zach.service.close()
+    const stopped = new TeamService({ directory: zach.directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net', () => false), threads: () => FACTS, projects: () => [], write: async () => null, anchor: () => null,
+      keepHistory: () => true, openExternal: async () => undefined, hostname: () => 'zach', fetch: net.fetchFor('zach') })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await stopped.start()
+      expect(vi.getTimerCount()).toBe(1)
+      await stopped.close()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
   })
 
   it('stops listening when a code nobody used ends', async () => {

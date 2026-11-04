@@ -20,6 +20,8 @@ export const TEAM_MESSAGES_KEPT = 100
 /** Tailnet HTTPS ports for the listener, in the order they are tried. Serve carries them; Funnel never does. */
 export const TEAM_SERVE_PORTS = [8445, 8446, 8447] as const
 export const TEAM_ROUTE = '/teams/v1'
+/** How often a computer with a link and no listener asks its own Tailscale whether it can listen yet. */
+export const TEAM_RELISTEN_MS = 30_000
 
 export const TEAM_ASKS = ['merge-priority', 'working-on'] as const
 export const teamAskSchema = z.enum(TEAM_ASKS)

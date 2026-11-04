@@ -9,7 +9,7 @@ import { cleanTeamAnswer, plainTeamAnswer, teamAnswerPrompt, teamSummary } from 
 import { startTeamListener, type TeamListener } from './teamListener'
 import {
   formatTeamCode, parseTeamCode, teamAddressSchema, teamAgainAnswerSchema, teamAskAnswerSchema, teamAskToolInputSchema, teamName, teammateMessageSchema, teamRedeemAnswerSchema, TEAM_ANSWERS_PER_BURST,
-  TEAM_ANSWERS_PER_DAY, TEAM_BODY_BYTES_MAX, TEAM_BURST_MS, TEAM_CODE_LIFETIME_MS, TEAM_CODE_TRIES, TEAM_LINK_LIFETIME_MS, TEAM_MESSAGES_KEPT, TEAM_RENEW_WINDOW_MS, TEAM_ROUTE, TEAM_SERVE_PORTS,
+  TEAM_ANSWERS_PER_DAY, TEAM_BODY_BYTES_MAX, TEAM_BURST_MS, TEAM_CODE_LIFETIME_MS, TEAM_CODE_TRIES, TEAM_LINK_LIFETIME_MS, TEAM_MESSAGES_KEPT, TEAM_RELISTEN_MS, TEAM_RENEW_WINDOW_MS, TEAM_ROUTE, TEAM_SERVE_PORTS,
   type TeamAsk, type TeamLinkView, type TeammateMessage, type TeamProjectFact, type TeamRefusal, type TeamsCommand, type TeamsCommandResult, type TeamsProblem, type TeamsState, type TeamThreadFact, type TeamWire,
 } from '../../shared/teams'
 
@@ -94,6 +94,8 @@ export class TeamService {
   private address: string | undefined
   private code: { readonly code: string; readonly text: string; readonly expiresAt: string; tries: number } | undefined
   private codeTimer: ReturnType<typeof setTimeout> | undefined
+  private relistenTimer: ReturnType<typeof setTimeout> | undefined
+  private listening: Promise<TeamsProblem | null> | undefined
   private problem: TeamsProblem | null = null
   private serveEnableUrl: string | null = null
   private readonly inFlight = new Set<string>()
@@ -121,7 +123,9 @@ export class TeamService {
     if (waited.length || heldWords) await this.save()
     await this.pairing.load()
     this.started = true
-    if (this.file.links.length) await this.ensureListening()
+    this.closed = false
+    if (this.file.links.length) await this.ensureListening().catch(() => undefined)
+    this.relistenLater()
     this.publish()
   }
 
@@ -204,6 +208,8 @@ export class TeamService {
   async close(): Promise<void> {
     this.closed = true
     clearTimeout(this.codeTimer)
+    clearTimeout(this.relistenTimer)
+    this.relistenTimer = undefined
     await this.stopListening()
   }
 
@@ -462,7 +468,23 @@ export class TeamService {
 
   // ---- Listening ----
 
-  private async ensureListening(): Promise<TeamsProblem | null> {
+  /**
+   * A link with no listener keeps looking, since Sotto often starts at login before Tailscale connects and a teammate's ask
+   * has no other way to bring it back. This asks only this computer's own Tailscale and contacts no one (ADR-0186, decision 4).
+   */
+  private relistenLater(): void {
+    if (this.closed || this.relistenTimer || this.address || !this.file.links.length) return
+    this.relistenTimer = setTimeout(() => {
+      this.relistenTimer = undefined
+      void this.ensureListening().catch(() => undefined).finally(() => { this.relistenLater(); this.publish() })
+    }, TEAM_RELISTEN_MS)
+    this.relistenTimer.unref?.()
+  }
+  /** One attempt at a time, so a retry and a press cannot each open a listener. */
+  private ensureListening(): Promise<TeamsProblem | null> {
+    return this.listening ??= this.listenNow().finally(() => { this.listening = undefined })
+  }
+  private async listenNow(): Promise<TeamsProblem | null> {
     if (this.address && this.listener) { this.problem = null; return null }
     const fail = (problem: TeamsProblem): TeamsProblem => { this.problem = problem; return problem }
     this.serveEnableUrl = null
