@@ -124,7 +124,7 @@ export const TEAM_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = Object.fre
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } }),
 ])
 /** What the two team tools ask of Sotto (`TeamService`). `turn` is `WatcherService.teamTurn`'s answer. */
-export interface WatcherTeamTools { ask(input: unknown, turn: string | undefined): unknown; readMessages(): unknown }
+export interface WatcherTeamTools { ask(input: unknown, turn: string | undefined): unknown; readMessages(turn: string | undefined): unknown }
 
 /** Tokens attach only to main's one current identity. Admission is repeated for every invocation. */
 export class WatcherToolServer implements WatcherProfileTools {
@@ -167,7 +167,7 @@ export class WatcherToolServer implements WatcherProfileTools {
       try { result = proposeOutput.parse(this.moves.propose(args)) } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not show this proposal. Nothing was moved.', true) }
     } else if ((name === TEAM_ASK_TOOL || name === TEAM_READ_TOOL) && this.teams) {
       try {
-        result = name === TEAM_ASK_TOOL ? teamAskToolOutputSchema.parse(this.teams.ask(args, this.service.teamTurn(threadId))) : teamReadToolOutputSchema.parse(this.teams.readMessages())
+        result = name === TEAM_ASK_TOOL ? teamAskToolOutputSchema.parse(this.teams.ask(args, this.service.teamTurn(threadId))) : teamReadToolOutputSchema.parse(this.teams.readMessages(this.service.teamTurn(threadId)))
       } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not do that for this teammate. Nothing was sent.', true) }
     } else if (!Object.hasOwn(watcherToolSchemas, name)) result = watcherRefusal('INVALID_INPUT', 'That tool is unavailable. Watcher cannot answer requests or change permissions.')
     else if (this.running >= 8) result = watcherRefusal('IN_FLIGHT_LIMIT', 'Watcher already has eight tool calls in progress. Wait for one to finish.', true)

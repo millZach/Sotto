@@ -1072,7 +1072,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
   const teams: TeamService | undefined = owlFeatures.teams && watcherEnabled && startupSettings.localHostEnabled ? new TeamService({
     directory: userDataPath, credentials, tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
-    threads: () => teamReads?.watcher?.teamThreadFacts() ?? [], projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
+    threads: leftOut => teamReads?.watcher?.teamThreadFacts(leftOut) ?? [], projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
     anchor: () => teamReads?.watcher?.teamAnchor() ?? null, keepHistory: () => agentHistoryEnabled,
     write: async prompt => {
       const modelId = teamReads?.watcher?.teamModel()
@@ -1444,6 +1444,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   windowHangs?.start()
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
+    teams?.privacyChanged()
     const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),

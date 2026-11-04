@@ -6532,6 +6532,7 @@ msgstr ""
 #: src/renderer/src/features/usage/UsageView.tsx
 #: src/renderer/src/watcher/machineWords.ts
 #: src/renderer/src/watcher/MoveThreads.tsx
+#: src/renderer/src/watcher/TeamsPage.tsx
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "This computer"

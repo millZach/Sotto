@@ -247,7 +247,7 @@ Recovery and dispatch checks retain prompt charges from stopped/closed legacy sc
 
 ## A teammate's Watcher
 
-On Owl with Teams on, Watcher has two more tools on `sotto_threads`. `ask_teammate` asks a linked teammate's computer about merge priority or what they are working on, with up to 800 characters of Watcher's words. It is refused in any turn the user's own message did not start, and each user message asks each thing once. It answers at once, and the answer shows as a row in Watcher's conversation. `read_teammate_messages` gives Watcher the rows the user has seen, labelled as a teammate's words, and only the ones that were on screen before the user's current message went. A note tells Watcher in fixed words when any wait.
+On Owl with Teams on, Watcher has two more tools on `sotto_threads`. `ask_teammate` asks a linked teammate's computer about merge priority or what they are working on, with up to 800 characters of Watcher's words. It is refused in any turn the user's own message did not start, and each user message asks each thing once. It answers at once, and the answer shows as a row in Watcher's conversation. `read_teammate_messages` gives Watcher the rows the user has seen, labelled as a teammate's words, only in a turn the user's own message started, and only the ones that were on screen before that message went. A note tells Watcher in fixed words when any wait.
 
 The other way round, nothing reaches Watcher at all: an incoming ask is answered by a side call with no tools, from the team summary. See [ADR-0186](adr/0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) and [ADR-0187](adr/0187-another-owners-words-are-untrusted-and-start-nothing.md).
 

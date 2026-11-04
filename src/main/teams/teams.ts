@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { t } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { PairedClients } from '../agents/pairing'
@@ -50,7 +51,7 @@ export interface TeamServiceOptions {
    * The team summary's facts. These two and `write` are all an ask can reach on this computer: there is no path from here
    * to a thread's commands, its cards or its permissions (ADR-0187, decision 1).
    */
-  readonly threads: () => readonly TeamThreadFact[]
+  readonly threads: (leftOut: ReadonlySet<string>) => readonly TeamThreadFact[]
   readonly projects: () => readonly TeamProjectFact[]
   /** One side call with no tools, on Watcher's provider. Null when none can run; the plain list answers then. */
   readonly write: (prompt: { readonly instruction: string; readonly material: string }) => Promise<string | null>
@@ -92,6 +93,7 @@ export class TeamService {
   private listener: TeamListener | undefined
   private address: string | undefined
   private code: { readonly code: string; readonly text: string; readonly expiresAt: string; tries: number } | undefined
+  private codeTimer: ReturnType<typeof setTimeout> | undefined
   private problem: TeamsProblem | null = null
   private serveEnableUrl: string | null = null
   private readonly inFlight = new Set<string>()
@@ -111,6 +113,12 @@ export class TeamService {
 
   async start(): Promise<void> {
     this.file = await this.store.read()
+    // An answer lost with the last run says so rather than waiting for ever, and with history off no word stays.
+    const waited = this.file.messages.filter(item => item.state === 'asking')
+    for (const item of waited) Object.assign(item, { state: 'failed', answeredAt: new Date(this.now()).toISOString() })
+    const heldWords = !this.options.keepHistory() && this.file.messages.length > 0
+    if (heldWords) this.file.messages = []
+    if (waited.length || heldWords) await this.save()
     await this.pairing.load()
     this.started = true
     if (this.file.links.length) await this.ensureListening()
@@ -126,7 +134,7 @@ export class TeamService {
   subscribe(listener: (state: TeamsState) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
 
   async command(command: TeamsCommand): Promise<TeamsCommandResult> {
-    if (!this.started) return { status: 'refused', message: 'Teams is still starting. Try again in a moment.' }
+    if (!this.started) return { status: 'refused', message: t`Teams is still starting. Try again in a moment.` }
     switch (command.type) {
       case 'make-code': return this.makeCode(command.name)
       case 'cancel-code': this.cancelCode(); await this.stopListeningIfUnused(); this.publish(); return { status: 'ok' }
@@ -168,9 +176,14 @@ export class TeamService {
       message: `Asked ${link.name}'s computer. Its answer shows to the user in this conversation when it comes. You read it with the user's next message, so end your turn and do not wait for it.` }
   }
 
-  /** `read_teammate_messages`: what was on screen before the user's current message went, once each. */
-  readMessages(): unknown {
-    const ready = this.file.messages.filter(item => !item.read && item.state !== 'asking' && Date.parse(item.answeredAt ?? item.at) <= this.readableUpTo)
+  /**
+   * `read_teammate_messages`: what was on screen before the user's current message went, once each, and only in a turn that
+   * message started. A wake-up has no user message behind it, so a teammate's words stay out of it (ADR-0187, decision 4).
+   */
+  readMessages(turn: string | undefined): unknown {
+    if (turn === undefined) return refuse('NOT_USERS_MESSAGE', 'A teammate\'s messages are read only in a turn the user\'s own message started. Nothing was read.')
+    // Before the message went, not in the same instant: an answer that lands with it waits for the next.
+    const ready = this.file.messages.filter(item => !item.read && item.state !== 'asking' && Date.parse(item.answeredAt ?? item.at) < this.readableUpTo)
     const waiting = this.file.messages.filter(item => !item.read && !ready.includes(item)).length
     for (const item of ready) item.read = true
     if (ready.length) void this.save()
@@ -178,6 +191,9 @@ export class TeamService {
       messages: ready.map(item => ({ teammate: item.teammate, direction: item.direction, ask: item.ask, askWords: item.askWords, state: item.state as 'answered' | 'refused' | 'failed', at: item.answeredAt ?? item.at,
         ...item.answer ? { words: item.answer } : {} })) }
   }
+
+  /** Keep local history changed: with it off, what was saved of a teammate's words goes now. */
+  privacyChanged(): void { if (!this.options.keepHistory()) void this.save() }
 
   /** A message of the user's is going to Watcher. Moves what Watcher may read, and says whether its note should mention any. */
   userMessageGoing(): boolean {
@@ -187,6 +203,7 @@ export class TeamService {
 
   async close(): Promise<void> {
     this.closed = true
+    clearTimeout(this.codeTimer)
     await this.stopListening()
   }
 
@@ -198,6 +215,9 @@ export class TeamService {
     this.cancelCode()
     const issued = this.pairing.issuePairingCode()
     this.code = { code: issued.code, text: formatTeamCode(this.address, issued.code), expiresAt: issued.expiresAt, tries: 0 }
+    // The listener runs only while a code waits or a link exists, so a code nobody used takes it down when it ends.
+    this.codeTimer = setTimeout(() => { void this.codeEnded() }, Date.parse(issued.expiresAt) - this.now())
+    this.codeTimer.unref?.()
     this.file.ownName = teamName(name)
     await this.save()
     this.publish()
@@ -206,7 +226,16 @@ export class TeamService {
   }
   private cancelCode(): void {
     if (this.code) this.pairing.cancelPairingCode(this.code.code)
+    this.forgetCode()
+  }
+  private forgetCode(): void {
+    clearTimeout(this.codeTimer)
     this.code = undefined
+  }
+  private async codeEnded(): Promise<void> {
+    this.cancelCode()
+    await this.stopListeningIfUnused()
+    this.publish()
   }
   private liveCode(): typeof this.code {
     if (this.code && Date.parse(this.code.expiresAt) <= this.now()) this.cancelCode()
@@ -215,23 +244,23 @@ export class TeamService {
 
   private async link(pasted: string, name: string): Promise<TeamsCommandResult> {
     const code = parseTeamCode(pasted)
-    if (!code) return { status: 'refused', message: 'That is not a Teams code. Ask your teammate to make a new one and paste all of it. Nothing was linked.' }
+    if (!code) return { status: 'refused', message: t`That is not a Teams code. Ask your teammate to make a new one and paste all of it. Nothing was linked.` }
     if (!this.options.credentials.available()) return { status: 'refused', message: this.problemWords('credentials-locked') }
     const problem = await this.ensureListening()
     if (problem || !this.address) { this.publish(); return { status: 'refused', message: this.problemWords(problem ?? 'serve-failed') } }
-    if (new URL(code.address).host === new URL(this.address).host) return { status: 'refused', message: 'That code came from this computer. Send it to your teammate instead. Nothing was linked.' }
+    if (new URL(code.address).host === new URL(this.address).host) return { status: 'refused', message: t`That code came from this computer. Send it to your teammate instead. Nothing was linked.` }
     // The token the teammate will use here, made first and taken back if the code fails.
     const mine = await this.pairing.redeem(this.pairing.issuePairingCode().code, code.address)
     const ownName = teamName(name)
-    let refused: string | undefined = 'Your teammate\'s computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked.'
+    let refused: string | undefined = t`Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked.`
     try {
       const answer = teamRedeemAnswerSchema.parse(await this.send(code.address, undefined, { command: 'redeem-code', code: code.code, name: ownName, address: this.address, token: mine.token }, SEND_TIMEOUT_MS))
       if (answer.status === 'linked') {
-        await this.addLink({ clientId: mine.clientId, name: answer.name, address: code.address, expiresAt: answer.expiresAt, token: answer.token })
+        await this.addLink({ clientId: mine.clientId, name: answer.name, address: code.address, expiresAt: this.noLaterThanALink(answer.expiresAt), token: answer.token })
         this.file.ownName = ownName
         await this.save()
         refused = undefined
-      } else refused = 'Your teammate\'s computer turned that code down. It may be used or too old. Ask them to make a new one. Nothing was linked.'
+      } else refused = t`Your teammate's computer turned that code down. It may be used or too old. Ask them to make a new one. Nothing was linked.`
     } catch { this.options.log?.('team-link-failed') }
     if (refused) { await this.pairing.revoke(mine.clientId).catch(() => undefined); await this.stopListeningIfUnused(); this.publish(); return { status: 'refused', message: refused } }
     this.publish()
@@ -273,25 +302,31 @@ export class TeamService {
 
   private async linkAgain(linkId: string): Promise<TeamsCommandResult> {
     const link = this.linkById(linkId)
-    if (!link) return { status: 'refused', message: 'That link is gone.' }
+    if (!link) return { status: 'refused', message: t`That link is gone.` }
+    const name = link.name, wantedBefore = link.wantedAgainAt, at = new Date(this.now()).toISOString()
+    // Said before it goes, so two presses that cross each find the other's and both renew.
+    link.wantedAgainAt = at
     try {
       const answer = teamAgainAnswerSchema.parse(await this.send(link.address, this.token(link), { command: 'link-again' }, SEND_TIMEOUT_MS))
-      if (answer.status === 'refused') return { status: 'refused', message: `${link.name} has removed this link. Make a new code to link again. Nothing changed here.` }
-      const at = new Date(this.now()).toISOString()
+      if (answer.status === 'refused') {
+        link.wantedAgainAt = wantedBefore
+        return { status: 'refused', message: t`${name} has removed this link. Make a new code to link again. Nothing changed here.` }
+      }
       if (answer.status === 'renewed') this.renew(link, answer.expiresAt)
-      else link.wantedAgainAt = at
       link.lastUsedAt = at
       await this.save()
       this.publish()
       return { status: 'ok' }
     } catch {
+      link.wantedAgainAt = wantedBefore
       this.options.log?.('team-link-again-failed')
-      return { status: 'refused', message: `${link.name}'s computer did not answer. Nothing changed. Try again when it is on.` }
+      return { status: 'refused', message: t`${name}'s computer did not answer. Nothing changed. Try again when it is on.` }
     }
   }
+  /** Never longer than this computer would give, whatever the other side says. */
+  private noLaterThanALink(expiresAt: string): string { return new Date(Math.min(Date.parse(expiresAt), this.now() + TEAM_LINK_LIFETIME_MS)).toISOString() }
   private renew(link: Link, expiresAt: string): void {
-    // Never longer than this computer would give, whatever the other side says.
-    link.expiresAt = new Date(Math.min(Date.parse(expiresAt), this.now() + TEAM_LINK_LIFETIME_MS)).toISOString()
+    link.expiresAt = this.noLaterThanALink(expiresAt)
     link.wantedAgainAt = null
     link.theyWantedAgainAt = null
   }
@@ -314,10 +349,16 @@ export class TeamService {
     if (!live) return refused
     if (message.code !== live.code) {
       // Five wrong tries end the code, so it cannot be guessed from the tailnet.
-      if (++live.tries >= TEAM_CODE_TRIES) { this.cancelCode(); this.options.log?.('team-code-ended'); this.publish() }
+      if (++live.tries >= TEAM_CODE_TRIES) {
+        this.cancelCode()
+        this.options.log?.('team-code-ended')
+        this.publish()
+        // After this answer is on its way: closing the listener now would cut it off.
+        setTimeout(() => { void this.stopListeningIfUnused() }, 1_000).unref?.()
+      }
       return refused
     }
-    this.code = undefined
+    this.forgetCode()
     const paired = await this.pairing.redeem(message.code, message.name)
     const expiresAt = new Date(this.now() + TEAM_LINK_LIFETIME_MS).toISOString()
     await this.addLink({ clientId: paired.clientId, name: message.name, address: message.address, expiresAt, token: message.token })
@@ -351,7 +392,7 @@ export class TeamService {
     this.inFlight.add(link.id)
     const row = this.addMessage({ linkId: link.id, teammate: link.name, direction: 'they-asked', ask, askWords: words })
     try {
-      const facts = teamSummary(this.options.threads(), new Set(this.file.leftOut))
+      const leftOut = new Set(this.file.leftOut), facts = teamSummary(this.options.threads(leftOut), leftOut)
       const written = cleanTeamAnswer(await this.options.write(teamAnswerPrompt(ask, words, facts)).catch(() => null))
       const answer = written ?? plainTeamAnswer(ask, facts)
       this.settle(row.id, { state: 'answered', answer, ...written ? {} : { plain: true as const } })
@@ -407,6 +448,7 @@ export class TeamService {
     const { state = 'asking', refusal, ...rest } = input
     const row: TeammateMessage = { id: randomUUID(), ...rest, state, ...refusal ? { refusal } : {}, at: new Date(this.now()).toISOString(), afterMessageId: this.options.anchor() }
     this.file.messages = [...this.file.messages, row].slice(-TEAM_MESSAGES_KEPT)
+    void this.save()
     this.publish()
     return row
   }
@@ -477,12 +519,12 @@ export class TeamService {
   }
   private problemWords(problem: TeamsProblem): string {
     switch (problem) {
-      case 'tailscale-off': return 'Tailscale is not running on this computer, and a team link needs it. Connect it in Settings > Hosts & phones, then try again. Nothing was linked.'
-      case 'serve-off': return 'Tailscale Serve is not turned on for your tailnet. Press Turn on Serve, then try again. Nothing was linked.'
-      case 'serve-denied': return 'Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked.'
-      case 'serve-failed': return 'Tailscale could not set up the link\'s address. Nothing was linked. Try again.'
-      case 'ports-taken': return 'Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then try again. Nothing was linked.'
-      case 'credentials-locked': return 'Your computer\'s credential store is locked, so Sotto cannot keep the link\'s token. Unlock it, then try again. Nothing was linked.'
+      case 'tailscale-off': return t`Tailscale is not running on this computer, and a team link needs it. Connect it in Settings > Hosts & phones, then try again. Nothing was linked.`
+      case 'serve-off': return t`Tailscale Serve is not turned on for your tailnet. Press Turn on Serve, then try again. Nothing was linked.`
+      case 'serve-denied': return t`Tailscale would not let this account change Serve. Run tailscale set --operator=\$USER on this computer, then try again. Nothing was linked.`
+      case 'serve-failed': return t`Tailscale could not set up the link's address. Nothing was linked. Try again.`
+      case 'ports-taken': return t`Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then try again. Nothing was linked.`
+      case 'credentials-locked': return t`Your computer's credential store is locked, so Sotto cannot keep the link's token. Unlock it, then try again. Nothing was linked.`
     }
   }
 }

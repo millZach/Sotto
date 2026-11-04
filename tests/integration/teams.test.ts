@@ -43,14 +43,14 @@ const memoryCredentials = (): TeamCredentials => {
   return { available: () => true, get: slot => values.get(slot) ?? '', set: async (slot, value) => { if (value) values.set(slot, value); else values.delete(slot) } }
 }
 
-async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly keepHistory?: boolean } = {}) {
+async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly keepHistory?: boolean; readonly fetch?: typeof fetch } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-teams-'))
   const write = vi.fn(overrides.write ?? (async () => `${name} says hello`))
   const threads = vi.fn(() => overrides.threads ?? FACTS)
   const dnsName = overrides.dnsName ?? `${name}.tail1.ts.net`
   const ts = tailscale(net, dnsName), events: string[] = []
-  const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: ts, threads, projects: () => [{ key: 'h1 sotto', title: 'Sotto', machine: 'This computer' }], write, anchor: () => 'message-1',
-    keepHistory: () => overrides.keepHistory !== false, openExternal: async () => undefined, hostname: () => name, fetch: net.fetchFor(name), log: event => { events.push(event) }, ...overrides.now ? { now: overrides.now } : {} })
+  const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: ts, threads, projects: () => [{ key: 'h1 sotto', title: 'Sotto', machine: null }], write, anchor: () => 'message-1',
+    keepHistory: () => overrides.keepHistory !== false, openExternal: async () => undefined, hostname: () => name, fetch: overrides.fetch ?? net.fetchFor(name), log: event => { events.push(event) }, ...overrides.now ? { now: overrides.now } : {} })
   await service.start()
   cleanups.push(async () => { await service.close(); await rm(directory, { recursive: true, force: true }) })
   return { service, write, threads, ts, directory, events, name }
@@ -133,6 +133,29 @@ describe('linking', () => {
     expect(zach.service.get().code).toBeNull()
   })
 
+  it('stops listening when a code nobody used ends', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const net = new Tailnet(), zach = await computer(net, 'zach')
+      await zach.service.command({ type: 'make-code', name: 'zach' })
+      expect(zach.ts.served.size).toBe(1)
+      await vi.advanceTimersByTimeAsync(31 * 60_000)
+      expect(zach.service.get().code).toBeNull()
+      expect(zach.ts.served.size).toBe(0)
+      expect(zach.service.get().listening).toBe(false)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('says an answer did not come back after a restart, rather than waiting for ever', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake', { write: () => new Promise<string>(() => undefined) })
+    await linked(net, zach, drake)
+    const id = asked(zach.service.ask({ ask: 'working-on', words: '' }, 'z1'))
+    await vi.waitFor(async () => expect(await readFile(join(zach.directory, 'team-links.json'), 'utf8')).toContain(id))
+    await zach.service.close()
+    await zach.service.start()
+    expect(zach.service.get().messages.find(row => row.id === id)).toMatchObject({ state: 'failed' })
+  })
+
   it('stops listening when the last link goes, and sends nothing to say so', async () => {
     const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
     await linked(net, zach, drake)
@@ -196,7 +219,7 @@ describe('nothing goes without a press or an ask', () => {
     try { await vi.advanceTimersByTimeAsync(3 * 60 * 60_000) } finally { vi.useRealTimers() }
     at += 3 * 60 * 60_000
     zach.service.get(); drake.service.get()
-    zach.service.readMessages(); zach.service.userMessageGoing()
+    zach.service.readMessages('z0'); zach.service.userMessageGoing()
     await zach.service.command({ type: 'leave-out', project: 'h1 client', leftOut: true })
     await zach.service.close(); await zach.service.start()
     expect(net.sent).toEqual([])
@@ -267,16 +290,35 @@ describe('a teammate\'s words', () => {
   })
 
   it('reach Watcher only once the user\'s next message goes, and once each', async () => {
-    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    let at = Date.parse('2026-11-03T10:00:00Z')
+    const now = () => at++, net = new Tailnet(), zach = await computer(net, 'zach', { now }), drake = await computer(net, 'drake', { now })
     await linked(net, zach, drake)
     await settled(zach.service, asked(zach.service.ask({ ask: 'working-on', words: '' }, 'z1')))
-    expect(zach.service.readMessages()).toMatchObject({ messages: [], waiting: 1 })
+    expect(zach.service.readMessages('z1')).toMatchObject({ messages: [], waiting: 1 })
     expect(zach.service.userMessageGoing()).toBe(true)
-    const read = zach.service.readMessages() as { messages: { words: string }[]; notice: string }
+    const read = zach.service.readMessages('z2') as { messages: { words: string }[]; notice: string }
     expect(read.messages.map(item => item.words)).toEqual(['drake says hello'])
     expect(read.notice).toContain('not the user\'s')
     expect(zach.service.userMessageGoing()).toBe(false)
-    expect(zach.service.readMessages()).toMatchObject({ messages: [], waiting: 0 })
+    expect(zach.service.readMessages('z3')).toMatchObject({ messages: [], waiting: 0 })
+  })
+
+  it('are not read in a turn the user\'s message did not start, even once a Send has made them readable', async () => {
+    let at = Date.parse('2026-11-03T10:00:00Z')
+    const now = () => at++, net = new Tailnet(), zach = await computer(net, 'zach', { now }), drake = await computer(net, 'drake', { now })
+    await linked(net, zach, drake)
+    await settled(zach.service, asked(zach.service.ask({ ask: 'working-on', words: '' }, 'z1')))
+    zach.service.userMessageGoing()
+    expect(zach.service.readMessages(undefined)).toMatchObject({ status: 'refused', code: 'NOT_USERS_MESSAGE' })
+    expect(zach.service.readMessages('z2')).toMatchObject({ messages: [{ words: 'drake says hello' }] })
+  })
+
+  it('wait for the next message when they land in the same instant as this one', async () => {
+    const at = Date.parse('2026-11-03T10:00:00Z'), net = new Tailnet(), zach = await computer(net, 'zach', { now: () => at }), drake = await computer(net, 'drake', { now: () => at })
+    await linked(net, zach, drake)
+    await settled(zach.service, asked(zach.service.ask({ ask: 'working-on', words: '' }, 'z1')))
+    zach.service.userMessageGoing()
+    expect(zach.service.readMessages('z2')).toMatchObject({ messages: [], waiting: 1 })
   })
 
   it('do not reach a log', async () => {
@@ -293,6 +335,30 @@ describe('a teammate\'s words', () => {
     for (const file of (await readdir(zach.directory, { recursive: true, withFileTypes: true })).filter(item => item.isFile())) {
       expect(await readFile(join(file.parentPath, file.name), 'utf8')).not.toContain(token)
     }
+  })
+
+  it('go from the record at the next start, and when history turns off', async () => {
+    let keep = true
+    const net = new Tailnet(), drake = await computer(net, 'drake'), directory = await mkdtemp(join(tmpdir(), 'sotto-teams-'))
+    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net'), threads: () => FACTS, projects: () => [], write: async () => 'hello', anchor: () => null,
+      keepHistory: () => keep, openExternal: async () => undefined, hostname: () => 'zach', fetch: net.fetchFor('zach') })
+    await service.start()
+    cleanups.push(() => service.close())
+    await service.command({ type: 'make-code', name: 'zach' })
+    await drake.service.command({ type: 'link', code: service.get().code!.text, name: 'drake' })
+    await settled(drake.service, asked(drake.service.ask({ ask: 'working-on', words: 'secret words' }, 'd1')))
+    await vi.waitFor(async () => expect(await readFile(join(directory, 'team-links.json'), 'utf8')).toContain('secret words'))
+    keep = false
+    service.privacyChanged()
+    await vi.waitFor(async () => expect(await readFile(join(directory, 'team-links.json'), 'utf8')).not.toContain('secret words'))
+    keep = true
+    await settled(drake.service, asked(drake.service.ask({ ask: 'merge-priority', words: 'more secret' }, 'd2')))
+    await vi.waitFor(async () => expect(await readFile(join(directory, 'team-links.json'), 'utf8')).toContain('more secret'))
+    keep = false
+    await service.close(); await service.start()
+    expect(service.get().messages).toEqual([])
+    expect(await readFile(join(directory, 'team-links.json'), 'utf8')).not.toContain('more secret')
   })
 
   it('stay in memory with Keep local history off', async () => {
@@ -346,6 +412,34 @@ describe('the caps', () => {
 })
 
 describe('thirty days', () => {
+  it('takes no teammate\'s word for a link longer than thirty days', async () => {
+    const at = Date.parse('2026-11-03T10:00:00Z'), net = new Tailnet()
+    const answers = async () => new Response(JSON.stringify({ status: 'linked', name: 'zach', token: 'x'.repeat(40), expiresAt: '2099-01-01T00:00:00.000Z' }), { status: 200 })
+    const drake = await computer(net, 'drake', { now: () => at, fetch: answers as unknown as typeof fetch })
+    expect(await drake.service.command({ type: 'link', code: 'sotto-team:zach.tail1.ts.net:8445:ABCD2345', name: 'drake' })).toEqual({ status: 'ok' })
+    expect(Date.parse(drake.service.get().links[0]!.expiresAt)).toBe(at + TEAM_LINK_LIFETIME_MS)
+  })
+
+  it('renews when the two presses cross', async () => {
+    let at = Date.parse('2026-11-03T10:00:00Z')
+    const net = new Tailnet(), zach = await computer(net, 'zach', { now: () => at }), drake = await computer(net, 'drake', { now: () => at })
+    await linked(net, zach, drake)
+    at += TEAM_LINK_LIFETIME_MS + 1
+    expect(await Promise.all([zach.service.command({ type: 'link-again', linkId: zach.service.get().links[0]!.id }), drake.service.command({ type: 'link-again', linkId: drake.service.get().links[0]!.id })])).toEqual([{ status: 'ok' }, { status: 'ok' }])
+    expect(zach.service.get().links[0]).toMatchObject({ expired: false, wantedAgain: false })
+    expect(drake.service.get().links[0]).toMatchObject({ expired: false, wantedAgain: false })
+  })
+
+  it('takes back a press that did not reach the teammate', async () => {
+    let at = Date.parse('2026-11-03T10:00:00Z')
+    const net = new Tailnet(), zach = await computer(net, 'zach', { now: () => at }), drake = await computer(net, 'drake', { now: () => at })
+    await linked(net, zach, drake)
+    at += TEAM_LINK_LIFETIME_MS + 1
+    await drake.service.close()
+    expect(await zach.service.command({ type: 'link-again', linkId: zach.service.get().links[0]!.id })).toMatchObject({ status: 'refused' })
+    expect(zach.service.get().links[0]).toMatchObject({ wantedAgain: false })
+  })
+
   it('turns an ask down after thirty days, with nothing run, and renews only when both press', async () => {
     let at = Date.parse('2026-11-03T10:00:00Z')
     const net = new Tailnet(), zach = await computer(net, 'zach', { now: () => at }), drake = await computer(net, 'drake', { now: () => at })

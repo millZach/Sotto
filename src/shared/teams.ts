@@ -12,8 +12,8 @@ export const TEAM_CODE_TRIES = 5
 export const TEAM_ANSWERS_PER_DAY = 20
 export const TEAM_ANSWERS_PER_BURST = 5
 export const TEAM_BURST_MS = 10 * MINUTE
-export const TEAM_ASK_WORDS_MAX = 800
-export const TEAM_ANSWER_WORDS_MAX = 4_000
+export const TEAM_ASK_CHARACTERS_MAX = 800
+export const TEAM_ANSWER_CHARACTERS_MAX = 4_000
 export const TEAM_NAME_MAX = 60
 export const TEAM_BODY_BYTES_MAX = 16 * 1024
 export const TEAM_MESSAGES_KEPT = 100
@@ -60,7 +60,7 @@ export function parseTeamCode(text: string): TeamCode | undefined {
  */
 export const teamWireSchema = z.discriminatedUnion('command', [
   z.object({ command: z.literal('redeem-code'), code: z.string().min(4).max(16), name: nameSchema, address: teamAddressSchema, token: z.string().min(20).max(512) }).strict(),
-  z.object({ command: z.literal('ask'), ask: teamAskSchema, words: z.string().max(TEAM_ASK_WORDS_MAX) }).strict(),
+  z.object({ command: z.literal('ask'), ask: teamAskSchema, words: z.string().max(TEAM_ASK_CHARACTERS_MAX) }).strict(),
   z.object({ command: z.literal('link-again') }).strict(),
 ])
 export type TeamWire = z.infer<typeof teamWireSchema>
@@ -70,7 +70,7 @@ export const teamRefusalSchema = z.enum(['not-on-the-list', 'not-linked', 'expir
 export type TeamRefusal = z.infer<typeof teamRefusalSchema>
 const refused = z.object({ status: z.literal('refused'), reason: teamRefusalSchema }).strict()
 export const teamRedeemAnswerSchema = z.union([z.object({ status: z.literal('linked'), name: nameSchema, token: z.string().min(20).max(512), expiresAt: z.iso.datetime() }).strict(), refused])
-export const teamAskAnswerSchema = z.union([z.object({ status: z.literal('answered'), words: z.string().min(1).max(TEAM_ANSWER_WORDS_MAX), plain: z.literal(true).optional() }).strict(), refused])
+export const teamAskAnswerSchema = z.union([z.object({ status: z.literal('answered'), words: z.string().min(1).max(TEAM_ANSWER_CHARACTERS_MAX), plain: z.literal(true).optional() }).strict(), refused])
 export const teamAgainAnswerSchema = z.union([z.object({ status: z.literal('waiting') }).strict(), z.object({ status: z.literal('renewed'), expiresAt: z.iso.datetime() }).strict(), refused])
 export type TeamAnswer = z.infer<typeof teamAskAnswerSchema>
 
@@ -82,15 +82,16 @@ export interface TeamThreadFact {
   readonly stands: 'working' | 'waiting-on-its-owner' | 'failed' | 'idle'
   readonly pullRequests: readonly { readonly number: number; readonly title: string; readonly state: string; readonly draft: boolean }[]
 }
-export interface TeamProjectFact { readonly key: string; readonly title: string; readonly machine: string }
+/** `machine` is another machine's name, or null for this computer. */
+export interface TeamProjectFact { readonly key: string; readonly title: string; readonly machine: string | null }
 
 /** A teammate's message, as a row in Watcher's conversation and on the Teams tab. */
 export const teammateMessageSchema = z.object({
   id: z.string().min(1).max(64), linkId: z.string().min(1).max(64), teammate: z.string().max(TEAM_NAME_MAX * 2),
   /** `we-asked`: this computer asked and this is what came back. `they-asked`: the teammate asked and this computer answered. */
-  direction: z.enum(['we-asked', 'they-asked']), ask: teamAskSchema, askWords: z.string().max(TEAM_ASK_WORDS_MAX),
+  direction: z.enum(['we-asked', 'they-asked']), ask: teamAskSchema, askWords: z.string().max(TEAM_ASK_CHARACTERS_MAX),
   state: z.enum(['asking', 'answered', 'refused', 'failed']),
-  answer: z.string().max(TEAM_ANSWER_WORDS_MAX).optional(), plain: z.literal(true).optional(), refusal: teamRefusalSchema.optional(),
+  answer: z.string().max(TEAM_ANSWER_CHARACTERS_MAX).optional(), plain: z.literal(true).optional(), refusal: teamRefusalSchema.optional(),
   at: z.iso.datetime(), answeredAt: z.iso.datetime().optional(), afterMessageId: z.string().max(512).nullable(),
   /** Watcher has read it through `read_teammate_messages`. Never changes what the user sees. */
   read: z.literal(true).optional(),
@@ -147,7 +148,7 @@ export interface TeamsBridge {
 /** Watcher's tools for this (ADR-0187). They live outside `watcherToolSchemas`, as propose_moves does, so stable offers none. */
 export const TEAM_ASK_TOOL = 'ask_teammate'
 export const TEAM_READ_TOOL = 'read_teammate_messages'
-export const teamAskToolInputSchema = z.object({ ask: teamAskSchema, words: z.string().max(TEAM_ASK_WORDS_MAX).default(''), teammate: z.string().max(TEAM_NAME_MAX * 2).optional() }).strict()
+export const teamAskToolInputSchema = z.object({ ask: teamAskSchema, words: z.string().max(TEAM_ASK_CHARACTERS_MAX).default(''), teammate: z.string().max(TEAM_NAME_MAX * 2).optional() }).strict()
 export const teamReadToolInputSchema = z.object({}).strict()
 const toolRefusal = z.object({ status: z.literal('refused'), code: z.string(), message: z.string(), retryable: z.boolean().optional() }).strict()
 export const teamAskToolOutputSchema = z.union([z.object({ status: z.literal('ok'), askId: z.string(), teammate: z.string(), message: z.string() }).strict(), toolRefusal])

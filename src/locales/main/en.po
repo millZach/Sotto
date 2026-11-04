@@ -182,6 +182,10 @@ msgstr "{name} could not reach GitHub, so this computer downloaded {to}, but cop
 msgid "{name} did not answer about phone access in time. Nothing was changed. Try again."
 msgstr "{name} did not answer about phone access in time. Nothing was changed. Try again."
 
+#: src/main/teams/teams.ts
+msgid "{name} has removed this link. Make a new code to link again. Nothing changed here."
+msgstr "{name} has removed this link. Make a new code to link again. Nothing changed here."
+
 #: src/main/agents/socketHostService.ts
 msgid "{name} is available in Sotto Owl. Nothing was sent."
 msgstr "{name} is available in Sotto Owl. Nothing was sent."
@@ -205,6 +209,10 @@ msgstr "{name} still runs {from}. Nothing was lost."
 #: src/main/hosts/hostBootStart.ts
 msgid "{name} would not turn on linger without an administrator. Without it, a unit would stop {name}’s host whenever its account signs out, so Sotto installed nothing."
 msgstr "{name} would not turn on linger without an administrator. Without it, a unit would stop {name}’s host whenever its account signs out, so Sotto installed nothing."
+
+#: src/main/teams/teams.ts
+msgid "{name}'s computer did not answer. Nothing changed. Try again when it is on."
+msgstr "{name}'s computer did not answer. Nothing changed. Try again when it is on."
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{name}'s host did not stop, so Sotto left {from} running."
@@ -976,6 +984,10 @@ msgstr "Open VSX sent a search response Sotto could not read."
 msgid "Open VSX sent more data than a theme needs, so the download was stopped."
 msgstr "Open VSX sent more data than a theme needs, so the download was stopped."
 
+#: src/main/teams/teams.ts
+msgid "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then try again. Nothing was linked."
+msgstr "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then try again. Nothing was linked."
+
 #: src/main/tools/checkpoints.ts
 msgid "Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn."
 msgstr "Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn."
@@ -1439,6 +1451,10 @@ msgstr "Stop Dictation"
 msgid "Stop the host on {name}, then connect to it again from Settings > Hosts & phones, and Sotto starts {to}."
 msgstr "Stop the host on {name}, then connect to it again from Settings > Hosts & phones, and Sotto starts {to}."
 
+#: src/main/teams/teams.ts
+msgid "Tailscale could not set up the link's address. Nothing was linked. Try again."
+msgstr "Tailscale could not set up the link's address. Nothing was linked. Try again."
+
 #: src/main/hosts/hostPhones.ts
 msgid "Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve."
 msgstr "Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve."
@@ -1446,6 +1462,14 @@ msgstr "Tailscale did not give a page to open. Open the Tailscale admin console 
 #: src/main/hosts/desktopHosts.ts
 msgid "Tailscale is no longer waiting for this approval. Nothing was opened."
 msgstr "Tailscale is no longer waiting for this approval. Nothing was opened."
+
+#: src/main/teams/teams.ts
+msgid "Tailscale is not running on this computer, and a team link needs it. Connect it in Settings > Hosts & phones, then try again. Nothing was linked."
+msgstr "Tailscale is not running on this computer, and a team link needs it. Connect it in Settings > Hosts & phones, then try again. Nothing was linked."
+
+#: src/main/teams/teams.ts
+msgid "Tailscale Serve is not turned on for your tailnet. Press Turn on Serve, then try again. Nothing was linked."
+msgstr "Tailscale Serve is not turned on for your tailnet. Press Turn on Serve, then try again. Nothing was linked."
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "Tailscale SSH asked you to approve the port forward as well, and closed it after 30 seconds without an approval. Nothing was saved. Try again, and approve it in your browser when Sotto asks."
@@ -1471,6 +1495,14 @@ msgstr "Tailscale SSH asked you to approve this request, and Sotto shows an appr
 msgid "Tailscale SSH asked you to approve this request, and Sotto shows an approval only while it connects. Nothing was saved. Nothing was changed. Switch the host off and on, approve the connection in your browser when Sotto asks, then try again."
 msgstr "Tailscale SSH asked you to approve this request, and Sotto shows an approval only while it connects. Nothing was saved. Nothing was changed. Switch the host off and on, approve the connection in your browser when Sotto asks, then try again."
 
+#: src/main/teams/teams.ts
+msgid "Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked."
+msgstr "Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked."
+
+#: src/main/teams/teams.ts
+msgid "Teams is still starting. Try again in a moment."
+msgstr "Teams is still starting. Try again in a moment."
+
 #: src/main/tools/terminal.ts
 msgid "Terminal is shutting down."
 msgstr "Terminal is shutting down."
@@ -1478,6 +1510,10 @@ msgstr "Terminal is shutting down."
 #: src/main/themes/openVsx.ts
 msgid "That address is not an Open VSX address."
 msgstr "That address is not an Open VSX address."
+
+#: src/main/teams/teams.ts
+msgid "That code came from this computer. Send it to your teammate instead. Nothing was linked."
+msgstr "That code came from this computer. Send it to your teammate instead. Nothing was linked."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
@@ -1499,9 +1535,17 @@ msgstr "That element is outside the captured page."
 msgid "That extension is no longer on Open VSX."
 msgstr "That extension is no longer on Open VSX."
 
+#: src/main/teams/teams.ts
+msgid "That is not a Teams code. Ask your teammate to make a new one and paste all of it. Nothing was linked."
+msgstr "That is not a Teams code. Ask your teammate to make a new one and paste all of it. Nothing was linked."
+
 #: src/main/themes/openVsx.ts
 msgid "That is not an Open VSX extension name."
 msgstr "That is not an Open VSX extension name."
+
+#: src/main/teams/teams.ts
+msgid "That link is gone."
+msgstr "That link is gone."
 
 #: src/main/hosts/hostSetupThreads.ts
 msgid "That model cannot set up a host. Choose a ready Claude Code, Codex or Grok Build model."
@@ -2960,6 +3004,18 @@ msgstr "Working-copy choices are unavailable. Reopen the project and try again."
 msgid "Your bindings.lua already gives {keys} to Sotto. Leaving those lines alone."
 msgstr "Your bindings.lua already gives {keys} to Sotto. Leaving those lines alone."
 
+#: src/main/teams/teams.ts
+msgid "Your computer's credential store is locked, so Sotto cannot keep the link's token. Unlock it, then try again. Nothing was linked."
+msgstr "Your computer's credential store is locked, so Sotto cannot keep the link's token. Unlock it, then try again. Nothing was linked."
+
 #: src/main/omarchy/setup.ts
 msgid "Your keys run what they did before."
 msgstr "Your keys run what they did before."
+
+#: src/main/teams/teams.ts
+msgid "Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked."
+msgstr "Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked."
+
+#: src/main/teams/teams.ts
+msgid "Your teammate's computer turned that code down. It may be used or too old. Ask them to make a new one. Nothing was linked."
+msgstr "Your teammate's computer turned that code down. It may be used or too old. Ask them to make a new one. Nothing was linked."

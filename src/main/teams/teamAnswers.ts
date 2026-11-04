@@ -1,4 +1,4 @@
-import { TEAM_ANSWER_WORDS_MAX, type TeamAsk, type TeamThreadFact } from '../../shared/teams'
+import { TEAM_ANSWER_CHARACTERS_MAX, type TeamAsk, type TeamThreadFact } from '../../shared/teams'
 
 /**
  * What an owner's computer tells a teammate (ADR-0187, decision 2). Everything here is made from team summary facts alone:
@@ -22,7 +22,7 @@ export function plainTeamAnswer(ask: TeamAsk, threads: readonly TeamThreadFact[]
   })
   let text = ''
   for (const line of lines) {
-    if (text.length + line.length + 1 > TEAM_ANSWER_WORDS_MAX) break
+    if (text.length + line.length + 1 > TEAM_ANSWER_CHARACTERS_MAX) break
     text += `${text ? '\n' : ''}${line}`
   }
   return text
@@ -43,5 +43,5 @@ export function teamAnswerPrompt(ask: TeamAsk, words: string, threads: readonly 
 /** What a side call wrote, fit to send; undefined when it wrote nothing usable. */
 export function cleanTeamAnswer(text: string | null | undefined): string | undefined {
   const cleaned = text?.replace(/\p{Cc}/gu, value => value === '\n' ? '\n' : ' ').trim()
-  return cleaned ? cleaned.slice(0, TEAM_ANSWER_WORDS_MAX).replace(/[\uD800-\uDBFF]$/u, '') : undefined
+  return cleaned ? cleaned.slice(0, TEAM_ANSWER_CHARACTERS_MAX).replace(/[\uD800-\uDBFF]$/u, '') : undefined
 }

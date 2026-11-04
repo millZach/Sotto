@@ -106,7 +106,9 @@ test.describe('Teams', () => {
         // Remove asks first, sends nothing, and leaves the forms.
         await card.getByRole('button', { name: 'Remove link' }).click()
         await expect(card).toContainText('Nothing is sent to them.')
-        await card.getByRole('button', { name: 'Keep it' }).click()
+        await expect(card.getByRole('button', { name: 'Keep it' })).toBeFocused()
+        await page.keyboard.press('Escape')
+        await expect(card.getByRole('button', { name: 'Remove link' })).toBeFocused()
         await card.getByRole('button', { name: 'Remove link' }).click()
         await card.getByRole('group').getByRole('button', { name: 'Remove link' }).click()
         await expect(card).toHaveCount(0)

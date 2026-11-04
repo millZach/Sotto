@@ -1203,30 +1203,32 @@ export class WatcherService implements WatcherControlHooks {
    */
   teamTurn(threadId: string): string | undefined {
     const request = this.turnRequest(threadId)
-    return request && !isToldRequest(request) ? `${request.id} ${request.userFollowups?.length ?? 0}` : undefined
+    // Counted by the messages delivered, so a draft queued behind this turn does not make it a new message.
+    return request && !isToldRequest(request) ? `${request.id} ${request.userFollowups?.filter(item => item.messageId).length ?? 0}` : undefined
   }
   /** What a team summary is made from: nothing of a thread but its title, where it stands and its pull requests (ADR-0187). */
-  teamThreadFacts(): TeamThreadFact[] {
-    const facts: TeamThreadFact[] = []
+  teamThreadFacts(leftOut: ReadonlySet<string> = new Set()): TeamThreadFact[] {
+    // The most active first, and no sort: this runs for each ask and stops at the cap however many threads there are.
+    const stands: Record<TeamThreadFact['stands'], TeamThreadFact[]> = { 'waiting-on-its-owner': [], working: [], failed: [], idle: [] }
     for (const hostId of this.teamHosts()) {
       const snapshot = this.owningSnapshot(hostId)
       if (!snapshot) continue
-      const titles = new Map(snapshot.projects.map(project => [project.id, project.title]))
+      const projects = new Map(snapshot.projects.map(project => [project.id, project]))
       for (const thread of snapshot.threads) {
-        const project = snapshot.projects.find(item => item.id === thread.projectId)
-        if (thread.delegatedBy || this.protectedThread(thread) || isWorkspaceThreadSettled(thread, project)) continue
-        facts.push({ project: titles.get(thread.projectId) ?? '', projectKey: `${hostId} ${thread.projectId}`, title: thread.title,
-          stands: thread.requests.length ? 'waiting-on-its-owner' : isThreadTurnRunning(thread) ? 'working' : thread.lastTurn?.status === 'failed' ? 'failed' : 'idle',
+        const project = projects.get(thread.projectId), projectKey = `${hostId} ${thread.projectId}`
+        // Left out before the cap, so threads the user left out never crowd out the ones they share.
+        if (leftOut.has(projectKey) || thread.delegatedBy || this.protectedThread(thread) || isWorkspaceThreadSettled(thread, project)) continue
+        const standing: TeamThreadFact['stands'] = thread.requests.length ? 'waiting-on-its-owner' : isThreadTurnRunning(thread) ? 'working' : thread.lastTurn?.status === 'failed' ? 'failed' : 'idle'
+        stands[standing].push({ project: project?.title ?? '', projectKey, title: thread.title, stands: standing,
           pullRequests: (thread.pullRequests ?? []).filter(item => item.state !== 'closed' && item.state !== 'merged').map(item => ({ number: item.number, title: item.title ?? '', state: item.state, draft: item.draft ?? false })) })
       }
     }
-    const order = { 'waiting-on-its-owner': 0, working: 1, failed: 2, idle: 3 }
-    return facts.sort((left, right) => order[left.stands] - order[right.stands]).slice(0, TEAM_SUMMARY_THREADS_MAX)
+    return [...stands['waiting-on-its-owner'], ...stands.working, ...stands.failed, ...stands.idle].slice(0, TEAM_SUMMARY_THREADS_MAX)
   }
   /** The projects the Teams tab lists, so the user can leave any out of their summaries. */
   teamProjectFacts(): TeamProjectFact[] {
     return this.teamHosts().flatMap(hostId => {
-      const snapshot = this.owningSnapshot(hostId), machine = hostId === this.hostId() ? 'This computer' : this.remote?.hosts().find(host => host.hostId === hostId)?.name ?? ''
+      const snapshot = this.owningSnapshot(hostId), machine = hostId === this.hostId() ? null : this.remote?.hosts().find(host => host.hostId === hostId)?.name ?? null
       return (snapshot?.projects ?? []).filter(project => !this.reservedProject(project.path)).map(project => ({ key: `${hostId} ${project.id}`, title: project.title, machine }))
     })
   }

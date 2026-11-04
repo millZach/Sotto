@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { Button } from '../components/Button'
 import { localeFormatter } from '../agents/localeFormat'
@@ -22,20 +22,26 @@ function whenOf(iso: string, now: number): string {
 /** One teammate: how long the link lasts, Link again, and what it has cost today. */
 function TeamLinkCard({ link, command, busy }: { readonly link: TeamLinkView; readonly command: (value: TeamsCommand) => void; readonly busy: boolean }): ReactNode {
   const { t } = useLingui()
-  const [removing, setRemoving] = useState(false), name = link.name, until = dateOf(link.expiresAt), answers = link.answersToday, cap = TEAM_ANSWERS_PER_DAY, refused = link.refusedToday
+  const [removing, setRemoving] = useState(false), keep = useRef<HTMLButtonElement>(null), removeButton = useRef<HTMLButtonElement>(null), reopened = useRef(false), name = link.name, until = dateOf(link.expiresAt), answers = link.answersToday, cap = TEAM_ANSWERS_PER_DAY, refused = link.refusedToday
   const soon = Date.parse(link.expiresAt) - Date.now() <= TEAM_RENEW_WINDOW_MS
+  // Opening the question moves focus to its safe answer, and closing it brings focus back to the press that opened it.
+  useEffect(() => {
+    if (removing) keep.current?.focus()
+    else if (reopened.current) { reopened.current = false; removeButton.current?.focus() }
+  }, [removing])
+  const closeQuestion = (): void => { reopened.current = true; setRemoving(false) }
   const again = link.expired || soon || link.theyWantAgain || link.wantedAgain
   return <section className="teams-card" aria-label={t`Link with ${name}`}>
     <div className="teams-card__head">
       <span className="teams-card__avatar" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
       <div className="teams-card__who"><strong>{name}</strong>
         <span className="teams-muted">{link.machine}{link.lastUsedAt ? ` · ${t`last used ${whenOf(link.lastUsedAt, Date.now())}`}` : ''}</span></div>
-      {removing ? null : <Button variant="ghost" disabled={busy} onClick={() => setRemoving(true)}>{t`Remove link`}</Button>}
+      {removing ? null : <Button ref={removeButton} variant="ghost" disabled={busy} onClick={() => setRemoving(true)}>{t`Remove link`}</Button>}
     </div>
-    {removing ? <div className="teams-card__confirm" role="group" aria-label={t`Remove the link with ${name}`}>
+    {removing ? <div className="teams-card__confirm" role="group" aria-label={t`Remove the link with ${name}`} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeQuestion() } }}>
       <p className="teams-muted">{t`Remove the link with ${name}? Nothing is sent to them. Their next ask will say the link is gone.`}</p>
       <Button variant="danger" disabled={busy} onClick={() => command({ type: 'remove-link', linkId: link.id })}>{t`Remove link`}</Button>
-      <Button variant="ghost" onClick={() => setRemoving(false)}>{t`Keep it`}</Button>
+      <Button ref={keep} variant="ghost" onClick={closeQuestion}>{t`Keep it`}</Button>
     </div> : null}
     <dl className="teams-facts">
       <dt>{t`Link`}</dt>
@@ -56,7 +62,7 @@ function WhatYouShare({ state, command, busy }: { readonly state: TeamsState; re
     <p className="teams-muted">{t`When a teammate asks, your computer tells them each thread's title, project and where it stands, and its open pull requests. Never its messages, code or file names. Thread titles come from your words, so untick any project they should not see.`}</p>
     {state.projects.length ? <ul className="teams-projects">{state.projects.map(project => <li key={project.key}>
       <label className="teams-projects__row"><input type="checkbox" checked={!project.leftOut} disabled={busy} onChange={event => command({ type: 'leave-out', project: project.key, leftOut: !event.currentTarget.checked })} />
-        <span>{project.title}</span><span className="teams-muted">{project.machine}</span></label>
+        <span>{project.title}</span><span className="teams-muted">{project.machine ?? t`This computer`}</span></label>
     </li>)}</ul> : <p className="teams-muted">{t`No projects yet.`}</p>}
   </section>
 }
