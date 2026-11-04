@@ -30,9 +30,9 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Run the arms in turn
-        # Eight rounds of four arms, two journeys an arm; no round starts after 65 minutes.
+        # Twelve rounds of three arms, two journeys an arm; no round starts after 60 minutes.
         timeout-minutes: 100
-        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 8 65
+        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 12 60
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4

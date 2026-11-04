@@ -12,6 +12,8 @@ enum BenchOpen {
     }()
     /// `--bench-hold-early`: the Threads page holds its list before the push starts.
     static let holdsEarly = ProcessInfo.processInfo.arguments.contains("--bench-hold-early")
+    /// `--bench-keep-list`: the Threads page hands back the list it last drew while the list made now would draw the same.
+    static let keepsList = ProcessInfo.processInfo.arguments.contains("--bench-keep-list")
     nonisolated(unsafe) static let holdNow = PassthroughSubject<Void, Never>()
     @MainActor static func conversation(rows: Int, held: Bool) {
         #if DEBUG && os(iOS)

@@ -41,6 +41,9 @@ sleep 8
 journey() {
     report=$1; seconds=$2; shift 2
     rm -f "$report"
+    # The sync arm: if SwiftUI's comparison waits on AttributeGraph reading a type's layout on a queue of its own, this
+    # has it read the layout when asked.
+    if [ -n "${ag_async:-}" ]; then export SIMCTL_CHILD_AG_ASYNC_LAYOUTS="$ag_async"; else unset SIMCTL_CHILD_AG_ASYNC_LAYOUTS; fi
     xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true
     sleep 2
     SIMCTL_CHILD_SOTTO_BENCH_FILE="$report" xcrun simctl launch "$device" com.millzach.sotto.ios \
@@ -58,21 +61,35 @@ journey() {
 }
 arm() {
     case "$1" in
-        base) journey "$2" "$3" ;;
-        turns3) journey "$2" "$3" --bench-open-turns 3 ;;
-        turns1) journey "$2" "$3" --bench-open-turns 1 ;;
-        hold) journey "$2" "$3" --bench-hold-early ;;
+        base) ag_async=; journey "$2" "$3" ;;
+        keep) ag_async=; journey "$2" "$3" --bench-keep-list ;;
+        sync) ag_async=0; journey "$2" "$3" ;;
     esac
 }
+
+# Whether this runtime's AttributeGraph reads the setting the sync arm uses, and what else it reads.
+runtime_root=$(python3 - "$out" "$2" <<'PY'
+import json, sys
+from pathlib import Path
+runtimes = json.loads((Path(sys.argv[1]) / 'runtimes.json').read_text())['runtimes']
+print(next(r['runtimeRoot'] for r in runtimes if r['identifier'] == sys.argv[2]))
+PY
+)
+{
+    echo "$runtime_root"
+    find "$runtime_root/System/Library/PrivateFrameworks/AttributeGraph.framework" -type f -maxdepth 2 2>/dev/null \
+        | while read -r file; do LC_ALL=C grep -a -o 'AG_[A-Z_]*' "$file" 2>/dev/null; done | sort -u
+    find "$runtime_root/../../../../Caches/dyld" /Library/Developer/CoreSimulator/Caches/dyld -type f -name 'dyld_sim_shared_cache_*' 2>/dev/null \
+        | while read -r file; do echo "$file"; LC_ALL=C grep -a -o 'AG_[A-Z_]\{3,\}' "$file" 2>/dev/null | sort -u; done
+} > "$out/ag-settings.txt" 2>&1 || true
 
 round=1
 while [ "$round" -le "$rounds" ]; do
     if [ $(( ($(date +%s) - start) / 60 )) -ge "$limit" ]; then echo "Stopped before round $round: past $limit minutes."; break; fi
-    case $((round % 4)) in
-        1) order="base turns3 turns1 hold" ;;
-        2) order="hold base turns3 turns1" ;;
-        3) order="turns1 hold base turns3" ;;
-        0) order="turns3 turns1 hold base" ;;
+    case $((round % 3)) in
+        1) order="base keep sync" ;;
+        2) order="sync base keep" ;;
+        0) order="keep sync base" ;;
     esac
     for side in $order; do
         for run in 1 2; do arm "$side" "$out/$side-$round-$run.json" 180; done
@@ -87,9 +104,13 @@ while [ "$round" -le "$rounds" ]; do
 done
 
 # Where the main thread went, named while the build's images are installed. The sampled journeys aren't timed.
-for name in base-1 base-2 turns1-1; do
-    side=${name%-*}
-    journey "$out/sampled-$name.json" 300 --bench-sample "$out/sampled-$name.samples.txt" $(case "$side" in turns1) echo --bench-open-turns 1 ;; esac)
+ag_async=
+sampled() {
+    name=$1; shift
+    journey "$out/sampled-$name.json" 300 --bench-sample "$out/sampled-$name.samples.txt" "$@"
     [ -f "$out/sampled-$name.samples.txt" ] && python3 "$root/apps/ios/Scripts/bench-sample.py" "$out/sampled-$name.samples.txt" > "$out/trace-$name.md" 2> "$out/trace-$name.log"
-done
+}
+sampled base-1
+sampled base-2
+sampled turns1-1 --bench-open-turns 1
 xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true

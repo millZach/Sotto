@@ -52,6 +52,27 @@ private struct SettledSearchKey: Hashable {
     let query: String; let show: ComputerFilter; let sources: [String]
 }
 
+/// The list the Threads page last drew, handed back whole while the list made now would draw the same. SwiftUI asks the
+/// list's `==` only once it has read the list's type, on a queue of its own: until then it compares the two values
+/// byte for byte, a list made again never matches, and every row draws again with every update to any thread. That can
+/// last for the first seconds after launch or for minutes. The very same value matches either way (#2120).
+private final class KeptList {
+    private var kept: ThreadListSections?
+    /// The hold `kept` stands for: a list held from one moment is the same list, so its rows aren't read again.
+    private var hold: UUID?
+    @MainActor func list(_ made: ThreadListSections) -> ThreadListSections {
+        defer { hold = made.drawing }
+        if let kept {
+            if let held = made.drawing, held == hold { return kept }
+            if kept == made { return kept }
+        }
+        var list = made
+        if list.drawing == nil { list.drawing = UUID() }
+        kept = list
+        return list
+    }
+}
+
 /// The search field's frame, kept outside SwiftUI's state so scrolling doesn't redraw the page.
 private final class FrameBox {
     var frame: CGRect = .zero
@@ -77,6 +98,7 @@ struct ThreadsView: View {
     /// lets go as it starts to come back, at the start of a swipe back or a press on Back and before that first frame,
     /// so it never shows an old row.
     @State private var held: HeldList?
+    @State private var keptList = KeptList()
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -245,10 +267,11 @@ struct ThreadsView: View {
     /// November 1).
     @ViewBuilder private func list(_ groups: FocusThreads, _ shelf: Shelf) -> some View {
         if groups.isEmpty && !shows(shelf, settled: groups.settled, groups) { empty(groups) }
-        ThreadListSections(groups: groups, watch: held?.watch ?? model.listWatch(groups), shelfOffers: held?.shelfOffers ?? model.shelfOffers(groups), held: held?.id, open: open,
-                           setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
-                           shelve: { row, action in Task { await model.shelve(row.ref, action) } })
-            .equatable()
+        let made = ThreadListSections(groups: groups, watch: held?.watch ?? model.listWatch(groups), shelfOffers: held?.shelfOffers ?? model.shelfOffers(groups), drawing: held?.id, open: open,
+                                      setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
+                                      shelve: { row, action in Task { await model.shelve(row.ref, action) } })
+        let drawnList = BenchOpen.keepsList ? keptList.list(made) : made
+        drawnList.equatable()
         if shows(shelf, settled: groups.settled, groups) {
             if groups.searching {
                 ThreadListHeading(title: String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: groups.settled.count + shelf.older.count, id: "settled")

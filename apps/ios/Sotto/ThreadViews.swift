@@ -1252,7 +1252,8 @@ private struct MessageView: View, Equatable {
     @Environment(\.sottoDensity) private var density
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
-        a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
+        BenchProbe.count("eq.MessageView")
+        return a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
     }
     var body: some View {
         let _ = BenchProbe.body("MessageView")

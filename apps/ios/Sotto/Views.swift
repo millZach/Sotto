@@ -721,8 +721,8 @@ struct ThreadListSections: View, Equatable {
     var chosen: ThreadRef? = nil
     /// Each row's identifier starts with this: `thread-` on the Threads page, `sidebar-thread-` beside a thread.
     var identifier = "thread-"
-    /// Set while the Threads page holds the list it drew as it went out of sight (`ThreadsView`): one hold is one list.
-    var held: UUID? = nil
+    /// One drawing is one list: set by the Threads page (`ThreadsView`), for the list it keeps and for one it holds.
+    var drawing: UUID? = nil
     let open: (ThreadRef) -> Void
     /// Watch or Stop watching, pressed on a row.
     let setWatched: (HostedThread, Bool) -> Void
@@ -760,8 +760,11 @@ struct ThreadListSections: View, Equatable {
     /// a row shows, or a row keeps old words. The closures never change what it draws. A list held from one moment is
     /// the same list, so two of the same hold are equal without reading their rows.
     static func == (lhs: ThreadListSections, rhs: ThreadListSections) -> Bool {
-        if let held = lhs.held, held == rhs.held { return true }
-        return lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && lhs.shelfOffers == rhs.shelfOffers && drawn(lhs.groups) == drawn(rhs.groups)
+        BenchProbe.count("eq.ThreadListSections")
+        if let drawing = lhs.drawing, drawing == rhs.drawing { BenchProbe.count("eq.ThreadListSections.equal"); return true }
+        let equal = lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && lhs.shelfOffers == rhs.shelfOffers && drawn(lhs.groups) == drawn(rhs.groups)
+        if equal { BenchProbe.count("eq.ThreadListSections.equal") }
+        return equal
     }
     private static func drawn(_ groups: FocusThreads) -> [String] {
         func rows(_ section: String, _ rows: [HostedThread]) -> [String] {
