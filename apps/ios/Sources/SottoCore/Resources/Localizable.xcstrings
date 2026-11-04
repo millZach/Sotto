@@ -28336,6 +28336,198 @@
         }
       }
     },
+    "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you." : {
+      "comment" : "What a Codex thread does under Allow actions. Allow edits is the name of another permission mode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مثل «السماح بالتعديلات»، لكن مراجِع Codex الخاص، وهو نموذج تشغّله OpenAI، يجيب عمّا كان سيصل إليك."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সম্পাদনার অনুমতি-র মতোই, তবে যা আপনার কাছে আসত তার উত্তর দেয় Codex-এর নিজস্ব রিভিউয়ার, OpenAI-এর চালানো একটি মডেল।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jako Povolit úpravy, ale na to, co by šlo za vámi, odpovídá vlastní kontrolor Codexu, model provozovaný OpenAI."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Som Tillad redigeringer, men Codex’ egen granskning, en model som OpenAI kører, svarer på det, der ellers ville komme til dig."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie Bearbeiten erlauben, aber Codex’ eigener Prüfer, ein Modell von OpenAI, beantwortet, was sonst zu dir käme."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Όπως το «Επιτρέπονται επεξεργασίες», αλλά σε ό,τι θα ερχόταν σε εσάς απαντά ο δικός ελεγκτής του Codex, ένα μοντέλο που εκτελεί η OpenAI."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como Permitir ediciones, pero el revisor propio de Codex, un modelo que ejecuta OpenAI, responde lo que te llegaría a ti."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como Permitir ediciones, pero el revisor propio de Codex, un modelo que ejecuta OpenAI, responde lo que te llegaría a ti."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como Permitir ediciones, pero el revisor propio de Codex, un modelo que ejecuta OpenAI, responde lo que te llegaría a ti."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuten Salli muokkaukset, mutta Codexin oma tarkastaja, OpenAI:n ajama malli, vastaa siihen, mikä muuten tulisi sinulle."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comme Autoriser les modifications, mais le propre vérificateur de Codex, un modèle exécuté par OpenAI, répond à ce qui vous reviendrait."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एडिट की अनुमति दें जैसा ही, लेकिन जो आपके पास आता उसका जवाब Codex का अपना समीक्षक देता है, जो OpenAI द्वारा चलाया जाने वाला एक मॉडल है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mint a Szerkesztések engedélyezése, de arra, ami hozzád kerülne, a Codex saját ellenőrzője, egy OpenAI által futtatott modell válaszol."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Come Consenti modifiche, ma il revisore di Codex, un modello gestito da OpenAI, risponde a ciò che arriverebbe a te."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編集を許可と同じですが、あなたに届くはずの確認には、OpenAI が動かすモデルである Codex 独自のレビュアーが答えます。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एडिटला परवानगी द्या सारखेच, पण जे तुमच्याकडे आले असते त्याचे उत्तर Codex चा स्वतःचा परीक्षक देतो, जो OpenAI चालवत असलेला एक मॉडेल आहे."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Som Tillat endringer, men Codex’ egen kontrollør, en modell som OpenAI kjører, svarer på det som ellers ville kommet til deg."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoals Sta bewerkingen toe, maar Codex’ eigen beoordelaar, een model van OpenAI, beantwoordt wat anders bij jou zou komen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jak Zezwalaj na edycje, ale na to, co trafiłoby do ciebie, odpowiada własny recenzent Codexa, model uruchamiany przez OpenAI."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como Permitir edições, mas o revisor próprio do Codex, um modelo executado pela OpenAI, responde ao que chegaria a você."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como Permitir edições, mas o revisor próprio do Codex, um modelo executado pela OpenAI, responde ao que lhe chegaria a si."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ca Permite editările, dar recenzentul propriu al Codex, un model rulat de OpenAI, răspunde la ce ar ajunge la tine."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Som Tillåt ändringar, men Codex egen granskare, en modell som OpenAI kör, svarar på det som annars skulle komma till dig."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "திருத்தங்களை அனுமதிப்பது போலவே, ஆனால் உங்களிடம் வர வேண்டியதற்கு Codex-இன் சொந்த மதிப்பாய்வாளர், OpenAI இயக்கும் ஒரு மாடல், பதிலளிக்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "సవరణలను అనుమతించడం లాగే, కానీ మీకు రావాల్సిన వాటికి Codex సొంత సమీక్షకుడు, OpenAI నడిపే ఒక మోడల్, సమాధానం ఇస్తుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Düzenlemelere izin ver gibi, ancak size gelecek olanları Codex’in kendi denetçisi, OpenAI’ın çalıştırdığı bir model yanıtlar."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Як «Дозволити редагування», але на те, що надійшло б вам, відповідає власний рецензент Codex — модель, яку запускає OpenAI."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ترامیم کی اجازت جیسا ہی، لیکن جو آپ کے پاس آتا اس کا جواب Codex کا اپنا جائزہ کار دیتا ہے، جو OpenAI کا چلایا ہوا ایک ماڈل ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与“允许编辑”相同，但本应交给你的事项由 Codex 自己的审查器回答，它是 OpenAI 运行的一个模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "與「允許編輯」相同，但本應交給你的事項由 Codex 自己的審查器回答，它是 OpenAI 執行的一個模型。"
+          }
+        }
+      }
+    },
     "Ask before actions" : {
       "comment" : "A new thread's permission: the agent asks before it acts",
       "extractionState" : "manual",
@@ -33697,6 +33889,774 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "程式碼審查"
+          }
+        }
+      }
+    },
+    "Codex asks before every command, even one that only reads, and before every edit." : {
+      "comment" : "What a Codex thread does under Ask before actions.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يسأل Codex قبل كل أمر، حتى الأمر الذي يقرأ فقط، وقبل كل تعديل."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex প্রতিটি কমান্ডের আগে জিজ্ঞাসা করে, এমনকি যেটি শুধু পড়ে সেটির আগেও, আর প্রতিটি সম্পাদনার আগে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex se ptá před každým příkazem, i takovým, který jen čte, a před každou úpravou."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex spørger før hver kommando, også en der kun læser, og før hver redigering."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex fragt vor jedem Befehl, auch einem, der nur liest, und vor jeder Bearbeitung."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Codex ρωτά πριν από κάθε εντολή, ακόμη και μία που μόνο διαβάζει, και πριν από κάθε επεξεργασία."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex asks before every command, even one that only reads, and before every edit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex pregunta antes de cada comando, incluso uno que solo lee, y antes de cada edición."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex pregunta antes de cada comando, incluso uno que solo lee, y antes de cada edición."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex pregunta antes de cada comando, incluso uno que solo lee, y antes de cada edición."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex kysyy ennen jokaista komentoa, myös pelkästään lukevaa, ja ennen jokaista muokkausta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex demande avant chaque commande, même une commande qui ne fait que lire, et avant chaque modification."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex हर कमांड से पहले पूछता है, उस कमांड से भी जो सिर्फ़ पढ़ती है, और हर एडिट से पहले।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Codex minden parancs előtt kérdez, még az olyan előtt is, amely csak olvas, és minden szerkesztés előtt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex chiede prima di ogni comando, anche di uno che si limita a leggere, e prima di ogni modifica."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex は、読み取るだけのコマンドも含めてすべてのコマンドの前と、すべての編集の前に確認します。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex प्रत्येक कमांडआधी विचारतो, फक्त वाचणाऱ्या कमांडआधीही, आणि प्रत्येक एडिटआधी."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex spør før hver kommando, også en som bare leser, og før hver endring."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex vraagt het vóór elke opdracht, ook een die alleen leest, en vóór elke bewerking."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex pyta przed każdym poleceniem, nawet takim, które tylko czyta, i przed każdą edycją."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Codex pergunta antes de cada comando, mesmo um que só lê, e antes de cada edição."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Codex pergunta antes de cada comando, mesmo um que apenas lê, e antes de cada edição."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex întreabă înainte de fiecare comandă, chiar și una care doar citește, și înainte de fiecare editare."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex frågar före varje kommando, även ett som bara läser, och före varje ändring."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "படிக்க மட்டுமே செய்யும் கட்டளை உட்பட ஒவ்வொரு கட்டளைக்கும் முன்பும், ஒவ்வொரு திருத்தத்துக்கும் முன்பும் Codex கேட்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "చదవడం మాత్రమే చేసే కమాండ్‌తో సహా ప్రతి కమాండ్‌కు ముందు, ప్రతి సవరణకు ముందు Codex అడుగుతుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex, yalnızca okuyan bir komut bile olsa her komuttan ve her düzenlemeden önce sorar."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex питає перед кожною командою, навіть такою, що лише читає, і перед кожним редагуванням."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex ہر کمانڈ سے پہلے پوچھتا ہے، اس کمانڈ سے بھی جو صرف پڑھتی ہے، اور ہر ترمیم سے پہلے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 在每条命令之前都会询问，即使命令只是读取，也会在每次编辑之前询问。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 在每個命令之前都會詢問，即使命令只是讀取，也會在每次編輯之前詢問。"
+          }
+        }
+      }
+    },
+    "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing." : {
+      "comment" : "What a Codex thread does under Allow edits.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعدّل Codex الملفات ويشغّل الأوامر في المشروع دون سؤال. ويسأل قبل الاتصال بالإنترنت أو العمل خارج المشروع أو إجراء commit."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex জিজ্ঞাসা না করে প্রজেক্টে ফাইল সম্পাদনা করে ও কমান্ড চালায়। অনলাইনে যাওয়া, প্রজেক্টের বাইরে কিছু করা বা কমিট করার আগে জিজ্ঞাসা করে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex upravuje soubory a spouští příkazy v projektu bez ptaní. Ptá se před přístupem na internet, prací mimo projekt nebo commitem."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex redigerer filer og kører kommandoer i projektet uden at spørge. Den spørger, før den går online, uden for projektet eller laver et commit."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex bearbeitet Dateien und führt Befehle im Projekt ohne Nachfrage aus. Es fragt, bevor es online geht, außerhalb des Projekts arbeitet oder committet."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Codex επεξεργάζεται αρχεία και εκτελεί εντολές στο έργο χωρίς να ρωτά. Ρωτά πριν βγει στο διαδίκτυο, πριν δουλέψει έξω από το έργο ή πριν κάνει commit."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex edita archivos y ejecuta comandos en el proyecto sin preguntar. Pregunta antes de conectarse a internet, salir del proyecto o hacer un commit."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex edita archivos y ejecuta comandos en el proyecto sin preguntar. Pregunta antes de conectarse a internet, salir del proyecto o hacer un commit."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex edita archivos y ejecuta comandos en el proyecto sin preguntar. Pregunta antes de conectarse a internet, salir del proyecto o hacer un commit."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex muokkaa tiedostoja ja suorittaa komentoja projektissa kysymättä. Se kysyy ennen kuin menee verkkoon, projektin ulkopuolelle tai tekee commitin."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex modifie les fichiers et exécute des commandes dans le projet sans demander. Il demande avant d’aller en ligne, de sortir du projet ou de faire un commit."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex बिना पूछे प्रोजेक्ट में फ़ाइलें एडिट करता है और कमांड चलाता है। ऑनलाइन जाने, प्रोजेक्ट से बाहर जाने या कमिट करने से पहले पूछता है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Codex kérdezés nélkül szerkeszt fájlokat és futtat parancsokat a projektben. Kérdez, mielőtt internetre menne, kilépne a projektből vagy commitolna."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex modifica i file ed esegue comandi nel progetto senza chiedere. Chiede prima di andare online, uscire dal progetto o fare un commit."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex はプロジェクト内で確認なしにファイルを編集し、コマンドを実行します。オンラインへの接続、プロジェクト外での操作、コミットの前には確認します。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex न विचारता प्रोजेक्टमध्ये फाइल्स एडिट करतो आणि कमांड चालवतो. ऑनलाइन जाण्याआधी, प्रोजेक्टबाहेर जाण्याआधी किंवा कमिट करण्याआधी विचारतो."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex endrer filer og kjører kommandoer i prosjektet uten å spørre. Den spør før den går på nettet, utenfor prosjektet eller lager en commit."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex bewerkt bestanden en voert opdrachten uit in het project zonder te vragen. Het vraagt het voordat het online gaat, buiten het project werkt of een commit maakt."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex edytuje pliki i uruchamia polecenia w projekcie bez pytania. Pyta, zanim połączy się z internetem, wyjdzie poza projekt lub zrobi commit."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Codex edita arquivos e executa comandos no projeto sem perguntar. Ele pergunta antes de acessar a internet, sair do projeto ou fazer um commit."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Codex edita ficheiros e executa comandos no projeto sem perguntar. Pergunta antes de aceder à internet, sair do projeto ou fazer um commit."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex editează fișiere și rulează comenzi în proiect fără să întrebe. Întreabă înainte să intre online, să iasă din proiect sau să facă un commit."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex ändrar filer och kör kommandon i projektet utan att fråga. Den frågar innan den går ut på nätet, utanför projektet eller gör en commit."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex கேட்காமலேயே ப்ராஜெக்ட்டில் கோப்புகளைத் திருத்தி, கட்டளைகளை இயக்கும். ஆன்லைனுக்குச் செல்லும் முன், ப்ராஜெக்ட்டுக்கு வெளியே செல்லும் முன் அல்லது கமிட் செய்யும் முன் கேட்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex అడగకుండానే ప్రాజెక్ట్‌లో ఫైళ్లను సవరిస్తుంది, కమాండ్‌లను అమలు చేస్తుంది. ఆన్‌లైన్‌కు వెళ్లే ముందు, ప్రాజెక్ట్ బయటకు వెళ్లే ముందు లేదా కమిట్ చేసే ముందు అడుగుతుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex projede sormadan dosyaları düzenler ve komutları çalıştırır. İnternete çıkmadan, projenin dışına çıkmadan veya commit yapmadan önce sorar."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex редагує файли й виконує команди в проєкті без запиту. Він питає, перш ніж вийти в інтернет, за межі проєкту чи зробити коміт."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex بغیر پوچھے پروجیکٹ میں فائلیں ترمیم کرتا اور کمانڈز چلاتا ہے۔ آن لائن جانے، پروجیکٹ سے باہر جانے یا کمٹ کرنے سے پہلے پوچھتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 无需询问即可在项目中编辑文件和运行命令。在联网、在项目外操作或提交之前会询问。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 不必詢問即可在專案中編輯檔案和執行命令。在連網、在專案外操作或提交之前會詢問。"
+          }
+        }
+      }
+    },
+    "Codex runs any command and edits any file without asking, anywhere on %@ and online." : {
+      "comment" : "What a Codex thread does under Full access. %@ is the computer's name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يشغّل Codex أي أمر ويعدّل أي ملف دون سؤال، في أي مكان على %@ وعلى الإنترنت."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex জিজ্ঞাসা না করে যেকোনো কমান্ড চালায় ও যেকোনো ফাইল সম্পাদনা করে, %@-এর যেকোনো জায়গায় এবং অনলাইনে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex spustí jakýkoli příkaz a upraví jakýkoli soubor bez ptaní, kdekoli na %@ i online."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex kører enhver kommando og redigerer enhver fil uden at spørge, overalt på %@ og online."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex führt jeden Befehl aus und bearbeitet jede Datei ohne Nachfrage, überall auf %@ und online."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Codex εκτελεί οποιαδήποτε εντολή και επεξεργάζεται οποιοδήποτε αρχείο χωρίς να ρωτά, οπουδήποτε στο %@ και στο διαδίκτυο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex runs any command and edits any file without asking, anywhere on %@ and online."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex ejecuta cualquier comando y edita cualquier archivo sin preguntar, en cualquier parte de %@ y en internet."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex ejecuta cualquier comando y edita cualquier archivo sin preguntar, en cualquier parte de %@ y en internet."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex ejecuta cualquier comando y edita cualquier archivo sin preguntar, en cualquier parte de %@ y en internet."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex suorittaa minkä tahansa komennon ja muokkaa mitä tahansa tiedostoa kysymättä, missä tahansa laitteella %@ ja verkossa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex exécute n’importe quelle commande et modifie n’importe quel fichier sans demander, partout sur %@ et en ligne."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex बिना पूछे कोई भी कमांड चलाता है और कोई भी फ़ाइल एडिट करता है, %@ पर कहीं भी और ऑनलाइन।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Codex kérdezés nélkül bármilyen parancsot futtat és bármilyen fájlt szerkeszt, bárhol a(z) %@ gépen és online."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex esegue qualsiasi comando e modifica qualsiasi file senza chiedere, ovunque su %@ e online."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex は確認なしに、%@ のどこでも、またオンラインでも、あらゆるコマンドを実行し、あらゆるファイルを編集します。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex न विचारता कोणतीही कमांड चालवतो आणि कोणतीही फाइल एडिट करतो, %@ वर कुठेही आणि ऑनलाइन."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex kjører enhver kommando og endrer enhver fil uten å spørre, hvor som helst på %@ og på nettet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex voert elke opdracht uit en bewerkt elk bestand zonder te vragen, overal op %@ en online."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex uruchamia dowolne polecenie i edytuje dowolny plik bez pytania, w dowolnym miejscu na %@ i w internecie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Codex executa qualquer comando e edita qualquer arquivo sem perguntar, em qualquer lugar de %@ e na internet."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Codex executa qualquer comando e edita qualquer ficheiro sem perguntar, em qualquer lugar de %@ e na internet."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex rulează orice comandă și editează orice fișier fără să întrebe, oriunde pe %@ și online."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex kör vilket kommando som helst och ändrar vilken fil som helst utan att fråga, var som helst på %@ och på nätet."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex கேட்காமலேயே எந்தக் கட்டளையையும் இயக்கி, எந்தக் கோப்பையும் திருத்தும், %@ இல் எங்கும் ஆன்லைனிலும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex అడగకుండానే ఏ కమాండ్‌నైనా అమలు చేస్తుంది, ఏ ఫైల్‌నైనా సవరిస్తుంది, %@‌లో ఎక్కడైనా, ఆన్‌లైన్‌లోనూ."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex, %@ üzerinde her yerde ve çevrimiçi olarak, sormadan herhangi bir komutu çalıştırır ve herhangi bir dosyayı düzenler."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex виконує будь-яку команду й редагує будь-який файл без запиту, будь-де на %@ і в інтернеті."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex بغیر پوچھے کوئی بھی کمانڈ چلاتا اور کوئی بھی فائل ترمیم کرتا ہے، %@ پر کہیں بھی اور آن لائن۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 无需询问即可运行任何命令、编辑任何文件，范围是 %@ 上的任何位置以及网络。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 不必詢問即可執行任何命令、編輯任何檔案，範圍是 %@ 上的任何位置以及網路。"
+          }
+        }
+      }
+    },
+    "Codex’s reviewer still answers what would come to you until it confirms." : {
+      "comment" : "Said while a Codex thread waits to leave Allow actions.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يظل مراجِع Codex يجيب عمّا كان سيصل إليك حتى يؤكد."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "নিশ্চিত না করা পর্যন্ত যা আপনার কাছে আসত তার উত্তর Codex-এর রিভিউয়ারই দিতে থাকবে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na to, co by šlo za vámi, dál odpovídá kontrolor Codexu, dokud to nepotvrdí."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’ granskning svarer stadig på det, der ellers ville komme til dig, indtil den bekræfter."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’ Prüfer beantwortet weiter, was sonst zu dir käme, bis die Änderung bestätigt ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο ελεγκτής του Codex εξακολουθεί να απαντά σε ό,τι θα ερχόταν σε εσάς μέχρι να το επιβεβαιώσει."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’s reviewer still answers what would come to you until it confirms."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El revisor de Codex sigue respondiendo lo que te llegaría a ti hasta que lo confirme."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El revisor de Codex sigue respondiendo lo que te llegaría a ti hasta que lo confirme."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El revisor de Codex sigue respondiendo lo que te llegaría a ti hasta que lo confirme."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codexin tarkastaja vastaa yhä siihen, mikä muuten tulisi sinulle, kunnes se vahvistaa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le vérificateur de Codex répond toujours à ce qui vous reviendrait jusqu’à sa confirmation."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पुष्टि होने तक जो आपके पास आता उसका जवाब Codex का समीक्षक ही देता रहेगा।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arra, ami hozzád kerülne, továbbra is a Codex ellenőrzője válaszol, amíg meg nem erősíti."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il revisore di Codex continua a rispondere a ciò che arriverebbe a te finché non conferma."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認されるまで、あなたに届くはずの確認には引き続き Codex のレビュアーが答えます。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पुष्टी होईपर्यंत जे तुमच्याकडे आले असते त्याचे उत्तर Codex चा परीक्षकच देत राहतो."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’ kontrollør svarer fortsatt på det som ellers ville kommet til deg, til den bekrefter."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’ beoordelaar beantwoordt nog steeds wat anders bij jou zou komen, tot het is bevestigd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na to, co trafiłoby do ciebie, nadal odpowiada recenzent Codexa, dopóki nie potwierdzi."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O revisor do Codex continua respondendo ao que chegaria a você até confirmar."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O revisor do Codex continua a responder ao que lhe chegaria a si até confirmar."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recenzentul Codex răspunde în continuare la ce ar ajunge la tine până confirmă."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex granskare svarar fortfarande på det som annars skulle komma till dig tills den bekräftar."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "உறுதிப்படுத்தும் வரை, உங்களிடம் வர வேண்டியதற்கு Codex-இன் மதிப்பாய்வாளரே பதிலளிக்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ధృవీకరించే వరకు, మీకు రావాల్సిన వాటికి Codex సమీక్షకుడే సమాధానం ఇస్తూ ఉంటుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’in denetçisi, onaylayana kadar size gelecek olanları yanıtlamaya devam eder."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На те, що надійшло б вам, і далі відповідає рецензент Codex, доки не підтвердить."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تصدیق ہونے تک جو آپ کے پاس آتا اس کا جواب Codex کا جائزہ کار ہی دیتا رہے گا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在确认之前，本应交给你的事项仍由 Codex 的审查器回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在確認之前，本應交給你的事項仍由 Codex 的審查器回答。"
           }
         }
       }

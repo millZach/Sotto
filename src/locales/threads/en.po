@@ -1954,6 +1954,10 @@ msgstr "Arrange in a single row"
 msgid "Arrow"
 msgstr "Arrow"
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+msgstr "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Ask about your threads, or say what to start or send"
 msgstr "Ask about your threads, or say what to start or send"
@@ -2667,10 +2671,31 @@ msgstr "Code"
 msgid "Code from the {sourceName} page"
 msgstr "Code from the {sourceName} page"
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex asks before every command, even one that only reads, and before every edit."
+msgstr "Codex asks before every command, even one that only reads, and before every edit."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
+msgstr "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
+
 #. A tip under a working Codex thread.
 #: src/renderer/src/agents/tips.tsx
 msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
 msgstr "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
+
+#. {computer} is the name of the computer the thread runs on, such as forge.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+msgstr "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+msgstr "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex’s reviewer still answers what would come to you until it confirms."
+msgstr "Codex’s reviewer still answers what would come to you until it confirms."
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Collapse question"
