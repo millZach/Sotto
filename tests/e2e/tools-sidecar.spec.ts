@@ -310,7 +310,7 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
 
     const setWidth = async (width: Width): Promise<void> => {
       const measured = await page.locator('.thread-workspace__body').evaluate(element => element.clientWidth)
-      const target = width === 'minimum' ? MIN_WIDTH : width === 'wide' ? MIN_WIDTH + WIDE_STEPS * STEP : Math.min(1200, Math.max(MIN_WIDTH, measured * .5))
+      const target = width === 'minimum' ? MIN_WIDTH : width === 'wide' ? MIN_WIDTH + WIDE_STEPS * STEP : Math.min(1200, Math.max(MIN_WIDTH, measured * .56))
       await separator.focus()
       await page.keyboard.press('Home')
       for (let step = 0; step < Math.round((target - MIN_WIDTH) / STEP); step++) {
