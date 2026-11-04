@@ -8,13 +8,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TeamService, type TeamCredentials, type TeamTailscale } from '../../src/main/teams/teams'
 import { REMOTE_COMMANDS } from '../../src/host/remoteCommands'
 import { agentCommandSchema } from '../../src/shared/agents'
-import { TEAM_ANSWERS_PER_BURST, TEAM_ANSWERS_PER_DAY, TEAM_BURST_MS, TEAM_LINK_LIFETIME_MS, TEAM_RELISTEN_MS, TEAM_ROUTE, TEAM_WIRE_COMMANDS, parseTeamCode, type TeamThreadFact } from '../../src/shared/teams'
+import { TEAM_ANSWERS_PER_BURST, TEAM_ANSWERS_PER_DAY, TEAM_BURST_MS, TEAM_DESK_BYTES_MAX, TEAM_DESK_READS_PER_BURST, TEAM_LINK_LIFETIME_MS, TEAM_RELISTEN_MS, TEAM_ROUTE, TEAM_WIRE_COMMANDS, parseTeamCode, type TeamThreadFact } from '../../src/shared/teams'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
 const FACTS: readonly TeamThreadFact[] = [
-  { project: 'Sotto', projectKey: 'h1 sotto', title: 'iPhone thread list', stands: 'working', pullRequests: [{ number: 2031, title: 'Fix the list', state: 'open', draft: false }] },
+  { project: 'Sotto', projectKey: 'h1 sotto', title: 'iPhone thread list', stands: 'working', pullRequests: [{ key: 'owner/secret-repo#2031', number: 2031, title: 'Fix the list', state: 'open', draft: false, checks: 'passed', checksPassedAt: '2026-11-04T01:00:00.000Z' }] },
   { project: 'Client work', projectKey: 'h1 client', title: 'Payroll for a client', stands: 'idle', pullRequests: [] },
 ]
 
@@ -44,13 +44,13 @@ const memoryCredentials = (): TeamCredentials => {
   return { available: () => true, get: slot => values.get(slot) ?? '', set: async (slot, value) => { if (value) values.set(slot, value); else values.delete(slot) } }
 }
 
-async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly keepHistory?: boolean; readonly fetch?: typeof fetch; readonly up?: () => boolean } = {}) {
+async function computer(net: Tailnet, name: string, overrides: { readonly write?: (prompt: { instruction: string; material: string }) => Promise<string | null>; readonly now?: () => number; readonly dnsName?: string; readonly threads?: readonly TeamThreadFact[]; readonly beyondCap?: number; readonly keepHistory?: boolean; readonly fetch?: typeof fetch; readonly up?: () => boolean } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-teams-'))
   const write = vi.fn(overrides.write ?? (async () => `${name} says hello`))
-  const threads = vi.fn(() => overrides.threads ?? FACTS)
+  const threads = vi.fn((): readonly TeamThreadFact[] => overrides.threads ?? FACTS)
   const dnsName = overrides.dnsName ?? `${name}.tail1.ts.net`
   const ts = tailscale(net, dnsName, overrides.up), events: string[] = []
-  const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: ts, threads, projects: () => [{ key: 'h1 sotto', title: 'Sotto', machine: null }], write, anchor: () => 'message-1',
+  const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: ts, threads: () => ({ threads: threads(), beyondCap: overrides.beyondCap ?? 0 }), projects: () => [{ key: 'h1 sotto', title: 'Sotto', machine: null }], write, anchor: () => 'message-1',
     keepHistory: () => overrides.keepHistory !== false, openExternal: async () => undefined, hostname: () => name, fetch: overrides.fetch ?? net.fetchFor(name), log: event => { events.push(event) }, ...overrides.now ? { now: overrides.now } : {} })
   await service.start()
   cleanups.push(async () => { await service.close(); await rm(directory, { recursive: true, force: true }) })
@@ -182,7 +182,7 @@ describe('linking', () => {
     const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
     await linked(net, zach, drake)
     await zach.service.close()
-    const stopped = new TeamService({ directory: zach.directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net', () => false), threads: () => FACTS, projects: () => [], write: async () => null, anchor: () => null,
+    const stopped = new TeamService({ directory: zach.directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net', () => false), threads: () => ({ threads: FACTS, beyondCap: 0 }), projects: () => [], write: async () => null, anchor: () => null,
       keepHistory: () => true, openExternal: async () => undefined, hostname: () => 'zach', fetch: net.fetchFor('zach') })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
@@ -229,7 +229,7 @@ describe('linking', () => {
 })
 
 describe('the closed list', () => {
-  it('holds exactly three commands', () => { expect([...TEAM_WIRE_COMMANDS].sort()).toEqual(['ask', 'link-again', 'redeem-code']) })
+  it('holds exactly four commands', () => { expect([...TEAM_WIRE_COMMANDS].sort()).toEqual(['ask', 'link-again', 'read-desk', 'redeem-code']) })
 
   it('refuses every command outside it, with a good token, and reaches nothing', async () => {
     const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
@@ -401,7 +401,7 @@ describe('a teammate\'s words', () => {
     let keep = true
     const net = new Tailnet(), drake = await computer(net, 'drake'), directory = await mkdtemp(join(tmpdir(), 'sotto-teams-'))
     cleanups.push(() => rm(directory, { recursive: true, force: true }))
-    const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net'), threads: () => FACTS, projects: () => [], write: async () => 'hello', anchor: () => null,
+    const service = new TeamService({ directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net'), threads: () => ({ threads: FACTS, beyondCap: 0 }), projects: () => [], write: async () => 'hello', anchor: () => null,
       keepHistory: () => keep, openExternal: async () => undefined, hostname: () => 'zach', fetch: net.fetchFor('zach') })
     await service.start()
     cleanups.push(() => service.close())
@@ -418,7 +418,7 @@ describe('a teammate\'s words', () => {
     keep = false
     // Main's privacy pass also runs before Teams has started, and must not write over links it has not read.
     await service.close()
-    const again = new TeamService({ directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net'), threads: () => FACTS, projects: () => [], write: async () => 'hello', anchor: () => null,
+    const again = new TeamService({ directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net'), threads: () => ({ threads: FACTS, beyondCap: 0 }), projects: () => [], write: async () => 'hello', anchor: () => null,
       keepHistory: () => keep, openExternal: async () => undefined, hostname: () => 'zach', fetch: net.fetchFor('zach') })
     again.privacyChanged()
     await again.start()
@@ -557,5 +557,151 @@ describe('the module\'s reach', () => {
       .flatMap(text => [...text.matchAll(/from '([^']+)'/gu)].map(match => match[1]!))
     const local = [...new Set(imports.filter(item => item.startsWith('.')))].sort()
     expect(local).toEqual(['../../shared/teams', '../agents/pairing', '../ipc/registerIpc', '../phones/tailscale', '../storage/atomicJsonStore', './teamAnswers', './teamListener', './teams'])
+  })
+})
+
+describe('two desks (ADR-0189)', () => {
+  it('reads a desk on a press, with no model, and nothing reaches Watcher', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    zach.write.mockClear(); drake.write.mockClear()
+    const anchors = drake.service.get().messages.length
+    const linkId = zach.service.get().links[0]!.id
+    expect(await zach.service.command({ type: 'read-desk', linkId })).toEqual({ status: 'ok' })
+    expect(net.sent).toHaveLength(1)
+    expect(JSON.parse(net.sent[0]!.body)).toEqual({ command: 'read-desk' })
+    expect(drake.write).not.toHaveBeenCalled()
+    const read = zach.service.get().desks[linkId]!
+    expect(read.desk.threads.map(thread => thread.title)).toEqual(['iPhone thread list', 'Payroll for a client'])
+    expect(read.desk.threads[0]!.pullRequests[0]).toEqual({ id: expect.stringMatching(/^[0-9a-f]{16}$/u), number: 2031, title: 'Fix the list', draft: false, checks: 'passed', checksPassedAt: '2026-11-04T01:00:00.000Z' })
+    expect(JSON.stringify(read.desk)).not.toContain('h1 sotto')
+    expect(JSON.stringify(read.desk)).not.toContain('secret-repo')
+    // No teammate's message on either side, so Watcher has nothing to be told of or to read.
+    expect(drake.service.get().messages).toHaveLength(anchors)
+    expect(zach.service.get().messages).toHaveLength(0)
+    expect(zach.service.userMessageGoing()).toBe(false)
+    expect(zach.service.readMessages('z1')).toMatchObject({ status: 'ok', messages: [], waiting: 0 })
+    expect(drake.service.get().deskReads).toMatchObject([{ linkId: drake.service.get().links[0]!.id, teammate: 'zach' }])
+  })
+
+  it('sends nothing for your own desk, or until the press', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    for (let index = 0; index < 5; index++) zach.service.ownDesk()
+    zach.service.get()
+    expect(net.sent).toHaveLength(0)
+    expect(drake.service.get().deskReads).toHaveLength(0)
+  })
+
+  it('leaves out what the owner left out, from both desks', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    expect(await drake.service.command({ type: 'leave-out', project: 'h1 client', leftOut: true })).toEqual({ status: 'ok' })
+    const linkId = zach.service.get().links[0]!.id
+    await zach.service.command({ type: 'read-desk', linkId })
+    expect(zach.service.get().desks[linkId]!.desk.threads.map(thread => thread.title)).toEqual(['iPhone thread list'])
+    expect(drake.service.ownDesk().threads.map(thread => thread.title)).toEqual(['iPhone thread list'])
+  })
+
+  it('keeps a desk within its budget and counts what did not fit', async () => {
+    const big = Array.from({ length: 60 }, (_, index): TeamThreadFact => ({ project: 'Sotto', projectKey: 'h1 sotto', title: 'é'.repeat(400), stands: 'idle',
+      pullRequests: Array.from({ length: 9 }, (__, item) => ({ key: `o/r#${index * 10 + item + 1}`, number: index * 10 + item + 1, title: '漢'.repeat(400), state: 'open', draft: false, checks: 'unknown' as const })) }))
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake', { threads: big })
+    await linked(net, zach, drake)
+    const linkId = zach.service.get().links[0]!.id
+    expect(await zach.service.command({ type: 'read-desk', linkId })).toEqual({ status: 'ok' })
+    const { desk } = zach.service.get().desks[linkId]!
+    expect(Buffer.byteLength(JSON.stringify({ status: 'desk', desk }))).toBeLessThanOrEqual(TEAM_DESK_BYTES_MAX)
+    expect(desk.threads.length).toBeGreaterThan(0)
+    expect(desk.more).toBe(60 - desk.threads.length)
+    expect(desk.threads[0]!.pullRequests).toHaveLength(5)
+    expect(desk.threads[0]!.title).toHaveLength(160)
+  })
+
+  it('counts threads past the summary\'s own cap as not fitting', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake', { beyondCap: 40, threads: Array.from({ length: 60 }, (_, index): TeamThreadFact => ({ project: 'Sotto', projectKey: 'h1 sotto', title: `Thread ${index}`, stands: 'idle', pullRequests: [] })) })
+    await linked(net, zach, drake)
+    const linkId = zach.service.get().links[0]!.id
+    await zach.service.command({ type: 'read-desk', linkId })
+    expect(zach.service.get().desks[linkId]!.desk).toMatchObject({ more: 60 })
+    expect(zach.service.get().desks[linkId]!.desk.threads).toHaveLength(40)
+  })
+
+  it('caps each link\'s reads however many other links read in between', async () => {
+    const net = new Tailnet(), drake = await computer(net, 'drake'), readers: Computer[] = []
+    for (let index = 0; index < 11; index++) {
+      const reader = await computer(net, `reader${index}`)
+      await linked(net, drake, reader)
+      readers.push(reader)
+    }
+    for (const reader of readers) for (let index = 0; index < TEAM_DESK_READS_PER_BURST; index++) {
+      expect(await reader.service.command({ type: 'read-desk', linkId: reader.service.get().links[0]!.id })).toEqual({ status: 'ok' })
+    }
+    expect(drake.service.get().deskReads).toHaveLength(100)
+    expect(await readers[0]!.service.command({ type: 'read-desk', linkId: readers[0]!.service.get().links[0]!.id })).toMatchObject({ status: 'refused', message: expect.stringContaining('Try again in a few minutes') })
+  })
+
+  it('turns down too many reads, says so, and keeps the desk it had', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    const linkId = zach.service.get().links[0]!.id
+    for (let index = 0; index < TEAM_DESK_READS_PER_BURST; index++) expect(await zach.service.command({ type: 'read-desk', linkId })).toEqual({ status: 'ok' })
+    const had = zach.service.get().desks[linkId]
+    expect(await zach.service.command({ type: 'read-desk', linkId })).toMatchObject({ status: 'refused', message: expect.stringContaining('Try again in a few minutes') })
+    expect(zach.service.get().desks[linkId]).toEqual(had)
+    expect(drake.service.get().deskReads).toHaveLength(TEAM_DESK_READS_PER_BURST)
+  })
+
+  it('says when the other computer does not answer, and keeps nothing to send', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    await drake.service.close()
+    const linkId = zach.service.get().links[0]!.id
+    net.ports.clear()
+    expect(await zach.service.command({ type: 'read-desk', linkId })).toMatchObject({ status: 'refused', message: expect.stringContaining('did not answer') })
+    expect(zach.service.get().desks[linkId]).toBeUndefined()
+    expect(net.sent).toHaveLength(1)
+  })
+
+  it('reads nothing over an expired or removed link', async () => {
+    let at = Date.parse('2026-11-04T12:00:00Z')
+    const net = new Tailnet(), zach = await computer(net, 'zach', { now: () => at }), drake = await computer(net, 'drake', { now: () => at })
+    await linked(net, zach, drake)
+    const linkId = zach.service.get().links[0]!.id, token = await tokenFor(drake)
+    expect((await raw(zach, { command: 'read-desk' }, { token })).json).toMatchObject({ status: 'desk' })
+    await zach.service.command({ type: 'read-desk', linkId })
+    at += TEAM_LINK_LIFETIME_MS + 1
+    net.sent.length = 0
+    expect(await zach.service.command({ type: 'read-desk', linkId })).toMatchObject({ status: 'refused', message: expect.stringContaining('run out') })
+    expect(net.sent).toHaveLength(0)
+    expect((await raw(zach, { command: 'read-desk' }, { token })).json).toEqual({ status: 'refused', reason: 'expired' })
+    expect((await raw(zach, { command: 'read-desk' })).json).toEqual({ status: 'refused', reason: 'not-linked' })
+    await zach.service.command({ type: 'remove-link', linkId })
+    expect(zach.service.get().desks[linkId]).toBeUndefined()
+  })
+
+  it('keeps a desk read off the disk, and the list of reads across a restart', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    await zach.service.command({ type: 'read-desk', linkId: zach.service.get().links[0]!.id })
+    await vi.waitFor(async () => { expect(await readFile(join(drake.directory, 'team-links.json'), 'utf8')).toContain('deskReads') })
+    expect(await readFile(join(zach.directory, 'team-links.json'), 'utf8')).not.toContain('iPhone thread list')
+    await vi.waitFor(async () => { expect(JSON.parse(await readFile(join(drake.directory, 'team-links.json'), 'utf8')).deskReads).toHaveLength(1) })
+  })
+
+  it('refuses a desk with anything extra in it', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    const linkId = zach.service.get().links[0]!.id
+    const answers = [{ status: 'desk', desk: { threads: [], more: 0 }, approved: true },
+      { status: 'desk', desk: { threads: [{ project: 'p', title: 't', stands: 'idle', pullRequests: [], messages: ['a secret'] }], more: 0 } },
+      { status: 'desk', desk: { threads: [{ project: 'p', title: 'x'.repeat(161), stands: 'idle', pullRequests: [] }], more: 0 } }]
+    const spy = vi.spyOn(globalThis, 'fetch')
+    for (const answer of answers) {
+      spy.mockImplementationOnce(async () => new Response(JSON.stringify(answer), { status: 200 }))
+      expect(await zach.service.command({ type: 'read-desk', linkId })).toMatchObject({ status: 'refused' })
+    }
+    spy.mockRestore()
+    expect(zach.service.get().desks[linkId]).toBeUndefined()
   })
 })

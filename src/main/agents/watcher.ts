@@ -59,7 +59,7 @@ import type { WatcherEvent } from '../../shared/watcherNews'
 import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
-import type { TeamProjectFact, TeamThreadFact } from '../../shared/teams'
+import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
 import { isToldRequest, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
@@ -1216,9 +1216,10 @@ export class WatcherService implements WatcherControlHooks {
     return request && !isToldRequest(request) ? `${request.id} ${request.userFollowups?.filter(item => item.messageId).length ?? 0}` : undefined
   }
   /** What a team summary is made from: nothing of a thread but its title, where it stands and its pull requests (ADR-0187). */
-  teamThreadFacts(leftOut: ReadonlySet<string> = new Set()): TeamThreadFact[] {
-    // The most active first, and no sort: this runs for each ask and stops at the cap however many threads there are.
-    const stands: Record<TeamThreadFact['stands'], TeamThreadFact[]> = { 'waiting-on-its-owner': [], working: [], failed: [], idle: [] }
+  teamThreadFacts(leftOut: ReadonlySet<string> = new Set()): TeamFacts {
+    // The most active first, and no sort. Only the threads inside the cap are read further, so this does not grow with the rest.
+    type Row = { readonly hostId: string; readonly thread: AgentThread; readonly project: string; readonly projectKey: string; readonly stands: TeamThreadFact['stands'] }
+    const stands: Record<TeamThreadFact['stands'], Row[]> = { 'waiting-on-its-owner': [], working: [], failed: [], idle: [] }
     for (const hostId of this.teamHosts()) {
       const snapshot = this.owningSnapshot(hostId)
       if (!snapshot) continue
@@ -1228,11 +1229,19 @@ export class WatcherService implements WatcherControlHooks {
         // Left out before the cap, so threads the user left out never crowd out the ones they share.
         if (leftOut.has(projectKey) || thread.delegatedBy || this.protectedThread(thread) || isWorkspaceThreadSettled(thread, project)) continue
         const standing: TeamThreadFact['stands'] = thread.requests.length ? 'waiting-on-its-owner' : isThreadTurnRunning(thread) ? 'working' : thread.lastTurn?.status === 'failed' ? 'failed' : 'idle'
-        stands[standing].push({ project: project?.title ?? '', projectKey, title: thread.title, stands: standing,
-          pullRequests: (thread.pullRequests ?? []).filter(item => item.state !== 'closed' && item.state !== 'merged').map(item => ({ number: item.number, title: item.title ?? '', state: item.state, draft: item.draft ?? false })) })
+        stands[standing].push({ hostId, thread, project: project?.title ?? '', projectKey, stands: standing })
       }
     }
-    return [...stands['waiting-on-its-owner'], ...stands.working, ...stands.failed, ...stands.idle].slice(0, TEAM_SUMMARY_THREADS_MAX)
+    const rows = [...stands['waiting-on-its-owner'], ...stands.working, ...stands.failed, ...stands.idle]
+    return { beyondCap: Math.max(0, rows.length - TEAM_SUMMARY_THREADS_MAX), threads: rows.slice(0, TEAM_SUMMARY_THREADS_MAX).map(({ hostId, thread, project, projectKey, stands: standing }) => {
+      // What Sotto has already read of each pull request's checks: this adds no read of GitHub, and no fresh read says so (ADR-0189, decision 9).
+      const target = { hostId, threadId: thread.id }, evidence = thread.pullRequests?.length ? this.wakes.evidence.read(target, this.connected(thread)) : []
+      return { project, projectKey, title: thread.title, stands: standing,
+        pullRequests: watcherOpenPullRequests(thread.pullRequests ?? [], evidence).filter(({ summary }) => summary.state === 'open').map(({ pr, summary }) => {
+          const checks = summary.stale === true ? 'unknown' : summary.checks ?? 'unknown', passedAt = checks === 'passed' ? this.wakes.evidence.checksPassedSince(target, pr.url) : undefined
+          return { key: pullRequestKey(pr.url) ?? pr.url, number: pr.number, title: pr.title ?? '', state: 'open', draft: pr.draft ?? false, checks, ...passedAt ? { checksPassedAt: passedAt } : {} }
+        }) }
+    }) }
   }
   /** The projects the Teams tab lists, so the user can leave any out of their summaries. */
   teamProjectFacts(): TeamProjectFact[] {

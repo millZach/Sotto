@@ -1,5 +1,5 @@
-import { mkdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
@@ -22,6 +22,7 @@ const evidence = evidenceDirectory('artifacts/teams-link')
 const at = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
 const seed = {
   version: 1, ownName: 'Zach', leftOut: [], servePort: null, loopbackPort: null,
+  deskReads: [{ id: 'read-1', linkId: 'link-1', teammate: 'Drake', at: at(1) }],
   links: [{ id: 'link-1', clientId: 'client-1', name: 'Drake', address: 'https://drake-pc.tail9.ts.net:8445/', createdAt: at(60), expiresAt: new Date(Date.now() + 29 * 86_400_000).toISOString(), lastUsedAt: at(5),
     wantedAgainAt: null, theyWantedAgainAt: null, day: new Date().toLocaleDateString('en-CA'), answersToday: 3, refusedToday: 0, recentAnswers: [] }],
   messages: [
@@ -132,6 +133,71 @@ test.describe('Teams', () => {
       await expect(section).toContainText('Last used')
     }))
   })
+
+  const deskAnswer = { status: 'desk', desk: { more: 2, threads: [
+    { project: 'Sotto', title: 'iPhone on the unfolded Duo', stands: 'working', pullRequests: [{ id: 'aaaaaaaaaaaaaaaa', number: 2158, title: 'One rail pill on the Duo', draft: false, checks: 'passed', checksPassedAt: at(40) }, { id: 'bbbbbbbbbbbbbbbb', number: 2164, title: 'A title with <b>markup</b> in it', draft: false, checks: 'unknown' }] },
+    { project: 'Sotto', title: 'Android pairing', stands: 'idle', pullRequests: [{ id: 'cccccccccccccccc', number: 2161, title: 'Pair an Android phone by code', draft: true, checks: 'unknown' }] },
+    { project: 'Client work', title: 'A long title that keeps going so that a narrow desk has to wrap it rather than run it off the side of the window', stands: 'waiting-on-its-owner', pullRequests: [] },
+    { project: 'Client work', title: 'Nightly import', stands: 'failed', pullRequests: [{ id: 'dddddddddddddddd', number: 88, title: 'Retry the import', draft: false, checks: 'failed' }] },
+  ] } }
+
+  for (const appearance of ['dark', 'light'] as const) {
+    test(`two desks read a teammate's desk only on a press, in ${appearance}`, async () => {
+      await onReleaseTrack('owl', () => withSotto(options(appearance), async launched => {
+        const { page, app } = launched
+        await openRoom(page)
+        await page.getByRole('tablist', { name: 'Watcher\'s room' }).getByRole('tab', { name: 'Teams', exact: true }).click()
+        // A read of this computer's desk is on the tab, and every kept one is a press away.
+        const latest = page.getByRole('region', { name: 'Latest' })
+        await expect(latest).toContainText('Drake read your desk.')
+        await latest.getByText('Every read of your desk (1)').click()
+        await expect(latest.locator('.teams-reads__list li')).toHaveCount(1)
+        const open = page.getByRole('button', { name: 'Open two desks' })
+        await open.click()
+        const desks = page.getByRole('group', { name: 'Two desks with Drake' })
+        const back = desks.getByRole('button', { name: 'Back to Teams' })
+        await expect(back).toBeFocused()
+        // Opening sends nothing, so the desk has nothing of Drake's and the order says why.
+        const drake = page.getByRole('region', { name: 'Drake\'s desk' }), order = page.getByRole('region', { name: 'Merge order' })
+        await expect(drake).toContainText('Nothing from Drake yet.')
+        await expect(order).toContainText('Needs Drake\'s desk first.')
+        await expect(page.getByRole('region', { name: 'Your desk' })).toBeVisible()
+        await captureWindow(app, resolve(evidence, `desks-not-read-${appearance}-1280x800.png`))
+        // The stand-in has no answer yet, as a computer that is off has none.
+        const get = desks.getByRole('button', { name: 'Get Drake\'s desk' })
+        await get.click()
+        await expect(drake.getByRole('alert')).toContainText('Drake\'s computer did not answer. Nothing is waiting to send.')
+        await writeFile(join(await app.evaluate(({ app: electron }) => electron.getPath('userData')), 'e2e-team-desk.json'), JSON.stringify(deskAnswer))
+        await get.click()
+        await expect(drake.getByRole('alert')).toHaveCount(0)
+        await expect(drake).toContainText('As of')
+        await expect(drake).toContainText('iPhone on the unfolded Duo')
+        await expect(drake).toContainText('2 more threads did not fit.')
+        // A teammate's title is text, whatever is in it.
+        await expect(drake).toContainText('A title with <b>markup</b> in it')
+        await expect(drake.locator('b')).toHaveCount(0)
+        await expect(order.getByRole('listitem').first()).toContainText('#2158')
+        await expect(order.getByRole('listitem').last()).toContainText('draft')
+        await expect(order).toContainText('Nothing merges from this')
+        await expect(order.getByRole('button')).toHaveCount(0)
+        for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+          await resizeContentWindow(launched, width, height)
+          await holdOwlSky(page)
+          expect(await pageBoundProblems(page), `${width}x${height}`).toEqual([])
+          expect(await page.locator('.teams-page').evaluate(node => node.scrollWidth <= node.clientWidth), `no sideways scroll at ${width}x${height}`).toBe(true)
+          await captureWindow(app, resolve(evidence, `desks-read-${appearance}-${width}x${height}.png`))
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        // Escape closes it, and focus goes back to the press that opened it.
+        await page.keyboard.press('Escape')
+        await expect(desks).toHaveCount(0)
+        await expect(open).toBeFocused()
+        // What was read stays while Sotto runs.
+        await open.click()
+        await expect(page.getByRole('region', { name: 'Drake\'s desk' })).toContainText('iPhone on the unfolded Duo')
+      }))
+    })
+  }
 
   test('a pasted code that names anything but a tailnet address says so and links nothing', async () => {
     await onReleaseTrack('owl', () => withSotto(options('dark'), async ({ page }) => {
