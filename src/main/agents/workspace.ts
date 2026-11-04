@@ -1,4 +1,5 @@
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
+import { whyNotDynamic } from '../../shared/dynamicThreads'
 import { withKeptMessageMetadata } from '../../shared/agents'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
@@ -5309,16 +5310,22 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
    * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
    */
-  /** Dynamic on or off for a thread (ADR-0191), Sotto's own record, which the provider never sees. */
+  /**
+   * Dynamic on or off for a thread (ADR-0191), Sotto's own record, which the provider never sees. Checked here against the
+   * thread as it stands now, since what the coordinator was last told can be a moment behind a turn that just began.
+   */
   async setThreadDynamic(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
     if ((thread.dynamic === true) !== dynamic) {
+      const refused = dynamic ? whyNotDynamic(thread) : undefined
+      if (refused) throw new Error(refused)
+      if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing Dynamic. Nothing changed.')
       if (dynamic) this.touched(thread).dynamic = true
       else delete this.touched(thread).dynamic
       this.dirty = true; await this.flush(); this.publish()
     }
-    return this.snapshot()
+    return this.workspaceSnapshot()
   }
   async renameThread(threadId: string, title: string, source: ThreadRenameSource = 'user'): Promise<AgentHostSnapshot> {
     await this.initialize()

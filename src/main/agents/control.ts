@@ -49,7 +49,6 @@ import { clientVersionOf, compareClientVersions, isComparableVersion } from './c
 import { compareMuseVersions } from './museClientInstall'
 import { CLIENT_CHECK_INTERVAL_MS, locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
 import { opencodeFolders } from './opencodeServer'
-import { whyNotDynamic } from '../../shared/dynamicThreads'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
@@ -4135,14 +4134,9 @@ export class AgentControl {
   private async setThreadDynamic(command: Extract<AgentCommand, { type: 'set-thread-dynamic' }>): Promise<AgentState> {
     try {
       if (this.dependencies.dynamicThreadsEnabled !== true) throw new Error('Dynamic threads are available in Sotto Owl. Nothing changed.')
-      const thread = this.thread(command.threadId)
-      if ((thread.dynamic === true) !== command.dynamic) {
-        const refused = command.dynamic ? whyNotDynamic(thread) : undefined
-        if (refused) throw new Error(refused)
-        if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing Dynamic. Nothing changed.')
-        if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
-        this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
-      }
+      this.thread(command.threadId)
+      if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
+      this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
       this.state.error = null
       await this.persist().catch(() => { throw new Error('Could not save that. Retry when storage is available.') })
     } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'Could not change Dynamic for this thread.') }
