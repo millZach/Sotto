@@ -1064,6 +1064,11 @@ msgstr "{provider} still runs anything without asking until it confirms."
 msgid "{provider} uses its own permission profiles; a new thread starts on its first."
 msgstr "{provider} uses its own permission profiles; a new thread starts on its first."
 
+#. Under a masked answer field. {provider} is the coding agent’s name, such as Codex.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} will see this and keep it in its own session file. Sotto does not save it."
+msgstr "{provider} will see this and keep it in its own session file. Sotto does not save it."
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "{providerName} model sources"
@@ -4434,6 +4439,11 @@ msgstr "Help"
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "hidden"
 msgstr "hidden"
+
+#. Stands for the words of a saved answer the agent asked for masked, which Sotto never saves or shows.
+#: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+msgid "Hidden answer"
+msgstr "Hidden answer"
 
 #. Hides the list under a project
 #: src/renderer/src/agents/MainCheckoutLine.tsx

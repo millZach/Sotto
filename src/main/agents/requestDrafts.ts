@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import {
-  requestDraftQuestions, requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
+  requestDraftQuestions, requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions, withoutSecretWords,
   type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard, type RequestDraftCheckResult, type RequestDraftStatus,
 } from '../../shared/requestDrafts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -406,8 +406,13 @@ export class RequestDraftService {
         const text = question.allowFreeText && (question.options.length === 0 || selection.other) ? selection.text.trim() : ''
         if (selection.optionIds.length || text) submitted[question.id] = { optionIds: selection.optionIds, ...(text ? { text } : {}) }
       }
-      const canonical = (value: AgentQuestionAnswers): string => JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, answer]) => [id, [...answer.optionIds].sort(), answer.text ?? '']))
+      // A secret answer's words were never saved (#2153), so they are left out of both sides: the rest of the answer, and
+      // the choices on a secret question, still tie it to this attempt.
+      const secret = new Set(previous.target.questions.filter(question => question.secret === true).map(question => question.id))
+      const canonical = (value: AgentQuestionAnswers): string => JSON.stringify(Object.entries(value)
+        .filter(([id, answer]) => !secret.has(id) || answer.optionIds.length > 0)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, answer]) => [id, [...answer.optionIds].sort(), secret.has(id) ? '' : answer.text ?? '']))
       if (canonical(submitted) !== canonical(answers)) return
       if (previous.decisionId && previous.decisionId !== decisionId) throw new Error('This answer already belongs to another delivery attempt. Check it before retrying.')
       await this.commit(this.saved.drafts.map(draft => draft === previous ? { ...previous, decisionId } : draft))
@@ -430,7 +435,9 @@ export class RequestDraftService {
   }
 
   save(input: RequestDraft): Promise<RequestDraft> {
-    const draft = requestDraftSchema.parse(input)
+    const parsed = requestDraftSchema.parse(input)
+    // The renderer never sends a secret answer's words (#2153); this keeps them off disk if one ever did.
+    const draft: RequestDraft = { ...parsed, selections: withoutSecretWords(parsed.target.questions, parsed.selections) }
     if (draft.target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => {
       const previous = this.current(draft.target), state = this.lookup(draft.target)

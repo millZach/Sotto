@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { t } from '@lingui/core/macro'
 import type { AgentAttachmentHandle, AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, withoutSecretWords, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -194,6 +194,8 @@ export class RequestAnswerStore {
   private readonly entries = new Map<string, RequestEntry>()
   private readonly listeners = new Set<() => void>()
   private readonly bindings = new Map<string, DraftBinding>()
+  /** How many open cards show each request's secret questions (#2153). */
+  private readonly secretHolds = new Map<string, number>()
   constructor(private readonly bridge: () => RequestDraftBridge | undefined = () => window.sotto?.requestDrafts) {}
 
   static key(ownerId: string, requestId: string): string { return `${ownerId}\0${requestId}` }
@@ -346,6 +348,26 @@ export class RequestAnswerStore {
       phase: 'sent', error: null, choice: null, save: 'saved', saveError: null })
   }
 
+  /**
+   * A card that shows secret questions holds their words here only while it is open (#2153). They are never saved, so
+   * once the last card showing the request closes they are forgotten, and the field is empty when it opens again.
+   */
+  holdSecrets(ownerId: string, requestId: string, questionIds: readonly string[]): () => void {
+    const key = RequestAnswerStore.key(ownerId, requestId)
+    this.secretHolds.set(key, (this.secretHolds.get(key) ?? 0) + 1)
+    return () => {
+      const left = (this.secretHolds.get(key) ?? 1) - 1
+      if (left > 0) { this.secretHolds.set(key, left); return }
+      this.secretHolds.delete(key)
+      const entry = this.entries.get(key)
+      if (!entry || !questionIds.some(id => entry.selections[id]?.text)) return
+      const selections = { ...entry.selections }
+      for (const id of questionIds) if (selections[id]?.text) selections[id] = { ...selections[id], text: '' }
+      // The saved revision already had no words for these questions, so forgetting them changes nothing that was saved.
+      this.set(ownerId, requestId, { ...entry, selections })
+    }
+  }
+
   select(ownerId: string, requestId: string, questionId: string, selection: QuestionSelection): void {
     const entry = this.get(ownerId, requestId)
     if (entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed') return
@@ -365,8 +387,9 @@ export class RequestAnswerStore {
     }
     if (this.isAccepted(ownerId, requestId, binding)) return true
     const entry = this.get(ownerId, requestId)
+    // A secret answer's words stay in this window and go only with the answer (#2153).
     const parsed = requestDraftSchema.safeParse({ target: binding.target, revision: Math.max(1, entry.revision),
-      selections: Object.fromEntries(Object.entries(entry.selections).map(([id, selection]) => [id, { ...selection, optionIds: [...selection.optionIds] }])),
+      selections: withoutSecretWords(binding.target.questions, Object.fromEntries(Object.entries(entry.selections).map(([id, selection]) => [id, { ...selection, optionIds: [...selection.optionIds] }]))),
       held: entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed' })
     if (!parsed.success) {
       this.set(ownerId, requestId, { ...entry, save: 'unsaved', saveError: t`This answer could not be saved. Use the offered choices and at most 24,000 characters per answer.` })
@@ -500,7 +523,8 @@ export class RequestAnswerStore {
     }
     // Checking delivery is not proof that newer local content was saved. A failed preflight can leave
     // only an older revision (or nothing) in main; retain the local edit and persist it after release.
-    const needsSave = !draft || draft.revision < current.revision || JSON.stringify(draft.selections) !== JSON.stringify(current.selections)
+    const needsSave = !draft || draft.revision < current.revision
+      || JSON.stringify(draft.selections) !== JSON.stringify(withoutSecretWords(draft.target.questions, current.selections))
     this.set(ownerId, requestId, { ...current, phase, error, choice: null,
       revision: needsSave ? Math.max(current.revision, draft?.revision ?? 0) + 1 : draft.revision,
       save: needsSave ? 'saving' : 'saved', saveError: null })

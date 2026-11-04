@@ -33,8 +33,13 @@ function renderedLive(draft: RequestDraft, live: readonly AgentRequest[]): boole
     && sameRequestQuestions(requestDraftQuestions(request), draft.target.questions))
 }
 
+const HIDDEN_ANSWER = msg({ message: 'Hidden answer', comment: 'Stands for the words of a saved answer the agent asked for masked, which Sotto never saves or shows.' })
+
 /** One question's saved answer in words: the chosen option labels, then Other or free text. Null when unanswered. */
 function savedAnswerText(question: StructuredQuestion, selection: RequestDraft['selections'][string] | undefined): string | null {
+  // A secret answer's words are never saved (#2153); its row says only that there were some, after any choice.
+  if (question.secret) return [...question.options.filter(option => selection?.optionIds.includes(option.id)).map(option => option.label),
+    ...textOnly(question) || selection?.other ? [i18n._(HIDDEN_ANSWER)] : []].join(', ') || null
   if (!selection || answerProgress(question, selection) === 'empty') return null
   const text = selection.text.trim()
   if (textOnly(question)) return text || null
@@ -45,14 +50,17 @@ function savedAnswerText(question: StructuredQuestion, selection: RequestDraft['
 
 const NO_ANSWER = msg({ message: 'No answer', comment: 'Stands for a question in a saved form that was left unanswered.' })
 
-/** The clipboard form: each question's label followed by its saved answer. */
+/** The clipboard form: each question's label followed by its saved answer. A secret question is left out (#2153). */
 export function savedAnswerClipboard(draft: RequestDraft): string {
-  return draft.target.questions.map(question => `${question.question}\n${savedAnswerText(question, draft.selections[question.id]) ?? i18n._(NO_ANSWER)}`).join('\n\n')
+  return draft.target.questions.filter(question => !question.secret)
+    .map(question => `${question.question}\n${savedAnswerText(question, draft.selections[question.id]) ?? i18n._(NO_ANSWER)}`).join('\n\n')
 }
 
-/** A form the user never filled in has nothing to recover; a held attempt is always shown. */
+/** A form the user never filled in has nothing to recover; a held attempt is always shown. A secret question counts
+ * only for a choice made on it, since its words were never kept. */
 const hasContent = (draft: RequestDraft): boolean => draft.held
-  || draft.target.questions.some(question => savedAnswerText(question, draft.selections[question.id]) !== null)
+  || draft.target.questions.some(question => question.secret ? (draft.selections[question.id]?.optionIds.length ?? 0) > 0
+    : savedAnswerText(question, draft.selections[question.id]) !== null)
 
 export interface RequestDraftRecoveryModel {
   /** Saved forms this owner has that no live card shows. */
@@ -225,7 +233,8 @@ function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscar
       </div>
     </div> : <div className="request-recovery__actions">
       <div className="agent-request__actions">
-        <Button variant="secondary" onClick={copy}><Trans>Copy answer</Trans></Button>
+        {/* A form of secret questions alone has nothing to copy (#2153). */}
+        {draft.target.questions.some(question => !question.secret) ? <Button variant="secondary" onClick={copy}><Trans>Copy answer</Trans></Button> : null}
         <Button ref={discardButton} variant="ghost" onClick={() => { setError(null); setConfirming(true) }}><Trans comment="Discards a saved answer; asks first.">Discard</Trans></Button>
       </div>
       <span className="agent-request__status" role="status">{copied ? t`Copied` : null}</span>

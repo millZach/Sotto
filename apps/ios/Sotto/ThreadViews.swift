@@ -3311,13 +3311,39 @@ struct RequestSheet: View {
     }
 
     private func ownAnswer(_ item: Question) -> some View {
-        answerField(text: Binding(get: { answers[item.id]?.text ?? "" }, set: { value in
+        let text = Binding(get: { answers[item.id]?.text ?? "" }, set: { value in
             var answer = answers[item.id] ?? QuestionAnswer()
             answer.text = value
             if !item.multiSelect && !value.isEmpty { answer.optionIds = [] }
             answers[item.id] = answer
-        }), id: item.id, label: String(localized: "Your own answer to: \(item.question)", comment: "%@ is the question's own words"))
+        })
+        let label = String(localized: "Your own answer to: \(item.question)", comment: "%@ is the question's own words")
+        return Group {
+            if item.secret == true {
+                secretField(text: text, id: item.id, label: label)
+            } else {
+                answerField(text: text, id: item.id, label: label)
+            }
+        }
         .disabled(item.unavailableReason != nil)
+    }
+
+    /// A secret answer's box (#2153): one masked line the keyboard neither learns from nor suggests into, held only in
+    /// this view's state like every answer here.
+    private func secretField(text: Binding<String>, id: String, label: String) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        return SecureField("Your answer", text: text, prompt: Text("Type your answer").foregroundStyle(Palette.placeholder))
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .privacySensitive()
+            .focused($focus, equals: id)
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.code, in: shape)
+            .overlay(shape.strokeBorder(focus == id ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
+            .accessibilityLabel(label)
     }
 
     private func answerField(text: Binding<String>, id: String, label: String) -> some View {

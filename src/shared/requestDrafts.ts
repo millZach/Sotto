@@ -80,6 +80,20 @@ export const requestDraftKey = (target: RequestDraftTarget): string => JSON.stri
 export const requestQuestionsSignature = (questions: RequestDraftTarget['questions']): string => JSON.stringify(agentRequestSchema.shape.questions.unwrap().parse(questions))
 export const sameRequestQuestions = (a: RequestDraftTarget['questions'], b: RequestDraftTarget['questions']): boolean => requestQuestionsSignature(a) === requestQuestionsSignature(b)
 
+/**
+ * A form's selections with every **secret answer**'s words left out (#2153): its choices stay, its text is empty. The
+ * renderer saves only this, and main writes only this, so the words never reach `request-drafts.json`. Returns the
+ * selections themselves when no secret question holds words.
+ */
+export function withoutSecretWords<Selection extends { readonly text: string }>(questions: RequestDraftTarget['questions'],
+  selections: Readonly<Record<string, Selection>>): Record<string, Selection> {
+  const secret = questions.filter(question => question.secret === true && selections[question.id]?.text)
+  if (secret.length === 0) return selections as Record<string, Selection>
+  const kept = { ...selections } as Record<string, Selection>
+  for (const question of secret) kept[question.id] = { ...kept[question.id]!, text: '' }
+  return kept
+}
+
 /** Draft identity for native question forms and the single choice offered by a legacy request. */
 export function requestDraftQuestions(request: AgentRequest): NonNullable<AgentRequest['questions']> {
   if (request.kind !== 'question') return []

@@ -6,7 +6,7 @@ import { changeFilesAction, modelSummary, readableFields } from './requestInput'
 import { BROWSER_MCP_SERVER } from './browserAgentServer'
 
 const option = z.object({ label: z.string(), description: z.string().optional() })
-const question = z.object({ id: z.string(), question: z.string(), header: z.string().optional(), isOther: z.boolean().optional(), options: z.array(option).nullish() })
+const question = z.object({ id: z.string(), question: z.string(), header: z.string().optional(), isOther: z.boolean().optional(), isSecret: z.boolean().optional(), options: z.array(option).nullish() })
 const paramsSchema = z.object({ threadId: z.string(), itemId: z.string().optional(), command: z.string().nullish(), reason: z.string().nullish(), cwd: z.string().nullish(), permissions: z.record(z.string(), z.unknown()).optional(), networkApprovalContext: z.unknown().optional(),
   grantRoot: z.string().nullish(), availableDecisions: z.array(z.unknown()).nullish(), questions: z.array(question).optional(),
   message: z.string().optional(), description: z.string().optional(), mode: z.string().optional(), requestedSchema: z.unknown().optional(), url: z.string().optional(),
@@ -120,7 +120,7 @@ export function pendingRequest(id: string | number, method: string, value: unkno
   const files = permission && !params.command && fileSummary ? fileSummary : undefined
   const fields = readableFields({ ...(params.reason && !summary && text !== params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { network: params.networkApprovalContext } : {}) })
   return { id, method, sessionId, params, request: { id: requestKey(id), kind: mapping.kind, text, options,
-    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length, prose: true as const })) } : formQuestions ? { questions: formQuestions } : {}),
+    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length, prose: true as const, ...(q.isSecret ? { secret: true as const } : {}) })) } : formQuestions ? { questions: formQuestions } : {}),
     ...(permission ? { permissionChoices } : { skippable: true as const }), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
       ...(files ? { action: changeFilesAction(files.split('\n').length) } : {}), ...(summary ? { summary } : {}), ...(files || fields ? { details: [files, fields].filter(Boolean).join('\n') } : {}) } } }
 }
