@@ -302,7 +302,7 @@ import { OwnCleanupMeasures, type OwnCleanupEvent } from './llm/ownServerCleanup
 import { registerOwnServerCleanupIpc } from './llm/ownServerCleanupIpc'
 import { OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, type OwnCleanupChoice } from '../shared/ownServerCleanup'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
-import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
+import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/statePublishers'
 import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
 import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { registerAgentIpc } from './agents/ipc'
