@@ -1,5 +1,6 @@
 import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
+import { TeamLinksOnHosts } from '../../watcher/TeamsPage'
 import { LocalAppsSettings } from './LocalAppsSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
@@ -841,6 +842,7 @@ export function SettingsView({
                   <PhonesSettings phoneAccess={settings.phoneAccess} phoneAccessName={settings.phoneAccessName} onUpdateSettings={onUpdateSettings}
                     onOpenHosts={() => { const panel = document.getElementById('settings-hosts'); const control = panel && findSettingControl(panel, 'local-host'); if (control) revealSetting(control) }} />
                 </SettingsGroup>
+                <TeamLinksOnHosts />
                 {localAppsOn ? <SettingsGroup title={t`Apps on this computer`} icon={AppWindow} rows={false}>
                   <LocalAppsSettings localApps={settings.localApps} onUpdateSettings={onUpdateSettings} />
                 </SettingsGroup> : null}

@@ -923,6 +923,10 @@ msgstr ""
 msgid "Open Settings in the main Sotto window."
 msgstr ""
 
+#: src/main/teams/ipc.ts
+msgid "Open Teams in the main Sotto window."
+msgstr ""
+
 #: src/main/council/councilIpc.ts
 msgid "Open the Council in the main Sotto window."
 msgstr ""

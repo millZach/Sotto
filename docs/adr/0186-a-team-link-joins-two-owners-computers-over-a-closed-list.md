@@ -28,7 +28,7 @@ Zach chose direct over a tailnet rather than a relay of Sotto's, which would add
 
 Anything else is refused without being read further, including every host command, however well signed. Bodies are capped at 16 KB. There is no command that lists threads, reads history, starts, stops, sends, settles, approves or merges, so a later slice that wants one adds it here on purpose.
 
-**6. Nothing goes without a press or an ask.** There is no heartbeat, no presence, no polling and no retry. Only an ask, a redeemed code or **Link again** opens a connection, so the Teams tab shows when each link was last used and never whether the other computer is online. This replaces the first prototype's "online" and "Watcher ready".
+**6. Nothing goes without a press or an ask.** There is no heartbeat, no presence, no polling and no retry. Only an ask, a redeemed code or **Link again** opens a connection, so the Teams tab and Settings > Hosts & phones show when each link was last used and never whether the other computer is online. This replaces the first prototype's "online" and "Watcher ready".
 
 **7. A link lasts 30 days, and both owners renew it.** After 30 days a token is good only for `link-again`, and the receiving computer starts nothing for it. **Link again** tells the other computer this owner wants the link kept. When both have pressed within 7 days, both renew it for 30 more. Removing a link removes it here and sends nothing; the other computer finds out when its next ask is refused, and says so. This covers team links only. The wider token expiry of #1692 stays its own ADR and pull request (plan, open question 10).
 

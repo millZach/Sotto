@@ -924,6 +924,10 @@ msgstr "Open Phones in the main Sotto window."
 msgid "Open Settings in the main Sotto window."
 msgstr "Open Settings in the main Sotto window."
 
+#: src/main/teams/ipc.ts
+msgid "Open Teams in the main Sotto window."
+msgstr "Open Teams in the main Sotto window."
+
 #: src/main/council/councilIpc.ts
 msgid "Open the Council in the main Sotto window."
 msgstr "Open the Council in the main Sotto window."
