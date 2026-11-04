@@ -186,7 +186,7 @@ import UIKit
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in MainActor.assumeIsolated { BenchDriver.running?.write() } }
         mark("driver-start")
         if BenchOpen.saysWhy {
-            modelWatch = model.objectWillChange.sink { _ in
+            modelWatch = model?.objectWillChange.sink { _ in
                 let frames = Thread.callStackSymbols.filter { $0.contains(" Sotto ") }.prefix(6).map { line in
                     line.split(separator: " ").dropFirst(3).prefix(1).joined()
                 }
