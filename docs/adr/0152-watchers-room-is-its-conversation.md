@@ -33,3 +33,7 @@ The night scene's thread owls glow in the accent while their thread waits on the
 - A Watcher that still sends `mergeTurn` is refused for an unknown field. Nothing reads it now, and its tool description no longer mentions it.
 - History and replay of the picture (#1340) have nothing left to replay.
 - A watched thread on a host the user has disconnected is not in All threads, so the desktop offers no way to stop that watch until the host is back. The user can still ask Watcher to stop watching it, or stop it from the iPhone's Watched list.
+
+## Amendment: a Teams tab on Owl (November 3, 2026)
+
+Zach picked a **Teams** tab beside **Watcher** while the `teams` Owl feature is on ([ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md), decision 9). With it off, decision 1 stands as written. The Watched and Visualize tabs stay gone.

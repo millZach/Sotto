@@ -1,6 +1,8 @@
 # Teams: your Watcher and Drake's, talking
 
-Status: brainstorm, November 2, 2026. Settled in a grilling session with Zach. No product code, no pull request, nothing approved or scheduled. Open questions are at the end, each with a recommended answer.
+Status: first slice approved, November 3, 2026. Settled in a grilling session with Zach on November 2. Zach chose to start it on Owl only, and Drake agreed to open question 1's default. [ADR-0186](../adr/0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) and [ADR-0187](../adr/0187-another-owners-words-are-untrusted-and-start-nothing.md) hold what the slice decided.
+
+Zach's card, November 3: Teams is a tab beside Watcher (question 9). A teammate's ask is answered by a side call with no tools rather than a Watcher turn, which replaces "A teammate's ask starts a turn in your Watcher" below. Summaries cover every project, with a leave-out list. Two desks and the merge order strip are the next slice. Open question 2 has no hold card, because an answer never sees thread content (ADR-0187, decision 3). The plan's links still say what it knew on November 2; #1691 and #1692 are as it says.
 
 ## What it is
 

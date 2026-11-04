@@ -157,3 +157,7 @@ The relay is the first stage, not an alternative: it proves the operations with 
 ## Proof, when built
 
 Two headless hosts in an integration test, each behind a stand-in for its tailnet listener: setting up a link with a code, refusing a used, expired or mismatched code, the test that fails and removes a half-made link, a linked start held to Ask for approval without link-start, a start capped by the desktop defaults, a branch bundle landing in an incoming ref and a cut-off one landing nothing, a move that drops at each state and reconciles to one thread, outcomes read exactly after a drop, Stop across a link, and Remove link ending the next request. Then a live run between forge and a Mac with the laptop asleep.
+
+## Amendment: a team link is a separate kind (November 3, 2026)
+
+[ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) joins two owners' computers. It is not a host link: this record still covers only one owner's machines, and a team link has its own listener, records and closed list.
