@@ -224,10 +224,8 @@ export const T3_CHAT_THEME: ThemeDefinition = {
 
 /**
  * Sotto's own look, the palette a new install wears. The light half is warm
- * paper; the dark half, Ink, is the same room by night: a soft charcoal, with the
- * composer, the user's messages and code in deeper wells of ink, as they sit a
- * step darker than the paper by day (ADR-0024, November 4, 2026 amendment), beside
- * a graphite sidebar. The accent is the app icon's teal: exactly the
+ * paper; the dark half, Ink, puts the thread on an almost-black room beside a
+ * lighter graphite sidebar. The accent is the app icon's teal: exactly the
  * icon's colour in the dark half, and a deeper teal of the same hue in the light
  * half so links and focus read on paper. Every role is canonical OKLCH.
  *
@@ -239,7 +237,7 @@ export const SOTTO_LIGHT_THEME_COLORS: ThemeColors = {
   chrome: 'oklch(0.978 0.004 85)',
   toolbar: 'oklch(0.978 0.004 85)',
   toolbarForeground: 'oklch(0.235 0.014 75)',
-  toolbarBorder: 'oklch(0.835 0.012 80)',
+  toolbarBorder: 'oklch(0.86 0.012 80)',
   toolbarControl: 'oklch(0.93 0.01 85)',
   toolbarControlForeground: 'oklch(0.235 0.014 75)',
   toolbarControlHover: 'oklch(0.9 0.012 82)',
@@ -248,8 +246,8 @@ export const SOTTO_LIGHT_THEME_COLORS: ThemeColors = {
   surfaceOverlay: 'oklch(0.945 0.007 85)',
   text: 'oklch(0.235 0.014 75)',
   textMuted: 'oklch(0.5 0.014 75)',
-  border: 'oklch(0.835 0.012 80)',
-  input: 'oklch(0.77 0.016 80)',
+  border: 'oklch(0.86 0.012 80)',
+  input: 'oklch(0.8 0.016 80)',
   focus: 'oklch(0.53 0.095 186)',
   accent: 'oklch(0.53 0.095 186)',
   accentForeground: 'oklch(0.99 0.003 85)',
@@ -280,12 +278,12 @@ export const SOTTO_LIGHT_THEME_COLORS: ThemeColors = {
   codeForeground: 'oklch(0.235 0.014 75)',
   sidebar: 'oklch(0.955 0.008 85)',
   sidebarForeground: 'oklch(0.235 0.014 75)',
-  sidebarMutedForeground: 'oklch(0.46 0.014 75)',
+  sidebarMutedForeground: 'oklch(0.5 0.014 75)',
   sidebarControlSurface: 'oklch(0.995 0.002 85)',
   sidebarRowHover: 'oklch(0.93 0.01 85)',
   sidebarRowActive: 'oklch(0.915 0.02 190)',
   sidebarRowSelected: 'oklch(0.895 0.028 188)',
-  sidebarBorder: 'oklch(0.845 0.012 82)',
+  sidebarBorder: 'oklch(0.87 0.012 82)',
   terminalBackground: 'oklch(0.978 0.004 85)',
   terminalForeground: 'oklch(0.235 0.014 75)',
   terminalCursor: 'oklch(0.53 0.095 186)',
@@ -295,9 +293,9 @@ export const SOTTO_LIGHT_THEME_COLORS: ThemeColors = {
 }
 
 export const SOTTO_DARK_THEME_COLORS: ThemeColors = {
-  canvas: 'oklch(0.222 0.001 75)',
-  chrome: 'oklch(0.222 0.001 75)',
-  toolbar: 'oklch(0.222 0.001 75)',
+  canvas: 'oklch(0.115 0.008 265)',
+  chrome: 'oklch(0.115 0.008 265)',
+  toolbar: 'oklch(0.115 0.008 265)',
   toolbarForeground: 'oklch(0.985 0.005 280)',
   toolbarBorder: 'oklch(0.285 0.02 265)',
   toolbarControl: 'oklch(0.155 0.008 265)',
@@ -331,13 +329,13 @@ export const SOTTO_DARK_THEME_COLORS: ThemeColors = {
   updateSurface: 'oklch(0.26 0.04 185)',
   accentSurface: 'oklch(0.32 0.05 185)',
   accentSurfaceForeground: 'oklch(0.985 0.005 280)',
-  messageSurface: 'oklch(0.178 0.007 265)',
-  messageForeground: 'oklch(0.925 0.005 280)',
+  messageSurface: 'oklch(0.205 0.014 265)',
+  messageForeground: 'oklch(0.985 0.005 280)',
   messageAction: 'oklch(0.714403 0.104089 183.092)',
   messageActionForeground: 'oklch(0.16 0.012 190)',
   messageActionHover: 'oklch(0.77 0.1 183)',
-  codeBackground: 'oklch(0.165 0.008 265)',
-  codeForeground: 'oklch(0.91 0.005 280)',
+  codeBackground: 'oklch(0.155 0.008 265)',
+  codeForeground: 'oklch(0.985 0.005 280)',
   sidebar: 'oklch(0.235 0.003 265)',
   sidebarForeground: 'oklch(0.985 0.005 280)',
   sidebarMutedForeground: 'oklch(0.72 0.014 265)',
@@ -346,7 +344,7 @@ export const SOTTO_DARK_THEME_COLORS: ThemeColors = {
   sidebarRowActive: 'oklch(0.32 0.025 190)',
   sidebarRowSelected: 'oklch(0.355 0.035 188)',
   sidebarBorder: 'oklch(0.355 0.012 265)',
-  terminalBackground: 'oklch(0.222 0.001 75)',
+  terminalBackground: 'oklch(0.115 0.008 265)',
   terminalForeground: 'oklch(0.985 0.005 280)',
   terminalCursor: 'oklch(0.714403 0.104089 183.092)',
   terminalSelection: 'oklch(0.32 0.05 185)',

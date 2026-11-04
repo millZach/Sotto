@@ -27,9 +27,9 @@
 
 :root {
   color-scheme: dark;
-  --theme-canvas: oklch(0.222 0.001 75);
-  --theme-chrome: oklch(0.222 0.001 75);
-  --theme-toolbar: oklch(0.222 0.001 75);
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-chrome: oklch(0.115 0.008 265);
+  --theme-toolbar: oklch(0.115 0.008 265);
   --theme-toolbar-foreground: oklch(0.985 0.005 280);
   --theme-toolbar-border: oklch(0.285 0.02 265);
   --theme-toolbar-control: oklch(0.155 0.008 265);
@@ -63,13 +63,13 @@
   --theme-update-surface: oklch(0.26 0.04 185);
   --theme-accent-surface: oklch(0.32 0.05 185);
   --theme-accent-surface-foreground: oklch(0.985 0.005 280);
-  --theme-message-surface: oklch(0.178 0.007 265);
-  --theme-message-foreground: oklch(0.925 0.005 280);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-message-foreground: oklch(0.985 0.005 280);
   --theme-message-action: oklch(0.714403 0.104089 183.092);
   --theme-message-action-foreground: oklch(0.16 0.012 190);
   --theme-message-action-hover: oklch(0.77 0.1 183);
-  --theme-code-background: oklch(0.165 0.008 265);
-  --theme-code-foreground: oklch(0.91 0.005 280);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-code-foreground: oklch(0.985 0.005 280);
   --theme-sidebar: oklch(0.235 0.003 265);
   --theme-sidebar-foreground: oklch(0.985 0.005 280);
   --theme-sidebar-muted-foreground: oklch(0.72 0.014 265);
@@ -78,7 +78,7 @@
   --theme-sidebar-row-active: oklch(0.32 0.025 190);
   --theme-sidebar-row-selected: oklch(0.355 0.035 188);
   --theme-sidebar-border: oklch(0.355 0.012 265);
-  --theme-terminal-background: oklch(0.222 0.001 75);
+  --theme-terminal-background: oklch(0.115 0.008 265);
   --theme-terminal-foreground: oklch(0.985 0.005 280);
   --theme-terminal-cursor: oklch(0.714403 0.104089 183.092);
   --theme-terminal-selection: oklch(0.32 0.05 185);
@@ -96,7 +96,7 @@
   --theme-chrome: oklch(0.978 0.004 85);
   --theme-toolbar: oklch(0.978 0.004 85);
   --theme-toolbar-foreground: oklch(0.235 0.014 75);
-  --theme-toolbar-border: oklch(0.835 0.012 80);
+  --theme-toolbar-border: oklch(0.86 0.012 80);
   --theme-toolbar-control: oklch(0.93 0.01 85);
   --theme-toolbar-control-foreground: oklch(0.235 0.014 75);
   --theme-toolbar-control-hover: oklch(0.9 0.012 82);
@@ -105,8 +105,8 @@
   --theme-surface-overlay: oklch(0.945 0.007 85);
   --theme-text: oklch(0.235 0.014 75);
   --theme-text-muted: oklch(0.5 0.014 75);
-  --theme-border: oklch(0.835 0.012 80);
-  --theme-input: oklch(0.77 0.016 80);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
   --theme-focus: oklch(0.53 0.095 186);
   --theme-accent: oklch(0.53 0.095 186);
   --theme-accent-foreground: oklch(0.99 0.003 85);
@@ -137,12 +137,12 @@
   --theme-code-foreground: oklch(0.235 0.014 75);
   --theme-sidebar: oklch(0.955 0.008 85);
   --theme-sidebar-foreground: oklch(0.235 0.014 75);
-  --theme-sidebar-muted-foreground: oklch(0.46 0.014 75);
+  --theme-sidebar-muted-foreground: oklch(0.5 0.014 75);
   --theme-sidebar-control-surface: oklch(0.995 0.002 85);
   --theme-sidebar-row-hover: oklch(0.93 0.01 85);
   --theme-sidebar-row-active: oklch(0.915 0.02 190);
   --theme-sidebar-row-selected: oklch(0.895 0.028 188);
-  --theme-sidebar-border: oklch(0.845 0.012 82);
+  --theme-sidebar-border: oklch(0.87 0.012 82);
   --theme-terminal-background: oklch(0.978 0.004 85);
   --theme-terminal-foreground: oklch(0.235 0.014 75);
   --theme-terminal-cursor: oklch(0.53 0.095 186);
@@ -198,6 +198,13 @@
   /* What the transcript writes in the muted tier, names, times and folded work, a step nearer the body, because it is read
      for a long time at small sizes. threads.css sets it as the transcript's muted tier; the composer stays on the tier above. */
   --tt-transcript-muted: color-mix(in oklab, var(--tt-text-muted) 80%, var(--tt-text));
+  /* What the reading surface reads: the theme's own inks and rules, unless a block below softens them. */
+  --tt-reading-text: var(--tt-text);
+  --tt-reading-text-2: var(--tt-text-2);
+  --tt-reading-bubble-text: var(--tt-bubble-text);
+  --tt-reading-code-text: var(--tt-code-text);
+  --tt-reading-hairline: var(--tt-border-faint);
+  --tt-reading-field-border: var(--tt-field-border);
 
   /* Boundaries: `border` draws rules, `input` outlines fields, and the
      control boundary leans toward the muted text so a control stays findable. */
@@ -494,9 +501,34 @@
   --tt-effort-trace-halo: .7;
 }
 
-/* Ink's room lifted to a soft charcoal on November 4, 2026 (ADR-0024). A pill's ink stays the deep ink it was, so the
-   composer's stop disc and every page's one action keep their look and their contrast. */
-:root[data-theme='dark'][data-theme-id='t3-code'] { --tt-pill-ink: oklch(0.115 0.008 265); }
+/* The desktop's Sotto halves read softer than the palette says (ADR-0024, November 4, 2026 amendment). This lives here rather
+   than in palettes.ts because the iPhone's palette is generated from that file and keeps its own values. The room rises only
+   as far as leaves the composer's card its step above it. --tt-canvas stays the palette's at the root and across Watcher's
+   room: its night scene, its Stars and its words' glow read the root and the shell, and they keep their colours exactly.
+   The inks are read only by the reading surface below; the composer and the chrome keep theirs. */
+:root[data-theme='dark'][data-theme-id='t3-code'] {
+  --tt-reading-text: color-mix(in oklab, var(--tt-text) 92%, var(--theme-canvas));
+  --tt-reading-text-2: color-mix(in oklab, var(--tt-text-2) 97%, var(--theme-canvas));
+  --tt-reading-bubble-text: color-mix(in oklab, var(--tt-bubble-text) 92%, var(--theme-message-surface));
+  --tt-reading-code-text: color-mix(in oklab, var(--tt-code-text) 90%, var(--theme-code-background));
+}
+:root[data-theme='dark'][data-theme-id='t3-code'] .app-shell:not(:has(.watcher-room)) { --tt-canvas: oklch(0.13 0.003 75); }
+/* By day the rules a reader's eye follows go a step darker, and so do the sidebar's times. */
+:root[data-theme='light'][data-theme-id='t3-code'] {
+  --tt-reading-hairline: color-mix(in srgb, var(--tt-border-faint) 88%, var(--theme-text));
+  --tt-reading-field-border: color-mix(in srgb, var(--tt-field-border) 88%, var(--theme-text));
+  --tt-sidebar-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-muted-foreground) 85%, var(--theme-sidebar-foreground)) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+}
+/* The reading surface: a thread's transcript, and not Watcher's conversation. */
+.thread-pane:not(.watcher-pane) .thread-transcript {
+  --tt-text: var(--tt-reading-text);
+  --tt-text-2: var(--tt-reading-text-2);
+  --tt-bubble-text: var(--tt-reading-bubble-text);
+  --tt-code-text: var(--tt-reading-code-text);
+  --tt-hairline: var(--tt-reading-hairline);
+  --tt-code-border: var(--tt-reading-hairline);
+  --threads-field-border: var(--tt-reading-field-border);
+}
 
 /* The effort colourways (ADR-0019). Ember and Theme accent come from theme roles; Cyberpunk, Rainbow, Aurora
    and Plasma are fixed palettes a theme does not carry. Keyed on the attribute alone, so a Settings swatch can

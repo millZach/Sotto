@@ -83,7 +83,7 @@ enum ThemePalettes {
         surfaceOverlay: ThemeRGB(0.9373, 0.9255, 0.9098),
         text: ThemeRGB(0.1333, 0.1137, 0.0902),
         textMuted: ThemeRGB(0.4078, 0.3843, 0.3569),
-        border: ThemeRGB(0.8039, 0.7843, 0.7529),
+        border: ThemeRGB(0.8353, 0.8157, 0.7843),
         accent: ThemeRGB(0.0000, 0.4902, 0.4549),
         accentForeground: ThemeRGB(0.9922, 0.9882, 0.9765),
         accentSurface: ThemeRGB(0.8118, 0.9255, 0.9059),
@@ -103,7 +103,7 @@ enum ThemePalettes {
     )
 
     static let sottoDark = ThemeSwatch(
-        canvas: ThemeRGB(0.1059, 0.1059, 0.1020),
+        canvas: ThemeRGB(0.0157, 0.0196, 0.0275),
         surface: ThemeRGB(0.0353, 0.0392, 0.0549),
         surfaceRaised: ThemeRGB(0.0667, 0.0745, 0.0863),
         surfaceOverlay: ThemeRGB(0.0941, 0.0980, 0.1137),
@@ -117,10 +117,10 @@ enum ThemePalettes {
         warningSurface: ThemeRGB(0.2275, 0.1882, 0.1216),
         error: ThemeRGB(0.9843, 0.2549, 0.2902),
         errorSurface: ThemeRGB(0.2392, 0.1373, 0.1373),
-        messageSurface: ThemeRGB(0.0627, 0.0667, 0.0784),
-        messageForeground: ThemeRGB(0.8980, 0.9020, 0.9137),
-        codeBackground: ThemeRGB(0.0510, 0.0549, 0.0706),
-        codeForeground: ThemeRGB(0.8784, 0.8824, 0.8980),
+        messageSurface: ThemeRGB(0.0784, 0.0902, 0.1176),
+        messageForeground: ThemeRGB(0.9765, 0.9804, 0.9922),
+        codeBackground: ThemeRGB(0.0431, 0.0471, 0.0627),
+        codeForeground: ThemeRGB(0.9765, 0.9804, 0.9922),
         placeholder: ThemeRGB(0.5804, 0.5922, 0.6196),
         mutedText: ThemeRGB(0.6275, 0.6471, 0.6824),
         accentText: ThemeRGB(0.4196, 0.7647, 0.7137),
