@@ -228,6 +228,7 @@ test('a prototype waiting for review is on the list, and opening its page takes 
     await expect(page.locator('.to-do__badge')).toHaveCount(0)
     await expect(scroll(page)).toHaveCount(0)
     await expect(page.locator('.prototype-ready')).toHaveCount(0)
+
   } finally { await closeSotto(launched) }
 })
 

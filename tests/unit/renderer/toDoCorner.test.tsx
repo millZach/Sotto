@@ -9,7 +9,12 @@ import { TO_DO_UNDO_MS, type ToDo, type ToDosBridge, type ToDosView, type ToDoWi
 import { AppProvider } from '../../../src/renderer/src/state/AppContext'
 import { ToDoCorner } from '../../../src/renderer/src/features/toDos/ToDoCorner'
 import { toDoClientOf } from '../../../src/renderer/src/features/toDos/toDoClient'
+import { toolsPanelStore } from '../../../src/renderer/src/tools/toolsPanelStore'
+import type { BrowserPage } from '../../../src/shared/browser'
 import { createBridge, createController } from '../../fixtures/renderer/appHarness'
+
+const agentsState = vi.hoisted(() => ({ value: null as { command: ReturnType<typeof vi.fn>; state: unknown } | null }))
+vi.mock('../../../src/renderer/src/agents/AgentContext', async original => ({ ...await original<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: () => agentsState.value }))
 
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
@@ -245,6 +250,44 @@ describe('a prototype waiting for review', () => {
     expect(screen.queryByRole('button', { name: 'It didn\'t work' })).toBeNull()
     expect(screen.queryByText('A thread added this')).toBeNull()
     expect(screen.getByRole('checkbox', { name: 'Check off: Review the prototype' })).toBeVisible()
+  })
+})
+
+describe('opening a prototype\'s page from the list', () => {
+  const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
+  const opening = (result: unknown) => {
+    const { bridge, publish } = lists([item('p', { by: 'prototype', threadId: 't1' })])
+    agentsState.value = { command: vi.fn(async () => undefined), state: { connections: [], host: { threads: [{ id: 't1', title: 'Greeting', prototypeReady: { source: 'reply:one', pages: [page] } }] } } }
+    const open = vi.fn(async () => result)
+    ;(window as unknown as { sotto?: unknown }).sotto = { openQuestionPage: open }
+    return { bridge, publish, open }
+  }
+  afterEach(() => { agentsState.value = null; delete (window as unknown as { sotto?: unknown }).sotto })
+  it('opens by its token and leaves the page where it is when the system browser took it', async () => {
+    const { bridge, open } = opening({ ok: true })
+    const shown = vi.spyOn(toolsPanelStore, 'showBrowserPage')
+    const user = userEvent.setup()
+    render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => update(true), getSettings: async () => DEFAULT_SETTINGS })} createController={createController}><ToDoCorner bridge={bridge} /></AppProvider>)
+    await user.click(await icon())
+    await user.click(screen.getByRole('link', { name: 'Open the prototype, greeting.html' }))
+    expect(open).toHaveBeenCalledWith({ threadId: 't1', token: page.token })
+    expect(agentsState.value!.command).not.toHaveBeenCalled()
+    expect(shown).not.toHaveBeenCalled()
+    shown.mockRestore()
+  })
+  it('takes the user to the thread and its browser when Sotto\'s browser took it, so the page is seen before its to-do goes', async () => {
+    const browserPage = { workspace: { threadId: 't1' } } as unknown as BrowserPage
+    const { bridge } = opening({ ok: true, page: browserPage })
+    const shown = vi.spyOn(toolsPanelStore, 'showBrowserPage').mockReturnValue('opened')
+    const user = userEvent.setup()
+    render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => update(true), getSettings: async () => DEFAULT_SETTINGS })} createController={createController}><ToDoCorner bridge={bridge} /></AppProvider>)
+    const button = await icon()
+    await user.click(button)
+    await user.click(screen.getByRole('link', { name: 'Open the prototype, greeting.html' }))
+    await waitFor(() => { expect(shown).toHaveBeenCalledWith(browserPage, true) })
+    expect(agentsState.value!.command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 't1' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    shown.mockRestore()
   })
 })
 

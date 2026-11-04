@@ -47,6 +47,15 @@ describe('a prototype waiting for review as a to-do', () => {
     made.markChanged()
     expect(made.view()[0]!.seen).toBe(false)
   })
+  it('stays seen after a restart, with its ID read back before or after its mark', () => {
+    const { made } = fixture([['thread-1', mark('reply:one')]])
+    made.allSeen()
+    const ids = made.seenIds()
+    const { made: again } = fixture([['thread-1', mark('reply:one')]])
+    expect(again.view()[0]!.seen).toBe(false)
+    again.restoreSeen(ids)
+    expect(again.view()[0]!.seen).toBe(true)
+  })
   it('counts as reviewed when checked off, as opening a page is', () => {
     const { made, opened } = fixture([['thread-1', mark('reply:one', 'tok')]])
     expect(made.checked(made.view()[0]!.id)).toBe(true)

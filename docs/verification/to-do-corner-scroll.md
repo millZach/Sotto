@@ -37,4 +37,5 @@ The same spec's third journey, on a thread whose finished reply names a page: th
 - Windows and macOS. Only Linux ran here, where the window has no controls of its own. On Windows the icon stands left of them; the CSS gives the same 34 pixels on all three, and the journey has not run there.
 - A real paired host. The socket's side has its own tests from part one (`tests/integration/socketToDos.test.ts`); the window with a second computer is covered only with a fake bridge.
 - A second tell after a restart. What a thread has heard while a save fails is held in memory, because the save is what failed, so a restart in that state tells it once more.
+- A prototype opened in Sotto's browser from the list, in the running app. Sotto's browser opens a file through the phone access listener, which the journey doesn't start, so that path is a unit test with main's answer faked. It's worth a hand test.
 - How the roll looks moving. The captures show it at rest. A hand look at the motion is worth having, since the journey only checks that the transition is what it should be.

@@ -4233,6 +4233,10 @@ msgstr "Open to answer"
 msgid "Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again."
 msgstr "Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again."
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Opened in the thread's browser, and Tools is pinned to another thread. Unpin it to see the page."
+msgstr "Opened in the thread's browser, and Tools is pinned to another thread. Unpin it to see the page."
+
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Opened in your browser"
 msgstr "Opened in your browser"

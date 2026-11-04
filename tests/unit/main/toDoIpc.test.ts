@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { machineToDos, registerToDoIpc, watcherToDoMachines, type RemoteToDos } from '../../../src/main/agents/toDoIpc'
+import { machineToDos, registerToDoIpc, type RemoteToDos } from '../../../src/main/agents/toDoIpc'
 import { ToDoStore } from '../../../src/main/agents/toDos'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { TO_DOS_CHANGED, TO_DOS_READ, TO_DOS_REQUEST, type MachineToDos, type ToDosView } from '../../../src/shared/toDos'
@@ -60,12 +60,11 @@ describe('the window’s to-do list (ADR-0188)', () => {
     hosts.change()
     expect(send).toHaveBeenCalledWith(TO_DOS_CHANGED, expect.objectContaining({ machines: expect.any(Array) }))
   })
-  it('leaves a list not read from disk out of what Watcher reads, so what comes back is a first read, not all new', async () => {
+  it('shows no list not read from disk, so what comes back is a first read, not all new', async () => {
     const store = { notRead: true, view: () => [] } as unknown as ToDoStore
-    expect(watcherToDoMachines(store, undefined, () => LOCAL)).toEqual([])
-    expect(machineToDos(store, undefined, () => LOCAL)).toEqual([{ hostId: LOCAL, thisComputer: true, items: [] }])
+    expect(machineToDos(store, undefined, () => LOCAL)).toEqual([])
     const read = { notRead: false, view: () => [] } as unknown as ToDoStore
-    expect(watcherToDoMachines(read, undefined, () => LOCAL)).toEqual([{ hostId: LOCAL, thisComputer: true, items: [] }])
+    expect(machineToDos(read, undefined, () => LOCAL)).toEqual([{ hostId: LOCAL, thisComputer: true, items: [] }])
   })
   it('refuses a window it does not trust', async () => {
     const { ipc, handlers, main, widgetEvent } = ipcRegistry()

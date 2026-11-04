@@ -7,6 +7,9 @@ import { TO_DO_NOTE_MAX, TO_DO_TITLE_MAX, type ToDosBridge } from '../../../../s
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { listedHosts } from '../../agents/HostBadge'
 import { MessageLinks } from '../../agents/requests/AgentRequestCard'
+import { BrowserPageRouteContext, ThreadWebLinks, type WebLinkResult } from '../../tools/webLinks'
+import { toolsPanelStore } from '../../tools/toolsPanelStore'
+import type { BrowserPage } from '../../../../shared/browser'
 import { Button } from '../../components/Button'
 import { useMark } from '../../components/marks'
 import { useOptionalApp } from '../../state/AppContext'
@@ -242,6 +245,11 @@ function ToDoItem({ row, client, isNew, several, rollUp }: {
     app?.actions.navigate('threads')
     rollUp()
   }
+  const showInThread = (page: BrowserPage): WebLinkResult => {
+    openThread()
+    return toolsPanelStore.showBrowserPage(page, true) === 'opened' ? { ok: true }
+      : { ok: true, message: t`Opened in the thread's browser, and Tools is pinned to another thread. Unpin it to see the page.` }
+  }
   const send = async (event?: FormEvent): Promise<void> => {
     event?.preventDefault()
     const words = note.trim()
@@ -278,7 +286,14 @@ function ToDoItem({ row, client, isNew, several, rollUp }: {
           {stepsOpen ? plural(stepCount, { one: 'Hide # step', other: 'Hide # steps' }) : plural(stepCount, { one: 'Show # step', other: 'Show # steps' })}
         </button> : null}
       </div>
-      {item.by === 'prototype' && thread?.prototypeReady ? <div className="to-do-row__pages"><MessageLinks links={[]} pages={thread.prototypeReady.pages} owner={{ threadId: thread.id }} label={t`Pages to review`} /></div> : null}
+      {item.by === 'prototype' && thread?.prototypeReady ? <div className="to-do-row__pages">
+        {/* Where Web links in threads opens pages in Sotto's browser, the page shows in its thread's, on the Threads page. */}
+        <BrowserPageRouteContext.Provider value={showInThread}>
+          <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} onPairedHost={thread.remoteHost === true}>
+            <MessageLinks links={[]} pages={thread.prototypeReady.pages} owner={{ threadId: thread.id }} label={t`Pages to review`} />
+          </ThreadWebLinks>
+        </BrowserPageRouteContext.Provider>
+      </div> : null}
       {stepsOpen && item.steps ? <ol className="to-do-row__steps">{item.steps.map((step, index) => <li key={index}>{step}</li>)}</ol> : null}
       {!item.waits ? null : noting
         ? <form className="to-do-row__note" onKeyDown={onNoteKey} onSubmit={event => void send(event)}>

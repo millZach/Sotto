@@ -632,7 +632,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? new PrototypeToDos(() => agentControl.prototypeMarks(), token => { agentControl.questionPageOpened(token) }, () => { toDos?.madeItemsChanged() }) : undefined
   if (prototypeToDos) agentControl.onPrototypeMarksChanged(() => { prototypeToDos.markChanged() })
   const toDos = options.toDoListEnabled === true ? new ToDoStore({ directory, historyEnabled: options.historyEnabled,
-    ...prototypeToDos ? { madeItems: () => prototypeToDos.view(), madeItemChecked: (id: string) => prototypeToDos.checked(id), madeItemsSeen: () => prototypeToDos.allSeen() } : {},
+    ...prototypeToDos ? { madeItems: () => prototypeToDos.view(), madeItemChecked: (id: string) => prototypeToDos.checked(id), madeItemsSeen: () => prototypeToDos.allSeen(), madeSeenIds: () => prototypeToDos.seenIds(), restoreMadeSeen: (ids: readonly string[]) => { prototypeToDos.restoreSeen(ids) } } : {},
     told: async (threadId, title, didNotWork) => {
       // A settled, closed or deleted thread is waiting on nothing, so the check-off simply stands.
       if (agentControl.takesWakeUps(threadId)) await agentControl.deliverWakeUp(threadId, { source: 'to-do', items: [{ title, ...didNotWork ? { didNotWork } : {} }] }, { tool: false })

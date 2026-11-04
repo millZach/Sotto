@@ -67,7 +67,7 @@ describe('the coordinator’s prototype-ready mark', () => {
     let told = 0
     const made = new PrototypeToDos(() => control.prototypeMarks(), token => { control.questionPageOpened(token) }, () => { told += 1 })
     control.onPrototypeMarksChanged(() => { made.markChanged() })
-    const store = new ToDoStore({ directory, historyEnabled: () => true, told: async () => undefined, madeItems: () => made.view(), madeItemChecked: id => made.checked(id), madeItemsSeen: () => made.allSeen() })
+    const store = new ToDoStore({ directory, historyEnabled: () => true, told: async () => undefined, madeItems: () => made.view(), madeItemChecked: id => made.checked(id), madeItemsSeen: () => made.allSeen(), madeSeenIds: () => made.seenIds(), restoreMadeSeen: ids => { made.restoreSeen(ids) } })
     await store.drain()
     finishWithPrototype(host)
     await vi.waitFor(() => expect(store.view()).toHaveLength(1))
@@ -77,9 +77,9 @@ describe('the coordinator’s prototype-ready mark', () => {
     await store.request({ kind: 'seen' })
     expect(store.view()[0]).toMatchObject({ id: item!.id, seen: true })
     await store.request({ kind: 'add', title: 'Mine' })
-    const saved = await readFile(join(directory, 'to-dos.json'), 'utf8')
-    expect(saved).toContain('Mine')
-    expect(saved).not.toContain('prototype')
+    const saved = JSON.parse(await readFile(join(directory, 'to-dos.json'), 'utf8')) as { items: { title: string; by: string }[]; madeSeen: string[] }
+    expect(saved.items.map(entry => [entry.title, entry.by])).toEqual([['Mine', 'user']])
+    expect(saved.madeSeen).toEqual([item!.id])
     await store.request({ kind: 'check', id: item!.id })
     await vi.waitFor(() => expect(mark(control.shell())).toBeUndefined())
     expect(store.view().map(entry => entry.title)).toEqual(['Mine'])

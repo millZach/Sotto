@@ -13,15 +13,8 @@ export interface RemoteToDos {
 /** Every computer's to-dos, This computer's first where it runs its local host, by the window's keys for their threads. */
 export function machineToDos(local: ToDoStore | undefined, remote: RemoteToDos | undefined, localHostId: () => string | undefined): MachineToDos[] {
   const hostId = localHostId()
-  return [...local ? [{ hostId: hostId ?? TO_DOS_HOST_NOT_KNOWN, thisComputer: true, items: local.view().map(item => toDoForWindow(hostId, item)) }] : [], ...remote?.hostToDos() ?? []]
-}
-
-/**
- * The same lists as Watcher reads them. A list not read from disk yet is left out, so one that comes back holding what was
- * saved is a first read, not everything just added. The window still shows it, since a press there is what reads it again.
- */
-export function watcherToDoMachines(local: ToDoStore | undefined, remote: RemoteToDos | undefined, localHostId: () => string | undefined): MachineToDos[] {
-  return machineToDos(local?.notRead ? undefined : local, remote, localHostId)
+  // A list not read from disk yet stands for nothing: shown, it would look empty, and what it holds would look just added.
+  return [...local && !local.notRead ? [{ hostId: hostId ?? TO_DOS_HOST_NOT_KNOWN, thisComputer: true, items: local.view().map(item => toDoForWindow(hostId, item)) }] : [], ...remote?.hostToDos() ?? []]
 }
 
 /**

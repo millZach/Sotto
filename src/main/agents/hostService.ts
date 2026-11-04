@@ -520,7 +520,8 @@ export class LocalHostService implements HostService {
     return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
   }
   get supportsToDos(): boolean { return this.options.toDos !== undefined }
-  toDos(): readonly ToDo[] | undefined { return this.options.toDos?.view() }
+  /** Nothing to say until the saved list has been read: pushed empty, what it holds would look just added. */
+  toDos(): readonly ToDo[] | undefined { return this.options.toDos?.notRead ? undefined : this.options.toDos?.view() }
   subscribeToDos(listener: () => void): () => void { return this.options.toDos?.subscribe(listener) ?? (() => undefined) }
   toDoRequest(request: ToDoRequest): Promise<void> { return this.options.toDos?.request(request) ?? Promise.reject(new Error('This host keeps no to-do list.')) }
   get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }

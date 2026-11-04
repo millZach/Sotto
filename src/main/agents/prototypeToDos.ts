@@ -7,8 +7,8 @@ export const PROTOTYPE_TO_DO_TITLE = 'Review the prototype'
 
 /**
  * A prototype waiting for review as a to-do of its own kind (ADR-0188, decision 10): made from each thread's Prototype ready
- * mark (ADR-0108) and never saved, so the mark stays the one record of it. It is worked out when a list is read, and only
- * after a mark changed, never on an update. What has been seen lasts until a restart.
+ * mark (ADR-0108) and never saved, so the mark stays the one record of it; only which have been seen is saved, by ID. It is
+ * worked out when a list is read, and only after a mark changed, never on an update.
  */
 export class PrototypeToDos {
   private items: readonly ToDo[] = []
@@ -41,7 +41,6 @@ export class PrototypeToDos {
     }
     this.addedAt.clear()
     for (const [id, at] of addedAt) this.addedAt.set(id, at)
-    for (const id of this.seen) if (!addedAt.has(id)) this.seen.delete(id)
     this.items = items.slice(-TO_DOS_MADE_MAX)
     return this.items
   }
@@ -58,7 +57,15 @@ export class PrototypeToDos {
     const fresh = this.view().filter(item => !item.seen)
     if (!fresh.length) return false
     for (const item of fresh) this.seen.add(item.id)
+    // The oldest go first: one whose mark is gone never comes back under the same ID.
+    for (const id of this.seen) { if (this.seen.size <= TO_DOS_MADE_MAX) break; this.seen.delete(id) }
     this.stale = true
     return true
+  }
+  /** What the list saves of these, by ID alone. */
+  seenIds(): readonly string[] { return [...this.seen] }
+  restoreSeen(ids: readonly string[]): void {
+    for (const id of ids) this.seen.add(id)
+    this.stale = true
   }
 }
