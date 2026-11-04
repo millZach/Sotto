@@ -684,6 +684,22 @@ msgstr "{minutes, plural, one {Checked # minute ago} other {Checked # minutes ag
 msgid "{modelCount} · Free with OpenCode Zen"
 msgstr "{modelCount} · Free with OpenCode Zen"
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself."
+msgstr "{modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself."
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece. It does no work itself."
+msgstr "{modelName} oversees and chooses a model for each piece. It does no work itself."
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
+msgstr "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
+msgstr "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{more, plural, one {and {files} more file} other {and {files} more files}}"
 msgstr "{more, plural, one {and {files} more file} other {and {files} more files}}"
@@ -2497,9 +2513,17 @@ msgstr "Choose branch"
 msgid "Choose model"
 msgstr "Choose model"
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Choose model. {modelNameNow} oversees this thread"
+msgstr "Choose model. {modelNameNow} oversees this thread"
+
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Choose or create a thread to review this draft."
 msgstr "Choose or create a thread to review this draft."
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Choose providers"
+msgstr "Choose providers"
 
 #. {computerName} is the name of a saved host.
 #: src/renderer/src/agents/ProjectsDirectoryRow.tsx
@@ -3926,6 +3950,10 @@ msgstr "Draws when the block is complete."
 msgid "Drop to attach"
 msgstr "Drop to attach"
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Dynamic"
+msgstr "Dynamic"
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
 msgstr "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
@@ -4672,6 +4700,10 @@ msgstr "It asked for more permission than this thread has, or than your new-thre
 #: src/renderer/src/agents/delegationWords.ts
 msgid "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
 msgstr "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "It can change once this turn finishes."
+msgstr "It can change once this turn finishes."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "It had answered at {time}, when Sotto last read it."
@@ -6225,6 +6257,11 @@ msgstr "OpenCode no longer has the key for {name}, but Sotto could not take {nam
 msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
 msgstr "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
 
+#. Who an OpenCode thread's work goes to, in a list of companies such as Anthropic and OpenAI.
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "OpenCode's model sources"
+msgstr "OpenCode's model sources"
+
 #. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "opened {url}"
@@ -6299,6 +6336,11 @@ msgstr "Other: {text}"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Outcome unknown"
 msgstr "Outcome unknown"
+
+#. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "oversees"
+msgstr "oversees"
 
 #. The form a GitHub repository name takes.
 #: src/renderer/src/agents/GitActionButton.tsx
@@ -9506,6 +9548,14 @@ msgstr "Turn off"
 msgid "Turn off idle compaction in Settings"
 msgstr "Turn off idle compaction in Settings"
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn on"
+msgstr "Turn on"
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn on Dynamic for this thread?"
+msgstr "Turn on Dynamic for this thread?"
+
 #. A tip under a working thread. {sigil} is the character that opens the skills list.
 #: src/renderer/src/agents/tips.tsx
 msgid "Type {sigil} in the prompt to pick one of this thread’s skills."
@@ -10364,6 +10414,10 @@ msgstr "You"
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You had sent your own message in that thread since this thread last read it. {nothing}"
 msgstr "You had sent your own message in that thread since this thread last read it. {nothing}"
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "You only see this once. The list stays in Settings, under Threads."
+msgstr "You only see this once. The list stays in Settings, under Threads."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You sent to it at {time}, so Sotto did not send this brief."

@@ -1,6 +1,6 @@
 # Dynamic threads
 
-Approved by Zach on November 4, 2026, to build in this order. The decisions are in [ADR-0191](../adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md) (number provisional). The mock-up is kept at the tag `prototype/dynamic-mode`.
+Approved by Zach on November 4, 2026, to build in this order. The decisions are in [ADR-0191](../adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md). The mock-up is kept at the tag `prototype/dynamic-mode`.
 
 ## Zach's picks, November 4, 2026
 
@@ -51,7 +51,7 @@ Main first, so the switch never appears before it does something. Each part is o
 
 ## Part 0: ADR, glossary and README
 
-The documents in this change: the ADR, `CONTEXT.md`'s **Dynamic thread** and **Overseer**, and the README paragraph that AGENTS.md asks for before a patch. Tag the prototype. Renumber the ADR if #2170 or another merge takes the number.
+The documents in this change: the ADR, `CONTEXT.md`'s **Dynamic thread** and **Overseer**, and the README paragraph that AGENTS.md asks for before a patch. Tag the prototype.
 
 ## Part 1: #1202
 
@@ -111,7 +111,7 @@ Tests: unit tests of the row's words. `tests/e2e/thread-delegation.spec.ts` gain
 - The first-use dialog, with Escape, and focus returning to the model chip.
 - A card in Settings → Threads with the list, its limit readings and the two limits, and its entries in `settingsPages.ts` for Find a setting.
 - Docs: `docs/guide.md`, `docs/agent-control.md` and README's feature list.
-- `tests/e2e/dynamic-threads.spec.ts`, on `worker-roles.spec.ts`'s pattern, over the fake clients. Light, dark and reduced motion, at 1600x1000, 1280x800 and 820x560. A note in `docs/verification/` with its screenshots in `artifacts/dynamic-threads/`.
+- `tests/e2e/dynamic-threads.spec.ts`, over the fake clients: both themes at 1600x1000, 1280x800 and 820x560, with text contrast. No motion is added. A note in `docs/verification/` with its screenshots in `artifacts/dynamic-threads/`.
 
 A new stylesheet goes on the `owned` list in `themeTokens.test.ts`. Baselines change only if a captured page does; with the switch off, none should.
 

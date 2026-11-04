@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted November 4, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/dynamic-mode` (switch A, steps 1). **Number provisional until merge** (`docs/agents/domain.md`): #2170 holds 0190.
+Accepted November 4, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/dynamic-mode` (switch A, steps 1).
 
 It is an Owl feature (`dynamic-threads`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). The build order is `docs/plans/dynamic-threads.md`.
 
@@ -26,7 +26,7 @@ What providers allow decides the shape. A thread stays on one provider session f
 
 Claude Code and Codex obey instructions given when a provider session is created, and ignore new ones on resume: checked live on November 4, 2026, on Claude Code 2.1.318 and Codex 0.166.0 (`dynamicThreadInstructionsLive.test.ts`). So a thread set before its first message starts on the overseer's instructions, and a thread that changes after that is told by an **overseer note**: one note, on or off, beside its next message, through the channel Watcher's request note uses (Claude Code's prompt hook, Codex's turn context), so it never joins the user's words. Zach chose this over fixing the switch at the first message. A note lives in the conversation rather than in the session's instructions, so a compaction can lose it: one Sotto sees finish sends the note again with the next message.
 
-The first time the user turns it on, a small dialog names the companies the allowed list would send work to, with **Turn on** and **Choose providers**. After that the switch just switches.
+The first time the user turns it on, a small dialog names the companies the allowed list would send work to, with **Turn on** and **Choose providers**, which opens the list in Settings and turns nothing on. After that the switch just switches, and so it does for a user who made the list in Settings first, since the list names the same companies. Changing a limit there does not make the list. For OpenCode, which is a client, the list names its model sources (CONTEXT.md) rather than a company.
 
 **2. The overseer does no work itself.** The model the user picked plans, briefs workers, reads what they return and answers the user. Its standing instructions tell it not to edit project files or run changing commands. If it does anyway, its reply is marked with the files and its reason, or "It gave no reason", as Watcher's is (ADR-0073). It is told and marked, not blocked. A block would need each provider's own proof and a new ceiling for its workers, and Zach moved Watcher off read-only on October 13, 2026.
 

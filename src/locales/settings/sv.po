@@ -674,6 +674,10 @@ msgstr ""
 msgid "{updates, plural, one {# update} other {# updates}} · {failed, plural, one {# failed} other {# failed}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "{used}% of {window} used"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "{uses, plural, one {{selectedName} · # use} other {{selectedName} · # uses}}"
 msgstr ""
@@ -787,6 +791,10 @@ msgstr ""
 #. A switch on Settings > Appearance: on, the light and the dark color schemes each get their own theme
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "A different theme when dark"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu."
 msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
@@ -2272,6 +2280,11 @@ msgstr ""
 msgid "Duplicate {name}"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Dynamic threads"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "e.g. Aurora"
 msgstr ""
@@ -2533,6 +2546,10 @@ msgstr ""
 msgid "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "For any worker. Ultracode is only ever yours to choose, on your own thread."
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "For settled threads on this computer. A cleared thread can’t be brought back."
 msgstr ""
@@ -2643,6 +2660,10 @@ msgstr ""
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Hide whitespace changes"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Highest effort"
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -3494,6 +3515,10 @@ msgstr ""
 msgid "No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "No provider is connected yet."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost."
 msgstr ""
@@ -3598,6 +3623,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Not on {host} yet."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Not read yet"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -4493,6 +4522,10 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Replies in threads"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Reports no limits, so it would be chosen blind"
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -6014,6 +6047,10 @@ msgstr ""
 msgid "The one on {host} is too old."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "The overseer starts the next as one returns. Your ceiling for this computer still applies."
+msgstr ""
+
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
 msgstr ""
@@ -6983,6 +7020,10 @@ msgstr ""
 msgid "What changes on {name}"
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "What it may use"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "What Sotto found on {name}"
 msgstr ""
@@ -7099,6 +7140,10 @@ msgstr ""
 msgid "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Workers at once"
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Workers is how many Watcher starts for one request: usually the first number, never more than Up to unless you name a count."
 msgstr ""
@@ -7188,6 +7233,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Your choice, not available"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your code goes to the company behind each provider ticked here. A provider off this list is never used, even if your message names it."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx

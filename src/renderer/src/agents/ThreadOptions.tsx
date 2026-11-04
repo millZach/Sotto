@@ -17,6 +17,7 @@ import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { SplitChipEffort, type SpeedOption } from './SplitChipEffort'
 import { suggestedEffortIndex } from './effortSuggestion'
+import { useDynamicSwitch } from './DynamicSwitch'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
@@ -595,6 +596,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // Where the thread's own model cannot change in place, its chip lists that model and the providers it may continue on.
   const continueOnly = (current: readonly AgentModel[]): AgentModel[] => [...current.filter(model => model.id === catalogEntry(current, thread.modelId)?.id), ...continuations]
   const stayingWith = providerNameOf(thread)
+  // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
+  const modelId = settings.pending.model?.value ?? drawn.model
+  const model = resolveModel(models, modelId)
+  const modelNameNow = model?.name ?? modelId
+  // Before the return below: a provider's capabilities can change while this bar stays on screen.
+  const dynamic = useDynamicSwitch({ thread, state, command, modelName: modelNameNow, fixed: fixed || busy })
   if (locked && !capabilities.configureThread) {
     if (watcher) return <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })}
       inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={permissionsFixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
@@ -608,10 +615,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     </div>
   }
   const modelDisabled = locked && capabilities.configureThreadModel === false
-  // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
   const confirmedModel = resolveModel(models, thread.modelId)
-  const modelId = settings.pending.model?.value ?? drawn.model
-  const model = resolveModel(models, modelId)
   const keptSpeed = watcher && savedRoleSpeed !== undefined ? savedRoleSpeed : threadSpeed(thread)
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
   // model's default effort, so that is what the effort chip shows meanwhile.
@@ -732,8 +736,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       pending={pendingPermission !== null || kept.has('permissions')} describedBy={kept.has('permissions') ? nextTurnLineId : permissionUnconfirmed ? unconfirmedId : captionId}
       onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked} data-permission={quiet ? permission : undefined}>
+    {dynamic.dialog}
     <div className="thread-options thread-options--chips">
-      <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
+      <ModelPicker foot={dynamic.foot} suffix={dynamic.suffix} label={dynamic.overseeing ? t`Choose model. ${modelNameNow} oversees this thread` : undefined} models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
         pending={settings.pending.model?.awaiting === 'unconfirmed' || kept.has('model')} describedBy={describedFor('model')} ownServers={ownServers}
         mark={serverMark ? <ServerMark state={serverMark.state} attempt={serverMark.attempt} turnId={serverTurn?.turnId} finished={serverTurn?.status === 'completed'} /> : undefined}
@@ -757,7 +762,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('effort') || kept.has('fast')} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
-        suggestion={suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
+        suggestion={dynamic.overseeing ? null : suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
         onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
