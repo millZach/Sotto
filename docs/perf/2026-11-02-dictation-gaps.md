@@ -1,6 +1,6 @@
 # Dictation handoff timings on Apple silicon
 
-The instrumented baseline is complete. A–E are measured separately, in order.
+The user ended the latency target pursuit on November 3, 2026 in Phoenix (November 4 UTC) and asked to consolidate the existing optimizations. The baseline and A–C completed their planned batches. D was implemented and has one ten-recording Code diagnostic; E was not implemented. The original targets were not achieved as a whole. This note records the measured result and its limits, not an ongoing A–E campaign.
 
 ## Measurement
 
@@ -8,9 +8,9 @@ The instrumented baseline is complete. A–E are measured separately, in order.
 - Machine: Mac16,7, Apple M4 Pro (14 cores), 24 GB, macOS 27.0 (26A428); microphone permission already granted.
 - Input: system default, MacBook Pro Microphone at 48 kHz.
 - Transcription: Parakeet Ultra (Core ML), already installed in FluidAudio's model folder. Cloud transcription off.
-- Local baseline: AI cleanup off, automatic paste on, saved paste delay 150 ms. History stays on: turning it off would delete the user's saved history.
+- Local baseline and A–C: AI cleanup off, automatic paste on, saved paste delay 150 ms. D's Code diagnostic used 50 ms; that is a diagnostic setting, not evidence for a shipped default. History stays on: turning it off would delete the user's saved history.
 - Every measurement build is a local Owl app installed with `sotto-install`; no test suite, e2e journey or design capture runs locally.
-- Ten cold recordings use the first hotkey press after each app launch. Twenty warm recordings leave five seconds idle between the previous recording completing and the next press. Each recording lasts five seconds.
+- The planned baseline and A–C batches each contain ten cold recordings using the first hotkey press after each app launch, and twenty warm recordings leaving five seconds idle between the previous recording completing and the next press. Each recording lasts five seconds. D has only ten warm Code recordings; its planned ten cold and twenty warm recordings did not complete.
 - Timing records contain fixed event names and numeric milliseconds only. They contain no words, audio, prompts, keys, application titles or user identifiers. Audio is never written to disk.
 - Cold means first dictation after launch with the selected speech model ready, rather than a press while its model is still loading. Warm does not keep a microphone stream open.
 
@@ -109,13 +109,15 @@ A second baseline interval, still running the unchanged installed build, measure
 
 ## Changes, in measurement order
 
+The original sequence was:
+
 1. A: prepare and suspend an AudioContext and its worklet at app start; reuse it and rebuild after a device change or closed context.
 2. B: dispatch Listening immediately when microphone access resolves, with synchronous source connection.
 3. C: start the cue and widget presentation alongside microphone opening.
 4. D: remove measured avoidable serial work after stop; select the lowest reliable paste delay across Terminal, VS Code, Chrome and Notes.
 5. E: run an inference before the selected speech model reports ready.
 
-Each stage will record ten cold and twenty warm results before proceeding to the next.
+The baseline and A–C completed ten cold and twenty warm results each. D ended after the Code diagnostic below; its four-target, full-batch and idle comparisons were not completed. E remained a proposal when the user ended the pursuit.
 
 ## A: warm suspended audio graph
 
@@ -290,7 +292,7 @@ Before C, five additional warm recordings in the unchanged B app temporarily dis
 | Source connected → first chunk | 48.300 / 56.599 | 13.800 / 21.500 |
 | Stop → paste | 383.099 / 408.155 | 372.571 / 629.812 |
 
-This small comparison supports the inference that fresh start-cue setup blocks receipt of capture chunks in the renderer: removing cues reduces the source-to-first-chunk interval by roughly 35 ms at both percentiles, without a corresponding Listening improvement. It does not prove a particular Chromium output-cache mechanism or late hardware capture. C will retain the cue and measure its implementation with a full cold/warm batch.
+This small comparison supports the inference that fresh start-cue setup blocks receipt of capture chunks in the renderer: removing cues reduces the source-to-first-chunk interval by roughly 35 ms at both percentiles, without a corresponding Listening improvement. It does not prove a particular Chromium output-cache mechanism or late hardware capture. C retained the cue and was measured with the full cold/warm batch below.
 
 ## C: prepare cues and play alongside capture
 
@@ -370,22 +372,118 @@ The same ten cold and twenty warm recordings completed with Sound cues on, clean
 
 Cold Listening p95 is 142.057 ms, 74.2% below the 550.796 ms baseline and within 150 ms in this batch. Warm Listening is 128.339 ms p95, above the 50 ms target and the 117.419 ms baseline. Its warm context resume is 42.300 ms p95 and microphone request 82.400 ms p95; these distributions overlap and their percentiles must not be added. Dispatch follows microphone readiness within 0.200 ms p95 and connects the source within another 0.100 ms. Warm first chunk is 121.789 ms p95, just above 120 ms; source-to-chunk p95 falls from B's 56.599 to 21.100 ms. The warm first-chunk regression from A and B is largely recovered, but this batch does not prove the target.
 
-Every outlier is retained: cold stop-to-paste reaches 742.877 ms (402.512 ms in the paste helper), and warm reaches 697.142 ms (442.566 ms in the helper). The warm nearest-rank p95 is 406.755 ms; the maximum is still in the evidence. Stop-to-paste p50 remains 376.046 ms, above 350 ms. D has not been applied.
+Every outlier is retained: cold stop-to-paste reaches 742.877 ms (402.512 ms in the paste helper), and warm reaches 697.142 ms (442.566 ms in the helper). The warm nearest-rank p95 is 406.755 ms; the maximum is still in the evidence. Stop-to-paste p50 remains 376.046 ms, above 350 ms. D had not yet been applied to this C build.
 
 The 30.108-second idle observation used 11.625% of one core over nine app processes, RSS 1126.703 → 1080.016 MiB ([evidence](2026-11-02-dictation-gaps/c-idle.json)). Against the first baseline endpoint this is 0.744 CPU percentage points lower and 24.532 MiB higher. Earlier unchanged-baseline intervals varied by hundreds of MiB, so this single endpoint does not establish compliance with the 15 MB memory budget. Matched resource comparisons remain required.
 
 C typecheck, lint, build and packaging passed. A code review found cached failed cue contexts and preparation while dictation was disabled; both were fixed before this build. Unit and perf sources await GitHub CI. No local test, e2e journey or design capture ran.
 
+## D: native paste and immediate Ready
+
+Source: `a3ec781c697d11f6d51a92d67362d23f8ade152e`, local Owl `0.1.43-owl.20261104.8005`. On macOS, paste uses the already-running, ready key listener to submit Command+V. It does not start a listener for paste. The existing fallback runs only when the listener reports that it did not send the command; an uncertain acknowledgement does not send it again. Focused-app lookup overlaps the clipboard write and still completes before the widget hides. After successful delivery and history, the controller publishes success, immediately resets to idle, dispatches Ready and releases the session with its existing guards. Copied keeps the configured display duration; cancellation and persistent error/recovery behavior are unchanged.
+
+The fixed 150 ms clipboard serialization guard survives in the background. Successful delivery returns without awaiting it, allowing history and Ready to proceed; later clipboard writers still wait for it to protect the clipboard while the target consumes the submitted paste. This is not a claim that every fixed sleep except the configured paste delay has been removed. An unconfirmed paste still waits for the guard before offering copied recovery.
+
+Only one diagnostic completed: ten warm recordings into Code, with cleanup off, history on and a saved **50 ms paste delay**. [Raw Code timings](2026-11-02-dictation-gaps/d-code.jsonl), [all numeric aggregates and samples](2026-11-02-dictation-gaps/d-code.summary.json), [numeric readback receipt](2026-11-02-dictation-gaps/d-four-apps.json).
+
+The consolidation decision restores `DEFAULT_SETTINGS.pasteDelayMs` and its matching fixture to the previous **150 ms** because cross-app reliability is incomplete. Existing saved settings are not migrated. The 50 ms setting remains experimental evidence only: **D was not measured at 150 ms**, and the ten Code results below do not establish latency at the retained 150 ms default. Native paste, the background clipboard guard and immediate Ready are kept.
+
+Independent readback reported ten occurrences of each expected clause and 530 characters in total, completing all ten Code deliveries at 50 ms. Despite its four-app filename, the receipt contains only Code. The runner failed while focusing Terminal before any Terminal trial; Terminal, Chrome and Notes were **not measured**. D's planned ten cold and twenty warm recordings and its idle observation did not complete. E was not implemented.
+
+The archived raw records were checked against the source's fixed timing-event vocabulary: ten complete recordings, 45 event names and finite nonnegative numeric values only. The summary was checked against every raw sample and its nearest-rank percentiles. The receipt contains only the fixed app name Code, numeric delay/trial/clause/character counts and a boolean result. No dictated text, window titles, paths from the target, audio or other user content was copied into these artifacts.
+
+| Measured interval | Code warm diagnostic (10), p50 / p95 ms |
+| --- | ---: |
+| `hotkeyToListeningCommittedMs` | 103.335 / 113.134 |
+| `hotkeyToListeningShownMs` | 115.407 / 2069.788 |
+| `hotkeyToFirstAudioChunkMs` | 110.007 / 131.788 |
+| `microphoneRequestMs` | 65.500 / 75.400 |
+| `stopToRecorderStoppedMs` | 11.396 / 28.191 |
+| `stopToLastSegmentMs` | 84.396 / 171.391 |
+| `stopToPasteKeystrokeMs` | 150.354 / 269.127 |
+| `stopToDeliveryReturnedMs` | 150.496 / 269.391 |
+| `stopToReadyMs` | 180.588 / 1888.791 |
+| `deliveryMs` | 65.900 / 97.300 |
+| `historyMs` | 10.100 / 14.700 |
+| `speechDurationMs` | 3465.000 / 3884.000 |
+| `captureDurationMs` | 5050.000 / 5082.000 |
+
+### D stage work
+
+| Measured interval | Code warm diagnostic (10), p50 / p95 ms |
+| --- | ---: |
+| `commandDeliveryMs` | 0.150 / 0.290 |
+| `widgetShowMs` | 0.080 / 3.778 |
+| `audioContextMs` | 35.400 / 45.000 |
+| `workletLoadMs` | 0.000 / 0.100 |
+| `microphoneRequestMs` | 65.500 / 75.400 |
+| `sourceConnectMs` | 0.000 / 0.400 |
+| `startCueMs` | 132.900 / 139.800 |
+| `recorderStopMs` | 11.000 / 27.400 |
+| `transcriptionRequestMs` | 73.800 / 142.900 |
+| `deliveryMs` | 65.900 / 97.300 |
+| `focusedAppMs` | 10.997 / 13.409 |
+| `clipboardWriteMs` | 0.279 / 1.101 |
+| `widgetHideMs` | 0.589 / 3.437 |
+| `pasteDelayMs` | 50.953 / 51.558 |
+| `pasteKeystrokeMs` | 0.613 / 30.505 |
+| `pasteSettleMs` | 150.489 / 532.653 |
+| `historyMs` | 10.100 / 14.700 |
+
+### D handoffs
+
+| Measured interval | Code warm diagnostic (10), p50 / p95 ms |
+| --- | ---: |
+| `hotkeyToCommandMs` | 0.057 / 0.123 |
+| `commandToRecorderMs` | 0.300 / 0.700 |
+| `recorderToAudioContextMs` | 0.000 / 0.000 |
+| `audioContextToWorkletMs` | 0.000 / 0.101 |
+| `workletToMicrophoneMs` | 0.100 / 2.300 |
+| `microphoneToSourceMs` | 0.200 / 0.400 |
+| `microphoneToListeningDispatchMs` | 0.100 / 0.300 |
+| `listeningDispatchToSourceMs` | 0.000 / 0.100 |
+| `listeningDispatchToCommitMs` | 1.101 / 2.300 |
+| `listeningCommitToShownMs` | 10.299 / 1958.800 |
+| `sourceToFirstChunkMs` | 2.200 / 22.600 |
+| `stopToCommandMs` | 0.026 / 0.059 |
+| `stopCommandToControllerMs` | 0.000 / 0.300 |
+| `controllerToRecorderStopMs` | 0.200 / 0.300 |
+| `recorderStopToTranscriptionMs` | 0.000 / 0.200 |
+| `transcriptionToLastSegmentMs` | 0.000 / 0.100 |
+| `lastSegmentToDeliveryMs` | 0.101 / 0.700 |
+| `deliveryToFocusedAppMs` | 2.129 / 4.604 |
+| `deliveryToClipboardMs` | 3.074 / 5.571 |
+| `clipboardToWidgetHideMs` | 9.782 / 10.148 |
+| `focusedAppToWidgetHideMs` | 0.027 / 0.057 |
+| `widgetHideToPasteDelayMs` | 0.003 / 0.005 |
+| `pasteDelayToKeystrokeMs` | 0.008 / 0.019 |
+| `pasteKeystrokeToSettleMs` | 0.004 / 0.006 |
+| `pasteKeystrokeToDeliveryReturnMs` | 0.117 / 0.621 |
+| `deliveryToHistoryMs` | 0.000 / 0.100 |
+| `historyToReadyDispatchMs` | 0.100 / 0.200 |
+| `readyDispatchToWidgetMs` | 16.200 / 1608.500 |
+| `sourceToListeningDispatchMs` | 0.000 / 0.000 |
+
+All ten recordings and every outlier are retained. At ten samples, nearest-rank p95 is the maximum. The first trial committed Listening at 110.988 ms but marked it shown at 2069.788 ms, a 1958.800 ms observation gap. Its Ready dispatch was 280.291 ms after stop, while the widget-ready mark arrived at 1888.791 ms: an unexplained 1608.500 ms animation-frame observation lag. As with B, these marks do not establish whether the user saw the same delay. They neither prove a 1.6-second app-owned stall nor justify dropping the sample or claiming that Ready meets the handoff target. The first background clipboard guard also took 532.653 ms; that full interval remains in `pasteSettleMs`, although successful delivery did not wait for it.
+
+Code's stop-to-paste p50 / p95 is 150.354 / 269.127 ms, compared with C's warm TextEdit 376.046 / 406.755 ms. This is a preliminary comparison across different targets, sample sizes and paste-delay settings, not a matched estimate of D's improvement. D's history-to-Ready-dispatch interval is 0.100 / 0.200 ms, and paste-acknowledgement-to-delivery-return is 0.117 / 0.621 ms; the observed widget Ready interval above remains unresolved.
+
+The controller unit and perf sources assert immediate Ready after a pasted success while preserving complete text, including the scripted 150 ms first-word case. Affected E2E sources now check final Ready/idle and retain full-text, clipboard, history, copied and failure evidence. These sources await GitHub CI. No local unit test, E2E journey or design capture was run. Full `npm run typecheck` and `npm run lint` passed after the default and matching fixture constants were restored from 50 to 150. Both measurement scripts also passed Node's syntax check.
+
+The final source review found no blocking correctness issues in warm capture ownership, device rebuilding, permission waiting, stop during start, cue parallelism, native paste fallback, clipboard serialization or immediate Ready. Keyboard-layout variants still need live verification. The Mac's original saved paste delay (150 ms), AI cleanup and idle-widget settings were restored. No measurement process remained running, and the temporary Code installation and Chrome paste-check profile were removed. The installed D measurement build was retained; its experimental 50 ms saved setting was not.
+
 ## Acceptance and limitations
 
-| Measure | Required |
-| --- | ---: |
-| Hotkey to Listening, warm p95 | ≤50 ms |
-| Hotkey to Listening, cold p95 | ≤150 ms |
-| Hotkey to first captured chunk, warm p95 | ≤120 ms |
-| Stop to paste, local, no cleanup, p50 / p95 | ≤350 / ≤500 ms |
-| App overhead beyond cleanup request time | ≤30 ms |
-| App-owned idle gap at each handoff | ≤16 ms |
-| Idle CPU increase / memory increase | ≤0.5 percentage points / ≤15 MB |
+These are the original targets, retained for comparison after the user ended the pursuit. They are not a declaration of acceptance or a plan to continue measuring.
 
-Baseline and A–C measurements are complete. D–E, execution of the scripted 150 ms speech and lifecycle test sources in GitHub CI, final resource comparisons and the PR remain. Typecheck and lint passed for C; later code must pass them again. C meets cold Listening in its batch. Warm Listening and first chunk, stop-to-paste p50 and the final resource budgets remain unmet or unproven; the B cold shown-mark outlier is retained.
+| Measure | Original target | Measured status at consolidation |
+| --- | ---: | --- |
+| Hotkey to Listening, warm p95 | ≤50 ms | Not met: C 128.339 ms; D Code diagnostic 2069.788 ms with its first-trial observation outlier retained. |
+| Hotkey to Listening, cold p95 | ≤150 ms | C met it at 142.057 ms in its batch; no D cold batch. |
+| Hotkey to first captured chunk, warm p95 | ≤120 ms | Not met: C 121.789 ms; D Code diagnostic 131.788 ms. |
+| Stop to paste, local, no cleanup, p50 / p95 | ≤350 / ≤500 ms | D Code diagnostic at a 50 ms paste delay is 150.354 / 269.127 ms. No exact D measurement at the retained 150 ms default exists; its latency and cross-app reliability are unproven. |
+| App overhead beyond cleanup request time | ≤30 ms | Not measured with cleanup enabled. The diagnostic's 50 ms paste delay plus local ASR already exceeds 30 ms before other work. |
+| App-owned idle gap at each handoff | ≤16 ms | Not established for every handoff. D removes the success hold and measures history-to-Ready dispatch at 0.100 / 0.200 ms; the Ready observation lag remains unexplained. |
+| Idle CPU increase / memory increase | ≤0.5 percentage points / ≤15 MB | Unproven: no D idle measurement, and the baseline varied too much for single endpoint comparisons. |
+
+The baseline and A–C full batches and D's ten Code diagnostics are the available evidence. The original goals were not achieved as a whole. No Terminal, Chrome or Notes D trials, D batch of ten cold and twenty warm recordings, D idle comparison or cleanup-enabled timing batch completed; E was not implemented. Further latency-target work ended at the user's request rather than remaining queued here. Consolidation retains the optimizations, the background clipboard guard, the outliers and the outstanding GitHub CI validation. The shipped paste-delay default is restored to 150 ms without migrating existing saved settings; the experimental 50 ms results do not prove latency at that default.
