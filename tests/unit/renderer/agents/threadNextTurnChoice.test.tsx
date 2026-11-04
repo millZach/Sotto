@@ -38,7 +38,7 @@ describe('a choice for the next turn while a thread works (#2158)', () => {
     const { command } = mount(codexRunning({ requests: [pendingApproval] }))
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
     fireEvent.click(chip)
-    const full = screen.queryByRole('option', { name: 'Full access' })
+    const full = screen.queryByRole('option', { name: /^Full access/u })
     if (full) fireEvent.click(full)
     for (const [request] of command.mock.calls as unknown as [AgentCommand][]) expect(request.type).toBe('configure-thread')
     if (on) expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', runtimeMode: 'full-access' })
