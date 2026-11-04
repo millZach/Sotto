@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { answerRequest, pendingRequest } from '../../../src/main/agents/codexRequests'
 import { RequestDraftService } from '../../../src/main/agents/requestDrafts'
+import { sendBackAnswer } from '../../../src/main/agents/prototypeQuestions'
 import { agentRequestSchema, answerImageCarrier, type AgentRequest } from '../../../src/shared/agents'
 import { protocolAgentStateSchema } from '../../../src/shared/hostProtocol'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
@@ -53,6 +54,11 @@ describe('a Codex question marked secret', () => {
     expect(wire.host.threads[0]!.requests[0]!.questions!.map(question => question.secret)).toEqual([undefined, true])
   })
 
+  it('is never sent back for its prototype, so no copy of it becomes the user’s message (ADR-0108)', () => {
+    expect(sendBackAnswer(secretRequest)).toBeUndefined()
+    expect(sendBackAnswer({ ...secretRequest, questions: [plainQuestion] })).toBeDefined()
+  })
+
   it('never carries an answer’s images (ADR-0176)', () => {
     expect(answerImageCarrier(secretRequest)?.id).toBe('name')
     expect(answerImageCarrier({ questions: [secretQuestion] })).toBeUndefined()
@@ -78,6 +84,14 @@ describe('a secret answer in main’s request drafts', () => {
     expect(saved.selections.q).toEqual({ optionIds: [], other: false, text: '' })
     expect(await written()).not.toContain(FAKE)
     expect(await written()).toContain('Kestrel')
+  })
+
+  it('is blanked by main’s own mark when a draft arrives without it', async () => {
+    const drafts = await service()
+    const unmarked = { ...target, questions: [plainQuestion, { ...plainQuestion, id: 'q', question: secretQuestion.question }] }
+    const saved = await drafts.save({ target: unmarked, revision: 1, held: false, selections })
+    expect(saved.selections.q!.text).toBe('')
+    expect(await written()).not.toContain(FAKE)
   })
 
   it('still binds a held answer to its delivery, compared without the secret words', async () => {

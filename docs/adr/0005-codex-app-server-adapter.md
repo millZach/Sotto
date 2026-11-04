@@ -230,12 +230,14 @@ is a change of its own.
 **The card masks it.** A secret question's own-answer box, alone or as **Write my own answer**, is one password field
 with autocomplete and spelling off and no button to show it. Its accessible name is the question's. A line under it says
 that the provider will see the words and keep them in its own session file, and that Sotto does not save them. On the
-iPhone it is a `SecureField`.
+iPhone it is a `SecureField` with the same line.
 
 **Its words are never saved.** The window sends the form's draft without a secret answer's words, and main blanks them
-again before it writes, so `request-drafts.json` holds only its choices. The words live in the window while a card shows
-the question: the last card for the request to close forgets them, so leaving the thread, a restart or a reload starts
-the box empty. Binding a held answer to its delivery compares the answer the user sent with the saved form without the
+again before it writes, by its own request's marks as well as the draft's, so `request-drafts.json` holds only its
+choices. The words live in the window only while the user may still send them: they are forgotten once the answer is
+sent or held unconfirmed, and when the last card for the request closes, so leaving the thread, a restart or a reload
+starts the box empty. A question about a prototype with a secret answer is never sent back for its page
+([ADR-0108](0108-a-prototype-waiting-for-review-needs-you.md)), since an answer to Sotto's copy becomes the user's message. Binding a held answer to its delivery compares the answer the user sent with the saved form without the
 secret words, rather than not binding secret answers at all, so a delivered answer is still retired by exact proof and an
 unconfirmed one still waits for Check. A delayed older answer with different secret words and the same choices could bind
 the newer held form; the held form never carries the words, so nothing is resent either way. Turning off **Keep local

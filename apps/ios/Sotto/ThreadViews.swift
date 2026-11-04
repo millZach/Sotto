@@ -3329,21 +3329,27 @@ struct RequestSheet: View {
     }
 
     /// A secret answer's box (#2153): one masked line the keyboard neither learns from nor suggests into, held only in
-    /// this view's state like every answer here.
+    /// this view's state like every answer here, with a line saying who keeps the words.
     private func secretField(text: Binding<String>, id: String, label: String) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-        return SecureField("Your answer", text: text, prompt: Text("Type your answer").foregroundStyle(Palette.placeholder))
-            .font(.sotto(.body))
-            .foregroundStyle(Palette.ink)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .privacySensitive()
-            .focused($focus, equals: id)
-            .padding(Space.s3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.code, in: shape)
-            .overlay(shape.strokeBorder(focus == id ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
-            .accessibilityLabel(label)
+        let provider = Words.provider(owner?.providerID)
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            SecureField("Your answer", text: text, prompt: Text("Type your answer").foregroundStyle(Palette.placeholder))
+                .font(.sotto(.body))
+                .foregroundStyle(Palette.ink)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .privacySensitive()
+                .focused($focus, equals: id)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.code, in: shape)
+                .overlay(shape.strokeBorder(focus == id ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
+                .accessibilityLabel(label)
+            Text(verbatim: String(localized: "\(provider) will see this and keep it in its own session file. Sotto does not save it.",
+                                  comment: "Under a masked answer box. %@ is the agent's name, such as Codex."))
+                .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func answerField(text: Binding<String>, id: String, label: String) -> some View {

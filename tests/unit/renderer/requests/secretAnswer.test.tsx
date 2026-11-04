@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
 import type { RequestDraft, RequestDraftBridge, RequestDraftOwner } from '../../../../src/shared/requestDrafts'
 import { AgentRequestCard } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
-import { RequestAnswerStore, type RequestAnswer, type SubmitOutcome } from '../../../../src/renderer/src/agents/requests/requestAnswers'
+import { requestAnswerOwnerKey, RequestAnswerStore, type RequestAnswer, type SubmitOutcome } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { RequestDraftRecovery, savedAnswerClipboard } from '../../../../src/renderer/src/agents/requests/RequestDraftRecovery'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); Reflect.deleteProperty(window, 'sotto') })
@@ -67,7 +67,8 @@ describe('a question its agent marks secret', () => {
 
   it('sends its words to the agent, and never to the request-draft bridge, while the other answers are saved', async () => {
     const drafts = bridge()
-    const { onSubmit } = card(request([plain, secretText]), { drafts })
+    const asked = request([plain, secretText])
+    const { onSubmit, store } = card(asked, { drafts })
     await waitFor(() => expect(drafts.status).toHaveBeenCalled())
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('What should it be called?'), 'Kestrel')
@@ -77,10 +78,13 @@ describe('a question its agent marks secret', () => {
     await user.click(screen.getByRole('button', { name: 'Send answers' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ questionAnswers: { name: { optionIds: [], text: 'Kestrel' }, q: { optionIds: [], text: FAKE } } })))
     expect(JSON.stringify(drafts.save.mock.calls)).not.toContain(FAKE)
+    // Sent, the words are forgotten while the card still shows that it went.
+    await screen.findByText('Answer sent.')
+    expect(JSON.stringify(store.get(requestAnswerOwnerKey('thread-a', asked, owner), asked.id))).not.toContain(FAKE)
   })
 
-  it('forgets the typed words when the last card showing them closes', async () => {
-    const asked = request([secretText])
+  it.each([['an ordinary ID', 'q'], ['an ID with a line break', 'token\npart']])('forgets the typed words when the last card showing them closes: %s', async (_name, id) => {
+    const asked = request([{ ...secretText, id }])
     const first = card(asked)
     const second = render(first.element)
     const user = userEvent.setup()

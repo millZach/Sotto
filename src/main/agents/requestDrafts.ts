@@ -436,11 +436,14 @@ export class RequestDraftService {
 
   save(input: RequestDraft): Promise<RequestDraft> {
     const parsed = requestDraftSchema.parse(input)
-    // The renderer never sends a secret answer's words (#2153); this keeps them off disk if one ever did.
-    const draft: RequestDraft = { ...parsed, selections: withoutSecretWords(parsed.target.questions, parsed.selections) }
-    if (draft.target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    if (parsed.target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => {
-      const previous = this.current(draft.target), state = this.lookup(draft.target)
+      const state = this.lookup(parsed.target)
+      // The renderer never sends a secret answer's words (#2153); this keeps them off disk if one ever did, by the marks main's
+      // own request carries as well as the draft's.
+      const live = state?.requests.find(request => request.id === parsed.target.requestId)?.questions ?? []
+      const draft: RequestDraft = { ...parsed, selections: withoutSecretWords([...parsed.target.questions, ...live], parsed.selections) }
+      const previous = this.current(draft.target)
       const accepted = this.retirement(draft.target)
       if (accepted && draft.revision <= accepted.revision) throw new Error('This answer revision was already accepted. Reload the current answer before saving.')
       if (draft.decisionId !== previous?.decisionId) throw new Error('Delivery identity is owned by main. Reload this answer before saving.')

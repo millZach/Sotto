@@ -74,8 +74,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
   const [checking, setChecking] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   // A secret answer's words live only while a card shows them (#2153): the last card for this request to close forgets them.
-  const secretIds = (request.questions ?? []).filter(question => question.secret === true).map(question => question.id).join('\n')
-  useEffect(() => secretIds ? store.holdSecrets(entryOwner, request.id, secretIds.split('\n')) : undefined, [store, entryOwner, request.id, secretIds])
+  const secretIds = JSON.stringify((request.questions ?? []).filter(question => question.secret === true).map(question => question.id))
+  useEffect(() => secretIds !== '[]' ? store.holdSecrets(entryOwner, request.id, JSON.parse(secretIds) as string[]) : undefined, [store, entryOwner, request.id, secretIds])
   const imagesKey = `${entryOwner}\n${request.id}`
   const [images, showImages] = useState(() => cardImages.get(imagesKey) ?? [])
   const setImages = (next: AgentAttachmentHandle[]): void => { if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey); showImages(next) }

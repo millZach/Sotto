@@ -194,8 +194,8 @@ export class RequestAnswerStore {
   private readonly entries = new Map<string, RequestEntry>()
   private readonly listeners = new Set<() => void>()
   private readonly bindings = new Map<string, DraftBinding>()
-  /** How many open cards show each request's secret questions (#2153). */
-  private readonly secretHolds = new Map<string, number>()
+  /** How many open cards show each request's secret questions, and which questions those are (#2153). */
+  private readonly secretHolds = new Map<string, { count: number; readonly questionIds: readonly string[] }>()
   constructor(private readonly bridge: () => RequestDraftBridge | undefined = () => window.sotto?.requestDrafts) {}
 
   static key(ownerId: string, requestId: string): string { return `${ownerId}\0${requestId}` }
@@ -349,22 +349,21 @@ export class RequestAnswerStore {
   }
 
   /**
-   * A card that shows secret questions holds their words here only while it is open (#2153). They are never saved, so
-   * once the last card showing the request closes they are forgotten, and the field is empty when it opens again.
+   * A card that shows secret questions holds their words here only while the user may still send them (#2153). They are
+   * never saved, so they are forgotten once the answer is sent or held unconfirmed, and once the last card showing the
+   * request closes; the field is empty when it opens again.
    */
   holdSecrets(ownerId: string, requestId: string, questionIds: readonly string[]): () => void {
     const key = RequestAnswerStore.key(ownerId, requestId)
-    this.secretHolds.set(key, (this.secretHolds.get(key) ?? 0) + 1)
+    const held = this.secretHolds.get(key)
+    if (held) held.count++
+    else this.secretHolds.set(key, { count: 1, questionIds })
     return () => {
-      const left = (this.secretHolds.get(key) ?? 1) - 1
-      if (left > 0) { this.secretHolds.set(key, left); return }
+      const current = this.secretHolds.get(key)
+      if (current && --current.count > 0) return
       this.secretHolds.delete(key)
       const entry = this.entries.get(key)
-      if (!entry || !questionIds.some(id => entry.selections[id]?.text)) return
-      const selections = { ...entry.selections }
-      for (const id of questionIds) if (selections[id]?.text) selections[id] = { ...selections[id], text: '' }
-      // The saved revision already had no words for these questions, so forgetting them changes nothing that was saved.
-      this.set(ownerId, requestId, { ...entry, selections })
+      if (entry) this.set(ownerId, requestId, entry, questionIds)
     }
   }
 
@@ -568,8 +567,19 @@ export class RequestAnswerStore {
     }
   }
 
-  private set(ownerId: string, requestId: string, entry: RequestEntry): void {
-    this.entries.set(RequestAnswerStore.key(ownerId, requestId), entry)
+  /** `forget` names secret questions whose words go now; a sent or unconfirmed answer forgets its held ones too (#2153). */
+  private set(ownerId: string, requestId: string, entry: RequestEntry, forget?: readonly string[]): void {
+    const key = RequestAnswerStore.key(ownerId, requestId)
+    const ids = forget ?? (entry.phase === 'sent' || entry.phase === 'unconfirmed' ? this.secretHolds.get(key)?.questionIds : undefined)
+    let kept = entry
+    if (ids?.some(id => entry.selections[id]?.text)) {
+      const selections = { ...entry.selections }
+      for (const id of ids) if (selections[id]?.text) selections[id] = { ...selections[id], text: '' }
+      // The saved revision already had no words for these questions, so forgetting them changes nothing that was saved.
+      kept = { ...entry, selections }
+    }
+    if (forget && kept === entry) return
+    this.entries.set(key, kept)
     this.emit()
   }
 
