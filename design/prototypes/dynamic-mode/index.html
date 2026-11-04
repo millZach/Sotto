@@ -1,0 +1,461 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE. Not product code, not wired to anything, not committed.
+
+  Questions, for Zach's brainstorm on Dynamic threads (November 4, 2026):
+    1. Where do you turn Dynamic on, and how does a Dynamic thread read at rest?  (Switch A, B, C)
+    2. What does a turn show of which model ran each piece and why?               (Steps 1, 2, 3)
+    3. What can you limit, and where?                                             (Settings)
+
+  Already decided by Zach, and the same in every variant: the model you pick oversees and does no work itself; it
+  ignores the worker role cards; it is told not to edit, and is marked if it does; limits move workers, and if the
+  overseer's own provider stops, the thread stops as today.
+
+  URL: switch=A|B|C, steps=1|2|3, scenario=working|finished|moved|stopped|edited, on=0|1, settings=1, theme=light, size=820
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto prototype: Dynamic threads</title>
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.235 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 72%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-error: oklch(0.72 0.17 22); --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265); --tt-disc: oklch(0.97 0.004 265); --tt-disc-ink: oklch(0.15 0.008 265);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.915 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 80%, oklch(0.5 0.014 75));
+  --tt-text-muted: oklch(0.45 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-error: oklch(0.52 0.18 25); --tt-success: oklch(0.45 0.12 160); --tt-warning: oklch(0.48 0.13 70);
+  --tt-message: oklch(0.94 0.006 85); --tt-disc: oklch(0.235 0.014 75); --tt-disc-ink: oklch(0.99 0.003 85);
+}
+@font-face { font-family: 'Figtree'; src: url('figtree.woff2') format('woff2'); font-weight: 300 900; font-display: swap; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; border-radius: 6px; }
+a { color: inherit; text-decoration-color: var(--tt-field-border); text-underline-offset: 2px; }
+.muted { color: var(--tt-text-muted); }
+.small { font-size: 12.5px; }
+svg.mark { width: 14px; height: 14px; flex: none; fill: currentColor; }
+.m-claude { color: #d97757; } .m-codex { color: var(--tt-text); } .m-muse { color: #7aa7ff; } .m-grok { color: var(--tt-text); }
+:root[data-theme='light'] .m-claude { color: #b4532f; } :root[data-theme='light'] .m-muse { color: #2a5fc4; }
+
+/* The window */
+body { display: flex; flex-direction: column; }
+.stage { flex: 1 1 0; min-height: 0; padding: 12px 12px 8px; display: flex; justify-content: center; align-items: center; }
+.frame { display: grid; grid-template-columns: 232px minmax(0, 1fr); width: 100%; height: 100%; border-radius: 12px; overflow: hidden; background: var(--tt-surface); position: relative; }
+.frame.sized { width: min(820px, 100%); height: min(560px, 100%); flex: none; grid-template-columns: minmax(0, 1fr); }
+.frame.sized .side { display: none; }
+.side { background: var(--tt-canvas); padding: 14px 10px; overflow: auto; }
+.side h3 { margin: 10px 8px 6px; font-size: 12px; font-weight: 600; color: var(--tt-text-muted); }
+.trow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; color: var(--tt-text-2); font-size: 13px; }
+.trow.sel { background: var(--tt-surface-elevated); color: var(--tt-text); }
+.trow .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; position: relative; }
+.phead { display: flex; align-items: center; gap: 6px; padding: 10px 14px; min-width: 0; }
+.phead .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 40px; }
+.phead .where { color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.phead .gap { flex: 1; }
+.hbtn { height: 28px; padding: 0 8px; border-radius: 8px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; flex: none; }
+.hbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.switch { display: inline-flex; align-items: center; gap: 8px; }
+.track { width: 28px; height: 16px; border-radius: 8px; background: var(--tt-field-border); position: relative; flex: none; transition: background 120ms; }
+.track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--tt-text); transition: left 120ms; }
+[aria-checked='true'] .track { background: var(--tt-accent); }
+[aria-checked='true'] .track::after { left: 14px; background: var(--tt-disc-ink); }
+:root[data-theme='light'] [aria-checked='true'] .track::after { background: #fff; }
+@media (prefers-reduced-motion: reduce) { .track, .track::after { transition: none; } }
+
+/* The transcript */
+.scroll { overflow: auto; padding: 6px 0 16px; min-height: 0; }
+.col { max-width: 720px; margin: 0 auto; padding: 0 18px; }
+.umsg { margin: 8px 0 14px auto; width: fit-content; max-width: 78%; padding: 8px 12px; border-radius: 14px; background: var(--tt-message); }
+.line { display: flex; align-items: center; gap: 6px; padding: 3px 0; color: var(--tt-text-muted); font-size: 13px; width: 100%; text-align: left; }
+.line:hover { color: var(--tt-text-2); }
+.chev { display: inline-block; width: 10px; transition: transform 100ms; }
+.open > .chev { transform: rotate(90deg); }
+.reply { margin: 10px 0; }
+.reply p { margin: 0 0 8px; }
+.fold { margin: 4px 0 8px 2px; padding-left: 12px; border-left: 1px solid var(--tt-hairline); }
+.w { padding: 7px 0; }
+.w + .w { border-top: 1px solid color-mix(in srgb, var(--tt-hairline) 55%, transparent); }
+.w-top { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.w-kind { font-weight: 600; font-size: 13px; }
+.w-title { font-size: 13px; min-width: 0; color: var(--tt-text-2); }
+.w-gap { flex: 1 1 8px; }
+.w-model { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--tt-text); white-space: nowrap; }
+.w-state { font-size: 12.5px; color: var(--tt-text-muted); white-space: nowrap; }
+.w-state.on { color: var(--tt-accent-text); } .w-state.bad { color: var(--tt-warning); }
+.w-why { margin: 2px 0 0; font-size: 12.5px; color: var(--tt-text-muted); }
+.w-why b { font-weight: 500; color: var(--tt-text-2); }
+.more { width: 24px; height: 22px; border-radius: 6px; color: var(--tt-text-muted); line-height: 1; flex: none; }
+.more:hover { background: var(--tt-hover); color: var(--tt-text); }
+.spin { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent-text); margin-right: 5px; vertical-align: 1px; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.still { margin: 6px 0; font-size: 13px; color: var(--tt-text-muted); }
+.plan { margin: 6px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--tt-surface-elevated); }
+.plan-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.plan-head b { font-weight: 600; }
+.plan ol { margin: 8px 0 0; padding: 0; list-style: none; }
+.plan li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 0 4px; padding: 6px 0; border-top: 1px solid color-mix(in srgb, var(--tt-hairline) 70%, transparent); }
+.plan .n { color: var(--tt-text-muted); font-size: 12.5px; }
+.chan { color: var(--tt-accent-text); font-size: 12.5px; flex: none; padding: 0 4px; border-radius: 6px; }
+.chan:hover { background: var(--tt-hover); }
+.oneline { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; font-size: 13px; color: var(--tt-text-muted); margin: 2px 0 6px; }
+.oneline button { display: inline-flex; align-items: center; gap: 5px; padding: 1px 5px; border-radius: 6px; color: var(--tt-text-2); }
+.oneline button:hover, .oneline button[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.detail { margin: 2px 0 8px; padding: 8px 12px; border-radius: 10px; background: var(--tt-surface-elevated); }
+.alert { margin: 10px 0; padding: 9px 12px; border-radius: 10px; background: var(--tt-surface-elevated); font-size: 13.5px; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px; font-size: 13px; color: var(--tt-text-muted); }
+.chipb { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: 7px; background: var(--tt-hover); color: var(--tt-text); }
+.chipb:hover { background: var(--tt-field-border); }
+.mark-line { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 8px 0; padding: 7px 10px; border-radius: 8px; background: color-mix(in srgb, var(--tt-warning) 10%, transparent); font-size: 13px; }
+.mark-line b { font-weight: 600; color: var(--tt-warning); }
+
+/* Zach's composer */
+.cwrap { padding: 0 14px 12px; position: relative; }
+.strip { max-width: 684px; margin: 0 auto 6px; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 8px; background: var(--tt-surface-elevated); font-size: 13px; color: var(--tt-text-2); }
+.strip .gap { flex: 1; }
+.composer { max-width: 684px; margin: 0 auto; padding: 12px 10px 8px 16px; border-radius: 18px; background: var(--tt-surface-elevated); }
+.composer textarea { display: block; width: 100%; min-height: 34px; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); font: inherit; }
+.composer textarea::placeholder { color: var(--tt-text-muted); }
+.foot { display: flex; align-items: center; gap: 2px; margin-top: 4px; min-width: 0; }
+.foot .gap { flex: 1; min-width: 4px; }
+.fb { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border-radius: 8px; font-size: 13px; white-space: nowrap; }
+.fb:hover { background: var(--tt-hover); }
+.fb.shield { color: var(--tt-warning); }
+.fb.effort { color: var(--tt-text-muted); }
+.fb.dyn[aria-checked='true'] { color: var(--tt-accent-text); }
+.fb.dyn[aria-checked='false'] { color: var(--tt-text-muted); }
+.disc { width: 32px; height: 32px; border-radius: 50%; background: var(--tt-disc); color: var(--tt-disc-ink); display: grid; place-items: center; margin-left: 4px; flex: none; }
+.oversees { color: var(--tt-accent-text); }
+
+/* Menus */
+.pop { position: absolute; z-index: 20; background: var(--tt-surface-elevated); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.4), 0 0 0 1px var(--tt-hairline); }
+.menu-model { right: 56px; bottom: 76px; width: 400px; max-width: calc(100% - 28px); }
+.mm-body { display: grid; grid-template-columns: 44px minmax(0, 1fr); height: 196px; }
+.mm-rail { padding: 8px 6px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--tt-hairline); }
+.mm-rail span { display: grid; place-items: center; width: 32px; height: 30px; border-radius: 7px; }
+.mm-rail span.sel { background: var(--tt-hover); }
+.mm-list { padding: 8px; overflow: auto; }
+.mm-item { display: flex; justify-content: space-between; width: 100%; padding: 6px 8px; border-radius: 7px; font-size: 13px; text-align: left; }
+.mm-item:hover, .mm-item.sel { background: var(--tt-hover); }
+.mm-foot { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); text-align: left; }
+.mm-foot:hover { background: color-mix(in srgb, var(--tt-hover) 50%, transparent); }
+.mm-foot .t { flex: 1; min-width: 0; }
+.mm-foot b { font-weight: 600; display: block; }
+.first { left: 50%; top: 50%; transform: translate(-50%, -50%); width: 400px; max-width: calc(100% - 28px); padding: 16px 18px; z-index: 35; }
+.first h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.first p { margin: 0 0 10px; font-size: 13.5px; color: var(--tt-text-2); }
+.first .acts { display: flex; justify-content: flex-end; gap: 6px; }
+.first .acts button { height: 30px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
+.first .acts .go { background: var(--tt-disc); color: var(--tt-disc-ink); font-weight: 600; }
+.first .acts .alt:hover { background: var(--tt-hover); }
+.menu-dyn { right: 150px; bottom: 76px; width: 330px; padding: 12px 14px; max-width: calc(100% - 28px); }
+.menu-row { z-index: 30; width: 224px; padding: 6px; right: 28px; }
+.menu-row button { display: block; width: 100%; text-align: left; padding: 6px 8px; border-radius: 7px; font-size: 13px; }
+.menu-row button:hover { background: var(--tt-hover); }
+.menu-row .sub { padding: 6px 8px 2px; font-size: 12px; color: var(--tt-text-muted); }
+
+/* Settings */
+.settings { position: absolute; inset: 0; z-index: 40; background: var(--tt-surface); overflow: auto; }
+.set-col { max-width: 660px; margin: 0 auto; padding: 18px 22px 34px; }
+.set-col h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.crumb { font-size: 12.5px; color: var(--tt-text-muted); margin: 0 0 2px; }
+.set-col > p.lede { margin: 4px 0 16px; color: var(--tt-text-muted); }
+.card { padding: 12px 14px; border-radius: 12px; background: var(--tt-surface-elevated); margin-bottom: 12px; }
+.card h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600; }
+.card > p { margin: 0 0 8px; font-size: 13px; color: var(--tt-text-muted); }
+.prov { display: grid; grid-template-columns: 22px 18px minmax(0, 1fr); gap: 2px 6px; align-items: center; padding: 6px 0; border-top: 1px solid color-mix(in srgb, var(--tt-hairline) 70%, transparent); }
+.prov input { margin: 0; accent-color: var(--tt-accent); width: 15px; height: 15px; }
+.prov .nm { font-size: 13.5px; }
+.prov .lim { grid-column: 3; font-size: 12.5px; color: var(--tt-text-muted); }
+.bar-m { display: inline-block; width: 64px; height: 4px; border-radius: 2px; background: var(--tt-field-border); vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.bar-m i { display: block; height: 100%; background: var(--tt-text-muted); }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 0; border-top: 1px solid color-mix(in srgb, var(--tt-hairline) 70%, transparent); font-size: 13.5px; }
+.field small { display: block; font-size: 12.5px; color: var(--tt-text-muted); }
+select, .num { height: 28px; padding: 0 6px; border-radius: 7px; border: 1px solid var(--tt-field-border); background: var(--tt-surface); color: var(--tt-text); font: inherit; font-size: 13px; }
+.num { width: 60px; }
+.note { width: 100%; min-height: 62px; padding: 8px; border-radius: 8px; border: 1px solid var(--tt-field-border); background: var(--tt-surface); color: var(--tt-text); font: inherit; font-size: 13px; resize: vertical; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: right; font-weight: 500; color: var(--tt-text-muted); font-size: 12px; padding: 3px 0 3px 10px; }
+td { text-align: right; padding: 5px 0 5px 10px; border-top: 1px solid color-mix(in srgb, var(--tt-hairline) 70%, transparent); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+.back { position: sticky; top: 0; }
+
+/* The prototype's own bar */
+.bar { flex: none; margin: 0 12px 8px; z-index: 60; display: grid; gap: 4px; padding: 6px 10px; border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 0 0 1px var(--tt-hairline); }
+.bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 12px; }
+.grp { display: inline-flex; align-items: center; gap: 2px; }
+.grp > span { color: var(--tt-text-muted); font-size: 12px; margin-right: 4px; }
+.grp { flex-wrap: wrap; }
+.grp button { min-width: 26px; height: 24px; padding: 0 7px; border-radius: 6px; font-size: 12.5px; color: var(--tt-text-2); white-space: nowrap; }
+.grp button:hover { background: var(--tt-hover); }
+.grp button[aria-pressed='true'] { background: var(--tt-accent-wash); color: var(--tt-accent-text); font-weight: 600; }
+.state { font-size: 12.5px; color: var(--tt-text-muted); }
+.state b { color: var(--tt-text-2); font-weight: 500; }
+@media (max-width: 760px) {
+  .stage { padding: 6px 6px 6px; }
+  .bar { margin: 0 6px 6px; }
+  .frame { grid-template-columns: minmax(0, 1fr); }
+  .side { display: none; }
+  .phead .where { display: none; }
+  .hide-narrow { display: none; }
+  .state { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="stage"><div class="frame" id="frame"></div></div>
+<div class="bar" id="bar"></div>
+<script>
+const MARKS = {"muse": {"viewBox": "0 0 100 100", "path": "M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z"}, "codex": {"viewBox": "0 0 256 260", "path": "M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"}, "claude": {"viewBox": "0 0 256 257", "path": "m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"}, "devin": {"viewBox": "48 48 330 330", "path": "M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"}, "opencode": {"viewBox": "0 0 32 40", "path": "M24 8H8V32H24V8ZM32 40H0V0H32V40Z"}, "cursor": {"viewBox": "0 0 24 24", "path": "M12 2.4L19.51 6.74L12 11.08L4.49 6.74ZM3.69 8.12L11.2 12.46L11.2 21.14L3.69 16.8ZM12.8 12.46L20.31 8.12L20.31 16.8L12.8 21.14Z"}, "grok": {"viewBox": "0 0 24 24", "path": "M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"}, "deepseek": {"viewBox": "0 0 24 24", "path": "M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45"}};
+const mark = (p, cls='') => { const m = MARKS[p]; return m ? `<svg class="mark m-${p} ${cls}" viewBox="${m.viewBox}" aria-hidden="true"><path d="${m.path}"/></svg>` : '' };
+const q = new URLSearchParams(location.search);
+const S = { sw: q.get('switch') || 'A', steps: q.get('steps') || '1', scenario: q.get('scenario') || 'working', on: q.get('on') !== '0', settings: q.get('settings') === '1',
+  size: q.get('size') === '820', menu: null, rowMenu: null, picking: false, foldOpen: true, planOpen: true, detail: null, moved: {}, stopped: {} };
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+
+const SWITCH = { A: 'in the model menu, and the chip says it', B: 'a word of its own in the composer', C: 'a switch at the top of the pane' };
+const STEPS = { 1: 'rows in the Worked for fold, as delegated work is today', 2: 'a plan up front, then its rows fill in', 3: 'one line under the reply; press a name for more' };
+const SCEN = { working: 'Working', finished: 'Finished', moved: 'A limit moved work', stopped: 'Overseer stopped', edited: 'Overseer edited' };
+const MODELS = [['claude','Opus 5.5'],['claude','Sonnet 5.5'],['codex','GPT-6.1 Sol'],['codex','GPT-6 Astra'],['muse','Muse Wonder Full'],['grok','Grok Build']];
+
+function workers() {
+  const s = S.scenario;
+  const base = [
+    { id:'r', kind:'Research', title:'Read how the sidebar redraws', p:'claude', model:'Haiku 5.5', effort:'Low', why:'Only a summary is needed back.', state:'Returned', meta:'1m 02s · 18k tokens' },
+    { id:'b', kind:'Building', title:'Stop the sidebar redrawing on a status change', p:'claude', model:'Sonnet 5.5', effort:'Medium', why:'Small and clear once the cause is known.', state:'Returned', meta:'2m 40s · 46k tokens' },
+    { id:'c', kind:'Review', title:'Second read of the fix', p:'codex', model:'GPT-6.1 Sol', effort:'High', why:'Another maker’s read. Codex has room: 19% of its week used.', state:'Returned', meta:'1m 31s · 31k tokens · no findings' },
+  ];
+  if (s === 'working') { base[1].state = 'Working'; base[1].meta = '1m 12s'; base[2].state = 'Starting'; base[2].meta = 'After Building returns'; }
+  if (s === 'moved') {
+    base[2].state = 'Stopped'; base[2].bad = true; base[2].meta = 'Codex reached its 5-hour limit';
+    base.push({ id:'m', kind:'Review', title:'Second read of the fix', p:'muse', model:'Muse Wonder Full', effort:'Extra high', why:'Codex stopped at its limit, resets 3:40 PM. Muse has room.', state:'Working', meta:'0m 48s' });
+  }
+  if (s === 'stopped') {
+    base[1].state = 'Stopped'; base[1].bad = true; base[1].meta = 'Claude Code reached your plan’s usage limit';
+    base[2].state = 'Working'; base[2].meta = 'Runs on Codex, so it carries on. Its reply waits for the overseer.';
+  }
+  for (const w of base) {
+    if (S.moved[w.id]) { const [p, model] = S.moved[w.id]; Object.assign(w, { p, model, effort:'High', why:'You chose this.', state:'Starting', meta:'', bad:false, yours:true }) }
+    if (S.stopped[w.id]) { Object.assign(w, { state:'Stopped', meta:'You stopped it', bad:false, why:w.why }) }
+  }
+  return base;
+}
+const stateClass = w => w.bad ? 'bad' : w.state === 'Working' || w.state === 'Starting' ? 'on' : '';
+const stateWord = w => `<span class="w-state ${stateClass(w)}">${w.state === 'Working' ? '<span class="spin"></span>' : ''}${w.state}${w.meta ? ' · ' + w.meta : ''}</span>`;
+const rowMore = w => `<button class="more" data-act="rowmenu:${w.id}" data-fid="more-${w.id}" aria-haspopup="menu" aria-label="More for ${w.kind}: ${w.title}">···</button>`;
+const rowHtml = w => `<div class="w"><div class="w-top"><span class="w-kind">${w.kind}</span><a href="#" class="w-title" data-act="noop">${w.title}</a><span class="w-gap"></span><span class="w-model">${mark(w.p)}${w.model}, ${w.effort}</span>${rowMore(w)}</div>
+  <p class="w-why"><b>${w.yours ? 'You' : 'Why'}:</b> ${w.why} ${stateWord(w)}</p></div>`;
+
+function transcript() {
+  const ws = workers(), s = S.scenario, running = s === 'working' || s === 'moved';
+  let html = `<div class="umsg">The sidebar flickers when a thread finishes. Find out why and fix it, then have it checked.</div>`;
+  if (!S.on) {
+    html += `<button class="line open" data-act="noop"><span class="chev">›</span>Worked for 4m 12s</button>
+      <div class="reply"><p>The sidebar redrew its whole list on every status change. I narrowed it to the row that changed, and the flicker is gone.</p></div>
+      <div class="line"><span class="chev">›</span>Changed 2 files</div>
+      <p class="muted small">Dynamic is off: Opus 5.5 did this itself, and any sub-agents and delegations followed the role cards.</p>`;
+    return html;
+  }
+  const overseerNote = `<div class="reply"><p>I’ll have the cause found first, then the fix made, then a second read from another maker.</p></div>`;
+  const counts = `${ws.length} workers on ${new Set(ws.map(w => w.p)).size} providers`;
+  const endReply = s === 'finished' || s === 'edited'
+    ? `<div class="reply"><p>The sidebar redrew its whole list on every status change. Sonnet narrowed it to the row that changed, and Sol’s second read found nothing wrong with the fix. The flicker is gone; the change is uncommitted on this branch.</p></div><div class="line"><span class="chev">›</span>Changed 2 files</div>` : '';
+  const edited = s === 'edited' ? `<div class="mark-line"><b>Opus 5.5 changed 2 files itself.</b><span class="muted">sidebar.tsx, sidebar.css. It gave no reason.</span></div>` : '';
+  const stopped = s === 'stopped' ? `<div class="alert">Claude Code has reached your plan’s usage limit, so this turn stopped. Nothing in the thread was lost.
+      <div class="chips">Or continue now on <button class="chipb" data-act="noop">${mark('codex')}Codex</button><button class="chipb" data-act="noop">${mark('muse')}Muse</button><button class="chipb" data-act="noop">${mark('grok')}Grok Build</button></div></div>` : '';
+  if (S.steps === '1') {
+    html += overseerNote + `<button class="line ${S.foldOpen ? 'open' : ''}" data-act="fold" data-fid="fold" aria-expanded="${S.foldOpen}"><span class="chev">›</span>${running ? 'Working for 2m 51s' : 'Worked for 4m 12s'} · ${counts}</button>`;
+    if (S.foldOpen) html += `<div class="fold">${ws.map(rowHtml).join('')}</div>`;
+    html += stopped + endReply + edited;
+  } else if (S.steps === '2') {
+    const done = ws.filter(w => w.state === 'Returned').length;
+    html += `<div class="plan"><div class="plan-head"><b>Plan</b><span class="muted small">${done} of ${ws.length} returned · it started without waiting; change any row</span><span style="flex:1"></span>
+      <button class="chan" data-act="plan" data-fid="plan" aria-expanded="${S.planOpen}">${S.planOpen ? 'Hide' : 'Show'}</button></div>`;
+    if (S.planOpen) html += `<ol>${ws.map((w, i) => `<li><span class="n">${i + 1}</span><div><div class="w-top"><span class="w-kind">${w.kind}</span><a href="#" class="w-title" data-act="noop">${w.title}</a><span class="w-gap"></span><span class="w-model">${mark(w.p)}${w.model}, ${w.effort}</span><button class="chan" data-act="rowmenu:${w.id}" data-fid="more-${w.id}" aria-label="Change ${w.kind}: ${w.title}">Change</button></div><p class="w-why"><b>${w.yours ? 'You' : 'Why'}:</b> ${w.why} ${stateWord(w)}</p></div></li>`).join('')}</ol>`;
+    html += `</div>` + stopped + endReply + edited;
+  } else {
+    html += stopped + (endReply || overseerNote);
+    const verb = { Research:'read', Building:'built', Review:'reviewed' };
+    html += `<div class="oneline">${ws.map((w, i) => `${i ? '<span>·</span>' : ''}<button data-act="detail:${w.id}" data-fid="d-${w.id}" aria-expanded="${S.detail === w.id}">${mark(w.p)}${w.model} ${verb[w.kind]}${w.state === 'Working' ? ' <span class="spin" style="margin:0 0 0 2px"></span>' : w.state === 'Stopped' ? ' (stopped)' : ''}</button>`).join('')}</div>`;
+    const d = ws.find(w => w.id === S.detail);
+    if (d) html += `<div class="detail">${rowHtml(d)}</div>`;
+    html += edited;
+  }
+  return html;
+}
+
+function composer() {
+  const chipWord = S.on && S.sw === 'A' ? `<span class="oversees">oversees</span>` : '';
+  const dynWord = S.sw === 'B' ? `<button class="fb dyn" role="switch" aria-checked="${S.on}" data-act="dynmenu" data-fid="dyn" aria-haspopup="dialog" aria-label="Dynamic ${S.on ? 'on' : 'off'}: choose whether this model oversees">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="3.5" cy="8" r="1.7"/><circle cx="12.5" cy="3.5" r="1.7"/><circle cx="12.5" cy="12.5" r="1.7"/><path d="M5.2 7.4 10.8 4.2M5.2 8.6l5.6 3.2"/></svg>Dynamic</button>` : '';
+  const strip = S.scenario === 'stopped' && S.on ? `<div class="strip"><span>Restarts at 3:00 PM, when Claude Code’s limit resets</span><span class="gap"></span><button class="chan" data-act="noop">Don’t restart</button></div>` : '';
+  return `${strip}<div class="composer">
+    <textarea rows="1" aria-label="Message" placeholder="${S.on ? 'Ask for something. Name an allowed model in your words and it uses that one.' : 'Ask for something.'}"></textarea>
+    <div class="foot">
+      <button class="fb" aria-label="Attach" data-act="noop" style="margin-left:-8px;color:var(--tt-text-muted)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+      <span class="gap"></span>
+      <button class="fb shield" data-act="noop" aria-label="Permissions: Allow edits${S.on ? ', the most its workers may do' : ''}"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1 2.5 3v4.4c0 3.6 2.3 6.2 5.5 7.6 3.2-1.4 5.5-4 5.5-7.6V3L8 1Z"/></svg><span class="hide-narrow">Allow edits</span></button>
+      ${dynWord}
+      <button class="fb" data-act="modelmenu" data-fid="model" aria-haspopup="menu" aria-label="Choose model. Now Opus 5.5${S.on ? ', overseeing' : ''}">${mark('claude')}Opus 5.5 ${chipWord}</button>
+      <button class="fb effort" data-act="noop" aria-label="Choose effort. Now High">High</button>
+      <button class="disc" aria-label="Send" data-act="noop"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg></button>
+    </div></div>`;
+}
+
+function modelMenu() {
+  return `<div class="pop menu-model" role="menu" aria-label="Choose model">
+    <div class="mm-body"><div class="mm-rail"><span class="sel">${mark('claude')}</span><span>${mark('codex')}</span><span>${mark('muse')}</span><span>${mark('grok')}</span></div>
+    <div class="mm-list"><button class="mm-item sel" role="menuitem" data-act="closemenu" data-fid="mi1"><span>Opus 5.5</span><span class="muted">✓</span></button><button class="mm-item" role="menuitem" data-act="closemenu"><span>Sonnet 5.5</span></button><button class="mm-item" role="menuitem" data-act="closemenu"><span>Haiku 5.5</span></button></div></div>
+    ${S.sw === 'A' ? `<button class="mm-foot" role="switch" aria-checked="${S.on}" data-act="toggle" data-fid="toggle-a"><span class="t"><b>Dynamic</b><span class="muted small">Opus 5.5 oversees and chooses a model for each piece. It does no work itself.</span></span><span class="track" style="margin-top:3px"></span></button>` : ''}
+  </div>`;
+}
+function dynMenu() {
+  return `<div class="pop menu-dyn" role="dialog" aria-label="Dynamic">
+    <button class="mm-foot" style="padding:0;border:0;background:none" role="switch" aria-checked="${S.on}" data-act="toggle" data-fid="toggle-b"><span class="t"><b>Dynamic</b><span class="muted small">Opus 5.5 oversees and chooses a model for each piece. It does no work itself.</span></span><span class="track" style="margin-top:3px"></span></button>
+    <p class="small muted" style="margin:8px 0 0">It uses Claude Code, Codex, Muse and Grok Build. <a href="#" data-act="settings">Change what it may use</a></p></div>`;
+}
+function firstUse() {
+  return `<div class="pop first" role="dialog" aria-modal="true" aria-label="Turn on Dynamic"><h3>Turn on Dynamic for this thread?</h3><p>Opus 5.5 will choose a model for each piece, and your code can go to any company on your list: <b>Anthropic, OpenAI, Meta and xAI</b>.</p><p class="small muted">You only see this once. The list stays in Settings → Threads.</p><div class="acts"><button class="alt" data-act="firstchoose" data-fid="f2">Choose providers</button><button class="go" data-act="firston" data-fid="f1">Turn on</button></div></div>`;
+}
+function rowMenu() {
+  const w = workers().find(x => x.id === S.rowMenu); if (!w) return '';
+  return `<div class="pop menu-row" id="rowmenu" role="menu" aria-label="${w.kind}: ${w.title}">${S.picking
+    ? `<div class="sub">Give it to</div>${MODELS.filter(m => m[1] !== w.model).map(([p, m]) => `<button role="menuitem" data-act="give:${w.id}:${p}:${m}" style="display:flex;gap:7px;align-items:center">${mark(p)}${m}</button>`).join('')}`
+    : `<button role="menuitem" data-act="closemenu" data-fid="ri1">Open this thread</button><button role="menuitem" data-act="pick" data-fid="ri2">Give it to another model…</button><button role="menuitem" data-act="stop:${w.id}" data-fid="ri3">Stop this worker</button>`}</div>`;
+}
+
+function settingsPage() {
+  const prov = [
+    ['claude','Claude Code','Anthropic','38','38% of the week used, resets Friday',true],
+    ['codex','Codex','OpenAI','19','19% of the week used, resets Monday',true],
+    ['muse','Muse','Meta',null,'Read while a Muse thread runs. Last read 22% an hour ago',true],
+    ['grok','Grok Build','xAI',null,'Read while a Grok Build thread runs. Not read yet',true],
+    ['devin','Devin','Cognition',null,'Not checked yet',false],
+    ['cursor','Cursor','Cursor',null,'Reports no limits, so it would be chosen blind',false],
+  ];
+  return `<div class="settings" role="region" aria-label="Settings, Threads, Dynamic threads"><div class="set-col">
+    <button class="hbtn back" data-act="settings" data-fid="closeset">‹ Back to the thread</button>
+    <p class="crumb" style="margin-top:6px">Settings › Threads</p>
+    <h2>Dynamic threads</h2>
+    <p class="lede">A Dynamic thread’s model oversees and chooses a model for each piece of work. These are the limits it works inside, on every Dynamic thread on this computer.</p>
+    <div class="card"><h3>What it may use</h3><p>Your code goes to the company behind each provider ticked here. A provider off this list is never used, even if your message names it.</p>
+      ${prov.map(([p,n,mk,pct,lim,on]) => `<label class="prov"><input type="checkbox" ${on ? 'checked' : ''}>${mark(p)}<span class="nm">${n} <span class="muted small">${mk}</span></span><span class="lim">${pct ? `<span class="bar-m"><i style="width:${pct}%"></i></span>` : ''}${lim}</span></label>`).join('')}
+    </div>
+    <div class="card"><h3>How far it may go</h3>
+      <div class="field" style="border:0"><span>Highest effort<small>For any worker. Ultracode is only ever yours to choose, on your own thread.</small></span><select aria-label="Highest effort"><option>Extra high</option><option>High</option><option>Max</option></select></div>
+      <div class="field"><span>Workers at once<small>The overseer starts the next as one returns. Your ceiling for this computer still applies.</small></span><input class="num" type="number" value="4" min="1" aria-label="Workers at once"></div>
+    </div>
+    <div class="card"><h3>Your note <span class="muted small">after the first version</span></h3><p>Advice in your own words, sent with each Dynamic turn. It can be ignored, so a provider you must not use belongs in the list above.</p>
+      <textarea class="note" aria-label="Your note to the overseer" placeholder="Sol for reviews. Save Opus for the hard debugging."></textarea></div>
+    <div class="card"><h3>Its record on this computer <span class="muted small">after the first version</span></h3><p>Counts only, no words. The overseer reads this when it chooses. Moved means the piece was then given to another model.</p>
+      <table><thead><tr><th>Model</th><th>Pieces</th><th>Finished</th><th>Moved</th><th>Tokens</th></tr></thead><tbody>
+      <tr><td>Sonnet 5.5</td><td>41</td><td>38</td><td>2</td><td>1.9M</td></tr><tr><td>GPT-6.1 Sol</td><td>27</td><td>25</td><td>1</td><td>2.4M</td></tr><tr><td>Haiku 5.5</td><td>22</td><td>22</td><td>0</td><td>0.3M</td></tr><tr><td>Muse Wonder Full</td><td>6</td><td>3</td><td>3</td><td>0.7M</td></tr></tbody></table>
+      <p class="small muted" style="margin:8px 0 0">Sample numbers.</p>
+      <button class="hbtn" style="margin:4px 0 0 -8px" data-act="noop">Clear its record</button></div>
+  </div></div>`;
+}
+
+function render() {
+  const fid = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.fid : null;
+  const scrolls = document.querySelector('.scroll')?.scrollTop;
+  const frame = document.getElementById('frame');
+  frame.className = 'frame' + (S.size ? ' sized' : '');
+  const headSwitch = S.sw === 'C' ? `<button class="hbtn switch" role="switch" aria-checked="${S.on}" data-act="toggle" data-fid="toggle-c" aria-label="Dynamic: Opus 5.5 oversees and chooses a model for each piece"><span>Dynamic</span><span class="track"></span></button>` : '';
+  frame.innerHTML = `<aside class="side" aria-label="Threads">
+      <h3>sotto</h3>
+      <div class="trow sel">${mark('claude')}<span class="name">Sidebar flickers when a thread finishes</span></div>
+      <div class="trow">${mark('codex')}<span class="name">Reply box settings</span></div>
+      <div class="trow">${mark('muse')}<span class="name">Review the release notes</span></div>
+    </aside>
+    <section class="pane" aria-label="Thread">
+      <header class="phead"><span class="title">Sidebar flickers when a thread finishes</span><span class="where">sotto · sotto/4af2</span><span class="gap"></span>${headSwitch}
+        <button class="hbtn hide-narrow" data-act="noop">Commit</button><button class="hbtn" data-act="noop">Watch</button><button class="hbtn" data-act="noop">Tools</button><button class="hbtn" aria-label="More actions" data-act="noop">···</button></header>
+      <div class="scroll"><div class="col">${transcript()}</div></div>
+      <div class="cwrap">${composer()}</div>
+      ${S.menu === 'model' ? modelMenu() : ''}${S.menu === 'dyn' ? dynMenu() : ''}
+      ${S.rowMenu ? rowMenu() : ''}
+      ${S.settings ? settingsPage() : ''}${S.first ? firstUse() : ''}
+    </section>`;
+  const b = document.getElementById('bar');
+  const grp = (label, key, opts) => `<span class="grp" role="group" aria-label="${label}"><span>${label}</span>${Object.entries(opts).map(([k, v]) => `<button aria-pressed="${String(S[key]) === k}" data-act="set:${key}:${k}" data-fid="set-${key}-${k}">${v}</button>`).join('')}</span>`;
+  b.innerHTML = `<div class="bar-row">${grp('Turn it on', 'sw', {A:'A',B:'B',C:'C'})}${grp('A turn shows', 'steps', {1:'1',2:'2',3:'3'})}${grp('Scenario', 'scenario', SCEN)}
+    <span class="grp"><button aria-pressed="${S.on}" data-act="toggle" data-fid="bar-on">Dynamic ${S.on ? 'on' : 'off'}</button><button aria-pressed="${S.settings}" data-act="settings" data-fid="bar-set">Settings</button>
+    <button aria-pressed="${document.documentElement.dataset.theme === 'light'}" data-act="theme" data-fid="bar-theme">Light</button><button aria-pressed="${S.size}" data-act="size" data-fid="bar-size">820 × 560</button><button aria-pressed="${!!S.first}" data-act="firstshow" data-fid="bar-first">First use</button></span></div>
+    <div class="state"><b>${S.sw}:</b> ${SWITCH[S.sw]}. <b>${S.steps}:</b> ${STEPS[S.steps]}. Try the ··· on a row, the model name in the composer, and Settings.</div>`;
+  const u = new URL(location.href);
+  for (const [k, v] of [['switch', S.sw], ['steps', S.steps], ['scenario', S.scenario], ['on', S.on ? '1' : '0']]) u.searchParams.set(k, v);
+  history.replaceState(null, '', u);
+  if (S.rowMenu) {
+    const anchor = document.querySelector(`[data-fid="more-${S.rowMenu}"]`), pane = document.querySelector('.pane'), menu = document.getElementById('rowmenu');
+    if (anchor && menu) { const a = anchor.getBoundingClientRect(), p = pane.getBoundingClientRect(); menu.style.top = Math.min(a.bottom - p.top + 4, p.height - menu.offsetHeight - 8) + 'px'; menu.style.right = Math.max(8, p.right - a.right) + 'px'; menu.querySelector('button')?.focus(); }
+  }
+  const sc = document.querySelector('.scroll'); if (sc && scrolls) sc.scrollTop = scrolls;
+  if (fid && !S.rowMenu) document.querySelector(`[data-fid="${fid}"]`)?.focus();
+  if (S.first) document.querySelector('[data-fid="f1"]')?.focus();
+  if (S.menu === 'model' && !fid?.startsWith('toggle')) document.querySelector('.menu-model button')?.focus();
+  if (S.menu === 'dyn' && !fid?.startsWith('toggle')) document.querySelector('.menu-dyn button')?.focus();
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]');
+  if (!t) { if (S.menu || S.rowMenu) { S.menu = null; S.rowMenu = null; S.picking = false; render(); } return; }
+  e.preventDefault();
+  const [a, x, y, z] = t.dataset.act.split(':');
+  const wasRow = S.rowMenu;
+  if (a === 'noop') return;
+  if (a === 'set') { S[x] = x === 'steps' ? String(y) : y; S.moved = {}; S.stopped = {}; S.detail = null; S.menu = null; S.rowMenu = null; }
+  else if (a === 'toggle') { if (!S.on && !S.seenFirst) { S.first = true; S.menu = null; } else S.on = !S.on; }
+  else if (a === 'firston') { S.first = false; S.seenFirst = true; S.on = true; }
+  else if (a === 'firstchoose') { S.first = false; S.seenFirst = true; S.on = true; S.settings = true; }
+  else if (a === 'firstshow') { S.on = false; S.seenFirst = false; S.first = true; S.menu = null; S.settings = false; }
+  else if (a === 'settings') { S.settings = !S.settings; S.menu = null; }
+  else if (a === 'theme') { const r = document.documentElement; if (r.dataset.theme === 'light') delete r.dataset.theme; else r.dataset.theme = 'light'; }
+  else if (a === 'size') S.size = !S.size;
+  else if (a === 'fold') S.foldOpen = !S.foldOpen;
+  else if (a === 'plan') S.planOpen = !S.planOpen;
+  else if (a === 'detail') S.detail = S.detail === x ? null : x;
+  else if (a === 'modelmenu') { S.menu = S.menu === 'model' ? null : 'model'; S.rowMenu = null; }
+  else if (a === 'dynmenu') { S.menu = S.menu === 'dyn' ? null : 'dyn'; S.rowMenu = null; }
+  else if (a === 'closemenu') { S.menu = null; S.rowMenu = null; S.picking = false; }
+  else if (a === 'rowmenu') { S.rowMenu = S.rowMenu === x ? null : x; S.picking = false; S.menu = null; }
+  else if (a === 'pick') S.picking = true;
+  else if (a === 'give') { S.moved[x] = [y, z]; S.rowMenu = null; S.picking = false; }
+  else if (a === 'stop') { S.stopped[x] = true; S.rowMenu = null; }
+  render();
+  if (wasRow && !S.rowMenu) document.querySelector(`[data-fid="more-${wasRow}"]`)?.focus();
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (S.first) { S.first = false; render(); document.querySelector('[data-fid="model"]')?.focus(); return; }
+  if (S.rowMenu) { const id = S.rowMenu; S.rowMenu = null; S.picking = false; render(); document.querySelector(`[data-fid="more-${id}"]`)?.focus(); return; }
+  if (S.menu) { const was = S.menu; S.menu = null; render(); document.querySelector(`[data-fid="${was === 'model' ? 'model' : 'dyn'}"]`)?.focus(); return; }
+  if (S.settings) { S.settings = false; render(); document.querySelector('[data-fid="bar-set"]')?.focus(); }
+});
+render();
+</script>
+</body>
+</html>
