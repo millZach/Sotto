@@ -506,7 +506,7 @@ describe('settings', () => {
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
-      pasteDelayMs: 50,
+      pasteDelayMs: 150,
       successDisplayMs: 1_400,
       launchAtStartup: false,
       startMinimized: false,
