@@ -54,11 +54,39 @@ What this found, filed and not fixed here:
 
 Haiku called `ask_teammate` with the wrong shape once and retried, and it still sometimes says "you" from the wrong side.
 
+## Two desks and the merge order
+
+November 4, 2026, built from the pull request for [ADR-0189](../adr/0189-two-desks-read-a-teammates-summary-on-a-press.md). The laptop was not used.
+
+**Two real instances on forge**, each with its own data folder and home, on real Tailscale Serve HTTPS and forge's real keyring, with the real buttons pressed through the debugging port:
+
+- [x] **Opening sends nothing.** Open two desks, left open for 16 seconds through a refresh of the user's own desk, gave Drake's computer no read (`real-desks-read.png` is after the press).
+- [x] **A press reads once, with no model.** Get Drake's desk came back in about a second with Drake's two threads. There was no teammate's message on either computer, and no Claude Code session under either Watcher.
+- [x] **The closed list.** `read-desk` with no token gave `not-linked`, and with an extra field gave 400 `not-on-the-list`.
+- [x] **The owner sees each read.** Drake's Teams tab said "Zach read your desk." for each one (`real-drake-lists-read.png`).
+- [x] **Left out stays out.** With Sotto left out on Drake's side, the next read came back with no threads, and Drake's own desk matched.
+
+These two instances held no open pull requests, so the real run did not show an order with real checks. `tests/unit/shared/teamMergeOrder.test.ts` and `tests/integration/teamsWatcher.test.ts` hold the order and where checks come from.
+
+Quitting both at the same moment took 8446 off Serve and left 8445, pointing at a dead port. Each quit runs `tailscale serve off` once and logs a failure, and only two instances on one computer can collide like that. A leftover like this is what the next start already takes back as its own, as the laptop run above showed. It was removed by hand here.
+
+**`tests/e2e/teams.spec.ts`**, in dark and light, with reduced motion, at 1600x1000, 1280x800 and 820x560:
+
+- [x] Opening shows your desk, nothing of Drake's, and the order saying it needs Drake's desk (`desks-not-read-dark-1280x800.png`).
+- [x] A computer that does not answer says so, and that nothing waits to send.
+- [x] A desk that was read shows its threads, how many did not fit, its time and the order, which holds no button (`desks-read-dark-1280x800.png`, `desks-read-light-820x560.png`).
+- [x] A teammate's title shows as text, markup and all.
+- [x] A read of this computer's desk shows under **Latest**, and every kept read is in the fold below it.
+- [x] Nothing overflows at the minimum.
+- [x] Focus lands on Back, Escape closes the desks, and focus returns to Open two desks. The journey found that disabling Get while it read dropped focus and Escape with it, so it now stays focusable and ignores a second press.
+
 ## Not proved
 
 - **A real `tailscale down` on the laptop.** A small stand-in for the `tailscale` command, seen only by the scratch copy, reported Stopped and refused Serve, and passed everything else to the real command. A real one would cut the laptop off its paired host and every tailnet page, and SSH from forge over the local network is refused, so a failed `tailscale up` could not have been put right from forge. It needs someone at the laptop. The real output of a stopped Tailscale on Windows, and anything Serve does while it is stopped, were not seen.
 - **Reading the answer with the next message, on Windows.** The laptop's Watcher got "What did that say?" and finished its turn, but its reply was not read. It is proved on forge only, above.
 - **The installed apps.** The run above used the published build beside them, not an update of them.
 - **A Mac.** Nothing here ran on one.
+- **Two desks on Windows, a Mac or two tailnets.** The desks ran on forge only. They use the same link, listener and credential store as the laptop run, but `read-desk` itself has not crossed between two computers.
+- **A merge order from two real desks with real pull requests and checks.**
 - **Two tailnets.** Drake's computer is not on Zach's tailnet, and only Tailscale's documentation says that device sharing carries Serve between them (`tailscale.com/kb/1084/sharing`, `kb/1312/serve`). A shared machine cannot start connections unless the sharing goes both ways, and the guide says to share each way. The first real link between Zach and Drake is the proof.
 - **A provider other than Claude Code** answering on two computers. Codex and Grok Build's side calls are ADR-0026's, tested in their own suites; Devin cannot be Watcher.
