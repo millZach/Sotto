@@ -771,6 +771,17 @@ artifacts/working-threads-warning/*
 !artifacts/working-threads-warning/line-11-dark-1280x800.png
 !artifacts/working-threads-warning/line-11-light-820x560.png
 !artifacts/working-threads-warning/line-10-light-820x560.png
+# To-do list's corner scroll (#2134); commit only the captures docs/verification/to-do-corner-scroll.md names.
+artifacts/to-do-list/*
+!artifacts/to-do-list/badge-new-dark.png
+!artifacts/to-do-list/badge-new-light.png
+!artifacts/to-do-list/open-1280x800-dark.png
+!artifacts/to-do-list/open-820x560-dark.png
+!artifacts/to-do-list/open-steps-light.png
+!artifacts/to-do-list/open-steps-dark.png
+!artifacts/to-do-list/undo-dark.png
+!artifacts/to-do-list/open-settings-dark.png
+
 # Main freeze notice (#1233); commit only the captures docs/verification/main-freeze-notice.md cites.
 artifacts/main-freeze-notice/*
 !artifacts/main-freeze-notice/pill-1280x800-dark.png

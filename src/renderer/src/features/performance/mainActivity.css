@@ -5,7 +5,7 @@
 /* The room the notice takes from the pane (or tools panel) that meets the window's corner, and from the host update
    pill beside it; threadsChrome.css and hostUpdates.css add it to their own. */
 .threads-view[data-main-freeze] { --main-freeze-room: 166px; }
-.threads-view--mac[data-main-freeze] { --threads-winctl-inset: var(--main-freeze-room); }
+.threads-view--mac:is([data-main-freeze], [data-to-do]) { --threads-winctl-inset: calc(var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
 .settings-view:has(.threads-view__winctl .main-freeze) .settings-feedback { padding-right: calc(116px + 166px); }
 
 .main-freeze { position: relative; display: flex; align-items: center; margin-right: 8px; -webkit-app-region: no-drag; }

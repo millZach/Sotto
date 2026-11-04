@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted November 3, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/to-do-scroll` (variant A). **Number provisional until merge** (docs/agents/domain.md).
+Accepted November 3, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/to-do-scroll` (variant A).
 
 It is an Owl feature (`to-do-list`, ADR-0072). Stable keeps today's Needs you lines in Watcher's replies until Zach sends it.
 
