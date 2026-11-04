@@ -6,6 +6,7 @@ import { ToDoStore, ToDoRefused, type ToDoStoreOptions } from '../../../src/main
 import { ToDoToolServer } from '../../../src/main/agents/toDoTools'
 import { FollowupStore } from '../../../src/main/agents/followups'
 import { foldWakeUpNews, isBabysitNews, isToDoNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { AGENT_TEXT_MAX } from '../../../src/shared/agents'
 import { TO_DO_LIMIT, TO_DO_NOTE_MAX, TO_DOS_MAX, toDoAddSchema, type ToDo } from '../../../src/shared/toDos'
 import { isOwlFeatureEnabled } from '../../../src/shared/owlFeatures'
@@ -116,6 +117,27 @@ describe('Checking one off', () => {
     await expect(store.request({ kind: 'check', id: item.id })).resolves.toBeUndefined()
     expect(store.view()).toEqual([])
   })
+  test('a save that fails after the thread was told leaves the item standing, and the next press only saves', async () => {
+    const { store, told } = await setup()
+    const item = await store.add({ title: 'Hand test', waits: true }, 'thread', 't1')
+    const save = vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('The disk is full.'))
+    await expect(store.request({ kind: 'check', id: item.id })).rejects.toThrow('The disk is full')
+    expect(store.view().map(entry => entry.id)).toEqual([item.id])
+    await store.request({ kind: 'check', id: item.id })
+    save.mockRestore()
+    expect(store.view()).toEqual([])
+    expect(told).toHaveBeenCalledExactlyOnceWith('t1', 'Hand test', undefined)
+  })
+  test('words the user writes after a failed save still reach the thread', async () => {
+    const { store, told } = await setup()
+    const item = await store.add({ title: 'Hand test', waits: true }, 'thread', 't1')
+    const save = vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('The disk is full.'))
+    await expect(store.request({ kind: 'check', id: item.id })).rejects.toThrow('The disk is full')
+    await store.request({ kind: 'check', id: item.id, didNotWork: 'It opened twice' })
+    save.mockRestore()
+    expect(told.mock.calls).toEqual([['t1', 'Hand test', undefined], ['t1', 'Hand test', 'It opened twice']])
+    expect(store.view()).toEqual([])
+  })
   test('two presses at once tell the thread once', async () => {
     const { store, told } = await setup()
     const item = await store.add({ title: 'Hand test', waits: true }, 'thread', 't1')
@@ -176,6 +198,45 @@ describe('add_to_do', () => {
     for (let index = 0; index < TO_DO_LIMIT + 5; index++) expect((await tools.call('t1', 'add_to_do', { title: 'Same words' })).isError).toBeUndefined()
     expect((await tools.call('t1', 'add_to_do', { title: 'Different words' })).isError).toBeUndefined()
     expect(store.view()).toHaveLength(2)
+    await tools.close()
+  })
+  test('a refused add costs nothing against the limit, so a thread is heard once the list has room', async () => {
+    const { store, tools } = await server()
+    await Promise.all(Array.from({ length: TO_DOS_MAX }, (_, index) => store.add({ title: `Filler ${index}` }, 'watcher')))
+    for (let index = 0; index < TO_DO_LIMIT + 2; index++) {
+      const refused = await tools.call('t1', 'add_to_do', { title: `Retry ${index}` })
+      expect(refused.isError).toBe(true)
+      expect(JSON.stringify(refused.content)).toContain(`already holds ${TO_DOS_MAX}`)
+    }
+    await store.request({ kind: 'check', id: store.view()[0]!.id })
+    expect((await tools.call('t1', 'add_to_do', { title: 'There is room now' })).isError).toBeUndefined()
+    await tools.close()
+  })
+  test('a refused add gives back its own slot, not one another call\'s add was kept on', async () => {
+    let now = 1_000
+    const waiting: { resolve: () => void; reject: (error: Error) => void }[] = []
+    const added: string[] = []
+    const store = { open: () => undefined, add: vi.fn((input: { title: string }) => new Promise((resolve, reject) => {
+      waiting.push({ resolve: () => { added.push(input.title); resolve({}) }, reject })
+    })) } as unknown as Pick<ToDoStore, 'add' | 'open'>
+    const tools = new ToDoToolServer(store, { admits: () => true }, () => now)
+    const first = tools.call('t1', 'add_to_do', { title: 'First' })
+    now += 60_000
+    const second = tools.call('t1', 'add_to_do', { title: 'Second' })
+    await vi.waitFor(() => { expect(waiting).toHaveLength(2) })
+    waiting[1]!.resolve()
+    await second
+    waiting[0]!.reject(new ToDoRefused('The list is full.'))
+    expect((await first).isError).toBe(true)
+    // The second's slot stands for its whole window: nine more fit in it, and the tenth is refused.
+    now += 9.5 * 60_000
+    for (let index = 0; index < TO_DO_LIMIT - 1; index++) {
+      const call = tools.call('t1', 'add_to_do', { title: `More ${index}` })
+      await vi.waitFor(() => { expect(waiting).toHaveLength(3 + index) })
+      waiting[2 + index]!.resolve()
+      expect((await call).isError).toBeUndefined()
+    }
+    expect((await tools.call('t1', 'add_to_do', { title: 'Past it' })).isError).toBe(true)
     await tools.close()
   })
   test('a thread the host does not admit gets no server and adds nothing', async () => {
