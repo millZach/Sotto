@@ -8,20 +8,22 @@ Two separate Sotto instances on forge, each with its own data folder, called Zac
 
 - [x] **Make a code and Link.** One code linked both directions and each showed the other, lasting until December 4. Tailscale listed 8445 and 8446 as tailnet only.
 - [x] **The closed list over real HTTPS.** A GET gave 404, `{"command":"start-thread"}` gave 400 with `not-on-the-list`, and an ask with no token gave `not-linked`.
-- [x] **"Give me a list of what Drake is working on for Sotto."** Zach's Watcher called `ask_teammate` and ended its turn in 7.6 seconds. The answer, from Drake's provider and with no tools, showed in Zach's conversation as a teammate's message, about 9 seconds after the Send (`real-zach-conversation.png`).
+- [x] **"Give me a list of what Drake is working on for Sotto."** Zach's Watcher called `ask_teammate` and ended its turn, in 6 to 14 seconds across the runs. The answer, from Drake's provider and with no tools, showed in Zach's conversation as a teammate's message, within 15 seconds of the Send (`real-zach-conversation.png`).
 - [x] **A teammate's message starts no turn.** Drake's Watcher had 0 messages before and after, and its conversation was still empty. Drake's Teams tab listed each ask and what it answered, and counted 2 of 20 (`real-drake-teams-tab.png`).
-- [x] **Watcher reads it with the next message.** Asked "What did that say?", Zach's Watcher gave Drake's answer in a sentence through `read_teammate_messages`.
-- [x] **Coordinate merge priority.** The same message went on to ask about merge priority. Zach's Watcher sent its words, Drake's answered from its list, and nothing merged.
+- [x] **Watcher reads it with the next message.** Asked "What did that say? One sentence, and look nothing up.", Zach's Watcher gave Drake's answer in a sentence, in one step, through `read_teammate_messages`.
+- [x] **Coordinate merge priority.** Zach's Watcher sent "I have nothing open.", Drake's computer answered from its list, and nothing merged.
+- [x] **A card still stops it.** In one run Zach's Watcher wanted `gh pr list --author @me` before asking about merge priority, and at Ask for approval that waited on an ordinary permission card. Nothing went until then. Its native tools are the user's, as ADR-0187 says.
 - [x] **Quitting** took both Serve settings off.
 
-What this caught, and the pull request fixed: Haiku went to `gh pr list --author` for "what Drake is working on" instead of asking, because the user's global notes point there, so the prompt and the tool now say to ask first. Answers said "your list" from the wrong side, so the writer is told who "you" is.
+These were repeated on the final code after the two-axis review. What the first runs caught, and the pull request fixed: Haiku went to `gh pr list --author` for "what Drake is working on" instead of asking, because the user's global notes point there, so the prompt and the tool now say to ask first. Answers said "your list" from the wrong side, so the writer is told who "you" is. Haiku still does it sometimes ("the only thread in your Sotto list"), so that is guidance and not a guarantee.
 
 ## The built app on seeded links
 
 `tests/e2e/teams.spec.ts`, in dark and light, with reduced motion, at 1600x1000, 1280x800 and 820x560:
 
 - Stable shows no Teams tab and no row, and main has no handler for it.
-- Left and Right move between the tabs and focus stays on the tab, and the page's own controls come next in the Tab order.
+- Left and Right move between the tabs and focus stays on the tab.
+- The question before removing a link takes focus, and Escape closes it and gives focus back.
 - Nothing overflows at the minimum, and the page clears the scene's owls.
 - A pasted code naming another host says so and links nothing.
 - Removing a link asks first and leaves the forms.
