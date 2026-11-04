@@ -544,7 +544,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       await delegationRelay.load()
     }
     const relaying = delegationRelay, remote = delegationRemote
-    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
       ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
         const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
         agentControl.swarmsChanged(ids)
@@ -571,7 +571,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // A thread here delegates on this machine alone until #1316. Its ceiling and roles are the desktop's, never this host's
     // own stored defaults; the four-prompt budget and the warning above ten are this machine's.
     const defaults = desktopDefaults
-    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
       ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
         const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
         agentControl.swarmsChanged(ids)

@@ -236,10 +236,10 @@ describe('messageNamesModel (#1202)', () => {
   const opus = { id: 'claude-opus-5-5', name: 'Opus 5.5', providerId: 'claude' as const }
   const wonder = { id: 'muse-wonder-full', name: 'Muse Wonder Full', providerId: 'muse' as const }
   it.each([
-    ['Use GPT-6.1 Sol for the review', sol], ['run it on gpt 6.1 sol', sol], ['have Sol look at it.', sol], ['ask GPT', sol], ['Have Codex review this', sol],
+    ['Use GPT-6.1 Sol for the review', sol], ['run it on gpt 6.1 sol', sol], ['have Sol look at it.', sol], ['Have Codex review this', sol],
     ['use opus', opus], ['Opus 5.5, please', opus], ['claude-opus-5-5', opus], ['Let Claude Code do it', opus], ['send it to Wonder', wonder], ['a Muse review', wonder],
   ])('finds the model in %j', (text, model) => { expect(messageNamesModel(text, model)).toBe(true) })
   it.each([
-    ['Review the change', sol], ['the solution is close', sol], ['consolidate these', sol], ['fix this', opus], ['a magnum opus-free day', sol], ['full access', wonder], ['', sol],
+    ['Review the change', sol], ['Use GPT-6 Astra', sol], ['ask GPT', sol], ['the solution is close', sol], ['consolidate these', sol], ['fix this', opus], ['a magnum opus-free day', sol], ['full access', wonder], ['', sol],
   ])('finds no model in %j', (text, model) => { expect(messageNamesModel(text, model)).toBe(false) })
 })

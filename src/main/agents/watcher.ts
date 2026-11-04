@@ -6,7 +6,7 @@ import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, 
   type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
-import { capRuntimeMode, fitSpeed, messageNamesModel, roleHeldNote, roleInForce, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning, THIS_COMPUTER } from '../../shared/workingThreads'
@@ -65,6 +65,7 @@ import type { CheckpointObservation, PullRequestObservation } from './watcherEvi
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
+import { userWordsOf } from './continueThread'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { watcherAskPlacements } from './watcherAskPlacements'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from './watcherOutcomes'
@@ -2776,30 +2777,28 @@ export class WatcherService implements WatcherControlHooks {
    * Watcher's own sends are known by their operations.
    */
   /**
-   * What a start's role says against the model it names (#1202), or undefined where the start stands: it names the role's
-   * own model, there is no role's model, or the user's own message in this request names it.
-   */
-  private roleHeld(request: WatcherRequest, role: WorkerKind, modelId: string, choices: WorkerRoleChoices, models: readonly AgentModel[]): { readonly model: AgentModel; readonly note: string } | undefined {
-    const inForce = roleInForce(role, choices, models).start
-    const model = inForce && resolveModel(models, inForce.modelId)
-    const named = resolveModel(models, modelId)
-    if (!model || named?.id === model.id) return undefined
-    if (this.requestWords(request).some(words => messageNamesModel(words, named ?? { id: modelId, name: modelId }))) return undefined
-    return { model, note: roleHeldNote(role, named?.name ?? modelId, model.name) }
-  }
-  /**
-   * The user's own messages in a request, from Sotto's record: what started it and what they sent it since, or for a told
-   * request, the message in that thread. A standing watch's request has none, and neither does a root that carries a
-   * handover, since the words before the user's are another Watcher's.
+   * The user's own words in a request, from Sotto's record, so no agent can write them (#1202): the message that started it
+   * less any handover ahead of it, which is another Watcher's, and the newest they have sent it since. For a told request,
+   * the message in that thread, which only a thread on this computer's record holds. A standing watch's request has none.
    */
   private requestWords(request: WatcherRequest): readonly string[] {
-    const words = (threadId: string, messageIds: readonly string[]): readonly string[] => messageIds.flatMap(messageId => {
-      const message = this.options.host.threadMessage(threadId, messageId)
-      return message?.role === 'user' ? [message.text] : []
-    })
     const told = toldRequestMessage(request.rootUserMessageId)
-    if (told) return words(told.threadId, [told.messageId])
-    return words(request.watcher.threadId, [...request.handover ? [] : [request.rootUserMessageId], ...(request.userFollowups ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])
+    if (told) {
+      const thread = this.localThread(told.threadId), message = this.options.host.threadMessage(told.threadId, told.messageId)
+      const words = thread && message?.role === 'user' ? userWordsOf(thread, message) : undefined
+      return words === undefined ? [] : [words]
+    }
+    const master = request.watcher.threadId
+    const root = this.options.host.threadMessage(master, request.rootUserMessageId)
+    const newest = (request.userFollowups ?? []).findLast(item => item.messageId !== undefined)?.messageId
+    const followup = newest ? this.options.host.threadMessage(master, newest) : undefined
+    return [...root?.role === 'user' ? [root.text.slice(request.handover?.prefixLength ?? 0)] : [], ...followup?.role === 'user' ? [followup.text] : []]
+  }
+  /** Whether Watcher sent this message to a thread on this computer, so that it is Watcher's words and not the user's (#1202). */
+  sentToThread(threadId: string, messageId: string): boolean {
+    const target = { hostId: this.hostId(), threadId }
+    return this.view().operations.some(operation => sameTarget(operation.target, target) && operation.messageId === messageId)
+      || this.options.control.archivedWatcherWork()?.sentMessage(target, messageId) === true
   }
   private sottoMessage(thread: AgentThread, messageId: string): boolean {
     return thread.wakeUpMessageIds?.includes(messageId) === true || thread.messages.some(message => message.id === messageId && message.wakeUp === true)
@@ -4505,10 +4504,10 @@ export class WatcherService implements WatcherControlHooks {
         // request named wins; a retry of a recorded start returned above and never resolves the role again.
         const choices = !imported && create.role && this.options.roles ? this.options.roles() : undefined
         // The role holds against a model the start names unless the user's own message in this request names it (#1202).
-        const roleHeld = choices && create.role && create.modelId ? this.roleHeld(request, create.role, create.modelId, choices, snapshot.models) : undefined
+        const roleHeld = choices && create.role && create.modelId ? roleHold(create.role, choices, snapshot.models, { id: create.modelId }, named => this.requestWords(request!).some(words => messageNamesModel(words, named))) : undefined
         const namedEffort = roleHeld ? undefined : create.reasoningEffort, namedSpeed = roleHeld ? undefined : create.speed
         // A permission the start named stays where the role's model offers it, still held to the ceiling.
-        const namedPermission = create.permission?.kind === 'runtime' && roleHeld && !roleHeld.model.runtimeModes?.includes(create.permission.mode) ? undefined : create.permission
+        const namedPermission = roleHeld && (create.permission?.kind !== 'runtime' || !roleHeld.model.runtimeModes?.includes(create.permission.mode)) ? undefined : create.permission
         const byRole = choices && create.role ? startFromRole(create.role, choices, snapshot.models, { modelId: roleHeld ? undefined : create.modelId,
           reasoningEffort: namedEffort, speed: namedSpeed, runtimeMode: namedPermission?.kind === 'runtime' ? namedPermission.mode : undefined }) : undefined
         const modelId = byRole ? byRole.modelId : create.modelId
@@ -4544,7 +4543,7 @@ export class WatcherService implements WatcherControlHooks {
           input = watcherToolSchemas.start_thread.input.parse({ ...concrete, modelId, ...(speed ? { speed } : {}), ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })
         }
         if (byRole) {
-          const named = create.permission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
+          const named = namedPermission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
           roleResult = { id: byRole.role, named: [...named], speed: byRole.speed, note: `${roleHeld ? `${roleHeld.note} ` : ''}${roleStartNote({ ...byRole, named }, snapshot.models, held)}` }
         }
         this.checkRemoteCeiling(request.id, permission.kind === 'runtime' ? permission.mode : undefined)

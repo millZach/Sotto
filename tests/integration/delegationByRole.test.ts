@@ -16,7 +16,7 @@ const ALL_MODES: AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits',
 type Result = { status: 'ok'; delegation: { id: string; thread: string; outcome: string }; role?: { work: string; named: string[]; note: string } }
   | { status: 'refused'; code: string; message: string }
 
-async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; grokModes?: AgentRuntimeMode[] } = {}) {
+async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; grokModes?: AgentRuntimeMode[]; watcherSent?: (threadId: string, messageId: string) => boolean } = {}) {
   const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
   cleanups.push(workspace.remove)
   // Every provider offers every mode, so only the ceiling narrows a permission.
@@ -29,6 +29,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: false } })
   let choices: WorkerRoleChoices = {}, reads = 0
   const service = new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => true,
+    ...(options.watcherSent ? { watcherSent: options.watcherSent } : {}),
     ...(options.roles === false ? {} : { roles: () => { reads++; return choices } }) })
   cleanups.push(async () => { service.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
   await f.control.start()
@@ -166,6 +167,38 @@ it('reads a delegated thread\'s brief as the delegating thread\'s words: only th
   const named = f.ok(await f.delegate(builder, { provider: 'codex', model: f.model('codex').id }))
   expect(f.created(named.delegation.thread)).toMatchObject({ provider: 'codex' })
   expect(named).not.toHaveProperty('heldToRole')
+})
+
+it('reads a message Watcher sent as Watcher\'s words, so naming a model there lets nothing through', async () => {
+  const f = await fixture({ newThread: 'full-access', watcherSent: () => true }), parent = await f.userThread('full-access', 'Have Codex review this')
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const result = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id }))
+  expect(f.created(result.delegation.thread)).toMatchObject({ provider: 'grok' })
+  expect(result).toHaveProperty('heldToRole')
+})
+
+it('says nothing new of the role on a retry, which reads the first call\'s start on whatever the role was then', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const input = { provider: 'codex', model: f.model('codex').id, retry_key: randomUUID() }
+  const first = f.ok(await f.delegate(parent, input))
+  expect(first).toHaveProperty('heldToRole')
+  f.setChoices({ 'code-review': { modelId: f.model('claude').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const retry = f.ok(await f.delegate(parent, input))
+  expect(retry.delegation.id).toBe(first.delegation.id)
+  expect(retry).not.toHaveProperty('heldToRole')
+})
+
+it('turns away a brief for another kind of work than the thread started for, when the role says another model, and keeps its own kind', async () => {
+  const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
+  f.setChoices({ building: { modelId: f.model('claude').id, reasoningEffort: 'high', runtimeMode: 'auto' }, 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const builder = f.ok(await f.delegate(parent, { work: 'building', brief: 'Build this' })).delegation.thread
+  const refused = await f.delegate(parent, { work: 'code-review', brief: 'Now review it', thread: builder })
+  expect(refused).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect((refused as { message: string }).message).toContain('role starts on')
+  // Another brief of its own kind goes, even once the role has moved on.
+  f.setChoices({ building: { modelId: f.model('codex').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  expect(await f.delegate(parent, { work: 'building', brief: 'And this', thread: builder })).not.toMatchObject({ code: 'INVALID_INPUT' })
 })
 
 it('still refuses a named permission wider than the ceiling, and a provider or model named alone', async () => {
