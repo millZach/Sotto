@@ -42,6 +42,10 @@ export interface ThreadLaunchProfiles {
 /** What each kind of work runs on now, for a thread's own sub-agents (#1042). Read at a launch and when Settings change. */
 export interface WorkerRoleSource {
   table(): readonly SubagentRole[]
+  /** What a Dynamic thread is told in place of the table (ADR-0191), or undefined for any other thread. Read at a launch. */
+  overseer?(threadId: string): string | undefined
+  /** The note a thread's next message must carry (ADR-0191). Present where Dynamic threads are on, so a launch can ready its channel. */
+  overseerNote?(threadId: string): string | undefined
   /** Called after the user's Settings change; returns what stops it. */
   onChange(listener: () => void): () => void
 }
@@ -74,6 +78,11 @@ export type AgentHostCommand =
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
      */
     readonly watcherRequestNote?: string
+    /**
+     * An overseer note (ADR-0191), set only by the workspace: what a provider session that cannot take new instructions on
+     * resume is told of Dynamic. It goes beside the message through the same channel, so the message is shown as typed.
+     */
+    readonly overseerNote?: string
     /**
      * A wake-up's news for the current Watcher (ADR-0073), set only by the coordinator on that wake-up's send. It
      * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
@@ -374,6 +383,7 @@ export interface AgentHost {
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
+  setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
   /**
    * One thread's whole history from Sotto's own store, for the few things that need more than the window
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
@@ -521,4 +531,9 @@ export interface AgentHost {
    * provider that is not connected. Absent on a host with no local client.
    */
   clientUpdated?(provider: ProviderId): Promise<void>
+  /**
+   * A thread at rest has turned Dynamic on or off (ADR-0191). The adapter lets go of its idle process, as the reaper does,
+   * so its next send starts one without its role agents, or with them, and ready to carry an overseer note.
+   */
+  threadInstructionsChanged?(threadId: string, provider?: ProviderId): Promise<void>
 }

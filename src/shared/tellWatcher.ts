@@ -59,3 +59,9 @@ export function toldUserMessage(id: string, text: string): ToldUserMessage | und
 const TOLD_ROOT = 'told:'
 export const toldRequestRoot = (hostId: string, threadId: string, messageId: string): string => `${TOLD_ROOT}${hostId}:${threadId}:${messageId}`
 export const isToldRequest = (request: { readonly rootUserMessageId: string }): boolean => request.rootUserMessageId.startsWith(TOLD_ROOT)
+/** The user's message a told request is rooted in, and its thread. Undefined for any other request's root. */
+export function toldRequestMessage(root: string): { readonly threadId: string; readonly messageId: string } | undefined {
+  if (!root.startsWith(TOLD_ROOT)) return undefined
+  const [, threadId, ...message] = root.slice(TOLD_ROOT.length).split(':')
+  return threadId && message.length ? { threadId, messageId: message.join(':') } : undefined
+}

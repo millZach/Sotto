@@ -1946,6 +1946,10 @@ msgstr ""
 msgid "Arrow"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Ask about your threads, or say what to start or send"
 msgstr ""
@@ -2659,9 +2663,30 @@ msgstr ""
 msgid "Code from the {sourceName} page"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex asks before every command, even one that only reads, and before every edit."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
+msgstr ""
+
 #. A tip under a working Codex thread.
 #: src/renderer/src/agents/tips.tsx
 msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
+msgstr ""
+
+#. {computer} is the name of the computer the thread runs on, such as forge.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex’s reviewer still answers what would come to you until it confirms."
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -3638,6 +3663,11 @@ msgstr ""
 
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Deleting…"
+msgstr ""
+
+#. An action the user denied, beside its row.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Denied"
 msgstr ""
 
 #. Answers an agent’s permission request.
@@ -4871,6 +4901,10 @@ msgstr ""
 #. Keeps a saved answer instead of discarding it.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Keep"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Keep current settings"
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
@@ -8479,6 +8513,10 @@ msgstr ""
 msgid "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now."
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "That provider is off the list Dynamic threads may use, in Settings under Threads. {nothing}"
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That server is no longer saved. Nothing was changed."
 msgstr ""
@@ -9206,6 +9244,11 @@ msgstr ""
 #. Heads the speed card of a thread on the user’s own model server while its turn runs.
 #: src/renderer/src/agents/ServerMark.tsx
 msgid "This turn"
+msgstr ""
+
+#. {now} lists the model, effort, speed and permission mode a running turn uses, such as "GPT-6.1 Terra, Low effort, Auto"; {next} lists the ones chosen for the next turn, such as "Medium effort".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "This turn runs on {now}. The next turn starts on {next}."
 msgstr ""
 
 #: src/renderer/src/agents/InteractiveVisual.tsx

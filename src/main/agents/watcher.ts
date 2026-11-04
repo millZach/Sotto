@@ -6,7 +6,7 @@ import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, 
   type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
-import { capRuntimeMode, fitSpeed, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning, THIS_COMPUTER } from '../../shared/workingThreads'
@@ -60,11 +60,12 @@ import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, wat
 import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
-import { isToldRequest, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
+import { isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
+import { userWordsOf } from './continueThread'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { watcherAskPlacements } from './watcherAskPlacements'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from './watcherOutcomes'
@@ -2775,6 +2776,30 @@ export class WatcherService implements WatcherControlHooks {
    * by the host's own record of what it sent, or a brief delegation sent. Neither is ever the user's turn or a takeover.
    * Watcher's own sends are known by their operations.
    */
+  /**
+   * The user's own words in a request, from Sotto's record, so no agent can write them (#1202): the message that started it
+   * less any handover ahead of it, which is another Watcher's, and the newest they have sent it since. For a told request,
+   * the message in that thread, which only a thread on this computer's record holds. A standing watch's request has none.
+   */
+  private requestWords(request: WatcherRequest): readonly string[] {
+    const told = toldRequestMessage(request.rootUserMessageId)
+    if (told) {
+      const thread = this.localThread(told.threadId), message = this.options.host.threadMessage(told.threadId, told.messageId)
+      const words = thread && message?.role === 'user' ? userWordsOf(thread, message) : undefined
+      return words === undefined ? [] : [words]
+    }
+    const master = request.watcher.threadId
+    const root = this.options.host.threadMessage(master, request.rootUserMessageId)
+    const newest = (request.userFollowups ?? []).findLast(item => item.messageId !== undefined)?.messageId
+    const followup = newest ? this.options.host.threadMessage(master, newest) : undefined
+    return [...root?.role === 'user' ? [root.text.slice(request.handover?.prefixLength ?? 0)] : [], ...followup?.role === 'user' ? [followup.text] : []]
+  }
+  /** Whether Watcher sent this message to a thread on this computer, so that it is Watcher's words and not the user's (#1202). */
+  sentToThread(threadId: string, messageId: string): boolean {
+    const target = { hostId: this.hostId(), threadId }
+    return this.view().operations.some(operation => sameTarget(operation.target, target) && operation.messageId === messageId)
+      || this.options.control.archivedWatcherWork()?.sentMessage(target, messageId) === true
+  }
   private sottoMessage(thread: AgentThread, messageId: string): boolean {
     return thread.wakeUpMessageIds?.includes(messageId) === true || thread.messages.some(message => message.id === messageId && message.wakeUp === true)
       || this.options.control.delegationMessage(messageId)
@@ -4477,19 +4502,25 @@ export class WatcherService implements WatcherControlHooks {
         const limits = this.permissionLimits(request, owner)
         // A start by worker role reads the user's Settings here, once, and only when a start is asked (#1041). What the
         // request named wins; a retry of a recorded start returned above and never resolves the role again.
-        const byRole = !imported && create.role && this.options.roles ? startFromRole(create.role, this.options.roles(), snapshot.models, { modelId: create.modelId,
-          reasoningEffort: create.reasoningEffort, speed: create.speed, runtimeMode: create.permission?.kind === 'runtime' ? create.permission.mode : undefined }) : undefined
+        const choices = !imported && create.role && this.options.roles ? this.options.roles() : undefined
+        // The role holds against a model the start names unless the user's own message in this request names it (#1202).
+        const roleHeld = choices && create.role && create.modelId ? roleHold(create.role, choices, snapshot.models, { id: create.modelId }, named => this.requestWords(request!).some(words => messageNamesModel(words, named))) : undefined
+        const namedEffort = roleHeld ? undefined : create.reasoningEffort, namedSpeed = roleHeld ? undefined : create.speed
+        // A permission the start named stays where the role's model offers it, still held to the ceiling.
+        const namedPermission = roleHeld && (create.permission?.kind !== 'runtime' || !roleHeld.model.runtimeModes?.includes(create.permission.mode)) ? undefined : create.permission
+        const byRole = choices && create.role ? startFromRole(create.role, choices, snapshot.models, { modelId: roleHeld ? undefined : create.modelId,
+          reasoningEffort: namedEffort, speed: namedSpeed, runtimeMode: namedPermission?.kind === 'runtime' ? namedPermission.mode : undefined }) : undefined
         const modelId = byRole ? byRole.modelId : create.modelId
         if (!modelId) refuse(byRole ? 'PROVIDER_UNAVAILABLE' : 'INVALID_INPUT', byRole
           ? 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.'
           : 'Name the worker model for this start. Nothing was started.')
         const model = resolveModel(snapshot.models, modelId)
         if (!model?.ready) refuse('PROVIDER_UNAVAILABLE', 'Choose a ready worker model. Sotto will not switch accounts.')
-        if (create.speed && fitSpeed(create.speed, model) !== create.speed) refuse('INVALID_INPUT', 'Choose a speed this worker model offers.')
-        if (create.reasoningEffort && !workerEfforts(model).includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
+        if (namedSpeed && fitSpeed(namedSpeed, model) !== namedSpeed) refuse('INVALID_INPUT', 'Choose a speed this worker model offers.')
+        if (namedEffort && !workerEfforts(model).includes(namedEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         const roleEffort = byRole?.reasoningEffort && !byRole.named.includes('effort') && workerEfforts(model).includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
         // A permission the request named keeps its refusal. One the role gave is held to the ceiling instead.
-        let explicit = create.permission, held: HeldPermission | undefined
+        let explicit = namedPermission, held: HeldPermission | undefined
         if (byRole?.runtimeMode && !explicit) {
           const ceiling = this.ceiling(model, limits)
           if (ceiling.providerMode === undefined && ceiling.runtimeMode) {
@@ -4503,17 +4534,17 @@ export class WatcherService implements WatcherControlHooks {
         if (!imported) {
           const configuration = this.options.control.configuration()
           const reference = resolveModel(this.options.control.watcherSnapshot().models, configuration.newThreadModelId)?.reasoningEfforts ?? model.reasoningEfforts ?? []
-          const effort = create.reasoningEffort ?? roleEffort ?? (configuration.newThreadReasoningEffort
+          const effort = namedEffort ?? roleEffort ?? (configuration.newThreadReasoningEffort
             ? nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, workerEfforts(model)) : undefined)
           // A single start keeps its original packet; a swarm also carries the role for its lead’s angle plan.
-          const { role: _role, speed: _speed, ...concrete } = create; void _role; void _speed
+          const { role: _role, speed: _speed, reasoningEffort: _effort, ...concrete } = create; void _role; void _speed; void _effort
           if ((create.count ?? 1) > 1) Object.assign(concrete, { role: create.role })
-          const speed = byRole ? byRole.speed : create.speed
+          const speed = byRole ? byRole.speed : namedSpeed
           input = watcherToolSchemas.start_thread.input.parse({ ...concrete, modelId, ...(speed ? { speed } : {}), ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })
         }
         if (byRole) {
-          const named = create.permission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
-          roleResult = { id: byRole.role, named: [...named], speed: byRole.speed, note: roleStartNote({ ...byRole, named }, snapshot.models, held) }
+          const named = namedPermission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
+          roleResult = { id: byRole.role, named: [...named], speed: byRole.speed, note: `${roleHeld ? `${roleHeld.note} ` : ''}${roleStartNote({ ...byRole, named }, snapshot.models, held)}` }
         }
         this.checkRemoteCeiling(request.id, permission.kind === 'runtime' ? permission.mode : undefined)
         this.prunePages()

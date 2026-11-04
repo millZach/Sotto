@@ -213,6 +213,48 @@ Measured on forge with 46 and 92 saved threads of 2 MB rollouts, a restart conne
 Opening a thread was unchanged at about 50 ms, and one with work done outside Sotto read only that
 (`docs/perf/2026-10-30-codex-rollout-positions.md`).
 
+## Amendment: what each permission mode says (November 4, 2026, #2161)
+
+A Codex thread's permission menu named its four modes and said nothing about them, while Cursor's (ADR-0128) and
+DeepSeek Harness's (ADR-0138) say what each lets the provider do. Codex's modes differ in more than their names suggest,
+and Auto hands the user's permission requests to a model, so the menu now says it. The adapter maps them in `runtimePolicy`, sent
+on `thread/start` and `thread/settings/update` and, for approval and reviewer, on every `turn/start`:
+
+| Mode | `approvalPolicy` | `approvalsReviewer` | `sandbox` |
+|---|---|---|---|
+| Ask for approval | `untrusted` | `user` | `read-only` |
+| Allow edits (the default when none is chosen) | `on-request` | `user` | `workspace-write` |
+| Auto | `on-request` | `auto_review` | `workspace-write` |
+| Full access | `never` | `user` | `danger-full-access` |
+
+Read in Codex 0.166.0's source: under `untrusted` every shell command asks, even one that only reads, and so does every
+patch. Under `on-request` with `workspace-write`, a command or patch inside the project runs without asking, and the
+network, other folders and the project's `.git` need an escalation, which asks; so a commit asks. `auto_review` sends
+those escalations to Codex's own reviewer, a model on the thread's provider (OpenAI, which Sotto sets), which can allow
+as well as deny and falls back to asking the user when a review fails. `never` with no sandbox asks nothing.
+
+Zach's pick, November 4, 2026: one line per mode, OpenAI named as Auto's reviewer, and Allow edits saying it asks
+before a commit:
+
+- **Ask for approval**: "Codex asks before every command, even one that only reads, and before every edit."
+- **Allow edits**: "Codex edits files and runs commands in the project without asking. It asks before going online,
+  outside the project or committing."
+- **Auto**: "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+- **Full access**: "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+
+The lines are `codexModeLine` in `ThreadOptions.tsx`, in the interface language, with a comment pinning them to Codex
+0.166.0 and the mapping above; read them again when either changes. While Auto is still in force after a press, the
+caption beside the chips says "Codex’s reviewer still answers what would come to you until it confirms." rather than
+that Codex decides what to ask. A Watcher on Codex gives the same four lines in place of Watcher's general ones, which
+said Allow edits asks before commands and Auto lets Codex decide. The iPhone gives them too, for a Codex thread and a
+Codex Watcher, with one change: its Full access line names the computer the thread runs on, since "this computer" on a
+phone would be wrong. On the desktop, a thread on a paired host names that host the same way. No line says when a change applies; the chip already cannot change while a turn runs.
+
+No Windows line. With Codex's Windows sandbox off, `workspace-write` could fall back to read-only, so a check ran the
+same day on Zach's Windows 11 PC with Codex 0.166.0: under `workspace-write` Codex wrote in the project without asking
+and printed no sandbox warning, and under `read-only` the write was denied. That PC sets `[windows] sandbox =
+"elevated"` in Codex's own config; a PC without it was not checked, and the menu claims nothing about one.
+
 ## Amendment: a secret answer is masked and never saved (November 4, 2026, #2153)
 
 Codex marks a `request_user_input` question `isSecret` when it wants the answer masked: its own client shows `*` while

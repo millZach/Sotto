@@ -1946,6 +1946,10 @@ msgstr "Arrange in a single row"
 msgid "Arrow"
 msgstr "Arrow"
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+msgstr "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Ask about your threads, or say what to start or send"
 msgstr "Ask about your threads, or say what to start or send"
@@ -2659,10 +2663,31 @@ msgstr "Code"
 msgid "Code from the {sourceName} page"
 msgstr "Code from the {sourceName} page"
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex asks before every command, even one that only reads, and before every edit."
+msgstr "Codex asks before every command, even one that only reads, and before every edit."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
+msgstr "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing."
+
 #. A tip under a working Codex thread.
 #: src/renderer/src/agents/tips.tsx
 msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
 msgstr "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
+
+#. {computer} is the name of the computer the thread runs on, such as forge.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+msgstr "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+msgstr "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex’s reviewer still answers what would come to you until it confirms."
+msgstr "Codex’s reviewer still answers what would come to you until it confirms."
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Collapse question"
@@ -3639,6 +3664,11 @@ msgstr "Deleted {subject}"
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Deleting…"
 msgstr "Deleting…"
+
+#. An action the user denied, beside its row.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Denied"
+msgstr "Denied"
 
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
@@ -4872,6 +4902,10 @@ msgstr "Just finished"
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Keep"
 msgstr "Keep"
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Keep current settings"
+msgstr "Keep current settings"
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Keep draft"
@@ -8479,6 +8513,10 @@ msgstr "That is not an address Sotto can reach. Type it like http://localhost:11
 msgid "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now."
 msgstr "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now."
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "That provider is off the list Dynamic threads may use, in Settings under Threads. {nothing}"
+msgstr "That provider is off the list Dynamic threads may use, in Settings under Threads. {nothing}"
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That server is no longer saved. Nothing was changed."
 msgstr "That server is no longer saved. Nothing was changed."
@@ -9207,6 +9245,11 @@ msgstr "This thread’s worktree. Both threads change the same files."
 #: src/renderer/src/agents/ServerMark.tsx
 msgid "This turn"
 msgstr "This turn"
+
+#. {now} lists the model, effort, speed and permission mode a running turn uses, such as "GPT-6.1 Terra, Low effort, Auto"; {next} lists the ones chosen for the next turn, such as "Medium effort".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "This turn runs on {now}. The next turn starts on {next}."
+msgstr "This turn runs on {now}. The next turn starts on {next}."
 
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."

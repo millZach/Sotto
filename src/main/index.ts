@@ -851,7 +851,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -1096,12 +1096,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
-    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     toDoListEnabled, delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'],
-    answerImages: owlFeatures['answer-images'],
+    answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     ...threadMedia ? { threadMedia } : {},
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
@@ -1322,7 +1322,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (councilService) { await councilService.recover(); quitHandles.council = councilService }
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
-  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
+  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { dynamic: owlFeatures['dynamic-threads'], roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   // Lets a thread on this computer send Watcher a message when the user tells it to (ADR-0073, November 2, 2026).
   const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
@@ -1465,6 +1465,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
+    delegationService?.privacyChanged()
     const [toDos, chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => localToDos?.privacyChanged()),
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),

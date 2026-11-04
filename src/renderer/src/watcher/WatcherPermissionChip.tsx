@@ -5,7 +5,7 @@ import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
-import { ChoiceChip, cursorModeLine, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
+import { ChoiceChip, codexModeLine, cursorModeLine, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
 import { useWatcherRoom } from './watcherRoom'
 
 /**
@@ -30,15 +30,17 @@ export function watcherModeDescriptions(provider: string): Record<AgentRuntimeMo
  * The modes Watcher's model offers, each with its line, led by the chosen mode as unchoosable when the model does not
  * offer it (a Grok Build model offers three). A model that lists none offers Sotto's four. A Cursor model offers Cursor's
  * three, each with the line a Cursor thread's menu gives it (ADR-0128): Ask for approval still edits inside the project
- * without asking, and Auto's classifier runs on Cursor's servers.
+ * without asking, and Auto's classifier runs on Cursor's servers. A Codex model's four take a Codex thread's lines
+ * (ADR-0005, #2161): under Allow edits Codex runs commands in the project without asking, and under Auto its reviewer
+ * answers in the user's place, which the general lines would misstate.
  */
 function choices(model: AgentModel | undefined, chosen: AgentRuntimeMode, provider: string): ChoiceOption[] {
   const offered = model?.runtimeModes?.length ? model.runtimeModes : agentRuntimeModeSchema.options
   const lines = watcherModeDescriptions(provider)
   const lead = offered.includes(chosen) ? [] : [{ id: chosen, label: RUNTIME_LABELS[chosen], disabled: true }]
   return [...lead, ...offered.map(mode => {
-    const cursor = model?.providerId === 'cursor' ? cursorModeLine(mode) : undefined
-    return { id: mode, label: RUNTIME_LABELS[mode], ...(cursor ? { description: cursor, translated: true } : { description: lines[mode] }) }
+    const own = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'codex' ? codexModeLine(mode) : undefined
+    return { id: mode, label: RUNTIME_LABELS[mode], ...(own ? { description: own, translated: true } : { description: lines[mode] }) }
   })]
 }
 
@@ -97,7 +99,7 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
       disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={t`When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.`} flip={flip} icon={PERMISSIONS_ICON}
       onChange={mode => void choose(mode as AgentRuntimeMode)} />
     {/* Always present, so assistive technology hears the caption when it arrives. */}
-    <span id={captionId} className="thread-options__caption" role="status">{pending ? permissionInForceCaption(provider, { runtimeMode: current }) : ''}</span>
+    <span id={captionId} className="thread-options__caption" role="status">{pending ? permissionInForceCaption(provider, { runtimeMode: current }, model?.providerId) : ''}</span>
     {noticeSlot ? createPortal(notice, noticeSlot) : notice}
   </>
 }
