@@ -729,6 +729,7 @@ struct SheetPage<Content: View>: View {
     }
     var body: some View {
         let _ = BenchProbe.body("SheetPage")
+        let _ = BenchOpen.why(Self.self, "SheetPage")
         VStack(spacing: 0) {
             ScrollViewReader { reader in
                 ScrollView {

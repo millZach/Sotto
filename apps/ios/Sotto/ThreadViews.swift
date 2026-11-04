@@ -37,6 +37,7 @@ struct ThreadView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadView")
+        let _ = BenchOpen.why(Self.self, "ThreadView")
         Conversation(ref: ref, stuck: $stuck, titled: $titled) { request in
             shown = request.id
             open = request

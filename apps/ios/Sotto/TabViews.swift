@@ -111,6 +111,7 @@ struct ThreadsView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
+        let _ = BenchOpen.why(Self.self, "ThreadsView")
         let shown = held.map { (groups: $0.groups, unsearched: $0.unsearched) } ?? lists()
         let groups = shown.groups
         let unsearched = shown.unsearched

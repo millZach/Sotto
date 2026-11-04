@@ -14,6 +14,19 @@ enum BenchOpen {
     static let holdsEarly = ProcessInfo.processInfo.arguments.contains("--bench-hold-early")
     /// `--bench-keep-list`: the Threads page hands back the list it last drew while the list made now would draw the same.
     static let keepsList = ProcessInfo.processInfo.arguments.contains("--bench-keep-list")
+    /// `--bench-why-bodies`: says on the app's standard output why the views above the list draw again, and what published.
+    static let saysWhy = ProcessInfo.processInfo.arguments.contains("--bench-why-bodies")
+    static func say(_ line: String) {
+        guard saysWhy else { return }
+        print(String(format: "%.1f ", ProcessInfo.processInfo.systemUptime * 1000) + line)
+        fflush(nil)
+    }
+    @MainActor static func why<V: View>(_ view: V.Type, _ name: String) {
+        guard saysWhy else { return }
+        say("body " + name)
+        view._printChanges()
+        fflush(nil)
+    }
     nonisolated(unsafe) static let holdNow = PassthroughSubject<Void, Never>()
     @MainActor static func conversation(rows: Int, held: Bool) {
         #if DEBUG && os(iOS)
@@ -159,6 +172,7 @@ import UIKit
     private var timer: Timer?
     private var sampler: BenchSampler?
     private let writes = DispatchQueue(label: "com.millzach.sotto.bench.report", qos: .utility)
+    private var modelWatch: AnyCancellable?
 
     private init(model: AppModel, report: URL, chunks: Int, long: ThreadRef) {
         self.model = model; self.report = report; self.chunks = chunks; self.long = long
@@ -171,6 +185,14 @@ import UIKit
         self.link = link
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in MainActor.assumeIsolated { BenchDriver.running?.write() } }
         mark("driver-start")
+        if BenchOpen.saysWhy {
+            modelWatch = model.objectWillChange.sink { _ in
+                let frames = Thread.callStackSymbols.filter { $0.contains(" Sotto ") }.prefix(6).map { line in
+                    line.split(separator: " ").dropFirst(3).prefix(1).joined()
+                }
+                BenchOpen.say("model publishes " + frames.joined(separator: " < "))
+            }
+        }
         let arguments = ProcessInfo.processInfo.arguments
         if let index = arguments.firstIndex(of: "--bench-sample"), arguments.indices.contains(index + 1) {
             sampler = BenchSampler(output: URL(fileURLWithPath: arguments[index + 1]))
@@ -297,6 +319,7 @@ import UIKit
         phase = name
         sampler?.phase(name)
         mark("phase-" + name)
+        BenchOpen.say("== phase " + name)
         write()
     }
 

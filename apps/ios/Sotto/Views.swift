@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         let _ = BenchProbe.body("RootView")
+        let _ = BenchOpen.why(Self.self, "RootView")
         // The whole screen, safe areas included, for Glass's backdrop on every page, pairing included.
         GeometryReader { frame in
             let insets = frame.safeAreaInsets
@@ -49,6 +50,7 @@ struct MainTabs: View {
     @AppStorage(PhonePreferenceKey.duoSidebarHidden) private var sidebarHidden = false
     var body: some View {
         let _ = BenchProbe.body("MainTabs")
+        let _ = BenchOpen.why(Self.self, "MainTabs")
         GeometryReader { frame in
             let duo = duoLayout(frame.safeAreaInsets)
             tabs(duo: duo).environment(\.duoLayout, duo)
