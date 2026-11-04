@@ -80,6 +80,10 @@ msgstr "{about} Sotto’s OpenCode reads it there, and Sotto keeps no copy."
 msgid "{actions, plural, one {{actionCount} agent action} other {{actionCount} agent actions}}"
 msgstr "{actions, plural, one {{actionCount} agent action} other {{actionCount} agent actions}}"
 
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "{added, plural, one {{lineCount} line added} other {{lineCount} lines added}}"
+msgstr "{added, plural, one {{lineCount} line added} other {{lineCount} lines added}}"
+
 #. Lines added to and removed from a changed file.
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "{added} added, {removed} removed"
@@ -299,6 +303,7 @@ msgstr "{derivedName}, from the address"
 msgid "{directory} has nothing to mention."
 msgstr "{directory} has nothing to mention."
 
+#. A plan's steps: 2 of 5 done.
 #. A plan's steps: 2 of 5 done.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{done} of {total} done"
@@ -1130,6 +1135,10 @@ msgstr "{remaining, plural, one {Try adding it again.} other {Try adding them ag
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "{remaining} left to answer"
 msgstr "{remaining} left to answer"
+
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "{removed, plural, one {{lineCount} line removed} other {{lineCount} lines removed}}"
+msgstr "{removed, plural, one {{lineCount} line removed} other {{lineCount} lines removed}}"
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{reviews, plural, one {# review} other {# reviews}}"
@@ -3907,6 +3916,16 @@ msgstr "Edited"
 msgid "Edited {subject}"
 msgstr "Edited {subject}"
 
+#. The working line while a file changes; {name} is the file's name, such as control.ts.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Editing {name}"
+msgstr "Editing {name}"
+
+#. The working line while files change; {name} is the first file's name, such as control.ts.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Editing {name} and {more} more"
+msgstr "Editing {name} and {more} more"
+
 #. The reasoning effort chip, when no level is set.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Effort"
@@ -6371,6 +6390,11 @@ msgstr "Plain ink"
 msgid "Plan"
 msgstr "Plan"
 
+#. One part of a list of what a turn did, starting lowercase; {progress} is how far its plan got, such as 3 of 7 done.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "plan {progress}"
+msgstr "plan {progress}"
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Plan from {ownerTitle}"
 msgstr "Plan from {ownerTitle}"
@@ -6694,6 +6718,11 @@ msgstr "Read the reply from {title}, the check on {machine}"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Read your saved servers again"
 msgstr "Read your saved servers again"
+
+#. The working line while a tool reads a file; {name} is the file's name, such as threads.css.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Reading {name}"
+msgstr "Reading {name}"
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Reading changes…"
@@ -7206,6 +7235,11 @@ msgstr "Run this page"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Running"
 msgstr "Running"
+
+#. The working line while a command runs; {command} is the command, such as npm test.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Running {command}"
+msgstr "Running {command}"
 
 #. {name} is a Git hook's name, such as pre-commit.
 #: src/renderer/src/agents/gitActionButton.logic.ts
@@ -9736,6 +9770,21 @@ msgstr "Use the model's default, {defaultLevel}"
 msgid "Use this folder"
 msgstr "Use this folder"
 
+#. One part of a list of what a turn did, starting lowercase; {first} is a tool's name, such as Read.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "used {first}"
+msgstr "used {first}"
+
+#. One part of a list of what a turn did, starting lowercase; {first} and {second} are tools' names.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "used {first} and {second}"
+msgstr "used {first} and {second}"
+
+#. One part of a list of what a turn did, starting lowercase; {first} and {second} are tools' names.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "used {first}, {second} and {more} more"
+msgstr "used {first}, {second} and {more} more"
+
 #. The browser line once the agent has moved on, when it opened no address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "Used the browser"
@@ -10231,6 +10280,11 @@ msgstr "Write what {continueTarget} should do next. It goes with the handover."
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Write your answer…"
 msgstr "Write your answer…"
+
+#. The working line while the agent writes its reply.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Writing a reply"
+msgstr "Writing a reply"
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Writing a reply…"
