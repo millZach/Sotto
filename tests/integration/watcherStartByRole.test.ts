@@ -16,7 +16,7 @@ const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 const ALL_MODES: AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
 
-async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; otherModes?: AgentRuntimeMode[] } = {}) {
+async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; otherModes?: AgentRuntimeMode[]; request?: string } = {}) {
   const workspace = await workspaceFixture(undefined, { history: true })
   cleanups.push(workspace.remove)
   // Codex offers every mode and a second model, so only the ceiling narrows a permission and a named model can differ.
@@ -43,7 +43,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
   const project = f.control.shell().host.projects.find(item => item.providerId === 'codex')!
   expect(await service.open({ provider: 'codex', modelId: base.id })).toMatchObject({ status: 'ok' })
   const id = service.state().current!.target.threadId
-  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic Watcher user request' })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: options.request ?? 'Synthetic Watcher user request' })).error).toBeNull()
   const requestId = service.state().requests.at(-1)!.id
   const existing = new Set(f.control.shell().host.threads.map(thread => thread.id))
   const start = (extra: Record<string, unknown> = {}) => ({ requestId, retryKey: randomUUID(), project: { hostId: f.control.hostId()!, projectId: project.id },
@@ -117,8 +117,18 @@ it('says the model does not offer the default\'s mode when that, not the default
   expect(result.role!.note).toContain('Its permission, Full access, was held to Ask for approval: the user\'s new-thread default is Allow edits, which this model does not offer, so it starts on the nearest mode the model does.')
 })
 
-it('lets a named model override the role for this start only, with effort and permission still from the role', async () => {
+it('holds the role against a model the start names when the user\'s own message does not name it (#1202)', async () => {
   const f = await fixture({ newThread: 'full-access' })
+  f.setChoices({ building: { modelId: f.base.id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  const result = f.ok(await f.call(f.start({ role: 'building', modelId: f.other.id, reasoningEffort: 'low', speed: 'fast' })))
+  expect(result.effectiveChoices.modelId).toBe(f.base.id)
+  expect(f.created(result.target.threadId)).toMatchObject({ reasoningEffort: 'high', speed: null, runtimeMode: 'auto' })
+  expect(result.role).toMatchObject({ id: 'building', named: [] })
+  expect(result.role!.note).toContain('This call named Synthetic other model, but the user\'s Building role starts on Test model')
+})
+
+it('lets a named model override the role for this start only when the user\'s own message names it, with effort and permission still from the role', async () => {
+  const f = await fixture({ newThread: 'full-access', request: 'Use the Synthetic other model for this' })
   f.setChoices({ building: { modelId: f.base.id, reasoningEffort: 'high', runtimeMode: 'auto' } })
   const result = f.ok(await f.call(f.start({ role: 'building', modelId: f.other.id })))
   expect(result.effectiveChoices.modelId).toBe(f.other.id)

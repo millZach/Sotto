@@ -88,7 +88,7 @@ async function hostFixture(version = OWL) {
   const parentThread = async (permission: AgentRuntimeMode = 'full-access') => {
     const threadId = randomUUID(), title = `Synthetic parent ${threadId.slice(0, 8)}`
     await command({ type: 'create-thread', threadId, projectId: project.id, title, modelId: model.id, runtimeMode: permission, workingCopy: 'shared' })
-    await command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user request' })
+    await command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Have Codex do this synthetic user request' })
     return { threadId, title }
   }
   /** A tool call as the provider makes it: through the thread's own loopback server, with its own token. */
