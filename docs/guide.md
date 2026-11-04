@@ -669,7 +669,7 @@ A remote host keeps its own OpenRouter key, in its encrypted credential file, an
 
 Sotto prepares the audio processing while dictation is on and keeps it suspended between recordings. The microphone opens only when you start dictation and closes when you stop. Changing audio devices rebuilds the prepared processing; it does not open the microphone.
 
-Listening appears as soon as the microphone opens. **Waiting for microphone** appears only while the operating system is asking for microphone access. Pressing Stop or the shortcut again during startup cancels immediately; a microphone that finishes opening afterwards is closed without keeping or transcribing audio.
+Listening appears when Sotto is ready to record. Before it appears, Stop or the shortcut cancels immediately; a microphone that finishes opening afterwards is closed without keeping or transcribing audio. Once Listening appears, Stop or the shortcut finishes the recording. **Waiting for microphone** appears only while the operating system is asking for microphone access.
 
 The Dictate room is where your transcripts live. At the top, the dictate bar has the small wave, one sentence saying what Sotto is doing, **Start dictation** (or **Stop** while you talk) and your shortcut. Automatic paste returns the bar and widget to Ready as soon as delivery finishes. A dictation Sotto copied without pasting says **Copied.** for the success-message duration set in Settings. Errors, a kept recording and text Sotto could not copy show here as before, with **Try again**, **Discard recording**, **Dismiss** or **Copy text**.
 

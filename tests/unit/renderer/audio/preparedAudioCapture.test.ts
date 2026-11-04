@@ -115,7 +115,7 @@ describe('prepared audio capture', () => {
     const recorder = harness.owner.createRecorder({ maxRecordingSeconds: 10 })
     const outcome = recorder.start(ready).then(() => 'started', () => 'cancelled')
     await entered.promise
-    expect(ready).toHaveBeenCalledOnce()
+    expect(ready).not.toHaveBeenCalled()
     expect(harness.context.source.connect).toHaveBeenCalledOnce()
 
     await recorder[action]()
@@ -125,6 +125,7 @@ describe('prepared audio capture', () => {
     resumed.resolve()
 
     expect(await outcome).toBe(action === 'stop' ? 'started' : 'cancelled')
+    expect(ready).not.toHaveBeenCalled()
     expect(harness.context.source.connect).toHaveBeenCalledOnce()
     expect(harness.context.source.disconnect).toHaveBeenCalledOnce()
     expect(harness.context.state).toBe('suspended')

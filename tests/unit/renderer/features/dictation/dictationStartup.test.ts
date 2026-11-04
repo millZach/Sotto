@@ -5,7 +5,7 @@ import { createMicrophoneAccessGate } from '../../../../../src/main/media/microp
 import { createHarness as createAudioHarness } from '../../../../fixtures/renderer/audioRecorderHarness'
 import { createHarness, deferred, recorderOptions, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
 
-// Readiness is a recorder contract: these fakes report it explicitly, before start settles.
+// Readiness means capture can be stopped, even before the start promise settles.
 describe('dictation startup', () => {
   it('publishes the widget and starts the cue while the recorder start is pending', async () => {
     const starting = deferred<void>()
@@ -34,7 +34,7 @@ describe('dictation startup', () => {
     await harness.controller.cancel()
   })
 
-  it.each([false, true])('cancels immediately during start, including after readiness (%s)', async afterReady => {
+  it('cancels immediately before readiness and ignores a late readiness callback', async () => {
     const starting = deferred<void>()
     let ready!: () => void
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }
@@ -42,7 +42,6 @@ describe('dictation startup', () => {
       start: vi.fn((onReady: () => void) => { ready = onReady; return starting.promise }),
     } })
     const start = harness.controller.start()
-    if (afterReady) ready()
     await harness.controller.stop()
     expect(harness.controller.getState().status).toBe('cancelled')
     expect(harness.recorder.cancel).toHaveBeenCalledOnce()
@@ -55,6 +54,72 @@ describe('dictation startup', () => {
     expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
     expect(cuePlayer.playStart).toHaveBeenCalledOnce()
     expect(cuePlayer.playStop).not.toHaveBeenCalled()
+  })
+
+  it('waits for post-permission resume and preserves Stop from the Listening publication', async () => {
+    const entered = deferred<void>()
+    const resumed = deferred<void>()
+    const audio = createAudioHarness({}, 16_000)
+    audio.getUserMedia.mockImplementation(async () => {
+      audio.context.state = 'suspended'
+      return audio.stream
+    })
+    audio.context.resume.mockImplementation(() => { entered.resolve(); return resumed.promise })
+    const samples = new Float32Array(960).fill(0.25)
+    let stop: Promise<void> | undefined
+    let stoppedOnListening = false
+    const harness = createHarness({ publishWidgetState: snapshot => {
+      if (snapshot.status !== 'listening' || stoppedOnListening) return
+      stoppedOnListening = true
+      expect(audio.context.state).toBe('running')
+      expect(audio.context.source.connect).toHaveBeenCalledOnce()
+      audio.worklet.port.onmessage?.({ data: samples })
+      stop = harness.controller.stop()
+    } })
+    harness.createRecorder.mockImplementation(options => new AudioRecorder(options, audio.dependencies))
+    const start = harness.controller.start()
+    await entered.promise
+    expect(harness.controller.getState().status).toBe('requesting-permission')
+    expect(snapshots(harness).some(snapshot => snapshot.status === 'listening')).toBe(false)
+    expect(audio.context.source.connect).toHaveBeenCalledOnce()
+
+    audio.context.state = 'running'
+    resumed.resolve()
+    await start
+    expect(stop).toBeDefined()
+    await stop
+    expect(harness.transcriber.transcribe).toHaveBeenCalledOnce()
+    expect(harness.transcriber.transcribe.mock.calls[0]![0].audio).toEqual(samples)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'hello world' }))
+    expect(harness.publishedStates.slice(-2)).toEqual([
+      { status: 'success', sessionId: 'session', text: 'hello world', output: 'pasted' },
+      { status: 'idle' },
+    ])
+    expect(audio.track.stop).toHaveBeenCalledOnce()
+    expect(audio.worklet.port.onmessage).toBeNull()
+  })
+
+  it('cancels a post-permission resume without publishing late Listening', async () => {
+    const entered = deferred<void>()
+    const resumed = deferred<void>()
+    const audio = createAudioHarness()
+    audio.getUserMedia.mockImplementation(async () => {
+      audio.context.state = 'suspended'
+      return audio.stream
+    })
+    audio.context.resume.mockImplementation(() => { entered.resolve(); return resumed.promise })
+    const harness = createHarness()
+    harness.createRecorder.mockImplementation(options => new AudioRecorder(options, audio.dependencies))
+    const start = harness.controller.start()
+    await entered.promise
+    await harness.controller.stop()
+    resumed.resolve()
+    await start
+    expect(harness.controller.getState().status).toBe('cancelled')
+    expect(snapshots(harness).some(snapshot => snapshot.status === 'listening')).toBe(false)
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(audio.track.stop).toHaveBeenCalledOnce()
+    expect(audio.context.source.disconnect).toHaveBeenCalledOnce()
   })
 
   it('ignores an older start and its permission notifications after a new session starts', async () => {
@@ -91,7 +156,7 @@ describe('dictation startup', () => {
     const harness = createHarness()
     harness.createRecorder.mockImplementation(options => new AudioRecorder(options, audio.dependencies))
     audio.context.createMediaStreamSource.mockImplementation(() => {
-      expect(harness.controller.getState().status).toBe('listening')
+      expect(harness.controller.getState().status).toBe('requesting-permission')
       return audio.context.source
     })
     const start = harness.controller.start()

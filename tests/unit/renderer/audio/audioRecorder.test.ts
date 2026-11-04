@@ -14,21 +14,21 @@ import {
 import { createHarness, deferred } from '../../../fixtures/renderer/audioRecorderHarness'
 
 describe('AudioRecorder', () => {
-  it('reports readiness before synchronous source connection, without yielding between them', async () => {
+  it('reports readiness after source connection without yielding between them', async () => {
     const harness = createHarness()
     const order: string[] = []
     harness.context.source.connect.mockImplementation(node => { order.push('connect'); return node })
     const recorder = harness.recorder()
     await recorder.start(() => {
       order.push('ready')
-      expect(harness.context.createMediaStreamSource).not.toHaveBeenCalled()
+      expect(harness.context.source.connect).toHaveBeenCalledOnce()
       void Promise.resolve().then(() => { order.push('microtask') })
     })
-    expect(order).toEqual(['ready', 'connect', 'microtask'])
+    expect(order).toEqual(['connect', 'ready', 'microtask'])
     await recorder.cancel()
   })
 
-  it('connects in the readiness callback turn before waiting for the context to resume', async () => {
+  it('connects immediately but waits for post-permission resume before reporting readiness', async () => {
     const entered = deferred<void>()
     const resume = deferred<void>()
     const harness = createHarness()
@@ -47,15 +47,18 @@ describe('AudioRecorder', () => {
     let finished = false
     const start = recorder.start(() => {
       order.push('ready')
-      expect(harness.context.createMediaStreamSource).not.toHaveBeenCalled()
+      expect(harness.context.source.connect).toHaveBeenCalledOnce()
+      expect(harness.context.state).toBe('running')
       void Promise.resolve().then(() => { order.push('microtask') })
     }).then(() => { finished = true })
 
     await entered.promise
-    expect(order).toEqual(['ready', 'resume', 'connect', 'microtask'])
+    expect(order).toEqual(['resume', 'connect'])
     expect(finished).toBe(false)
+    harness.context.state = 'running'
     resume.resolve()
     await start
+    expect(order).toEqual(['resume', 'connect', 'ready', 'microtask'])
     await recorder.cancel()
   })
 
@@ -80,7 +83,7 @@ describe('AudioRecorder', () => {
     await recorder[action]()
     resume.resolve()
     expect(await outcome).toBe(action === 'stop' ? 'started' : 'cancelled')
-    expect(ready).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
+    expect(ready).not.toHaveBeenCalled()
     expect(harness.context.source.connect).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
     expect(harness.context.source.disconnect).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
     expect(harness.track.stop).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
@@ -103,7 +106,7 @@ describe('AudioRecorder', () => {
     const recorder = harness.recorder()
     const start = recorder.start(ready)
     await entered.promise
-    expect(ready).toHaveBeenCalledOnce()
+    expect(ready).not.toHaveBeenCalled()
     expect(harness.context.source.connect).toHaveBeenCalledOnce()
 
     resume.reject(new Error('resume failed'))

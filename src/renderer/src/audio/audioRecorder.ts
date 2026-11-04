@@ -223,7 +223,7 @@ export class AudioRecorder {
     }
   }
 
-  /** Calls onReady synchronously when the stream resolves, before connecting its source. */
+  /** Calls onReady once capture is connected, resumed and ready to stop. */
   async start(onReady?: () => void): Promise<void> {
     if (this.session !== null) {
       throw new AudioRecorderError('ALREADY_RECORDING', 'Microphone capture is already active.')
@@ -304,15 +304,13 @@ export class AudioRecorder {
       }
       markDictationTiming('microphone-resolved')
       this.assertSessionLive(session)
-      onReady?.()
-      this.assertSessionLive(session)
       const resumed = session.context.state === 'suspended' ? session.context.resume?.() : undefined
       // Observe failure even if a synchronous graph operation throws before the await below.
       void resumed?.catch(() => undefined)
       this.monitorTrackEnd(session)
 
-      // Connect in the readiness callback's turn, including after a permission
-      // dialog. A suspended context can resume once the source is connected.
+      // Connect immediately, including after a permission dialog, but only
+      // announce readiness once any pending context resume has completed.
       markDictationTiming('source-connect-started')
       session.source = session.context.createMediaStreamSource(session.stream)
       session.source.connect(session.worklet)
@@ -334,6 +332,7 @@ export class AudioRecorder {
         }, this.options.maxRecordingSeconds * 1_000)
       }
       session.starting = false
+      onReady?.()
     } catch (error: unknown) {
       const resolveCancelledStart = session.resolveStartOnTermination === true
       session.starting = false

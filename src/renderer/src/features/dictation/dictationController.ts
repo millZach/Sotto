@@ -49,7 +49,7 @@ import type {
 import { TranscriptionError } from '../../transcription/localTranscriber'
 
 export interface DictationRecorder {
-  /** onReady runs once, synchronously at microphone readiness, before source connection. */
+  /** onReady runs once capture is connected, resumed and ready to stop. */
   start(onReady: () => void): Promise<void>
   stop(): Promise<AudioRecordingResult | null>
   cancel(): Promise<void>
@@ -141,7 +141,6 @@ interface ActiveSession {
   startedAt: number
   /** Whether the recorder reached listening, independent of its start timestamp. */
   captureStarted: boolean
-  startFinished: boolean
   /** Whether a voice is heard, from the levels while listening; made with the first level. */
   gate?: SpeakingGate
   /** The recording's parts in order: segments emitted while listening, then the tail. */
@@ -377,7 +376,6 @@ export class DictationController {
       acceptProgress: true,
       startedAt: 0,
       captureStarted: false,
-      startFinished: false,
       parts: [],
       durationMs: 0,
       kept: false,
@@ -435,8 +433,7 @@ export class DictationController {
   stop(): Promise<void> {
     markDictationTiming('controller-stop-received')
     const session = this.session
-    if (session !== null && (this.state.status === 'requesting-permission' ||
-      (this.state.status === 'listening' && !session.startFinished))) {
+    if (session !== null && this.state.status === 'requesting-permission') {
       session.stopClaimed = true
       return this.cancel()
     }
@@ -614,7 +611,6 @@ export class DictationController {
       const starting = session.recorder?.start(() => this.recorderReady(session))
       if (this.isCurrent(session) && !session.stopClaimed) this.playCue(session, 'start')
       await starting
-      session.startFinished = true
     } catch (error: unknown) {
       if (this.isCurrent(session)) this.fail(session, classifyStartFailure(error))
       return

@@ -68,9 +68,9 @@ After you type in the Claude CLI, the next send from Sotto resumes the updated n
 If a Claude Code answer is unconfirmed, **Check again** checks the request without sending anything. A delayed write keeps your original choice; another answer is allowed only after the write fails outright or the client is gone.
 
 Codex, Claude Code and new Grok Build threads are asked to put a question for you through their own question tool. When a model writes a question into a reply instead and keeps working, the finished turn quotes it under its **Worked for** line, with **Show where it asked**.
-Pressing the dictation shortcut again while the microphone is connecting cancels the session immediately. No audio is kept or transcribed.
+Pressing the dictation shortcut again before Listening appears cancels the session immediately. No audio is kept or transcribed.
 With dictation on, Sotto prepares its audio processing when it opens. The microphone opens only when you start dictation and closes when you stop.
-Listening appears as soon as the microphone opens. **Waiting for microphone** appears only while the operating system is asking for microphone access.
+Listening appears when Sotto is ready to record. Once it appears, Stop or the shortcut finishes the recording. **Waiting for microphone** appears only while the operating system is asking for microphone access.
 
 After automatic paste, Sotto returns to Ready immediately. **Copied** stays up for the success-message duration set in Settings so you can paste manually.
 
