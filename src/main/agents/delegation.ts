@@ -24,7 +24,7 @@ import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
-  delegationAskedSchema, delegationHostHoldSchema, CHECK_REPLY_EXCERPT_MAX, type CheckReplyExcerpt, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
+  delegationAskedSchema, delegationChoiceSchema, delegationHostHoldSchema, CHECK_REPLY_EXCERPT_MAX, type CheckReplyExcerpt, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { userWordsOf } from './continueThread'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
@@ -294,8 +294,8 @@ const recordSchema = z.object({
   told: watcherOutcomeSchema.optional(),
   /** Counts against the prompt budget. A brief refused before anything was sent does not. */
   charged: z.boolean(),
-  /** Why an overseer chose this model for this piece, in its own words, for its row (ADR-0191); the delegation it took over. */
-  why: z.string().max(DYNAMIC_WHY_MAX).optional(), replaces: z.uuid().optional(),
+  /** What an overseer chose for this worker, as it started; why, in its own words, for its row (ADR-0191); the delegation it took over. */
+  chosen: delegationChoiceSchema.optional(), why: z.string().max(DYNAMIC_WHY_MAX).optional(), replaces: z.uuid().optional(),
   /** What the result says when Highest effort held this start's effort, kept so a retry says it too. */
   effortHeld: z.string().max(400).optional(),
   /** How long the `delegate` call waited for the outcome and when it began; the window's card says it (decision 8). */
@@ -565,6 +565,8 @@ export class DelegationService {
   /** Starts admitted whose delegated thread is still being created, which a snapshot without it does not end. */
   private readonly creating = new Set<string>()
   private readonly answeredThisRun = new Set<string>()
+  /** The overseers' workers started since Sotto started, whose reasons stay in memory with Keep local history off (ADR-0191). */
+  private readonly startedThisRun = new Set<string>()
   private readonly dispatchRefusals = new Map<string, Failure>()
   /**
    * The starts this run made as checks (#1312), until each leaves its machine's queue, by the ticket each took in it as it
@@ -1315,8 +1317,17 @@ export class DelegationService {
     const stop = thread.lastTurn?.status === 'failed' ? thread.lastTurn.limitStop : undefined
     return stop && thread.providerId && userHead(thread) === record.messageId ? { provider: thread.providerId, ...stop.resetsAt ? { resetsAt: stop.resetsAt } : {} } : undefined
   }
-  /** Keep local history changed: what is saved stops holding an overseer's reasons, which is its own words (ADR-0191). */
-  privacyChanged(): void { void this.persist() }
+  /** Keep local history changed: what is saved stops holding an overseer's reasons, which is its own words (ADR-0191), and the rows stop showing any from before Sotto restarted. */
+  privacyChanged(): void {
+    void this.persist()
+    for (const record of this.records) if (record.why && !this.startedThisRun.has(record.id)) this.touched(record)
+  }
+  /** An overseer's reason, as a check's reply is: with Keep local history off, one from before Sotto restarted is not shown, whatever was read while it was on. */
+  private reasonKept(record: DelegationRecord): boolean { return this.options.historyEnabled() || this.startedThisRun.has(record.id) }
+  private replacedThread(replaces: string): { readonly replacedThread?: string } {
+    const thread = this.record(replaces)?.delegatedThreadId
+    return thread === undefined ? {} : { replacedThread: thread }
+  }
   /**
    * A piece given to another model (ADR-0191 decision 10): the thread it left no longer restarts at its limit's reset, and
    * one whose restart has already gone is stopped, so two models do not carry on with the same piece.
@@ -1419,7 +1430,8 @@ export class DelegationService {
       ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
       ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
       waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record), ...(record.held ? { held: record.held } : {}),
-      ...(record.why ? { why: record.why } : {}), ...(record.effortHeld ? { effortHeld: true as const } : {}), ...(record.replaces ? { replaces: record.replaces } : {}),
+      ...(record.chosen ? { chosen: record.chosen } : {}), ...(record.why && this.reasonKept(record) ? { why: record.why } : {}), ...(record.effortHeld ? { effortHeld: true as const } : {}),
+      ...(record.replaces ? { replaces: record.replaces, ...this.replacedThread(record.replaces) } : {}),
       ...(made && record.check && this.options.checkReplies ? { check: true as const, ...this.checkExcerpt(record, outcome) } : {}) }
   }
   /**
@@ -2141,10 +2153,12 @@ export class DelegationService {
     const by = fromRole?.held?.by
     const hostHeld = by === 'not-told' || by === 'no-answer-grant' || by === 'answers-revoked' ? by : undefined
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}),
+      ...limits?.overseeing ? { chosen: { model: model.id, ...effort ? { effort } : {}, ...input.speed ? { speed: input.speed } : {} } } : {},
       ...limits?.overseeing && input.why ? { why: input.why } : {}, ...limits?.overseeing && input.replaces ? { replaces: input.replaces } : {},
       ...effort !== asked ? { effortHeld: `Its effort, ${asked}, was held to ${effort}, the most the user's Settings allow for a Dynamic thread's workers.` } : {},
       ...(check ? { check: true } : {}) })
     this.add(record)
+    if (record.why) this.startedThisRun.add(record.id)
     this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
