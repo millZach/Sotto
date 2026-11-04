@@ -9,7 +9,7 @@ struct SettingsView: View {
     @Environment(\.duoLayout) private var duo
     var body: some View {
         SheetPage {
-            PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings."))
+            PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings.")) { if duo == .none { ToDoIcon() } }
                 .padding(.top, Space.s1)
             SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."))
             // Look is one group of rows on one card, as Notifications is, with the theme tiles on a card of their own

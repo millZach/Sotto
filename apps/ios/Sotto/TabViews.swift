@@ -172,10 +172,14 @@ struct ThreadsView: View {
         PageHeading(String(localized: "Threads")) {
             // On the iPhone Duo, New thread is on the rail instead (ADR-0151, amended).
             if duo == .none {
-                Button { creating = true } label: { Image(systemName: "plus") }
-                    .buttonStyle(GlassCircleStyle())
-                    .accessibilityLabel("New thread")
-                    .accessibilityIdentifier("new-thread")
+                HStack(spacing: Space.s2) {
+                    // On every other iPhone the to-do list stands in each page's heading (Zach's pick, November 4, 2026).
+                    ToDoIcon()
+                    Button { creating = true } label: { Image(systemName: "plus") }
+                        .buttonStyle(GlassCircleStyle())
+                        .accessibilityLabel("New thread")
+                        .accessibilityIdentifier("new-thread")
+                }
             }
         }
         // On the unfolded Duo the heading lines up with the rail's first button beside it.

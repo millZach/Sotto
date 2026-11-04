@@ -53,6 +53,7 @@ struct ThreadView: View {
                     if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { agentsOpen = true } }
                     barPill
                     if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
+                    ToDoIcon(inBar: true)
                     if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
                 // Where the bar is short, iOS gives the group its smallest size, which squeezed Agents' and Watch's words
@@ -129,6 +130,7 @@ struct FoldedThreadRail: View, Equatable {
     var body: some View {
         VStack(spacing: 0) {
             RailBackButton(back: back)
+            ToDoIcon().padding(.top, Space.s3)
             Spacer(minLength: Space.s3)
             if let ref { ThreadRailPill(ref: ref) }
         }
@@ -161,6 +163,8 @@ struct RailBackButton: View {
 struct ThreadRailPill: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
+    /// Held sideways, a delegated thread with Agents has no room on the rail for the to-do tile, so it goes in •••.
+    var toDoInMenu = false
     var body: some View {
         let thread = model.thread(ref)
         VStack(spacing: DuoRailMetrics.tileGap) {
@@ -173,7 +177,7 @@ struct ThreadRailPill: View {
             // As the tabs' names do, they stay at this size; a tile has no room to grow. ••• is left out, since its icon
             // doesn't grow and the pull request's sheet it opens takes the user's own text size.
             .dynamicTypeSize(...DynamicTypeSize.large)
-            ThreadMenu(ref: ref, onRail: true)
+            ThreadMenu(ref: ref, onRail: true, toDoInMenu: toDoInMenu)
         }
         .padding(DuoRailMetrics.pillInset)
         .background { DuoRailPillGround().accessibilityHidden(true) }
@@ -361,12 +365,20 @@ struct ThreadMenu: View {
     let ref: ThreadRef
     /// On the Duo's rail: a tile, with the thread's name and chips at the top of the menu.
     var onRail = false
+    /// The to-do list's own row, where the rail has no room for its tile.
+    var toDoInMenu = false
+    @EnvironmentObject var toDos: ToDoStore
     @State private var acted = 0
     @State private var showingPullRequest = false
     var body: some View {
         let chips = GitChips(model.thread(ref)?.worktree)
         Menu {
             if onRail { railItems(chips) } else { actions }
+            if toDoInMenu {
+                let count = toDos.book.left
+                Button { toDos.unroll() } label: { Label(String(localized: "To-do, \(count) to do."), systemImage: "checklist") }
+                    .accessibilityIdentifier("thread-menu-to-do")
+            }
         } label: {
             if onRail {
                 Image(systemName: "ellipsis")

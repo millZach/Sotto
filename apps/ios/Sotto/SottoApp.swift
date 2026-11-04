@@ -17,7 +17,7 @@ import SottoCore
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(model).environmentObject(model.draftStore).environmentObject(model.detailStore)
-                .environmentObject(model.watcherStore)
+                .environmentObject(model.watcherStore).environmentObject(model.toDoStore)
                 .environmentObject(previews)
                 .environmentObject(files)
                 // A sent file opens in Quick Look over whatever is showing; its copy goes when the preview closes.

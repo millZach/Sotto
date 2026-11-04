@@ -17,6 +17,8 @@ public enum IncomingFrame: Sendable {
     case shell(Shell)
     case detail(threadID: String, value: ThreadDetail?)
     case delta(threadID: String, value: ThreadDetailDelta)
+    /// One computer's to-do list, whole (ADR-0188), only to a client whose hello accepted it.
+    case toDos([ToDoItem])
     case failure(WireFailure)
 }
 
@@ -24,7 +26,7 @@ public enum IncomingFrame: Sendable {
 private enum FrameEnvelope: Decodable {
     case reply(String, CarriedCatalog?, HeldThreadRecords?)
     case frame(IncomingFrame)
-    private enum Keys: String, CodingKey { case v, id, ok, result, error, event, state, threads, threadId, detail, delta }
+    private enum Keys: String, CodingKey { case v, id, ok, result, error, event, state, threads, threadId, detail, delta, items }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         guard try c.decode(Int.self, forKey: .v) == 1 else { throw ClientError.invalidProtocol }
@@ -36,6 +38,7 @@ private enum FrameEnvelope: Decodable {
                 self = .frame(.shell(shell))
             case "detail": self = .frame(.detail(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(Optional<ThreadDetail>.self, forKey: .detail)))
             case "detail-delta": self = .frame(.delta(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(ThreadDetailDelta.self, forKey: .delta)))
+            case "to-dos": self = .frame(.toDos(try c.decode([ToDoItem].self, forKey: .items)))
             case "error": self = .frame(.failure(try c.decode(WireFailure.self, forKey: .error)))
             default: throw ClientError.invalidProtocol
             }

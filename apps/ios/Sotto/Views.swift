@@ -46,6 +46,7 @@ struct MainTabs: View {
     @Environment(\.sottoGlass) private var glass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(PhonePreferenceKey.duoTabsSide) private var railSide = DuoTabsSide.right.rawValue
+    @EnvironmentObject var toDos: ToDoStore
     @AppStorage(PhonePreferenceKey.duoSidebarHidden) private var sidebarHidden = false
     var body: some View {
         let _ = BenchProbe.body("MainTabs")
@@ -69,6 +70,11 @@ struct MainTabs: View {
     /// a column of the strip's width: down the right edge of the unfolded Duo held upright, where the right thumb rests
     /// (Zach's pick, November 1, 2026), or held sideways with the rail on the side away from the clock.
     private enum RailPlace: Equatable { case bottom, strip(trailing: Bool, width: CGFloat), column(leading: Bool, width: CGFloat) }
+    /// How much of this side a rail in its own column takes. The strip is outside the page already.
+    private func railColumn(_ place: RailPlace, leading side: Bool) -> CGFloat {
+        if case .column(let leading, let width) = place, leading == side { return width }
+        return 0
+    }
     private func railPlace(_ duo: DuoLayout) -> RailPlace {
         switch duo {
         case .none: return .bottom
@@ -170,6 +176,10 @@ struct MainTabs: View {
         }
         .onChange(of: threadPath) { _, path in if case .folded = duo { foldedOnList = path.isEmpty && tab == .threads } }
         .onChange(of: tab) { _, chosen in if case .folded = duo { foldedOnList = threadPath.isEmpty && chosen == .threads } }
+        // The to-do list unrolls over whatever page shows, beside the Duo's rail and under any other iPhone's bar or heading.
+        .overlay { ToDoScroll(top: duo == .none ? Space.s8 + Space.s2 : Space.s2, wide: duo != .none)
+            .padding(.leading, railColumn(place, leading: true))
+            .padding(.trailing, railColumn(place, leading: false)) }
         // The page's ground runs on under the Duo's strip and rail, so the rail stands on the page's own ground and the
         // page reaches every edge of the screen, with no band at the top (Zach, November 1, 2026). Under Glass the
         // backdrop reaches every edge on any iPhone. Any other iPhone has its pages' own ground and no second one.
@@ -230,12 +240,17 @@ struct MainTabs: View {
             let beside = threadOpen && (duo.sideways || duo == .upright)
             let tight = beside && duo.sideways
             let nestedBack = tight && model.railNested != nil
+            // Held sideways with Agents and four tabs, both pills leave 8 points, so the to-do tile takes the sidebar button's
+            // place, and a drag still moves the sidebar (Zach's pick, November 4, 2026). A delegated thread keeps Back there,
+            // and To-do moves into its ••• menu.
+            let full = tight && toDos.book.offered && model.watcherHostID != nil && model.selected.flatMap { model.agentsCount($0) } != nil
             VStack(spacing: tight ? Space.s1 : Space.s3) {
                 if beside && (duo == .upright || nestedBack) { RailBackButton(back: popThread) }
-                if (duo.sideways || duo == .upright) && !nestedBack { sidebarButton(upright: duo == .upright) }
+                if (duo.sideways || duo == .upright) && !nestedBack && !full { sidebarButton(upright: duo == .upright) }
                 if !tight { newThread }
+                if !full || !nestedBack { ToDoIcon() }
                 Spacer(minLength: tight ? 0 : Space.s3)
-                if beside, let ref = model.selected { ThreadRailPill(ref: ref) }
+                if beside, let ref = model.selected { ThreadRailPill(ref: ref, toDoInMenu: full && nestedBack) }
                 TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
                         style: .rail, reselect: reselect)
             }

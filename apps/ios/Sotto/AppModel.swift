@@ -1332,6 +1332,7 @@ struct RailAsk: Equatable {
     let detailStore = DetailStore()
     /// Watcher's pages, in `watcherStore`, which publishes on its own in the same way.
     let watcherStore = WatcherStore()
+    let toDoStore = ToDoStore()
     private var openDetail: ThreadDetail? {
         get { detailStore.detail }
         set { detailStore.detail = newValue; publishOnModelIfComparing() }
@@ -1555,6 +1556,15 @@ struct RailAsk: Equatable {
         }
         let laptop = "11111111-1111-4111-8111-111111111111"
         let studio = "22222222-2222-4222-8222-222222222222"
+        // The to-do list's journey: the laptop keeps a list, with one thing new, one with steps and one a thread waits on.
+        if ProcessInfo.processInfo.arguments.contains("--ui-to-dos") {
+            toDoStore.take(hostID: laptop, items: [
+                ToDoItem(id: "hand-test", title: "Hand test links on a paired host", why: "Links in a host's thread now open in the system browser.",
+                         steps: ["Open a thread on the studio Mac", "Press a link in a reply", "See it open in Safari"], by: "watcher"),
+                ToDoItem(id: "soundtrack", title: "Listen to the new soundtrack", by: "user", seen: true),
+                ToDoItem(id: "walkthrough", title: "Walk through the release on the laptop", by: "thread", waits: true, seen: true),
+            ])
+        }
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--ui-light") {
             UserDefaults.standard.set("light", forKey: PhonePreferenceKey.appearance)
@@ -2603,6 +2613,7 @@ struct RailAsk: Equatable {
         self.receiptSleep = receiptSleep
         self.photoLoadLimit = photoLoadLimit
         #if DEBUG && os(iOS)
+        toDoStore.send = { [weak self] request, hostID in try await self?.sendToDo(request, to: hostID) }
         if ProcessInfo.processInfo.arguments.contains("--ui-fixture") {
             loadUIFixture()
             return
@@ -2824,7 +2835,38 @@ struct RailAsk: Equatable {
     /// A connection that failed or was lost. A computer that has been online is tried again quietly, reading
     /// Connecting, until its quiet retries run out; any other gives up: it reads Can't reach it, with the problem on its
     /// own page, and nothing connects it until the user presses Try again or Reconnect.
+    /// A press on a computer's to-do list. It says what happened by throwing; a computer that isn't connected keeps its list.
+    func sendToDo(_ request: ToDoRequest, to hostID: String) async throws {
+        #if DEBUG && os(iOS)
+        if isUIFixture { applyFixtureToDo(request, on: hostID); return }
+        #endif
+        guard online(hostID), let connection = connections[hostID] else { throw ClientError.disconnected }
+        _ = try await connection.call(ToDoWire.operation(request))
+    }
+    /// Opens the thread a to-do names, as an alert does.
+    func openToDoThread(_ ref: ThreadRef) { openFromAlert(ref) }
+    /// How many computers this iPhone is paired with: a to-do names its computer only among several.
+    var computerCount: Int { computers.count }
+    #if DEBUG && os(iOS)
+    /// What the fixture's laptop does with a press on its to-do list, as a computer would.
+    private func applyFixtureToDo(_ request: ToDoRequest, on hostID: String) {
+        var items = toDoStore.book.rows.filter { $0.hostID == hostID }.map(\.item)
+        switch request {
+        case .seen: items = items.map { ToDoItem(id: $0.id, title: $0.title, why: $0.why, link: $0.link, steps: $0.steps, threadId: $0.threadId, by: $0.by, waits: $0.waits, seen: true) }
+        case .add(let title): items.append(ToDoItem(id: UUID().uuidString, title: title, by: "user", seen: true))
+        case .check(let id, _): items.removeAll { $0.id == id }
+        }
+        toDoStore.take(hostID: hostID, items: items)
+    }
+    #endif
+    /// The pages a prototype's to-do opens, on the computer that serves them.
+    func prototypePages(_ ref: ThreadRef) -> [PrototypePageLink] {
+        guard let endpoint = pageEndpoint(ref.hostID), let pages = thread(ref)?.prototypeReady?.pages else { return [] }
+        return pages.compactMap { page in page.url(on: endpoint).map { PrototypePageLink(page: page, url: $0) } }
+    }
     private func connectionEnded(_ hostID: String, problem: String, retrying: Bool) {
+        // Its list goes with it, and comes back whole with the next hello.
+        toDoStore.forget(hostID: hostID)
         let since = retryingSince[hostID] ?? Date()
         if retrying, active, wasOnline.contains(hostID), (retryAttempts[hostID] ?? 0) < Self.quietRetries,
            Date().timeIntervalSince(since) < Self.quietRetryWindow {
@@ -2995,6 +3037,7 @@ struct RailAsk: Equatable {
         generations[hostID] = UUID(); connecting.remove(hostID)
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
+        toDoStore.forget(hostID: hostID)
         computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil; watcherStore.pages[hostID] = nil
         if chosenWatcherHost == hostID { chosenWatcherHost = nil }
         watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil; watcherStops[hostID] = nil; watcherReadProblems[hostID] = nil
@@ -4245,6 +4288,7 @@ struct RailAsk: Equatable {
                 if let next = openDetail?.applying(delta), let epoch = generations[hostID] {
                     try applyDetail(next, ref: ref, epoch: epoch)
                 } else { detailWantedRevision = max(detailWantedRevision, delta.revision); reloadDetail(ref) }
+            case .toDos(let items): toDoStore.take(hostID: hostID, items: items)
             case .failure(let failure):
                 // The host sends this in place of an update too large for one frame; the connection stays open.
                 feedback = failure.message

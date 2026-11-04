@@ -224,6 +224,8 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let providerId: String?; public let status: String; public let requests: [AgentRequest]
     /// The thread's model in its computer's catalog (`host.models`), which says whether it takes photos.
     public let modelId: String?
+    /// A prototype waiting for the user's review (ADR-0108), with the pages it opens at. Read for its to-do's link (ADR-0188).
+    public var prototypeReady: PrototypeMark? = nil
     /// What the thread runs with besides its model, for the reply box's chips (ADR-0166): its effort, Sotto's permission
     /// mode or its provider's own, and its speed (`speed`, null at Standard, or the older `fastMode`). Older computers
     /// may send none of them.
@@ -497,6 +499,16 @@ private struct Lossy<Value: Decodable>: Decodable {
 /// A page the computer found for a question, in its words or the agent's message before it (ADR-0085): an HTML file in
 /// the thread's folder, or a page the agent serves on that computer. The computer that runs the thread serves it at
 /// `/page/<token>/<start>`; `name` is what its row shows. `kind` stays a string, as `file` or `server`.
+/// A thread's Prototype ready mark. A shape this reader doesn't know reads as no pages rather than losing the thread.
+public struct PrototypeMark: Decodable, Equatable, Sendable {
+    public let pages: [RequestPage]
+    public init(pages: [RequestPage]) { self.pages = pages }
+    private enum Keys: String, CodingKey { case pages }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        pages = (try? c.decode([Lossy<RequestPage>].self, forKey: .pages))?.compactMap(\.value) ?? []
+    }
+}
 public struct RequestPage: Decodable, Equatable, Identifiable, Sendable {
     public let token: String; public let kind: String; public let name: String; public let start: String
     public var id: String { token }

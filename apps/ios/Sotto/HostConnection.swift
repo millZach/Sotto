@@ -264,7 +264,7 @@ extension HostConnection {
     /// permission and watch controls (`watcher-phone-manage`), now that the Watcher tab can show them and read what a
     /// change did after a lost acknowledgement. Only an Owl desktop that runs Watcher offers them; any other computer reads
     /// the names and offers nothing new.
-    nonisolated static var hello: [String: JSONValue] { WatcherWire.managementHello }
+    nonisolated static var hello: [String: JSONValue] { ToDoWire.accepting(WatcherWire.managementHello) }
     /// What a request that failed means: a timeout's cause, by what the request was for.
     nonisolated static func requestFailure(operation: String) -> ClientError {
         switch operation {

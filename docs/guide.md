@@ -321,6 +321,8 @@ A prototype waiting for review is on the list too. Sotto puts it there itself fr
 
 Watcher works from the list too. On Owl its replies don't repeat what waits on you, because cards come to you by themselves. When a worker asks you to do something by hand, Watcher puts it on the list, and it hears when you check something off. A thread still waiting on its to-do doesn't settle.
 
+On the iPhone, with a computer that keeps a list, the icon stands in each page's heading and at the top right of a thread's bar, and on the Duo it's a tile on the rail. Held sideways with a thread and Agents showing, the rail is full, so the tile takes the sidebar button's place, and a drag from the edge still moves the sidebar. Your own goes to the first computer connected.
+
 Each computer keeps its own list, and the window joins the lists of every computer it is connected to. A press goes back to the computer that holds the item. While a computer is away its items aren't shown, and they come back with it. The words are saved only while **Keep local history** is on.
 
 ### Terminal drawer

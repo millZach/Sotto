@@ -25,6 +25,7 @@ struct WatcherView: View {
     /// Counts presses on Stop Watcher’s threads and confirmed stops, so the view that carries the alert gives the press a
     /// tap and the destructive act a warning buzz.
     @State private var stopPresses = 0
+    @Environment(\.duoLayout) private var duo
     @State private var stopsConfirmed = 0
     @State private var reviewing: ReviewedCard?
 
@@ -33,6 +34,8 @@ struct WatcherView: View {
         // over it and no Watched pane beside it.
         WatcherConversationPane(hostID: hostID, toTop: toTop, stopAll: prepareStop) { reviewing = $0 }
             .pageGround()
+            // Watcher has no heading, so on an iPhone with no rail the to-do list stands in the page's top corner.
+            .overlay(alignment: .topTrailing) { if duo == .none { ToDoIcon().padding(.trailing, Space.s4).padding(.top, Space.s1) } }
             .navigationTitle("Watcher")
             .toolbar(.hidden, for: .navigationBar)
             .onAppear { model.watcherOnScreen = true }

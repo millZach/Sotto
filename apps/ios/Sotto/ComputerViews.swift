@@ -8,13 +8,17 @@ struct ComputerRoute: Hashable { let hostID: String }
 /// cards scroll as one sheet, like Threads.
 struct ComputersView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         SheetPage(washHeight: 330) {
             PageHeading(String(localized: "Computers"), subtitle: String(localized: "Each computer runs Sotto and shares its threads with this iPhone.")) {
-                Button { model.startAdding() } label: { Image(systemName: "plus") }
-                    .buttonStyle(GlassCircleStyle())
-                    .disabled(!model.storageReady)
-                    .accessibilityLabel("Add computer")
+                HStack(spacing: Space.s2) {
+                    if duo == .none { ToDoIcon() }
+                    Button { model.startAdding() } label: { Image(systemName: "plus") }
+                        .buttonStyle(GlassCircleStyle())
+                        .disabled(!model.storageReady)
+                        .accessibilityLabel("Add computer")
+                }
             }
             .padding(.top, Space.s1)
             if model.feedback != nil { FeedbackBanner().padding(.top, Space.s4) }
