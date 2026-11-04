@@ -6,7 +6,7 @@ import { questionInstructions } from '../../../src/main/agents/questionInstructi
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
-import { mergeAgentActivities, type AgentActivity } from '../../../src/shared/agentActivity'
+import { changeWentThrough, mergeAgentActivities, type AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentHostSnapshot, AgentMessage, AgentThread } from '../../../src/shared/agents'
 
 const at = '2026-10-13T00:00:00.000Z'
@@ -56,6 +56,17 @@ describe('Watcher own changes', () => {
     projection.turn(t, { id: 'codex-turn', status: 'completed' })
     expect(watcherOwnChanges(t)).toEqual([{ replyMessageId: 'reply', turnId: 'codex-turn', files: ['/project/src/a.ts', '/project/src/b.ts'],
       fileCount: 2, reason: null, source: 'provider-file-change' }])
+  })
+
+  it('counts a declined Codex patch as no change, as the turn\'s own count does (#2159)', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    projection.anchor(t, 'codex-turn', 'user')
+    for (const [id, status] of [['denied', 'declined'], ['failed', 'failed']] as const) projection.item(t, codexItemSchema.parse({ id, type: 'fileChange', status,
+      changes: [{ path: `/project/src/${id}.ts`, kind: { type: 'add' }, diff: 'Patch' }] }), { turnId: 'codex-turn', phase: 'completed', afterMessageId: 'user' })
+    projection.turn(t, { id: 'codex-turn', status: 'completed' })
+    expect(t.activities?.find(record => record.kind === 'file-change' && record.denied)).toBeDefined()
+    expect(watcherOwnChanges(t)).toEqual([])
+    expect(t.activities!.filter(changeWentThrough)).toEqual([])
   })
 
   it.each(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])('extracts acknowledged Claude %s changes', name => {
