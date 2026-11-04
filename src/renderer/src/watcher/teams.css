@@ -45,3 +45,33 @@
 .teammate-message__words { color: var(--tt-text); overflow-wrap: anywhere; white-space: pre-line; user-select: text; }
 .teammate-message__said { color: var(--tt-text-muted); }
 .teammate-message__fine { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+
+/* Two desks (ADR-0189): wider than the page's column, on the same ground, so their words clear the scene. */
+.teams-desks { display: grid; gap: 12px; width: min(1140px, 100%); margin: 0 auto; padding: 8px 12px 16px; border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); }
+.teams-desks p { margin: 0; }
+.teams-desks__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.teams-desks__title { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 650; }
+.teams-desks__grow { flex: 1 1 0; }
+.teams-desks__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 700px) { .teams-desks__columns { grid-template-columns: minmax(0, 1fr); } }
+
+.teams-order { display: grid; gap: 8px; min-width: 0; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); }
+.teams-order__top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--tt-text); font-size: var(--tt-type-small); }
+.teams-order__list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.teams-order__list li { min-width: 0; padding: 4px 9px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); color: var(--tt-text); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.teams-order__list b { color: var(--tt-accent-text); }
+
+.teams-desk { display: grid; gap: 4px; min-width: 0; padding: 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); }
+.teams-desk__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 4px; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.teams-desk__project { margin: 8px 0 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; overflow-wrap: anywhere; }
+.teams-desk__thread { display: grid; gap: 1px; min-width: 0; padding: 7px 0; border-top: 1px solid var(--tt-hairline); }
+.teams-desk__title { color: var(--tt-text); font-size: var(--tt-type-body); overflow-wrap: anywhere; user-select: text; }
+.teams-desk__stands i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--tt-text-muted); vertical-align: 1px; }
+.teams-desk__stands[data-stands='working'] i { background: var(--tt-accent); }
+.teams-desk__stands[data-stands='waiting-on-its-owner'] i { background: var(--tt-warning); }
+.teams-desk__stands[data-stands='failed'] i { background: var(--tt-error); }
+.teams-desk__pull { color: var(--tt-text); font-size: var(--tt-type-small); overflow-wrap: anywhere; user-select: text; }
+.teams-desk__empty { padding: 16px 6px; text-align: center; }
+.teams-desk__error { margin: 0; }
+.teams-reads summary { width: fit-content; }
+.teams-reads__list { display: grid; gap: 2px; max-height: 200px; margin: 6px 0 0; padding: 0; overflow-y: auto; list-style: none; }

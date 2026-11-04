@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
+import { localeFormatter } from '../agents/localeFormat'
 import type { TeammateMessage, TeamsBridge, TeamsState } from '../../../shared/teams'
 import { useOwlFeature } from '../state/owlFeature'
+
+const dateFormat = localeFormatter({ month: 'long', day: 'numeric' }), timeFormat = localeFormatter({ hour: 'numeric', minute: '2-digit' })
+export const dateOf = (iso: string): string => dateFormat(new Date(iso))
+export const timeOf = (iso: string): string => timeFormat(new Date(iso))
+/** Later today as a time, otherwise a date and a time. */
+export function whenOf(iso: string, now: number): string {
+  return new Date(iso).toDateString() === new Date(now).toDateString() ? timeOf(iso) : `${dateOf(iso)}, ${timeOf(iso)}`
+}
 
 /** The bridge, where main offers it: Owl, with Teams on (ADR-0186). */
 export function useTeamsBridge(bridge: TeamsBridge | undefined = window.sotto?.teams): TeamsBridge | undefined {

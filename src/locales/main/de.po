@@ -183,6 +183,10 @@ msgid "{name} did not answer about phone access in time. Nothing was changed. Tr
 msgstr ""
 
 #: src/main/teams/teams.ts
+msgid "{name} has removed this link, so nothing was read. Make a new code to link again."
+msgstr ""
+
+#: src/main/teams/teams.ts
 msgid "{name} has removed this link. Make a new code to link again. Nothing changed here."
 msgstr ""
 
@@ -212,6 +216,14 @@ msgstr ""
 
 #: src/main/teams/teams.ts
 msgid "{name}'s computer did not answer. Nothing changed. Try again when it is on."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "{name}'s computer did not answer. Nothing is waiting to send. Try again when it is on."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "{name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -2692,6 +2704,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "This link has run out, so nothing was read. Both of you can press Link again to keep it."
 msgstr ""
 
 #: src/main/files/ipc.ts

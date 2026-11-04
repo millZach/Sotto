@@ -183,6 +183,10 @@ msgid "{name} did not answer about phone access in time. Nothing was changed. Tr
 msgstr "{name} did not answer about phone access in time. Nothing was changed. Try again."
 
 #: src/main/teams/teams.ts
+msgid "{name} has removed this link, so nothing was read. Make a new code to link again."
+msgstr "{name} has removed this link, so nothing was read. Make a new code to link again."
+
+#: src/main/teams/teams.ts
 msgid "{name} has removed this link. Make a new code to link again. Nothing changed here."
 msgstr "{name} has removed this link. Make a new code to link again. Nothing changed here."
 
@@ -213,6 +217,14 @@ msgstr "{name} would not turn on linger without an administrator. Without it, a 
 #: src/main/teams/teams.ts
 msgid "{name}'s computer did not answer. Nothing changed. Try again when it is on."
 msgstr "{name}'s computer did not answer. Nothing changed. Try again when it is on."
+
+#: src/main/teams/teams.ts
+msgid "{name}'s computer did not answer. Nothing is waiting to send. Try again when it is on."
+msgstr "{name}'s computer did not answer. Nothing is waiting to send. Try again when it is on."
+
+#: src/main/teams/teams.ts
+msgid "{name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes."
+msgstr "{name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes."
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{name}'s host did not stop, so Sotto left {from} running."
@@ -2694,6 +2706,10 @@ msgstr "This is the same host as {host}, which is already saved. Nothing was sav
 #: src/main/hosts/hostFailureWords.ts
 msgid "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
 msgstr "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
+
+#: src/main/teams/teams.ts
+msgid "This link has run out, so nothing was read. Both of you can press Link again to keep it."
+msgstr "This link has run out, so nothing was read. Both of you can press Link again to keep it."
 
 #: src/main/files/ipc.ts
 msgid "This link is not a file path. Nothing was opened."

@@ -66,6 +66,7 @@ import { TeamService, type TeamEvent } from './teams/teams'
 import { TEAMS_CHANGED } from '../shared/teams'
 import { SIDE_WRITING_TIMEOUT_MS } from './agents/sideWriting'
 import { e2eTailscale } from './e2e/tailscale'
+import { e2eTeamFetch } from './e2e/teamFetch'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
 import { hostedTerminals } from './hosts/hostedTerminals'
@@ -1083,7 +1084,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
   const teams: TeamService | undefined = owlFeatures.teams && watcherEnabled && startupSettings.localHostEnabled ? new TeamService({
     directory: userDataPath, credentials, tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
-    threads: leftOut => teamReads?.watcher?.teamThreadFacts(leftOut) ?? [], projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
+    threads: leftOut => teamReads?.watcher?.teamThreadFacts(leftOut) ?? { threads: [], beyondCap: 0 }, projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
     anchor: () => teamReads?.watcher?.teamAnchor() ?? null, keepHistory: () => agentHistoryEnabled,
     write: async prompt => {
       const modelId = teamReads?.watcher?.teamModel()
@@ -1091,6 +1092,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       return await teamReads?.host.writeShortTextOn?.({ modelId }, prompt, AbortSignal.timeout(SIDE_WRITING_TIMEOUT_MS)) ?? null
     },
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) }, hostname: () => osHostname(), log: logOperational,
+    ...e2eConfiguration ? { fetch: e2eTeamFetch(userDataPath) } : {},
   }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},

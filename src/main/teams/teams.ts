@@ -5,12 +5,12 @@ import { z } from 'zod'
 import { PairedClients } from '../agents/pairing'
 import { servePortOwner, type ServeConfig, type ServeResult, type TailscaleStatus } from '../phones/tailscale'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { cleanTeamAnswer, plainTeamAnswer, teamAnswerPrompt, teamSummary } from './teamAnswers'
+import { cleanTeamAnswer, plainTeamAnswer, teamAnswerPrompt, teamDesk, teamSummary } from './teamAnswers'
 import { startTeamListener, type TeamListener } from './teamListener'
 import {
-  formatTeamCode, parseTeamCode, teamAddressSchema, teamAgainAnswerSchema, teamAskAnswerSchema, teamAskToolInputSchema, teamName, teammateMessageSchema, teamRedeemAnswerSchema, TEAM_ANSWERS_PER_BURST,
-  TEAM_ANSWERS_PER_DAY, TEAM_BODY_BYTES_MAX, TEAM_BURST_MS, TEAM_CODE_LIFETIME_MS, TEAM_CODE_TRIES, TEAM_LINK_LIFETIME_MS, TEAM_MESSAGES_KEPT, TEAM_RELISTEN_MS, TEAM_RENEW_WINDOW_MS, TEAM_ROUTE, TEAM_SERVE_PORTS,
-  type TeamAsk, type TeamLinkView, type TeammateMessage, type TeamProjectFact, type TeamRefusal, type TeamsCommand, type TeamsCommandResult, type TeamsProblem, type TeamsState, type TeamThreadFact, type TeamWire,
+  formatTeamCode, parseTeamCode, teamAddressSchema, teamAgainAnswerSchema, teamAskAnswerSchema, teamAskToolInputSchema, teamDeskAnswerSchema, teamDeskReadSchema, teamName, teammateMessageSchema, teamRedeemAnswerSchema, TEAM_ANSWERS_PER_BURST,
+  TEAM_ANSWERS_PER_DAY, TEAM_BODY_BYTES_MAX, TEAM_BURST_MS, TEAM_CODE_LIFETIME_MS, TEAM_CODE_TRIES, TEAM_DESK_BYTES_MAX, TEAM_DESK_READS_KEPT, TEAM_DESK_READS_PER_BURST, TEAM_LINK_LIFETIME_MS, TEAM_MESSAGES_KEPT, TEAM_RELISTEN_MS, TEAM_RENEW_WINDOW_MS, TEAM_ROUTE, TEAM_SERVE_PORTS,
+  type TeamAsk, type TeamDesk, type TeamFacts, type TeamLinkView, type TeammateMessage, type TeamProjectFact, type TeamRefusal, type TeamsCommand, type TeamsCommandResult, type TeamsProblem, type TeamsState, type TeamWire,
 } from '../../shared/teams'
 
 const linkSchema = z.object({
@@ -25,12 +25,14 @@ const fileSchema = z.object({
   links: z.array(linkSchema).max(100), messages: z.array(teammateMessageSchema).max(TEAM_MESSAGES_KEPT),
   /** The Serve setting Sotto last made, so a setting left by a crash reads as Sotto's own and not someone else's. */
   servePort: z.number().int().positive().nullable(), loopbackPort: z.number().int().positive().nullable(),
+  /** Each read of this computer's desk: who and when, with no words (ADR-0189, decision 5). */
+  deskReads: z.array(teamDeskReadSchema).max(TEAM_DESK_READS_KEPT).default([]),
 }).strict()
 type TeamsFile = z.infer<typeof fileSchema>
-const emptyFile = (): TeamsFile => ({ version: 1, ownName: '', leftOut: [], links: [], messages: [], servePort: null, loopbackPort: null })
+const emptyFile = (): TeamsFile => ({ version: 1, ownName: '', leftOut: [], links: [], messages: [], servePort: null, loopbackPort: null, deskReads: [] })
 
 /** What this logs: stable event names only, never a code, a token or anyone's words. */
-export type TeamEvent = 'teams-start-failed' | 'team-code-made' | 'team-code-ended' | 'team-linked' | 'team-link-failed' | 'team-link-again-failed' | 'team-ask-refused' | 'team-ask-answered' | 'team-ask-failed'
+export type TeamEvent = 'teams-start-failed' | 'team-code-made' | 'team-code-ended' | 'team-linked' | 'team-link-failed' | 'team-link-again-failed' | 'team-ask-refused' | 'team-ask-answered' | 'team-ask-failed' | 'team-desk-read' | 'team-desk-refused' | 'team-desk-failed'
   | 'team-listening' | 'team-unserve-failed' | 'team-links-save-failed'
 
 /** The Tailscale command as this needs it; the same one phone access runs. */
@@ -51,7 +53,7 @@ export interface TeamServiceOptions {
    * The team summary's facts. These two and `write` are all an ask can reach on this computer: there is no path from here
    * to a thread's commands, its cards or its permissions (ADR-0187, decision 1).
    */
-  readonly threads: (leftOut: ReadonlySet<string>) => readonly TeamThreadFact[]
+  readonly threads: (leftOut: ReadonlySet<string>) => TeamFacts
   readonly projects: () => readonly TeamProjectFact[]
   /** One side call with no tools, on Watcher's provider. Null when none can run; the plain list answers then. */
   readonly write: (prompt: { readonly instruction: string; readonly material: string }) => Promise<string | null>
@@ -99,6 +101,10 @@ export class TeamService {
   private problem: TeamsProblem | null = null
   private serveEnableUrl: string | null = null
   private readonly inFlight = new Set<string>()
+  /** The team desk last read for each link. Another owner's titles stay in memory (ADR-0189, decision 6). */
+  private readonly desks = new Map<string, { readonly desk: TeamDesk; readonly at: string }>()
+  /** When each link last read this computer's desk, for the cap. Apart from the list of reads, which other links can push things off. */
+  private readonly recentDeskReads = new Map<string, readonly number[]>()
   /** The asks each user message has spent, by message, newest last (ADR-0187, decision 5). */
   private readonly spent = new Map<string, Set<string>>()
   /** Watcher reads only what was on screen before the user's current message went (ADR-0187, decision 4). */
@@ -133,7 +139,8 @@ export class TeamService {
     const code = this.liveCode(), leftOut = new Set(this.file.leftOut)
     return { ownName: this.file.ownName || this.options.hostname(), listening: this.address !== undefined, code: code ? { text: code.text, expiresAt: code.expiresAt } : null,
       links: this.file.links.map(link => this.view(link)), messages: this.file.messages,
-      projects: this.options.projects().map(project => ({ ...project, leftOut: leftOut.has(project.key) })), problem: this.problem, serveEnableUrl: this.serveEnableUrl }
+      projects: this.options.projects().map(project => ({ ...project, leftOut: leftOut.has(project.key) })), problem: this.problem, serveEnableUrl: this.serveEnableUrl,
+      desks: Object.fromEntries(this.desks), deskReads: this.file.deskReads }
   }
   subscribe(listener: (state: TeamsState) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
 
@@ -149,7 +156,15 @@ export class TeamService {
       case 'open-serve-setting':
         if (this.serveEnableUrl) await this.options.openExternal(this.serveEnableUrl)
         return { status: 'ok' }
+      case 'read-desk': return this.readDesk(command.linkId)
     }
+  }
+
+  /** This computer's desk as a teammate would read it, without what the user left out (ADR-0189, decision 7). Sends nothing. */
+  ownDesk(): TeamDesk {
+    const leftOut = new Set(this.file.leftOut)
+    const facts = this.options.threads(leftOut)
+    return teamDesk(teamSummary(facts.threads, leftOut), facts.beyondCap)
   }
 
   // ---- Watcher's tools ----
@@ -289,6 +304,9 @@ export class TeamService {
     await this.pairing.revoke(link.clientId).catch(() => undefined)
     await this.options.credentials.set(slot(link.id), '').catch(() => undefined)
     this.file.links = this.file.links.filter(item => item.id !== link.id)
+    this.file.deskReads = this.file.deskReads.filter(item => item.linkId !== link.id)
+    this.desks.delete(link.id)
+    this.recentDeskReads.delete(link.id)
   }
   private async removeLink(linkId: string): Promise<TeamsCommandResult> {
     const link = this.linkById(linkId)
@@ -346,7 +364,11 @@ export class TeamService {
     const clientId = token === undefined ? undefined : this.pairing.verifyToken(token)
     const link = clientId === undefined ? undefined : this.file.links.find(item => item.clientId === clientId)
     if (!link) return { status: 'refused', reason: 'not-linked' }
-    return message.command === 'ask' ? this.answerAsk(link, message.ask, message.words) : this.answerLinkAgain(link)
+    switch (message.command) {
+      case 'ask': return this.answerAsk(link, message.ask, message.words)
+      case 'link-again': return this.answerLinkAgain(link)
+      case 'read-desk': return this.answerDesk(link)
+    }
   }
 
   private async answerRedeem(message: Extract<TeamWire, { command: 'redeem-code' }>): Promise<unknown> {
@@ -398,7 +420,7 @@ export class TeamService {
     this.inFlight.add(link.id)
     const row = this.addMessage({ linkId: link.id, teammate: link.name, direction: 'they-asked', ask, askWords: words })
     try {
-      const leftOut = new Set(this.file.leftOut), facts = teamSummary(this.options.threads(leftOut), leftOut)
+      const leftOut = new Set(this.file.leftOut), facts = teamSummary(this.options.threads(leftOut).threads, leftOut)
       const written = cleanTeamAnswer(await this.options.write(teamAnswerPrompt(ask, words, facts)).catch(() => null))
       const answer = written ?? plainTeamAnswer(ask, facts)
       this.settle(row.id, { state: 'answered', answer, ...written ? {} : { plain: true as const } })
@@ -422,6 +444,57 @@ export class TeamService {
     return { status: 'waiting' }
   }
 
+  /**
+   * A read of this computer's desk (ADR-0189). It runs no model, makes no teammate's message and reaches no Watcher: all it
+   * does is read the summary's facts and note who read them.
+   */
+  private answerDesk(link: Link): unknown {
+    const at = this.now(), iso = new Date(at).toISOString()
+    if (this.expired(link)) { this.options.log?.('team-desk-refused'); return { status: 'refused', reason: 'expired' } }
+    link.lastUsedAt = iso
+    const recent = (this.recentDeskReads.get(link.id) ?? []).filter(item => at - item < TEAM_BURST_MS)
+    this.recentDeskReads.set(link.id, recent)
+    if (recent.length >= TEAM_DESK_READS_PER_BURST) {
+      void this.save()
+      this.options.log?.('team-desk-refused')
+      return { status: 'refused', reason: 'too-many' }
+    }
+    this.recentDeskReads.set(link.id, [...recent, at])
+    this.file.deskReads = [...this.file.deskReads, { id: randomUUID(), linkId: link.id, teammate: link.name, at: iso }].slice(-TEAM_DESK_READS_KEPT)
+    void this.save()
+    this.publish()
+    this.options.log?.('team-desk-read')
+    return { status: 'desk', desk: this.ownDesk() }
+  }
+
+  /** One press, one read. A failure is said and nothing is kept to send later (ADR-0189, decision 4). */
+  private async readDesk(linkId: string): Promise<TeamsCommandResult> {
+    const link = this.linkById(linkId)
+    if (!link) return { status: 'refused', message: t`That link is gone.` }
+    const name = link.name
+    const ranOut = t`This link has run out, so nothing was read. Both of you can press Link again to keep it.`
+    if (this.expired(link)) return { status: 'refused', message: ranOut }
+    let answer: ReturnType<typeof teamDeskAnswerSchema.parse>
+    try {
+      answer = teamDeskAnswerSchema.parse(await this.send(link.address, this.token(link), { command: 'read-desk' }, SEND_TIMEOUT_MS, TEAM_DESK_BYTES_MAX))
+    } catch {
+      this.options.log?.('team-desk-failed')
+      return { status: 'refused', message: t`${name}'s computer did not answer. Nothing is waiting to send. Try again when it is on.` }
+    }
+    const at = new Date(this.now()).toISOString()
+    if (answer.status === 'refused') {
+      if (answer.reason === 'too-many') return { status: 'refused', message: t`${name}'s computer has answered a lot of reads just now, so it turned this one down. Try again in a few minutes.` }
+      if (answer.reason === 'expired') return { status: 'refused', message: ranOut }
+      return { status: 'refused', message: t`${name} has removed this link, so nothing was read. Make a new code to link again.` }
+    }
+    link.lastUsedAt = at
+    // The link may have gone while this read was on its way, and a desk outlives no link.
+    if (this.linkById(linkId)) this.desks.set(linkId, { desk: answer.desk, at })
+    await this.save()
+    this.publish()
+    return { status: 'ok' }
+  }
+
   // ---- Asking ----
 
   private async sendAsk(link: Link, rowId: string, ask: TeamAsk, words: string): Promise<void> {
@@ -439,12 +512,12 @@ export class TeamService {
   private token(link: Link): string { return this.options.credentials.get(slot(link.id)) }
 
   /** The only place this computer contacts a teammate's. */
-  private async send(address: string, token: string | undefined, message: TeamWire, timeoutMs: number): Promise<unknown> {
+  private async send(address: string, token: string | undefined, message: TeamWire, timeoutMs: number, bytesMax = TEAM_BODY_BYTES_MAX): Promise<unknown> {
     if (!teamAddressSchema.safeParse(address).success) throw new Error('Not a team address.')
     const response = await this.fetch(new URL(TEAM_ROUTE, address), { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
       headers: { 'content-type': 'application/json', ...token ? { authorization: `Bearer ${token}` } : {} }, body: JSON.stringify(message) })
     const text = await response.text()
-    if (Buffer.byteLength(text) > TEAM_BODY_BYTES_MAX) throw new Error('Too long.')
+    if (Buffer.byteLength(text) > bytesMax) throw new Error('Too long.')
     return JSON.parse(text)
   }
 
