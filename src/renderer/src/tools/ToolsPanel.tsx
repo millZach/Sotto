@@ -398,7 +398,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     <PhonePlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   </>
   const measured = available !== null && available > 0 ? available : null
-  const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
+  const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .5))
   const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
   // The page wears how the panel stands: docked beside the panes or over them, and nothing while it is shut.
   useMark('tools', open ? overlay ? 'overlay' : 'docked' : null)
