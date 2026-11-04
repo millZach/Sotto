@@ -29,9 +29,9 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - name: Scroll the list both ways
-        timeout-minutes: 50
-        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 0 0
+      - name: Open a long thread and scroll the list both ways
+        timeout-minutes: 60
+        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 3 20
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4

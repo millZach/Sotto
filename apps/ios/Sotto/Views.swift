@@ -714,6 +714,7 @@ struct ThreadSidebar: View, Equatable {
 /// unfolded Duo's sidebar shows it beside a thread. A Needs you row is a row like the others: its thread opens on its
 /// question.
 struct ThreadListSections: View, Equatable {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let groups: FocusThreads
     /// What it reads from Watcher for its rows. Its caller reads it from the model, so the list watches nothing itself and
     /// draws again only when what it shows has changed, not with every update to any thread.
@@ -794,7 +795,11 @@ struct ThreadListSections: View, Equatable {
                                                  @ViewBuilder row: @escaping (HostedThread) -> Row) -> some View {
         if !rows.isEmpty {
             ThreadListHeading(title: title, count: rows.count, id: id)
-            ForEach(rows) { row($0) }
+            if BenchOpen.lazySections && !typeSize.isAccessibilitySize {
+                LazyVStack(alignment: .leading, spacing: 0) { ForEach(rows) { row($0) } }
+            } else {
+                ForEach(rows) { row($0) }
+            }
         }
     }
 }

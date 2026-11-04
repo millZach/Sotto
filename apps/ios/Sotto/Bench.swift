@@ -16,6 +16,9 @@ enum BenchOpen {
     static let keepsList = ProcessInfo.processInfo.arguments.contains("--bench-keep-list")
     /// `--bench-lazy-list`: the thread list's rows are made as they come into view.
     static let lazyList = ProcessInfo.processInfo.arguments.contains("--bench-lazy-list")
+    /// `--bench-lazy-sections`: each section's rows are made as they come into view, below the accessibility text sizes,
+    /// where a section's rows are all one height.
+    static let lazySections = ProcessInfo.processInfo.arguments.contains("--bench-lazy-sections")
     /// `--bench-tap-row`: the journey opens the long thread as a press on its row does, not as a notification does.
     static let tapsRow = ProcessInfo.processInfo.arguments.contains("--bench-tap-row")
     nonisolated(unsafe) static let tap = PassthroughSubject<ThreadRef, Never>()
