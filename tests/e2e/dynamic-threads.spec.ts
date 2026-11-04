@@ -12,7 +12,7 @@ import { overseerInstructions } from '../../src/shared/dynamicThreads'
 import { fakeClaudeLaunches, fakeClaudeRecords } from '../fixtures/fakeClaudeRecords'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { onReleaseTrack } from './support/releaseTrack'
-import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 async function fixture() {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-dynamic-' })).directory
@@ -138,6 +138,25 @@ test('an overseer starts the model it names inside the list, with its reason, an
         const thread = (await window.sotto!.agents!.get()).host.threads.find(item => item.delegatedBy === parent)
         return thread && { provider: thread.providerId, effort: thread.reasoningEffort }
       }, id), { timeout: 30_000 }).toEqual({ provider: 'codex', effort: 'high' })
+      // Its row says which model the overseer chose, at what effort and why, and has a menu to open or stop it.
+      await page.reload()
+      await openThreads(page)
+      await page.getByRole('button', { name: 'Reconnect fix', exact: true }).first().click({ position: { x: 16, y: 12 } })
+      await expect(page.locator('.thread-workspace__head h2')).toHaveText('Reconnect fix')
+      const row = page.locator('.delegated-work__row', { hasText: 'GPT-6.1 Sol' }).first()
+      // A finished turn folds its work away under its Worked for line.
+      const worked = page.getByRole('button', { name: /Worked for/u }).first()
+      await expect(row.or(worked)).toBeVisible({ timeout: 15_000 })
+      if (!await row.isVisible()) await worked.click()
+      await expect(row).toBeVisible({ timeout: 15_000 })
+      await expect(row.locator('.delegated-work__meta')).toContainText('GPT-6.1 Sol, High')
+      await expect(row).toContainText('Why: Another maker\'s read.')
+      await expect(row).toContainText('Its effort was held to the most you allow in Settings.')
+      await row.getByRole('button', { name: /^Actions for / }).click()
+      await expect(page.getByRole('menuitem', { name: 'Open this thread' })).toBeVisible()
+      await expect(page.getByRole('menuitem', { name: 'Stop this worker' })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(row.getByRole('button', { name: /^Actions for / })).toBeFocused()
     })
   } finally {
     if (launched) await closeSotto(launched)

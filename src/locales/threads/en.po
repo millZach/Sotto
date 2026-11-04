@@ -41,6 +41,11 @@ msgstr "(recommended)"
 msgid "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
 msgstr "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
 
+#. placeholder {0}: overseen.length
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{0, plural, one {# worker} other {# workers}}"
+msgstr "{0, plural, one {# worker} other {# workers}}"
+
 #. placeholder {0}: blocked.ahead
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
@@ -1074,6 +1079,10 @@ msgstr "{providerName} model sources"
 msgid "{providerName} models"
 msgstr "{providerName} models"
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{providers, plural, one {on # provider} other {on # providers}}"
+msgstr "{providers, plural, one {on # provider} other {on # providers}}"
+
 #. {published} is a version number.
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "{published} is published."
@@ -1642,6 +1651,10 @@ msgstr "Action failed"
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Actions for {projectTitle}"
 msgstr "Actions for {projectTitle}"
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Actions for {threadTitle}"
+msgstr "Actions for {threadTitle}"
 
 #: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
@@ -4645,6 +4658,10 @@ msgstr "It had stopped at {time}, when Sotto last read it."
 msgid "It had stopped when Sotto last read it."
 msgstr "It had stopped when Sotto last read it."
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It isn't working now."
+msgstr "It isn't working now."
+
 #. Before a quote of the first line of a check's reply, in the check's own words.
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "It replied"
@@ -4678,6 +4695,10 @@ msgstr "It starts on {permission}, the nearest {offeredBy} offers to this thread
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "It stays readable there. <0>Open it</0>"
 msgstr "It stays readable there. <0>Open it</0>"
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It took over from an earlier worker."
+msgstr "It took over from an earlier worker."
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check {name}, then try again."
@@ -4730,6 +4751,10 @@ msgstr "Its checksum has to match the release’s."
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Its delivery is still unknown. Sotto has not sent it again."
 msgstr "Its delivery is still unknown. Sotto has not sent it again."
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Its effort was held to the most you allow in Settings."
+msgstr "Its effort was held to the most you allow in Settings."
 
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "Its first {count} lines."
@@ -6088,6 +6113,10 @@ msgstr "Open the prototype, {name}"
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Open the thread to finish it, or discard it."
 msgstr "Open the thread to finish it, or discard it."
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Open this thread"
+msgstr "Open this thread"
 
 #. Opens the thread a popped Needs you card belongs to.
 #: src/renderer/src/agents/EmptyWorkspace.tsx
@@ -8341,6 +8370,10 @@ msgstr "Stop babysitting #{number}"
 msgid "Stop GIF {number}"
 msgstr "Stop GIF {number}"
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Stop this worker"
+msgstr "Stop this worker"
+
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
@@ -10094,6 +10127,11 @@ msgstr "Where the server listens, on this computer, your network or your tailnet
 #: src/renderer/src/agents/tips.tsx
 msgid "Which threads are waiting on me?"
 msgstr "Which threads are waiting on me?"
+
+#. Before the reason a Dynamic thread's model chose this model for this piece, in its own words.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Why:"
+msgstr "Why:"
 
 #. A turn that finished, when its time was not recorded.
 #: src/renderer/src/agents/threadActivityView.ts

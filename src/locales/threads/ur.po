@@ -41,6 +41,11 @@ msgstr ""
 msgid "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
 msgstr ""
 
+#. placeholder {0}: overseen.length
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{0, plural, one {# worker} other {# workers}}"
+msgstr ""
+
 #. placeholder {0}: blocked.ahead
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
@@ -1074,6 +1079,10 @@ msgstr ""
 msgid "{providerName} models"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{providers, plural, one {on # provider} other {on # providers}}"
+msgstr ""
+
 #. {published} is a version number.
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "{published} is published."
@@ -1641,6 +1650,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Actions for {projectTitle}"
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Actions for {threadTitle}"
 msgstr ""
 
 #: src/renderer/src/agents/RailTile.tsx
@@ -4645,6 +4658,10 @@ msgstr ""
 msgid "It had stopped when Sotto last read it."
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It isn't working now."
+msgstr ""
+
 #. Before a quote of the first line of a check's reply, in the check's own words.
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "It replied"
@@ -4677,6 +4694,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "It stays readable there. <0>Open it</0>"
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It took over from an earlier worker."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
@@ -4729,6 +4750,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Its delivery is still unknown. Sotto has not sent it again."
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Its effort was held to the most you allow in Settings."
 msgstr ""
 
 #: src/renderer/src/agents/CheckReply.tsx
@@ -6087,6 +6112,10 @@ msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Open the thread to finish it, or discard it."
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Open this thread"
 msgstr ""
 
 #. Opens the thread a popped Needs you card belongs to.
@@ -8341,6 +8370,10 @@ msgstr ""
 msgid "Stop GIF {number}"
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Stop this worker"
+msgstr ""
+
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
@@ -10093,6 +10126,11 @@ msgstr ""
 #. Put in Watcher's prompt by a tip's Try it.
 #: src/renderer/src/agents/tips.tsx
 msgid "Which threads are waiting on me?"
+msgstr ""
+
+#. Before the reason a Dynamic thread's model chose this model for this piece, in its own words.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Why:"
 msgstr ""
 
 #. A turn that finished, when its time was not recorded.

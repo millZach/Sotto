@@ -363,11 +363,15 @@ export function delegatedSummary(views: readonly DelegationView[], threadOf: (vi
     if (view.outcome === 'unknown') unknown++
   }
   const work = kinds.work, checked = kinds.check, reviews = kinds.review, museReviews = kinds['muse-review']
+  // A Dynamic thread's workers are told by how many and on how many providers, since which it chose is the point (ADR-0191).
+  const overseen = views.filter(view => view.outcome !== 'refused' && view.why !== undefined)
+  const providers = new Set(overseen.flatMap(view => { const provider = threadOf(view)?.providerId; return provider ? [provider] : [] })).size
   return [
-    work && plural(work, { one: '# delegated thread', other: '# delegated threads' }),
-    checked && plural(checked, { one: '# check', other: '# checks' }),
-    reviews && plural(reviews, { one: '# review', other: '# reviews' }),
-    museReviews && plural(museReviews, { one: 'Muse review', other: '# Muse reviews' }),
+    ...overseen.length ? [plural(overseen.length, { one: '# worker', other: '# workers' }) + ' ' + plural(providers, { one: 'on # provider', other: 'on # providers' })]
+      : [work && plural(work, { one: '# delegated thread', other: '# delegated threads' }),
+        checked && plural(checked, { one: '# check', other: '# checks' }),
+        reviews && plural(reviews, { one: '# review', other: '# reviews' }),
+        museReviews && plural(museReviews, { one: 'Muse review', other: '# Muse reviews' })],
     asking && plural(asking, { one: '# needs you', other: '# need you' }),
     failed && t({ message: `${{ failedCount: shownCount(failed) }} failed`, comment: 'How many delegated threads failed.' }),
     unknown && t({ message: `${{ unknownCount: shownCount(unknown) }} unknown`, comment: 'How many delegated threads have an unknown outcome.' }),

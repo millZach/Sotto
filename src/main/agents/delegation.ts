@@ -1419,6 +1419,7 @@ export class DelegationService {
       ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
       ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
       waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record), ...(record.held ? { held: record.held } : {}),
+      ...(record.why ? { why: record.why } : {}), ...(record.effortHeld ? { effortHeld: true as const } : {}), ...(record.replaces ? { replaces: record.replaces } : {}),
       ...(made && record.check && this.options.checkReplies ? { check: true as const, ...this.checkExcerpt(record, outcome) } : {}) }
   }
   /**

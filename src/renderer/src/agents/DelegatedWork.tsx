@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { Bot, FlaskConical, GitFork, Laptop, Search, Server, ShieldCheck, Sparkle, type LucideIcon } from 'lucide-react'
+import React, { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Bot, FlaskConical, GitFork, Laptop, MoreHorizontal, Search, Server, ShieldCheck, Sparkle, type LucideIcon } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../../shared/agentMonitoring'
@@ -13,6 +13,9 @@ import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, d
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
+import { resolveModel } from '../../../shared/modelCatalog'
+import { effortLabel } from './EffortPicker'
+import { RowMenu, type RowMenuPlace } from './RowMenu'
 import { CheckReplyLine, CheckTraysProvider, useCheckTrayOpen } from './CheckReply'
 import './delegation.css'
 
@@ -20,6 +23,10 @@ import './delegation.css'
 export interface DelegationWorld {
   readonly thread: (threadId: string) => AgentThread | undefined
   readonly hostName: (thread: AgentThread) => string
+  /** A thread's model by name, for a Dynamic thread's rows (ADR-0191). */
+  readonly modelName?: (thread: AgentThread) => string
+  /** Stops a worker's turn, from its row's menu (ADR-0191). */
+  readonly stop?: (threadId: string) => void
   readonly open: (threadId: string) => void
   /** False where the page holds its clock still (a capture run): a wait in progress keeps the time it was drawn with. */
   readonly liveClock: boolean
@@ -46,7 +53,7 @@ const DelegationWorldContext = createContext<DelegationWorld | null>(null)
 export function useDelegationWorld(state: AgentState, command: AgentConnection['command'], now?: number,
   from?: { readonly thread: AgentThread; readonly lastReadAt: number | undefined }): DelegationWorld {
   const { t } = useLingui()
-  const threads = state.host.threads
+  const threads = state.host.threads, models = state.host.models
   const connections = state.connections
   const crossMachine = useOwlFeature('cross-machine-work')
   const machine = crossMachine && from?.thread.remoteHost === true ? rosterMachine(connections, from.thread) : undefined
@@ -59,6 +66,7 @@ export function useDelegationWorld(state: AgentState, command: AgentConnection['
   return useMemo(() => {
     const byId = new Map(threads.map(thread => [thread.id, thread]))
     return { thread: id => byId.get(id), hostName: thread => threadHostName({ connections }, thread),
+      modelName: thread => resolveModel(models, thread.modelId)?.name ?? thread.modelId, stop: id => { void command({ type: 'interrupt', threadId: id }) },
       open: id => {
         const from = byId.get(id)?.delegatedBy
         if (from === undefined) void command({ type: 'select-thread', threadId: id })
@@ -67,7 +75,7 @@ export function useDelegationWorld(state: AgentState, command: AgentConnection['
       machineName: hostId => { const listed = connections?.find(item => item.hostId === hostId); return listed === undefined ? undefined : listed.kind === 'local' ? t`this computer` : listed.name },
       ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}),
       ...(checkReply ? { checkReply } : {}) }
-  }, [threads, connections, command, now, awayName, awayConnected, lastReadAt, checkReply, t])
+  }, [threads, models, connections, command, now, awayName, awayConnected, lastReadAt, checkReply, t])
 }
 /** The transcript's world for its rows, and its check reply tray, one open at a time (#1312). */
 export function DelegationWorldProvider({ world, children }: { readonly world: DelegationWorld; readonly children: ReactNode }): ReactNode {
@@ -125,6 +133,8 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const { t } = useLingui()
   const world = useContext(DelegationWorldContext)
   const lineId = useId(), metaId = useId()
+  const rowItem = useRef<HTMLLIElement>(null), more = useRef<HTMLButtonElement>(null)
+  const [menu, setMenu] = useState<RowMenuPlace | null>(null)
   // A check says Check, and once answered quotes its reply (#1312), only where Work across machines is on.
   const checks = useOwlFeature('cross-machine-work')
   const trayOpen = useCheckTrayOpen(view.id)
@@ -157,7 +167,11 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const checkMachine = thread?.remoteHost ? machine : t`this computer`
   const reply = check?.outcome === 'answered' ? <CheckReplyLine reply={check.checkReply} delegation={check} names={{ title: name, machine: checkMachine }} read={world.checkReply}
     onOpenCheck={thread ? () => world.open(thread.id) : undefined} /> : null
-  return <li className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} data-check={check ? '' : undefined} data-tray-open={trayOpen || undefined} aria-label={label}>
+  // A Dynamic thread's worker says which model the overseer chose, at what effort and why (ADR-0191), and has a menu to open or stop it.
+  const overseen = !refused && view.why !== undefined ? view : undefined
+  const chosen = overseen && thread ? [world.modelName?.(thread) ?? thread.modelId, ...thread.reasoningEffort ? [effortLabel(thread.reasoningEffort)] : []].join(', ') : undefined
+  const working = thread !== undefined && isThreadTurnRunning(thread)
+  return <li ref={rowItem} className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} data-check={check ? '' : undefined} data-tray-open={trayOpen || undefined} aria-label={label}>
     <Glyph size={14} aria-hidden="true" className="delegated-work__glyph" />
     <span className="delegated-work__name">
       <span className="delegated-work__kind">{kindWord}</span>
@@ -168,14 +182,22 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
     </span>
     <span className="delegated-work__state" data-state={state.id} data-last-read={lastRead || undefined}>
       <span className="delegation-ring" data-outcome={view.outcome} data-state={state.id} data-last-read={lastRead || undefined} aria-hidden="true" />{state.word}
+      {overseen && thread ? <button ref={more} type="button" className="delegated-work__more tt-focusable" aria-haspopup="menu" aria-expanded={menu !== null} aria-label={t`Actions for ${threadTitle}`}
+        onClick={() => setMenu(current => current === null ? 'beside' : null)}><MoreHorizontal size={14} aria-hidden="true" /></button> : null}
     </span>
+    {menu !== null && thread ? <RowMenu label={t`Actions for ${threadTitle}`} anchor={() => rowItem.current} place={menu} onClose={restore => { setMenu(null); if (restore) more.current?.focus() }}
+      groups={[[{ id: 'open', label: t`Open this thread`, run: () => world.open(thread.id) },
+        { id: 'stop', label: t`Stop this worker`, disabled: !working, ...working ? {} : { hint: t`It isn't working now.` }, run: () => world.stop?.(thread.id) }]]} /> : null}
     {reply}
     <p id={metaId} className="delegated-work__meta">
-      {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span>{shownMachine ? <span aria-hidden="true">·</span> : null}</> : null}
+      {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{chosen ?? PROVIDER_LABELS[provider]}</span>{shownMachine ? <span aria-hidden="true">·</span> : null}</> : null}
       {shownMachine ? <span className="delegated-work__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span> : null}
       <span className="tt-visually-hidden">, {state.word}.</span>
     </p>
     <RowLine view={view} state={state.id} id={lineId} world={world} request={request} />
+    {overseen ? <p className="delegated-work__why tt-paragraph"><span className="delegated-work__why-word"><Trans comment="Before the reason a Dynamic thread's model chose this model for this piece, in its own words.">Why:</Trans></span> {overseen.why}</p> : null}
+    {overseen?.effortHeld ? <p className="delegated-work__why tt-paragraph"><Trans>Its effort was held to the most you allow in Settings.</Trans></p> : null}
+    {overseen?.replaces ? <p className="delegated-work__why tt-paragraph"><Trans>It took over from an earlier worker.</Trans></p> : null}
     {held ? <p className="delegated-work__held tt-paragraph"><ShieldCheck size={13} aria-hidden="true" /><span>{held}</span></p> : null}
   </li>
 }

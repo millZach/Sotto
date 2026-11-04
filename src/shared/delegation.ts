@@ -234,6 +234,10 @@ export const delegatedViewSchema = z.object({
    * where Work across machines is on, and only in this computer's own read; a host's read keeps its shape.
    */
   check: z.literal(true).optional(),
+  /** Why a Dynamic thread's overseer chose this model for this piece, in its words; that Highest effort held its effort; the delegation it took over (ADR-0191). */
+  why: z.string().max(DYNAMIC_WHY_MAX).optional(),
+  effortHeld: z.literal(true).optional(),
+  replaces: z.uuid().optional(),
   /** An answered check's reply excerpt, or that its reply is no longer held. Nothing for any other delegation. */
   checkReply: checkReplyExcerptSchema.optional(),
 }).strict()
