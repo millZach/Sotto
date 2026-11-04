@@ -565,6 +565,8 @@ test.describe('review evidence', () => {
   } },
   { name: 'shell-check', covers: [], run: async capture => {
     const { page } = capture
+    for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { modes: ['dark'], size })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
     const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
     for (const [link, state] of pages) {
       await openThreads(page)
