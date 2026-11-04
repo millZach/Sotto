@@ -7400,6 +7400,10 @@ msgstr "Your projects and their threads are listed here. Add project brings in a
 msgid "Your rules"
 msgstr "Your rules"
 
+#: src/renderer/src/App.tsx
+msgid "Your saved to-do list could not be cleared. The file is still on this computer. Repair local storage, then restart Sotto to try again."
+msgstr "Your saved to-do list could not be cleared. The file is still on this computer. Repair local storage, then restart Sotto to try again."
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "Your speed shows here once you have dictated on two days."
 msgstr "Your speed shows here once you have dictated on two days."

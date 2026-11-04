@@ -53,6 +53,7 @@ import type { TellWatcherAnswer, TellWatcherAsk } from '../../shared/tellWatcher
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
+import { toDoReceiptSchema, type ToDo, type ToDoRequest } from '../../shared/toDos'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 /** Answers read on every call, checked against schemas built once rather than on every call. */
@@ -118,6 +119,8 @@ export interface SocketHostServiceOptions {
    * `delegation-views` and read a host's own threads' delegations. Stable reads none and is pushed none.
    */
   crossMachineEnabled?: boolean
+  /** Whether this desktop shows to-dos (ADR-0188), so it asks a host for its list. */
+  toDoListEnabled?: boolean
   /**
    * Whether this desktop wants a host's next prompts now (ADR-0173): present only while its `next-prompt` Owl answer is on,
    * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
@@ -237,10 +240,12 @@ export class SocketHostService implements HostService {
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
   /** The host's check queue as it last pushed it (#1312), on this connection only; undefined before a push and once it closes. */
   private checks: readonly CheckQueueEntry[] | undefined
+  private toDoItems: readonly ToDo[] | undefined
   /** The host's next prompts as it pushed them on this connection, by its own thread IDs (ADR-0173). */
   private readonly nextPromptEntries = new Map<string, NextPromptEntry>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   private readonly checkListeners = new Set<() => void>()
+  private readonly toDoListeners = new Set<() => void>()
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
   private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
@@ -406,7 +411,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.toDoListEnabled === true ? ['to-dos'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -454,6 +459,10 @@ export class SocketHostService implements HostService {
     if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
     // A queue read on a closed connection is not current: the machine's panel says nothing of it until the host pushes again.
     if (this.checks !== undefined) { this.checks = undefined; this.checksChanged() }
+    if (this.toDoItems !== undefined) { this.toDoItems = undefined; this.toDosChanged() }
+  }
+  private toDosChanged(): void {
+    for (const listener of [...this.toDoListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
   }
   private checksChanged(): void {
     for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
@@ -510,6 +519,7 @@ export class SocketHostService implements HostService {
         // Sent only to a client whose hello accepts `host-update` (ADR-0088), for the update step it asked for.
         else if (message.event === 'host-update-step') { for (const listener of this.updateSteps) listener(message.step) }
         else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
+        else if (message.event === 'to-dos') { if (this.options.toDoListEnabled === true) { this.toDoItems = message.items; this.toDosChanged() } }
         // Pushed only to a desktop whose hello accepted `check-queue-views` (#1312), so only where Work across machines is on.
         else if (message.event === 'check-queue') { if (this.options.crossMachineEnabled === true) { this.checks = message.checks; this.checksChanged() } }
         // Pushed only to a desktop whose hello accepted `next-prompts` and that said it wants them (ADR-0173).
@@ -1592,6 +1602,18 @@ export class SocketHostService implements HostService {
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     this.delegationListeners.add(listener)
     return () => { this.delegationListeners.delete(listener) }
+  }
+  /** The host lists `to-dos` and this desktop accepted it (ADR-0188): it pushes its own list. */
+  get supportsToDos(): boolean { return this.options.toDoListEnabled === true && this.features.includes('to-dos') }
+  /** The host's list as it last pushed it on this connection, by the host's own thread IDs. */
+  toDos(): readonly ToDo[] | undefined { return this.supportsToDos ? this.toDoItems : undefined }
+  subscribeToDos(listener: () => void): () => void {
+    this.toDoListeners.add(listener)
+    return () => { this.toDoListeners.delete(listener) }
+  }
+  async toDoRequest(request: ToDoRequest): Promise<void> {
+    if (!this.supportsToDos) throw new Error('This host keeps no to-do list.')
+    this.read(toDoReceiptSchema, await this.call({ op: 'to-do-request', request }))
   }
   /** The host lists `check-queue-views` and this desktop accepted it (#1312): it pushes its own check queue. */
   get supportsCheckQueueViews(): boolean { return this.options.crossMachineEnabled === true && this.features.includes('check-queue-views') }

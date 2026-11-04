@@ -38,6 +38,7 @@ import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
+import { ToDoStore } from './toDos'
 import { WorkerAdmission } from './workerAdmission'
 import { workerMachineCeiling } from '../../shared/workerMachine'
 import { THIS_COMPUTER } from '../../shared/workingThreads'
@@ -201,6 +202,8 @@ export interface AgentRuntimeOptions {
   /** What the short-writing switches read (ADR-0026). No key is needed: each thread's own provider writes. */
   writingSettings: () => Promise<AppSettings>
   historyEnabled: () => boolean
+  /** The to-do list's Owl answer (ADR-0188). */
+  toDoListEnabled?: boolean
   observeActiveThread?: boolean
   openExternal: (url: string) => Promise<unknown>
   openThreadFolder?: ControlDependencies['openThreadFolder']
@@ -411,7 +414,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, toDoListEnabled: options.toDoListEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -818,7 +821,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+  // Each computer keeps its own to-dos, and tells a thread that waits on one through its wake-up (ADR-0188).
+  const toDos = options.toDoListEnabled === true ? new ToDoStore({ directory, historyEnabled: options.historyEnabled,
+    told: async (threadId, title, didNotWork) => {
+      // A settled, closed or deleted thread is waiting on nothing, so the check-off simply stands.
+      if (agentControl.takesWakeUps(threadId)) await agentControl.deliverWakeUp(threadId, { source: 'to-do', items: [{ title, ...didNotWork ? { didNotWork } : {} }] }, { tool: false })
+    } }) : undefined
+  const hostService = new LocalHostService({ ...toDos ? { toDos } : {}, control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
     ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {
       nextPromptListeners.add(listener)
@@ -874,5 +883,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { toDos, agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

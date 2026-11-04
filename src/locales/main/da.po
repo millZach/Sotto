@@ -971,6 +971,10 @@ msgstr ""
 msgid "Open VSX sent more data than a theme needs, so the download was stopped."
 msgstr ""
 
+#: src/main/agents/toDoIpc.ts
+msgid "Open your to-do list in the main Sotto window."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn."
 msgstr ""
@@ -1476,6 +1480,11 @@ msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
+msgstr ""
+
+#: src/main/agents/toDoIpc.ts
+#: src/main/hosts/desktopHostRouter.ts
+msgid "That computer is not connected. Your to-do is still on its list."
 msgstr ""
 
 #: src/main/council/councilService.ts

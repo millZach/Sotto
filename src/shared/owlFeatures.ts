@@ -68,6 +68,7 @@ export const OWL_FEATURES = [
   { id: 'living-widget-owl', name: 'The widget\'s living owl', owlSince: '2026-11-02', owner: 'docs/adr/0178-the-widgets-owl-is-alive.md', sentToStable: false },
   { id: 'local-apps', name: 'Let apps on this computer connect', owlSince: '2026-11-02', owner: 'docs/adr/0180-apps-on-this-computer-connect-without-a-pairing-code.md', sentToStable: false },
   { id: 'popup', name: 'The popup', owlSince: '2026-11-02', owner: 'docs/adr/0181-a-shortcut-shows-a-popup-that-prompts-a-thread-or-watcher.md', sentToStable: false },
+  { id: 'to-do-list', name: 'To-do list', owlSince: '2026-11-03', owner: 'docs/adr/0188-a-to-do-list-holds-what-only-the-users-hands-can-do.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']
