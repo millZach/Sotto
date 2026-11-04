@@ -89,8 +89,8 @@ function channel(name: string, value: unknown): void {
 }
 
 // The window's detail publisher and Watcher's room publisher send to a callback the fixture passes in; wrap both.
-vi.mock('../../src/main/agents/control', async original => {
-  const actual = await original<typeof import('../../src/main/agents/control')>()
+vi.mock('../../src/main/agents/statePublishers', async original => {
+  const actual = await original<typeof import('../../src/main/agents/statePublishers')>()
   return { ...actual, coalesceAgentThreadDetailPublishes: ((send, options) => actual.coalesceAgentThreadDetailPublishes(update => { channel('window detail', update); send(update) }, options)) as typeof actual.coalesceAgentThreadDetailPublishes }
 })
 vi.mock('../../src/main/agents/watcherRoomDesktop', async original => {
