@@ -7,7 +7,8 @@
 
 .rich-message {
   --rich-text: var(--tt-text-2);
-  --rich-strong: var(--tt-text);
+  /* Headings, a clear step above the sentence without flaring to the full text ink. */
+  --rich-strong: color-mix(in oklab, var(--tt-text) 86%, var(--tt-text-2));
   --rich-muted: var(--tt-text-muted);
   --rich-rule: var(--tt-code-border, var(--tt-border-faint));
   --rich-block: var(--tt-code-bg, var(--tt-surface));
@@ -17,14 +18,19 @@
   --rich-caret: var(--tt-activity);
   /* Keywords borrow the primary action's fill, which is tuned for its button, not for text: a little body ink keeps 4.5:1. */
   --rich-code-keyword: color-mix(in oklab, var(--tt-primary) 85%, var(--tt-text));
-  --rich-code-string: var(--tt-warning);
-  --rich-code-number: var(--tt-error);
-  --rich-code-title: var(--tt-text);
+  /* The status colours are tuned to call out. In code they sit nearer the code's own ink, so a block of strings stays readable. */
+  --rich-code-string: color-mix(in oklab, var(--tt-warning) 70%, var(--tt-code-text));
+  --rich-code-number: color-mix(in oklab, var(--tt-error) 70%, var(--tt-code-text));
+  --rich-code-title: var(--tt-code-text);
   --rich-code-type: var(--tt-primary-hover);
   --rich-code-comment: var(--tt-text-muted);
   --rich-code-meta: var(--tt-text-muted);
   --rich-code-text: var(--tt-code-text, var(--tt-text));
   --rich-stripe: var(--tt-table-stripe, transparent);
+  /* Inline code: a tint of the ink over whatever it sits on, so it works on the room, in the bubble and in every theme. */
+  --rich-code-chip: color-mix(in oklab, var(--tt-text) 9%, transparent);
+  /* How wide a line of prose runs: about 90 characters of Figtree. Code and tables keep the column's whole width. */
+  --rich-measure: 42em;
 
   min-width: 0;
   color: var(--rich-text);
@@ -37,28 +43,31 @@
 /* The last child is always the link feedback line, so the last content block is second from the end. */
 .rich-message > :nth-last-child(2) { margin-bottom: 0; }
 
+/* Prose keeps a readable line, however wide the column; code, tables and diagrams take the column's width. */
+.rich-message > :is(p, ul, ol, blockquote, .rich-heading) { max-width: var(--rich-measure); }
+
 /* Doubled class beats `.thread-message p`, which keeps pre-wrap for plain text. */
-.rich-message.rich-message p { margin: 0 0 12px; color: inherit; font-size: inherit; line-height: inherit; white-space: normal; overflow-wrap: anywhere; }
+.rich-message.rich-message p { margin: 0 0 14px; color: inherit; font-size: inherit; line-height: inherit; white-space: normal; overflow-wrap: anywhere; }
 .rich-message.rich-message > p:nth-last-child(2) { margin-bottom: 0; }
 
 /* Bold by weight alone: the same ink as the sentence, so emphasis does not flare white. */
 .rich-message strong { color: inherit; font-weight: 600; }
 .rich-message del { color: var(--rich-muted); }
 
-.rich-heading { margin: 20px 0 6px; color: var(--rich-strong); font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; }
+.rich-heading { margin: 26px 0 8px; color: var(--rich-strong); font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; }
 .rich-heading--1 { font-size: var(--tt-type-heading); }
 .rich-heading--2 { font-size: var(--tt-type-lead); }
 .rich-heading--3, .rich-heading--4, .rich-heading--5, .rich-heading--6 { font-size: var(--tt-type-reading); }
 
-.rich-message ul, .rich-message ol { margin: 0 0 12px; padding-left: 24px; }
-.rich-message li { margin: 3px 0; padding-left: 2px; }
+.rich-message ul, .rich-message ol { margin: 0 0 14px; padding-left: 22px; }
+.rich-message li { margin: 5px 0; padding-left: 3px; }
 .rich-message li > p { margin: 0; }
 .rich-message li > ul, .rich-message li > ol { margin: 2px 0 4px; }
 .rich-message li::marker { color: var(--rich-muted); }
 .rich-message li:has(> .rich-task) { list-style: none; margin-left: -22px; }
 .rich-task { width: 15px; height: 15px; margin: 0 9px 0 0; vertical-align: -2px; accent-color: var(--tt-primary); }
 
-.rich-message blockquote { margin: 0 0 12px; padding: 2px 0 2px 14px; border-left: 2px solid var(--rich-rule); color: var(--rich-muted); }
+.rich-message blockquote { margin: 0 0 14px; padding: 2px 0 2px 14px; border-left: 2px solid var(--rich-rule); color: var(--rich-muted); }
 .rich-message blockquote > :last-child { margin-bottom: 0; }
 
 .rich-message hr { height: 1px; margin: 20px 0; border: 0; background: var(--rich-rule); }
@@ -68,16 +77,22 @@
 .rich-link--inert { color: inherit; text-decoration-style: dotted; text-decoration-color: var(--rich-muted); cursor: help; }
 .rich-link--inert:hover { color: inherit; }
 
+/* Inline code sits in the sentence: the sentence's own ink and weight, a size down because the mono runs wide, on a tint
+   with no outline. A chip that wraps keeps its rounded ends on both lines. */
 .rich-message :not(pre) > code {
-  padding: 1px 5px;
-  border: 1px solid var(--rich-rule);
+  padding: 1px 4px;
   border-radius: var(--tt-radius-tag);
-  background: var(--rich-block);
-  color: var(--rich-code-text);
+  background: var(--rich-code-chip);
+  color: inherit;
   font-family: var(--tt-font-mono);
-  font-size: var(--tt-type-body);
+  font-size: var(--tt-type-small);
   overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
+.rich-heading--1 > code { font-size: var(--tt-type-lead); }
+.rich-heading--2 > code { font-size: var(--tt-type-reading); }
+.rich-heading--3 > code, .rich-heading--4 > code, .rich-heading--5 > code, .rich-heading--6 > code { font-size: var(--tt-type-body); }
 
 .rich-image-blocked {
   display: inline-flex;
@@ -95,8 +110,9 @@
 
 /* Code */
 
-.rich-code { margin: 14px 0; border: 1px solid var(--rich-rule); border-radius: var(--tt-radius-md); background: var(--rich-block); overflow: hidden; }
-.rich-code__bar { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 4px 4px 14px; border-bottom: 1px solid var(--tt-hairline); background: var(--rich-block-bar); }
+/* A block of code is a well in the room: one fill, its language and Copy on the same ground as the code. */
+.rich-code { margin: 16px 0; border: 1px solid color-mix(in srgb, var(--rich-rule) 60%, transparent); border-radius: var(--tt-radius-md); background: var(--rich-block); overflow: hidden; }
+.rich-code__bar { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 2px 2px 0 14px; }
 .rich-code__language { flex: 1; min-width: 0; overflow: hidden; color: var(--rich-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .rich-code__status { color: var(--rich-muted); font-size: var(--tt-type-small); }
 .rich-code__copy {
@@ -118,7 +134,7 @@
 
 .rich-code__scroll {
   margin: 0;
-  padding: 12px 14px 14px;
+  padding: 4px 14px 14px;
   overflow-x: auto;
   color: var(--rich-code-text);
   font-family: var(--tt-font-mono);
@@ -144,7 +160,7 @@
 
 /* Tables */
 
-.rich-table { max-width: 100%; margin: 14px 0; overflow-x: auto; border: 1px solid var(--rich-rule); border-radius: var(--tt-radius-md); scrollbar-width: thin; }
+.rich-table { max-width: 100%; margin: 16px 0; overflow-x: auto; border: 1px solid var(--rich-rule); border-radius: var(--tt-radius-md); scrollbar-width: thin; }
 .rich-table:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
 .rich-table table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: var(--tt-type-reading); line-height: 1.5; }
 .rich-table th, .rich-table td { max-width: 42ch; min-width: 8ch; padding: 8px 14px; border-bottom: 1px solid var(--tt-hairline); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
