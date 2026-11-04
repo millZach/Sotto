@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, providerIdSchema, type ProviderId } from '../../../../shared/agents'
-import { DYNAMIC_EFFORTS, dynamicEffortSchema, PROVIDER_COMPANIES, WORKERS_AT_ONCE_MAX, workersAtOnceSchema, type DynamicThreadSettings } from '../../../../shared/dynamicThreads'
+import { DYNAMIC_EFFORTS, dynamicEffortSchema, WORKERS_AT_ONCE_MAX, workersAtOnceSchema, type DynamicThreadSettings } from '../../../../shared/dynamicThreads'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { reportsUsageLimits, type UsageQuotaRead } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
-import { firstAllowedProviders } from '../../agents/DynamicSwitch'
+import { companyWords, firstAllowedProviders } from '../../agents/DynamicSwitch'
 import { effortLabel } from '../../agents/EffortPicker'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { Field } from '../../components/Field'
@@ -34,25 +34,37 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
     return () => { current = false }
   }, [here])
   const connected = useMemo(() => providerIdSchema.options.filter(provider => state?.host.models.some(model => model.ready && model.providerId === provider)), [state?.host.models])
-  const saved = useMemo(() => new Set(settings.providers ?? (state ? firstAllowedProviders(state) : [])), [settings.providers, state])
-  // A tick shows at once, ahead of the save that holds it, and what was saved takes over as it lands.
-  const [pressed, setPressed] = useState<ReadonlySet<ProviderId> | null>(null)
-  useEffect(() => { setPressed(null) }, [settings.providers])
-  const allowed = pressed ?? saved
-  const save = (next: Partial<DynamicThreadSettings>): void => { void onSave({ dynamicThreads: { ...settings, ...settings.providers === undefined ? { providers: [...allowed] } : {}, ...next } }) }
+  // A press shows at once, ahead of the save that holds it. Each save sends the whole setting, built on the one before it
+  // rather than on what has come back, so a quick second change can't put the first back. What was saved takes over once
+  // none is on its way.
+  const [draft, setDraft] = useState(settings)
+  const latest = useRef(settings), saving = useRef(0), held = useRef(settings)
+  held.current = settings
+  useEffect(() => { if (saving.current === 0) { latest.current = settings; setDraft(settings) } }, [settings])
+  const save = (next: Partial<DynamicThreadSettings>): void => {
+    const whole = { ...latest.current, ...next }
+    latest.current = whole
+    setDraft(whole)
+    saving.current++
+    void Promise.resolve(onSave({ dynamicThreads: whole })).catch(() => false).then(() => {
+      saving.current--
+      if (saving.current === 0) { latest.current = held.current; setDraft(held.current) }
+    })
+  }
+  // Until the user makes it, the list is only what it would start as: a limit's change leaves it unmade, so the first-use question still asks.
+  const allowed = useMemo(() => new Set(draft.providers ?? (state ? firstAllowedProviders(state) : [])), [draft.providers, state])
   // The count saves when it is left or Enter is pressed, so it can be cleared on the way to a new number; anything but a whole number in range puts the saved one back.
-  const [count, setCount] = useState(String(settings.workersAtOnce))
-  useEffect(() => { setCount(String(settings.workersAtOnce)) }, [settings.workersAtOnce])
+  const [count, setCount] = useState(String(draft.workersAtOnce))
+  useEffect(() => { setCount(String(draft.workersAtOnce)) }, [draft.workersAtOnce])
   const commitCount = (text: string): void => {
     const next = workersAtOnceSchema.safeParse(/^\d+$/u.test(text.trim()) ? Number(text) : Number.NaN)
-    if (!next.success) { setCount(String(settings.workersAtOnce)); return }
+    if (!next.success) { setCount(String(draft.workersAtOnce)); return }
     setCount(String(next.data))
-    if (next.data !== settings.workersAtOnce) save({ workersAtOnce: next.data })
+    if (next.data !== draft.workersAtOnce) save({ workersAtOnce: next.data })
   }
   const toggle = (provider: ProviderId, on: boolean): void => {
     const list = new Set(allowed)
     if (on) list.add(provider); else list.delete(provider)
-    setPressed(list)
     save({ providers: [...list] })
   }
   return <div className="dynamic-threads" data-setting="dynamic-threads">
@@ -62,7 +74,7 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
       <p className="dynamic-threads__note tt-paragraph"><Trans>Your code goes to the company behind each provider ticked here. A provider off this list is never used, even if your message names it.</Trans></p>
       {connected.map(provider => {
         const quota = quotas.find(item => item.providerId === provider), limit = limitWords(quota)
-        const name = PROVIDER_LABELS[provider], company = PROVIDER_COMPANIES[provider]
+        const name = PROVIDER_LABELS[provider], company = companyWords(provider)
         const used = limit?.used, window = limit?.label
         return <label key={provider} className="dynamic-threads__provider">
           <input type="checkbox" checked={allowed.has(provider)} onChange={event => toggle(provider, event.target.checked)} />
@@ -75,7 +87,7 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
       {connected.length === 0 ? <p className="dynamic-threads__note tt-paragraph"><Trans>No provider is connected yet.</Trans></p> : null}
     </fieldset>
     <Field label={t`Highest effort`} description={t`For any worker. Ultracode is only ever yours to choose, on your own thread.`}>
-      <Select value={settings.highestEffort} onChange={event => { const next = dynamicEffortSchema.safeParse(event.target.value); if (next.success) save({ highestEffort: next.data }) }}>
+      <Select value={draft.highestEffort} onChange={event => { const next = dynamicEffortSchema.safeParse(event.target.value); if (next.success) save({ highestEffort: next.data }) }}>
         {DYNAMIC_EFFORTS.map(effort => <option key={effort} value={effort}>{effortLabel(effort)}</option>)}
       </Select>
     </Field>

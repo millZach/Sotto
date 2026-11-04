@@ -1282,7 +1282,7 @@ Each worker is a delegated thread. Its row under **Worked for** names the model 
 
 **Settings → Threads** holds the limits every Dynamic thread works inside:
 
-- **What it may use.** Your code goes to the company behind each provider ticked here. A provider off the list is never used, even if your message names it. The first time you turn Dynamic on, a question names these companies, and your answer makes the list, so a provider you connect later doesn't join it on its own. A provider that reports no limits starts unticked, since it would be chosen blind.
+- **What it may use.** Your code goes to the company behind each provider ticked here. A provider off the list is never used, even if your message names it. The first time you turn Dynamic on, a question names these companies, unless you have already changed the list here. **Turn on** makes the list, so a provider you connect later doesn't join it on its own, and **Choose providers** opens it here and turns nothing on. OpenCode has no company of its own: its work goes to the model source its model runs on. A provider that reports no limits starts unticked, since it would be chosen blind.
 - **Highest effort.** A higher one is held to this, and the worker's row says so. Ultracode is only ever yours to choose, on your own thread.
 - **Workers at once.** The overseer starts the next as one returns. Your ceiling for the computer still applies.
 

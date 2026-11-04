@@ -6239,6 +6239,11 @@ msgstr ""
 msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
 msgstr ""
 
+#. Who an OpenCode thread's work goes to, in a list of companies such as Anthropic and OpenAI.
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "OpenCode's model sources"
+msgstr ""
+
 #. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "opened {url}"

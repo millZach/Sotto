@@ -9,6 +9,20 @@ import { fixture, LiveThread, mount, setupThreadOptionsTests, withThread } from 
 setupThreadOptionsTests()
 
 describe('composer option chips', () => {
+  it('stays standing when a started thread\'s provider gains what it can configure', () => {
+    const started = fixture()
+    const thread = { ...started.host.threads[0]!, nativeSessionStarted: true, providerId: 'claude' as const }
+    const able = { ...started, host: { ...started.host, threads: [thread], capabilities: { ...started.host.capabilities, configureThread: true },
+      providers: started.host.providers!.map(item => ({ ...item, capabilities: { ...item.capabilities, configureThread: true } })) } }
+    const unable = { ...able, host: { ...able.host, capabilities: { ...able.host.capabilities, configureThread: false },
+      providers: able.host.providers!.map(item => ({ ...item, capabilities: { ...item.capabilities, configureThread: false } })) } }
+    const offer = { models: [], unavailable: [], refusal: null, onContinue: vi.fn() }
+    const command = vi.fn(() => deferred<AgentState>().promise)
+    const { rerender } = render(<ThreadOptions thread={thread} state={unable} command={command} continueOffer={offer} />)
+    rerender(<ThreadOptions thread={thread} state={able} command={command} continueOffer={offer} />)
+    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled()
+  })
+
   it('shows the model with its provider mark, the effort and the permissions as three chips', () => {
     mount()
     const model = screen.getByRole('combobox', { name: 'Thread model' })

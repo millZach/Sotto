@@ -1,4 +1,5 @@
 import React, { useRef, useState, type ReactNode } from 'react'
+import { t as translate } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState, AgentThread, ProviderId } from '../../../shared/agents'
 import { DEFAULT_DYNAMIC_THREADS, isDynamicThread, PROVIDER_COMPANIES, whyNotDynamic } from '../../../shared/dynamicThreads'
@@ -15,10 +16,16 @@ export function firstAllowedProviders(state: AgentState): ProviderId[] {
   return [...ready].filter(provider => reportsUsageLimits(provider))
 }
 
+/** Who a provider's work goes to, in the allowed list's words. OpenCode is a client, and what it reaches is whichever model source the model runs on. */
+export function companyWords(provider: ProviderId): string {
+  return provider === 'opencode' ? translate({ message: 'OpenCode\'s model sources', comment: 'Who an OpenCode thread\'s work goes to, in a list of companies such as Anthropic and OpenAI.' }) : PROVIDER_COMPANIES[provider]
+}
+
 /**
  * Dynamic for one thread (ADR-0191): the switch at the foot of its model menu, and the words after the model's name on the
  * chip. The first time it is turned on, a question names the companies the allowed list would send work to, and the answer
- * makes that list, so a provider connected later never joins it. Nothing here exists where the Owl feature is off, on a
+ * makes that list, so a provider connected later never joins it. A list the user made in Settings has named them already.
+ * Nothing here exists where the Owl feature is off, on a
  * provider that cannot oversee yet, on a thread on another machine or on one another thread started.
  */
 export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
@@ -35,8 +42,9 @@ export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
   const set = (dynamic: boolean): void => { void command({ type: 'set-thread-dynamic', threadId: thread.id, dynamic }) }
   const list = app?.settings?.dynamicThreads
   const offered = enabled && whyNotDynamic(thread) === undefined
-  const providers = firstAllowedProviders(state)
-  const companies = providers.map(provider => PROVIDER_COMPANIES[provider]).join(', ')
+  // The thread's own provider has its code already, whether or not it is ready just now.
+  const providers = [...new Set([...thread.providerId ? [thread.providerId] : [], ...firstAllowedProviders(state)])]
+  const companies = providers.map(companyWords).join(', ')
   const makeList = (): Promise<boolean> | undefined => app?.actions.updateSettings({ dynamicThreads: { ...list ?? DEFAULT_DYNAMIC_THREADS, providers } })
   const began = thread.nativeSessionStarted !== false
   const description = fixed ? t`It can change once this turn finishes.`
@@ -58,10 +66,10 @@ export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
         set(true)
         return true
       }}
-      // The dialog closes through this after a confirm too, so only the other button goes on to the list.
+      // The dialog closes through this after a confirm too, so only the other button goes on to the list, which turns nothing on.
       onCancel={() => {
         setAsking(false)
         if (confirmed.current) { confirmed.current = false; return }
-        void makeList(); set(true); app?.actions.navigate('settings', 'settings-agents', 'dynamic-threads')
+        app?.actions.navigate('settings', 'settings-agents', 'dynamic-threads')
       }} /> : null }
 }

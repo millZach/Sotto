@@ -588,6 +588,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // Where the thread's own model cannot change in place, its chip lists that model and the providers it may continue on.
   const continueOnly = (current: readonly AgentModel[]): AgentModel[] => [...current.filter(model => model.id === catalogEntry(current, thread.modelId)?.id), ...continuations]
   const stayingWith = providerNameOf(thread)
+  // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
+  const modelId = settings.pending.model?.value ?? drawn.model
+  const model = resolveModel(models, modelId)
+  const modelNameNow = model?.name ?? modelId
+  // Before the return below: a provider's capabilities can change while this bar stays on screen.
+  const dynamic = useDynamicSwitch({ thread, state, command, modelName: modelNameNow, fixed: fixed || busy })
   if (locked && !capabilities.configureThread) {
     if (watcher) return <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })}
       inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={permissionsFixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
@@ -601,10 +607,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     </div>
   }
   const modelDisabled = locked && capabilities.configureThreadModel === false
-  // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
   const confirmedModel = resolveModel(models, thread.modelId)
-  const modelId = settings.pending.model?.value ?? drawn.model
-  const model = resolveModel(models, modelId)
   const keptSpeed = watcher && savedRoleSpeed !== undefined ? savedRoleSpeed : threadSpeed(thread)
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
   // model's default effort, so that is what the effort chip shows meanwhile.
@@ -683,8 +686,6 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     press('fast', next, speedPatch(next, model), unpressed.fast)
     orchestrating?.(modelId, reasoning || null, state.host.models, next === SPEED_STANDARD ? null : next as AgentSpeed)
   }
-  const modelNameNow = model?.name ?? modelId
-  const dynamic = useDynamicSwitch({ thread, state, command, modelName: modelNameNow, fixed: fixed || busy })
   const effortDescription = [settings.pending.effort?.awaiting === 'unconfirmed' ? unconfirmedEffortId : '', settings.pending.fast?.awaiting === 'unconfirmed' ? unconfirmedFastId : ''].filter(Boolean).join(' ')
   const permissions = watcher
     ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
