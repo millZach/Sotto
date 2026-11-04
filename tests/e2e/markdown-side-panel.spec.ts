@@ -157,12 +157,13 @@ for (const appearance of ['dark', 'light'] as const) {
           const preview = page.getByRole('region', { name: 'Preview of plan.md' })
           await expect(preview.getByRole('heading', { name: 'The plan' })).toBeVisible()
           await expect(preview.getByRole('button', { name: /Show in (?:File Explorer|Finder|the file manager)/u })).toBeVisible()
-          // The name stays readable when the head is short of room: the size gives way first, and nothing runs under Source.
+          // The name stays readable when the head is short of room: the size gives way first, then the buttons take a second
+          // row, and nothing runs under Source.
           const name = await preview.locator('.files-preview__name').boundingBox()
           const source = await preview.getByRole('button', { name: 'Source' }).boundingBox()
           expect(name!.width).toBeGreaterThan(30)
           const title = await preview.locator('.files-preview__title').boundingBox()
-          expect(title!.x + title!.width).toBeLessThanOrEqual(source!.x)
+          expect(title!.x + title!.width <= source!.x || title!.y + title!.height <= source!.y).toBe(true)
           // Nothing clips at any size, and the window's controls leave its close clear.
           const close = await preview.getByRole('button', { name: 'Close preview' }).boundingBox()
           expect(close!.x + close!.width).toBeLessThanOrEqual(width)
