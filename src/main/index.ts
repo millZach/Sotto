@@ -1322,7 +1322,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (councilService) { await councilService.recover(); quitHandles.council = councilService }
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
-  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
+  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { dynamic: owlFeatures['dynamic-threads'], roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   // Lets a thread on this computer send Watcher a message when the user tells it to (ADR-0073, November 2, 2026).
   const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
@@ -1465,6 +1465,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
+    delegationService?.privacyChanged()
     const [toDos, chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => localToDos?.privacyChanged()),
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),

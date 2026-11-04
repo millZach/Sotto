@@ -154,6 +154,7 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     case 'PENDING_USER_REQUEST': return t`That thread was waiting for your answer. ${nothing}`
     case 'UNKNOWN_THREAD': return t`That thread is gone or archived, or this thread did not delegate to it. ${nothing}`
     case 'QUEUE_HELD': return t`That thread's own queue was paused, or a message to it had an unknown result, so it takes no brief until you resume, clear or check it there. ${nothing}`
+    case 'PROVIDER_NOT_ALLOWED': return t`That provider is off the list Dynamic threads may use, in Settings under Threads. ${nothing}`
     case 'MACHINE_UNAVAILABLE': return t`The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. ${nothing}`
     case 'BRANCH_UNAVAILABLE': return t`It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. ${nothing} Commit first, then ask again.`
     default: return t`Sotto turned it down. ${nothing}`

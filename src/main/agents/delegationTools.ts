@@ -48,6 +48,12 @@ const WHERE_HOST = `A new thread starts on this machine, the one this thread run
 /** With the desktop relay (#1316), a thread on a headless host may start a thread on This computer too, while it is connected. */
 const WHERE_HOST_RELAY = `A new thread starts on this machine, the one this thread runs on. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) to start it elsewhere: Sotto asks This computer, which starts it on This computer or on another machine it is connected to, under the user's own rules, and only while This computer is connected to this machine; otherwise it is refused and nothing is queued. from_my_branch and test_run work there too: This computer moves your branch, or a check's snapshot, to that machine first, and a check waits in that machine's own queue. A system never falls back to another. The result's placement says where it started.`
 const LIST_MACHINES_INPUT = z.object({}).strict()
+/** The call's schema where Dynamic threads are off: no thread there has a reason to give or a piece to move. */
+function withoutDynamicFields(input: Record<string, unknown>): Record<string, unknown> {
+  const { why: _why, replaces: _replaces, ...properties } = input.properties as Record<string, unknown>
+  void _why; void _replaces
+  return { ...input, properties }
+}
 /** Where the delegating thread runs: This computer, the desktop, or a headless host's machine (#1310). */
 export type DelegationPlace = 'this-computer' | 'this-machine'
 
@@ -56,13 +62,15 @@ export type DelegationPlace = 'this-computer' | 'this-machine'
  * Work across machines on (#1032), a new thread may name a machine or a system, and the machines can be listed. On a
  * headless host (`this-machine`, #1310), the words say this machine, and only this machine is listed.
  */
-export function delegationToolDefinitions(roles: boolean, machines = false, place: DelegationPlace = 'this-computer', relay = false, swarms = false): readonly ThreadToolDefinition[] {
-  const delegate = roles
+export function delegationToolDefinitions(roles: boolean, machines = false, place: DelegationPlace = 'this-computer', relay = false, swarms = false, dynamic = false): readonly ThreadToolDefinition[] {
+  const all = roles
     ? swarms ? machines ? delegateByRoleSchema : delegateRoleHereSchema : machines ? delegateSingleByRoleSchema : delegateSingleRoleHereSchema
     : swarms ? machines ? delegateInputSchema : delegateHereSchema : machines ? delegateSingleSchema : delegateSingleHereSchema
+  // A Dynamic thread's overseer gives each worker its reason and can move one (ADR-0191); nothing else is offered them.
+  const delegate = dynamic ? schema(all) : withoutDynamicFields(schema(all))
   const here = place === 'this-machine' ? 'this machine' : 'this computer'
   return [
-    { name: DELEGATE_TOOL, inputSchema: schema(delegate), description: [
+    { name: DELEGATE_TOOL, inputSchema: delegate, description: [
       `Hand work to another thread on ${here}: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.`,
       'The thread is the user\'s to open, answer and stop. It asks the user, never you, for any permission or answer, and nothing you send approves anything.',
       roles ? NEW_THREAD_BY_ROLE : NEW_THREAD_BY_NAME,
@@ -100,9 +108,9 @@ export class DelegationToolServer implements ScopedThreadTools {
   /** Above the longest wait, so the call returns working before Codex's and Claude Code's clients give up on it (decision 8). */
   readonly timeoutMs = (DELEGATION_WAIT_MAX_SECONDS + 30) * 1000
   private readonly server: ThreadToolServer
-  constructor(private readonly service: DelegationService, options: { roles?: boolean; machines?: boolean; place?: DelegationPlace; relay?: boolean; swarms?: boolean } = {}) {
+  constructor(private readonly service: DelegationService, options: { roles?: boolean; machines?: boolean; place?: DelegationPlace; relay?: boolean; swarms?: boolean; dynamic?: boolean } = {}) {
     const roles = options.roles === true, machines = options.machines === true, place = options.place ?? 'this-computer'
-    this.definitions = roles || machines || place !== 'this-computer' || options.swarms ? delegationToolDefinitions(roles, machines, place, options.relay === true, options.swarms === true) : DELEGATION_TOOL_DEFINITIONS
+    this.definitions = roles || machines || place !== 'this-computer' || options.swarms || options.dynamic ? delegationToolDefinitions(roles, machines, place, options.relay === true, options.swarms === true, options.dynamic === true) : DELEGATION_TOOL_DEFINITIONS
     this.server = new ThreadToolServer({ name: DELEGATE_MCP_SERVER, serverName: 'sotto-delegate', instructions: instructions(place),
       unavailable: 'Sotto\'s delegation tools are unavailable. Nothing was started.', failed: 'Sotto could not complete this delegation call. Call read_delegation to see where it stands before trying again.',
       maxRequestBytes: 256 * 1024 },

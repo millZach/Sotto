@@ -56,3 +56,10 @@ it('finds every thread below one, both levels, from the snapshot\'s links', () =
   expect(delegatedThreadsBelow(threads, 'child')).toEqual(['grandchild'])
   expect(delegatedThreadsBelow(threads, 'grandchild')).toEqual([])
 })
+
+it('says a delegated thread stopped at a limit, and how to give its piece to another model (ADR-0191)', () => {
+  const id = randomUUID()
+  const text = delegationNewsText(news(id, 'failed'), new Map<string, DelegationNewsDetail>([[id, { limitStop: { provider: 'Codex', resetsAt: '2026-11-04T15:40:00.000Z' } }]]))
+  expect(text).toContain('stopped at Codex\'s usage limit, which resets at 2026-11-04T15:40:00.000Z.')
+  expect(text).toContain('Give the piece to another model and name this delegation in replaces.')
+})

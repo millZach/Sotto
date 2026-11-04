@@ -41,6 +41,17 @@ export function parseDynamicThreadSettings(input: unknown): DynamicThreadSetting
     workersAtOnce: workersAtOnce.success ? workersAtOnce.data : DEFAULT_WORKERS_AT_ONCE }
 }
 
+/** The most a reason line on a worker's row holds (ADR-0191 decision 11). */
+export const DYNAMIC_WHY_MAX = 200
+
+/** What the allowed list holds. Until the user has seen one there is none, so an overseer keeps to its own provider. */
+export const allowedProviders = (settings: DynamicThreadSettings, own: ProviderId | undefined): ReadonlySet<ProviderId> =>
+  new Set(settings.providers ?? (own ? [own] : []))
+
+/** What a provider can do that a model's own efforts, speeds and permissions do not say, for an overseer choosing (ADR-0191 decision 9). */
+export const providerAbilities = (provider: ProviderId, takesSottoTools: boolean): readonly string[] =>
+  [...provider === 'codex' ? ['Computer Use, for clicking and typing in apps'] : [], ...takesSottoTools ? ['Sotto\'s browser, for clicking and typing in a page'] : []]
+
 /** What can hold the mark: a project's thread of this computer, on an overseer's provider, that no thread delegated to. */
 type DynamicThreadFacts = Pick<AgentThread, 'providerId' | 'kind' | 'delegatedBy' | 'remoteHost' | 'archivedAt'>
 

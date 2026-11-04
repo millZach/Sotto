@@ -4049,6 +4049,8 @@ export class AgentControl {
   /** The thread with its scheduled restart while one stands (ADR-0144); as it is while the feature is off. */
   private restartMark<T extends AgentThread>(thread: T): T { return this.limitRestart ? this.limitRestart.publish(thread) : thread }
   /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
+  /** A delegated piece has moved to another model, so its old thread does not restart at the reset (ADR-0191). */
+  cancelLimitRestart(threadId: string): boolean { return this.limitRestart?.cancel(threadId) ?? false }
   private cancelRestart(command: Extract<AgentCommand, { type: 'cancel-restart' }>): AgentState {
     try {
       this.thread(command.threadId)
