@@ -122,6 +122,8 @@ export interface DelegationRead {
   readonly replyUnavailable?: string
   /** The user has sent their own message in the delegated thread since this thread's last brief to it. */
   readonly userSentSince?: boolean
+  /** What Highest effort did to this start's effort, in the words its first result used (ADR-0191). */
+  readonly effortHeld?: string
   /** The delegated thread's turn stopped at this provider's usage limit, so another model could take the piece (ADR-0191). */
   readonly limitStop?: { readonly provider: string; readonly resetsAt?: string }
   /**

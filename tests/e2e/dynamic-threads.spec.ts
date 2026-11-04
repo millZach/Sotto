@@ -124,7 +124,7 @@ test('an overseer starts the model it names inside the list, with its reason, an
       const delegate = (args: Record<string, unknown>) => page.evaluate(async ({ threadId, args }) => {
         const result = await window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: args })
         const text = result.content.find(item => item.type === 'text')
-        return JSON.parse(text && 'text' in text ? text.text : '{}') as { status: string; code?: string; message?: string; effortHeld?: string; delegation?: { thread?: string } }
+        return JSON.parse(text && 'text' in text ? text.text : '{}') as { status: string; code?: string; message?: string; delegation?: { thread?: string; effortHeld?: string } }
       }, { threadId: id, args })
       const worker = { work: 'code-review', brief: 'Review the reconnect fix.', wait_seconds: 0, provider: 'codex', model: 'native:codex:model:gpt-6.1-sol', effort: 'max', permission: 'approval-required', why: 'Another maker\'s read.' }
       // Codex is off the list, and only a press in Settings puts it on.
@@ -133,7 +133,7 @@ test('an overseer starts the model it names inside the list, with its reason, an
       await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4 } }))
       const started = await delegate(worker)
       expect(started, JSON.stringify(started)).toMatchObject({ status: 'ok' })
-      expect(started.effortHeld).toContain('held to high')
+      expect(started.delegation?.effortHeld).toContain('held to high')
       await expect.poll(() => page.evaluate(async parent => {
         const thread = (await window.sotto!.agents!.get()).host.threads.find(item => item.delegatedBy === parent)
         return thread && { provider: thread.providerId, effort: thread.reasoningEffort }

@@ -1465,6 +1465,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
+    delegationService?.privacyChanged()
     const [toDos, chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => localToDos?.privacyChanged()),
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),

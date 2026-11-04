@@ -8474,6 +8474,10 @@ msgstr "That is not an address Sotto can reach. Type it like http://localhost:11
 msgid "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now."
 msgstr "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now."
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "That provider is off the list Dynamic threads may use, in Settings under Threads. {nothing}"
+msgstr "That provider is off the list Dynamic threads may use, in Settings under Threads. {nothing}"
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That server is no longer saved. Nothing was changed."
 msgstr "That server is no longer saved. Nothing was changed."

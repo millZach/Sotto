@@ -16,7 +16,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 const ALL_MODES: AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
 const FIVE = ['low', 'medium', 'high', 'xhigh', 'max']
 
-type Result = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; limitStop?: unknown }; role?: unknown; heldToRole?: string; effortHeld?: string }
+type Result = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; limitStop?: unknown; effortHeld?: string }; role?: unknown; heldToRole?: string }
   | { status: 'refused'; code: string; message: string; delegation?: string }
 
 async function fixture(options: { enabled?: boolean; limits?: Partial<DynamicThreadSettings>; quota?: (provider: ProviderId) => Promise<UsageQuotaRead | undefined> } = {}) {
@@ -100,10 +100,10 @@ it('holds effort to the most Settings allow, and says so, rather than refusing',
   const f = await fixture({ limits: { highestEffort: 'high' } }), parent = await f.overseer()
   const result = f.ok(await f.delegate(parent, f.named('codex', { effort: 'max' })))
   expect(f.created(result.delegation.thread)).toMatchObject({ reasoningEffort: 'high' })
-  expect(result.effortHeld).toContain('Its effort, max, was held to high')
+  expect(result.delegation.effortHeld).toContain('Its effort, max, was held to high')
   const under = f.ok(await f.delegate(parent, f.named('codex', { effort: 'low' })))
   expect(f.created(under.delegation.thread)).toMatchObject({ reasoningEffort: 'low' })
-  expect(under).not.toHaveProperty('effortHeld')
+  expect(under.delegation).not.toHaveProperty('effortHeld')
 })
 
 it('turns away a worker past Workers at once without recording a row, and says what to do', async () => {
@@ -111,8 +111,61 @@ it('turns away a worker past Workers at once without recording a row, and says w
   f.ok(await f.delegate(parent, f.named('codex')))
   const refused = await f.delegate(parent, f.named('codex'))
   expect(refused).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
-  expect((refused as { message: string }).message).toContain('Start this one when one returns')
+  expect((refused as { message: string }).message).toContain('Do this when one returns')
   expect((refused as { delegation?: string }).delegation).toBeUndefined()
+})
+
+it('holds a brief to an existing worker to the limits as they stand now', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const worker = f.ok(await f.delegate(parent, f.named('codex'))).delegation.thread
+  // Its turn ends, so a brief to it is not simply waiting behind that turn.
+  const session = f.workspace.registry.byThread(worker)!.sessionId
+  // The fake keeps only the model, so the effort the worker runs at is set where the provider reports it.
+  Object.assign(f.workspace.adapters.codex.state.threads.find(item => item.id === session)!, { status: 'idle', reasoningEffort: 'high' }); f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  f.setLimits({ providers: ['claude'] })
+  const refused = await f.delegate(parent, { work: 'code-review', brief: 'Another brief', wait_seconds: 0, thread: worker })
+  expect(refused).toMatchObject({ status: 'refused', code: 'PROVIDER_NOT_ALLOWED' })
+  f.setLimits({ providers: ['claude', 'codex'], highestEffort: 'low' })
+  const tooHigh = await f.delegate(parent, { work: 'code-review', brief: 'Another brief', wait_seconds: 0, thread: worker })
+  expect(tooHigh).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect((tooHigh as { message: string }).message).toContain('above the most the user\'s Settings allow now')
+})
+
+it('says on a retry what Highest effort did, and does not ask for why again of a call made before Dynamic was on', async () => {
+  const f = await fixture({ limits: { highestEffort: 'high' } }), parent = await f.overseer()
+  const input = f.named('codex', { effort: 'max', retry_key: randomUUID() })
+  const first = f.ok(await f.delegate(parent, input))
+  expect(first.delegation.effortHeld).toContain('held to high')
+  expect(f.ok(await f.delegate(parent, input)).delegation.effortHeld).toBe(first.delegation.effortHeld)
+  const plain = await f.overseer(false), asked = { work: 'research', brief: 'Synthetic brief', wait_seconds: 0, retry_key: randomUUID() }
+  const start = f.ok(await f.delegate(plain, asked))
+  const binding = f.workspace.registry.byThread(plain)!
+  f.workspace.adapters.claude.state.threads.find(item => item.id === binding.sessionId)!.status = 'idle'; f.workspace.adapters.claude.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'claude' })
+  expect((await f.control.commandShell({ type: 'set-thread-dynamic', threadId: plain, dynamic: true })).error).toBeNull()
+  expect(f.ok(await f.delegate(plain, asked)).delegation.id).toBe(start.delegation.id)
+})
+
+it('treats an effort Sotto cannot place as past the limit, and refuses a model with none at or under it', async () => {
+  const f = await fixture({ limits: { highestEffort: 'high' } }), parent = await f.overseer()
+  f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['low', 'high', 'ultra']
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const held = f.ok(await f.delegate(parent, f.named('codex', { effort: 'ultra' })))
+  expect(f.created(held.delegation.thread)).toMatchObject({ reasoningEffort: 'high' })
+  f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['ultra']
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const refused = await f.delegate(parent, f.named('codex', { effort: 'ultra' }))
+  expect(refused).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect((refused as { message: string }).message).toContain('offers no effort at or under high')
+})
+
+it('turns away a worker that asks for a machine or a system, rather than ignoring it', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const worker = f.ok(await f.delegate(parent, f.named('codex'))).delegation.thread
+  expect(await f.delegate(worker, { work: 'research', brief: 'Synthetic brief', wait_seconds: 0, os: 'windows' })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
 })
 
 it('refuses a swarm and a machine on a Dynamic thread', async () => {
@@ -175,5 +228,23 @@ it('lets go of what a new worker replaces: its restart at the reset, and its tur
   cancel.mockClear()
   const other = await f.overseer()
   f.ok(await f.delegate(other, f.named('claude', { replaces: first.delegation.id })))
+  expect(cancel).not.toHaveBeenCalled()
+})
+
+it('leaves alone what the user has said since in the thread a new worker replaces', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const cancel = vi.fn(() => true)
+  ;(f.control as unknown as { cancelLimitRestart: typeof cancel }).cancelLimitRestart = cancel
+  const first = f.ok(await f.delegate(parent, f.named('codex')))
+  // The worker's turn ends, and the user takes the thread up themselves.
+  const session = f.workspace.registry.byThread(first.delegation.thread)!.sessionId
+  f.workspace.adapters.codex.state.threads.find(item => item.id === session)!.status = 'idle'; f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: first.delegation.thread, draftId: randomUUID(), text: 'My own message there' })).error).toBeNull()
+  await expect.poll(() => f.control.shell().host.threads.find(item => item.id === first.delegation.thread)?.status).toBe('running')
+  const stops = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
+  const before = stops()
+  f.ok(await f.delegate(parent, f.named('claude', { replaces: first.delegation.id })))
+  expect(stops()).toBe(before)
   expect(cancel).not.toHaveBeenCalled()
 })
