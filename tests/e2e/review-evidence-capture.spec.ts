@@ -408,7 +408,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
     await line.click()
-    await focusedPane(page).getByRole('button', { name: /^Plan the split, 3 of 7 done|^Plan, 3 of 7 done/u }).click()
+    await focusedPane(page).getByRole('button', { name: /^Plan the split, 3 of 7 done/u }).click()
     await expect(focusedPane(page).getByRole('list', { name: 'Plan, 3 of 7 done' })).toBeVisible()
     await capture.shoot('steps-expanded', 'The same turn unfolded: the newest six steps, with the plan among them pressed open, three done, one running and three to come.')
     await capture.shoot('steps-expanded', 'The same turn unfolded at a narrower window.', '', { modes: ['dark'], size: [1280, 800] })
