@@ -1,6 +1,6 @@
 # Dynamic threads
 
-Approved by Zach on November 4, 2026, to build in this order. The decisions are in [ADR-0191](../adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md) (number provisional). The mock-up is kept at the tag `prototype/dynamic-mode`.
+Approved by Zach on November 4, 2026, to build in this order. The decisions are in [ADR-0191](../adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md). The mock-up is kept at the tag `prototype/dynamic-mode`.
 
 ## Zach's picks, November 4, 2026
 
@@ -51,7 +51,7 @@ Main first, so the switch never appears before it does something. Each part is o
 
 ## Part 0: ADR, glossary and README
 
-The documents in this change: the ADR, `CONTEXT.md`'s **Dynamic thread** and **Overseer**, and the README paragraph that AGENTS.md asks for before a patch. Tag the prototype. Renumber the ADR if #2170 or another merge takes the number.
+The documents in this change: the ADR, `CONTEXT.md`'s **Dynamic thread** and **Overseer**, and the README paragraph that AGENTS.md asks for before a patch. Tag the prototype.
 
 ## Part 1: #1202
 

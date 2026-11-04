@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted November 4, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/dynamic-mode` (switch A, steps 1). **Number provisional until merge** (`docs/agents/domain.md`): #2170 holds 0190.
+Accepted November 4, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/dynamic-mode` (switch A, steps 1).
 
 It is an Owl feature (`dynamic-threads`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). The build order is `docs/plans/dynamic-threads.md`.
 
