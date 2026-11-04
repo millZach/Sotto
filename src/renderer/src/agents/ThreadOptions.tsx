@@ -61,6 +61,23 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
     default: return undefined
   }
 }
+/**
+ * What each of Codex's four modes does, said as Codex doing it (ADR-0005, Zach's pick on November 4, 2026), in the
+ * interface language. The words are Codex 0.166.0's behaviour under `runtimePolicy` in `src/main/agents/codex.ts`:
+ * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks; Allow edits is
+ * `on-request` in `workspace-write`, where commands inside the project run unasked and the network, other folders and
+ * `.git` need escalation; Auto routes those escalations to Codex's `auto_review` reviewer, a model on the thread's own
+ * model provider, which Sotto sets to OpenAI; Full access is `never` with no sandbox. Read them again when Codex or that
+ * mapping changes.
+ */
+export function codexModeLine(mode: AgentRuntimeMode): string {
+  switch (mode) {
+    case 'approval-required': return t`Codex asks before every command, even one that only reads, and before every edit.`
+    case 'auto-accept-edits': return t`Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.`
+    case 'auto': return t`As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.`
+    case 'full-access': return t`Codex runs any command and edits any file without asking, anywhere on this computer and online.`
+  }
+}
 /** Permissions' glyph, which stands for the value in a narrow composer. */
 export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
@@ -121,7 +138,8 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   const lead = runtimeMode === undefined ? [{ id: '', label: t`Provider default`, disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
-    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode) : undefined
+    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
+      : model?.providerId === 'codex' ? codexModeLine(mode) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }
@@ -192,11 +210,13 @@ function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider
 /**
  * The caption beside the chips while a permission change waits: what is still in force, in the provider's name. What a
  * permission mode still lets the provider do is said as the provider doing it: the difference decides what the
- * provider does on its next tool call, so the caption names the mode in force rather than the one coming.
+ * provider does on its next tool call, so the caption names the mode in force rather than the one coming. Under Codex's
+ * Auto a reviewer model answers in the user's place (#2161), so for Codex that caption says so.
  */
-export function permissionInForceCaption(provider: string, inForce: { readonly runtimeMode?: AgentRuntimeMode | undefined; readonly providerModeName?: string | undefined }): string {
+export function permissionInForceCaption(provider: string, inForce: { readonly runtimeMode?: AgentRuntimeMode | undefined; readonly providerModeName?: string | undefined }, providerId?: string): string {
   const mode = inForce.providerModeName
   if (mode) return t({ message: `${provider} stays on ${mode} until it confirms.`, comment: '{provider} is a provider\'s name or "The provider"; {mode} is the provider\'s own name for a permission mode.' })
+  if (providerId === 'codex' && inForce.runtimeMode === 'auto') return t`Codex’s reviewer still answers what would come to you until it confirms.`
   switch (inForce.runtimeMode) {
     case 'approval-required': return t({ message: `${provider} still asks for approval until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
     case 'auto-accept-edits': return t({ message: `${provider} still makes edits without asking until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
@@ -626,7 +646,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const pendingPermission = settings.pending.permissions ?? null
   const permissionUnconfirmed = pendingPermission?.awaiting === 'unconfirmed'
   const caption = pendingPermission === null || permissionUnconfirmed ? '' : permissionInForceCaption(provider, usesProviderModes(confirmedModel)
-    ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined })
+    ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined },
+  thread.providerId ?? confirmedModel?.providerId)
   const retry = (kind: SettingKind): void => {
     // The speed control is either the bolt or the split chip's effort half.
     // The quiet pill draws the shield outside the bar, at its start, so the chip is looked for in the whole composer.

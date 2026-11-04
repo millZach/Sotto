@@ -377,3 +377,39 @@ describe('a pending setting', () => {
       .toBe('Codex has not confirmed Full access. The thread starts on Full access the next time it is used, and Sotto checks it then.')
   })
 })
+
+// #2161: Codex's menu named its four modes and said nothing about any of them, while Cursor's and DeepSeek Harness's
+// carry a line each. The lines say what Codex 0.166.0 does under the mapping in `codex.ts` (ADR-0005, November 4, 2026).
+describe('Codex’s permission menu', () => {
+  const CODEX_LINES = {
+    'approval-required': 'Codex asks before every command, even one that only reads, and before every edit.',
+    'auto-accept-edits': 'Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.',
+    auto: 'As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.',
+    'full-access': 'Codex runs any command and edits any file without asking, anywhere on this computer and online.',
+  } as const
+
+  it('says under each of the four modes what Codex does without asking, read as part of the option’s name', () => {
+    const state = fixture({ providerId: 'codex', modelId: 'codex:model', runtimeMode: 'auto-accept-edits' })
+    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={vi.fn(async () => state)} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
+    const options = within(screen.getByRole('listbox', { name: 'Thread permissions' })).getAllByRole('option')
+    expect(options.map(option => [option.querySelector('span')?.firstChild?.textContent, option.querySelector('small')?.textContent])).toEqual([
+      ['Ask for approval', CODEX_LINES['approval-required']], ['Allow edits', CODEX_LINES['auto-accept-edits']],
+      ['Auto', CODEX_LINES.auto], ['Full access', CODEX_LINES['full-access']]])
+    // The line is part of the option a screen reader names, and the selected one takes focus as the list opens.
+    expect(options[1]).toHaveAccessibleName(expect.stringContaining(CODEX_LINES['auto-accept-edits']))
+    expect(options[1]).toHaveFocus()
+  })
+
+  it('says while Auto is still in force that Codex’s reviewer answers, not that Codex decides what to ask', () => {
+    expect(permissionInForceCaption('Codex', { runtimeMode: 'auto' }, 'codex')).toBe('Codex’s reviewer still answers what would come to you until it confirms.')
+    expect(permissionInForceCaption('Codex', { runtimeMode: 'auto-accept-edits' }, 'codex')).toBe('Codex still makes edits without asking until it confirms.')
+    expect(permissionInForceCaption('Grok Build', { runtimeMode: 'auto' }, 'grok')).toBe('Grok Build still decides what to ask you about until it confirms.')
+  })
+
+  it('gives another provider’s modes none of Codex’s lines', () => {
+    mount()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
+    expect(within(screen.getByRole('listbox', { name: 'Thread permissions' })).queryByText(/Codex/u)).toBeNull()
+  })
+})

@@ -13,7 +13,7 @@ import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { cursorModeLine } from '../../../src/renderer/src/agents/ThreadOptions'
+import { codexModeLine, cursorModeLine } from '../../../src/renderer/src/agents/ThreadOptions'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { WatcherRoomProvider, targetForThread, watchedTargets } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
@@ -140,7 +140,10 @@ afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe('Watcher’s permissions chip', () => {
   it('sits after model and reasoning with the four modes, Sotto’s names, a line each and the line that holds in every mode', async () => {
-    renderRoom(roomState())
+    const state = stateWithWatcher()
+    // Main names each model's provider; the shared fixture's Codex model leaves it out.
+    state.host.models.find(entry => entry.id === 'codex:gpt')!.providerId = 'codex'
+    renderRoom(roomState(), { state })
     const pane = await watcherPane()
     // After the model (and reasoning where the model offers it), as on Threads.
     const chip = within(pane).getByRole('combobox', { name: 'Watcher’s permissions' })
@@ -149,9 +152,12 @@ describe('Watcher’s permissions chip', () => {
     expect(chip).toHaveTextContent('Ask for approval')
     fireEvent.click(chip)
     const list = screen.getByRole('listbox', { name: 'Watcher’s permissions' })
-    const lines = watcherModeDescriptions('Codex')
+    // A Codex Watcher reads the lines a Codex thread's menu gives (#2161): Allow edits runs commands in the project
+    // without asking, and under Auto Codex's reviewer answers, so the generic lines would be wrong for it.
     expect(within(list).getAllByRole('option').map(option => option.textContent)).toEqual([
-      `Ask for approval${lines['approval-required']}`, `Allow edits${lines['auto-accept-edits']}`, 'AutoCodex decides what to ask you about.', `Full access${lines['full-access']}`])
+      `Ask for approval${codexModeLine('approval-required')}`, `Allow edits${codexModeLine('auto-accept-edits')}`, `Auto${codexModeLine('auto')}`, `Full access${codexModeLine('full-access')}`])
+    expect(within(list).getByRole('option', { name: /^Allow edits/u })).toHaveTextContent('Codex edits files and runs commands in the project without asking.')
+    expect(within(list).getByRole('option', { name: /^Auto/u })).toHaveTextContent('Codex’s own reviewer, a model run by OpenAI, answers what would come to you.')
     expect(within(list).getByRole('option', { name: /Ask for approval/ })).toHaveAttribute('aria-selected', 'true')
     // The line under the list is read, never chosen: it sits outside the listbox.
     const foot = screen.getByText(WATCHER_PERMISSIONS_FOOT)
@@ -226,6 +232,16 @@ describe('Watcher’s permissions chip', () => {
       `Ask for approval${cursorModeLine('approval-required')}`, `Auto${cursorModeLine('auto')}`, `Full access${cursorModeLine('full-access')}`])
     expect(options[0]).toHaveTextContent('It edits files inside the project without asking.')
     expect(options[1]).toHaveTextContent('Its classifier runs on Cursor’s servers')
+  })
+
+  it('gives a Watcher on another provider the general lines, with that provider named under Auto, and none of Codex’s', async () => {
+    const state = stateWithWatcher()
+    state.host.models.find(entry => entry.id === 'codex:gpt')!.providerId = 'claude'
+    renderRoom(roomState(), { state })
+    fireEvent.click(within(await watcherPane()).getByRole('combobox', { name: 'Watcher’s permissions' }))
+    const lines = watcherModeDescriptions('Codex')
+    expect(within(screen.getByRole('listbox', { name: 'Watcher’s permissions' })).getAllByRole('option').map(option => option.textContent)).toEqual([
+      `Ask for approval${lines['approval-required']}`, `Allow edits${lines['auto-accept-edits']}`, `Auto${lines.auto}`, `Full access${lines['full-access']}`])
   })
 
   it('is chosen before Watcher exists, and a new Watcher starts on the remembered mode', async () => {
