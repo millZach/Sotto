@@ -2706,7 +2706,7 @@ private struct ThreadSettingsPill: View {
         if !panel.permissions.isEmpty {
             Menu {
                 ForEach(panel.permissions) { mode in
-                    option(mode.name, line: mode.asks ?? ThreadSettingWords.permissionLine(mode.id, provider: panel.provider), chosen: mode.id == panel.permission) {
+                    option(mode.name, line: mode.asks ?? ThreadSettingWords.permissionLine(mode.id, provider: panel.provider, providerID: panel.providerID, computer: model.name(ref.hostID)), chosen: mode.id == panel.permission) {
                         choose(.permissions, mode.id)
                     }
                     .disabled(!panel.mayChoose(mode))
