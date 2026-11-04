@@ -23,6 +23,8 @@ export interface WebLinkRouter {
   show?(page: BrowserPage): WebLinkResult
   /** Shows a file a message links to in Finder or File Explorer. Only a thread's transcript can: a relative path is read from its folder. */
   revealFile?(path: string): Promise<WebLinkResult>
+  /** Opens a Markdown file a message links to in the side panel (ADR-0120, November 3 amendment). Only a thread's transcript can. */
+  openFile?(path: string): void
 }
 
 function bridgeBrowser(): BrowserBridge | undefined {
@@ -53,13 +55,24 @@ export type BrowserPageRoute = ((page: BrowserPage) => WebLinkResult) | null
 export const BrowserPageRouteContext = createContext<BrowserPageRoute | undefined>(undefined)
 
 /**
+ * Where a Markdown file a message linked opens, for a page with no Tools panel beside its panes (Watcher's room). Left
+ * unset, Tools > Files beside the panes shows it. `readerOf` names the thread whose machine a link's path is on, which is
+ * not always the thread whose message names it.
+ */
+export interface LinkedFileRoute {
+  open(threadId: string, path: string): void
+  readerOf(threadId: string, path: string): string
+}
+export const LinkedFileRouteContext = createContext<LinkedFileRoute | undefined>(undefined)
+
+/**
  * Builds the router for one thread's transcript: web links follow the setting, or the reader's choice for one link.
  * `focused` is whether this is the focused pane (split view can show more than one); an unfocused pane's own click
  * still opens the page, but never pulls the focused thread's Tools open onto a thread the user is not looking at (#331).
  * `show`, when given, takes an opened page where it can be seen instead of Tools beside the panes.
  */
 export function threadLinkRouter(threadId: string, threadTitle: string, bridge: BrowserBridge | undefined, store: ToolsPanelStore = toolsPanelStore, focused = true,
-  show?: (page: BrowserPage) => WebLinkResult): WebLinkRouter {
+  show?: (page: BrowserPage) => WebLinkResult, showFile?: LinkedFileRoute): WebLinkRouter {
   const showPage = (page: BrowserPage): WebLinkResult => {
     if (show) return show(page)
     const shown = store.showBrowserPage(page, focused)
@@ -70,11 +83,15 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
   }
   return {
     show: showPage,
+    openFile(path) {
+      if (showFile) showFile.open(threadId, path)
+      else store.showLinkedFile(threadId, path, focused)
+    },
     async revealFile(path) {
       const files = (window.sotto as { files?: FilesBridge } | undefined)?.files
       if (!files?.revealLink) return { ok: false, message: t`Sotto cannot show files from here. Nothing was opened.` }
       try {
-        const result = await files.revealLink({ threadId, path })
+        const result = await files.revealLink({ threadId: showFile?.readerOf(threadId, path) ?? threadId, path })
         return result.ok ? { ok: true } : { ok: false, message: result.error.message }
       } catch { return { ok: false, message: t`Sotto could not show this file. Nothing was opened.` } }
     },
@@ -112,7 +129,8 @@ export function ThreadWebLinks({ threadId, threadTitle, children, bridge, store,
   const route = useContext(BrowserPageRouteContext)
   // A thread whose browser cannot be shown from here has none to open links in.
   const resolved = route === null || onPairedHost ? undefined : bridge ?? bridgeBrowser()
-  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused, route ?? undefined), [threadId, threadTitle, resolved, store, focused, route])
+  const fileRoute = useContext(LinkedFileRouteContext)
+  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused, route ?? undefined, fileRoute), [threadId, threadTitle, resolved, store, focused, route, fileRoute])
   return <WebLinkRouterContext.Provider value={router}>{children}</WebLinkRouterContext.Provider>
 }
 

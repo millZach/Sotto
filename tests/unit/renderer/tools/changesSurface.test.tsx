@@ -158,6 +158,20 @@ describe('Changes as T3’s diff', () => {
     expect(await within(panel()).findByText('export const ready = true')).toBeInTheDocument()
   })
 
+  it('puts an open linked file away when a file is opened from its name, so Files shows the file pressed', async () => {
+    const user = userEvent.setup()
+    const { store } = setup()
+    await within(panel()).findByText('export const ready = true')
+    act(() => store.showLinkedFile('visual-gate', 'docs/plan.md'))
+    expect(await within(panel()).findByRole('region', { name: 'Preview of plan.md' })).toBeInTheDocument()
+    act(() => store.setSurface('changes'))
+    await user.click(within(block('src/app.ts')).getByRole('button', { name: 'Open src/app.ts' }))
+    expect(store.getSnapshot().surface).toBe('files')
+    expect(await within(panel()).findByRole('region', { name: 'Preview of app.ts' })).toBeInTheDocument()
+    expect(within(panel()).queryByRole('region', { name: 'Preview of plan.md' })).toBeNull()
+    expect(store.linkedFile('visual-gate')).toBeNull()
+  })
+
   it('starts where the diff settings say, keeps what the controls choose, and follows a setting that changes', async () => {
     const user = userEvent.setup()
     const settings = { ...DEFAULT_SETTINGS, diffLayout: 'split' as const, diffHideWhitespace: true, diffFileState: 'collapsed' as const }

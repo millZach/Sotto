@@ -27,21 +27,21 @@ describe('Watcher split persistence', () => {
     const store = new RoomViewStore(storage)
     store.set({ besideId: 'a', share: 0.3 })
     store.set({ besideId: 'b' })
-    expect(store.get()).toEqual({ besideId: 'b', share: 0.3 })
+    expect(store.get()).toEqual({ besideId: 'b', share: 0.3, file: null })
     store.set({ besideId: null })
     store.set({ besideId: 'c' })
-    expect(store.get()).toEqual({ besideId: 'c', share: 0.3 })
+    expect(store.get()).toEqual({ besideId: 'c', share: 0.3, file: null })
     expect([...storage.items.keys()]).toEqual([WATCHER_SHARE_STORAGE_KEY])
     const restarted = new RoomViewStore(storage)
-    expect(restarted.get()).toEqual({ besideId: null, share: 0.3 })
+    expect(restarted.get()).toEqual({ besideId: null, share: 0.3, file: null })
     restarted.set({ besideId: 'd' })
-    expect(restarted.get()).toEqual({ besideId: 'd', share: 0.3 })
+    expect(restarted.get()).toEqual({ besideId: 'd', share: 0.3, file: null })
   })
 
   it.each([null, 'not json', 'null', '"0.3"', '[0.3]', '0', '1', '-1', '1.1', '1e400'])('uses the default when the saved share is %s', text => {
     const storage = new MemoryStorage()
     if (text !== null) storage.setItem(WATCHER_SHARE_STORAGE_KEY, text)
-    expect(new RoomViewStore(storage).get()).toEqual({ besideId: null, share: 0.5 })
+    expect(new RoomViewStore(storage).get()).toEqual({ besideId: null, share: 0.5, file: null })
   })
 
   it.each([0.01, 0.99])('keeps a saved share of %s within both panes’ minimum widths without forgetting it', share => {
@@ -65,7 +65,7 @@ describe('Watcher split persistence', () => {
     expect(store.get().share).toBe(0.5)
     store.set({ share: 0.3 })
     store.set({ besideId: 'b' })
-    expect(store.get()).toEqual({ besideId: 'b', share: 0.3 })
+    expect(store.get()).toEqual({ besideId: 'b', share: 0.3, file: null })
   })
 })
 

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, rename, symlink, open, realpath } from '
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { FilesService, type FilesBinding } from '../../../src/main/files/service'
-import { FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, filePreviewSchema, fileListingSchema, type FilesResult } from '../../../src/shared/files'
+import { FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkPreviewSchema, filePreviewSchema, fileListingSchema, type FilesResult } from '../../../src/shared/files'
 
 const race = vi.hoisted(() => ({ beforeOpen: undefined as (() => Promise<void>) | undefined }))
 vi.mock('node:fs/promises', async importOriginal => {
@@ -39,6 +39,58 @@ async function request(path: string) {
   const listing = value(await service.list({ threadId: 'thread', path: '' }))
   return { threadId: 'thread', path, workspaceId: listing.workspace.workspaceId }
 }
+
+describe('a Markdown file a message links to', () => {
+  const read = (path: string, threadId = 'thread') => service.previewLink({ threadId, path })
+
+  it('reads one inside the thread\'s folder, with or without a location, and names it as the link did', async () => {
+    await mkdir(join(root, 'docs')); await writeFile(join(root, 'docs', 'plan.md'), '# Plan')
+    expect(value(await read('docs/plan.md'))).toEqual({ name: 'plan.md', size: 6, text: '# Plan' })
+    expect(value(await read('docs/plan.md:12')).name).toBe('plan.md')
+    expect(value(await read('docs/plan.md#L3-L9')).name).toBe('plan.md')
+    expect(value(await read(join(root, 'docs', 'plan.md'))).text).toBe('# Plan')
+    expect(revealed).not.toHaveBeenCalled()
+  })
+
+  it('reads an absolute path outside the folder, and holds a relative one inside it', async () => {
+    await writeFile(join(other, 'outside.md'), '# Outside')
+    expect(value(await read(join(other, 'outside.md'))).text).toBe('# Outside')
+    error(await read('../outside/outside.md'), 'path-outside-workspace')
+  })
+
+  it('refuses a link that leads anywhere but a Markdown file, whatever it is called', async () => {
+    await writeFile(join(root, 'secret.txt'), 'key'); await writeFile(join(root, 'notes.md'), 'notes'); await mkdir(join(root, 'folder.md'))
+    error(await read('secret.txt'), 'invalid-request')
+    // A real file whose name only looks like a link's location after Markdown's ending is not Markdown.
+    await writeFile(join(root, 'secret.md#L1'), 'key')
+    error(await read('secret.md#L1'), 'invalid-request')
+    error(await read('folder.md'), 'not-file')
+    error(await read('missing.md'), 'path-unavailable')
+    error(await read('notes.md', 'unknown'), 'thread-unavailable')
+    for (const path of ['\\\\evil.example\\share\\a.md', '//evil.example/share/a.md', '\\\\?\\C:\\a.md', 'C:a.md', 'a\u0000.md']) error(await read(path), 'invalid-request')
+    error(await service.previewLink({ threadId: 'thread', path: 'notes.md', command: 'open' }), 'invalid-request')
+  })
+
+  it('keeps to the size and text limits', async () => {
+    await writeFile(join(root, 'long.md'), 'x'.repeat(FILES_MAX_TEXT_BYTES + 1))
+    error(await read('long.md'), 'too-large')
+    await writeFile(join(root, 'edge.md'), 'x'.repeat(FILES_MAX_TEXT_BYTES))
+    expect(fileLinkPreviewSchema.safeParse(value(await read('edge.md'))).success).toBe(true)
+    await writeFile(join(root, 'binary.md'), Buffer.from([0, 1, 2, 3]))
+    error(await read('binary.md'), 'binary')
+  })
+
+  describe.skipIf(process.platform === 'win32')('links followed', () => {
+    it('refuses a link named as Markdown that leads to a key, and one leaving the folder', async () => {
+      await writeFile(join(other, 'id_rsa'), 'key'); await writeFile(join(other, 'outside.md'), '# Outside')
+      await symlink(join(other, 'id_rsa'), join(root, 'notes.md'))
+      await symlink(join(other, 'outside.md'), join(root, 'escape.md'))
+      error(await read('notes.md'), 'path-outside-workspace')
+      error(await read(join(root, 'notes.md')), 'invalid-request')
+      error(await read('escape.md'), 'path-outside-workspace')
+    })
+  })
+})
 
 describe('thread-bound Files service', () => {
   it('allows unsupported display paths only on unavailable listing entries', async () => {

@@ -18,7 +18,7 @@ import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
-import { fileListingSchema, filePreviewSchema, filesResultSchema, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
+import { fileLinkPreviewSchema, fileListingSchema, filePreviewSchema, filesResultSchema, type FileLinkPreview, type FileLinkRequest, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
 import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
 import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentPage, type SubagentPageRequest } from '../../shared/subagents'
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
@@ -61,6 +61,7 @@ const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderId
 const signInAnswerSchema = hostSignInSchema.nullable()
 const fileListingResultSchema = filesResultSchema(fileListingSchema)
 const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
+const fileLinkPreviewResultSchema = filesResultSchema(fileLinkPreviewSchema)
 const gitListingResultSchema = toolsResultSchema(gitListingSchema)
 const gitReviewResultSchema = toolsResultSchema(gitReviewSchema)
 
@@ -1456,6 +1457,9 @@ export class SocketHostService implements HostService {
   }
   threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> {
     return this.large('thread-files', async () => this.read(filePreviewResultSchema, await this.call({ op: 'thread-file-preview', request })))
+  }
+  threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>> {
+    return this.large('thread-file-links', async () => this.read(fileLinkPreviewResultSchema, await this.call({ op: 'thread-file-link', request })))
   }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> {
     this.offers('thread-changes')

@@ -1604,7 +1604,7 @@ export class DesktopHosts {
       // A question's pages are served by the host's own listener, which this computer reaches where its socket does (ADR-0085).
       pageAddress: token => new URL(`/page/${token}/`, target.browserUrl ?? target.url).href,
       // A thread's Files, Changes and Agents, read on the host (ADR-0025, October 5 amendment).
-      threadFiles: request => socket.threadFiles(request), threadFilePreview: request => socket.threadFilePreview(request),
+      threadFiles: request => socket.threadFiles(request), threadFilePreview: request => socket.threadFilePreview(request), threadFileLink: request => socket.threadFileLink(request),
       gitChanges: request => socket.gitChanges(request), gitReview: request => socket.gitReview(request),
       subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,

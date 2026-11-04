@@ -13,7 +13,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
-import type { FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { HostThreadDelegations } from '../../shared/agentsView'
@@ -311,6 +311,10 @@ export interface HostService {
   threadFiles?(request: FileListRequest): Promise<FilesResult<FileListing>>
   /** One file's preview from a thread's working copy, for Files. */
   threadFilePreview?(request: FileRequest): Promise<FilesResult<FilePreview>>
+  /** Whether this host reads Markdown files a thread's message links to: its Owl answer (ADR-0120, November 3 amendment). */
+  readonly supportsThreadFileLinks?: boolean
+  /** A Markdown file a thread's message links to, for the side panel. */
+  threadFileLink?(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>>
   /** A thread's changed files as Git's status lists them, for Changes. */
   gitChanges?(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>>
   /** A thread's Working tree or Branch changes comparison, for Changes. */
@@ -452,6 +456,8 @@ export class LocalHostService implements HostService {
     pullRequestView?: boolean
     /** Deleting settled threads (ADR-0140), true only when the host's Owl answer turns clearing on. */
     threadDelete?: boolean
+    /** Reads Markdown files a thread's message links to: the Owl answer (ADR-0120, November 3 amendment). */
+    threadFileLinks?: boolean
     /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
     fileStaging?: boolean
     /** The `inline-media` Owl answer (ADR-0170): this host keeps its agents' pictures and answers for them. */
@@ -538,6 +544,7 @@ export class LocalHostService implements HostService {
   }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   get supportsThreadDelete(): boolean { return this.options.threadDelete === true }
+  get supportsThreadFileLinks(): boolean { return this.options.threadFileLinks === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
   get supportsFileStaging(): boolean { return this.options.fileStaging === true }
   /** Reads the threads as the host last published them, without copying them. */
@@ -655,6 +662,7 @@ export class LocalHostService implements HostService {
   // A thread's Files, Changes and Agents, read as the window's own IPC reads them, with the same bounds.
   async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return this.reads().threadFiles(request) }
   async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return this.reads().threadFilePreview(request) }
+  async threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>> { return this.reads().threadFileLink(request) }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return this.reads().gitChanges(request) }
   async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return this.reads().gitReview(request) }
   async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.reads().subagentPage(request) }

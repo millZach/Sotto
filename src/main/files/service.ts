@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { constants, type BigIntStats } from 'node:fs'
-import { open, opendir, realpath, stat } from 'node:fs/promises'
+import { open, opendir, realpath, stat, type FileHandle } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { TextDecoder } from 'node:util'
-import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkRequestSchema, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema,
-  type FileLink, type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
+import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkRequestSchema, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema, isMarkdownFileName, withoutLinkLocation,
+  type FileLink, type FileLinkPreview, type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
 import { rasterImage } from './imagePreview'
 
 export interface FilesBinding { threadId: string; projectId: string; workingDirectory: string; previewOnly?: boolean }
@@ -25,8 +25,47 @@ function inside(root: string, target: string): boolean {
   const path = relative(root, target)
   return path === '' || (!isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`))
 }
+/** A file's whole contents, refused when it changed during the read. */
+async function wholeFile(file: FileHandle, before: BigIntStats): Promise<Buffer> {
+  const bytes = Buffer.alloc(Number(before.size) + 1)
+  let count = 0
+  while (count < bytes.length) {
+    const { bytesRead } = await file.read(bytes, count, bytes.length - count, count)
+    if (!bytesRead) break
+    count += bytesRead
+  }
+  if (BigInt(count) !== before.size || !sameRevision(before, await file.stat({ bigint: true }))) return fail('path-unavailable', 'This file changed while it was being read. Refresh Files and try again.')
+  return bytes.subarray(0, count)
+}
+/** UTF-8 text, or a refusal for anything that reads as binary. */
+function textOf(bytes: Buffer): string {
+  let text: string
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+  catch { return fail('binary', 'This file is not supported UTF-8 text or a raster image.') }
+  // eslint-disable-next-line no-control-regex -- Binary sniffing deliberately checks control bytes.
+  if (/[\x00-\x08\x0b\x0e-\x1f\x7f]/.test(text)) return fail('binary', 'Binary files cannot be previewed as text.')
+  return text
+}
 interface Workspace { value: FileWorkspace; root: string }
+interface LocatedLink { absolutePath: string; stats: BigIntStats; written: string; relativeToThread: boolean }
 interface Target { absolutePath: string; stats: BigIntStats }
+
+/**
+ * Where a link's path leads. An absolute or `~/` path may name anything on this machine; a relative one is read from the
+ * thread's folder, and its caller holds it inside. The path as written wins, then the path without a trailing location.
+ */
+async function locateLink(root: string, path: string): Promise<LocatedLink | null> {
+  const relativeToThread = !/^~(?:[\\/]|$)/u.test(path) && !isAbsolute(path)
+  const located = async (candidate: string): Promise<LocatedLink | null> => {
+    const absolute = relativeToThread ? resolve(root, candidate) : /^~/u.test(candidate) ? resolve(homedir(), candidate.slice(2)) : candidate
+    try {
+      const absolutePath = await realpath(absolute)
+      return { absolutePath, stats: await stat(absolutePath, { bigint: true }), written: candidate, relativeToThread }
+    } catch { return null }
+  }
+  const bare = withoutLinkLocation(path)
+  return await located(path) ?? (bare && bare !== path ? located(bare) : null)
+}
 
 export class FilesService {
   private active = 0
@@ -148,15 +187,7 @@ export class FilesService {
         const before = await file.stat({ bigint: true })
         if (!before.isFile() || !sameRevision(before, target.stats)) return fail('path-unavailable', 'This file changed. Refresh Files and try again.')
         await this.verify(workspace, request.path, target, true)
-        bytes = Buffer.alloc(Number(before.size) + 1)
-        let count = 0
-        while (count < bytes.length) {
-          const { bytesRead } = await file.read(bytes, count, bytes.length - count, count)
-          if (!bytesRead) break
-          count += bytesRead
-        }
-        if (BigInt(count) !== before.size || !sameRevision(before, await file.stat({ bigint: true }))) return fail('path-unavailable', 'This file changed while it was being read. Refresh Files and try again.')
-        bytes = bytes.subarray(0, count)
+        bytes = await wholeFile(file, before)
         await this.verify(workspace, request.path, target, true)
       } finally { await file.close() }
       const base = { workspace: workspace.value, path: request.path, name: basename(request.path), size: bytes.length }
@@ -166,11 +197,7 @@ export class FilesService {
         return { ...base, content: { kind: 'image', mime: image.mime, dataUrl: `data:${image.mime};base64,${bytes.toString('base64')}` } }
       }
       if (bytes.length > FILES_MAX_TEXT_BYTES) return fail('too-large', 'Text previews are limited to 512 KiB.')
-      let text: string
-      try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
-      catch { return fail('binary', 'This file is not supported UTF-8 text or a raster image.') }
-      // eslint-disable-next-line no-control-regex -- Binary sniffing deliberately checks control bytes.
-      if (/[\x00-\x08\x0b\x0e-\x1f\x7f]/.test(text)) return fail('binary', 'Binary files cannot be previewed as text.')
+      const text = textOf(bytes)
       return { ...base, content: { kind: ['.md', '.markdown', '.mdown'].includes(extname(request.path).toLowerCase()) ? 'markdown' : 'text', text } }
     })
   }
@@ -204,21 +231,40 @@ export class FilesService {
       const { threadId, path } = parsed.data
       // Only a live thread on this computer may show files, whatever form the path takes.
       const workspace = await this.workspace(threadId)
-      const relativeToThread = !/^~(?:[\\/]|$)/u.test(path) && !isAbsolute(path)
-      const located = async (candidate: string): Promise<{ absolutePath: string; stats: BigIntStats } | null> => {
-        const absolute = relativeToThread ? resolve(workspace.root, candidate) : /^~/u.test(candidate) ? resolve(homedir(), candidate.slice(2)) : candidate
-        try {
-          const absolutePath = await realpath(absolute)
-          return { absolutePath, stats: await stat(absolutePath, { bigint: true }) }
-        } catch { return null }
-      }
-      const bare = path.replace(/(?:#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?|#page=\d+|:\d+(?:[:-]\d+)?)$/u, '')
-      const found = await located(path) ?? (bare && bare !== path ? await located(bare) : null)
+      const found = await locateLink(workspace.root, path)
       if (!found) return fail('path-unavailable', 'This file is not on this computer, or it has moved. Nothing was opened.')
-      if (relativeToThread && !inside(workspace.root, found.absolutePath)) return fail('path-outside-workspace', 'This link points outside the thread’s folder. Nothing was opened.')
+      if (found.relativeToThread && !inside(workspace.root, found.absolutePath)) return fail('path-outside-workspace', 'This link points outside the thread’s folder. Nothing was opened.')
       if (!found.stats.isFile() && !found.stats.isDirectory()) return fail('path-unavailable', 'This link is not a file or folder. Nothing was opened.')
       await this.dependencies.reveal(found.absolutePath)
       return {}
+    })
+  }
+
+  /**
+   * Reads a Markdown file a thread's message links to, for the side panel (ADR-0120, November 3 amendment), on the machine
+   * the thread runs on. The paths are as for showing a file, and both the path as written and the file it really is must
+   * be Markdown, so a link named `notes.md` that leads to a key is refused. It answers the file's text and the link's own
+   * name, never where the path led.
+   */
+  previewLink(payload: unknown): Promise<FilesResult<FileLinkPreview>> {
+    return this.run(async () => {
+      const parsed = fileLinkRequestSchema.safeParse(payload)
+      if (!parsed.success) return fail('invalid-request', 'This link is not a file path. Nothing was opened.')
+      const { threadId, path } = parsed.data
+      const workspace = await this.workspace(threadId)
+      const found = await locateLink(workspace.root, path)
+      if (!found) return fail('path-unavailable', 'This file is not on the computer this thread runs on, or it has moved. Nothing was opened.')
+      if (found.relativeToThread && !inside(workspace.root, found.absolutePath)) return fail('path-outside-workspace', 'This link points outside the thread’s folder. Nothing was opened.')
+      if (!found.stats.isFile()) return fail('not-file', 'This link is not a file. Nothing was opened.')
+      if (!isMarkdownFileName(found.written) || !isMarkdownFileName(found.absolutePath)) return fail('invalid-request', 'This link does not lead to a Markdown file. Nothing was opened.')
+      if (found.stats.size > BigInt(FILES_MAX_TEXT_BYTES)) return fail('too-large', 'Markdown files open here up to 512 KB. Nothing was opened.')
+      const file = await open(found.absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+      try {
+        const before = await file.stat({ bigint: true })
+        if (!before.isFile() || !sameRevision(before, found.stats)) return fail('path-unavailable', 'This file changed. Read it again.')
+        const bytes = await wholeFile(file, before)
+        return { name: found.written.slice(Math.max(found.written.lastIndexOf('/'), found.written.lastIndexOf('\\')) + 1), size: bytes.length, text: textOf(bytes) }
+      } finally { await file.close() }
     })
   }
 }

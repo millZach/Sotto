@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -43,6 +43,7 @@ import { PullRequestSurface } from './PullRequestSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
 import { FilesSurface, useThreadFiles } from './FilesSurface'
+import { focusLinkOpener } from './linkedFile'
 import { hostThreadChanges, hostThreadFiles } from './hostThreadTools'
 import { useProactiveChanges } from './proactivePanels'
 import type { PathAction } from './filesBrowser'
@@ -259,6 +260,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // Continue as a thread on a finished agent (#1028; Owl only): the agents Codex and Claude Code threads report.
   const startsOn = useThreadStarts()
   const continueModels = thread ? hostForThread(state.host, thread).models : undefined
+  const linkedFile = useSyncExternalStore(store.subscribe, () => thread ? store.linkedFile(thread.id) : null)
   const sourceRepository = thread?.worktree?.git?.isRepository === true, sourceBranch = thread?.worktree?.git?.branch ?? null
   const continuation = useMemo<AgentContinueOptions | undefined>(() => {
     if (!startsOn || !thread || !continueModels || !command || (thread.providerId !== 'codex' && thread.providerId !== 'claude') || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
@@ -478,8 +480,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} machine={hostName} />
   // A paired host pushes no change events: the Changes bridge for its thread asks it on a timer while Changes shows it.
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesFor} platform={platform} onStatus={showStatus}
-    onOpenFile={path => { store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
-  else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={filesFor} platform={platform} onPathAction={pathAction} />
+    onOpenFile={path => { store.closeLinkedFile(thread.id); store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
+  else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={filesFor} platform={platform} onPathAction={pathAction} linkedFile={linkedFile} host={hostName}
+    onCloseLinkedFile={() => { store.closeLinkedFile(thread.id); focusLinkOpener(() => document.getElementById('tools-tab-files')?.focus()) }} />
 
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line
   // of chrome, its work and the working-copy footer; CSS draws the rail on the panel's outer edge.

@@ -3307,6 +3307,10 @@ msgstr ""
 msgid "Make a code"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "Markdown file"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "Match {system}"
 msgstr ""

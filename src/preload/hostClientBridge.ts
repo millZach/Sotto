@@ -28,8 +28,9 @@ export function hostClientBridge<T extends object>(bridge: T): T {
   const domains = new Set(['agents', 'terminal', 'browser', 'cloudIphone', 'gitChanges', 'files', 'subagents', 'requestDrafts', 'memory', 'visuals'])
   // Files, Changes and Agents read a paired host's thread through main, which sends the read to that host (ADR-0025,
   // October 5 amendment): these calls keep another host's key. Every other call naming another host is refused here.
+  // A link's Markdown file is read the same way, and main itself says a link's file cannot be shown in a folder here (ADR-0120).
   const hostReads: Readonly<Record<string, ReadonlySet<string>>> = {
-    files: new Set(['list', 'preview', 'copyPath']), gitChanges: new Set(['list', 'review', 'copyPath']), subagents: new Set(['page', 'assignments']),
+    files: new Set(['list', 'preview', 'copyPath', 'previewLink', 'revealLink']), gitChanges: new Set(['list', 'review', 'copyPath']), subagents: new Set(['page', 'assignments']),
     // An interactive visual's page is asked of main, which says itself that a paired host's page is on another computer.
     visuals: new Set(['open']),
     // A thread on a paired host opens its terminal over SSH from this computer (ADR-0183): main knows the key names a host.

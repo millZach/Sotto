@@ -59,7 +59,7 @@ import { createCloudIphoneBridge } from './cloudIphone'
 import { createThemesBridge } from './themes'
 import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS, omarchySetupCommandSchema, omarchySetupStateSchema, type OmarchySetupBridge } from '../shared/omarchySetup'
 import { speechModelListSchema, speechModelStatusSchema } from '../shared/speechModel'
-import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, fileLinkRequestSchema, fileLinkSchema, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK, fileLinkPreviewSchema, fileLinkRequestSchema, fileLinkSchema, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, gitChangedFilesSchema } from '../shared/gitChangedFiles'
@@ -245,6 +245,7 @@ const fileListingResultSchema = filesResultSchema(fileListingSchema)
 const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
 const filePathResultSchema = filesResultSchema(filePathSchema)
 const fileLinkResultSchema = filesResultSchema(fileLinkSchema)
+const fileLinkPreviewResultSchema = filesResultSchema(fileLinkPreviewSchema)
 const requestDraftsSchema = requestDraftSchema.array()
 const requestDraftResultSchema = requestDraftSchema.nullable()
 const dictationRecordResultSchema = dictationRecordSchema.nullable()
@@ -648,6 +649,7 @@ export function createSottoBridge(
       copyPath: request => invokeParsed(renderer, FILES_COPY_PATH, filePathResultSchema, fileRequestSchema.parse(request)),
       reveal: request => invokeParsed(renderer, FILES_REVEAL, filePathResultSchema, fileRequestSchema.parse(request)),
       revealLink: request => invokeParsed(renderer, FILES_REVEAL_LINK, fileLinkResultSchema, fileLinkRequestSchema.parse(request)),
+      previewLink: request => invokeParsed(renderer, FILES_PREVIEW_LINK, fileLinkPreviewResultSchema, fileLinkRequestSchema.parse(request)),
     }),
     memory: Object.freeze<MemoryBridge>({
       get: () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),

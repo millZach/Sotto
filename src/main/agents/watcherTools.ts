@@ -150,14 +150,14 @@ export class WatcherToolServer implements WatcherProfileTools {
    * `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles; `pullRequestNews`
    * says Watcher's pull request news runs (ADR-0144).
    */
-  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean; swarms?: boolean; moves?: WatcherMoveProposals | undefined; teams?: WatcherTeamTools | undefined; toDos?: Pick<ToDoAdder, 'forWatcher'> | undefined } = {}) {
+  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean; swarms?: boolean; markdownLinks?: boolean; moves?: WatcherMoveProposals | undefined; teams?: WatcherTeamTools | undefined; toDos?: Pick<ToDoAdder, 'forWatcher'> | undefined } = {}) {
     const roles = options.roles === true, machines = options.machines === true, pullRequestNews = options.pullRequestNews === true
     this.moves = machines ? options.moves : undefined
     const offered = roles || machines || options.swarms ? watcherToolDefinitions(roles, machines, options.swarms) : WATCHER_TOOL_DEFINITIONS
     this.teams = options.teams
     this.toDos = options.toDos
     this.definitions = this.moves || this.teams || this.toDos ? Object.freeze([...this.toDos ? offered.map(withToDosRead) : offered, ...this.moves ? [PROPOSE_MOVES_DEFINITION] : [], ...this.teams ? TEAM_TOOL_DEFINITIONS : [], ...this.toDos ? [toDoWatcherDefinition] : []]) : offered
-    this.instructions = roles || machines || pullRequestNews || options.swarms || this.teams || this.toDos ? watcherSystemPrompt(roles, machines, pullRequestNews, options.swarms, this.teams !== undefined, this.toDos !== undefined) : undefined
+    this.instructions = roles || machines || pullRequestNews || options.swarms || this.teams || this.toDos || options.markdownLinks ? watcherSystemPrompt(roles, machines, pullRequestNews, options.swarms, this.teams !== undefined, this.toDos !== undefined, options.markdownLinks) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name now or queue, and its result says when a steer went now or queued instead; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },

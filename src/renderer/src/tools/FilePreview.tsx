@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Copy, FolderOutput, WrapText, X } from 'lucide-react'
+import { Copy, FolderOutput, RotateCw, WrapText, X } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -24,12 +24,15 @@ export function revealLabel(platform: string | undefined): string {
 }
 
 function fileName(path: string): string {
-  return path.slice(path.lastIndexOf('/') + 1)
+  return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
 }
 
+/** What the preview draws: a file in the tree, or a Markdown file a message linked, which has no working folder to name. */
+export type ShownPreview = PreviewState | { readonly status: 'ready'; readonly path: string; readonly preview: Pick<FilePreviewValue, 'size' | 'content'> }
+
 export interface FilePreviewProps {
-  readonly files: ThreadFiles
-  readonly preview: PreviewState
+  readonly files: Pick<ThreadFiles, 'markdownView'>
+  readonly preview: ShownPreview
   readonly scrollTop: number
   readonly onScroll: (top: number) => void
   readonly onCopyPath: () => void
@@ -40,6 +43,16 @@ export interface FilePreviewProps {
   readonly onRefreshFolder: () => void
   readonly onMarkdownView: (view: ThreadFiles['markdownView']) => void
   readonly platform?: string | undefined
+  /** Said after the size, as where the file is: "on forge" for a linked file on a paired host. */
+  readonly place?: string | undefined
+  /** Offers Read again, for a linked file: it has no Refresh in a line of chrome above it. */
+  readonly onReadAgain?: (() => void) | undefined
+  /** A linked file's own way of saying what went wrong. */
+  readonly problem?: ((error: FilesError) => ReactNode) | undefined
+  /** What stands under the preview's head and over the file. */
+  readonly under?: ReactNode
+  /** Takes focus once drawn, so the keyboard reads a file a press just opened, and arrow keys scroll it. */
+  readonly takesFocus?: boolean
 }
 
 function PreviewProblem({ error, onRetry, onRefreshFolder }: { error: FilesError; onRetry: () => void; onRefreshFolder: () => void }): ReactNode {
@@ -60,7 +73,7 @@ function PreviewProblem({ error, onRetry, onRefreshFolder }: { error: FilesError
 }
 
 /** The open file: text as text, Markdown through the transcript's safe renderer, rasters from main's data URL. */
-export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, onReveal, onClose, onRetry, onRefreshFolder, onMarkdownView, platform }: FilePreviewProps): ReactNode {
+export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, onReveal, onClose, onRetry, onRefreshFolder, onMarkdownView, platform, place, onReadAgain, problem, under, takesFocus = false }: FilePreviewProps): ReactNode {
   const { t } = useLingui()
   const body = useRef<HTMLDivElement>(null)
   const [wrap, setWrap] = useState(true)
@@ -77,9 +90,14 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
     // Restore only when a preview arrives, not while the reader scrolls.
   }, [preview.status, preview.path])
 
+  useLayoutEffect(() => {
+    if (takesFocus) body.current?.focus({ preventScroll: true })
+    // Once, as it opens; a later read must not pull focus back.
+  }, [])
+
   let content: ReactNode
   if (preview.status === 'loading') content = <p className="files-preview__loading" role="status">{t`Loading…`}</p>
-  else if (preview.status === 'error') content = <PreviewProblem error={preview.error} onRetry={onRetry} onRefreshFolder={onRefreshFolder} />
+  else if (preview.status === 'error') content = problem ? problem(preview.error) : <PreviewProblem error={preview.error} onRetry={onRetry} onRefreshFolder={onRefreshFolder} />
   else if (ready!.content.kind === 'image') {
     const source = trustedImageSource(ready!.content)
     content = source
@@ -98,16 +116,18 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
     <header className="files-preview__head">
       <div className="files-preview__title" title={preview.path}>
         <span className="files-preview__name">{name}</span>
-        <span className="files-preview__meta">{size ? t({ message: `${size} · Read only`, comment: '{size} is a file size, as in "12 KB".' }) : t`Read only`}</span>
+        <span className="files-preview__meta">{[size ? t({ message: `${size} · Read only`, comment: '{size} is a file size, as in "12 KB".' }) : t`Read only`, place].filter(Boolean).join(' · ')}</span>
       </div>
       <div className="files-preview__actions">
         {renderable ? <button type="button" className="files-toggle tt-focusable" aria-pressed={!rendered} onClick={() => onMarkdownView(rendered ? 'source' : 'rendered')}>{t({ message: 'Source', comment: 'Shows a Markdown file as its source text rather than rendered.' })}</button> : null}
         {ready && ready.content.kind !== 'image' && !rendered ? <button type="button" className="files-icon tt-focusable" aria-label={t`Wrap lines`} title={wrap ? t`Wrap lines: on` : t`Wrap lines: off`} aria-pressed={wrap} onClick={() => setWrap(value => !value)}><WrapText size={16} aria-hidden="true" /></button> : null}
+        {onReadAgain ? <button type="button" className="files-icon tt-focusable" aria-label={t`Read ${name} again`} title={t`Read again`} onClick={onReadAgain}><RotateCw size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label={t`Copy path of ${name}`} title={t`Copy path`} onClick={onCopyPath}><Copy size={16} aria-hidden="true" /></button>
         {onReveal ? <button type="button" className="files-icon tt-focusable" aria-label={t({ message: `${reveal}: ${name}`, comment: '{reveal} is "Show in File Explorer" or the like; {name} is a file name.' })} title={reveal} onClick={onReveal}><FolderOutput size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label={t`Close preview`} title={t`Close preview`} onClick={onClose}><X size={16} aria-hidden="true" /></button>
       </div>
     </header>
-    <div ref={body} className="files-preview__body" data-kind={ready?.content.kind} onScroll={event => onScroll(event.currentTarget.scrollTop)}>{content}</div>
+    {under}
+    <div ref={body} className="files-preview__body" tabIndex={takesFocus ? 0 : undefined} aria-label={takesFocus ? t({ message: `${name} contents`, comment: '{name} is a file name.' }) : undefined} data-kind={ready?.content.kind} onScroll={event => onScroll(event.currentTarget.scrollTop)}>{content}</div>
   </section>
 }

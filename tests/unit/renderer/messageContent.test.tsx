@@ -1,7 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentAttachmentPreviewDataSchema } from '../../../src/shared/agents'
 import {
   AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, attachmentTypeLabel, formatAttachmentSize, localFilePath, safeLinkUrl,
@@ -9,11 +9,12 @@ import {
 import { ThreadWebLinks } from '../../../src/renderer/src/tools/webLinks'
 import { SentSkillsContext } from '../../../src/renderer/src/agents/sentSkills'
 import { renderedPlainText } from '../../../src/renderer/src/agents/richActions'
+import { LinkedFileRouteContext } from '../../../src/renderer/src/tools/webLinks'
 
-const owl = vi.hoisted(() => ({ on: true }))
+const owl = vi.hoisted(() => ({ on: true, panel: false }))
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
-  useOwlFeature: (id: string) => id === 'reveal-linked-files' && owl.on,
+  useOwlFeature: (id: string) => id === 'reveal-linked-files' && owl.on || id === 'markdown-side-panel' && owl.panel,
 }))
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII='
@@ -564,6 +565,63 @@ describe('image viewer', () => {
     expect(viewer).toHaveAttribute('data-scope', 'window')
     expect(viewer).not.toHaveTextContent('1 of 1')
     expect(within(viewer).queryByRole('group', { name: 'Images in this message' })).toBeNull()
+  })
+})
+
+describe('a link to a Markdown file', () => {
+  const opened = vi.fn()
+  const route = { open: opened, readerOf: (threadId: string): string => threadId }
+  const inThread = (text: string): ReturnType<typeof render> => render(<LinkedFileRouteContext.Provider value={route}><ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text={text} /></ThreadWebLinks></LinkedFileRouteContext.Provider>)
+  beforeEach(() => { owl.panel = true; opened.mockClear(); (window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn(async () => ({ ok: true as const, value: {} })) } } })
+  afterEach(() => { owl.panel = false; delete (window as { sotto?: unknown }).sotto })
+
+  it('opens in the side panel on a press or Enter, and is never something the window could navigate to', async () => {
+    const user = userEvent.setup()
+    const { container } = inThread('Wrote [the plan](</home/me/docs/plan.md>).')
+    const link = screen.getByRole('link', { name: 'Open /home/me/docs/plan.md in the side panel' })
+    expect(link).not.toHaveAttribute('href')
+    await user.click(link)
+    expect(opened).toHaveBeenLastCalledWith('thread', '/home/me/docs/plan.md')
+    link.focus(); await user.keyboard('{Enter}')
+    expect(opened).toHaveBeenCalledTimes(2)
+    assertInert(container)
+  })
+
+  it('makes a relative path in inline code a link, and leaves other code alone', async () => {
+    inThread('See `docs/plan.md:12`, `README.md`, `npm test` and `a b.md`.')
+    await userEvent.click(screen.getByRole('link', { name: 'Open docs/plan.md:12 in the side panel' }))
+    expect(opened).toHaveBeenLastCalledWith('thread', 'docs/plan.md:12')
+    expect(screen.getByRole('link', { name: 'Open README.md in the side panel' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(2)
+  })
+
+  it('offers the side panel, the folder and the path on its menu, by pointer and by keyboard', async () => {
+    const user = userEvent.setup()
+    inThread('[plan](/home/me/plan.md)')
+    const link = screen.getByRole('link', { name: 'Open /home/me/plan.md in the side panel' })
+    fireEvent.contextMenu(link, { clientX: 20, clientY: 30 })
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Open in side panel', 'Show in File Explorer', 'Copy path'])
+    await user.click(screen.getByRole('menuitem', { name: 'Show in File Explorer' }))
+    expect((window as unknown as { sotto: { files: { revealLink: unknown } } }).sotto.files.revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: '/home/me/plan.md' })
+    link.focus(); await user.keyboard('{Shift>}{F10}{/Shift}')
+    await user.click(screen.getByRole('menuitem', { name: 'Open in side panel' }))
+    expect(opened).toHaveBeenLastCalledWith('thread', '/home/me/plan.md')
+  })
+
+  it('leaves every other file to show in its folder', async () => {
+    inThread('[picture](/home/me/capture.png)')
+    expect(screen.getByRole('link', { name: 'Show /home/me/capture.png in File Explorer' })).toBeInTheDocument()
+  })
+
+  it('still shows in its folder while the Owl answer is off, and stays inert outside a thread', () => {
+    owl.panel = false
+    const { unmount } = inThread('[plan](/home/me/plan.md) and `README.md`')
+    expect(screen.getByRole('link', { name: 'Show /home/me/plan.md in File Explorer' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+    unmount()
+    owl.panel = true
+    render(<MessageContent text="[plan](/home/me/plan.md)" />)
+    expect(screen.queryByRole('link', { name: /plan\.md/u })).toBeNull()
   })
 })
 

@@ -2,16 +2,16 @@
    around them, its rail, lines of chrome and footer, is toolsRail.css. Type: tree rows and controls 14px, file
    text 13px mono, paths and notices 12–13px. */
 
-.tools-panel .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
-.tools-panel .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
-.tools-panel .files-icon:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
-.tools-panel .files-icon[aria-pressed='true'] { color: var(--tt-accent-text); }
-.tools-panel .files-icon--small { width: 28px; height: 28px; min-height: 28px; border-radius: var(--tt-radius-control); }
-:is(.tools-panel, .pane-terminal) .files-link { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
-:is(.tools-panel, .pane-terminal) .files-link:hover { border-color: var(--tt-border); }
-.tools-panel .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
-.tools-panel .files-toggle:not([aria-pressed='true']):hover { border-color: var(--tt-border); color: var(--tt-text); }
-.tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
+:is(.tools-panel, .linked-file) .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+:is(.tools-panel, .linked-file) .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
+:is(.tools-panel, .linked-file) .files-icon:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+:is(.tools-panel, .linked-file) .files-icon[aria-pressed='true'] { color: var(--tt-accent-text); }
+:is(.tools-panel, .linked-file) .files-icon--small { width: 28px; height: 28px; min-height: 28px; border-radius: var(--tt-radius-control); }
+:is(.tools-panel, .pane-terminal, .linked-file) .files-link { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+:is(.tools-panel, .pane-terminal, .linked-file) .files-link:hover { border-color: var(--tt-border); }
+:is(.tools-panel, .linked-file) .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+:is(.tools-panel, .linked-file) .files-toggle:not([aria-pressed='true']):hover { border-color: var(--tt-border); color: var(--tt-text); }
+:is(.tools-panel, .linked-file) .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
 
 /* Files: the tree, and the open file stacked beneath it (side by side once the panel is wide). */
 .files-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
@@ -36,10 +36,11 @@
 
 .files-preview { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .files-preview__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; min-height: 44px; padding: 0 6px 0 16px; border-bottom: 1px solid var(--tt-hairline); }
-.files-preview__title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.files-preview__title { display: flex; flex: 0 1 auto; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; }
 .files-preview__name { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.files-preview__meta { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
-.files-preview__actions { display: flex; align-items: center; gap: 2px; }
+/* Short of room, the size and where the file is give way before its name. */
+.files-preview__meta { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
+.files-preview__actions { display: flex; flex: none; align-items: center; gap: 2px; }
 .files-preview__actions .files-toggle { margin-right: 4px; }
 .files-preview__body { position: relative; flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .files-preview__text { box-sizing: border-box; min-width: 100%; width: max-content; margin: 0; padding: 14px 16px 24px; color: var(--tt-code-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-body); line-height: 1.6; tab-size: 2; white-space: pre; }
@@ -48,12 +49,24 @@
 .files-preview__markdown { padding: 16px 18px 28px; color: var(--tt-text); }
 .files-preview__image { display: grid; place-items: center; min-height: 100%; padding: 16px; }
 .files-preview__image img { display: block; max-width: 100%; height: auto; border-radius: var(--tt-radius-control); background: var(--tt-code-bg); image-rendering: auto; }
+/* A Markdown file a message linked (ADR-0120, November 3 amendment): Files' preview in Tools or in the beside pane's place. */
+.linked-file { --tools-hover: var(--tt-hover); display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.linked-file__back { flex: none; display: flex; align-items: center; min-height: 30px; padding: 0 16px; border-bottom: 1px solid var(--tt-hairline); }
+.linked-file__back-button { padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
+.linked-file__back-button:hover { color: var(--tt-text); }
+.linked-file__notice { flex: none; margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.linked-file .files-preview__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.watcher-room .thread-pane.watcher-beside[data-behind-file] { visibility: hidden; }
+.threads-view .watcher-beside .linked-file .files-preview__head { flex-wrap: wrap; padding-right: calc(6px + var(--threads-pane-inset, 0px)); -webkit-app-region: drag; }
+/* Short of room beside the window's controls, the buttons take a second row, so that the name stays readable. */
+.threads-view .watcher-beside .linked-file .files-preview__title { flex: 1 1 96px; }
+.threads-view .watcher-beside .linked-file .files-preview__actions { -webkit-app-region: no-drag; }
 .files-preview__loading { margin: 0; padding: 16px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 
-:is(.tools-panel, .pane-terminal) .files-problem { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 18px; }
-:is(.tools-panel, .pane-terminal) .files-problem strong { color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; }
-:is(.tools-panel, .pane-terminal) .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
-:is(.tools-panel, .pane-terminal) .files-problem--root { padding-top: 28px; }
+:is(.tools-panel, .pane-terminal, .linked-file) .files-problem { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 18px; }
+:is(.tools-panel, .pane-terminal, .linked-file) .files-problem strong { color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; }
+:is(.tools-panel, .pane-terminal, .linked-file) .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
+:is(.tools-panel, .pane-terminal, .linked-file) .files-problem--root { padding-top: 28px; }
 
 /* Terminal: the thread's shells as tabs, one screen at a time. The screen takes the panel field so the
    xterm canvas and its padding read as one surface. */
@@ -81,8 +94,8 @@
 /* Which machine a shell over SSH is on (ADR-0183). It stays at the narrowest pane: where a shell runs matters more than the branch. */
 .terminal-machine { display: inline-flex; flex: none; align-items: center; gap: 4px; max-width: 140px; margin-right: 4px; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
 .terminal-machine bdi { overflow: hidden; text-overflow: ellipsis; }
-.tools-panel .files-icon:disabled { color: var(--tt-text-faint); opacity: .5; cursor: default; }
-.tools-panel .files-icon:disabled:hover { background: transparent; }
+:is(.tools-panel, .linked-file) .files-icon:disabled { color: var(--tt-text-faint); opacity: .5; cursor: default; }
+:is(.tools-panel, .linked-file) .files-icon:disabled:hover { background: transparent; }
 .terminal-confirm { display: grid; flex: none; gap: 10px; margin: 8px; padding: 12px 14px; border: 1px solid var(--tt-error-border); border-radius: var(--tt-radius-inset); background: var(--tt-error-surface); color: var(--tt-text-2); font-size: var(--tt-type-small); }
 .terminal-confirm p { margin: 0; line-height: 1.5; }
 .terminal-confirm strong { color: var(--tt-text); font-weight: 500; }

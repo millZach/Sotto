@@ -68,12 +68,18 @@ To check one thread's work on another machine, start the worker from that thread
 export const WATCHER_PULL_REQUEST_NEWS_PROMPT = `A watched thread that pushed to a pull request ends its turn instead of watching CI itself: a shell watch dies when Sotto restarts, and pull request news tells you within two minutes once any check fails, before the rest finish, and when the required checks pass. On a failure, send the thread back to classify each failing assertion and return the evidence receipt. After classifying, follow the project's CI procedure if it has one; otherwise fix own-diff failures, merge the base branch when it already carries the fix, rerun failed jobs only for confirmed flakes, diagnose unknown failures, and name one repair owner for a pre-existing failure with no fix in the base. When the required checks pass, send it to merge as the project's notes say. Bug Bot review coverage is visibility only: current means its latest marked review names the head, stale means another commit, missing means no marked review was found, and unknown means the read could not establish coverage. Report it when relevant; never hold a merge for stale, missing or unknown coverage. Coverage grants no approval.`
 
 /**
+ * What Watcher is told while linked Markdown files open in the side panel (ADR-0120, November 3 amendment): Sotto reads a full
+ * path inside a thread's folder from that thread's machine, wherever Watcher runs.
+ */
+export const WATCHER_MARKDOWN_LINKS_PROMPT = `When you name a Markdown file a worker made, or one you made, link it in your reply by its full path as the worker gave it, as in [plan.md](/full/path/to/plan.md). Sotto opens that link in a side panel beside you, read only, from the machine of the thread whose folder holds the file. Do not shorten a worker's path to ~/ or to a relative one: it would be read from your own machine.`
+
+/**
  * Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines,
  * the pull request news of Restart stopped threads, swarms, Teams, and the to-do list in place of the Needs you lines.
  */
-export function watcherSystemPrompt(roles: boolean, machines = false, pullRequestNews = false, swarms = false, teams = false, toDos = false): string {
+export function watcherSystemPrompt(roles: boolean, machines = false, pullRequestNews = false, swarms = false, teams = false, toDos = false, markdownLinks = false): string {
   const base = toDos ? WATCHER_SYSTEM_PROMPT.replace(WATCHER_NEEDS_YOU_LINES, WATCHER_TO_DO_LINES) : WATCHER_SYSTEM_PROMPT
-  return [base, ...roles ? [WATCHER_ROLES_PROMPT] : [], ...machines ? [WATCHER_MACHINES_PROMPT] : [], ...pullRequestNews ? [WATCHER_PULL_REQUEST_NEWS_PROMPT] : [], ...swarms ? [WATCHER_SWARMS_PROMPT] : [], ...teams ? [WATCHER_TEAMS_PROMPT] : []].join('\n')
+  return [base, ...roles ? [WATCHER_ROLES_PROMPT] : [], ...machines ? [WATCHER_MACHINES_PROMPT] : [], ...pullRequestNews ? [WATCHER_PULL_REQUEST_NEWS_PROMPT] : [], ...swarms ? [WATCHER_SWARMS_PROMPT] : [], ...teams ? [WATCHER_TEAMS_PROMPT] : [], ...markdownLinks ? [WATCHER_MARKDOWN_LINKS_PROMPT] : []].join('\n')
 }
 
 /**

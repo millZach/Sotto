@@ -96,7 +96,7 @@ const TOO_LARGE: Record<Oversize, string> = {
   list: 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.',
 }
 /** A thread's tool reads (ADR-0025, October 5 amendment), whose answer too large to send gets the tool sentence. A file preview and a comparison also take the one-at-a-time guard below. */
-const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
+const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-file-link', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
 /** A refusal the client reads: its code, and a sentence, which is the code's own unless the refusal says more. */
 /** `reason` rides along on a pull request read's refusal only (#1290), so the client can say what to do next. */
 class Refusal extends Error { constructor(readonly code: HostErrorCode, message = errors[code], readonly reason?: GitPullRequestReadFailure) { super(message) } }
@@ -419,6 +419,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'delegation-branch-starts' || options.delegationRemote !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Deleting settled threads (ADR-0140) only where the host's Owl answer turns clearing on, and only for a desktop: the
     // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
+    && (feature !== 'thread-file-links' || service.supportsThreadFileLinks === true && service.threadFileLink !== undefined)
     && (feature !== 'thread-delete' || service.supportsThreadDelete === true && (options.admin !== false || options.tailnet !== undefined))
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
@@ -1569,6 +1570,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!service.threadFilePreview) throw new Refusal('invalid_request')
         // Up to 8 MiB of image as about 11 MB of base64: one at a time per peer, on the preview's guard.
         return oneAtATime(peer, () => toolRead(() => service.threadFilePreview!(request.request)))
+      // A Markdown file a thread's message links to (ADR-0120, November 3 amendment): at most 512 KiB of text, one at a time per peer.
+      case 'thread-file-link':
+        if (!offers(peer, 'thread-file-links') || !service.threadFileLink) throw new Refusal('invalid_request')
+        return oneAtATime(peer, () => toolRead(() => service.threadFileLink!(request.request)))
       case 'thread-changes':
         if (!service.gitChanges) throw new Refusal('invalid_request')
         return toolRead(() => service.gitChanges!(request.request))

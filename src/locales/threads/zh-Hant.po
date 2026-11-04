@@ -3026,6 +3026,10 @@ msgstr ""
 msgid "Copy page source"
 msgstr ""
 
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Copy path"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copy reply as Markdown"
 msgstr ""
@@ -3139,6 +3143,10 @@ msgstr ""
 
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Could not copy the link"
+msgstr ""
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Could not copy the path."
 msgstr ""
 
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
@@ -4949,6 +4957,11 @@ msgstr ""
 msgid "Link copied"
 msgstr ""
 
+#. {file} is a path to a Markdown file.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Link: {file}"
+msgstr ""
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Link: {menuHost}"
 msgstr ""
@@ -5856,6 +5869,12 @@ msgstr ""
 msgid "Open"
 msgstr ""
 
+#. {file} is a path to a Markdown file.
+#. {file} is a path to a Markdown file.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Open {file} in the side panel"
+msgstr ""
+
 #. {name} is an attached image's file name.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Open {name}"
@@ -5946,6 +5965,10 @@ msgstr ""
 
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Open in mail app"
+msgstr ""
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Open in side panel"
 msgstr ""
 
 #: src/renderer/src/agents/MessageContent.tsx
@@ -6260,6 +6283,10 @@ msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Paste the key"
+msgstr ""
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Path copied."
 msgstr ""
 
 #. A queued message's state: the queue is paused.
@@ -7563,6 +7590,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Show here"
+msgstr ""
+
+#. {manager} is File Explorer, Finder or the file manager.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Show in {manager}"
 msgstr ""
 
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.

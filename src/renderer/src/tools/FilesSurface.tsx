@@ -4,6 +4,8 @@ import { useLingui } from '@lingui/react/macro'
 import type { FilesBridge, FilesError } from '../../../shared/files'
 import { FilePreview } from './FilePreview'
 import { FileTree } from './FileTree'
+import { LinkedFilePanel } from './LinkedFilePanel'
+import type { LinkedFile } from './linkedFile'
 import { ToolsChrome } from './ToolsChrome'
 import { type FilesBrowserStore, type PathAction, type ThreadFiles } from './filesBrowser'
 
@@ -37,13 +39,18 @@ export interface FilesSurfaceProps {
   readonly bridge: FilesBridge | undefined
   readonly platform?: string | undefined
   readonly onPathAction: (action: PathAction, path: string) => void
+  /** A Markdown file a message linked, which fills Files until it is closed (ADR-0120, November 3 amendment). */
+  readonly linkedFile?: LinkedFile | null | undefined
+  readonly onCloseLinkedFile?: (() => void) | undefined
+  /** The paired host's name for a thread on one. */
+  readonly host?: string | undefined
 }
 
 /**
  * Files for one thread: its line of chrome, then the working-folder tree above its preview, beside it once the panel is
  * wide. A bridge without reveal (a thread on a paired host, whose folder is on that machine) offers no Show in folder.
  */
-export function FilesSurface({ threadId, store, bridge, platform, onPathAction }: FilesSurfaceProps): ReactNode {
+export function FilesSurface({ threadId, store, bridge, platform, onPathAction, linkedFile, onCloseLinkedFile, host }: FilesSurfaceProps): ReactNode {
   const { t } = useLingui()
   const files = useThreadFiles(store, threadId)
   const folder = files?.workspace ? folderName(files.workspace.workingDirectory) : null
@@ -51,6 +58,7 @@ export function FilesSurface({ threadId, store, bridge, platform, onPathAction }
   const chrome = <ToolsChrome title={filesTitle} detail={folder}>
     <button type="button" className="files-icon tt-focusable" aria-label={t`Refresh files`} title={t`Refresh files`} data-busy={files?.refreshing || undefined} onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
   </ToolsChrome>
+  if (linkedFile) return <>{chrome}<LinkedFilePanel key={linkedFile.path} file={linkedFile} host={host} onClose={() => onCloseLinkedFile?.()} /></>
   if (!files) return <>{chrome}<p className="files-preview__loading" role="status">{t`Loading…`}</p></>
   const root = files.listings.get('')
   const rootError = root?.status === 'error' ? root.error : null
