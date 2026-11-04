@@ -1,6 +1,5 @@
 import { plural, t } from '@lingui/core/macro'
 import { shownCount } from '../state/interfaceNumbers'
-import { elapsedLabel } from './rosterTime'
 import { GIT_PULL_REQUEST_MERGE_METHOD_LABELS, type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestLinkSource, type GitPullRequestListItem, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
 
 type Detail = Pick<GitPullRequestDetail, 'state' | 'draft' | 'checks' | 'checksUnknown' | 'reviewDecision' | 'reviews' | 'mergeable' | 'behindBy' | 'canUpdateBranch' | 'baseBranch' | 'url'>
@@ -175,46 +174,10 @@ export function mergeEffect(method: GitPullRequestMergeMethod, base: string): st
   return method === 'squash' ? t`One commit on ${base}` : method === 'rebase' ? t`Every commit, replayed onto ${base}` : t`Every commit, plus a merge commit`
 }
 
-/**
- * The checks in their fold, in the order a reader needs them (as the iPhone's sheet has them, ADR-0102): those
- * that hold the merge back or still run first, then the settled ones, which fold away while any of the first kind stands.
- */
-const CHECK_ORDER: Readonly<Record<GitPullRequestCheck['status'], number>> = { failure: 0, cancelled: 1, 'action-required': 2, pending: 3, success: 4, neutral: 5, skipped: 6 }
-const SETTLED_CHECK: ReadonlySet<GitPullRequestCheck['status']> = new Set(['success', 'neutral', 'skipped'])
-export function checksInOrder(checks: readonly GitPullRequestCheck[]): { readonly standing: readonly GitPullRequestCheck[]; readonly settled: readonly GitPullRequestCheck[] } {
-  const ordered = checks.map((check, index) => ({ check, index })).sort((a, b) => CHECK_ORDER[a.check.status] - CHECK_ORDER[b.check.status] || a.index - b.index).map(({ check }) => check)
-  return { standing: ordered.filter(check => !SETTLED_CHECK.has(check.status)), settled: ordered.filter(check => SETTLED_CHECK.has(check.status)) }
-}
-/** A check's state in a word, beside its icon and colour, so neither has to be read to know it. */
-export function checkWord(check: Pick<GitPullRequestCheck, 'status' | 'startedAt'>): string {
-  switch (check.status) {
-    case 'success': return t({ message: 'Passed', comment: 'A check on a pull request passed.' })
-    case 'failure': return t({ message: 'Failed', comment: 'A check on a pull request failed.' })
-    case 'cancelled': return t({ message: 'Cancelled', comment: 'A check on a pull request was cancelled.' })
-    case 'pending': return check.startedAt ? t({ message: 'Running', comment: 'A check on a pull request is running now.' }) : t({ message: 'Queued', comment: 'A check on a pull request has not started.' })
-    case 'action-required': return t({ message: 'Needs approval', comment: 'A check on a pull request waits for someone to approve it on GitHub.' })
-    case 'skipped': return t({ message: 'Skipped', comment: 'A check on a pull request was skipped.' })
-    case 'neutral': return t({ message: 'Neutral', comment: 'A check on a pull request finished without passing or failing.' })
-  }
-}
-/** How long a check took, or has taken so far as of this read; null where GitHub records no times, as for a status another service posted. */
-export function checkTime(check: Pick<GitPullRequestCheck, 'startedAt' | 'completedAt'>, now = Date.now()): string | null {
-  const started = check.startedAt ? Date.parse(check.startedAt) : Number.NaN
-  if (Number.isNaN(started)) return null
-  const completed = check.completedAt ? Date.parse(check.completedAt) : Number.NaN
-  return elapsedLabel((Number.isNaN(completed) ? now : completed) - started)
-}
-/** A check's name as GitHub's Actions writes it, "workflow / job", cut so the job is what the eye reads. */
-export function checkNameParts(name: string): { readonly group: string | null; readonly own: string } {
-  const at = name.indexOf(' / ')
-  return at > 0 ? { group: name.slice(0, at), own: name.slice(at + 3) } : { group: null, own: name }
-}
 /** The files a pull request changes, the most changed first, as the iPhone's sheet lists them (ADR-0102). */
 export function filesByWeight(files: readonly GitPullRequestFile[]): GitPullRequestFile[] {
   return [...files].sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions) || a.path.localeCompare(b.path))
 }
-/** The full list of a pull request's checks, on GitHub. */
-export const checksOnGitHub = (pullRequestUrl: string): string => `${pullRequestUrl.replace(/[?#].*$/u, '').replace(/\/+$/u, '')}/checks`
 /** A file's path cut into the folder, which recedes, and the name, which is read. */
 export function pathParts(path: string): { readonly folder: string; readonly name: string } {
   const at = path.lastIndexOf('/')

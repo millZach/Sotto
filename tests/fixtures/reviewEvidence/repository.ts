@@ -101,27 +101,23 @@ export type PullRequestMoment = 'checks-running' | 'checks-failed' | 'ready'
 
 /** A time before the capture's held clock, as GitHub would record it. */
 const ago = (minutes: number): string => new Date(E2E_THREADS_NOW - minutes * 60_000).toISOString()
-/** A check run, with how long it took in seconds once it finished, or has taken so far while it runs. */
-const run = (name: string, workflowName: string, status: 'IN_PROGRESS' | 'QUEUED' | 'COMPLETED', conclusion: string | null, id: number, seconds = 0) => {
-  const started = 34 + id
-  return { __typename: 'CheckRun', name, workflowName, status, conclusion, detailsUrl: `${GITHUB_URL}/actions/runs/${id}`,
-    startedAt: status === 'QUEUED' ? null : ago(status === 'IN_PROGRESS' ? seconds / 60 : started), completedAt: status === 'COMPLETED' ? new Date(Date.parse(ago(started)) + seconds * 1_000).toISOString() : null }
-}
+const run = (name: string, workflowName: string, status: 'IN_PROGRESS' | 'QUEUED' | 'COMPLETED', conclusion: string | null, id: number) =>
+  ({ __typename: 'CheckRun', name, workflowName, status, conclusion, detailsUrl: `${GITHUB_URL}/actions/runs/${id}` })
 
 const SUCCESS = 'SUCCESS'
-const LEADING = [run('Greptile Review', 'Greptile', 'COMPLETED', SUCCESS, 1, 94), run('Pull request checks', 'CI', 'COMPLETED', SUCCESS, 2, 41), run('Typecheck and lint', 'CI', 'COMPLETED', SUCCESS, 3, 262)]
+const LEADING = [run('Greptile Review', 'Greptile', 'COMPLETED', SUCCESS, 1), run('Pull request checks', 'CI', 'COMPLETED', SUCCESS, 2), run('Typecheck and lint', 'CI', 'COMPLETED', SUCCESS, 3)]
 const CHECKS: Readonly<Record<PullRequestMoment, readonly ReturnType<typeof run>[]>> = {
   'checks-running': [...LEADING,
-    run('Gates (Windows)', 'CI', 'IN_PROGRESS', null, 4, 512), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5, 388), run('Test shard 2 of 4', 'CI', 'IN_PROGRESS', null, 6, 455),
-    run('Test shard 3 of 4', 'CI', 'IN_PROGRESS', null, 7, 402), run('Test shard 4 of 4', 'CI', 'QUEUED', null, 8), run('Package result', 'CI', 'QUEUED', null, 9), run('Desktop result', 'CI', 'QUEUED', null, 10),
+    run('Gates (Windows)', 'CI', 'IN_PROGRESS', null, 4), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5), run('Test shard 2 of 4', 'CI', 'IN_PROGRESS', null, 6),
+    run('Test shard 3 of 4', 'CI', 'IN_PROGRESS', null, 7), run('Test shard 4 of 4', 'CI', 'QUEUED', null, 8), run('Package result', 'CI', 'QUEUED', null, 9), run('Desktop result', 'CI', 'QUEUED', null, 10),
   ],
   'checks-failed': [...LEADING,
-    run('Gates (Windows)', 'CI', 'COMPLETED', 'FAILURE', 4, 618), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5, 388), run('Test shard 2 of 4', 'CI', 'COMPLETED', 'FAILURE', 6, 571),
-    run('Test shard 3 of 4', 'CI', 'COMPLETED', SUCCESS, 7, 402), run('Test shard 4 of 4', 'CI', 'COMPLETED', SUCCESS, 8, 366), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'IN_PROGRESS', null, 10, 734),
+    run('Gates (Windows)', 'CI', 'COMPLETED', 'FAILURE', 4), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5), run('Test shard 2 of 4', 'CI', 'COMPLETED', 'FAILURE', 6),
+    run('Test shard 3 of 4', 'CI', 'COMPLETED', SUCCESS, 7), run('Test shard 4 of 4', 'CI', 'COMPLETED', SUCCESS, 8), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9), run('Desktop result', 'CI', 'IN_PROGRESS', null, 10),
   ],
   ready: [...LEADING,
-    run('Gates (Windows)', 'CI', 'COMPLETED', SUCCESS, 4, 633), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5, 388), run('Test shard 2 of 4', 'CI', 'COMPLETED', SUCCESS, 6, 571),
-    run('Test shard 3 of 4', 'CI', 'COMPLETED', SUCCESS, 7, 402), run('Test shard 4 of 4', 'CI', 'COMPLETED', SUCCESS, 8, 366), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'COMPLETED', SUCCESS, 10, 1_092),
+    run('Gates (Windows)', 'CI', 'COMPLETED', SUCCESS, 4), run('Test shard 1 of 4', 'CI', 'COMPLETED', SUCCESS, 5), run('Test shard 2 of 4', 'CI', 'COMPLETED', SUCCESS, 6),
+    run('Test shard 3 of 4', 'CI', 'COMPLETED', SUCCESS, 7), run('Test shard 4 of 4', 'CI', 'COMPLETED', SUCCESS, 8), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9), run('Desktop result', 'CI', 'COMPLETED', SUCCESS, 10),
   ],
 }
 

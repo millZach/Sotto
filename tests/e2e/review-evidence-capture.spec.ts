@@ -466,26 +466,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await resizeContentWindowFor(capture.launched, 1600, 1000)
     await closeTools(page)
   } },
-  // The drill-in folded under the plain answer: every check, the changed files, the description, the repository's open pull requests and one of them read.
-  { name: 'pr-detail', covers: ['pr-checks-fold', 'pr-all-checks', 'pr-files', 'pr-review-in-changes', 'pr-description', 'pr-clay', 'pr-open-list', 'pr-other'], run: async capture => {
+  // The drill-in folded under the plain answer: the changed files, the description, the repository's open pull requests and one of them read.
+  { name: 'pr-detail', covers: ['pr-files', 'pr-review-in-changes', 'pr-description', 'pr-clay', 'pr-open-list', 'pr-other'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
-    const scripted = 'The pull request and the repository\'s others live in the scripted gh: checks, times, files and counts are data, read through the real status reader and surface. The files and their counts are the real diff\'s.'
-    await pullRequestMomentRead(capture, 'checks-failed')
-    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
-    const checks = panel.getByRole('button', { name: /^Checks \d+/u })
-    await checks.click()
-    await expect(panel.getByRole('list', { name: 'Checks', exact: true })).toBeVisible()
-    await capture.shoot('pr-checks-fold', 'A failed pull request with its Checks fold opened below Merge: what failed and still runs first, with state and time, and the passed ones folded.', scripted)
-    await resizeContentWindowFor(capture.launched, 820, 560)
-    await panel.locator('.pr-surface__body').evaluate(body => { body.scrollTop += body.querySelector('.pr-surface__checks')!.getBoundingClientRect().top - body.getBoundingClientRect().top - 44 })
-    await capture.shoot('pr-checks-fold', 'The Checks fold at the smallest window, scrolled to: a check\'s state goes under its name.', scripted, { modes: ['dark'], size: [820, 560] })
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
-    await panel.getByRole('button', { name: /^Show \d+ passed$/u }).click()
-    await capture.shoot('pr-all-checks', 'The same fold with the passed checks shown too: every named check, its state, how long it took, and a press to open it.', scripted)
+    const scripted = 'The pull request and the repository\'s others live in the scripted gh: checks, files and counts are data, read through the real status reader and surface. The files and their counts are the real diff\'s.'
     await pullRequestMomentRead(capture, 'ready')
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const files = panel.getByRole('button', { name: /^Changed files/u })
-    await checks.click()
     await files.click()
     await expect(panel.getByRole('list', { name: 'Changed files' })).toBeVisible()
     await capture.shoot('pr-files', 'Ready to merge, with the changed files opened below Merge: the most changed first, each with its added and removed lines.', scripted)
