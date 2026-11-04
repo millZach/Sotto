@@ -30,7 +30,8 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
   const [quotas, setQuotas] = useState<readonly UsageQuotaRead[]>([])
   useEffect(() => {
     let current = true
-    void window.sotto?.usage?.read(here ? { hostIds: [here] } : {}).then(read => { if (current) setQuotas(read.hosts[0]?.quotas ?? []) }).catch(() => undefined)
+    // A refresh rather than a read: nothing has been read until something asks, and this answers from a recent reading where a provider's read is costly.
+    void window.sotto?.usage?.refresh({ background: true, ...here ? { hostIds: [here] } : {} }).then(read => { if (current) setQuotas(read.hosts[0]?.quotas ?? []) }).catch(() => undefined)
     return () => { current = false }
   }, [here])
   const connected = useMemo(() => providerIdSchema.options.filter(provider => state?.host.models.some(model => model.ready && model.providerId === provider)), [state?.host.models])
