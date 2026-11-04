@@ -177,7 +177,12 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
   }
   const questions = pending.params.questions ?? []
   if (!questions.length) throw new Error('Codex did not provide question identifiers. Answer this request in Codex.')
-  if (questionAnswers) return { answers: Object.fromEntries(Object.entries(questionValues(pending.request, questionAnswers)).map(([id, answers]) => [id, { answers }])) }
+  // Codex's own clients send typed words as `user_note: <text>` after any chosen label, so the model and Codex never
+  // read them as the option they spell (Codex 0.166.0, tui/src/bottom_pane/request_user_input/mod.rs; issue #2157).
+  if (questionAnswers) return { answers: Object.fromEntries(Object.entries(questionValues(pending.request, questionAnswers)).map(([id, values]) => {
+    const { optionIds, text } = questionAnswers[id]!
+    return [id, { answers: [...values.slice(0, optionIds.length), ...(text?.trim() ? [`user_note: ${text.trim()}`] : [])] }]
+  })) }
   let values: Record<string, string | string[]> = {}
   if (questions.length > 1) {
     try { values = questionAnswersSchema.parse(JSON.parse(answer)) }
