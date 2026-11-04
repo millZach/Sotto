@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway): Teams pane in Watcher's room</title>
+<style>
+  /* Colours are Sotto's Dark theme (src/shared/themes/palettes.ts, SOTTO_DARK_THEME_COLORS). Font is the app's Figtree (src/shared/fonts). */
+  @font-face { font-family: "Figtree"; src: url("fonts/figtree-latin.woff2") format("woff2"); font-weight: 300 900; font-display: swap; }
+  :root {
+    --canvas: oklch(0.115 0.008 265);
+    --surface: oklch(0.145 0.008 265);
+    --surface-raised: oklch(0.185 0.008 265);
+    --surface-overlay: oklch(0.215 0.008 265);
+    --message: oklch(0.205 0.014 265);
+    --text: oklch(0.985 0.005 280);
+    --muted: oklch(0.72 0.014 265);
+    --border: oklch(0.305 0.02 265);
+    --input: oklch(0.375 0.024 265);
+    --accent: oklch(0.714403 0.104089 183.092);
+    --accent-fg: oklch(0.16 0.012 190);
+    --accent-surface: oklch(0.32 0.05 185);
+    --warning: oklch(0.772406 0.172798 65.367);
+    --error: oklch(0.655108 0.221148 23.473);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--canvas); color: var(--text); }
+  body { font: 15px/1.45 "Figtree", ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
+  button, textarea { font: inherit; color: inherit; }
+  .scene { position: fixed; inset: 0; margin: 0; overflow: hidden; color: var(--muted); opacity: .32;
+    font: 11px/1 ui-monospace, Menlo, Consolas, monospace; white-space: pre; pointer-events: none; }
+  .app { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
+  .strip { display: flex; align-items: center; gap: 14px; padding: 10px 16px; min-height: 52px; }
+  .tile { width: 28px; height: 28px; border-radius: 8px; background: var(--accent-surface); color: var(--text);
+    display: grid; place-items: center; font: 600 11px/1 ui-monospace, Menlo, Consolas, monospace; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .seg { display: inline-flex; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .seg button { background: transparent; border: 0; border-radius: 7px; padding: 6px 12px; color: var(--muted); cursor: pointer; min-height: 32px; }
+  .seg button[aria-selected="true"] { background: var(--surface-overlay); color: var(--text); }
+  .grow { flex: 1; }
+  .chip { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 999px; padding: 5px 11px; color: var(--muted); font-size: 13px; }
+  .needs { text-align: center; font-size: 13px; color: var(--muted); padding: 2px 16px 10px; border-bottom: 1px solid var(--border); margin: 0 16px; }
+  .needs b { color: var(--warning); font-weight: 600; }
+  .stage { flex: 1; min-height: 0; overflow: auto; padding: 18px 16px 12px; }
+  .col-wrap { max-width: 680px; margin: 0 auto; }
+  .art { font: 13px/1.15 ui-monospace, Menlo, Consolas, monospace; color: var(--accent); text-align: center; margin: 4px 0 12px; white-space: pre; }
+  h1 { font-size: 20px; margin: 0; text-align: center; font-weight: 650; }
+  .sub { color: var(--muted); text-align: center; margin: 4px 0 18px; font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 36px; height: 36px; border-radius: 999px; background: var(--accent-surface); display: grid; place-items: center; font-weight: 600; }
+  .grow2 { flex: 1; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .pill { font-size: 12px; border-radius: 999px; padding: 3px 9px; background: var(--surface-raised); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .pill.ok { color: var(--accent); border-color: var(--accent); }
+  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 14px 0; font-size: 14px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; min-height: 38px; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+  .btn.ghost { background: transparent; }
+  .fine { text-align: center; color: var(--muted); font-size: 13px; margin-top: 14px; }
+  .desks-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .order { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
+  .order span { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 13px; }
+  .order b { color: var(--accent); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .col { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; min-width: 0; }
+  .col h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .bubble { border-radius: 12px; padding: 9px 12px; margin: 0 0 3px; max-width: 92%; }
+  .bubble.you { background: var(--surface-overlay); margin-left: auto; }
+  .bubble.them { background: var(--message); }
+  .who { display: block; font-size: 12px; color: var(--accent); margin-bottom: 2px; }
+  .receipt { font-size: 12px; color: var(--muted); text-align: right; margin: 0 2px 10px; }
+  .ask { border: 1px solid var(--warning); border-radius: 12px; padding: 10px 12px; margin-top: 12px; background: var(--surface-raised); }
+  .composer { position: sticky; bottom: 0; margin: 12px auto 0; max-width: 680px; background: var(--surface); border: 1px solid var(--input); border-radius: 14px; padding: 10px 10px 8px; }
+  .composer textarea { width: 100%; min-height: 48px; resize: none; background: transparent; border: 0; outline: none; color: var(--text); }
+  .composer textarea::placeholder { color: var(--muted); }
+  .composer .bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .send { margin-left: auto; width: 34px; height: 34px; border-radius: 999px; border: 0; background: var(--accent); color: var(--accent-fg); font-weight: 700; cursor: pointer; }
+  .dock { align-self: center; display: flex; align-items: center; gap: 6px; background: var(--surface-raised); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px; margin: 8px 0 12px; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  .dock button { background: transparent; border: 0; border-radius: 999px; padding: 7px 14px; color: var(--muted); cursor: pointer; min-height: 34px; }
+  .dock button[aria-current="true"] { background: var(--surface-overlay); color: var(--text); }
+  .dock .owl-btn { font: 600 11px/1 ui-monospace, Menlo, Consolas, monospace; color: var(--text); padding: 7px 10px; }
+  .panel-empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } .strip { flex-wrap: wrap; } .needs { margin: 0 8px; } }
+  @media (max-height: 640px) { .composer textarea { min-height: 30px; } .composer { padding: 6px 8px; } }
+</style>
+</head>
+<body>
+<pre class="scene" id="scene" aria-hidden="true"></pre>
+
+<div class="app">
+  <header class="strip">
+    <div class="brand"><span class="tile" aria-hidden="true">(o,o)</span><span>Watcher</span></div>
+    <div class="seg" role="tablist" aria-label="Watcher's room">
+      <button role="tab" id="tab-watcher" aria-selected="false">Watcher</button>
+      <button role="tab" id="tab-teams" aria-selected="true">Teams</button>
+    </div>
+    <div class="grow"></div>
+    <span class="chip">All threads 9</span>
+  </header>
+  <p class="needs" id="needs"><b>1 needs you</b> · Drake's Watcher asks about #2031</p>
+
+  <main class="stage" id="stage"></main>
+
+  <nav class="dock" aria-label="Rooms">
+    <button>Dictate</button>
+    <button class="owl-btn" aria-label="Watcher's room" aria-current="true">(o,o)</button>
+    <button>Threads</button>
+  </nav>
+</div>
+
+<script>
+// Throwaway prototype. Sample text only. Nothing here is live data, and nothing sends.
+const OWLS = [
+  "         *      .    *        .      *    .        ",
+  "    .        *     ,_,      .      *    ,_,     .  ",
+  "   *    .        (o,o)  . . . . . . (o,o)    *     ",
+  "     .      *     /)_)    tailnet    (_(/     .    ",
+  "   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  ",
+].join("\n");
+
+// The night scene in text characters, drawn once from a fixed seed so it is stable.
+function drawScene() {
+  let seed = 9137;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const cols = 170, rows = 60, glyphs = ".:-=+*#%";
+  const lines = [];
+  for (let r = 0; r < rows; r++) {
+    let line = "";
+    for (let c = 0; c < cols; c++) {
+      const x = rnd();
+      line += x < 0.012 ? "*" : x < 0.03 ? "." : x < 0.05 ? glyphs[Math.floor(rnd() * glyphs.length)] : " ";
+    }
+    lines.push(line);
+  }
+  document.getElementById("scene").textContent = lines.join("\n");
+}
+
+function paneHtml() {
+  return `
+    <div class="col-wrap">
+      <pre class="art" aria-hidden="true">${OWLS}</pre>
+      <h1>Teams</h1>
+      <p class="sub">You and Drake · direct over your tailnet</p>
+      <section class="card" aria-label="Drake">
+        <div class="row">
+          <span class="avatar" aria-hidden="true">D</span>
+          <div class="grow2">
+            <strong>Drake</strong>
+            <div class="muted">forge (sample) · online</div>
+          </div>
+          <span class="pill ok">Watcher ready</span>
+        </div>
+        <dl class="facts">
+          <dt>Open work</dt><dd>3 pull requests (sample)</dd>
+          <dt>Merge order</dt><dd>#2031 yours, then #2039 Drake, then #2036 yours</dd>
+          <dt>Asks you</dt><dd>Hold #2031 until the iPhone fix is pushed (sample)</dd>
+          <dt>Link</dt><dd>Direct over tailnet, re-pairs in 30 days (sample)</dd>
+        </dl>
+        <div class="actions">
+          <button class="btn primary" data-go="desks">Open two desks</button>
+        </div>
+      </section>
+      <p class="fine">This pane sends nothing. Asks go from the desks view.</p>
+    </div>`;
+}
+
+function desksHtml() {
+  return `
+    <div class="col-wrap">
+      <div class="desks-head">
+        <button class="btn ghost" data-go="pane" aria-label="Back to Teams">&larr; Teams</button>
+        <span class="muted">Yours and Drake's Watcher, side by side</span>
+      </div>
+      <div class="order" aria-label="Merge order">
+        <span><b>1</b> #2031 yours</span><span><b>2</b> #2039 Drake</span><span><b>3</b> #2036 yours</span>
+      </div>
+      <div class="cols">
+        <section class="col" aria-label="Yours">
+          <h2>Yours</h2>
+          <div class="bubble you">Coordinate merge priority with Drake's Watcher so we aren't stepping on each other.</div>
+          <div class="receipt">Sent at once · 09:14</div>
+          <div class="bubble you">List what Drake is working on for Sotto.</div>
+          <div class="receipt">Sent at once · 09:16</div>
+        </section>
+        <section class="col" aria-label="Drake's Watcher">
+          <h2>Drake's Watcher</h2>
+          <div class="bubble them"><span class="who">Drake's Watcher</span>I'm on #2039 (iPhone on the unfolded Duo). #2031 touches the same iPhone files, so suggest #2031 merges first and #2039 rebases after.</div>
+          <div class="bubble them"><span class="who">Drake's Watcher</span>Open now: #2039 (in progress), #2035 (waiting for review), #2036 (settle waiting on GitHub's merge).</div>
+          <div class="ask">
+            <div class="muted">Drake's Watcher asks you</div>
+            <div>Can you hold #2031 until I've pushed the iPhone fix?</div>
+            <div class="actions" style="margin-top:8px"><button class="btn primary">Answer in my Watcher</button></div>
+          </div>
+        </section>
+      </div>
+      <form class="composer" onsubmit="return false">
+        <textarea aria-label="Ask Drake's Watcher" placeholder="Ask Drake's Watcher, e.g. coordinate merge priority"></textarea>
+        <div class="bar">
+          <span class="chip">To Drake's Watcher</span>
+          <span class="chip">Sent at once</span>
+          <button class="send" aria-label="Send to Drake's Watcher">&uarr;</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+function watcherHtml() {
+  return `<div class="panel-empty">Watcher's own conversation is unchanged.<br>Teams is the new pane beside it.</div>`;
+}
+
+let view = "pane";
+function render() {
+  const stage = document.getElementById("stage");
+  stage.innerHTML = view === "desks" ? desksHtml() : paneHtml();
+  document.getElementById("tab-teams").setAttribute("aria-selected", "true");
+  document.getElementById("tab-watcher").setAttribute("aria-selected", "false");
+  document.getElementById("needs").style.display = "";
+  document.title = view === "desks" ? "PROTOTYPE: two desks" : "PROTOTYPE: Teams pane";
+  const url = new URL(location.href);
+  url.searchParams.set("view", view);
+  history.replaceState(null, "", url);
+}
+function showWatcher() {
+  document.getElementById("stage").innerHTML = watcherHtml();
+  document.getElementById("tab-teams").setAttribute("aria-selected", "false");
+  document.getElementById("tab-watcher").setAttribute("aria-selected", "true");
+  document.getElementById("needs").style.display = "none";
+}
+
+document.getElementById("stage").addEventListener("click", e => {
+  const go = e.target.closest("[data-go]");
+  if (go) { view = go.dataset.go; render(); }
+});
+document.getElementById("tab-teams").onclick = () => { view = "pane"; render(); };
+document.getElementById("tab-watcher").onclick = showWatcher;
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && view === "desks") { view = "pane"; render(); }
+});
+
+drawScene();
+const start = new URLSearchParams(location.search).get("view");
+view = start === "desks" ? "desks" : "pane";
+render();
+</script>
+</body>
+</html>

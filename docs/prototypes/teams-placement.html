@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway): where Teams sits</title>
+<style>
+  /* Throwaway. Colours are Sotto Dark's, font is the app's Figtree. Sample text only; nothing here sends. */
+  @font-face { font-family: "Figtree"; src: url("fonts/figtree-latin.woff2") format("woff2"); font-weight: 300 900; font-display: swap; }
+  :root {
+    --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265);
+    --overlay: oklch(0.215 0.008 265); --message: oklch(0.205 0.014 265); --text: oklch(0.985 0.005 280);
+    --muted: oklch(0.72 0.014 265); --border: oklch(0.305 0.02 265); --input: oklch(0.375 0.024 265);
+    --accent: oklch(0.714403 0.104089 183.092); --accent-fg: oklch(0.16 0.012 190); --accent-surface: oklch(0.32 0.05 185);
+    --warning: oklch(0.772406 0.172798 65.367);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--canvas); color: var(--text); }
+  body { font: 15px/1.45 "Figtree", ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
+  button, input { font: inherit; color: inherit; }
+  .app { height: 100%; display: flex; flex-direction: column; padding-bottom: 104px; }
+  .head { display: flex; align-items: center; gap: 6px; padding: 8px 14px; flex-wrap: wrap; min-height: 46px; }
+  .tile { width: 26px; height: 26px; border-radius: 7px; background: var(--accent-surface); display: grid; place-items: center; font: 700 10px/1 ui-monospace, Menlo, monospace; }
+  .title { font-weight: 600; margin: 0 8px 0 6px; }
+  .all { color: var(--muted); font-size: 13px; margin-right: 10px; white-space: nowrap; }
+  .ico { width: 34px; height: 34px; border: 0; background: transparent; border-radius: 8px; color: var(--muted); display: grid; place-items: center; cursor: pointer; font-size: 15px; position: relative; }
+  .ico[aria-current="true"] { background: var(--overlay); color: var(--text); }
+  .ico.new::after { content: ""; position: absolute; inset: 1px; border: 1.5px solid var(--accent); border-radius: 8px; }
+  .hair { width: 1px; height: 20px; background: var(--border); margin: 0 6px; }
+  .seg { display: inline-flex; background: var(--raised); border: 1px solid var(--accent); border-radius: 9px; padding: 2px; margin-right: 8px; }
+  .seg button { background: transparent; border: 0; border-radius: 7px; padding: 4px 11px; color: var(--muted); cursor: pointer; font-size: 13px; min-height: 28px; }
+  .seg button[aria-selected="true"] { background: var(--overlay); color: var(--text); }
+  .stage { flex: 1; min-height: 0; overflow: auto; padding: 10px 14px 12px; }
+  .col { max-width: 720px; margin: 0 auto; }
+  .needs { font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); padding: 0 0 10px; margin-bottom: 14px; }
+  .needs b { color: var(--warning); font-weight: 600; }
+  .msg { background: var(--message); border-radius: 12px; padding: 10px 14px; margin: 0 0 10px auto; max-width: 88%; }
+  .msg .who { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .reply { margin: 0 0 12px; padding: 2px 14px; }
+  .mate { border-left: 2px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; padding: 10px 14px; margin: 0 0 12px; }
+  .mate .who { font-size: 12px; color: var(--accent); margin-bottom: 3px; font-weight: 600; }
+  .mate .fine { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .composer { background: var(--surface); border: 1px solid var(--input); border-radius: 14px; padding: 10px 12px; color: var(--muted); margin-top: 16px; }
+  .art { font: 13px/1.3 ui-monospace, Menlo, monospace; color: var(--accent); text-align: center; margin: 6px 0 10px; white-space: pre; overflow: visible; }
+  h1 { font-size: 20px; margin: 0; text-align: center; font-weight: 650; }
+  .sub { color: var(--muted); text-align: center; margin: 4px 0 16px; font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .av { width: 34px; height: 34px; border-radius: 999px; background: var(--accent-surface); display: grid; place-items: center; font-weight: 600; flex: none; }
+  .grow { flex: 1; min-width: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 12px 0; font-size: 14px; }
+  dt { color: var(--muted); } dd { margin: 0; min-width: 0; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 7px 13px; min-height: 36px; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+  .code { font: 600 14px/1.3 ui-monospace, Menlo, monospace; background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 10px 0; word-break: break-all; }
+  input { width: 100%; background: var(--raised); border: 1px solid var(--input); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+  .bar { position: fixed; left: 8px; right: 8px; bottom: 8px; background: var(--overlay); border: 1px solid var(--input); border-radius: 14px; padding: 7px 10px; display: flex; flex-direction: column; gap: 5px; box-shadow: 0 8px 26px rgba(0,0,0,.5); }
+  .bar .line { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+  .bar b { color: var(--muted); font-weight: 500; margin-right: 4px; }
+  .bar button { border: 1px solid var(--border); background: var(--raised); border-radius: 8px; padding: 4px 9px; cursor: pointer; font-size: 13px; }
+  .bar button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+  .bar p { margin: 0; font-size: 12px; color: var(--muted); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="head" id="head"></header>
+  <main class="stage"><div class="col" id="stage"></div></main>
+</div>
+<div class="bar" role="region" aria-label="Prototype controls">
+  <div class="line"><b>Where</b>
+    <button data-v="c">C Page link</button><button data-v="b">B Switch tile</button><button data-v="a">A Tab</button>
+  </div>
+  <div class="line"><b>Show</b>
+    <button data-p="talk">Watcher's conversation</button><button data-p="teams">Teams, linked</button><button data-p="unlinked">Teams, no link</button>
+  </div>
+  <p id="note"></p>
+</div>
+<script>
+const NOTES = {
+  c: 'C: an icon beside Usage, Settings and Help, in Watcher\'s header and the sidebar foot alike (outlined here). It is a page you open now and then. Nothing is added to Watcher\'s room, which stays its conversation (ADR-0152).',
+  b: 'B: a fourth tile on the room switch, after Threads (outlined here). This is the "dock button": the switch is the dock in today\'s app. Teams becomes a room, always one press away, and takes a page shortcut.',
+  a: 'A: tabs beside Watcher, as the first prototype drew them. Zach removed the room\'s tabs on October 27 (ADR-0152), so this one puts them back.'
+};
+const OWLS = ["   ,_,                 ,_,   ","  (o,o) . . . . . . . (o,o)  ","  /)_)     tailnet     (_(\\  "," ~~~~~~~~~~~~~~~~~~~~~~~~~~~ "].join("\n");
+let v = new URL(location.href).searchParams.get('v') || 'c', p = new URL(location.href).searchParams.get('p') || 'talk';
+if (!NOTES[v]) v = 'c';
+function head() {
+  const teams = p !== 'talk';
+  const owlOn = !teams || v !== 'b' && v !== 'c';
+  let h = `<span class="tile" aria-hidden="true">o,o</span><span class="title">${teams && v !== 'a' ? 'Teams' : 'Watcher'}</span><span class="all">All threads 8 &#9662;</span>`;
+  if (v === 'a') h += `<span class="seg" role="tablist"><button role="tab" aria-selected="${!teams}" data-p="talk">Watcher</button><button role="tab" aria-selected="${teams}" data-p="teams">Teams</button></span>`;
+  h += `<button class="ico" aria-label="Dictate" title="Dictate">&#127908;&#xFE0E;</button>`;
+  h += `<button class="ico" aria-label="Watcher" title="Watcher" data-p="talk" aria-current="${owlOn}">o,o</button>`;
+  h += `<button class="ico" aria-label="Threads" title="Threads">&#9776;</button>`;
+  if (v === 'b') h += `<button class="ico new" aria-label="Teams" title="Teams" data-p="teams" aria-current="${teams}">oo</button>`;
+  h += `<span class="hair"></span><button class="ico" aria-label="Usage" title="Usage">&#9636;</button><button class="ico" aria-label="Settings" title="Settings">&#9881;&#xFE0E;</button>`;
+  if (v === 'c') h += `<button class="ico new" aria-label="Teams" title="Teams" data-p="teams" aria-current="${teams}">oo</button>`;
+  h += `<button class="ico" aria-label="Help" title="Help">?</button>`;
+  return h;
+}
+function talk() {
+  return `<p class="needs">No one needs you. <span style="margin-left:8px">This computer 3 working</span></p>
+  <div class="msg"><div class="who">You 9:14 am</div>Coordinate merge priority with Drake's Watcher so we aren't stepping on each other's toes.</div>
+  <p class="reply">I asked Drake's Watcher about merge priority, and told it #2031 and #2036 are yours and open. Its reply will show here.</p>
+  <div class="mate"><div class="who">Drake's Watcher &middot; 9:14 am</div>Open now: #2039, iPhone on the unfolded Duo, checks running. #2035, waiting for review. #2039 and #2031 are both iPhone work, so I'd merge #2031 first and rebase #2039 after.<div class="fine">A teammate's message. It asks nothing of your Watcher and changes nothing here. Your Watcher reads it with your next message.</div></div>
+  <div class="composer">Ask about your threads, or say what to start or send</div>`;
+}
+function teams() {
+  return `<pre class="art" aria-hidden="true">${OWLS}</pre><h1>Teams</h1><p class="sub">You and Drake, direct over your tailnet</p>
+  <section class="card"><div class="row"><span class="av" aria-hidden="true">D</span><div class="grow"><strong>Drake</strong><div class="muted">drake-pc &middot; last asked 9:14 am</div></div><button class="btn">Remove link</button></div>
+   <dl><dt>Link</dt><dd>Lasts until December 3. Link again keeps it going.</dd>
+   <dt>You share</dt><dd>What your threads are called, where each stands, and their pull requests. No messages, code or file names.</dd>
+   <dt>Answers</dt><dd>3 of 20 today, on your own provider account</dd></dl></section>
+  <section class="card"><strong>Latest</strong>
+   <dl><dt>9:14 am</dt><dd>You asked about merge priority. Drake's Watcher answered in your conversation.</dd>
+   <dt>8:52 am</dt><dd>Drake's Watcher asked what you are working on. Your computer answered: "Open now: #2031, iPhone thread list, checks passed…"</dd></dl></section>
+  <p class="muted" style="text-align:center">Sotto says nothing to Drake's computer until one of you asks, so there is no online or offline here.</p>`;
+}
+function unlinked() {
+  return `<pre class="art" aria-hidden="true">${OWLS}</pre><h1>Teams</h1><p class="sub">Let your Watcher and a teammate's talk, direct over your tailnet</p>
+  <section class="card"><strong>Link with a teammate</strong><p class="muted" style="margin:4px 0 10px">Make a code and send it to them. It works once, for 30 minutes, and the link lasts 30 days.</p><button class="btn primary">Make a code</button>
+   <div class="code">sotto-team:laptop-russh2j5.tail5728ca.ts.net:8445:7KQ4-MPX9</div></section>
+  <section class="card"><strong>Got a code?</strong><input aria-label="Code from your teammate" placeholder="Paste your teammate's code"><button class="btn">Link</button></section>
+  <p class="muted" style="text-align:center">Their computer must be able to reach yours on a tailnet. Nothing is shared until one of you asks.</p>`;
+}
+function render() {
+  document.getElementById('head').innerHTML = head();
+  document.getElementById('stage').innerHTML = p === 'talk' ? talk() : p === 'teams' ? teams() : unlinked();
+  document.querySelectorAll('.bar [data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+  document.querySelectorAll('.bar [data-p]').forEach(b => b.setAttribute('aria-pressed', b.dataset.p === p));
+  document.getElementById('note').textContent = NOTES[v];
+  const u = new URL(location.href); u.searchParams.set('v', v); u.searchParams.set('p', p); history.replaceState(null, '', u);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-v],[data-p]'); if (!t) return;
+  if (t.dataset.v) v = t.dataset.v; if (t.dataset.p) p = t.dataset.p; render();
+});
+render();
+</script>
+</body>
+</html>
