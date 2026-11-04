@@ -134,6 +134,14 @@ export function branchLabel(thread: ToolbarThread): string {
   return worktree.git?.branch ?? worktree.branch ?? t`Select ref`
 }
 
+/** Whether the picker's label names a branch or where a new worktree starts from, rather than asking for one (Select ref). */
+export function branchLabelChosen(thread: ToolbarThread): boolean {
+  const worktree = thread.worktree
+  if (!worktree) return false
+  if (newWorktreeDraft(thread)) return true
+  return (worktree.git?.branch ?? worktree.branch) != null
+}
+
 /** Whether the picker's label is a ref's own name, which a right-click copies, rather than Select ref or a new worktree's base. */
 export function branchLabelIsRef(thread: ToolbarThread): boolean {
   const worktree = thread.worktree
