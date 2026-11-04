@@ -14,6 +14,11 @@ enum BenchOpen {
     static let holdsEarly = ProcessInfo.processInfo.arguments.contains("--bench-hold-early")
     /// `--bench-keep-list`: the Threads page hands back the list it last drew while the list made now would draw the same.
     static let keepsList = ProcessInfo.processInfo.arguments.contains("--bench-keep-list")
+    /// `--bench-lazy-list`: the thread list's rows are made as they come into view.
+    static let lazyList = ProcessInfo.processInfo.arguments.contains("--bench-lazy-list")
+    /// `--bench-tap-row`: the journey opens the long thread as a press on its row does, not as a notification does.
+    static let tapsRow = ProcessInfo.processInfo.arguments.contains("--bench-tap-row")
+    nonisolated(unsafe) static let tap = PassthroughSubject<ThreadRef, Never>()
     /// `--bench-why-bodies`: says on the app's standard output why the views above the list draw again, and what published.
     static let saysWhy = ProcessInfo.processInfo.arguments.contains("--bench-why-bodies")
     static func say(_ line: String) {
@@ -123,6 +128,10 @@ import UIKit
         note("turn", ["work": work, "commit": commit])
     }
     /// The long thread opened, then twice more in the same process: what's left on a reopen is what isn't once a launch.
+    private func openLong() {
+        if BenchOpen.tapsRow { BenchOpen.tap.send(long) } else { model?.alertOpened = long }
+    }
+
     private func openJourney() async {
         tracing = true
         watchTurns()
@@ -130,7 +139,7 @@ import UIKit
         mark("open-begin")
         if BenchOpen.holdsEarly { BenchOpen.holdNow.send(()) }
         waiting.insert("rendered-open")
-        model?.alertOpened = long
+        openLong()
         guard await until({ self.marks["rendered-open"] != nil && self.detailsApplied >= 1 }) else { return finish("no-thread") }
         await quiet()
         for round in 1...2 {
@@ -144,7 +153,7 @@ import UIKit
             next(phaseName)
             if BenchOpen.holdsEarly { BenchOpen.holdNow.send(()) }
             waiting.insert("rendered-" + phaseName)
-            model?.alertOpened = long
+            openLong()
             guard await until({ self.marks["rendered-" + phaseName] != nil && self.detailsApplied > applied }) else { return finish("no-reopen") }
             await quiet()
         }
@@ -214,7 +223,7 @@ import UIKit
 
         next("open")
         mark("open-begin")
-        model?.alertOpened = long
+        openLong()
         guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
         await quiet()
 
@@ -260,7 +269,7 @@ import UIKit
     /// line there glows, and so is the bar. Each photo is the report's name and the distance (`look-1-1500.png`).
     private func look() async {
         next("open")
-        model?.alertOpened = long
+        openLong()
         guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
         await quiet()
         next("look")

@@ -29,9 +29,10 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - name: Say why the views above the list draw again
-        timeout-minutes: 40
-        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why"
+      - name: Run the arms in turn
+        # Ten rounds of three arms, two journeys an arm; no round starts after 65 minutes. Then the whole journeys.
+        timeout-minutes: 112
+        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 10 65
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4

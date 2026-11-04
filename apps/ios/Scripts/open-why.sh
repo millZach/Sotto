@@ -1,10 +1,12 @@
 #!/bin/sh
 # What opening a long thread costs, and what part of it comes only once a launch (#2120, #1702). Measuring branch only.
-# One build, one runner, one iPhone 16 Pro Max, from a cold launch: six journeys that say why the views above the list
-# draw again, and what published on the model. Usage:
-#   sh apps/ios/Scripts/open-why.sh <report folder>
+# One build, one runner, one iPhone 16 Pro Max, the arms taking turns from a cold launch: as it stands, the list's rows
+# lazy, and the thread opened as a row's press opens it. Then whole benchmark journeys for what a lazy list does to
+# scrolling, and journeys that say why the views above the list draw again on a row's press. Usage:
+#   sh apps/ios/Scripts/open-why.sh <report folder> <rounds> <minutes to stop starting rounds at>
 set -u
-out=$1
+start=$(date +%s)
+out=$1; rounds=$2; limit=$3
 mkdir -p "$out"
 root=$(git rev-parse --show-toplevel)
 git -C "$root" log -1 --format='%H %s' | tee "$out/source.txt"
@@ -44,7 +46,7 @@ journey() {
     xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true
     sleep 2
     SIMCTL_CHILD_SOTTO_BENCH_FILE="$report" xcrun simctl launch --stdout="${report%.json}.txt" "$device" com.millzach.sotto.ios \
-        --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey open \
+        --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey "${kind:-open}" \
         "$@" -AppleLanguages '(en)' -AppleLocale en_US >/dev/null
     outcome=timed-out
     for _ in $(seq 1 "$seconds"); do
@@ -56,5 +58,35 @@ journey() {
     done
     echo "$(date -u +%H:%M:%SZ) $(basename "$report"): $outcome"
 }
-for run in 1 2 3 4 5 6; do journey "$out/why-$run.json" 180 --bench-why-bodies; done
+arm() {
+    case "$1" in
+        base) journey "$2" "$3" ;;
+        lazy) journey "$2" "$3" --bench-lazy-list ;;
+        tap) journey "$2" "$3" --bench-tap-row ;;
+    esac
+}
+round=1
+while [ "$round" -le "$rounds" ]; do
+    if [ $(( ($(date +%s) - start) / 60 )) -ge "$limit" ]; then echo "Stopped before round $round: past $limit minutes."; break; fi
+    case $((round % 3)) in
+        1) order="base lazy tap" ;;
+        2) order="tap base lazy" ;;
+        0) order="lazy tap base" ;;
+    esac
+    for side in $order; do
+        for run in 1 2; do arm "$side" "$out/$side-$round-$run.json" 180; done
+    done
+    if [ "$round" = 1 ] && ! grep -lq '"phase":"finished"' "$out"/*-1-*.json; then
+        echo "No journey of the first round finished."
+        exit 1
+    fi
+    round=$((round + 1))
+done
+kind=all
+for run in 1 2 3 4; do
+    arm base "$out/whole-base-$run.json" 420
+    arm lazy "$out/whole-lazy-$run.json" 420
+done
+kind=open
+for run in 1 2 3; do journey "$out/why-$run.json" 180 --bench-why-bodies --bench-tap-row; done
 xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true

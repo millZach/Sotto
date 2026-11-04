@@ -185,6 +185,7 @@ struct MainTabs: View {
         .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
+        .onReceive(BenchOpen.tap) { ref in threadPath.append(ThreadRoute(ref: ref)) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
         // Something shared to Sotto opens where it went: Watcher, or Threads, whose new thread's sheet takes it (ADR-0157).
         .onChange(of: model.shareOpened) { _, destination in openShared(destination) }
@@ -732,16 +733,23 @@ struct ThreadListSections: View, Equatable {
     let shelve: (HostedThread, AppModel.ShelfAction) -> Void
     var body: some View {
         let _ = BenchProbe.body("ThreadListSections")
-        VStack(alignment: .leading, spacing: 0) {
-            section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
-                rowView(row, .needs, asking: groups.asking(row))
-            }
-            section(String(localized: "Working now"), "working", groups.working) { row in rowView(row, .working) }
-            section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
-                rowView(row, .recent(unread: groups.isUnreadFinish(row)))
+        Group {
+            if BenchOpen.lazyList {
+                LazyVStack(alignment: .leading, spacing: 0) { allSections }
+            } else {
+                VStack(alignment: .leading, spacing: 0) { allSections }
             }
         }
         .benchEnvironment("EnvironmentUnderList")
+    }
+    @ViewBuilder private var allSections: some View {
+        section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
+            rowView(row, .needs, asking: groups.asking(row))
+        }
+        section(String(localized: "Working now"), "working", groups.working) { row in rowView(row, .working) }
+        section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
+            rowView(row, .recent(unread: groups.isUnreadFinish(row)))
+        }
     }
     /// A Needs you row can stand for a delegated thread that asks (ADR-0081): a press opens the row's thread and then
     /// the one that asks, so its question opens there and Back returns to the thread that delegated it.
