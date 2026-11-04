@@ -45,6 +45,11 @@ export function menuBarOwlWanted(platform: SottoPlatform, owlFeatures: OwlFeatur
   return platform === 'darwin' && owlFeatures['menu-bar-owl'] && !endToEnd
 }
 
+/** Whether this run's tray shows: always, but on a Mac with the `hide-menu-bar-icon` Owl feature on the user may take it out. */
+export function menuBarIconShown(platform: SottoPlatform, owlFeatures: OwlFeatureStates, settings: Pick<AppSettings, 'showMenuBarIcon'>): boolean {
+  return platform !== 'darwin' || !owlFeatures['hide-menu-bar-icon'] || settings.showMenuBarIcon
+}
+
 /**
  * Starts the menu bar owl on `tray`, or returns null and leaves the tray as it is when it cannot start (its frames cannot
  * be read, or the system will not answer), so a missing file costs the user nothing but the animation. Once running, a

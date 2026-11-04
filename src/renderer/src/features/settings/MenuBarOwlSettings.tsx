@@ -12,41 +12,48 @@ import {
   type MenuBarOwlBody,
   type MenuBarOwlEyes,
 } from '../../../../shared/menuBarOwl'
+import { Toggle } from '../../components/Toggle'
 import type { LaterWords } from './laterWords'
 import './menuBarOwl.css'
 
 /**
  * Settings → Appearance → Menu bar owl (ADR-0114): the colour of the owl's body and of its eyes. Each swatch is the
- * colour the frames are drawn in, so what the user presses is what the bar shows.
+ * colour the frames are drawn in, so what the user presses is what the bar shows. Where `onShow` is given (the
+ * `hide-menu-bar-icon` Owl feature), a switch above them takes the icon out of the menu bar, and the colours hide with it.
  */
-export function MenuBarOwlSettings({ body, eyes, onChoose }: {
+export function MenuBarOwlSettings({ body, eyes, shown, onChoose, onShow }: {
   readonly body: MenuBarOwlBody
   readonly eyes: MenuBarOwlEyes
+  readonly shown: boolean
   readonly onChoose: (patch: { menuBarOwlBody: MenuBarOwlBody } | { menuBarOwlEyes: MenuBarOwlEyes }, successText: LaterWords) => void
+  readonly onShow?: ((shown: boolean) => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
   return (
     <div className="menu-bar-owl" data-setting="menu-bar-owl">
       <h3 className="theme-settings__subheading"><Trans>Menu bar owl</Trans></h3>
       <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon.</Trans></p>
-      <SwatchGroup
-        title={t({ message: 'Body', comment: "The menu bar owl's body, whose color the swatches below choose" })}
-        choiceLabel={(label, active) => active ? t`Use ${label} as the owl's body color, currently active` : t`Use ${label} as the owl's body color`}
-        ids={MENU_BAR_OWL_BODIES}
-        labels={MENU_BAR_OWL_BODY_LABELS}
-        swatches={MENU_BAR_OWL_BODY_SWATCHES}
-        value={body}
-        onChoose={id => onChoose({ menuBarOwlBody: id }, msg`Owl body saved.`)}
-      />
-      <SwatchGroup
-        title={t({ message: 'Eyes', comment: "The menu bar owl's eyes, whose color the swatches below choose" })}
-        choiceLabel={(label, active) => active ? t`Use ${label} as the owl's eye color, currently active` : t`Use ${label} as the owl's eye color`}
-        ids={MENU_BAR_OWL_EYES}
-        labels={MENU_BAR_OWL_EYES_LABELS}
-        swatches={MENU_BAR_OWL_EYES_SWATCHES}
-        value={eyes}
-        onChoose={id => onChoose({ menuBarOwlEyes: id }, msg`Owl eyes saved.`)}
-      />
+      {onShow ? <Toggle setting="show-menu-bar-icon" label={t`Show in menu bar`} checked={shown} onCheckedChange={onShow} description={t`Off, open Sotto from the Dock.`} /> : null}
+      {shown ? <>
+        <SwatchGroup
+          title={t({ message: 'Body', comment: "The menu bar owl's body, whose color the swatches below choose" })}
+          choiceLabel={(label, active) => active ? t`Use ${label} as the owl's body color, currently active` : t`Use ${label} as the owl's body color`}
+          ids={MENU_BAR_OWL_BODIES}
+          labels={MENU_BAR_OWL_BODY_LABELS}
+          swatches={MENU_BAR_OWL_BODY_SWATCHES}
+          value={body}
+          onChoose={id => onChoose({ menuBarOwlBody: id }, msg`Owl body saved.`)}
+        />
+        <SwatchGroup
+          title={t({ message: 'Eyes', comment: "The menu bar owl's eyes, whose color the swatches below choose" })}
+          choiceLabel={(label, active) => active ? t`Use ${label} as the owl's eye color, currently active` : t`Use ${label} as the owl's eye color`}
+          ids={MENU_BAR_OWL_EYES}
+          labels={MENU_BAR_OWL_EYES_LABELS}
+          swatches={MENU_BAR_OWL_EYES_SWATCHES}
+          value={eyes}
+          onChoose={id => onChoose({ menuBarOwlEyes: id }, msg`Owl eyes saved.`)}
+        />
+      </> : null}
     </div>
   )
 }

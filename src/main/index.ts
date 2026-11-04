@@ -200,7 +200,7 @@ import {
   createTrayResource,
   NativeTrayCreationError,
 } from './tray/trayIcon'
-import { menuBarOwlWanted, startMenuBarOwl, type MenuBarOwl } from './tray/menuBarOwl'
+import { menuBarIconShown, menuBarOwlWanted, startMenuBarOwl, type MenuBarOwl } from './tray/menuBarOwl'
 import { electronOwlEnvironment } from './tray/menuBarOwlElectron'
 import {
   parseDevelopmentRendererSources,
@@ -403,6 +403,7 @@ type NativeDiagnostic =
   | 'dock-icon-failed'
   | 'owl-frames-unavailable'
   | 'owl-failed'
+  | 'menu-bar-icon-show-failed'
   | 'desktop-notification-failed'
   | MainCheckoutEvent
   | DesktopDefaultsEvent
@@ -1937,7 +1938,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   BrowserWindow.getAllWindows().forEach(watchMainWindowFocus)
   app.on('browser-window-created', (_event, window) => watchMainWindowFocus(window))
 
-  const nativeTray = e2eConfiguration === null
+  const makeNativeTray = async () => e2eConfiguration === null
     ? await createTrayResource({
         source: profile.trayIcon,
         executablePath: process.execPath,
@@ -1959,16 +1960,36 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     : { setContextMenu: () => undefined, destroy: () => undefined }
   // The menu bar owl (ADR-0114): on a Mac in an Owl build the tray's picture is swapped on a schedule. When its frames cannot
   // be read the one-tint template stays and the user loses only the animation.
-  const menuBarOwl: MenuBarOwl | null = menuBarOwlWanted(platform, owlFeatures, e2eConfiguration !== null) && 'setImage' in nativeTray
-    ? startMenuBarOwl(nativeTray, startupSettings, electronOwlEnvironment({ nativeImage, systemPreferences, powerMonitor }, resourceRoot, event => { if (event === 'owl-frames-unavailable' || event === 'owl-failed') logOperational(event) }))
-    : null
+  const startOwl = (tray: Awaited<ReturnType<typeof makeNativeTray>>, settings: AppSettings): MenuBarOwl | null =>
+    menuBarOwlWanted(platform, owlFeatures, e2eConfiguration !== null) && 'setImage' in tray
+      ? startMenuBarOwl(tray, settings, electronOwlEnvironment({ nativeImage, systemPreferences, powerMonitor }, resourceRoot, event => { if (event === 'owl-frames-unavailable' || event === 'owl-failed') logOperational(event) }))
+      : null
+  // A Mac's user may take the icon out of the menu bar (ADR-0114); the Dock icon still opens the window.
+  let nativeTray = menuBarIconShown(platform, owlFeatures, startupSettings) ? await makeNativeTray() : null
+  let menuBarOwl = nativeTray === null ? null : startOwl(nativeTray, startupSettings)
   try {
+  const showMenuBarIcon = async (settings: AppSettings): Promise<void> => {
+    if (!menuBarIconShown(platform, owlFeatures, settings)) {
+      menuBarOwl?.dispose()
+      nativeTray?.destroy()
+      menuBarOwl = null
+      nativeTray = null
+      return
+    }
+    if (nativeTray !== null) return
+    const made = await makeNativeTray().catch(() => { logOperational('menu-bar-icon-show-failed'); return null })
+    // A second press while the tray was being made has the last word.
+    if (made === null || nativeTray !== null || !menuBarIconShown(platform, owlFeatures, workingCopySettings)) { made?.destroy(); return }
+    nativeTray = made
+    menuBarOwl = startOwl(made, workingCopySettings)
+    trayController.update(currentTrayState)
+  }
   const trayAdapter: TrayAdapter = {
     setMenu(items): void {
-      nativeTray.setContextMenu(Menu.buildFromTemplate(items.map(toMenuTemplate)))
+      nativeTray?.setContextMenu(Menu.buildFromTemplate(items.map(toMenuTemplate)))
     },
     destroy(): void {
-      nativeTray.destroy()
+      nativeTray?.destroy()
     },
   }
   // Linux's keys are Hyprland bindings the Omarchy setup writes; it is built with the IPC, after this coordinator.
@@ -2003,7 +2024,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       }
       // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
-      menuBarOwl?.applySettings(settings)
+      if (menuBarIconShown(platform, owlFeatures, settings) === (nativeTray !== null)) menuBarOwl?.applySettings(settings)
+      else await showMenuBarIcon(settings)
       popup?.settingsChanged(settings)
       // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
       if (await applyInterfaceLanguage(settings)) {
@@ -2721,7 +2743,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   } catch {
     try {
       menuBarOwl?.dispose()
-      nativeTray.destroy()
+      nativeTray?.destroy()
     } catch {
       // Startup will report one finite failure even if native tray cleanup also fails.
     }

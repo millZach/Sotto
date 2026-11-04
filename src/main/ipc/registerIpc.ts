@@ -118,6 +118,7 @@ const settingKeys = [
   'effortColor',
   'menuBarOwlBody',
   'menuBarOwlEyes',
+  'showMenuBarIcon',
   'watcherScene',
   'creature',
   'showCreature',

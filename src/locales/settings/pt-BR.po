@@ -3198,6 +3198,14 @@ msgstr ""
 msgid "memory unknown"
 msgstr ""
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon hidden."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon shown."
+msgstr ""
+
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Menu bar owl"
@@ -3676,6 +3684,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Off, one theme paints light and dark."
+msgstr ""
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Off, open Sotto from the Dock."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -4893,6 +4905,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
 msgid "Show hidden tips again"
+msgstr ""
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Show in menu bar"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
