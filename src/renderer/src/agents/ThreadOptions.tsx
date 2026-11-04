@@ -20,7 +20,8 @@ import { suggestedEffortIndex } from './effortSuggestion'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
-import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, speedPatch, SPEED_NOT_CARRIED, SPEED_STANDARD, threadSpeed, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
+import { nextTurnChoiceOf, nextTurnKinds, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, settingValuesInForce, speedPatch, SPEED_NOT_CARRIED, SPEED_STANDARD, threadSpeed, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
+import { useOwlFeature } from '../state/owlFeature'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
@@ -59,6 +60,24 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
     case 'auto-accept-edits': return t`DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary.`
     case 'full-access': return t`DeepSeek Harness runs commands and edits files without asking, in the project and outside it.`
     default: return undefined
+  }
+}
+/**
+ * What each of Codex's four modes does, said as Codex doing it (ADR-0005, Zach's pick on November 4, 2026), in the
+ * interface language. The words are Codex 0.166.0's behaviour under `runtimePolicy` in `src/main/agents/codex.ts`:
+ * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks; Allow edits is
+ * `on-request` in `workspace-write`, where commands inside the project run unasked and the network, other folders and
+ * `.git` need escalation; Auto routes those escalations to Codex's `auto_review` reviewer, a model on the thread's own
+ * model provider, which Sotto sets to OpenAI; Full access is `never` with no sandbox. Read them again when Codex or that
+ * mapping changes. A thread on another computer names it under Full access, since "this computer" is the one Sotto runs on.
+ */
+export function codexModeLine(mode: AgentRuntimeMode, computer?: string): string {
+  if (mode === 'full-access' && computer) return t({ message: `Codex runs any command and edits any file without asking, anywhere on ${computer} and online.`, comment: '{computer} is the name of the computer the thread runs on, such as forge.' })
+  switch (mode) {
+    case 'approval-required': return t`Codex asks before every command, even one that only reads, and before every edit.`
+    case 'auto-accept-edits': return t`Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.`
+    case 'auto': return t`As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.`
+    case 'full-access': return t`Codex runs any command and edits any file without asking, anywhere on this computer and online.`
   }
 }
 /** Permissions' glyph, which stands for the value in a narrow composer. */
@@ -106,9 +125,9 @@ export function effortChoices(model: AgentModel | undefined, reasoning: string, 
  * The permission modes a model offers, led by "Provider default" or an unoffered current mode as
  * unchoosable. A provider whose modes are its own (Devin) answers with those instead of Sotto's four, and
  * each carries what Sotto will still ask about under it, so a mode named for what the provider stops
- * asking cannot be read as Sotto stopping too.
+ * asking cannot be read as Sotto stopping too. `computer` names the thread's computer when it is not this one.
  */
-export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined): ChoiceOption[] {
+export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined, computer?: string): ChoiceOption[] {
   const own = model?.providerModes ?? []
   if (own.length > 0) {
     // Unchosen reads as the first mode, which is what the thread starts on, so only an unoffered one leads.
@@ -121,7 +140,8 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   const lead = runtimeMode === undefined ? [{ id: '', label: t`Provider default`, disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
-    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode) : undefined
+    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
+      : model?.providerId === 'codex' ? codexModeLine(mode, computer) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }
@@ -192,11 +212,13 @@ function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider
 /**
  * The caption beside the chips while a permission change waits: what is still in force, in the provider's name. What a
  * permission mode still lets the provider do is said as the provider doing it: the difference decides what the
- * provider does on its next tool call, so the caption names the mode in force rather than the one coming.
+ * provider does on its next tool call, so the caption names the mode in force rather than the one coming. Under Codex's
+ * Auto a reviewer model answers in the user's place (#2161), so for Codex that caption says so.
  */
-export function permissionInForceCaption(provider: string, inForce: { readonly runtimeMode?: AgentRuntimeMode | undefined; readonly providerModeName?: string | undefined }): string {
+export function permissionInForceCaption(provider: string, inForce: { readonly runtimeMode?: AgentRuntimeMode | undefined; readonly providerModeName?: string | undefined }, providerId?: string): string {
   const mode = inForce.providerModeName
   if (mode) return t({ message: `${provider} stays on ${mode} until it confirms.`, comment: '{provider} is a provider\'s name or "The provider"; {mode} is the provider\'s own name for a permission mode.' })
+  if (providerId === 'codex' && inForce.runtimeMode === 'auto') return t`Codex’s reviewer still answers what would come to you until it confirms.`
   switch (inForce.runtimeMode) {
     case 'approval-required': return t({ message: `${provider} still asks for approval until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
     case 'auto-accept-edits': return t({ message: `${provider} still makes edits without asking until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
@@ -470,6 +492,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
+  // A chip pressed while the thread works is kept for its next turn (ADR-0192; Owl only). Watcher keeps its own (ADR-0073).
+  const keepsForNextTurn = useOwlFeature('next-turn-choice') && !watcher
+  const nextTurnLineId = useId()
   // A thread on one of the user's own model servers wears the server mark in its chip, with its speed card (ADR-0124).
   const serverMark = useOwnServerMark(thread, isThreadProviderConnected(state.host, thread))
   const serverTurn = serverMark?.turn
@@ -518,11 +543,14 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const nextTurn = watcher && room?.currentThreadId === thread.id ? room.state?.nextTurnOptions : undefined
   const nextTurnModel = nextTurn === undefined ? undefined : resolveModel(state.host.models, nextTurn.modelId)
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
-  const drawn = nextTurn === undefined ? settingValues(state, thread)
+  const drawn = nextTurn === undefined ? keepsForNextTurn ? settingValues(state, thread) : settingValuesInForce(state, thread)
     : settingValuesFor({ modelId: nextTurn.modelId, ...(nextTurn.reasoningEffort ? { reasoningEffort: nextTurn.reasoningEffort } : {}),
       ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
       speed: nextTurn.speed !== undefined ? nextTurn.speed : threadSpeed(thread) }, nextTurnModel)
   const unconfirmed = unconfirmedKinds(state, thread.id)
+  /** What main keeps for this thread's next turn, which `drawn` already shows on the chips, and the chips it changes. */
+  const nextTurnChoice = keepsForNextTurn ? nextTurnChoiceOf(state, thread.id) : undefined
+  const kept = nextTurnKinds(nextTurnChoice)
   /**
    * The chips are fixed by what a provider actually refuses: a turn under way, an unanswered request, an archived
    * thread, a provider that is gone, and a prompt still on its way, which a change would run behind once its turn has
@@ -533,10 +561,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
    */
   const busy = thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)
   // Watcher's model, effort and speed are not fixed by its work: main keeps a change made meanwhile for its next turn.
-  // Its permissions are.
-  const fixed = Boolean(thread.archivedAt) || (busy && !watcher) || unconfirmed.has('permissions')
+  // Its permissions are. On Owl every other thread's chips are free too, permissions included: main keeps the choice for
+  // the thread's next turn and sends it once the thread rests, never to a turn or a request under way (ADR-0192).
+  const fixed = Boolean(thread.archivedAt) || (busy && !watcher && !keepsForNextTurn) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
-  const permissionsFixed = fixed || busy
+  const permissionsFixed = fixed || (busy && !keepsForNextTurn)
   const unconfirmedKey = [...unconfirmed].join(',')
   useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, drawn.fast, unconfirmedKey])
   const threads = state.host.threads
@@ -601,7 +630,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** A speed as it runs on this model, in words: one the model does not offer runs at Standard. */
   const speedInForce = (value: string): string => speedName(speeds.some(item => item.id === value) ? value : SPEED_STANDARD, speeds)
   const efforts = effortChoices(model, reasoning, { ultracode: !watcher })
-  const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
+  const remoteComputer = thread.remoteHost ? state.connections?.find(item => item.hostId === thread.hostId)?.name ?? thread.hostLabel : undefined
+  const modes = modeChoices(model, thread.runtimeMode, thread.providerMode, remoteComputer)
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
   const provider = providerName ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })
@@ -626,7 +656,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const pendingPermission = settings.pending.permissions ?? null
   const permissionUnconfirmed = pendingPermission?.awaiting === 'unconfirmed'
   const caption = pendingPermission === null || permissionUnconfirmed ? '' : permissionInForceCaption(provider, usesProviderModes(confirmedModel)
-    ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined })
+    ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined },
+  thread.providerId ?? confirmedModel?.providerId)
   const retry = (kind: SettingKind): void => {
     // The speed control is either the bolt or the split chip's effort half.
     // The quiet pill draws the shield outside the bar, at its start, so the chip is looked for in the whole composer.
@@ -634,7 +665,40 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   }
   const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
   const unconfirmedIds: Readonly<Record<SettingKind, string>> = { model: unconfirmedModelId, effort: unconfirmedEffortId, permissions: unconfirmedId, fast: unconfirmedFastId }
+  /** A chip's description: the next-turn line while main keeps its setting, else what its unconfirmed line says. */
+  const describedFor = (kind: SettingKind): string => kept.has(kind) ? nextTurnLineId : unconfirmedIds[kind]
+  const inForce = settingValuesInForce(state, thread)
+  const offeredInForce = offeredSpeeds(confirmedModel, confirmedModel?.providerId ?? thread.providerId)
+  /**
+   * The line under the chips while main keeps a choice for the next turn (ADR-0192, Zach's look A): what this turn runs on,
+   * then what the next one starts on, in the chips' order. It describes each chip that shows a kept value.
+   */
+  const nextTurnLine = nextTurnChoice === undefined ? null : (() => {
+    const hasEffort = (confirmedModel?.reasoningEfforts?.length ?? 0) > 0
+    const now = [valueName('model', inForce.model, confirmedModel), hasEffort && inForce.effort ? valueName('effort', inForce.effort, confirmedModel) : null,
+      offeredInForce.some(item => item.id === inForce.fast) ? speedName(inForce.fast, offeredInForce) : null,
+      modes.length > 0 && inForce.permissions ? valueName('permissions', inForce.permissions, confirmedModel) : null].filter(Boolean).join(', ')
+    const next = (['model', 'effort', 'fast', 'permissions'] as const).filter(kind => kept.has(kind))
+      .map(kind => kind === 'fast' ? speedName(drawn.fast, offeredSpeeds(model, speedProvider)) : valueName(kind, drawn[kind], model)).join(', ')
+    return t({ message: `This turn runs on ${now}. The next turn starts on ${next}.`, comment: '{now} lists the model, effort, speed and permission mode a running turn uses, such as "GPT-6.1 Terra, Low effort, Auto"; {next} lists the ones chosen for the next turn, such as "Medium effort".' })
+  })()
+  /** Keep current settings: the values in force, sent for each kept setting, which main takes as putting the choice away. */
+  const keepCurrent = (): void => {
+    const patch: { -readonly [K in keyof SettingsPatch]: SettingsPatch[K] } = {}
+    if (kept.has('model')) patch.modelId = inForce.model
+    if (kept.has('effort') && inForce.effort) patch.reasoningEffort = inForce.effort
+    if (kept.has('permissions') && inForce.permissions) Object.assign(patch, permissionPatch(confirmedModel, inForce.permissions))
+    if (kept.has('fast')) Object.assign(patch, speedPatch(inForce.fast, confirmedModel))
+    const first = kinds.find(kind => kept.has(kind))
+    void command({ type: 'configure-thread', threadId: thread.id, ...patch }).finally(() => {
+      // The line goes with the choice, so focus goes back to the first chip it was about.
+      if (first) (bar.current?.closest('form') ?? bar.current)?.querySelector<HTMLElement>(first === 'fast' ? '.thread-fast, .split-chip-effort__trigger' : `[aria-label="${OPTION_CHIP_NAMES[first]}"]`)?.focus()
+    })
+  }
   const notices = <>
+    {nextTurnLine === null ? null : <p className="thread-options__notice thread-options__notice--next tt-paragraph" role="status">
+      <span id={nextTurnLineId}>{nextTurnLine}</span>
+      <button type="button" className="tt-focusable" onClick={keepCurrent}>{t`Keep current settings`}</button></p>}
     {replacing?.refusal ? <p className="thread-options__notice tt-paragraph" role="alert"><span>{shownWords(replacing.refusal)}</span></p> : null}
     {kinds.map(kind => {
       const pending = settings.pending[kind]
@@ -659,18 +723,19 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     press('fast', next, speedPatch(next, model), unpressed.fast)
     orchestrating?.(modelId, reasoning || null, state.host.models, next === SPEED_STANDARD ? null : next as AgentSpeed)
   }
-  const effortDescription = [settings.pending.effort?.awaiting === 'unconfirmed' ? unconfirmedEffortId : '', settings.pending.fast?.awaiting === 'unconfirmed' ? unconfirmedFastId : ''].filter(Boolean).join(' ')
+  const effortDescription = [...new Set([settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort') ? describedFor('effort') : '',
+    settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('fast') ? describedFor('fast') : ''])].filter(Boolean).join(' ')
   const permissions = watcher
     ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
       disabled={permissionsFixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
     : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder={t`Provider default`} value={permission} options={modes} disabled={fixed} icon={PERMISSIONS_ICON}
-      pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
+      pending={pendingPermission !== null || kept.has('permissions')} describedBy={kept.has('permissions') ? nextTurnLineId : permissionUnconfirmed ? unconfirmedId : captionId}
       onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked} data-permission={quiet ? permission : undefined}>
     <div className="thread-options thread-options--chips">
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
-        pending={settings.pending.model?.awaiting === 'unconfirmed'} describedBy={unconfirmedModelId} ownServers={ownServers}
+        pending={settings.pending.model?.awaiting === 'unconfirmed' || kept.has('model')} describedBy={describedFor('model')} ownServers={ownServers}
         mark={serverMark ? <ServerMark state={serverMark.state} attempt={serverMark.attempt} turnId={serverTurn?.turnId} finished={serverTurn?.status === 'completed'} /> : undefined}
         card={serverMark && serverTurn ? { id: speedCardId, render: shown => <ServerSpeedCard turn={serverTurn} heard={serverMark.heard} unanswered={serverMark.unanswered} usage={thread.usage} modelId={thread.modelId} shown={shown} /> } : undefined}
         unavailable={continueUnavailable} continueOn={continueOn} onChange={pressed => {
@@ -687,10 +752,10 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         press('model', id, { modelId: id, ...(watcher && fitSpeed(roleSpeed, pickedModel) === roleSpeed ? speedPatch(roleSpeed ?? SPEED_STANDARD, pickedModel) : {}) })
         orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models, roleSpeed)
       }} />
-      {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
+      {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('fast')} describedBy={describedFor('fast')}
         onChange={changeSpeed} />}
       {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
-        pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={effortDescription}
+        pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('effort') || kept.has('fast')} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
         suggestion={suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
         onChange={reasoningEffort => {
@@ -698,7 +763,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
         }} />
       : efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
-        disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} onChange={reasoningEffort => {
+        disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort')} describedBy={describedFor('effort')} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
         }}
@@ -711,7 +776,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? t({ message: `Starting a new Watcher on ${replacingName}…`, comment: '{replacingName} is a provider\'s name.' }) : caption}</span>
     {watcher && nextTurn !== undefined ? <small>{t`Watcher starts its next turn on this choice.`}</small>
-      : !watcher && locked && thread.status === 'running' && turnNote ? <small>{t`Available after this turn finishes.`}</small> : null}
+      : !watcher && !keepsForNextTurn && locked && thread.status === 'running' && turnNote ? <small>{t`Available after this turn finishes.`}</small> : null}
     {noticeSlot ? createPortal(notices, noticeSlot) : notices}
   </div>
 }

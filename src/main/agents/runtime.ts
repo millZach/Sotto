@@ -99,6 +99,8 @@ export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   watcherEnabled?: boolean
+  /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
+  dynamicThreadsEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
   heldProviders?: HeldProviders
   /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -177,6 +179,8 @@ export interface AgentRuntimeOptions {
   attachAnyFile?: boolean
   /** Images dropped on a question card go with the answer (ADR-0176): the `answer-images` Owl answer, read once at start. */
   answerImages?: boolean
+  /** A chip pressed while a thread works is kept for its next turn (ADR-0192): the `next-turn-choice` Owl answer, read once at start. */
+  nextTurnChoice?: boolean
   /**
    * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex
    * keep their tool results' pictures in the thread media store and the host answers `thread-media` reads. Absent fails
@@ -422,7 +426,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, toDoListEnabled: options.toDoListEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, toDoListEnabled: options.toDoListEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -439,6 +443,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
     ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
     ...(options.answerImages === true ? { answerImages: true } : {}),
+    ...(options.nextTurnChoice === true ? { nextTurnChoice: true } : {}),
     ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
@@ -471,6 +476,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // and offered again when Settings change. A headless host's threads start concretely, as their workers do.
   const workerRoles = options.workerRolesEnabled === true && options.runsAs !== 'headless-host'
     ? new WorkerRoles(() => subagentRoleTable(options.settings().workerRoles, agentControl.watcherSnapshot().models)) : undefined
+  if (options.dynamicThreadsEnabled === true) agentHost.allowDynamicThreads()
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
@@ -544,7 +550,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       await delegationRelay.load()
     }
     const relaying = delegationRelay, remote = delegationRemote
-    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
+      ...options.dynamicThreadsEnabled === true ? { dynamicThreads: () => options.settings().dynamicThreads, providerLimits: async (provider: ProviderId) => agentHost.readProviderQuota?.(provider, false) } : {},
       ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
         const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
         agentControl.swarmsChanged(ids)
@@ -571,7 +578,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // A thread here delegates on this machine alone until #1316. Its ceiling and roles are the desktop's, never this host's
     // own stored defaults; the four-prompt budget and the warning above ten are this machine's.
     const defaults = desktopDefaults
-    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, ...watcher ? { watcherSent: (threadId: string, messageId: string) => watcher.sentToThread(threadId, messageId) } : {},
       ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
         const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
         agentControl.swarmsChanged(ids)

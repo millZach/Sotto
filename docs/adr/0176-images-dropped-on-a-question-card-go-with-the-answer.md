@@ -23,3 +23,5 @@ A question often wants a picture as its answer: which of these looks right, what
 - A question asked as a typed form takes no images, even where its field is free text; marking those needs each form's field formats read, which no adapter does yet.
 - A remote host takes images on an answer only on its own Owl answer for `answer-images`; an older host refuses the field.
 - Stable shows no drop edge, no chips and no paperclip on a question card, and its main refuses an answer that carries images.
+
+November 4, 2026 amendment (#2153, [ADR-0005](0005-codex-app-server-adapter.md)): a question marked secret, a **secret answer**, takes no images and is never the question images are named in, even when it is `prose`. Its words are masked and never saved, and a note added to them would be both.

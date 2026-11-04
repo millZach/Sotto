@@ -277,6 +277,8 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
    * prompt's UserPromptSubmit hook takes it as context: a steer, or a turn Claude Code starts itself, never does.
    */
   requestNote?: { readonly note: string; readonly text: string } | undefined
+  /** Whether this CLI registered the hook that carries a note: a Watcher's, or any where Dynamic threads are on. */
+  takesNotes: boolean
   /**
    * The widest permission this CLI's role agents were given at launch (#1042). The thread's permission narrowing below it
    * starts the CLI again, so no agent keeps more than its thread.
@@ -285,7 +287,7 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
   /** The level this CLI runs Ultracode at, from its launch or its last confirmed change; undefined while Ultracode is off (ADR-0148). */
   ultracodeEffort?: UltracodeEffort | undefined }
 /**
- * The one hook a Watcher's CLI is started with (ADR-0073): UserPromptSubmit, answered on this process's own control
+ * The one hook a Watcher's CLI is started with (ADR-0073), and every thread's where Dynamic threads are on (ADR-0191), since a thread can owe a note at any send: UserPromptSubmit, answered on this process's own control
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
  */
 const WATCHER_REQUEST_HOOK = 'sotto_watcher_request'
@@ -600,6 +602,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * while it is looked at or working and when it is opened, and the next action launches the CLI again from
    * the stored session.
    */
+  async threadInstructionsChanged(id: string): Promise<void> {
+    if (!this.busy(id)) await this.stopSession(id)
+  }
   private async stopSession(id: string): Promise<void> {
     if (this.spares.has(id)) { this.discardSpare(id); return }
     const runtime = this.runtimes.get(id)
@@ -1181,7 +1186,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
           if (this.usageEnabled) this.usageGroups.set(id, { id: origin.uuid, startedAt: new Date().toISOString() })
           // Only this prompt's own note, or none: a send never carries an earlier request's note or news.
           const note = command.watcherRequestNote ?? command.watcherNews
-          runtime.requestNote = runtime.watcher && note ? { note, text: nativeText } : undefined
+          runtime.requestNote = runtime.watcher && note ? { note, text: nativeText } : runtime.takesNotes && command.overseerNote ? { note: command.overseerNote, text: nativeText } : undefined
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }
@@ -1627,18 +1632,19 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     // The worker roles (#1042), read once for this launch: one agent per role on Claude, each held to the thread's own
     // permission, and the table in the instructions. Watcher starts its workers through its own tools instead.
-    const roles = profile ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
+    const overseer = profile ? undefined : this.workerRoles?.overseer?.(id)
+    const roles = profile || overseer ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const questions = this.options.markdownLinks === true ? `${CLAUDE_QUESTIONS}\n\n${MARKDOWN_LINK_INSTRUCTIONS}` : CLAUDE_QUESTIONS
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? `${questions}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
+      '--append-system-prompt', profile ? `${questions}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode)]
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
-      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, subagentMode: roles?.subagents?.widest,
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, takesNotes: !!profile || this.workerRoles?.overseerNote !== undefined, subagentMode: roles?.subagents?.widest,
         ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
@@ -1676,7 +1682,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (spare) spare.runtime = runtime; else this.runtimes.set(id, runtime)
     this.trackClosure(runtime.protocol.closed.then(async () => { if (mcpConfig) await this.removeConfig(mcpConfig) }))
     let initialized: ClaudeFrame
-    try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: profile ? { UserPromptSubmit: [{ hookCallbackIds: [WATCHER_REQUEST_HOOK] }] } : {},
+    try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: runtime.takesNotes ? { UserPromptSubmit: [{ hookCallbackIds: [WATCHER_REQUEST_HOOK] }] } : {},
       sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'], ...(roles?.subagents ? { agents: roles.subagents.agents } : {}) }) }
     // A spare is not the thread's CLI, so it is stopped as one: only a thread on its session ID waits for its exit.
     catch (error) {
@@ -1886,9 +1892,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     const hook = frame.type === 'control_request' ? object(frame.request) : undefined
     if (hook?.subtype === 'hook_callback' && typeof frame.request_id === 'string') {
-      // Only a Watcher's CLI registers a hook, and its note goes once, as context for the prompt it was written with.
+      // Only a Watcher's CLI, or one that could be sent an overseer note, registers a hook, and a note goes once, as context for the prompt it was written with.
       const input = object(hook.input), pending = runtime.requestNote
-      const note = runtime.watcher && pending && hook.callback_id === WATCHER_REQUEST_HOOK && input?.hook_event_name === 'UserPromptSubmit'
+      const note = runtime.takesNotes && pending && hook.callback_id === WATCHER_REQUEST_HOOK && input?.hook_event_name === 'UserPromptSubmit'
         && (typeof input.prompt !== 'string' || input.prompt.trim() === pending.text.trim()) ? pending.note : undefined
       if (note !== undefined) runtime.requestNote = undefined
       void this.reply(runtime, frame.request_id, note ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: note } } : {}).catch(() => undefined)

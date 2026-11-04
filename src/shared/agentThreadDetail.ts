@@ -23,6 +23,8 @@ export function agentActivitySignature(record: AgentActivity): string {
     record.title.length, size(record.text), size(record.command), size(record.cwd), size(record.output), size(record.error),
     record.exitCode ?? '', record.startedAt ?? '', record.completedAt ?? '', record.timingSource ?? '', record.durationMs ?? '',
     record.context?.before ?? '', record.context?.after ?? '', record.truncated === true ? '1' : '', record.taskUpdatesExcluded === true ? '1' : '',
+    // A failed change reread as one the user denied (#2159) keeps its status, so the mark itself is what changed.
+    record.denied === true ? '1' : '',
     (record.changes ?? []).map(change => `${change.path.length}:${change.kind.length}:${size(change.diff)}`).join('~'),
     (record.steps ?? []).map(step => `${step.text.length}:${step.status}`).join('~'),
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),

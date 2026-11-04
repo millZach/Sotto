@@ -36,6 +36,8 @@ export interface DelegationNewsDetail {
   readonly synthesisFailed?: 'failed' | 'stopped'
   /** An answered delegation's reply: the delegated thread's own words, cut as `read_delegation` cuts them. */
   readonly reply?: { readonly messageId: string; readonly text: string; readonly truncated: boolean }
+  /** The usage limit the delegated thread's turn stopped at, for an overseer to give the piece to another model (ADR-0191). */
+  readonly limitStop?: { readonly provider: string; readonly resetsAt?: string }
   /** Why an answered delegation's reply is not included, as `read_delegation` would say it. */
   readonly replyUnavailable?: string
   /** What happened to a brief that was never sent, which replaces the outcome's own words. */
@@ -76,6 +78,7 @@ export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<s
   const says = (item: DelegationNews['items'][number]): string => {
     const detail = details?.get(item.delegationId)
     if (detail?.notSent) return `was not sent. ${detail.notSent}`
+    if (detail?.limitStop) return `stopped at ${detail.limitStop.provider}'s usage limit${detail.limitStop.resetsAt ? `, which resets at ${detail.limitStop.resetsAt}` : ''}. Its partial work stays in the folder. Give the piece to another model and name this delegation in replaces.`
     if (detail?.synthesisFailed) return `synthesis ${detail.synthesisFailed === 'stopped' ? 'was stopped' : 'failed'}; its result is missing. Read the swarm receipt before retrying or settling it. This is not a completed synthesis.`
     if (item.outcome === 'answered' && detail?.replyUnavailable) return `answered. ${detail.replyUnavailable}`
     if (item.outcome === 'background' && item.heldMinutes !== undefined) return `${heldWords(item.heldMinutes, detail?.laterTurn === true)}${detail?.lastReply?.trim() ? lastReplyStart(detail.lastReply) : ''}`

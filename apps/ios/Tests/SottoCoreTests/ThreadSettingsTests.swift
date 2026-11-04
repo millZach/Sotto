@@ -243,5 +243,22 @@ final class ThreadSettingsTests: XCTestCase {
         XCTAssertEqual(EffortWords.line("max", index: 3, count: 4), "Everything the model has. Slowest, costliest.", "The top of the list gets the top line")
         XCTAssertEqual(EffortWords.line("high", index: 2, count: 4), "Takes longer and catches more.")
     }
-}
 
+    /// #2161: a Codex thread's permission lines say what Codex does under each mode, in the desktop's words, and the
+    /// caption while it leaves Allow actions says its reviewer answers; other agents keep the general lines.
+    func testACodexThreadsPermissionLinesSayWhatCodexDoes() {
+        XCTAssertEqual(ThreadSettingWords.permissionLine("approval-required", provider: "Codex", providerID: "codex", computer: "Laptop"),
+                       "Codex asks before every command, even one that only reads, and before every edit.")
+        XCTAssertEqual(ThreadSettingWords.permissionLine("auto-accept-edits", provider: "Codex", providerID: "codex", computer: "Laptop"),
+                       "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.")
+        XCTAssertEqual(ThreadSettingWords.permissionLine("auto", provider: "Codex", providerID: "codex", computer: "Laptop"),
+                       "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.")
+        XCTAssertEqual(ThreadSettingWords.permissionLine("full-access", provider: "Codex", providerID: "codex", computer: "Laptop"),
+                       "Codex runs any command and edits any file without asking, anywhere on Laptop and online.")
+        XCTAssertEqual(ThreadSettingWords.permissionLine("auto", provider: "Claude Code", providerID: "claude", computer: "Laptop"), "Claude Code decides what to ask you about.")
+        XCTAssertEqual(ThreadSettingWords.inForce(provider: "Codex", runtimeMode: "auto", providerModeName: nil, providerID: "codex"),
+                       "Codex’s reviewer still answers what would come to you until it confirms.")
+        XCTAssertEqual(ThreadSettingWords.inForce(provider: "Grok Build", runtimeMode: "auto", providerModeName: nil, providerID: "grok"),
+                       "Grok Build still decides what to ask you about until it confirms.")
+    }
+}

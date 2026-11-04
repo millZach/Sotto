@@ -1,12 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
-import { isThreadProviderConnected, lastUserMessageIdOf, providerIdSchema, threadTakesSottoTools,
-  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread } from '../../shared/agents'
+import { isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS, providerIdSchema, threadTakesSottoTools,
+  type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
-import { capRuntimeMode, fitSpeed, roleInForce, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleInForce, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { allowedProviders, DYNAMIC_WHY_MAX, isDynamicThread, providerAbilities, WORKERS_AT_ONCE_MAX, type DynamicEffort, type DynamicThreadSettings } from '../../shared/dynamicThreads'
+import { providerProfile } from '../../shared/providerProfile'
+import { effortRank } from '../../shared/reasoningEfforts'
+import { reportsUsageLimits, type UsageQuotaRead } from '../../shared/usageDashboard'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning, THIS_COMPUTER } from '../../shared/workingThreads'
 import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
@@ -22,6 +26,7 @@ import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
   delegationAskedSchema, delegationHostHoldSchema, CHECK_REPLY_EXCERPT_MAX, type CheckReplyExcerpt, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { userWordsOf } from './continueThread'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
 import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsDetail } from './delegationNews'
 import { WATCHER_QUIET_MS } from '../../shared/watcherOverview'
@@ -76,6 +81,8 @@ export interface DelegationCoordinator {
   useDelegation(hooks: DelegationControlHooks): () => void
   commandFromDelegation(command: DelegationCommand, guard: () => void): Promise<AgentState>
   hasPendingThreadWork(threadId: string): boolean
+  /** Lets go of a stopped thread's restart at its limit's reset, when one stands (ADR-0144). Whether one did. */
+  cancelLimitRestart?(threadId: string): boolean
   /** Why a thread's own queue or sends hold its next prompt, when they do; a held queue refuses a brief at admission. */
   pendingThreadWorkReason?(threadId: string): string | null
   hasUserDraft(threadId: string): boolean
@@ -106,6 +113,12 @@ export interface DelegationServiceOptions {
    * permission come from its kind of work unless the call names them. Read once per `delegate` call, in admission.
    */
   readonly roles?: () => WorkerRoleChoices
+  /** Whether Watcher sent this message to this thread, so that it is Watcher's words and not the user's (#1202). */
+  readonly watcherSent?: (threadId: string, messageId: string) => boolean
+  /** Dynamic threads' limits (ADR-0191), read when a start or a read asks. Present only where the Owl feature is on. */
+  readonly dynamicThreads?: () => DynamicThreadSettings
+  /** A provider's limits as Usage reads them, for an overseer choosing (ADR-0191 decision 9). */
+  readonly providerLimits?: (provider: ProviderId) => Promise<UsageQuotaRead | undefined>
   /** Owl worker-swarms: one machine admission owner and identity-only group updates. */
   readonly swarms?: { readonly admission: WorkerAdmission; readonly changed?: (swarm: WorkerSwarm) => void }
   /**
@@ -217,6 +230,8 @@ export const REMOTE_NO_BRANCH = (machine: string): string => `Sotto on ${machine
  */
 export const DELEGATION_FOLLOWS_NEW_WORKER_MACHINE = false
 /** A start's worker role as the `delegate` result says it (#1041). Never saved: a retry's result has none. */
+/** A start under Dynamic's limits: the Dynamic thread they come from, whether the caller is that thread's overseer, and the limits. */
+interface DynamicLimits { readonly thread: AgentThread; readonly overseeing: boolean; readonly settings: DynamicThreadSettings }
 interface RoleReceipt { readonly work: DelegationWork; readonly named: RoleField[]; readonly speed: AgentSpeed | null; readonly note: string }
 
 const now = (): string => new Date().toISOString()
@@ -279,6 +294,10 @@ const recordSchema = z.object({
   told: watcherOutcomeSchema.optional(),
   /** Counts against the prompt budget. A brief refused before anything was sent does not. */
   charged: z.boolean(),
+  /** Why an overseer chose this model for this piece, in its own words, for its row (ADR-0191); the delegation it took over. */
+  why: z.string().max(DYNAMIC_WHY_MAX).optional(), replaces: z.uuid().optional(),
+  /** What the result says when Highest effort held this start's effort, kept so a retry says it too. */
+  effortHeld: z.string().max(400).optional(),
   /** How long the `delegate` call waited for the outcome and when it began; the window's card says it (decision 8). */
   waitSeconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional(), waitStartedAt: z.iso.datetime().optional(),
   /** When the call returned with the brief still working, so its outcome reaches the delegating thread as a wake-up. */
@@ -370,6 +389,8 @@ interface LandedBranch { readonly moveId: string; readonly projectId: string; re
 /** What a delegate call carries from the machine that asked, besides its arguments (#1316). */
 interface DelegateContext {
   readonly waitMs?: number
+  /** The call as it was asked, where its role held against what it named (#1202), so a retry of that call is still that call. */
+  readonly askedDigest?: string
   /** Where the desktop relay already placed a start for a thread on another machine, on one of this computer's paired hosts. */
   readonly placement?: WorkerPlacement
   /** The caller's branch, which the desktop already landed in this host's project for this start (#1316 part 2). */
@@ -420,6 +441,16 @@ const NOTES: Record<WatcherOutcome, string> = {
 const REFUSED_CANCEL = 'This delegation was refused when it was asked for, so nothing was started or sent, and there is nothing to stop.'
 const GONE = 'The delegated thread is gone from Sotto, so nothing more will come of this, and Sotto cannot tell how its turn ended. Start a new delegation if the work is still needed.'
 export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. Nothing was started.'
+/** How long an overseer's read waits for a provider's limits before saying they are not known, as Usage's own read waits. */
+const DYNAMIC_LIMIT_READ_MS = 6_000
+/** An effort held to the most the user's Settings allow: the highest the model offers at or under it, or none when it offers none. */
+function heldEffort(asked: string | undefined, efforts: readonly string[], highest: DynamicEffort): string | undefined {
+  if (asked === undefined) return undefined
+  const most = effortRank(highest)
+  // A level Sotto cannot place, such as a client's newest, counts as past the limit rather than slipping through it.
+  const within = (level: string): boolean => (effortRank(level) ?? Infinity) <= (most ?? Infinity)
+  return within(asked) ? asked : efforts.filter(within).at(-1)
+}
 const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.'
 
 /** `place`'s answer for a start the desktop relays to another machine (#1316). */
@@ -495,6 +526,8 @@ export class DelegationService {
    */
   private readonly byDelegating = new Map<string, DelegationRecord[]>()
   private readonly byDelegated = new Map<string, DelegationRecord[]>()
+  /** Each brief by its message, for what a thread's message turns out to be (#1202), without searching what it was sent. */
+  private readonly byBrief = new Map<string, DelegationRecord>()
   /** Each record by its delegating thread and retry key, so a retry is found without walking the user's history. */
   private readonly byRetryKey = new Map<string, DelegationRecord>()
   /** Each record by its ID, the first with it, so the window's press on one row finds it without walking a thread's history. */
@@ -505,7 +538,7 @@ export class DelegationService {
   private get records(): readonly DelegationRecord[] { return this.entries }
   private set records(records: DelegationRecord[]) {
     this.entries = records
-    this.byDelegating.clear(); this.byDelegated.clear(); this.byRetryKey.clear(); this.byId.clear()
+    this.byDelegating.clear(); this.byDelegated.clear(); this.byBrief.clear(); this.byRetryKey.clear(); this.byId.clear()
     for (const record of records) this.indexed(record)
   }
   private get refusals(): readonly RefusedDelegation[] { return this.refusalEntries }
@@ -1051,7 +1084,105 @@ export class DelegationService {
       return this.admits(threadId) ? delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
         : delegationRefusal('NOT_ADMITTED', NOT_ADMITTED)
     }
-    const input = parsed.data
+    // A role holds against a model the call names unless the user's own message names it (#1202).
+    const held = this.heldToRole(threadId, parsed.data)
+    if (!held) return await this.route(threadId, parsed.data, context)
+    // A retry reads the first call's start, which its own result already spoke for, on whatever the role was then.
+    const retry = this.alreadyAsked(threadId, parsed.data.retry_key)
+    const answer = await this.route(threadId, held.input, { ...context, askedDigest: digest(parsed.data) }) as { readonly status?: string }
+    return retry || answer.status === 'refused' ? answer : { ...answer, heldToRole: held.note }
+  }
+  private alreadyAsked(threadId: string, key: string | undefined): boolean {
+    return key !== undefined && (this.retried(threadId, key) !== undefined || this.options.remote?.retried(threadId, key) !== undefined || this.swarmByRetry.has(retryIndex(threadId, key)))
+  }
+  /**
+   * What a new thread's call becomes where its role holds (#1202): the call without the model it named, and what it named
+   * for that model, so the role fills them in on every path a start can take, here or on another machine. Undefined where
+   * the call stands: it names no model or the role's own, the user's own message names it, or the caller is a thread on
+   * another machine, whose own machine held its call before it asked here.
+   */
+  private heldToRole(threadId: string, input: DelegateInput): { readonly input: DelegateInput; readonly note: string } | undefined {
+    if (!this.options.roles || input.thread !== undefined || input.provider === undefined || input.model === undefined) return undefined
+    const snapshot = this.snapshot(), caller = snapshot.threads.find(thread => thread.id === threadId)
+    // An overseer chooses for itself (ADR-0191 decision 5): this hold is for every other thread.
+    if (!caller || this.dynamicLimits(caller, snapshot)?.overseeing) return undefined
+    const hold = roleHold(input.work, this.options.roles(), snapshot.models, { id: input.model, providerId: input.provider }, model => this.userNames(caller, snapshot, model))
+    if (!hold) return undefined
+    const { provider: _provider, model: _model, effort: _effort, speed: _speed, permission, ...rest } = input
+    void _provider; void _model; void _effort; void _speed
+    // A permission the call named stays where the role's model offers it, still held to the ceiling.
+    return { input: { ...rest, ...permission && hold.model.runtimeModes?.includes(permission) ? { permission } : {} }, note: hold.note }
+  }
+  /**
+   * Whether the user's own message that the calling thread's turn answers names a model, from Sotto's record, so no agent
+   * can write it. A brief is the words of the thread that sent it, so a delegated thread answers to the message that
+   * thread's turn answers, and Watcher's send to a thread is Watcher's words. Where Sotto holds no such message, no.
+   */
+  private userNames(caller: AgentThread, snapshot: AgentHostSnapshot, model: Pick<AgentModel, 'id' | 'name' | 'providerId'>): boolean {
+    let threadId = caller.id, messageId: string
+    try { messageId = this.rootOf(caller) } catch { return false }
+    for (let level = 0; level <= DELEGATION_LEVELS_MAX; level++) {
+      const brief = this.byBrief.get(messageId)
+      if (brief?.delegatedThreadId === threadId) { threadId = brief.delegatingThreadId; messageId = brief.rootUserMessageId; continue }
+      const thread = snapshot.threads.find(item => item.id === threadId)
+      const message = thread?.messages.find(item => item.id === messageId) ?? this.options.host.threadMessage(threadId, messageId) as AgentMessage | undefined
+      if (message?.role !== 'user') return false
+      const words = thread ? userWordsOf(thread, message) : message.text
+      return words !== undefined && messageNamesModel(words, model) && this.options.watcherSent?.(threadId, messageId) !== true
+    }
+    return false
+  }
+  /**
+   * A brief for another kind of work than the thread was started for is new work on that thread's model, so a role holds
+   * against it as against a start (#1202). Refused rather than moved: the thread's model is fixed, and a new thread is the
+   * way to the role's. A brief for the thread's own kind of work is never turned away, whatever its role says now.
+   */
+  private checkSendForRole(caller: AgentThread, thread: AgentThread, work: DelegationWork, snapshot: AgentHostSnapshot): void {
+    const started = this.byDelegated.get(thread.id)?.[0]
+    if (!this.options.roles || !started || started.work === work || this.dynamicLimits(caller, snapshot)?.overseeing) return
+    const hold = roleHold(work, this.options.roles(), snapshot.models, { id: thread.modelId }, model => this.userNames(caller, snapshot, model))
+    if (hold) refuse('INVALID_INPUT', `That thread runs on ${resolveModel(snapshot.models, thread.modelId)?.name ?? 'another model'}, and the user's ${DELEGATION_WORK_TITLES[work]} role starts on ${hold.model.name}. Leave thread out to start a new one on the role. Nothing was sent.`)
+  }
+  /**
+   * Workers at once (ADR-0191 decision 8): a brief to a worker that is already working adds none, and neither does a start
+   * that takes over from one. Read from this thread's newest records, a bound well past the most any setting allows, so
+   * it does not grow with what the thread has ever delegated.
+   */
+  private checkWorkersAtOnce(caller: AgentThread, settings: DynamicThreadSettings, target: string | undefined, replaces?: string): void {
+    const working = new Set((this.byDelegating.get(caller.id) ?? []).slice(-WORKERS_AT_ONCE_MAX * 2).filter(record => this.open(record) && record.id !== replaces).map(record => record.delegatedThreadId))
+    if (target !== undefined && working.has(target)) return
+    if (working.size >= settings.workersAtOnce) refuse('INVALID_INPUT', `${working.size} workers are working for this thread, the most the user's Settings allow at once. Do this when one returns: Sotto tells you. Nothing was started.`)
+  }
+  /**
+   * The limits a start here is held to (ADR-0191): a Dynamic thread's own, or those of the Dynamic thread above a worker, so
+   * a list cannot be walked around one level down. Undefined for every other thread, and wherever the feature is off.
+   */
+  private dynamicLimits(caller: AgentThread, snapshot: AgentHostSnapshot): DynamicLimits | undefined {
+    const read = this.options.dynamicThreads
+    if (!read) return undefined
+    if (isDynamicThread(caller, true)) return { thread: caller, overseeing: true, settings: read() }
+    const above = this.parentOf(caller.id, snapshot.threads)
+    const parent = above === undefined ? undefined : snapshot.threads.find(thread => thread.id === above)
+    return parent && isDynamicThread(parent, true) ? { thread: parent, overseeing: false, settings: read() } : undefined
+  }
+  /** What an overseer's start may not do, in plain words for it, or undefined. A swarm's lead and counts come from a role, and it works on this computer for now. */
+  private dynamicRefusal(threadId: string, input: DelegateInput): DelegationRefusal | undefined {
+    const snapshot = this.snapshot(), caller = snapshot.threads.find(thread => thread.id === threadId)
+    const limits = caller && this.dynamicLimits(caller, snapshot)
+    if (!limits) return undefined
+    if (input.thread !== undefined) return this.options.relay?.holdsThread(threadId, input.thread) || this.options.remote?.holdsThread(threadId, input.thread)
+      ? delegationRefusal('INVALID_INPUT', 'A Dynamic thread\'s workers work on this computer for now, so this thread on another machine takes no brief from it. Nothing was sent.') : undefined
+    if (input.machine !== undefined || input.os !== undefined) return delegationRefusal('INVALID_INPUT', 'A Dynamic thread\'s workers start on this computer for now. Leave machine and os out. Nothing was started.')
+    if (!limits.overseeing) return undefined
+    if ((input.count ?? 1) > 1) return delegationRefusal('INVALID_INPUT', 'A Dynamic thread starts its workers one at a time, not as a swarm. Leave count out. Nothing was started.')
+    if (!input.why) return delegationRefusal('INVALID_INPUT', 'Say why this model for this piece, in one short line: why is required on a Dynamic thread, and the user reads it. Nothing was started.')
+    return undefined
+  }
+  /** Where an admitted call goes: a swarm, a brief on another machine, or a start, in its place in this machine's check queue. */
+  private async route(threadId: string, input: DelegateInput, context: DelegateContext): Promise<unknown> {
+    // A retry reads the first call, whatever has changed since, so it is asked only of a call new to this thread.
+    const refused = this.alreadyAsked(threadId, input.retry_key) ? undefined : this.dynamicRefusal(threadId, input)
+    if (refused) return refused
     if (input.count !== undefined || input.prompts !== undefined) {
       if (!this.options.swarms) return delegationRefusal('INVALID_INPUT', 'Worker swarms are available in Sotto Owl. Nothing was started.')
       if (input.prompts && (input.count === undefined || input.prompts.length !== input.count)) return delegationRefusal('INVALID_INPUT', 'Give exactly one prompt per angle and the same count. Nothing was started.')
@@ -1128,7 +1259,7 @@ export class DelegationService {
     if (branch && 'status' in branch) return branch
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
     // A start that took its place in this machine's queue is a check, saved as one with its admission (#1312).
-    try { admitted = await this.transaction(() => this.admit(threadId, input, ticket !== undefined)) }
+    try { admitted = await this.transaction(() => this.admit(threadId, input, ticket !== undefined, context.askedDigest)) }
     catch (error) {
       // A start refused here never runs, so the branch landed for it is let go.
       await this.letGo(branch)
@@ -1147,6 +1278,8 @@ export class DelegationService {
     const live = this.record(record.id)?.deliveryState === 'queued'
     const waiting = start !== undefined && live && (ticket !== undefined && this.queueCheck(record, input.brief, start, branch, ticket)
       || this.queueWorker(record, input.brief, start, branch))
+    // Before the new worker starts, so two models never work on the same piece while the call waits for its outcome.
+    if (record.replaces) await this.letGoOfReplaced(threadId, record.replaces)
     this.calling.add(record.id)
     try {
       if (!waiting) await this.execute(record, input.brief, start)
@@ -1177,6 +1310,26 @@ export class DelegationService {
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
+  /** The limit this brief's own turn stopped at, while it is still the newest word in that thread (ADR-0191), so an older brief takes none of a later turn's. */
+  private stoppedAtLimit(record: DelegationRecord, thread: AgentThread): { readonly provider: ProviderId; readonly resetsAt?: string } | undefined {
+    const stop = thread.lastTurn?.status === 'failed' ? thread.lastTurn.limitStop : undefined
+    return stop && thread.providerId && userHead(thread) === record.messageId ? { provider: thread.providerId, ...stop.resetsAt ? { resetsAt: stop.resetsAt } : {} } : undefined
+  }
+  /** Keep local history changed: what is saved stops holding an overseer's reasons, which is its own words (ADR-0191). */
+  privacyChanged(): void { void this.persist() }
+  /**
+   * A piece given to another model (ADR-0191 decision 10): the thread it left no longer restarts at its limit's reset, and
+   * one whose restart has already gone is stopped, so two models do not carry on with the same piece.
+   */
+  private async letGoOfReplaced(callerId: string, replaces: string): Promise<void> {
+    const old = this.record(replaces)
+    if (!old || old.delegatingThreadId !== callerId) return
+    const thread = this.snapshot().threads.find(item => item.id === old.delegatedThreadId)
+    // Only while this brief is still the newest word in that thread: the user's own message there is the user's own turn.
+    if (!thread || userHead(thread) !== old.messageId) return
+    this.options.control.cancelLimitRestart?.(old.delegatedThreadId)
+    if (isThreadTurnRunning(thread)) await this.stopThreads([old.delegatedThreadId], new Set([callerId]))
+  }
   /**
    * What the window shows of a thread's delegations (#1029), oldest first: the ones it made, every open one and the
    * newest finished or refused ones, and the briefs it was sent. Identities, outcome and timing from this service's own
@@ -1344,7 +1497,7 @@ export class DelegationService {
         let recovered = false
         for (const record of this.byDelegating.get(caller.id) ?? []) if (this.reconsiderRestarted(record)) recovered = true
         if (recovered) await this.persist()
-        return this.listing(caller, snapshot)
+        return await this.withDynamicFacts(this.listing(caller, snapshot), caller, snapshot)
       }
       const swarm = this.options.swarms ? this.swarms.get(parsed.data.delegation) : undefined
       if (swarm && (swarm.ownerThreadId === caller.id || swarm.leadThreadId === caller.id)) return await this.swarmResult(swarm)
@@ -1422,6 +1575,9 @@ export class DelegationService {
    */
   private async place(threadId: string, input: DelegateInput): Promise<WorkerPlacementReceipt | DelegationRefusal | typeof RELAYED | Elsewhere | undefined> {
     const asks = input.machine !== undefined || input.os !== undefined
+    // A Dynamic thread's workers start here for now (ADR-0191 decision 13), wherever new workers start otherwise.
+    const here = this.snapshot(), calling = here.threads.find(thread => thread.id === threadId)
+    if (calling && this.dynamicLimits(calling, here)) return undefined
     const machines = this.options.machines
     if (!machines) return asks ? delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.') : undefined
     if (input.thread !== undefined) return asks ? delegationRefusal('INVALID_INPUT', 'A machine or system is only for a new thread. Leave them out to send another brief. Nothing was sent.') : undefined
@@ -1708,6 +1864,7 @@ export class DelegationService {
   private indexed(record: DelegationRecord): void {
     listed(this.byDelegating, record.delegatingThreadId).push(record)
     listed(this.byDelegated, record.delegatedThreadId).push(record)
+    this.byBrief.set(record.messageId, record)
     if (record.retryKey) this.byRetryKey.set(retryIndex(record.delegatingThreadId, record.retryKey), record)
     if (!this.byId.has(record.id)) this.byId.set(record.id, record)
   }
@@ -1899,10 +2056,10 @@ export class DelegationService {
   }
 
   /** Admission, in one transaction: who calls, under which root, within which ceiling and limits. Records the brief. */
-  private async admit(threadId: string, input: DelegateInput, check = false) {
+  private async admit(threadId: string, input: DelegateInput, check = false, askedDigest?: string) {
     if (this.closed) refuse('STOPPING', 'Sotto is stopping. Nothing was started.')
     const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
-    const inputDigest = digest(input)
+    const inputDigest = askedDigest ?? digest(input)
     if (input.retry_key) {
       const retry = this.retried(caller.id, input.retry_key)
       if (retry) {
@@ -1920,6 +2077,7 @@ export class DelegationService {
       if (!link || link.delegatingThreadId !== caller.id) refuse('UNKNOWN_THREAD', 'This thread can send a brief only to a thread it delegated to. Leave thread out to start a new one. Nothing was sent.')
       const thread = snapshot.threads.find(item => item.id === input.thread)
       if (!thread || isThreadClosed(thread)) refuse('UNKNOWN_THREAD', 'That delegated thread is gone or archived. Nothing was sent.')
+      this.checkSendForRole(caller, thread, input.work, snapshot)
       if (!isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) refuse('PROVIDER_UNAVAILABLE', 'That delegated thread\'s provider is disconnected. Nothing was sent.')
       if (thread.requests.length) refuse('PENDING_USER_REQUEST', 'That delegated thread is waiting for the user\'s answer, which only the user gives on its own card. Nothing was sent.')
       // A held queue says why first: the user's send there pauses delegated sends too, but only their resuming it ends that.
@@ -1929,6 +2087,13 @@ export class DelegationService {
       if (userHead(thread) !== link.seenHead) refuse('TARGET_CHANGED', 'The user has sent their own message in that delegated thread since this thread last looked. Call read_delegation on its newest delegation first. Nothing was sent.')
       const model = resolveModel(snapshot.models, thread.modelId)
       if (!model) refuse('PROVIDER_UNAVAILABLE', 'That delegated thread\'s model is unavailable. Nothing was sent.')
+      // A brief to a worker is held as a start is, as the limits stand now (ADR-0191): a model cannot be reused around them.
+      const underLimits = this.dynamicLimits(caller, snapshot)
+      if (underLimits) {
+        if (model.providerId && !allowedProviders(underLimits.settings, underLimits.thread.providerId).has(model.providerId)) refuse('PROVIDER_NOT_ALLOWED', `${PROVIDER_LABELS[model.providerId]} is off the list Dynamic threads may use. Tell the user they can tick it in Settings, under Threads. Nothing was sent.`)
+        if (thread.reasoningEffort && heldEffort(thread.reasoningEffort, withoutUltracode(model.reasoningEfforts ?? []), underLimits.settings.highestEffort) !== thread.reasoningEffort) refuse('INVALID_INPUT', `That thread works at ${thread.reasoningEffort}, above the most the user's Settings allow now. Start a new worker instead. Nothing was sent.`)
+        if (underLimits.overseeing) this.checkWorkersAtOnce(caller, underLimits.settings, thread.id)
+      }
       const current = this.permission(model, caller, snapshot.models, thread.providerMode ? undefined : thread.runtimeMode ?? 'approval-required')
       if (thread.providerMode && current.providerMode !== thread.providerMode) refuse('PERMISSION_NOT_COMPARABLE', 'That delegated thread\'s permission cannot be compared safely. Nothing was sent.')
       if (this.prompts(caller.id, root, thread.id) >= DELEGATION_PROMPTS_PER_THREAD) refuse('PROMPT_LIMIT', `That thread has had ${DELEGATION_PROMPTS_PER_THREAD} briefs in this turn of this thread. Retries, reads and wake-ups do not renew the limit; the user's next message does. Nothing was sent.`)
@@ -1943,18 +2108,27 @@ export class DelegationService {
     // With worker roles on, a new thread names its kind of work and the user's Settings fill in the rest (#1041): read
     // here, once per call. A provider and model named together override the role's; one without the other is refused.
     const named = input.provider !== undefined && input.model !== undefined
+    const limits = this.dynamicLimits(caller, snapshot)
     let byRole: RoleStart | undefined
-    if (this.options.roles && (named || input.provider === undefined && input.model === undefined)) {
+    // An overseer names what it chooses, as a start did before roles (ADR-0191 decision 5): nothing is filled in for it.
+    if (this.options.roles && !limits?.overseeing && (named || input.provider === undefined && input.model === undefined)) {
       byRole = startFromRole(input.work, this.options.roles(), snapshot.models, { ...(named ? { modelId: input.model } : {}), reasoningEffort: input.effort, speed: input.speed, runtimeMode: input.permission })
       if (!byRole.modelId) refuse('PROVIDER_UNAVAILABLE', 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.')
     } else if (!named) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider, where)} Nothing was started.`)
     const model = resolveModel(snapshot.models, byRole?.modelId ?? input.model!)
     if (!model?.ready || named && model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on ${where}. ${this.readyModels(snapshot, input.provider, where)} Nothing was started.`)
+    // The firm list (ADR-0191 decision 7), whichever way the model was chosen: its provider is who the work goes to.
+    if (limits && model.providerId && !allowedProviders(limits.settings, limits.thread.providerId).has(model.providerId)) refuse('PROVIDER_NOT_ALLOWED', `${PROVIDER_LABELS[model.providerId]} is off the list Dynamic threads may use. Tell the user they can tick it in Settings, under Threads. Nothing was started.`)
+    if (limits?.overseeing) this.checkWorkersAtOnce(caller, limits.settings, undefined, input.replaces)
     if (input.speed && fitSpeed(input.speed, model) !== input.speed) refuse('INVALID_INPUT', 'Choose a speed this model offers. Nothing was started.')
     // Ultracode is the user's own choice in a thread, never a delegating agent's (ADR-0148).
     const efforts = withoutUltracode(model.reasoningEfforts ?? [])
     const roleEffort = byRole && input.effort === undefined && byRole.reasoningEffort && efforts.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
-    const effort = input.effort ?? roleEffort
+    const asked = input.effort ?? roleEffort
+    if (asked !== undefined && !efforts.includes(asked) || asked === undefined && efforts.length > 0 && !byRole) refuse('INVALID_INPUT', `Name the effort for this model, one of: ${efforts.join(', ') || 'none, so leave it out'}. Nothing was started.`)
+    // Highest effort holds rather than refuses, as a ceiling holds a permission (ADR-0191 decision 8), and the result says so.
+    const effort = limits ? heldEffort(asked, efforts, limits.settings.highestEffort) : asked
+    if (asked !== undefined && effort === undefined) refuse('INVALID_INPUT', `This model offers no effort at or under ${limits!.settings.highestEffort}, the most the user's Settings allow. Choose another model. Nothing was started.`)
     if (effort === undefined ? efforts.length > 0 && !byRole : !efforts.includes(effort)) refuse('INVALID_INPUT', `Name the effort for this model, one of: ${efforts.join(', ') || 'none, so leave it out'}. Nothing was started.`)
     if (!byRole && !model.providerModes?.length && input.permission === undefined) refuse('INVALID_INPUT', `Name the permission for a new thread, one of: ${(model.runtimeModes ?? []).join(', ') || 'none'}. It may be no wider than this thread's own or the user's new-thread default. Nothing was started.`)
     const project = snapshot.projects.find(item => item.id === caller.projectId)
@@ -1966,6 +2140,8 @@ export class DelegationService {
     const by = fromRole?.held?.by
     const hostHeld = by === 'not-told' || by === 'no-answer-grant' || by === 'answers-revoked' ? by : undefined
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}),
+      ...limits?.overseeing && input.why ? { why: input.why } : {}, ...limits?.overseeing && input.replaces ? { replaces: input.replaces } : {},
+      ...effort !== asked ? { effortHeld: `Its effort, ${asked}, was held to ${effort}, the most the user's Settings allow for a Dynamic thread's workers.` } : {},
       ...(check ? { check: true } : {}) })
     this.add(record)
     this.creating.add(record.id)
@@ -2152,12 +2328,22 @@ export class DelegationService {
     if (this.fenced.has(delegationId)) { this.dispatchRefusals.set(delegationId, 'stopped'); throw new Error('This delegation was stopped. Nothing was sent.') }
     if (this.record(delegationId)?.deliveryState === 'failed') throw new Error('This delegation was stopped. Nothing was sent.')
   }
+  /** Asked again as the thread is created: a start that waited its turn is held to the list and the effort as they are now (ADR-0191). */
+  private guardDynamicLimits(record: DelegationRecord, start: DelegatedStart, snapshot: AgentHostSnapshot): void {
+    const caller = snapshot.threads.find(thread => thread.id === record.delegatingThreadId)
+    const limits = caller && this.dynamicLimits(caller, snapshot)
+    if (!limits) return
+    const model = resolveModel(snapshot.models, start.modelId)
+    if (model?.providerId && !allowedProviders(limits.settings, limits.thread.providerId).has(model.providerId)) throw new Error(`${PROVIDER_LABELS[model.providerId]} is off the list Dynamic threads may use. Nothing was started.`)
+    if (start.reasoningEffort !== undefined && heldEffort(start.reasoningEffort, withoutUltracode(model?.reasoningEfforts ?? []), limits.settings.highestEffort) !== start.reasoningEffort) throw new Error('The most effort the user\'s Settings allow has changed. Nothing was started.')
+  }
   /**
    * Asked again as the delegated thread is created: the permission it starts with is still within the ceiling as it is
    * now, so a narrower new-thread default, or a narrower delegating thread, set since admission is kept to (decision 4).
    */
   private guardCeiling(record: DelegationRecord, start: DelegatedStart): void {
     const snapshot = this.snapshot()
+    this.guardDynamicLimits(record, start, snapshot)
     // A thread on another machine that asked through the relay (#1316) is held to its permission as its machine last said it.
     const relayed = this.options.relayedCallers?.caller(record.delegatingThreadId)
     const caller = snapshot.threads.find(thread => thread.id === record.delegatingThreadId) ?? (relayed ? relayedThread(relayed) : undefined), model = resolveModel(snapshot.models, start.modelId)
@@ -2588,7 +2774,8 @@ export class DelegationService {
     const held = this.heldNow(record, thread, false)
     const note = record.deliveryState === 'failed' ? FAILURE_NOTES[record.failure ?? 'provider'] : !thread && (outcome === 'unknown' || outcome === 'failed') ? GONE
       : held ? heldWords(held.minutes, held.laterTurn).replace(/^h/u, 'H') : NOTES[outcome]
-    const read: { -readonly [K in keyof DelegationRead]: DelegationRead[K] } = { id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action,
+    const limitStop = thread && this.stoppedAtLimit(record, thread)
+    const read: { -readonly [K in keyof DelegationRead]: DelegationRead[K] } = { id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action, ...limitStop ? { limitStop } : {}, ...record.effortHeld ? { effortHeld: record.effortHeld } : {},
       outcome, note: this.swarmByLead.get(record.delegatedThreadId)?.synthesisFailed
         ? `${note} The synthesis result is missing; it was not completed.` : note, createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
@@ -2666,6 +2853,11 @@ export class DelegationService {
       const synthesisFailed = this.swarmByLead.get(record.delegatedThreadId)?.synthesisFailed
       if (synthesisFailed && (item.outcome === 'failed' || item.outcome === 'stopped')) details.set(record.id, { synthesisFailed })
       if (record.deliveryState === 'failed') details.set(record.id, { notSent: FAILURE_NOTES[record.failure ?? 'provider'] })
+      else if (item.outcome === 'failed') {
+        const stopped = threads.get(record.delegatedThreadId), overseer = threads.get(record.delegatingThreadId)
+        const limit = stopped && overseer && this.options.dynamicThreads && isDynamicThread(overseer, true) ? this.stoppedAtLimit(record, stopped) : undefined
+        if (limit) details.set(record.id, { limitStop: { ...limit, provider: PROVIDER_LABELS[limit.provider] } })
+      }
       else if (item.outcome === 'answered' && this.outcomeOf(record) === 'answered') details.set(record.id, this.replyOf(record, threads.get(record.delegatedThreadId)))
       else if (item.heldMinutes !== undefined) {
         // The brief's turn's own reply, while that turn is still the thread's newest: never a later turn's words.
@@ -2681,6 +2873,24 @@ export class DelegationService {
       ? group.members.filter(member => member.delegationId && this.byId.has(member.delegationId) && !included.has(member.delegationId)).length : 0
     return [omitted ? `${omitted} angle results omitted from this news. Call read_delegation with delegation: "${group!.id}" for the full receipt, then read those delegations for their results.` : '',
       delegationNewsText(folded, details, undefined, summary ? `Swarm ${summary.swarmId}: ${summary.note}${omitted ? '' : ' Read the swarm receipt with read_delegation for every angle, including missing and refused ones. Write the synthesis only after reading their results.'}` : undefined)].filter(Boolean).join('\n\n')
+  }
+  /**
+   * What an overseer reads when it chooses (ADR-0191 decision 9), or a worker under one: only the models on the list, with
+   * what each provider can do and how much of its limit is left, read here when the tool is called and never on an update.
+   */
+  private async withDynamicFacts<T extends { readonly models: readonly { readonly provider: ProviderId }[] }>(listed: T, caller: AgentThread, snapshot: AgentHostSnapshot): Promise<T | (Omit<T, 'roles'> & Record<string, unknown>)> {
+    const limits = this.dynamicLimits(caller, snapshot)
+    if (!limits) return listed
+    const allowed = allowedProviders(limits.settings, limits.thread.providerId)
+    const providers = await Promise.all([...allowed].map(async provider => {
+      const read = reportsUsageLimits(provider) ? await Promise.race([this.options.providerLimits?.(provider).catch(() => undefined), new Promise<undefined>(done => { const timer = setTimeout(done, DYNAMIC_LIMIT_READ_MS, undefined); timer.unref?.() })]) : undefined
+      return { provider, can: providerAbilities(provider, providerProfile(provider)?.takesSottoTools === true),
+        limits: read?.status === 'available' ? { windows: read.windows.map(window => ({ label: window.label, ...window.usedPercent === undefined ? {} : { usedPercent: window.usedPercent }, ...window.resetsAt ? { resetsAt: window.resetsAt } : {}, ...window.modelId ? { modelId: window.modelId } : {} })), ...read.observedAt ? { readAt: read.observedAt } : {} }
+          : 'not known, so choose it knowing that' }
+    }))
+    const { roles: _roles, ...rest } = listed as T & { roles?: unknown }
+    void _roles
+    return { ...rest, models: listed.models.filter(model => allowed.has(model.provider)), providers, highestEffort: limits.settings.highestEffort, ...limits.overseeing ? { workersAtOnce: limits.settings.workersAtOnce } : {} } as Omit<T, 'roles'> & Record<string, unknown>
   }
   private listing(caller: AgentThread, snapshot: AgentHostSnapshot) {
     // The newest twenty, refused ones among them, oldest first.
@@ -2782,7 +2992,9 @@ export class DelegationService {
   }
   /** Writes the record as it is now; rejects when it could not be saved. */
   private save(): Promise<void> {
-    return this.store.writeLatest(() => ({ version: 1, delegations: this.records.slice(-RECORDS_MAX * 2), links: [...this.links.values()].slice(-RECORDS_MAX),
+    // An overseer's reason is its own words, so it stays in memory while Keep local history is off (ADR-0191).
+    const kept = (records: readonly DelegationRecord[]): DelegationRecord[] => this.options.historyEnabled() ? [...records] : records.map(({ why: _why, ...record }) => { void _why; return record })
+    return this.store.writeLatest(() => ({ version: 1, delegations: kept(this.records.slice(-RECORDS_MAX * 2)), links: [...this.links.values()].slice(-RECORDS_MAX),
       roots: [...this.roots].slice(-RECORDS_MAX).map(([threadId, rootUserMessageId]) => ({ threadId, rootUserMessageId })), refusals: this.refusals.slice(-REFUSALS_MAX),
       ...this.swarms.size ? { swarms: [...this.swarms.values()] } : {} }))
   }

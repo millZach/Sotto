@@ -58,6 +58,8 @@ The renderer activity tests keep handles to their mounted prompt editors, finish
 
 `tests/unit/renderer/scaleTokens.test.ts` checks every renderer stylesheet in the normal test gate: each `font-size`, `font` shorthand size and `border-radius` length names a `--tt-type-*` or `--tt-radius-*` step that `tokens.css` declares (ADR-0169), or is `0`, `inherit` or `50%`. A red run lists each value off the scale under its stylesheet. Use the step it belongs on; a value with a reason to stay off the scale goes on the test's exception list with that reason, and an entry no stylesheet writes any more fails too. Run it alone with `npx vitest run tests/unit/renderer/scaleTokens.test.ts`.
 
+`tests/unit/main/codeSizeBudget.test.ts` checks the files on `tests/fixtures/codeSizeBudget.json` in the normal test gate: each holds no more code than its cap in KB, comments and indentation left out (ADR-0190). A red run names the file, its size and its cap. Move code out along a seam; a raise needs its reason in the PR.
+
 `tests/unit/release/trackedFileEncoding.test.ts` checks every Git-tracked file for a UTF-8 byte order mark in the normal test gate. Files stay UTF-8 without a BOM.
 
 Each gate is its own named step, so a red check names the gate that failed. Locally, `npm test -- --maxWorkers=2` still runs the whole suite in one go; while iterating, `npx vitest related <changed files> --run` runs only the tests that import them.

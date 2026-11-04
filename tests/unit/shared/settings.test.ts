@@ -52,6 +52,7 @@ const customSettings = {
   resumeThreadsAfterRestart: false,
   restartStoppedThreads: false,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
+  dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 2 },
   workerCeiling: 10,
   workerMachineCeilings: {},
   watcherSettlesFinishedThreads: false,
@@ -454,6 +455,7 @@ describe('settings', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
       workerRoles: {},
+      dynamicThreads: { highestEffort: 'xhigh', workersAtOnce: 4 },
       workerCeiling: 10,
       workerMachineCeilings: {},
       watcherSettlesFinishedThreads: true,

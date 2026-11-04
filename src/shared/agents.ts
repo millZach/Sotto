@@ -395,7 +395,11 @@ export const agentRequestSchema = z.object({
   questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional(),
     /** Its written answer reaches the agent as the user's own words, not as a value a form checks, so images may go in it
      *  (ADR-0176). The adapter of an agent's own question tool sets it; a typed form field never has it. */
-    prose: z.literal(true).optional() })).max(100).optional(),
+    prose: z.literal(true).optional(),
+    /** Its written answer is a **secret answer** (#2153): the agent asked for it masked, as Codex's `isSecret` does. Every
+     *  client masks it, Sotto never saves its words, and it carries no images. Older clients drop the mark and show a
+     *  plain field. */
+    secret: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   /** A **confirmation** (CONTEXT.md): a permission with nothing to fill in and nothing named to act on beyond its words, answered
    * Allow once or Deny above the composer, the way a question is (issue #2149). The adapter adds it; a request without it,
@@ -628,6 +632,10 @@ export const agentThreadSchema = z.object({
    * the thread's own record so it survives a restart; absent on every thread no other thread started, and from older hosts.
    */
   delegatedBy: id.optional(),
+  /** The user turned Dynamic on for this thread (ADR-0191): Sotto's own record, read through `isDynamicThread`. */
+  dynamic: z.literal(true).optional().catch(undefined),
+  /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
+  dynamicSession: z.object({ created: z.boolean(), told: z.boolean() }).strict().optional().catch(undefined),
   /** Live swarm membership, supplied by its owner only while worker-swarms is on. */
   swarm: z.object({ id, leadThreadId: id, index: z.number().int().nonnegative().optional(), count: z.number().int().positive(),
     synthesisDone: z.boolean().optional(), synthesisFailed: z.enum(['failed', 'stopped']).optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
@@ -1121,6 +1129,12 @@ export const agentStateSchema = z.object({
    * it or the provider says otherwise, and takes no other action on the thread meanwhile. Absent when there are none.
    */
   unconfirmedSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
+  /**
+   * The choice kept for each thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0192): what the user pressed on its
+   * chips while it worked, only where it differs from what the thread runs on. Main sends it once the thread rests, before
+   * its queue sends anything, and nothing of it reaches the provider before. Absent when none waits.
+   */
+  nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
@@ -1446,6 +1460,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('clear-threads'), olderThanDays: clearThreadsAgeSchema, threadIds: z.array(id).min(1).max(THREAD_CLEAR_MAX) }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
+  /** Turn Dynamic on or off for a thread at rest (ADR-0191): a Sotto-side mark that its next send reads. */
+  z.object({ type: z.literal('set-thread-dynamic'), threadId: id, dynamic: z.boolean() }).strict(),
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
@@ -1741,8 +1757,8 @@ export function isThreadProviderConnected(host: AgentHostSnapshot, thread: Agent
 
 /**
  * The question an answer's images are named in (ADR-0176): the last whose written answer reaches the agent as the user's
- * own words. A typed form field is never one, so a number or a date never carries them.
+ * own words. A typed form field is never one, so a number or a date never carries them, and nor is a secret answer.
  */
 export function answerImageCarrier(request: Pick<AgentRequest, 'questions'> | undefined): NonNullable<AgentRequest['questions']>[number] | undefined {
-  return request?.questions?.findLast(question => question.prose === true && question.allowFreeText && !question.unavailableReason)
+  return request?.questions?.findLast(question => question.prose === true && question.allowFreeText && !question.unavailableReason && question.secret !== true)
 }

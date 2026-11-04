@@ -247,7 +247,8 @@ test('Add host follows a setup thread as it checks forge, waits in the thread, a
     const chip = page.getByRole('combobox', { name: 'Thread permissions', exact: true })
     await expect(chip).toHaveText('Full access')
     await chip.click()
-    await page.getByRole('listbox', { name: 'Thread permissions' }).getByRole('option', { name: 'Auto', exact: true }).click()
+    // A Codex option's name carries the line under it (#2161), so it is found by how it starts.
+    await page.getByRole('listbox', { name: 'Thread permissions' }).getByRole('option', { name: /^Auto/u }).click()
     await expect.poll(async () => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === id)?.runtimeMode, remoteThread)).toBe('auto')
     await expect(chip).toHaveText('Auto')
     await expect(chip).not.toHaveAttribute('data-pending')
