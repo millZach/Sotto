@@ -167,10 +167,13 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await expect(panel.getByRole('button', { name: 'Stage file', exact: true })).toHaveCount(0)
     // Changes reads the file directly; the pane's Git status is a separate, periodically refreshed record.
     // Use the working-copy Refresh control so this journey does not depend on the background poll's phase.
+    // Beside open Tools the row has given it up for the name (ADR-0182, November 4 amendment), so Tools folds for the press.
     const workingCopy = pane(first).getByRole('button', { name: /^Working copy:/u })
+    await toggleTools(pane(first))
     await workingCopy.click()
     await pane(first).getByRole('group', { name: 'Working copy details' }).getByRole('button', { name: 'Refresh', exact: true }).click()
     await workingCopy.click()
+    await toggleTools(pane(first))
     // The commit is the pane header's Git action (ADR-0027): Commit from its menu, the message typed in the dialog.
     await pane(first).getByRole('button', { name: 'More Git actions', exact: true }).click()
     const commitAction = page.getByRole('menuitem', { name: /^Commit(?:\.|$)/u })

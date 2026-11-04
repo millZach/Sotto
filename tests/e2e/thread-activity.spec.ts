@@ -133,9 +133,9 @@ test('a running turn folds its steps under the glowing working words, opens them
     const live = log.getByTestId('thread-activity-live')
     const line = live.getByRole('button', { name: /^Working, \d+ steps so far$/ })
     await expect(line).toHaveAttribute('aria-expanded', 'false')
-    // The words alone carry the wait: no clock, no step named on the line, and no live rows until it opens.
+    // The line names the step it is on (ADR-0134, November 4 amendment): no clock, no count, and no live rows until it opens.
     await expect(live.locator('.thread-activity-live__word')).toBeVisible()
-    await expect(live).not.toContainText('npm test')
+    await expect(live.locator('.thread-activity-live__word')).toContainText(/^Running .*npm test/u)
     await expect(live.locator('[data-elapsed]')).toHaveCount(0)
     await expect(log.locator('.thread-activity[data-live]')).toHaveCount(0)
     // A band of the accent, at its most vivid, lights the letters as it crosses them, and the dot steps aside for it.

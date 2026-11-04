@@ -62,6 +62,6 @@ Zach chose this. On November 2 he asked: "shorten the name of the thread down, i
 
 **Why.** The name is the one thing in the row that tells panes apart. With Tools open or two threads side by side, decision 5 spent the row on a project and branch that Tools and the Git action already say.
 
-**What it costs.** With a long name in a narrow pane, the project, the branch and the number can all leave the row where decision 5 kept part of them, and Choose branch loses its button. Its chord still opens it. Below a 720px pane Watch has no word.
+**What it costs.** With a long name in a narrow pane, the project, the branch and the number can all leave the row where decision 5 kept part of them, and Choose branch loses its button, though its chord still opens it. The working copy's button goes too until the row has room for it, so opening its panel in a narrow pane means widening the pane first. Below a 720px pane Watch has no word.
 
 The Consequences' line on `calc-size()` still holds. The floor also reads the title's own width, so the title is a size container, and the name's cap reads the pane's width through the registered property `--pane-width`.
