@@ -1,0 +1,188 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything. Nothing here is saved.
+
+  Question: Zach's picks (ADR-0188, tag prototype/to-do-scroll) leave two things open on the phone, once #2126's real rail is measured.
+    1. Duo sideways with a thread and Agents: the rail has 8 points left and the tile needs 44. Variants A, B, C.
+    2. Other iPhones: most pages have no bar for "top right of the bar" to mean. Variants A, B.
+  Zach's picks (November 4, 2026): question 1 A, the to-do tile takes the sidebar button's place while both pills are full; question 2 A, in each page's heading, and in the top corner on Watcher.
+  Settled by his earlier picks and only shown for reference: the Duo folded and upright, and sideways without Agents.
+
+  Frames come from the app: Duo sideways 951x669 with an 84-point strip and the clock's first 124; tiles 50 in a pill with 5 of inset,
+  so four are 216; circles 44. Other iPhones are 393x852 and 375x667.
+  URL params: q=1|2|bar, variant=A|B|C, theme=dark|light, phone=393|375, page=threads|settings|watcher, agents=0|1.
+-->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto, the to-do list on the iPhone, prototype</title>
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265); --tt-raised: oklch(0.185 0.008 265); --tt-overlay: oklch(0.215 0.008 265);
+  --tt-text: oklch(0.985 0.005 280); --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183); --tt-on-accent: oklch(0.16 0.012 190); --tt-accent-surface: oklch(0.32 0.05 185);
+  --tt-message: oklch(0.205 0.014 265); --tt-attention: oklch(0.829 0.171 81); --tt-badge: oklch(0.772 0.173 65); --tt-on-badge: oklch(0.2 0.03 65);
+  --tt-sidebar: oklch(0.235 0.003 265); --tt-sidebar-control: oklch(0.295 0.003 265); --tt-sidebar-selected: oklch(0.355 0.035 188); --tt-sidebar-border: oklch(0.355 0.012 265);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent); --tt-shadow: rgb(0 0 0 / 73%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --page: #2a2b30;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85); --tt-raised: oklch(0.955 0.006 85); --tt-overlay: oklch(0.945 0.007 85);
+  --tt-text: oklch(0.235 0.014 75); --tt-text-2: oklch(0.36 0.012 75); --tt-muted: oklch(0.45 0.012 75);
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.53 0.095 186); --tt-on-accent: oklch(0.99 0.003 85); --tt-accent-surface: oklch(0.92 0.03 186);
+  --tt-message: oklch(0.93 0.012 85); --tt-attention: oklch(0.531 0.156 45);
+  --tt-sidebar: oklch(0.955 0.008 85); --tt-sidebar-control: oklch(0.995 0.002 85); --tt-sidebar-selected: oklch(0.895 0.028 188); --tt-sidebar-border: oklch(0.87 0.012 82);
+  --tt-hover: oklch(0.93 0.02 185); --tt-shadow: rgb(0 0 0 / 22%);
+  --page: #c9c9cc;
+}
+*{box-sizing:border-box} html,body{margin:0;height:100%}
+body{background:var(--page);color:var(--tt-text);font:15px/1.4 var(--tt-font);display:flex;flex-direction:column}
+#stage{flex:1;min-height:0;overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+#say{max-width:900px;width:100%;font-size:14px;color:var(--tt-text-2)} #say b{color:var(--tt-text)}
+#fit{transform-origin:top center}
+#win{position:relative;background:var(--tt-canvas);border-radius:26px;overflow:hidden;box-shadow:0 0 0 1px var(--tt-hairline)}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.circ{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--tt-surface);box-shadow:inset 0 0 0 1px var(--tt-hairline);color:var(--tt-text-2);position:relative;flex:none}
+.bdg{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;font-size:12px;font-weight:700;line-height:18px;text-align:center;background:var(--tt-badge);color:var(--tt-on-badge)}
+.bdg.quiet{background:var(--tt-surface);color:var(--tt-text-2);box-shadow:inset 0 0 0 1px var(--tt-field-border);font-weight:600}
+.open-t{background:var(--tt-accent-surface);color:var(--tt-accent)}
+.pill{width:60px;border-radius:30px;padding:5px;background:var(--tt-surface);box-shadow:inset 0 0 0 1px var(--tt-hairline);display:flex;flex-direction:column;gap:2px;align-items:center;flex:none}
+.tile{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;color:var(--tt-text-2);position:relative;flex:none}
+.tile.lit{background:var(--tt-accent-surface);color:var(--tt-accent)} .tile small{font-size:10px;line-height:1.15;text-align:center;color:var(--tt-accent)}
+.rail{position:absolute;top:0;bottom:0;right:0;width:84px;display:flex;flex-direction:column;align-items:center}
+.clock{position:absolute;top:30px;left:0;right:0;text-align:center;font-weight:700;font-size:15px}
+.list{position:absolute;left:0;top:0;bottom:0;width:280px;border-right:1px solid var(--tt-hairline);padding:18px 12px;overflow:hidden}
+.list h1{margin:0;font-size:24px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.list h4{margin:16px 6px 6px;font-size:13px;color:var(--tt-muted);font-weight:500} .lrow{padding:8px;border-radius:10px;font-size:14px} .lrow.sel{background:var(--tt-accent-surface)} .lrow small{display:block;color:var(--tt-muted);font-size:12px}
+.main{position:absolute;top:0;bottom:0;padding:18px 16px;overflow:hidden}
+.bubble{background:var(--tt-message);border-radius:14px;padding:10px 12px;margin:0 0 12px auto;width:fit-content;max-width:80%}
+.compo{position:absolute;left:12px;right:12px;bottom:14px;border-radius:18px;background:var(--tt-surface);box-shadow:inset 0 0 0 1px var(--tt-hairline);padding:12px 14px;color:var(--tt-muted)}
+.head{display:flex;align-items:center;gap:8px;min-height:52px} .head h1{margin:0;font-size:28px;font-weight:700;flex:1;min-width:0}
+.ph-status{height:50px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 28px 4px;font-weight:600;font-size:15px}
+.tabs{position:absolute;left:0;right:0;bottom:0;height:78px;border-top:1px solid var(--tt-hairline);display:flex;justify-content:space-around;padding-top:8px;background:var(--tt-canvas);color:var(--tt-text-2);font-size:11px}
+.tabs div{display:flex;flex-direction:column;align-items:center;gap:2px} .tabs .lit{color:var(--tt-accent)}
+.nav{display:flex;align-items:center;gap:4px;padding:0 10px;height:48px} .nav b{flex:1;min-width:0;text-align:center;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--tt-surface);box-shadow:inset 0 0 0 1px var(--tt-hairline);color:var(--tt-text-2);position:relative;flex:none}
+.spill{height:36px;border-radius:18px;padding:0 10px;display:flex;align-items:center;gap:6px;background:var(--tt-surface);box-shadow:inset 0 0 0 1px var(--tt-hairline);font-size:12px;color:var(--tt-accent);flex:none;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--tt-accent)}
+.scroll{position:absolute;z-index:9;overflow:hidden;border-radius:12px;background:var(--tt-raised);box-shadow:inset 0 0 0 1px var(--tt-hairline),0 12px 30px var(--tt-shadow);padding:12px 14px}
+.scroll h2{margin:0 0 8px;font-size:17px}.scroll span{color:var(--tt-muted);font-size:13px;font-weight:400;margin-left:8px}
+.todo{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--tt-hairline);font-size:15px}.todo i{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--tt-field-border);flex:none}
+.note{position:absolute;z-index:8;font-size:12px;color:var(--tt-on-badge);background:var(--tt-attention);padding:3px 7px;border-radius:6px;white-space:nowrap}
+#bar{flex:none;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:8px;background:var(--tt-raised);border-top:1px solid var(--tt-hairline)}
+#bar button,#bar select{height:34px;padding:0 10px;border-radius:7px;background:var(--tt-surface);box-shadow:inset 0 0 0 1px var(--tt-hairline);font-size:13px;color:var(--tt-text)}
+#bar button.on{background:var(--tt-accent);color:var(--tt-on-accent);font-weight:600}
+#state{font:12px ui-monospace,monospace;color:var(--tt-muted);max-width:900px;width:100%;white-space:pre-wrap}
+</style></head><body>
+<div id="stage"><div id="say"></div><div id="fit"><div id="win"></div></div><div id="state"></div></div>
+<div id="bar"></div>
+<script>
+const I = {
+  todo: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>`,
+  check: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>`,
+  out: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>`,
+  up: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>`,
+  right: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>`,
+  left: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>`,
+  owl: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l3.2 2.2a12 12 0 0 1 7.6 0L19 4v8.5C19 17 16 20 12 20s-7-3-7-7.5z"/><circle cx="9" cy="12" r="2.4" fill="var(--tt-canvas)"/><circle cx="15" cy="12" r="2.4" fill="var(--tt-canvas)"/></svg>`,
+  dots: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>`,
+  x: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>`,
+  min: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 12h12"/></svg>`,
+  max: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>`,
+  panel: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="14" rx="2.5"/><path d="M15 5v14"/></svg>`,
+  drawer: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="14" rx="2.5"/><path d="M4 14h16"/></svg>`,
+  side: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9.5 5v14"/><path d="M5.5 9h1.5M5.5 12h1.5"/></svg>`,
+  plus: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
+  mic: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>`,
+  send: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11.5 12 5.5l6 6"/></svg>`,
+  chat: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4h14a2.5 2.5 0 0 1 2.5 2.5v8A2.5 2.5 0 0 1 19 17h-7l-5 4v-4H5a2.5 2.5 0 0 1-2.5-2.5v-8A2.5 2.5 0 0 1 5 4z"/></svg>`,
+  host: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><rect x="2.5" y="4" width="19" height="13" rx="2"/><rect x="9" y="18" width="6" height="2"/></svg>`,
+  sliders: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 7h18M3 12h18M3 17h18"/><circle cx="15" cy="7" r="2" fill="var(--tt-surface)"/><circle cx="8" cy="12" r="2" fill="var(--tt-surface)"/><circle cx="14" cy="17" r="2" fill="var(--tt-surface)"/></svg>`,
+  search: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>`,
+  folder: s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>`,
+  ringWifi: () => `<svg class="ring" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 22a11 11 0 1 1 16 0"/><path d="M9 13a7 7 0 0 1 10 0M11.5 16a3.5 3.5 0 0 1 5 0" stroke="var(--tt-text)" stroke-width="1.9"/><circle cx="14" cy="19" r="1" fill="var(--tt-text)" stroke="none"/></svg>`,
+}
+
+const q=new URLSearchParams(location.search)
+const S={q:q.get('q')||'1',variant:q.get('variant')||'A',theme:q.get('theme')||'dark',phone:+(q.get('phone')||393),page:q.get('page')||'threads',agents:q.get('agents')!=='0',open:false,items:3,fresh:1,scrolled:false}
+const $=s=>document.querySelector(s)
+const VARIANTS={'1':{A:'A: it takes the sidebar button\'s place',B:'B: beside + in the sidebar\'s heading',C:'C: floats at the page\'s corner'},'2':{A:'A: in each page\'s heading',B:'B: pinned at the top right'},bar:{A:'A thread\'s bar, all controls'}}
+const SAY={
+ '1':'<b>Question 1, the Duo held sideways, a thread open, Agents showing.</b> The rail is 635 tall and the clock takes 124. Two full pills leave 8 points, and the tile needs 44. <b>Without Agents it fits as you picked</b>, so switch Agents off to compare: this is only about when both pills are full. In A, a delegated thread that also has Agents keeps Back in that spot, and To-do moves into its ••• menu, since nothing else fits.',
+ '2':'<b>Question 2, other iPhones.</b> You picked the top right of the bar, and a thread has one. Threads, Computers, Settings and Watcher have no bar. Their heading scrolls away with the list. Press the page buttons, and Scroll to see each answer once you have read down.',
+ 'bar':'<b>For reference, a thread\'s bar on the smallest iPhone, with everything showing.</b> It fits because the title gives way, as it already does. Nothing to pick unless this looks wrong to you.'}
+const badge=()=>S.items?`<span class="bdg ${S.fresh&&!S.open?'':'quiet'}">${S.fresh&&!S.open?S.fresh:S.items}</span>`:''
+const toggle=`data-act="todo"`
+const tdc=(cls='circ')=>`<button class="${cls} ${S.open?'open-t':''}" ${toggle} aria-label="To-do">${I.todo(cls==='cb'?18:21)}${badge()}</button>`
+const statePill=(a)=>`<div class="pill">${`<div class="tile" style="height:${a?50:50}px;display:flex;flex-direction:column;align-items:center;justify-content:center"><span class="dot"></span><small>Working<br>12m</small></div>`}${a?`<div class="tile">${I.host?'':''}<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg><span class="bdg">4</span></div>`:''}<div class="tile">${I.owl(24)}</div><div class="tile">${I.dots(20)}</div></div>`
+const tabsPill=()=>`<div class="pill"><div class="tile lit">${I.chat?I.chat(24):''}<span class="bdg">5</span></div><div class="tile">${I.owl(24)}</div><div class="tile">${I.host?I.host(24):''}</div><div class="tile">${I.sliders?I.sliders(22):''}</div></div>`
+const thread=`<div class="bubble">Put the hand test on my to-do, I'll run it tonight.</div><div style="color:var(--tt-text-2);font-size:13px">Codex</div><div>It's on your to-do, seven steps. I'll wait for what you find.</div><div class="compo">Reply while it works</div>`
+function scene1(){
+  const W=951,H=669,v=S.variant,a=S.agents
+  const full=a
+  // Without Agents the tile stands under the sidebar button, as he picked. With Agents the variant decides.
+  const belowSide=!full
+  const swap=full&&v==='A', heading=full&&v==='B', float=full&&v==='C'
+  const top=swap?tdc():`<div class="circ">${I.side?I.side(21):''}</div>`
+  const rail=`<div class="rail" style="padding-top:124px;padding-bottom:20px"><div class="clock">9:41</div><div style="display:flex;flex-direction:column;gap:4px;align-items:center;height:100%">${top}${belowSide?tdc():''}${statePill(a)}${tabsPill()}</div></div>`
+  const plus=`<span class="circ">${I.plus?I.plus(20):'+'}</span>`
+  const list=`<div class="list"><h1>Threads<span style="display:flex;gap:6px">${heading?tdc():''}${plus}</span></h1><h4>Needs you 1</h4><div class="lrow">Visual gate flake<small>Asked you a question</small></div><h4>Working now 2</h4><div class="lrow sel">Paired host links<small>Codex on forge</small></div><div class="lrow">Soundtrack<small>Claude Code on forge</small></div><h4>Recent 2</h4><div class="lrow">Teams decisions<small>1d ago</small></div></div>`
+  const main=`<div class="main" style="left:280px;right:84px">${float?`<div style="position:absolute;top:12px;right:12px;z-index:7">${tdc()}</div>`:''}${thread}</div>`
+  const note=swap?`<div class="note" style="top:134px;right:88px">Drag from the edge for the sidebar</div>`:heading?`<div class="note" style="top:64px;left:292px">With the sidebar hidden, the Threads tab reaches it</div>`:float?`<div class="note" style="top:64px;right:96px">Over the thread's words as they scroll</div>`:''
+  const pane=S.open?`<div class="scroll" style="top:10px;right:84px;width:400px"><h2>To-do<span>${S.items} to do</span></h2>${todos()}</div>`:''
+  return {W,H,html:list+main+note+rail+pane,facts:`rail: 635 tall. clock 124 + button 44 + gaps 8 + thread pill ${a?216:164} + tabs 216 + foot 19 = ${124+44+8+(a?216:164)+216+19}; left over ${635-(124+44+8+(a?216:164)+216+19)} points, tile needs 44 + 4.`}
+}
+function page2(){
+  const pg=S.page,v=S.variant,pinned=v==='B'
+  const titles={threads:'Threads',settings:'Settings',watcher:''}
+  const plus=pg==='threads'?`<span class="circ">${I.plus?I.plus(20):'+'}</span>`:''
+  const head=pg==='watcher'?'':`<div class="head" style="${S.scrolled?'margin-top:-300px':''}"><h1>${titles[pg]}</h1>${pinned?'':tdc()}${plus}</div>`
+  const body=pg==='threads'?`<h4 style="margin:12px 0 6px;font-size:13px;color:var(--tt-muted);font-weight:500">Needs you 1</h4><div class="lrow">Visual gate flake<small>Asked you a question</small></div><h4 style="margin:12px 0 6px;font-size:13px;color:var(--tt-muted);font-weight:500">Working now 2</h4><div class="lrow">Paired host links<small>Codex on forge</small></div><div class="lrow">Soundtrack<small>Claude Code on forge</small></div><h4 style="margin:12px 0 6px;font-size:13px;color:var(--tt-muted);font-weight:500">Recent 5</h4>${['Teams decisions','Duo thread rail','Mark up','Dictation','Council','Release'].map(t=>`<div class="lrow">${t}<small>1d ago</small></div>`).join('')}`
+    :pg==='settings'?`<div style="color:var(--tt-muted);font-size:14px;margin:6px 0 14px">These are kept on this iPhone.</div>${['Appearance','Notifications','Text size','Duo tabs','About'].map(t=>`<div class="lrow" style="padding:14px 8px;border-top:1px solid var(--tt-hairline)">${t}</div>`).join('')}`
+    :`<div class="bubble">What needs me?</div><div style="color:var(--tt-text-2);font-size:13px">Watcher</div><div>Nothing is waiting on a card. There are three things on your to-do.</div>`
+  const watcherIcon=pg==='watcher'&&!pinned?`<div style="position:absolute;top:58px;right:14px;z-index:7">${tdc()}</div>`:''
+  const pin=pinned?`<div style="position:absolute;top:58px;right:${pg==='threads'&&!S.scrolled?70:14}px;z-index:7">${tdc()}</div>`:''
+  const sh=S.phone===375?667:852
+  const pane=S.open?`<div class="scroll" style="top:104px;left:8px;right:8px"><h2>To-do<span>${S.items} to do</span></h2>${todos()}</div>`:''
+  const hidden=!pinned&&S.scrolled&&pg!=='watcher'
+  return {W:S.phone,H:sh,html:`<div class="ph-status"><span>9:41</span><span>●●●</span></div><div style="padding:0 16px;overflow:hidden;height:calc(100% - 128px)">${head}${body}</div>${watcherIcon}${pin}${pane}<div class="tabs">${[['Threads','threads'],['Watcher','watcher'],['Computers',''],['Settings','settings']].map(([t,p])=>`<div class="${p===pg?'lit':''}" data-page="${p}" style="cursor:pointer">${p==='threads'?(I.chat?I.chat(22):''):p==='watcher'?I.owl(22):p==='settings'?(I.sliders?I.sliders(20):''):(I.host?I.host(22):'')}${t}</div>`).join('')}</div>`,facts:`page ${pg}, ${S.phone} wide, ${S.scrolled?'scrolled':'at the top'}. Icon on screen: ${hidden?'no, it went with the heading; the thread bar and scrolling up reach it':'yes'}.`}
+}
+function bar(){
+  return {W:375,H:667,html:`<div class="ph-status"><span>9:41</span><span>●●●</span></div><div class="nav"><span class="cb">${I.left(18)}</span><b>Paired host links</b><span class="cb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg><span class="bdg">4</span></span><span class="spill"><span class="dot"></span>12m</span><span class="cb">${I.owl(18)}</span>${tdc('cb')}<span class="cb">${I.dots(17)}</span></div><div class="main" style="top:98px;left:0;right:0">${thread}</div>${S.open?`<div class="scroll" style="top:104px;left:8px;right:8px"><h2>To-do<span>${S.items} to do</span></h2>${todos()}</div>`:''}`,facts:'Drawn at these sizes, not measured from the app: back 36, Agents 36, state 58, Watch 36, To-do 36, ••• 36, gaps 20, edges 20 = 278, so the title has 97 of 375.'}
+}
+function todos(){return ['Hand test links on a paired host','Listen to the new soundtrack','Walk through part 3 on the laptop'].slice(0,S.items).map(t=>`<div class="todo"><i></i><div>${t}</div></div>`).join('')+`<div style="margin-top:8px;text-align:right;font-size:13px;color:var(--tt-text-2)"><button data-act="todo">Roll up</button></div>`}
+function render(){
+  document.documentElement.dataset.theme=S.theme
+  const vs=VARIANTS[S.q]; if(!vs[S.variant]) S.variant='A'
+  const r=S.q==='1'?scene1():S.q==='2'?page2():bar()
+  const w=$('#win'); w.style.width=r.W+'px'; w.style.height=r.H+'px'; w.innerHTML=r.html
+  const room=Math.min(1,(document.documentElement.clientWidth-32)/r.W)
+  $('#fit').style.transform=`scale(${room})`; $('#fit').style.height=r.H*room+'px'; $('#fit').style.width=r.W*room+'px'; $('#fit').style.display='flex'; $('#fit').style.justifyContent='center'; $('#fit').style.transformOrigin='top left'
+  $('#say').innerHTML=SAY[S.q]
+  $('#state').textContent=`q=${S.q} variant=${S.variant} theme=${S.theme}${S.q==='1'?' agents='+S.agents:''}${S.q==='2'?' page='+S.page+' phone='+S.phone:''} list=${S.open?'unrolled':'rolled'}\n${r.facts}`
+  const bt=(act,val,label,on)=>`<button data-${act}="${val}" class="${on?'on':''}">${label}</button>`
+  $('#bar').innerHTML=[bt('q','1','Duo sideways',S.q==='1'),bt('q','2','Other iPhones',S.q==='2'),bt('q','bar','Small iPhone bar',S.q==='bar'),'<span style="width:10px"></span>',...Object.entries(vs).map(([k,l])=>bt('variant',k,l,S.variant===k)),'<span style="width:10px"></span>',
+    ...(S.q==='1'?[bt('flag','agents',S.agents?'Agents on':'Agents off',S.agents)]:[]),
+    ...(S.q==='2'?[bt('page','threads','Threads',S.page==='threads'),bt('page','settings','Settings',S.page==='settings'),bt('page','watcher','Watcher',S.page==='watcher'),bt('flag','scrolled','Scroll',S.scrolled),bt('flag','phone',S.phone+' wide',false)]:[]),
+    bt('flag','theme',S.theme==='dark'?'Dark':'Light',false)].join('')
+  const u=new URLSearchParams({q:S.q,variant:S.variant,theme:S.theme,agents:S.agents?'1':'0',page:S.page,phone:S.phone}); history.replaceState(null,'','?'+u)
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-q],[data-variant],[data-page],[data-flag],[data-act]'); if(!t)return
+  const d=t.dataset
+  if(d.q){S.q=d.q;S.variant='A';S.open=false}
+  if(d.variant)S.variant=d.variant
+  if(d.page)S.page=d.page,S.scrolled=false
+  if(d.flag==='agents')S.agents=!S.agents
+  if(d.flag==='scrolled')S.scrolled=!S.scrolled
+  if(d.flag==='phone')S.phone=S.phone===393?375:393
+  if(d.flag==='theme')S.theme=S.theme==='dark'?'light':'dark'
+  if(d.act==='todo'){S.open=!S.open;if(S.open)S.fresh=0}
+  render()
+})
+addEventListener('resize',render); render()
+</script></body></html>
