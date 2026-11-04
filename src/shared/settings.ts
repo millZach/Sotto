@@ -6,6 +6,7 @@ import { DEFAULT_HOTKEY } from './constants'
 import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { DEFAULT_WATCHER_SCENE, WATCHER_SCENES, type WatcherScene } from './watcherScene'
+import { DEFAULT_DYNAMIC_THREADS, dynamicThreadSettingsSchema, parseDynamicThreadSettings, type DynamicThreadSettings } from './dynamicThreads'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import { COUNCIL_STAGE_DEADLINE, councilChairSchema, councilLayoutSchema, councilPanelistsSchema, councilStageDeadlineSchema, DEFAULT_COUNCIL_LAYOUT, DEFAULT_COUNCIL_PANELISTS,
   parseCouncilPanelists, type CouncilLayout, type CouncilSeatChoice } from './council'
@@ -199,6 +200,8 @@ export interface AppSettings {
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
    */
   workerRoles: WorkerRoleChoices
+  /** Dynamic threads' limits under Settings, Threads (ADR-0191, an Owl feature): the allowed list and how far workers may go. */
+  dynamicThreads: DynamicThreadSettings
   /** Concurrent worker starts per machine while worker-swarms is on; saved whole on stable. */
   workerCeiling: number
   workerMachineCeilings: WorkerMachineCeilings
@@ -503,6 +506,7 @@ const fieldSchemas = {
   resumeThreadsAfterRestart: z.boolean(),
   restartStoppedThreads: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
+  dynamicThreads: dynamicThreadSettingsSchema,
   workerCeiling: workerCeilingSchema,
   workerMachineCeilings: workerMachineCeilingsSchema,
   watcherSettlesFinishedThreads: z.boolean(),
@@ -631,6 +635,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeThreadsAfterRestart: true,
   restartStoppedThreads: true,
   workerRoles: {},
+  dynamicThreads: { ...DEFAULT_DYNAMIC_THREADS },
   workerCeiling: DEFAULT_WORKER_CEILING,
   workerMachineCeilings: {},
   watcherSettlesFinishedThreads: true,
@@ -829,6 +834,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     restartStoppedThreads: parseField(persisted, 'restartStoppedThreads', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
+    dynamicThreads: persisted.dynamicThreads === undefined ? { ...defaults.dynamicThreads } : parseDynamicThreadSettings(persisted.dynamicThreads),
     workerCeiling: parseField(persisted, 'workerCeiling', defaults),
     workerMachineCeilings: parseField(persisted, 'workerMachineCeilings', defaults),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),

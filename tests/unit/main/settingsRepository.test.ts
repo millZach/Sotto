@@ -52,6 +52,16 @@ describe('SettingsRepository', () => {
     expect((await reopened.get()).workerRoles).toEqual(rows)
     expect((await reopened.update({ workerRoles: {} })).workerRoles).toEqual({})
   })
+  it('keeps Dynamic threads\' limits whole with the Owl feature off, and refuses a change to them', async () => {
+    const filePath = join(await mkdtemp(join(tmpdir(), 'sotto-dynamic-settings-')), 'settings.json')
+    const limits = { providers: ['claude' as const], highestEffort: 'high' as const, workersAtOnce: 2 }
+    await new SettingsRepository(filePath).update({ dynamicThreads: limits })
+    const stable = new SettingsRepository(filePath, { dynamicThreadsEnabled: false })
+    expect((await stable.save({ ...DEFAULT_SETTINGS, autoPaste: false })).dynamicThreads).toEqual(limits)
+    await expect(stable.update({ dynamicThreads: { highestEffort: 'max', workersAtOnce: 9 } })).rejects.toThrow('Sotto Owl')
+    expect((await stable.reset()).dynamicThreads).toEqual(limits)
+  })
+
   it('keeps hidden swarm counts and machine ceilings through role edits, resets and whole saves', async () => {
     const { filePath, repository: owl } = await createRepository()
     const forge = '11111111-1111-4111-8111-111111111111'

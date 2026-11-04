@@ -205,6 +205,7 @@ const settingKeys = [
   'resumeThreadsAfterRestart',
   'restartStoppedThreads',
   'workerRoles',
+  'dynamicThreads',
   'workerCeiling',
   'workerMachineCeilings',
   'watcherSettlesFinishedThreads',
