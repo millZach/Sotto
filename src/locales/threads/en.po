@@ -2671,6 +2671,11 @@ msgstr "Codex edits files and runs commands in the project without asking. It as
 msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
 msgstr "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
 
+#. {computer} is the name of the computer the thread runs on, such as forge.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+msgstr "Codex runs any command and edits any file without asking, anywhere on {computer} and online."
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Codex runs any command and edits any file without asking, anywhere on this computer and online."
 msgstr "Codex runs any command and edits any file without asking, anywhere on this computer and online."

@@ -2,7 +2,7 @@ import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { permissionInForceCaption, settingRefusalText, ThreadOptionFields, ThreadOptions, threadOptionsSummary, unconfirmedSettingText } from '../../../../src/renderer/src/agents/ThreadOptions'
+import { modeChoices, permissionInForceCaption, settingRefusalText, ThreadOptionFields, ThreadOptions, threadOptionsSummary, unconfirmedSettingText } from '../../../../src/renderer/src/agents/ThreadOptions'
 import { PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, type AgentCommand, type AgentState, type AgentThread } from '../../../../src/shared/agents'
 import { fixture, LiveThread, mount, setupThreadOptionsTests, withThread } from '../../../fixtures/renderer/threadOptionsHarness'
 
@@ -405,6 +405,14 @@ describe('Codex’s permission menu', () => {
     expect(permissionInForceCaption('Codex', { runtimeMode: 'auto' }, 'codex')).toBe('Codex’s reviewer still answers what would come to you until it confirms.')
     expect(permissionInForceCaption('Codex', { runtimeMode: 'auto-accept-edits' }, 'codex')).toBe('Codex still makes edits without asking until it confirms.')
     expect(permissionInForceCaption('Grok Build', { runtimeMode: 'auto' }, 'grok')).toBe('Grok Build still decides what to ask you about until it confirms.')
+  })
+
+  it('names a paired host under Full access, since this computer is the one Sotto runs on', () => {
+    const state = fixture({ providerId: 'codex', modelId: 'codex:model' })
+    const model = state.host.models.find(entry => entry.id === 'codex:model')
+    expect(modeChoices(model, 'auto', undefined, 'forge').find(choice => choice.id === 'full-access')?.description)
+      .toBe('Codex runs any command and edits any file without asking, anywhere on forge and online.')
+    expect(modeChoices(model, 'auto', undefined, 'forge').find(choice => choice.id === 'auto')?.description).toBe(CODEX_LINES.auto)
   })
 
   it('gives another provider’s modes none of Codex’s lines', () => {

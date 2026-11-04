@@ -217,7 +217,7 @@ Opening a thread was unchanged at about 50 ms, and one with work done outside So
 
 A Codex thread's permission menu named its four modes and said nothing about them, while Cursor's (ADR-0128) and
 DeepSeek Harness's (ADR-0138) say what each lets the provider do. Codex's modes differ in more than their names suggest,
-and Auto hands the user's questions to a model, so the menu now says it. The adapter maps them in `runtimePolicy`, sent
+and Auto hands the user's permission requests to a model, so the menu now says it. The adapter maps them in `runtimePolicy`, sent
 on `thread/start` and `thread/settings/update` and, for approval and reviewer, on every `turn/start`:
 
 | Mode | `approvalPolicy` | `approvalsReviewer` | `sandbox` |
@@ -248,7 +248,7 @@ caption beside the chips says "Codex’s reviewer still answers what would come 
 that Codex decides what to ask. A Watcher on Codex gives the same four lines in place of Watcher's general ones, which
 said Allow edits asks before commands and Auto lets Codex decide. The iPhone gives them too, for a Codex thread and a
 Codex Watcher, with one change: its Full access line names the computer the thread runs on, since "this computer" on a
-phone would be wrong. No line says when a change applies; the chip already cannot change while a turn runs.
+phone would be wrong. On the desktop, a thread on a paired host names that host the same way. No line says when a change applies; the chip already cannot change while a turn runs.
 
 No Windows line. With Codex's Windows sandbox off, `workspace-write` could fall back to read-only, so a check ran the
 same day on Zach's Windows 11 PC with Codex 0.166.0: under `workspace-write` Codex wrote in the project without asking

@@ -68,9 +68,10 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
  * `on-request` in `workspace-write`, where commands inside the project run unasked and the network, other folders and
  * `.git` need escalation; Auto routes those escalations to Codex's `auto_review` reviewer, a model on the thread's own
  * model provider, which Sotto sets to OpenAI; Full access is `never` with no sandbox. Read them again when Codex or that
- * mapping changes.
+ * mapping changes. A thread on another computer names it under Full access, since "this computer" is the one Sotto runs on.
  */
-export function codexModeLine(mode: AgentRuntimeMode): string {
+export function codexModeLine(mode: AgentRuntimeMode, computer?: string): string {
+  if (mode === 'full-access' && computer) return t({ message: `Codex runs any command and edits any file without asking, anywhere on ${computer} and online.`, comment: '{computer} is the name of the computer the thread runs on, such as forge.' })
   switch (mode) {
     case 'approval-required': return t`Codex asks before every command, even one that only reads, and before every edit.`
     case 'auto-accept-edits': return t`Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.`
@@ -123,9 +124,9 @@ export function effortChoices(model: AgentModel | undefined, reasoning: string, 
  * The permission modes a model offers, led by "Provider default" or an unoffered current mode as
  * unchoosable. A provider whose modes are its own (Devin) answers with those instead of Sotto's four, and
  * each carries what Sotto will still ask about under it, so a mode named for what the provider stops
- * asking cannot be read as Sotto stopping too.
+ * asking cannot be read as Sotto stopping too. `computer` names the thread's computer when it is not this one.
  */
-export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined): ChoiceOption[] {
+export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined, computer?: string): ChoiceOption[] {
   const own = model?.providerModes ?? []
   if (own.length > 0) {
     // Unchosen reads as the first mode, which is what the thread starts on, so only an unoffered one leads.
@@ -139,7 +140,7 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
     const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
-      : model?.providerId === 'codex' ? codexModeLine(mode) : undefined
+      : model?.providerId === 'codex' ? codexModeLine(mode, computer) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }
@@ -621,7 +622,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** A speed as it runs on this model, in words: one the model does not offer runs at Standard. */
   const speedInForce = (value: string): string => speedName(speeds.some(item => item.id === value) ? value : SPEED_STANDARD, speeds)
   const efforts = effortChoices(model, reasoning, { ultracode: !watcher })
-  const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
+  const remoteComputer = thread.remoteHost ? state.connections?.find(item => item.hostId === thread.hostId)?.name ?? thread.hostLabel : undefined
+  const modes = modeChoices(model, thread.runtimeMode, thread.providerMode, remoteComputer)
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
   const provider = providerName ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })
