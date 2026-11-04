@@ -50,6 +50,7 @@ describe('a served model name when no catalog lists it', () => {
     ['claude', 'claude-opus-5', 'Claude Opus 5'],
     ['claude', 'claude-fable-5-1', 'Claude Fable 5.1'],
     ['claude', 'native:claude:model:claude-sonnet-5-5[1m]', 'Claude Sonnet 5.5'],
+    ['claude', 'claude:sonnet', 'Sonnet'],
     ['claude', 'us.anthropic.claude-haiku-4-5-20251001-v1:0', 'Claude Haiku 4.5'],
     ['claude', 'opus', 'Opus'],
     ['codex', 'gpt-6.1-sol', 'GPT-6.1 Sol'],

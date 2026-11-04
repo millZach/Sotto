@@ -138,6 +138,10 @@
 .usage-index__unit { margin-left: 7px; color: var(--tt-text-2); font-size: var(--tt-type-reading); font-weight: 450; letter-spacing: -.2px; }
 .usage-index__viz { align-self: center; color: var(--tt-accent-text); }
 .usage-index__note { grid-column: 1 / -1; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; text-overflow: ellipsis; }
+/* A measure with nothing to show: its name and what is missing, and no large dash standing in for a figure. */
+.usage-index__item[data-empty] { padding-block: 9px; }
+.usage-index__item[data-empty] :is(.usage-index__value, .usage-index__viz) { display: none; }
+.usage-index__item[data-empty]:not([aria-selected='true']) .usage-index__label { color: var(--tt-text-2); }
 .usage-mini-rings { display: flex; gap: 4px; }
 .usage-mini-split { display: flex; gap: 2px; width: 56px; height: 8px; }
 .usage-mini-split i { min-width: 2px; border-radius: var(--tt-radius-mark); }
@@ -170,8 +174,9 @@
 .usage-about.usage-values-more ul { gap: 4px; margin-top: 8px; font-size: var(--tt-type-caption); line-height: 1.5; }
 
 /* Daily bars and their two gridlines. */
-.usage-chart { --usage-chart-h: clamp(190px, 26cqi, 330px); }
-.usage-chart__plot { position: relative; height: var(--usage-chart-h); margin-top: 22px; border-bottom: 1px solid var(--tt-border); border-radius: var(--tt-radius-mark); cursor: crosshair; outline-offset: 6px; }
+/* The scale's figures stand in a gutter of their own, so a tall bar at the end of the range is never cut by one. */
+.usage-chart { --usage-chart-h: clamp(170px, 20cqi, 250px); --usage-scale-gutter: 30px; }
+.usage-chart__plot { position: relative; height: var(--usage-chart-h); margin-top: 22px; margin-right: var(--usage-scale-gutter); border-bottom: 1px solid var(--tt-border); border-radius: var(--tt-radius-mark); cursor: crosshair; outline-offset: 6px; }
 .usage-chart__columns { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: space-around; gap: var(--usage-gap); }
 .usage-chart__column { display: flex; flex: 1 1 0; flex-direction: column-reverse; min-width: 0; max-width: 52px; height: 100%; transform-origin: bottom; }
 .usage-chart__bar { display: block; flex: none; height: calc(var(--usage-h) * 100%); min-height: 1px; border-radius: 0; background: var(--usage-series); transition: opacity .15s; }
@@ -188,9 +193,9 @@
 .usage-chart__dot[data-on] { width: 10px; height: 10px; margin: 0 0 -5px -5px; }
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__bar { opacity: .28; }
 .usage-chart__grid { position: absolute; right: 0; left: 0; border-top: 1px dashed var(--usage-grid); pointer-events: none; }
-.usage-chart__grid span { position: absolute; right: 0; bottom: 3px; padding-left: 6px; background: var(--usage-ground); color: var(--tt-text-faint); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
+.usage-chart__grid span { position: absolute; right: calc(-1 * var(--usage-scale-gutter)); width: calc(var(--usage-scale-gutter) - 6px); bottom: -8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .usage-chart__none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
-.usage-chart__axis { position: relative; height: 20px; margin-top: 8px; color: var(--tt-text-faint); font-size: var(--tt-type-caption); }
+.usage-chart__axis { position: relative; height: 20px; margin-top: 8px; margin-right: var(--usage-scale-gutter); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .usage-chart__axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
 .usage-chart__axis .usage-chart__tick--start { transform: none; }
 .usage-chart__axis .usage-chart__tick--end { transform: translateX(-100%); }
@@ -198,6 +203,7 @@
 /* Rows of shares: models, cache, where the work ran. */
 .usage-shares { display: grid; gap: 18px; margin: 20px 0 0; padding: 0; list-style: none; }
 .usage-shares--where { margin-top: 26px; }
+.usage-shares--compact { gap: 12px; margin-top: 0; }
 .usage-share { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; }
 .usage-share__name { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: var(--tt-type-body); font-weight: 500; }
 .usage-share__name > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

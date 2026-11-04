@@ -85,13 +85,13 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       low: lowest !== undefined && lowest.primary.tightest!.left! <= LOW_LEFT,
     },
     prompts: { value: fmtInt(prompts), text: fmtInt(prompts), note: page.rangeLabel, viz: series === null ? undefined : <Spark values={series.map(row => row.prompts)} /> },
-    tokens: { value: fieldTokens(totals.tokens.total), text: fieldTokens(totals.tokens.total), note: t`input + output` },
+    tokens: { value: fieldTokens(totals.tokens.total), text: fieldTokens(totals.tokens.total), note: totals.tokens.total.value === undefined ? t`No tokens in this range` : t`input + output` },
     where: tokenTotal > 0
       ? { value: <>{sottoShare}<span className="usage-index__unit"><Trans>in Sotto</Trans></span></>, text: t`${sottoShare} in Sotto`,
         note: t`of tokens · ${sottoPromptShare} of prompts`,
         viz: <span className="usage-mini-split" aria-hidden="true"><i className="usage-where--sotto" style={{ flexGrow: summary.sottoTokens }} /><i className="usage-where--outside" style={{ flexGrow: Math.max(0, tokenTotal - summary.sottoTokens) }} /></span> }
       : { value: '—', text: '—', note: t`No tokens in this range` },
-    cache: { value: summary.cacheShare === undefined ? '—' : pct(summary.cacheShare), text: summary.cacheShare === undefined ? '—' : pct(summary.cacheShare), note: t`of input tokens` },
+    cache: { value: summary.cacheShare === undefined ? '—' : pct(summary.cacheShare), text: summary.cacheShare === undefined ? '—' : pct(summary.cacheShare), note: summary.cacheShare === undefined ? t`No tokens in this range` : t`of input tokens` },
     models: {
       value: topModel === undefined ? '—' : page.modelName(topModel), text: topModel === undefined ? '—' : page.modelName(topModel), words: true,
       note: summary.modelsTruncated ? t`Ranking is incomplete` : topModel !== undefined ? t`${topShare} of prompts` : prompts > 0 ? t`Not matched for these prompts` : t`No prompts yet`,
@@ -298,9 +298,14 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
         {head(t`Prompts`)}
         <p className="usage-when tt-paragraph">{when}</p>
         {perDay('prompts')}
-        {byProvider.length > 0 ? <div className="usage-split-block"><p className="usage-split-caption"><Trans>By provider</Trans></p><div className="usage-split">{byProvider.map(row => <div key={row.providerId} className="usage-split__item">
-          <span><ProviderMark provider={row.providerId} name={PROVIDER_NAMES[row.providerId]} size={14} />{PROVIDER_NAMES[row.providerId]}</span><b>{fmtInt(row.prompts.total)}</b>
-        </div>)}</div></div> : null}
+        {byProvider.length > 0 ? <div className="usage-split-block"><p className="usage-split-caption"><Trans>By provider</Trans></p><ol className="usage-shares usage-shares--compact">{byProvider.map(row => {
+          const top = Math.max(...byProvider.map(item => item.prompts.total))
+          return <li key={row.providerId} className="usage-share">
+            <span className="usage-share__name"><ProviderMark provider={row.providerId} name={PROVIDER_NAMES[row.providerId]} size={14} /><span>{PROVIDER_NAMES[row.providerId]}</span></span>
+            <span className="usage-share__value">{fmtInt(row.prompts.total)}<small>{share(row.prompts.total, prompts)}</small></span>
+            <span className="usage-share__bar"><i className="usage-grow" style={{ '--usage-w': (row.prompts.total / top).toFixed(3) } as React.CSSProperties} /></span>
+          </li>
+        })}</ol></div> : null}
         {prompts > 0 ? <div className="usage-split-block"><p className="usage-split-caption"><Trans>Sent from</Trans></p>
           {clients.length > 0 ? <div className="usage-split usage-split--small">{clients.map(row => <div key={row.clientId} className="usage-split__item"><span>{clientName(row.clientId)}</span><b>{fmtInt(row.prompts)}</b></div>)}</div> : null}
           {placesNote}
@@ -317,8 +322,10 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
         {FOCUS.map((value, index) => {
           const item = items[value]
           const name = i18n._(FOCUS_NAMES[value])
-          return <button key={value} type="button" role="tab" id={`${id}-${value}`} className="usage-index__item tt-focusable" aria-selected={focus === value} tabIndex={focus === value ? 0 : -1}
-            aria-controls={`${id}-stage`} aria-label={`${name} ${item.text} ${item.note}`}
+          // A measure with nothing to show says so in a line and takes a line's room, so what is known stands out.
+          const empty = item.text === '—'
+          return <button key={value} type="button" role="tab" id={`${id}-${value}`} className="usage-index__item tt-focusable" data-empty={empty || undefined} aria-selected={focus === value} tabIndex={focus === value ? 0 : -1}
+            aria-controls={`${id}-stage`} aria-label={empty ? `${name} ${item.note}` : `${name} ${item.text} ${item.note}`}
             onClick={() => choose(value)} onKeyDown={event => onIndexKey(event, index)}>
             <span className="usage-index__label">{name}</span>
             <span className="usage-index__value" data-words={item.words || undefined} data-low={item.low || undefined} title={typeof item.value === 'string' ? item.value : undefined}>{item.value}</span>
