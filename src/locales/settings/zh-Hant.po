@@ -2559,6 +2559,11 @@ msgstr ""
 msgid "From your SSH configuration"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Generated command summaries"
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Generated commit messages"
@@ -3193,6 +3198,14 @@ msgstr ""
 msgid "memory unknown"
 msgstr ""
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon hidden."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon shown."
+msgstr ""
+
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Menu bar owl"
@@ -3671,6 +3684,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Off, one theme paints light and dark."
+msgstr ""
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Off, open Sotto from the Dock."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -4888,6 +4905,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
 msgid "Show hidden tips again"
+msgstr ""
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Show in menu bar"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -6994,6 +7015,10 @@ msgstr ""
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "When a thread needs you"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a thread's model asks to run a command and sends no summary, Sotto asks that thread's own provider what the command does. It uses your subscription, and only that provider sees the command."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx

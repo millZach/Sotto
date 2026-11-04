@@ -294,5 +294,10 @@ test('a permission card shows the model’s summary and the command, or a readab
     await expect(edit.locator('.agent-request__summary')).toHaveCount(0)
     await edit.evaluate(element => element.scrollIntoView({ block: 'center' }))
     await shoot(page, 'permission-edit-820')
+    // A command with no summary is answerable at once, and what the side call came to on this fake provider reaches the card.
+    await emit('docs', pendingRequest('asked', 'item/commandExecution/requestApproval', { threadId: 'native-thread', itemId: 'i', command: 'npm test -- --run', cwd: '/repo' }, 'native-thread')!.request)
+    const asked = page.locator('.agent-request[data-kind="permission"]').filter({ hasText: 'npm test -- --run' })
+    await expect(asked.locator('.agent-request__summary')).toHaveText(/couldn’t give a summary|what this does/u)
+    await expect(asked.getByRole('button', { name: 'Allow once' })).toBeEnabled()
   } finally { await closeSotto(launched) }
 })

@@ -241,6 +241,19 @@ describe('AgentRequestCard', () => {
     expect(container.querySelector('.agent-request__command')).toBeNull()
   })
 
+  it('says what became of a summary Sotto asked for, without holding the answer back (ADR-0185)', () => {
+    const card = (context: NonNullable<AgentRequest['context']>) => render(<AgentRequestCard ownerId="thread" ownerTitle="Compare runs" request={{ id: 'perm-a', kind: 'permission', text: 'npm test', options: [], context: { command: 'npm test', ...context } }} blocked={null} onSubmit={vi.fn(async () => ({ error: null }))} providerId="codex" store={new RequestAnswerStore()} />)
+    const waiting = card({ summaryAsk: 'waiting' })
+    expect(screen.getByRole('status').textContent).toBe('Asking Codex for a summary…')
+    expect((screen.getByRole('button', { name: 'Allow' }) as HTMLButtonElement).disabled).toBe(false)
+    waiting.unmount()
+    const answered = card({ summaryAsk: 'answered', summary: 'Runs the tests.' })
+    expect(answered.container.querySelector('.agent-request__summary')!.textContent).toBe('Sotto asked Codex what this doesRuns the tests.')
+    answered.unmount()
+    card({ summaryAsk: 'failed' })
+    expect(screen.getByText('Codex couldn’t give a summary of this command.')).toBeTruthy()
+  })
+
   it('keeps a refused answer answerable and holds an unconfirmed one until checked', async () => {
     const refused = setup({ id: 'perm-2', kind: 'permission', text: 'Allow?', options: [] }, { outcome: { error: 'The request is no longer pending.' } })
     await refused.user.click(screen.getByRole('button', { name: 'Allow' }))

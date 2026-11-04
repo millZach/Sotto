@@ -30,6 +30,7 @@ import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { verifyFileMentions } from './promptFiles'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import { watcherMayWrite } from './host'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -1180,7 +1181,7 @@ export class CodexAppServerHost implements AgentHost {
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const generation = this.generation
-    if (await this.checkLaunchProfile(id) && prompt.purpose !== 'next-prompt') return null
+    if (await this.checkLaunchProfile(id) && !watcherMayWrite(prompt.purpose)) return null
     if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]

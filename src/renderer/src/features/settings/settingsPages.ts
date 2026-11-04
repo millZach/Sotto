@@ -152,6 +152,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'project-defaults', label: msg`Project defaults`, section: 'settings-agents', words: 'working copy worktree' },
     { id: 'reply-streaming', label: msg`Replies in threads`, section: 'settings-agents', words: 'streaming as written' },
     { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
+    { id: 'command-summaries', label: msg`Generated command summaries`, section: 'settings-agents', words: 'permission approve explain' },
     { id: 'next-prompt', label: msg`Suggest a next prompt`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
     { id: 'thread-tips', label: msg`Show tips`, section: 'settings-agents', words: 'tips hints shortcuts skills hidden again', gate: 'thread-tips' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
@@ -243,7 +244,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'creature', label: msg`Creature`, section: 'settings-appearance', words: 'claude bot sotto composer' },
     { id: 'watcher-scene', label: msg`Watcher scene`, section: 'settings-appearance', words: 'night scene owls place harbour harbor snowfield snow desert wood theme', gate: 'watcher' },
     // The menu bar owl is a Mac's alone (ADR-0114).
-    ...platform === 'darwin' ? [{ id: 'menu-bar-owl', label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
+    ...platform === 'darwin' ? [{ id: 'menu-bar-owl', label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color show hide', gate: 'menu-bar-owl' } as const] : [],
     { id: 'contrast', label: msg`Contrast`, section: 'settings-appearance' },
     { id: 'reduced-motion', label: msg`Reduced motion`, section: 'settings-appearance', words: 'animation' },
     { id: 'click-effect', label: msg`Click effect`, section: 'settings-appearance', words: 'press ripple waves binary animation accent', gate: 'click-effect' },

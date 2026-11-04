@@ -943,6 +943,11 @@ msgstr ""
 msgid "{provider} changed this question. {delivery}"
 msgstr ""
 
+#. {provider} is the coding agent’s name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} couldn’t give a summary of this command."
+msgstr ""
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{provider} couldn’t list skills for this folder."
 msgstr ""
@@ -1969,6 +1974,11 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Asked for {asked}. This computer couldn't start it there, so nothing was started."
+msgstr ""
+
+#. Shown while Sotto waits for a summary of a command. The user can answer without waiting.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Asking {inSentence} for a summary…"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -7707,6 +7717,11 @@ msgstr ""
 msgid "Sotto application"
 msgstr ""
 
+#. Over a summary of a command that Sotto asked the coding agent’s provider for. {inSentence} is its name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Sotto asked {inSentence} what this does"
+msgstr ""
+
 #. {folder} is a folder's name or "this folder"; {place} is "this computer" or a saved host's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Sotto can't read {folder} on {place}. It may belong to another account. Nothing was changed; choose another folder."
@@ -8391,6 +8406,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "The address could not be copied. Select it and copy it yourself."
+msgstr ""
+
+#. Stands in for the coding agent’s name in mid-sentence, as in “Asking the agent for a summary”.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "the agent"
 msgstr ""
 
 #. Stands in for the coding agent’s name when it is not known, as in “The agent says”.
