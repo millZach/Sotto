@@ -41,6 +41,7 @@ import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import { ToDoStore } from './toDos'
 import { ToDoAdder } from './toDoTools'
+import { TO_DOS_HOST_NOT_KNOWN } from '../../shared/toDos'
 import { WorkerAdmission } from './workerAdmission'
 import { workerMachineCeiling } from '../../shared/workerMachine'
 import { THIS_COMPUTER } from '../../shared/workingThreads'
@@ -631,6 +632,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A settled, closed or deleted thread is waiting on nothing, so the check-off simply stands.
       if (agentControl.takesWakeUps(threadId)) await agentControl.deliverWakeUp(threadId, { source: 'to-do', items: [{ title, ...didNotWork ? { didNotWork } : {} }] }, { tool: false })
     } }) : undefined
+  // A headless host settles its own threads when a desktop's Watcher asks, so its own list holds that too. It keeps no
+  // Watcher of its own to tell.
+  if (watcher && toDos && options.runsAs === 'headless-host') {
+    watcher.useToDos({ machines: () => [{ hostId: agentControl.hostId() ?? TO_DOS_HOST_NOT_KNOWN, thisComputer: true, items: [...toDos.view()] }], subscribe: listener => toDos.subscribe(listener) }, toDos.drain())
+  }
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
     if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, ...threadMoves ? { moves: threadMoves } : {}, ...toDos ? { toDos: new ToDoAdder(toDos) } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }

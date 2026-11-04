@@ -29,8 +29,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherToDo, type WatcherWaitingOnUser } from '../../shared/watcher'
-import { parseHostEntityKey } from '../../shared/clientIdentity'
-import { TO_DOS_HOST_NOT_KNOWN, type MachineToDos } from '../../shared/toDos'
+import { TO_DOS_HOST_NOT_KNOWN, toDoThreadId, type MachineToDos } from '../../shared/toDos'
 import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
@@ -1417,7 +1416,7 @@ export class WatcherService implements WatcherControlHooks {
     const hostId = thread.hostId ?? this.hostId()
     for (const machine of this.toDoLists?.machines() ?? []) {
       if (machine.hostId !== hostId) continue
-      for (const item of machine.items) if (item.waits && item.threadId !== undefined && (parseHostEntityKey(item.threadId)?.id ?? item.threadId) === thread.id) return item.title
+      for (const item of machine.items) if (item.waits && item.threadId !== undefined && toDoThreadId(item.threadId) === thread.id) return item.title
     }
     return undefined
   }
@@ -1426,15 +1425,19 @@ export class WatcherService implements WatcherControlHooks {
    * changed. Set only while the to-do list is on, so stable reads and tells nothing of it. A list's change is news as it
    * comes; nothing of this runs on an update.
    */
-  useToDos(lists: WatcherToDoLists): void {
+  useToDos(lists: WatcherToDoLists, ready: Promise<unknown> = Promise.resolve()): void {
     this.toDoLists = lists
-    this.wakes.toDosChanged(lists.machines())
-    this.stopToDos = lists.subscribe(() => { this.wakes.toDosChanged(lists.machines()) })
+    // A list still being read from disk would look like everything on it was just added.
+    void ready.catch(() => undefined).then(() => {
+      if (this.toDoLists !== lists) return
+      this.wakes.toDosChanged(lists.machines())
+      this.stopToDos = lists.subscribe(() => { this.wakes.toDosChanged(lists.machines()) })
+    })
   }
   /** Every computer's open to-dos as read_state lists them. */
   private openToDos(): WatcherToDo[] {
     return (this.toDoLists?.machines() ?? []).flatMap(machine => machine.items.map(item => ({ hostId: machine.hostId, title: item.title, by: item.by, waits: item.waits,
-      ...item.threadId === undefined || machine.hostId === TO_DOS_HOST_NOT_KNOWN ? {} : { target: { hostId: machine.hostId, threadId: parseHostEntityKey(item.threadId)?.id ?? item.threadId } } })))
+      ...item.threadId === undefined || machine.hostId === TO_DOS_HOST_NOT_KNOWN ? {} : { target: { hostId: machine.hostId, threadId: toDoThreadId(item.threadId) } } })))
   }
   /** The first live field holding a delegated writer, shared by preflight and the writer's check. */
   private settleBlockingField(thread: AgentThread): string | undefined {
@@ -6217,6 +6220,7 @@ ${operation.draftId}`)
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
   close(): void {
+    this.toDoLists = undefined
     this.stopToDos?.()
     // Checks still waiting will never start, and a restart keeps none of them, so each lets go of the branch it would have
     // started from now, rather than leave its incoming ref behind (#1312). The queue goes with this run, so none starts.

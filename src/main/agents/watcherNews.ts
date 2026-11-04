@@ -90,7 +90,7 @@ function closedWords(event: WatcherEvent): string {
 const providerName = (provider: string | undefined): string => provider === undefined ? 'Its provider' : Object.hasOwn(PROVIDER_LABELS, provider)
   ? PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] : provider
 /** Whether a `threads-restarted` or `thread-moved` event's thread is one no request watches (ADR-0144, #1178). */
-const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-restarted' || event.kind === 'thread-moved' || event.kind === 'thread-told') && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
+const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-restarted' || event.kind === 'thread-moved' || event.kind === 'thread-told' || event.kind === 'to-do-checked') && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
 /** A restarted thread's line (ADR-0144), in Sotto's words: which limit had stopped it, and whether Watcher watches it. */
 const restartedWords = (event: WatcherEvent): string => `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.${
   unwatched(event) ? ' No request of yours watches it: read it with read_thread if its work matters to yours.' : ''} This approves nothing.`

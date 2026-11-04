@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { hostEntityKey } from './clientIdentity'
+import { hostEntityKey, parseHostEntityKey } from './clientIdentity'
 
 /**
  * A to-do: what only the user's hands can do (ADR-0188). Each computer keeps its own and a client joins them, as it does
@@ -79,6 +79,8 @@ export const machineToDosSchema = z.object({
 export type MachineToDos = z.infer<typeof machineToDosSchema>
 /** The item as the window names it: its thread by the window's key. */
 export const toDoForWindow = (hostId: string | undefined, item: ToDo): ToDo => item.threadId === undefined ? item : { ...item, threadId: hostEntityKey(hostId, item.threadId) }
+/** The thread's own ID on the computer that holds the item, from either name the window may have for it. */
+export const toDoThreadId = (threadId: string): string => parseHostEntityKey(threadId)?.id ?? threadId
 export const toDosViewSchema = z.object({ machines: z.array(machineToDosSchema).max(256) }).strict()
 export type ToDosView = z.infer<typeof toDosViewSchema>
 export const toDoWindowRequestSchema = z.object({ hostId: z.string().min(1).max(128), request: toDoRequestSchema }).strict()

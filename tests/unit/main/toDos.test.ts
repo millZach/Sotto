@@ -5,6 +5,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { ToDoStore, ToDoRefused, type ToDoStoreOptions } from '../../../src/main/agents/toDos'
 import { ToDoAdder, ToDoToolServer, toDoWatcherDefinition } from '../../../src/main/agents/toDoTools'
 import { WATCHER_SYSTEM_PROMPT, WATCHER_TO_DO_LINES, watcherSystemPrompt } from '../../../src/main/agents/watcherPrompt'
+import { WatcherToolServer } from '../../../src/main/agents/watcherTools'
+import type { WatcherService } from '../../../src/main/agents/watcher'
 import { FollowupStore } from '../../../src/main/agents/followups'
 import { foldWakeUpNews, isBabysitNews, isToDoNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
@@ -275,6 +277,25 @@ describe('add_to_do as Watcher has it', () => {
   })
 })
 
+describe('What Watcher is offered (ADR-0188)', () => {
+  const service = { isCurrent: () => true } as unknown as WatcherService
+  const readState = (server: WatcherToolServer) => server.definitions.find(item => item.name === 'read_state') as { description: string; outputSchema: unknown }
+  test('stable offers no to-do tool, and read_state says nothing of them', () => {
+    const server = new WatcherToolServer(service)
+    expect(server.definitions.map(item => item.name)).not.toContain('add_to_do')
+    expect(JSON.stringify(readState(server))).not.toContain('toDos')
+    expect(server.instructions).toBeUndefined()
+  })
+  test('with the list on it offers add_to_do, and read_state says it lists them', () => {
+    const server = new WatcherToolServer(service, { toDos: { forWatcher: async () => ({ content: [] }) } })
+    expect(server.definitions.map(item => item.name)).toContain('add_to_do')
+    expect(JSON.stringify(readState(server).outputSchema)).toContain('toDos')
+    expect(readState(server).description).toContain('Only what it and toDos list wait on the user')
+    expect(readState(server).description).not.toContain('carry those separately')
+    expect(server.instructions).toContain(WATCHER_TO_DO_LINES)
+  })
+})
+
 describe('What Watcher is told (ADR-0188, decision 9)', () => {
   test('stable keeps its Needs you lines, whole and untouched', () => {
     expect(watcherSystemPrompt(false)).toBe(WATCHER_SYSTEM_PROMPT)
@@ -287,7 +308,7 @@ describe('What Watcher is told (ADR-0188, decision 9)', () => {
     expect(told).not.toContain('Every reply you give the user names')
     expect(told).not.toContain('Never write Needs you: nothing')
     expect(told).not.toContain('carry the ask in your replies until the card is up')
-    expect(told).toContain('call read_state and check waitingOnUser')
+    expect(told).toContain('call read_state: only what it lists waits on them')
     expect(told).toContain('You decide when a watched thread is finished')
   })
 })

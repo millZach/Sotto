@@ -420,9 +420,7 @@ export const watcherToolSchemas = {
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
       waitingOnUser: z.array(watcherWaitingOnUserSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
-      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter,
-      // Every computer's open to-dos, a hundred to a page, only while the to-do list is on (ADR-0188).
-      toDos: z.array(watcherToDoSchema).max(100).optional() }),
+      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter }),
   },
   list_machines: {
     input: z.object({}).strict(),
@@ -447,6 +445,8 @@ export const watcherToolSchemas = {
       evidence: z.array(watcherEvidenceSchema).max(100).optional() })),
   },
 } as const
+/** read_state while the to-do list is on (ADR-0188): every computer's open to-dos too, a hundred to a page. Stable's tools are not offered this. */
+export const watcherReadStateToDosOutput = z.union([watcherToolSchemas.read_state.output.options[0].extend({ toDos: z.array(watcherToDoSchema).max(100).optional() }).strict(), watcherRefusalSchema])
 export type WatcherToolName = keyof typeof watcherToolSchemas
 export type WatcherToolInput<N extends WatcherToolName> = z.infer<(typeof watcherToolSchemas)[N]['input']>
 export type WatcherToolOutput<N extends WatcherToolName> = z.infer<(typeof watcherToolSchemas)[N]['output']>
