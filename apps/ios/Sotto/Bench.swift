@@ -292,6 +292,7 @@ import UIKit
     /// The Threads list photographed from its top, by points scrolled, and again after a thread has been opened over it
     /// and closed, with where the scroller stands at each.
     private func listLook() async {
+        tracing = true
         next("list-look")
         func photo(_ name: String, _ view: UIScrollView) async {
             await quiet()
