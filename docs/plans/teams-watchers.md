@@ -2,7 +2,7 @@
 
 Status: first slice approved, November 3, 2026. Settled in a grilling session with Zach on November 2. Zach chose to start it on Owl only, and Drake agreed to open question 1's default. [ADR-0186](../adr/0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) and [ADR-0187](../adr/0187-another-owners-words-are-untrusted-and-start-nothing.md) hold what the slice decided.
 
-Zach's card, November 3: Teams is a tab beside Watcher (question 9). A teammate's ask is answered by a side call with no tools rather than a Watcher turn, which replaced the planned Watcher turn. Summaries cover every project, with a leave-out list. Two desks and the merge order strip are the next slice. Open question 2 has no hold card, because an answer never sees thread content (ADR-0187, decision 3). The plan's links still say what it knew on November 2; #1691 and #1692 are as it says.
+Zach's card, November 3: Teams is a tab beside Watcher (question 9). A teammate's ask is answered by a side call with no tools rather than a Watcher turn, which replaced the planned Watcher turn. Summaries cover every project, with a leave-out list. Two desks and the merge order strip were the next slice, and Zach's card of November 4 settled them: work desks, read only on a press, and an order Sotto works out ([ADR-0189](../adr/0189-two-desks-read-a-teammates-summary-on-a-press.md), prototype at the tag `prototype/teams-desks`). Open question 2 has no hold card, because an answer never sees thread content (ADR-0187, decision 3). The plan's links still say what it knew on November 2; #1691 and #1692 are as it says.
 
 ## What it is
 
@@ -82,4 +82,4 @@ Each has a recommended answer.
 
 ## Prototype
 
-The prototype is throwaway and kept outside git, in `/home/zach/.sotto/prototypes/teams-look/`. Its files are `index.html` (three layouts, A to C, plus the first Teams pane) and `app.html` (the Teams pane and two desks in the app's own look). When the look is final, keep it as a `prototype/` tag, as the prototype skill describes.
+The prototype is throwaway and kept outside git, in `/home/zach/.sotto/prototypes/teams-look/`. Its files are `index.html` (three layouts, A to C, plus the first Teams pane) and `app.html` (the Teams pane and two desks in the app's own look). The second slice's variants are at the tag `prototype/teams-desks`. When the look is final, keep it as a `prototype/` tag, as the prototype skill describes.

@@ -301,6 +301,18 @@ const optionalCount: StructuredQuestion = { id: 'count', question: 'How many wor
 const requiredCode: StructuredQuestion = { id: 'code', header: 'Code', question: 'Uppercase code', multiSelect: false, allowFreeText: false, options: [], unavailableReason: nativeOnly }
 
 describe('optional and unavailable native fields', () => {
+  // Issue #2155: Codex 0.166.0 sends a question without choices as `isOther: false, options: null`.
+  it('gives a Codex question without choices a text box and sends what was typed', async () => {
+    const request = pendingRequest('u-2155', 'item/tool/requestUserInput', { threadId: 't', itemId: 'i', questions: [
+      { id: 'q', header: 'Test', question: 'Enter a test value', isSecret: false, isOther: false, options: null },
+    ] }, 't')!.request
+    const { user, onSubmit } = setup(request)
+    expect(screen.queryByText('This question has no choices Sotto can show.')).toBeNull()
+    await user.type(screen.getByRole('textbox', { name: 'Test' }), 'fake-value-123')
+    await user.click(screen.getByRole('button', { name: /^Send answer/u }))
+    expect(onSubmit).toHaveBeenCalledWith({ answer: '', questionAnswers: { q: { optionIds: [], text: 'fake-value-123' } } })
+  })
+
   it('omits unanswered optional fields, keeps exact option IDs, and treats absent required as required', () => {
     const name = { optionIds: [], other: false, text: 'Sotto' }
     expect(buildQuestionAnswers([requiredName, optionalMode, optionalNote], { name })).toEqual({ name: { optionIds: [], text: 'Sotto' } })
