@@ -17,6 +17,14 @@ export function machineToDos(local: ToDoStore | undefined, remote: RemoteToDos |
 }
 
 /**
+ * The same lists as Watcher reads them. A list not read from disk yet is left out, so one that comes back holding what was
+ * saved is a first read, not everything just added. The window still shows it, since a press there is what reads it again.
+ */
+export function watcherToDoMachines(local: ToDoStore | undefined, remote: RemoteToDos | undefined, localHostId: () => string | undefined): MachineToDos[] {
+  return machineToDos(local?.notRead ? undefined : local, remote, localHostId)
+}
+
+/**
  * Every computer's to-dos as the window shows them (ADR-0188): This computer's first, where it runs its local host, then each
  * connected host's. Stable registers nothing. The window reads it once and main sends the whole view again whenever a list
  * changes, never on the update path: a list's view is taken only after it changed.

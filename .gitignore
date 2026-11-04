@@ -780,6 +780,7 @@ artifacts/to-do-list/*
 !artifacts/to-do-list/open-steps-light.png
 !artifacts/to-do-list/open-steps-dark.png
 !artifacts/to-do-list/undo-dark.png
+!artifacts/to-do-list/prototype-dark.png
 !artifacts/to-do-list/open-settings-dark.png
 
 # Main freeze notice (#1233); commit only the captures docs/verification/main-freeze-notice.md cites.

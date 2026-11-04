@@ -87,6 +87,25 @@ describe('A computer keeps its own to-dos', () => {
   })
 })
 
+describe('A saved list that could not be read', () => {
+  test('says so until a press reads it again, and then holds what was saved', async () => {
+    const { directory, make } = await setup()
+    const first = make()
+    await first.add({ title: 'Saved' }, 'watcher')
+    await first.drain()
+    const read = vi.spyOn(AtomicJsonStore.prototype, 'read').mockRejectedValueOnce(new Error('The disk is busy.'))
+    const store = make()
+    await store.drain()
+    read.mockRestore()
+    expect(directory).toBeTruthy()
+    expect(store.notRead).toBe(true)
+    expect(store.view()).toEqual([])
+    await store.request({ kind: 'add', title: 'Mine' })
+    expect(store.notRead).toBe(false)
+    expect(store.view().map(item => item.title)).toEqual(['Saved', 'Mine'])
+  })
+})
+
 describe('Checking one off', () => {
   test('takes it off and tells only a thread that said it waits', async () => {
     const { store, told } = await setup()

@@ -234,6 +234,20 @@ describe('checking one off', () => {
   })
 })
 
+describe('a prototype waiting for review', () => {
+  it('reads in Sotto\'s words, with no note to send, and checks off like any other', async () => {
+    const { bridge } = lists([item('p', { by: 'prototype', title: 'Sent from a host in its own language', threadId: 't1' })])
+    const user = userEvent.setup()
+    shown(bridge)
+    await user.click(await icon())
+    expect(screen.getByText('Review the prototype')).toBeVisible()
+    expect(screen.queryByText('Sent from a host in its own language')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'It didn\'t work' })).toBeNull()
+    expect(screen.queryByText('A thread added this')).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'Check off: Review the prototype' })).toBeVisible()
+  })
+})
+
 describe('It didn\'t work', () => {
   it('stands only on one a thread waits on, and sends the user\'s words at once', async () => {
     const { bridge, request } = lists([item('a'), item('b', { waits: true, threadId: 't1' })])

@@ -22,6 +22,8 @@ export interface ToDoStoreOptions {
   readonly madeItems?: () => readonly ToDo[]
   /** Its to-do was checked off: the mark is let go. */
   readonly madeItemChecked?: (id: string) => boolean
+  /** The list was opened: what it made is new no longer. True when that changed anything. */
+  readonly madeItemsSeen?: () => boolean
   readonly clock?: () => number
 }
 
@@ -46,6 +48,8 @@ export class ToDoStore {
       if (options.historyEnabled()) { this.items = (await this.store.read()).items; this.changed() } else await this.removeSaved()
     }).catch(() => { this.unread = true })
   }
+  /** The saved list could not be read yet, so what `view` shows is no sign of what is saved. The next press reads it again. */
+  get notRead(): boolean { return this.unread }
   /** Every to-do this computer holds, the oldest first, with the prototypes waiting for review after them. */
   view(): readonly ToDo[] {
     const made = this.options.madeItems?.() ?? NONE, shown = this.shown
@@ -83,6 +87,7 @@ export class ToDoStore {
       })
     }
     if (request.kind === 'seen') {
+      if (this.options.madeItemsSeen?.()) this.changed()
       return this.change(items => ({ items: items.some(item => !item.seen) ? items.map(item => item.seen ? item : { ...item, seen: true }) : items, result: undefined }))
     }
     return this.check(request.id, request.didNotWork)

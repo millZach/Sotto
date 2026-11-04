@@ -4331,6 +4331,10 @@ msgstr "Overview"
 msgid "Pages"
 msgstr "Pages"
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Pages to review"
+msgstr "Pages to review"
+
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Paired computer"
@@ -5087,6 +5091,10 @@ msgstr "Review"
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Review current replacement"
 msgstr "Review current replacement"
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Review the prototype"
+msgstr "Review the prototype"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Revoked"

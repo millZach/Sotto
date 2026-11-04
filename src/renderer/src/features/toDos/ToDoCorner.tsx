@@ -6,6 +6,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { TO_DO_NOTE_MAX, TO_DO_TITLE_MAX, type ToDosBridge } from '../../../../shared/toDos'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { listedHosts } from '../../agents/HostBadge'
+import { MessageLinks } from '../../agents/requests/AgentRequestCard'
 import { Button } from '../../components/Button'
 import { useMark } from '../../components/marks'
 import { useOptionalApp } from '../../state/AppContext'
@@ -226,8 +227,10 @@ function ToDoItem({ row, client, isNew, several, rollUp }: {
   const thread = item.threadId === undefined ? undefined : state?.host.threads.find(entry => entry.id === item.threadId)
   const threadName = thread?.title
   const host = several && state ? listedHosts(state).find(entry => entry.hostId === row.hostId)?.name : undefined
+  // A prototype's is Sotto's own words, so it reads in the user's language; every other is in its author's words.
+  const shownTitle = item.by === 'prototype' ? t`Review the prototype` : item.title
   if (row.held) {
-    const title = item.title
+    const title = shownTitle
     return <li className="to-do-row" data-held="">
       <p className="to-do-row__gone" role="status"><Trans>Checked off: {title}</Trans></p>
       {row.sending ? null : <Button ref={undo} variant="secondary" aria-label={t`Undo checking off: ${title}`} onClick={() => { movedBy.current = true; client.undo(row.key) }}><Trans>Undo</Trans></Button>}
@@ -254,13 +257,13 @@ function ToDoItem({ row, client, isNew, several, rollUp }: {
     event.preventDefault(); event.stopPropagation()
     cancelNote()
   }
-  const title = item.title
+  const title = shownTitle
   const stepCount = item.steps?.length ?? 0
   return <li className="to-do-row">
     <button ref={check} type="button" role="checkbox" aria-checked={false} className="to-do-row__check tt-focusable" aria-label={t`Check off: ${title}`}
       onClick={() => { movedBy.current = true; client.check(row) }}><span aria-hidden="true" /></button>
     <div className="to-do-row__words">
-      <div className="to-do-row__title">{isNew ? <em className="to-do-row__new" role="img" aria-label={t`New`} /> : null}{item.title}</div>
+      <div className="to-do-row__title">{isNew ? <em className="to-do-row__new" role="img" aria-label={t`New`} /> : null}{title}</div>
       {item.why ? <div className="to-do-row__why">{item.why}</div> : null}
       <div className="to-do-row__meta">
         {thread && threadName !== undefined
@@ -275,6 +278,7 @@ function ToDoItem({ row, client, isNew, several, rollUp }: {
           {stepsOpen ? plural(stepCount, { one: 'Hide # step', other: 'Hide # steps' }) : plural(stepCount, { one: 'Show # step', other: 'Show # steps' })}
         </button> : null}
       </div>
+      {item.by === 'prototype' && thread?.prototypeReady ? <div className="to-do-row__pages"><MessageLinks links={[]} pages={thread.prototypeReady.pages} owner={{ threadId: thread.id }} label={t`Pages to review`} /></div> : null}
       {stepsOpen && item.steps ? <ol className="to-do-row__steps">{item.steps.map((step, index) => <li key={index}>{step}</li>)}</ol> : null}
       {!item.waits ? null : noting
         ? <form className="to-do-row__note" onKeyDown={onNoteKey} onSubmit={event => void send(event)}>

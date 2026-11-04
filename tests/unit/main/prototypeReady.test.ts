@@ -275,3 +275,44 @@ describe('PrototypeReady', () => {
     expect(markOf(restarted, snapshot(later))).toEqual({ source: 'reply:reply', pages })
   })
 })
+
+describe('hearing marks change, for the to-do list (ADR-0188)', () => {
+  const marked = (id = 'thread-1', messageId = 'reply-1') => thread({ id, messages: [assistant(messageId)], status: 'idle', lastTurn: { id: 'turn', status: 'completed' } } as Partial<AgentThread>)
+  it('keeps no list and tells nothing while nothing listens, as on stable', () => {
+    const ready = new PrototypeReady(searches({ 'reply-1': [page('a')] }), [], 0)
+    ready.decorate(snapshot(marked()))
+    expect(ready.currentMarks().size).toBe(0)
+  })
+  it('tells only of a change, not of a thread marked the same again, and of a thread gone', () => {
+    const ready = new PrototypeReady(searches({ 'reply-1': [page('a')] }), [], 0)
+    let told = 0
+    ready.onMarksChanged = () => { told += 1 }
+    ready.noteMark('thread-1', { source: 'reply:reply-1', pages: [page('a')] })
+    expect(told).toBe(1)
+    ready.noteMark('thread-1', { source: 'reply:reply-1', pages: [page('a')] })
+    expect(told).toBe(1)
+    ready.noteMark('thread-1', { source: 'reply:reply-2', pages: [page('a')] })
+    expect(told).toBe(2)
+    ready.letGo(['thread-1'])
+    expect(told).toBe(3)
+    expect(ready.currentMarks().size).toBe(0)
+    ready.letGo(['thread-1'])
+    expect(told).toBe(3)
+  })
+  it('lets go of a thread a whole snapshot no longer holds', () => {
+    const ready = new PrototypeReady(searches(), [], 0)
+    ready.onMarksChanged = () => undefined
+    ready.noteMark('gone', { source: 'reply:reply-1', pages: [page('a')] })
+    ready.decorate(snapshot(thread({ id: 'still-here' })))
+    expect(ready.currentMarks().has('gone')).toBe(false)
+  })
+  it('puts the marks back when a check that showed every thread again is undone', () => {
+    const ready = new PrototypeReady(searches(), [], 0)
+    ready.onMarksChanged = () => undefined
+    ready.noteMark('thread-1', { source: 'reply:reply-1', pages: [page('a')] })
+    const restore = ready.checkpoint()
+    ready.noteMark('thread-1', undefined)
+    restore()
+    expect(ready.currentMarks().has('thread-1')).toBe(true)
+  })
+})

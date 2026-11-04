@@ -24,6 +24,10 @@ Captures in `artifacts/to-do-list/`:
 - `undo-dark.png`: a row checked off, with **Undo**.
 - `open-settings-dark.png`: on the Settings page.
 
+## A prototype waiting for review
+
+The same spec's third journey, on a thread whose finished reply names a page: the badge reads an orange 1, the list shows **Review the prototype** with its thread and **Open the prototype**, with no **It didn't work**. Opening the page takes the item off and rolls the list up, and the thread's Prototype ready line goes with it. `prototype-dark.png` is that list. Part of #2134, part three.
+
 ## What was proved below the app
 
 `tests/unit/renderer/toDoCorner.test.tsx` covers what the journey can't reach without a waiting thread or a second computer: **It didn't work** standing only on an item a thread waits on, its words going at once, Escape closing the note without rolling up, the words staying when they could not be sent, a press going back to the computer that holds the item, a wait dropped when another client checks the item off first, the last item standing until its press has an answer, the list unrolling to say a press failed after it was rolled up, a newer draft kept when an earlier add fails, and no box where this computer keeps no list. Two Bug Bot findings on #2135 are fixed in `tests/unit/main/toDos.test.ts`: a refused add gives back its own slot on a thread's ten, and a failed save after a thread was told does not tell it the same thing twice, though words the user writes after that still go.

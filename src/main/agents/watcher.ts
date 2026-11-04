@@ -1436,7 +1436,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** Every computer's open to-dos as read_state lists them. */
   private openToDos(): WatcherToDo[] {
-    return (this.toDoLists?.machines() ?? []).flatMap(machine => machine.items.map(item => ({ hostId: machine.hostId, title: item.title, by: item.by, waits: item.waits,
+    // A prototype's is on waitingOnUser already, as it was before there was a list.
+    return (this.toDoLists?.machines() ?? []).flatMap(machine => machine.items.filter(item => item.by !== 'prototype').map(item => ({ hostId: machine.hostId, title: item.title, by: item.by, waits: item.waits,
       ...item.threadId === undefined || machine.hostId === TO_DOS_HOST_NOT_KNOWN ? {} : { target: { hostId: machine.hostId, threadId: toDoThreadId(item.threadId) } } })))
   }
   /** The first live field holding a delegated writer, shared by preflight and the writer's check. */

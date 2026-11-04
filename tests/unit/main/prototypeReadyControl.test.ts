@@ -10,6 +10,8 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { LocalHostService } from '../../../src/main/agents/hostService'
+import { PrototypeToDos } from '../../../src/main/agents/prototypeToDos'
+import { ToDoStore } from '../../../src/main/agents/toDos'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -57,6 +59,30 @@ describe('the coordinator’s prototype-ready mark', () => {
     expect(mark(control.get())).toEqual(ready)
     expect(control.questionPage(ready.pages[0]!.token)).toMatchObject({ kind: 'file' })
     expect(mark(control.shell(), 'docs')).toBeUndefined()
+  })
+
+  it('makes a to-do from the mark, which goes when a page opens or when it is checked off, and is never saved (ADR-0188, decision 10)', async () => {
+    const { root, host, control } = await start()
+    const directory = root
+    let told = 0
+    const made = new PrototypeToDos(() => control.prototypeMarks(), token => { control.questionPageOpened(token) }, () => { told += 1 })
+    control.onPrototypeMarksChanged(() => { made.markChanged() })
+    const store = new ToDoStore({ directory, historyEnabled: () => true, told: async () => undefined, madeItems: () => made.view(), madeItemChecked: id => made.checked(id), madeItemsSeen: () => made.allSeen() })
+    await store.drain()
+    finishWithPrototype(host)
+    await vi.waitFor(() => expect(store.view()).toHaveLength(1))
+    expect(told).toBeGreaterThan(0)
+    const [item] = store.view()
+    expect(item).toMatchObject({ by: 'prototype', waits: false, seen: false, threadId: expect.any(String) })
+    await store.request({ kind: 'seen' })
+    expect(store.view()[0]).toMatchObject({ id: item!.id, seen: true })
+    await store.request({ kind: 'add', title: 'Mine' })
+    const saved = await readFile(join(directory, 'to-dos.json'), 'utf8')
+    expect(saved).toContain('Mine')
+    expect(saved).not.toContain('prototype')
+    await store.request({ kind: 'check', id: item!.id })
+    await vi.waitFor(() => expect(mark(control.shell())).toBeUndefined())
+    expect(store.view().map(entry => entry.title)).toEqual(['Mine'])
   })
 
   it('clears the mark when one of its pages is opened through the host service, and a restart keeps it cleared', async () => {

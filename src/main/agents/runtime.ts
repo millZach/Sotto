@@ -40,6 +40,7 @@ import { DelegationService } from './delegation'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import { ToDoStore } from './toDos'
+import { PrototypeToDos } from './prototypeToDos'
 import { ToDoAdder } from './toDoTools'
 import { TO_DOS_HOST_NOT_KNOWN } from '../../shared/toDos'
 import { WorkerAdmission } from './workerAdmission'
@@ -627,7 +628,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A deleted thread keeps no worktree, so its move lets go of it (ADR-0140 decision 4).
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
   // Each computer keeps its own to-dos, and tells a thread that waits on one through its wake-up (ADR-0188).
+  const prototypeToDos = options.toDoListEnabled === true
+    ? new PrototypeToDos(() => agentControl.prototypeMarks(), token => { agentControl.questionPageOpened(token) }, () => { toDos?.madeItemsChanged() }) : undefined
+  if (prototypeToDos) agentControl.onPrototypeMarksChanged(() => { prototypeToDos.markChanged() })
   const toDos = options.toDoListEnabled === true ? new ToDoStore({ directory, historyEnabled: options.historyEnabled,
+    ...prototypeToDos ? { madeItems: () => prototypeToDos.view(), madeItemChecked: (id: string) => prototypeToDos.checked(id), madeItemsSeen: () => prototypeToDos.allSeen() } : {},
     told: async (threadId, title, didNotWork) => {
       // A settled, closed or deleted thread is waiting on nothing, so the check-off simply stands.
       if (agentControl.takesWakeUps(threadId)) await agentControl.deliverWakeUp(threadId, { source: 'to-do', items: [{ title, ...didNotWork ? { didNotWork } : {} }] }, { tool: false })
@@ -635,7 +640,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A headless host settles its own threads when a desktop's Watcher asks, so its own list holds that too. It keeps no
   // Watcher of its own to tell.
   if (watcher && toDos && options.runsAs === 'headless-host') {
-    watcher.useToDos({ machines: () => [{ hostId: agentControl.hostId() ?? TO_DOS_HOST_NOT_KNOWN, thisComputer: true, items: [...toDos.view()] }], subscribe: listener => toDos.subscribe(listener) }, toDos.drain())
+    watcher.useToDos({ machines: () => toDos.notRead ? [] : [{ hostId: agentControl.hostId() ?? TO_DOS_HOST_NOT_KNOWN, thisComputer: true, items: [...toDos.view()] }], subscribe: listener => toDos.subscribe(listener) }, toDos.drain())
   }
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
