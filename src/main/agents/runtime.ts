@@ -40,6 +40,7 @@ import { DelegationService } from './delegation'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import { ToDoStore } from './toDos'
+import { ToDoAdder } from './toDoTools'
 import { WorkerAdmission } from './workerAdmission'
 import { workerMachineCeiling } from '../../shared/workerMachine'
 import { THIS_COMPUTER } from '../../shared/workingThreads'
@@ -624,9 +625,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const moveKeeps = threadMoves ?? heldMoves
   // A deleted thread keeps no worktree, so its move lets go of it (ADR-0140 decision 4).
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
+  // Each computer keeps its own to-dos, and tells a thread that waits on one through its wake-up (ADR-0188).
+  const toDos = options.toDoListEnabled === true ? new ToDoStore({ directory, historyEnabled: options.historyEnabled,
+    told: async (threadId, title, didNotWork) => {
+      // A settled, closed or deleted thread is waiting on nothing, so the check-off simply stands.
+      if (agentControl.takesWakeUps(threadId)) await agentControl.deliverWakeUp(threadId, { source: 'to-do', items: [{ title, ...didNotWork ? { didNotWork } : {} }] }, { tool: false })
+    } }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, ...threadMoves ? { moves: threadMoves } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, ...threadMoves ? { moves: threadMoves } : {}, ...toDos ? { toDos: new ToDoAdder(toDos) } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
@@ -825,12 +832,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
-  // Each computer keeps its own to-dos, and tells a thread that waits on one through its wake-up (ADR-0188).
-  const toDos = options.toDoListEnabled === true ? new ToDoStore({ directory, historyEnabled: options.historyEnabled,
-    told: async (threadId, title, didNotWork) => {
-      // A settled, closed or deleted thread is waiting on nothing, so the check-off simply stands.
-      if (agentControl.takesWakeUps(threadId)) await agentControl.deliverWakeUp(threadId, { source: 'to-do', items: [{ title, ...didNotWork ? { didNotWork } : {} }] }, { tool: false })
-    } }) : undefined
   const hostService = new LocalHostService({ ...toDos ? { toDos } : {}, control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
     ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {

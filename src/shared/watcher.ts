@@ -3,6 +3,7 @@ import { agentModelSpeedSchema, agentRuntimeModeSchema, agentSpeedSchema, handov
 import { worktreeMadeFromSchema } from './bringChangesBack'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
+import { TO_DO_TITLE_MAX, toDoSchema } from './toDos'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
@@ -272,6 +273,10 @@ export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS
 export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsFor: z.enum(['question', 'permission', 'prototype-review']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
 export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
+/** One open to-do as read_state lists it (ADR-0188): whose words it is in, and on which computer. Its thread only where a thread added it. */
+export const watcherToDoSchema = z.object({ hostId: z.string().min(1).max(128), target: watcherThreadTargetSchema.optional(), title: z.string().max(TO_DO_TITLE_MAX),
+  by: toDoSchema.shape.by, waits: z.boolean() }).strict()
+export type WatcherToDo = z.infer<typeof watcherToDoSchema>
 /** What waits on the user, a hundred to a page with the watched threads. */
 export const WATCHER_WAITING_ON_USER_MAX = 100
 export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
@@ -415,7 +420,9 @@ export const watcherToolSchemas = {
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
       waitingOnUser: z.array(watcherWaitingOnUserSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
-      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter }),
+      staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter,
+      // Every computer's open to-dos, a hundred to a page, only while the to-do list is on (ADR-0188).
+      toDos: z.array(watcherToDoSchema).max(100).optional() }),
   },
   list_machines: {
     input: z.object({}).strict(),

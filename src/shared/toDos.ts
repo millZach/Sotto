@@ -68,6 +68,8 @@ export const toDoRequestSchema = z.discriminatedUnion('kind', [
 export type ToDoRequest = z.infer<typeof toDoRequestSchema>
 export const toDoReceiptSchema = z.object({ ok: z.literal(true) }).strict()
 
+/** What This computer's list goes by before it knows its own host ID, which only happens as it starts. */
+export const TO_DOS_HOST_NOT_KNOWN = 'this-computer'
 /** One computer's list as the window reads it, by the window's keys for its threads. */
 export const machineToDosSchema = z.object({
   hostId: z.string().min(1).max(128),

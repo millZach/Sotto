@@ -8,7 +8,7 @@ import type { WatcherEvidence } from '../../shared/watcher'
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
     event.kind === 'needs-user' || event.kind === 'request-closed' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
-      : event.kind === 'prototype-ready' || event.kind === 'prototype-closed' ? watcherPrototypeSource(event) ?? null : event.kind === 'thread-moved' ? event.moveId ?? null : event.kind === 'thread-told' ? event.id : event.turnId ?? null])
+      : event.kind === 'prototype-ready' || event.kind === 'prototype-closed' ? watcherPrototypeSource(event) ?? null : event.kind === 'thread-moved' ? event.moveId ?? null : event.kind === 'thread-told' ? event.id : event.kind === 'to-do-added' || event.kind === 'to-do-checked' ? event.toDoId ?? null : event.turnId ?? null])
 }
 /**
  * The prototype a `prototype-ready` event is of (ADR-0108), as the thread's mark names its source: the question it waits
@@ -51,7 +51,7 @@ export const requestRevision = (request: unknown): string => observationDigest(r
 /** What reaches a thread after a takeover fenced a request there (#1148), as its news and its refusals say it. */
 export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
 /** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
-const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told'>, string> = {
+const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved' | 'thread-told' | 'to-do-added' | 'to-do-checked'>, string> = {
   'swarm-progress': 'The swarm made progress. Read its lead for the synthesis.',
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
@@ -139,7 +139,18 @@ export function toldEventsForLater(events: readonly WatcherEvent[]): ReadonlySet
   }
   return later
 }
-const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' ? toldWords(event) : event.kind === 'swarm-progress' && event.swarm
+/**
+ * A to-do's line (ADR-0188): whose words its title is in, and that it approves nothing. `to-do-checked` does not say which
+ * way it went: the thread that waits on it was told, and hears the user's words if they said it did not work.
+ */
+const toDoWords = (event: WatcherEvent): string => {
+  const title = JSON.stringify(event.toDoTitle ?? '')
+  if (event.kind === 'to-do-added') return `This thread put ${title} on the user's to-do list, in its own words. Mention it once in passing. It approves nothing.`
+  return event.requestId === WATCHER_UNWATCHED_REQUEST_ID
+    ? `The user took your to-do ${title} off their list: they checked it off. It approves nothing.`
+    : `The user took this thread's to-do ${title} off their list: they checked it off or said it did not work, and the thread was told if it waits on it. It approves nothing.`
+}
+const kindWords = (event: WatcherEvent): string => event.kind === 'thread-told' ? toldWords(event) : event.kind === 'to-do-added' || event.kind === 'to-do-checked' ? toDoWords(event) : event.kind === 'swarm-progress' && event.swarm
   ? `${event.swarm.done} of ${event.swarm.count} angles done, ${event.swarm.failed} failed, ${event.swarm.queued} queued. The lead holds their replies and writes the synthesis. This grants no permission.`
   : event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`

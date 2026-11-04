@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { ToDoStore, ToDoRefused, type ToDoStoreOptions } from '../../../src/main/agents/toDos'
-import { ToDoToolServer } from '../../../src/main/agents/toDoTools'
+import { ToDoAdder, ToDoToolServer, toDoWatcherDefinition } from '../../../src/main/agents/toDoTools'
+import { WATCHER_SYSTEM_PROMPT, WATCHER_TO_DO_LINES, watcherSystemPrompt } from '../../../src/main/agents/watcherPrompt'
 import { FollowupStore } from '../../../src/main/agents/followups'
 import { foldWakeUpNews, isBabysitNews, isToDoNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
@@ -245,6 +246,49 @@ describe('add_to_do', () => {
     expect((await tools.call('t1', 'add_to_do', { title: 'x' })).isError).toBe(true)
     expect(store.view()).toEqual([])
     await tools.close()
+  })
+})
+
+describe('add_to_do as Watcher has it', () => {
+  const adder = async () => { const { store } = await setup(false); return { store, adder: new ToDoAdder(store) } }
+  test('adds in Watcher\'s name, with no thread and no wait, and a retry changes nothing', async () => {
+    const { store, adder: add } = await adder()
+    const first = await add.forWatcher({ title: 'Send the invoice', steps: ['Open it', 'Send it'] })
+    expect(first.isError).toBeUndefined()
+    await add.forWatcher({ title: 'Send the invoice' })
+    expect(store.view()).toEqual([expect.objectContaining({ title: 'Send the invoice', by: 'watcher', waits: false })])
+    expect(store.view()[0]!.threadId).toBeUndefined()
+  })
+  test('refuses a wait, since Watcher has no thread to wait', async () => {
+    const { store, adder: add } = await adder()
+    expect((await add.forWatcher({ title: 'Send it', waits: true })).isError).toBe(true)
+    expect(store.view()).toEqual([])
+    expect(toDoWatcherDefinition.inputSchema).not.toHaveProperty('properties.waits')
+  })
+  test('holds Watcher to the same limit as a thread', async () => {
+    const { store, adder: add } = await adder()
+    for (let index = 0; index < TO_DO_LIMIT; index++) await add.forWatcher({ title: `Item ${index}` })
+    const past = await add.forWatcher({ title: 'Past it' })
+    expect(past.isError).toBe(true)
+    expect(JSON.stringify(past.content)).toContain('You have added')
+    expect(store.view()).toHaveLength(TO_DO_LIMIT)
+  })
+})
+
+describe('What Watcher is told (ADR-0188, decision 9)', () => {
+  test('stable keeps its Needs you lines, whole and untouched', () => {
+    expect(watcherSystemPrompt(false)).toBe(WATCHER_SYSTEM_PROMPT)
+    expect(WATCHER_SYSTEM_PROMPT).toContain('Every reply you give the user names, under Needs you, each thing waitingOnUser lists, every time, until the user answers it.')
+    expect(WATCHER_SYSTEM_PROMPT).not.toContain('add_to_do')
+  })
+  test('with the to-do list on, nothing tells Watcher to repeat what waits on the user', () => {
+    const told = watcherSystemPrompt(false, false, false, false, false, true)
+    expect(told).toContain(WATCHER_TO_DO_LINES)
+    expect(told).not.toContain('Every reply you give the user names')
+    expect(told).not.toContain('Never write Needs you: nothing')
+    expect(told).not.toContain('carry the ask in your replies until the card is up')
+    expect(told).toContain('call read_state and check waitingOnUser')
+    expect(told).toContain('You decide when a watched thread is finished')
   })
 })
 

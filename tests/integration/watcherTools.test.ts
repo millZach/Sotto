@@ -2370,6 +2370,24 @@ it('says a watched thread waits on the card of a thread it delegated to, as list
   expect(JSON.stringify(read)).not.toContain('synthetic private command')
 })
 
+it('read_state lists every computer\'s open to-dos only while the to-do list is on, and works out each one\'s thread (ADR-0188)', async () => {
+  const f = await fixture()
+  const off = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (off.status !== 'ok') throw new Error('read refused')
+  expect(off).not.toHaveProperty('toDos')
+  const hostId = f.control.hostId()!, forge = '55555555-5555-4555-8555-555555555555'
+  const item = { by: 'thread' as const, waits: true, seen: true, addedAt: '2026-11-03T00:00:00.000Z' }
+  f.service.useToDos({ machines: () => [{ hostId, thisComputer: true, items: [{ ...item, id: 'a', title: 'Here', threadId: 'local-thread' }, { ...item, id: 'b', title: 'Mine', by: 'user', waits: false }] },
+    { hostId: forge, thisComputer: false, items: [{ ...item, id: 'c', title: 'There', threadId: `host:${forge}:remote-thread` }] }], subscribe: () => () => undefined })
+  const on = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (on.status !== 'ok') throw new Error('read refused')
+  expect(on.toDos).toEqual([
+    { hostId, target: { hostId, threadId: 'local-thread' }, title: 'Here', by: 'thread', waits: true },
+    { hostId, title: 'Mine', by: 'user', waits: false },
+    { hostId: forge, target: { hostId: forge, threadId: 'remote-thread' }, title: 'There', by: 'thread', waits: true },
+  ])
+})
+
 // #1274: read_state works out what changes from live data, and flags kept notes that name what is over.
 it('gives the merge queue and each watched thread’s open pull requests from live data, and flags kept notes that name what is over', async () => {
   const f = await fixture()

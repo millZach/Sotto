@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { TELL_WATCHER_WORDS_BYTES_MAX } from './tellWatcher'
+import { TO_DO_TITLE_MAX } from './toDos'
 import { watcherThreadTargetSchema } from './watcher'
 
 /** How long news that needs an answer at once waits for more: a question, a permission request or a failure. */
@@ -40,10 +41,13 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * as Sotto's record has it. `opened` says that message names Watcher and Sotto opened the request `requestId` names for
  * this one turn, to start threads and send and nothing else; otherwise the news grants nothing. These words are the only
  * ones an event keeps, so a restart cannot lose a message the thread was told got through.
+ * `to-do-added` comes once when a watched thread adds a to-do (ADR-0188, decision 9), and `to-do-checked` once when the user
+ * checks off a watched thread's or Watcher's own, Watcher's own under `WATCHER_UNWATCHED_REQUEST_ID`. `toDoTitle` is the
+ * to-do's words, kept because a checked one is gone by the time the news goes. They answer nothing and approve nothing.
  */
 export const watcherEventSchema = z.object({
   id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready',
-    'request-closed', 'prototype-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told']),
+    'request-closed', 'prototype-closed', 'threads-restarted', 'thread-moved', 'swarm-progress', 'thread-told', 'to-do-added', 'to-do-checked']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
   observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(), messageId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),
@@ -55,6 +59,7 @@ export const watcherEventSchema = z.object({
   moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back', 'kept']).optional(), machine: z.string().min(1).max(200).optional(),
   told: z.object({ words: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX), userWords: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX).optional(),
     userWordsCut: z.literal(true).optional(), opened: z.boolean() }).strict().optional(),
+  toDoId: z.string().min(1).max(64).optional(), toDoTitle: z.string().min(1).max(TO_DO_TITLE_MAX).optional(),
 }).strict()
 /** The request a `threads-restarted` event names for a thread no request watches: the nil UUID, which no request has. */
 export const WATCHER_UNWATCHED_REQUEST_ID = '00000000-0000-0000-0000-000000000000'

@@ -28,7 +28,9 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherPromptTurn, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
-  type WatcherWaitingOnUser } from '../../shared/watcher'
+  type WatcherToDo, type WatcherWaitingOnUser } from '../../shared/watcher'
+import { parseHostEntityKey } from '../../shared/clientIdentity'
+import { TO_DOS_HOST_NOT_KNOWN, type MachineToDos } from '../../shared/toDos'
 import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
@@ -418,7 +420,7 @@ function onceEach(waiting: readonly WatcherWaitingOnUser[]): WatcherWaitingOnUse
   })
 }
 interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests: WatcherPullRequestSummary[] }) | undefined; readonly queue: WatcherMergeQueueItem | undefined
-  readonly waiting: WatcherWaitingOnUser | undefined }
+  readonly waiting: WatcherWaitingOnUser | undefined; readonly toDo: WatcherToDo | undefined }
 
 /**
  * A participation Watcher stopped: Watcher's own Stop of the thread, or a stopped request on a thread Watcher started.
@@ -482,7 +484,15 @@ function definitelyFailedStart(result: unknown): boolean {
   return (result as { receipt?: { deliveryState?: unknown } }).receipt?.deliveryState === 'failed'
 }
 
+/** Every computer's to-do list, as the window joins them (`machineToDos`). */
+export interface WatcherToDoLists {
+  machines(): readonly MachineToDos[]
+  subscribe(listener: () => void): () => void
+}
+
 export class WatcherService implements WatcherControlHooks {
+  private toDoLists: WatcherToDoLists | undefined
+  private stopToDos: (() => void) | undefined
   readonly wakes: WatcherWakeUp
   private tail: Promise<unknown> = Promise.resolve()
   private opening: Promise<WatcherRoomResult> | undefined
@@ -1387,6 +1397,11 @@ export class WatcherService implements WatcherControlHooks {
     // An open pull request Sotto knows of, its own or a delegated thread's, holds the settle (October 29, 2026). Sotto
     // knows only the linked ones, the branch's and the babysat ones, so Watcher still looks for others the thread opened.
     // A record may be out of date, so GitHub was asked before this check (`askBeforeSettle`, #2019), and what it said ended holds nothing.
+    // A thread waiting on an open to-do of its own, or one it delegated to, is not finished (ADR-0188, decision 9).
+    for (const owner of [thread, ...delegated]) {
+      const waits = this.toDoWaitedOn(owner)
+      if (waits !== undefined) refuse('THREAD_BUSY', `${owner === thread ? 'Thread' : 'Delegated thread'} “${owner.title}” (${owner.id}) waits on the user's to-do ${JSON.stringify(waits)}. It is not finished until they check it off. Nothing was settled.`)
+    }
     for (const owner of [thread, ...delegated]) for (const url of this.openPullRequests(owner)) {
       const identity = `${owner === thread ? 'Thread' : 'Delegated thread'} “${owner.title}” (${owner.id})`
       if (!this.options.pullRequestState) refuse('THREAD_BUSY', `${identity} has an open pull request, ${url}. Wait for it to merge or close before settling. Nothing was settled.`)
@@ -1396,6 +1411,30 @@ export class WatcherService implements WatcherControlHooks {
       if (read?.state === 'open' && Date.now() - read.observedAt < 60_000) refuse('THREAD_BUSY', `${identity} has a confirmed-open pull request, ${url}: GitHub just confirmed it is open. Wait for it to merge or close before settling. Nothing was settled.`)
       refuse('THREAD_BUSY', `${identity} has a stale-open pull request, ${url}: Sotto’s record says open, without a fresh GitHub read. Read it again before settling. Nothing was settled.`, true)
     }
+  }
+  /** The words of an open to-do this thread waits on, if it has one. Read for a settle, never on an update. */
+  private toDoWaitedOn(thread: AgentThread): string | undefined {
+    const hostId = thread.hostId ?? this.hostId()
+    for (const machine of this.toDoLists?.machines() ?? []) {
+      if (machine.hostId !== hostId) continue
+      for (const item of machine.items) if (item.waits && item.threadId !== undefined && (parseHostEntityKey(item.threadId)?.id ?? item.threadId) === thread.id) return item.title
+    }
+    return undefined
+  }
+  /**
+   * Hands Watcher every computer's to-do list (ADR-0188): for read_state, for what holds a settle, and for news of what
+   * changed. Set only while the to-do list is on, so stable reads and tells nothing of it. A list's change is news as it
+   * comes; nothing of this runs on an update.
+   */
+  useToDos(lists: WatcherToDoLists): void {
+    this.toDoLists = lists
+    this.wakes.toDosChanged(lists.machines())
+    this.stopToDos = lists.subscribe(() => { this.wakes.toDosChanged(lists.machines()) })
+  }
+  /** Every computer's open to-dos as read_state lists them. */
+  private openToDos(): WatcherToDo[] {
+    return (this.toDoLists?.machines() ?? []).flatMap(machine => machine.items.map(item => ({ hostId: machine.hostId, title: item.title, by: item.by, waits: item.waits,
+      ...item.threadId === undefined || machine.hostId === TO_DOS_HOST_NOT_KNOWN ? {} : { target: { hostId: machine.hostId, threadId: parseHostEntityKey(item.threadId)?.id ?? item.threadId } } })))
   }
   /** The first live field holding a delegated writer, shared by preflight and the writer's check. */
   private settleBlockingField(thread: AgentThread): string | undefined {
@@ -4177,8 +4216,9 @@ export class WatcherService implements WatcherControlHooks {
         // on from what the first one found.
         const live = first ? this.liveState() : { threads: [], waiting: [], watching: [], mergeQueue: [] }
         const { threads, waiting, watching, mergeQueue: queue } = live
-        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, waiting.length) },
-          (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at] }))
+        const toDos = first ? this.openToDos() : []
+        const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, waiting.length, toDos.length) },
+          (_, at) => ({ watching: watching[at], queue: queue[at], waiting: waiting[at], toDo: toDos[at] }))
         const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
         const staleNotes = this.staleNotes(kept, first ? threads : this.watching(this.state().watchedThreads))
         // Only the final page completes recovery: a partial read or an expired cursor leaves the reminder. Look first,
@@ -4188,7 +4228,8 @@ export class WatcherService implements WatcherControlHooks {
         return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
           mergeQueue: shown.flatMap(row => row.queue ?? []), settleWithoutAsking: this.settlesWithoutAsking(),
           waitingOnUser: shown.flatMap(row => row.waiting ?? []), kept, staleNotes,
-          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt() }
+          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt(),
+          ...this.toDoLists ? { toDos: shown.flatMap(row => row.toDo ?? []) } : {} }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
@@ -6176,6 +6217,7 @@ ${operation.draftId}`)
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
   close(): void {
+    this.stopToDos?.()
     // Checks still waiting will never start, and a restart keeps none of them, so each lets go of the branch it would have
     // started from now, rather than leave its incoming ref behind (#1312). The queue goes with this run, so none starts.
     const waiting = [...this.heldChecks.values()].flatMap(check => check.waiting ? [check.waiting] : [])

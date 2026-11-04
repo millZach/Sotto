@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro'
-import { TO_DOS_CHANGED, TO_DOS_READ, TO_DOS_REQUEST, toDoForWindow, toDosViewSchema, toDoWindowRequestSchema, type MachineToDos, type ToDoRequest, type ToDosView } from '../../shared/toDos'
+import { TO_DOS_CHANGED, TO_DOS_HOST_NOT_KNOWN, TO_DOS_READ, TO_DOS_REQUEST, toDoForWindow, toDosViewSchema, toDoWindowRequestSchema, type MachineToDos, type ToDoRequest, type ToDosView } from '../../shared/toDos'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { ToDoStore } from './toDos'
 
@@ -10,6 +10,12 @@ export interface RemoteToDos {
   toDoRequest(hostId: string, request: ToDoRequest): Promise<void>
 }
 
+/** Every computer's to-dos, This computer's first where it runs its local host, by the window's keys for their threads. */
+export function machineToDos(local: ToDoStore | undefined, remote: RemoteToDos | undefined, localHostId: () => string | undefined): MachineToDos[] {
+  const hostId = localHostId()
+  return [...local ? [{ hostId: hostId ?? TO_DOS_HOST_NOT_KNOWN, thisComputer: true, items: local.view().map(item => toDoForWindow(hostId, item)) }] : [], ...remote?.hostToDos() ?? []]
+}
+
 /**
  * Every computer's to-dos as the window shows them (ADR-0188): This computer's first, where it runs its local host, then each
  * connected host's. Stable registers nothing. The window reads it once and main sends the whole view again whenever a list
@@ -18,12 +24,8 @@ export interface RemoteToDos {
 export function registerToDoIpc(ipc: IpcMainAdapter, enabled: boolean, local: ToDoStore | undefined, senders: () => readonly TrustedIpcSender[],
   localHostId: () => string | undefined, send: (channel: string, payload: unknown) => void, remote?: RemoteToDos): () => void {
   if (!enabled) return () => undefined
-  const ownId = (): string => localHostId() ?? 'this-computer'
-  const view = (): ToDosView => {
-    const hostId = localHostId()
-    const own = local ? [{ hostId: ownId(), thisComputer: true, items: local.view().map(item => toDoForWindow(hostId, item)) }] : []
-    return toDosViewSchema.parse({ machines: [...own, ...remote?.hostToDos() ?? []] })
-  }
+  const ownId = (): string => localHostId() ?? TO_DOS_HOST_NOT_KNOWN
+  const view = (): ToDosView => toDosViewSchema.parse({ machines: machineToDos(local, remote, localHostId) })
   const allowed = (event: Parameters<typeof isAuthorizedIpcSender>[0]): void => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open your to-do list in the main Sotto window.`)
   }

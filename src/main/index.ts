@@ -29,7 +29,7 @@ import { registerCouncilIpc } from './council/councilIpc'
 import { CouncilService } from './council/councilService'
 import { BranchBundles } from './agents/branchBundles'
 import { registerCheckQueueIpc } from './agents/checkQueueIpc'
-import { registerToDoIpc } from './agents/toDoIpc'
+import { machineToDos, registerToDoIpc } from './agents/toDoIpc'
 import { ToDoToolServer } from './agents/toDoTools'
 import { TO_DOS_RENDERER_ARGUMENT } from '../shared/toDos'
 import { registerContinueIpc } from './agents/continueThreadIpc'
@@ -1332,6 +1332,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const localToDos = 'toDos' in localRuntime ? localRuntime.toDos : undefined
   const toDoTools = localToDos ? new ToDoToolServer(localToDos, { admits: threadId => agentHost.admitsTellWatcher(threadId) }) : undefined
   if (toDoTools) quitHandles.toDoTools = toDoTools
+  // Watcher reads every computer's list, as the window joins them, and hears what changes on it (ADR-0188, decision 9).
+  if (toDoListEnabled) localRuntime.watcher?.useToDos({ machines: () => machineToDos(localToDos, hostRouter, () => agentControl.hostId()),
+    subscribe: listener => { const stopLocal = localToDos?.subscribe(listener), stopRemote = hostRouter.subscribeToDos(listener); return () => { stopLocal?.(); stopRemote() } } })
   agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []), ...(toDoTools ? [toDoTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.

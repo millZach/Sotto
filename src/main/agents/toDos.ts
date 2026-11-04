@@ -58,8 +58,8 @@ export class ToDoStore {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
-  /** The open to-do with these words from this thread, if there is one: adding it again would change nothing. */
-  open(title: string, threadId: string): ToDo | undefined { return this.items.find(item => item.title === title && item.threadId === threadId && item.by === 'thread') }
+  /** The open to-do with these words from this source, if there is one: adding it again would change nothing. */
+  open(title: string, by: 'thread' | 'watcher', threadId?: string): ToDo | undefined { return this.items.find(item => item.title === title && item.threadId === threadId && item.by === by) }
   /** Something a client sees changed from outside the list, such as a prototype's mark. */
   madeItemsChanged(): void { this.changed() }
   /** Adds one for a thread or Watcher. Words the same source has open change nothing, so a retry is safe. */

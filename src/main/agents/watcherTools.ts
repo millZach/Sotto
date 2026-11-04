@@ -4,6 +4,8 @@ import { ThreadToolServer, type ThreadToolCallContext, type ThreadToolDefinition
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
 import { watcherSystemPrompt } from './watcherPrompt'
+import { toDoWatcherDefinition, type ToDoAdder } from './toDoTools'
+import { TO_DO_TOOL } from '../../shared/toDos'
 import { WORKER_KIND_LIST } from '../../shared/workerRoles'
 import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
 import { WATCHER_KEPT_ITEMS_MAX, watcherRefusalSchema } from '../../shared/watcher'
@@ -136,17 +138,19 @@ export class WatcherToolServer implements WatcherProfileTools {
   private running = 0
   private readonly moves: WatcherMoveProposals | undefined
   private readonly teams: WatcherTeamTools | undefined
+  private readonly toDos: Pick<ToDoAdder, 'forWatcher'> | undefined
   /**
    * `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles; `pullRequestNews`
    * says Watcher's pull request news runs (ADR-0144).
    */
-  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean; swarms?: boolean; moves?: WatcherMoveProposals | undefined; teams?: WatcherTeamTools | undefined } = {}) {
+  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean; swarms?: boolean; moves?: WatcherMoveProposals | undefined; teams?: WatcherTeamTools | undefined; toDos?: Pick<ToDoAdder, 'forWatcher'> | undefined } = {}) {
     const roles = options.roles === true, machines = options.machines === true, pullRequestNews = options.pullRequestNews === true
     this.moves = machines ? options.moves : undefined
     const offered = roles || machines || options.swarms ? watcherToolDefinitions(roles, machines, options.swarms) : WATCHER_TOOL_DEFINITIONS
     this.teams = options.teams
-    this.definitions = this.moves || this.teams ? Object.freeze([...offered, ...this.moves ? [PROPOSE_MOVES_DEFINITION] : [], ...this.teams ? TEAM_TOOL_DEFINITIONS : []]) : offered
-    this.instructions = roles || machines || pullRequestNews || options.swarms || this.teams ? watcherSystemPrompt(roles, machines, pullRequestNews, options.swarms, this.teams !== undefined) : undefined
+    this.toDos = options.toDos
+    this.definitions = this.moves || this.teams || this.toDos ? Object.freeze([...offered, ...this.moves ? [PROPOSE_MOVES_DEFINITION] : [], ...this.teams ? TEAM_TOOL_DEFINITIONS : [], ...this.toDos ? [toDoWatcherDefinition] : []]) : offered
+    this.instructions = roles || machines || pullRequestNews || options.swarms || this.teams || this.toDos ? watcherSystemPrompt(roles, machines, pullRequestNews, options.swarms, this.teams !== undefined, this.toDos !== undefined) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name now or queue, and its result says when a steer went now or queued instead; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },
@@ -169,6 +173,9 @@ export class WatcherToolServer implements WatcherProfileTools {
       try {
         result = name === TEAM_ASK_TOOL ? teamAskToolOutputSchema.parse(this.teams.ask(args, this.service.teamTurn(threadId))) : teamReadToolOutputSchema.parse(this.teams.readMessages(this.service.teamTurn(threadId)))
       } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not do that for this teammate. Nothing was sent.', true) }
+    } else if (name === TO_DO_TOOL && this.toDos) {
+      // Adding answers nothing and approves nothing, and the words are Watcher's own, so no request is needed.
+      try { return await this.toDos.forWatcher(args) } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not add this. Nothing was added. Tell the user in your reply.', true) }
     } else if (!Object.hasOwn(watcherToolSchemas, name)) result = watcherRefusal('INVALID_INPUT', 'That tool is unavailable. Watcher cannot answer requests or change permissions.')
     else if (this.running >= 8) result = watcherRefusal('IN_FLIGHT_LIMIT', 'Watcher already has eight tool calls in progress. Wait for one to finish.', true)
     else {
