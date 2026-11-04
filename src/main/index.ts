@@ -56,6 +56,10 @@ import { LocalApps, type LocalAppsEvent } from './phones/localApps'
 import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
+import { registerTeamsIpc } from './teams/ipc'
+import { TeamService, type TeamEvent } from './teams/teams'
+import { TEAMS_CHANGED } from '../shared/teams'
+import { SIDE_WRITING_TIMEOUT_MS } from './agents/sideWriting'
 import { e2eTailscale } from './e2e/tailscale'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
@@ -109,7 +113,7 @@ import {
 } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
-import { homedir, release as osRelease } from 'node:os'
+import { homedir, hostname as osHostname, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
 import {
@@ -358,6 +362,7 @@ const profile = platformProfile(platform)
 const platformDefaults = defaultSettings(profile.defaultHotkey, profile.defaultHoldShortcuts)
 
 type NativeDiagnostic =
+  | TeamEvent
   | OpenRouterModelsEvent
   | OpenRouterSpeechModelsEvent
   | RecoveryNoticeLogEvent
@@ -1063,7 +1068,22 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
   const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
   const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
+  // Teams (ADR-0186): an Owl feature on a desktop with a Watcher. An ask reaches only these reads and one side call with no
+  // tools, and nothing here can send to a thread, answer a card or change a permission (ADR-0187).
+  let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
+  const teams: TeamService | undefined = owlFeatures.teams && watcherEnabled && startupSettings.localHostEnabled ? new TeamService({
+    directory: userDataPath, credentials, tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
+    threads: leftOut => teamReads?.watcher?.teamThreadFacts(leftOut) ?? [], projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
+    anchor: () => teamReads?.watcher?.teamAnchor() ?? null, keepHistory: () => agentHistoryEnabled,
+    write: async prompt => {
+      const modelId = teamReads?.watcher?.teamModel()
+      if (!modelId) return null
+      return await teamReads?.host.writeShortTextOn?.({ modelId }, prompt, AbortSignal.timeout(SIDE_WRITING_TIMEOUT_MS)) ?? null
+    },
+    openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) }, hostname: () => osHostname(), log: logOperational,
+  }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
+    ...teams ? { teams } : {},
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
@@ -1379,6 +1399,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Apps on this computer reach the same threads on a loopback listener of their own, with no pairing code (ADR-0180).
   const localApps = localAppsEnabled ? new LocalApps({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined, settings: () => workingCopySettings, policy: authority, log: logOperational }) : undefined
+  if (teams) { teamReads = { watcher: localRuntime.watcher, host: localRuntime.agentHost }; quitHandles.teams = teams; void teams.start().catch(() => logOperational('teams-start-failed')) }
   if (localApps) { quitHandles.localApps = localApps; void localApps.start().catch(() => logOperational('local-apps-failed')) }
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => requestDraftOwnerState(owner, agentControl, hostRouter), async (target, decisionId) => {
     if (target.kind !== 'thread') throw new Error(t`Standalone chats are no longer available.`)
@@ -1424,6 +1445,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   windowHangs?.start()
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
+    teams?.privacyChanged()
     const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
@@ -2469,6 +2491,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale, { opencode: !heldProviders.has('opencode') })
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
+      const cleanupTeams = teams ? registerTeamsIpc(ipcMain, teams, () => windows.getTrustedRenderers(), state => windows.sendToMain(TEAMS_CHANGED, state)) : undefined
       const cleanupLocalApps = localApps ? registerLocalAppsIpc(ipcMain, localApps, () => windows.getTrustedRenderers(), state => windows.sendToMain(LOCAL_APPS_CHANGED, state)) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
@@ -2618,6 +2641,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupAgents()
         cleanupHosts()
         cleanupPhones()
+        cleanupTeams?.()
         cleanupLocalApps?.()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()

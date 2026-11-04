@@ -8,6 +8,7 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Tools](#tools)
 - [Git, branches and worktrees](#git-branches-and-worktrees)
 - [Remote hosts](#remote-hosts)
+- [Teams](#teams)
 - [Phones](#phones)
 - [Headless host](#headless-host)
 - [Dictation and settings](#dictation-and-settings)
@@ -597,6 +598,18 @@ Notifications are off until you turn one on, which is when iOS asks to allow the
 Pairing lets the iPhone read threads, reply, and answer questions and permissions on that computer. Removing the iPhone in that computer's **Settings › Hosts & phones** is what takes it away. A computer still running an older Sotto may have left an iPhone paired there unable to answer; the request says so until that computer is updated. A reply reads **Sending…** under it, an answer **Sending your answer…**, a stop **Stopping…**, and a queued reply, a steer, a removal or a compaction **Queuing…**, **Steering…**, **Removing…** or **Compacting…**, until the computer answers, and for as long as the computer says it is still carrying it out, which a provider starting up can make slow. Only one the computer couldn't confirm is marked, with **I checked** and **Check again**, and it is never sent again on its own. Only the answer command's own completed receipt with no error and confirmation of its successful outcome shows "Answer sent." If its request stops waiting or its thread disappears without that receipt, Sotto says "That request is no longer waiting." An error from another thread does not decide its delivery. An older computer cannot confirm its own answer outcome; that answer stays unconfirmed while waiting and settles neutrally when its request leaves. Live updates settle marked replies and clear answers that no longer need a response without another check. A working turn still offers Stop while its reply is unconfirmed. Terminal input, file contents and voice are not part of the iPhone app.
 
 If secure storage is locked at launch, unlock the iPhone and return to Sotto. A damaged saved-computers list is rebuilt from readable saved pairings without replacing the damaged index. The recovery message appears only the first time. The app reports how many saved computers need pairing again, once for each unreadable item. If saved unconfirmed actions cannot be read, it asks you to check your threads before sending again; nothing is resent.
+
+## Teams
+
+**Teams** (Owl) lets your Watcher and a teammate's talk, directly over a tailnet, so the two of you can coordinate merge priority and see what the other is working on. It is the tab beside **Watcher** in Watcher's room. Nothing crosses until one of you asks, and a teammate's computer can start, stop, send to, settle, approve and merge nothing on yours.
+
+**Linking.** Both computers need Tailscale running, and Tailscale Serve on for the tailnet; Teams says so if it is not. On separate tailnets, each of you shares your computer with the other in Tailscale's own admin console first, and accepts the other's share. Then one of you opens **Teams**, gives the name their teammate should see, presses **Make a code** and sends the code however you like. It works once, for 30 minutes, and five wrong tries end it. The other pastes it under **Got a code from your teammate?** and presses **Link**. That one code links both directions.
+
+**Asking.** Tell Watcher what you want in your own words: "coordinate merge priority with Drake's Watcher so we aren't stepping on each other's toes", or "give me a list of what Drake is working on". Watcher asks once and ends its turn. Only your own message can ask, and it asks each of the two things once. The answer shows as a teammate's message in Watcher's conversation. It changes nothing, and Watcher reads it with your next message.
+
+**Answering.** When a teammate asks you, your own provider writes the answer in one short request with no tools, on your account, from your thread titles, projects, where each stands and their open pull requests, or Sotto sends the same facts as a plain list if your provider writes nothing. It never reads a thread's messages, code or file names, and it never starts a turn in Watcher. The ask and what your computer answered show in your Watcher's conversation, under the message that was last when each came. Your computer answers each teammate at most 20 times a day and 5 times in 10 minutes, one at a time, and turns down anything past that without running anything. **What you share** on the Teams tab lists your projects: untick any you want left out of your answers, since thread titles come from your words.
+
+**How long it lasts.** A link lasts 30 days. Near the end, and after it, **Link again** appears; when you have both pressed it within 7 days, the link lasts another 30 days. **Remove link** ends it on your computer and sends nothing; your teammate's next ask says the link is gone. The Teams tab and Settings > Hosts & phones show when each link was last used. Neither shows who is online, because nothing is sent to find out.
 
 ## Phones
 

@@ -3,6 +3,7 @@ import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCAL
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
+import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, teamsCommandSchema, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
@@ -607,6 +608,7 @@ export function createSottoBridge(
         return renderer.invoke(HOSTS_OPENCODE_SIGN_IN, parsed).then(answer => parseHostOpenCodeAnswer(action, answer))
       } } : {}) }),
     phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
+    teams: Object.freeze<TeamsBridge>({ get: () => renderer.invoke(TEAMS_GET) as Promise<TeamsState>, command: command => renderer.invoke(TEAMS_COMMAND, teamsCommandSchema.parse(command)) as Promise<TeamsCommandResult>, subscribe: listener => subscribe(renderer, TEAMS_CHANGED, trustedState<TeamsState>('links'), listener) }),
     localApps: Object.freeze<import('../shared/localApps').LocalAppsBridge>({ get: () => renderer.invoke(LOCAL_APPS_GET) as Promise<LocalAppsState>, onChanged: listener => subscribe(renderer, LOCAL_APPS_CHANGED, trustedState<LocalAppsState>('phase'), listener) }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),

@@ -206,6 +206,7 @@ describe('typed preload bridge', () => {
         'searchHistory',
         'subagents',
         'suspendDictationShortcuts',
+        'teams',
         'setStartup',
         'showApp',
         'terminal',

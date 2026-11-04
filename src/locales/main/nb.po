@@ -182,6 +182,10 @@ msgstr ""
 msgid "{name} did not answer about phone access in time. Nothing was changed. Try again."
 msgstr ""
 
+#: src/main/teams/teams.ts
+msgid "{name} has removed this link. Make a new code to link again. Nothing changed here."
+msgstr ""
+
 #: src/main/agents/socketHostService.ts
 msgid "{name} is available in Sotto Owl. Nothing was sent."
 msgstr ""
@@ -204,6 +208,10 @@ msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
 msgid "{name} would not turn on linger without an administrator. Without it, a unit would stop {name}’s host whenever its account signs out, so Sotto installed nothing."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "{name}'s computer did not answer. Nothing changed. Try again when it is on."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -923,6 +931,10 @@ msgstr ""
 msgid "Open Settings in the main Sotto window."
 msgstr ""
 
+#: src/main/teams/ipc.ts
+msgid "Open Teams in the main Sotto window."
+msgstr ""
+
 #: src/main/council/councilIpc.ts
 msgid "Open the Council in the main Sotto window."
 msgstr ""
@@ -969,6 +981,10 @@ msgstr ""
 
 #: src/main/themes/openVsx.ts
 msgid "Open VSX sent more data than a theme needs, so the download was stopped."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then try again. Nothing was linked."
 msgstr ""
 
 #: src/main/tools/checkpoints.ts
@@ -1434,12 +1450,24 @@ msgstr "Stopp diktering"
 msgid "Stop the host on {name}, then connect to it again from Settings > Hosts & phones, and Sotto starts {to}."
 msgstr ""
 
+#: src/main/teams/teams.ts
+msgid "Tailscale could not set up the link's address. Nothing was linked. Try again."
+msgstr ""
+
 #: src/main/hosts/hostPhones.ts
 msgid "Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve."
 msgstr ""
 
 #: src/main/hosts/desktopHosts.ts
 msgid "Tailscale is no longer waiting for this approval. Nothing was opened."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Tailscale is not running on this computer, and a team link needs it. Connect it in Settings > Hosts & phones, then try again. Nothing was linked."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Tailscale Serve is not turned on for your tailnet. Press Turn on Serve, then try again. Nothing was linked."
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -1466,12 +1494,24 @@ msgstr ""
 msgid "Tailscale SSH asked you to approve this request, and Sotto shows an approval only while it connects. Nothing was saved. Nothing was changed. Switch the host off and on, approve the connection in your browser when Sotto asks, then try again."
 msgstr ""
 
+#: src/main/teams/teams.ts
+msgid "Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Teams is still starting. Try again in a moment."
+msgstr ""
+
 #: src/main/tools/terminal.ts
 msgid "Terminal is shutting down."
 msgstr ""
 
 #: src/main/themes/openVsx.ts
 msgid "That address is not an Open VSX address."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "That code came from this computer. Send it to your teammate instead. Nothing was linked."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -1494,8 +1534,16 @@ msgstr ""
 msgid "That extension is no longer on Open VSX."
 msgstr ""
 
+#: src/main/teams/teams.ts
+msgid "That is not a Teams code. Ask your teammate to make a new one and paste all of it. Nothing was linked."
+msgstr ""
+
 #: src/main/themes/openVsx.ts
 msgid "That is not an Open VSX extension name."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "That link is gone."
 msgstr ""
 
 #: src/main/hosts/hostSetupThreads.ts
@@ -2955,6 +3003,18 @@ msgstr ""
 msgid "Your bindings.lua already gives {keys} to Sotto. Leaving those lines alone."
 msgstr ""
 
+#: src/main/teams/teams.ts
+msgid "Your computer's credential store is locked, so Sotto cannot keep the link's token. Unlock it, then try again. Nothing was linked."
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "Your keys run what they did before."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Your teammate's computer did not answer over your tailnet. Check that they are on and that you can each reach the other, then try again. Nothing was linked."
+msgstr ""
+
+#: src/main/teams/teams.ts
+msgid "Your teammate's computer turned that code down. It may be used or too old. Ask them to make a new one. Nothing was linked."
 msgstr ""

@@ -437,6 +437,8 @@ export interface SottoBridge {
   readonly watcher?: import('./watcherRoom').WatcherBridge
   readonly hosts?: import('./hosts').HostsBridge
   readonly phones?: import('./phones').PhonesBridge
+  /** Teams (ADR-0186); main answers it only while the `teams` Owl feature is on. */
+  readonly teams?: import('./teams').TeamsBridge
   /** Let apps on this computer connect (ADR-0180); main answers it only while the `local-apps` Owl feature is on. */
   readonly localApps?: import('./localApps').LocalAppsBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge

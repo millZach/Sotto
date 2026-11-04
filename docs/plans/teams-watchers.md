@@ -2,7 +2,7 @@
 
 Status: first slice approved, November 3, 2026. Settled in a grilling session with Zach on November 2. Zach chose to start it on Owl only, and Drake agreed to open question 1's default. [ADR-0186](../adr/0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) and [ADR-0187](../adr/0187-another-owners-words-are-untrusted-and-start-nothing.md) hold what the slice decided.
 
-Zach's card, November 3: Teams is a tab beside Watcher (question 9). A teammate's ask is answered by a side call with no tools rather than a Watcher turn, which replaces "A teammate's ask starts a turn in your Watcher" below. Summaries cover every project, with a leave-out list. Two desks and the merge order strip are the next slice. Open question 2 has no hold card, because an answer never sees thread content (ADR-0187, decision 3). The plan's links still say what it knew on November 2; #1691 and #1692 are as it says.
+Zach's card, November 3: Teams is a tab beside Watcher (question 9). A teammate's ask is answered by a side call with no tools rather than a Watcher turn, which replaced the planned Watcher turn. Summaries cover every project, with a leave-out list. Two desks and the merge order strip are the next slice. Open question 2 has no hold card, because an answer never sees thread content (ADR-0187, decision 3). The plan's links still say what it knew on November 2; #1691 and #1692 are as it says.
 
 ## What it is
 
@@ -33,8 +33,8 @@ Two owners, Zach and Drake, each run Sotto on their own computers. A teams link 
 1. **Who is on a team.** "You and Drake": two owners who already trust each other.
 2. **What your Watcher can reach on your computer.** "Talk only." Drake's Watcher starts, stops, sends to, settles and changes nothing on your side.
 3. **What crosses between the Watchers.** Its own words, and summaries. Zach, after the first answer: "It doesn't need to open a thread. This is more meant to be directly in the watcher thread. As a first slice what I imagine is saying something along the lines like coordinate merge priority with drakes watcher so we aren't stepping on each others toes or give me a list of what Drake is working on for Sotto." Opening threads to the other person is out of the first slice.
-4. **How the two computers connect.** "Direct over a tailnet," set up by one press each way, as host links are. A relay that Sotto runs is not chosen; it would add a host and an account.
-5. **How far a message from Drake's Watcher reaches.** "Show and read only." Its asks become cards you answer. The action tools (send, stop, settle, watch, start) refuse anything a teammate's message triggers, enforced in code, not only in the prompt. ADR-0073 treats a prompt rule as guidance only. Nothing in a message answers a card or grants a permission.
+4. **How the two computers connect.** "Direct over a tailnet," set up by one press each way, as host links are. A relay that Sotto runs is not chosen; it would add a host and an account. (Built as one code that links both directions, because host links' setup needs an SSH sign-in on the other owner's computer: ADR-0186, decision 3.)
+5. **How far a message from Drake's Watcher reaches.** "Show and read only." Its asks become cards you answer. (Not in the first slice: an ask makes no card. A side call with no tools answers it, and it shows as a teammate's message: ADR-0187, decisions 1, 2 and 4.) The action tools (send, stop, settle, watch, start) refuse anything a teammate's message triggers, enforced in code, not only in the prompt. ADR-0073 treats a prompt rule as guidance only. Nothing in a message answers a card or grants a permission.
 6. **Where shared work happens (later slice).** "Own checkouts, branches move." Each owner works in their own checkout. Branches move over the link, as ADR-0082 does between one owner's machines. Nobody edits the other's checkout.
 7. **How much flows by default.** Zach, after the question on pressing Send: "We need to be very careful with this we don't want to be sending a ton of data back and forth." Chosen: "Only when someone asks."
 8. **Whether asks show before they go.** "Send at once." Zach's request is the go-ahead.
@@ -44,7 +44,7 @@ Two owners, Zach and Drake, each run Sotto on their own computers. A teams link 
 ## Decided by the above (not asked; for Zach to object to)
 
 - **Merge priority is advice.** It orders work and merges nothing. Each owner still merges their own PRs under their own confirmation (#1741, ADR-0004).
-- **Usage lands on the receiving side.** A teammate's ask starts a turn in your Watcher, on your provider account. Each owner's turns run on that owner's account (README).
+- **Usage lands on the receiving side.** A teammate's ask runs on your provider account: first planned as a turn in your Watcher, then a side call with no tools (ADR-0187, decision 2). Each owner's work runs on that owner's account (README).
 
 ## Open questions
 
@@ -73,7 +73,7 @@ Each has a recommended answer.
 "Two Watchers talk, and nothing else."
 
 - Behind an Owl feature flag, once open question 7 is answered.
-- Link two desktops with the existing host-link setup, with the 30-day expiry. Tests can use the laptop and forge as the two computers.
+- Link two desktops with a code on a team link of their own (ADR-0186, which replaces reusing host links' setup), with the 30-day expiry. Tests can use the laptop and forge as the two computers.
 - Your Watcher can send one kind of message to the linked Watcher: an ask. The reply comes back in your Watcher's conversation, shown as a teammate's message.
 - Two asks: coordinate merge priority, and list what the other is working on.
 - No thread content, no starts, no stops, no approvals, no merges.

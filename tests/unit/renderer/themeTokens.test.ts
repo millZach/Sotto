@@ -320,6 +320,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/nextPrompt.css',
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
+      'src/renderer/src/watcher/teams.css',
       'src/renderer/src/watcher/nightScene.css',
       'src/renderer/src/components/clickEffect.css',
       'src/renderer/src/watcher/checkQueue.css',

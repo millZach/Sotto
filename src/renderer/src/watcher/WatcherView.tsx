@@ -61,6 +61,8 @@ import { WatcherOwl } from './WatcherOwl'
 import { WatcherNightScene } from './WatcherNightScene'
 import { moodOf, owlKey, type WatchedOwl } from './owlFamily'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
+import { TeamsPage } from './TeamsPage'
+import { placeTeammateMessages, useTeamsBridge, useTeamsState } from './teamsState'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
@@ -89,6 +91,29 @@ interface HeaderParts {
   readonly stopAll: ReactNode
   /** The update control's status and press, for the way off the page; none where the app does not update itself. */
   readonly update: UpdateControlProps | null
+  /** The Watcher and Teams tabs, while Teams is on (ADR-0186). */
+  readonly tabs?: ReactNode
+}
+
+type RoomTab = 'watcher' | 'teams'
+/**
+ * The Watcher and Teams tabs (ADR-0186, decision 9): Zach's pick on November 3, 2026, over the room's otherwise having no
+ * tabs (ADR-0152). Left and Right move between them, and they sit in the drag strip without dragging.
+ */
+function RoomTabs({ tab, onTab, moved }: { readonly tab: RoomTab; readonly onTab: (tab: RoomTab) => void; readonly moved: React.RefObject<boolean> }): ReactNode {
+  const { t } = useLingui()
+  const tabs: readonly { readonly id: RoomTab; readonly label: string }[] = [{ id: 'watcher', label: 'Watcher' }, { id: 'teams', label: t`Teams` }]
+  const selected = useRef<HTMLButtonElement>(null)
+  // Each tab's page holds the header in its own place, so these buttons are new after a move: focus goes back to the new one.
+  useLayoutEffect(() => { if (moved.current) { moved.current = false; selected.current?.focus() } }, [moved])
+  const go = (next: RoomTab): void => { moved.current = true; onTab(next) }
+  return <div className="watcher-head__tabs" role="tablist" aria-label={t`Watcher's room`} onKeyDown={event => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    go(tab === 'watcher' ? 'teams' : 'watcher')
+  }}>
+    {tabs.map(item => <button key={item.id} ref={tab === item.id ? selected : undefined} id={`watcher-tab-${item.id}`} type="button" role="tab" className="watcher-head__tab tt-focusable" aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => go(item.id)}>{item.label}</button>)}
+  </div>
 }
 
 /**
@@ -109,7 +134,7 @@ function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null 
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, update }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, update, tabs }: HeaderParts): ReactNode {
   const { t } = useLingui()
   const started = room?.state?.current != null
   const track = useReleaseTrack()
@@ -120,6 +145,7 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
       : <span className="watcher-head__tile" role="img" aria-label={releaseTrackName(track)}><SottoMark className="thread-nav__tile" /></span>}
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
+      {tabs}
       <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}
         aria-label={t`All threads, ${count}. Show the list`} title={t`All threads`} onClick={onToggleList}>
         <List size={15} aria-hidden="true" /><span className="watcher-head__list-text">{t`All threads`}</span>
@@ -399,8 +425,11 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const proposals = useMoveProposals()
   const proposalsPlaced = useMemo(() => !crossMachine || proposals.length === 0 || since === undefined ? undefined
     : placeAfterTurns(messages, proposals.filter(proposal => Date.parse(proposal.at) >= Date.parse(since))), [crossMachine, proposals, messages, since])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced }),
-    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced])
+  const teamsBridge = useTeamsBridge()
+  const teamsState = useTeamsState(teamsBridge)
+  const teammates = useMemo(() => placeTeammateMessages(teamsState?.messages), [teamsState?.messages])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced, teammates }),
+    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced, teammates])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
@@ -655,20 +684,26 @@ export function WatcherView({ now: fixedNow, update = null }: {
 
   // The machines line (#1032) is part of the Owl feature Work across machines: Stable shows none of it.
   const crossMachine = useOwlFeature('cross-machine-work')
+  const teamsBridge = useTeamsBridge()
+  const teamsState = useTeamsState(teamsBridge)
+  const [roomTab, setRoomTab] = useState<RoomTab>('watcher')
+  const roomTabMoved = useRef(false)
   const error = state?.error ?? agents.error ?? null
   const stopAll = room === null ? null : <>
     {crossMachine ? <WatcherMoveThreads /> : null}
     <WatcherStopAll room={room} conversation={{ describe, press }} fallbackFocus={() => listButton.current?.focus()} />
   </>
+  const tabs = teamsBridge ? <RoomTabs tab={roomTab} onTab={setRoomTab} moved={roomTabMoved} /> : undefined
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
-      stopAll={stopAll} update={update} />
+      stopAll={stopAll} update={update} tabs={tabs} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
     {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status tt-paragraph' : 'watcher-room__status tt-paragraph'} role={alert ? 'alert' : 'status'}>{text}</p></>
-  if (room === null || room.status === 'unavailable') watcherContent = status(t`This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it.`)
+  if (teamsBridge && roomTab === 'teams') watcherContent = <>{header}<TeamsPage bridge={teamsBridge} state={teamsState} /></>
+  else if (room === null || room.status === 'unavailable') watcherContent = status(t`This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it.`)
   else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? t`Opening Watcher…`)
   else if (room.error !== null && room.state === null) watcherContent = status(shownWords(room.error), true)
   else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>
