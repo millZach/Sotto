@@ -1,3 +1,4 @@
+import { markDictationTiming } from '../../shared/dictationTiming'
 import type { OutputOutcome } from '../../shared/contracts'
 import type { PasteInvocation } from './pasteCommand'
 import { deliveredAppName } from '../../shared/dictationRecord'
@@ -121,6 +122,7 @@ export function createSpawnProcessAdapter(spawn: SpawnProcess): PasteProcessAdap
 
 export class OutputService {
   private deliveryTail: Promise<void> = Promise.resolve()
+  private clipboardAvailable: Promise<void> = Promise.resolve()
 
   constructor(private readonly dependencies: OutputServiceDependencies) {}
 
@@ -161,17 +163,20 @@ export class OutputService {
     const read = this.dependencies.readFocusedApp
     if (read === undefined) return null
     try {
-      return deliveredAppName(await read())
+      markDictationTiming('focused-app-started')
+      const app = deliveredAppName(await read())
+      markDictationTiming('focused-app-returned')
+      return app
     } catch {
       this.dependencies.log?.('delivered-app-unreadable')
       return null
     }
   }
 
-  /** Runs `work` once every delivery before it has finished, so another clipboard write cannot replace text waiting to be pasted. */
+  /** Keeps later clipboard writes behind submitted paste input, without holding up its successful delivery result. */
   afterDeliveries<T>(work: () => T | Promise<T>): Promise<T> {
     const run = this.deliveryTail.then(work)
-    this.deliveryTail = run.then(() => undefined, () => undefined)
+    this.deliveryTail = run.then(() => this.clipboardAvailable, () => this.clipboardAvailable)
     return run
   }
 
@@ -182,7 +187,9 @@ export class OutputService {
     beforeHide?: Promise<unknown>,
   ): Promise<OutputOutcome> {
     try {
+      markDictationTiming('clipboard-write-started')
       await this.dependencies.clipboard.writeText(text)
+      markDictationTiming('clipboard-written')
     } catch {
       // Wayland availability still matters if Electron's own fallback also fails.
       if (options.autoPaste && this.dependencies.clipboard.canPaste?.() === false) return 'clipboard-unavailable'
@@ -205,16 +212,28 @@ export class OutputService {
       if (invocation === null) return 'copied'
       if (!this.dependencies.keepWidgetVisibleDuringPaste) {
         await beforeHide
+        markDictationTiming('widget-hide-started')
         await this.dependencies.widget.hideWidget()
+        markDictationTiming('widget-hidden')
         hidForPaste = true
       }
+      markDictationTiming('paste-delay-started')
       await this.dependencies.delay(options.pasteDelayMs)
-      let pasted: boolean
+      markDictationTiming('paste-delay-ended')
+      let pasted = false
       try {
+        markDictationTiming('paste-keystroke-started')
         pasted = await this.dependencies.process.run(invocation)
+        if (pasted) markDictationTiming('paste-keystroke-sent')
       } finally {
-        // A failed or lost acknowledgement can still follow dispatched input.
-        await this.dependencies.delay(PASTE_SETTLE_MS)
+        // Submission does not prove the target consumed the clipboard. Protect
+        // later writers while history and Ready proceed after a successful paste.
+        // An unconfirmed paste still waits before offering manual copy recovery.
+        markDictationTiming('paste-settle-started')
+        const settled = Promise.resolve(this.dependencies.delay(PASTE_SETTLE_MS))
+          .then(() => { markDictationTiming('paste-settle-ended') })
+        this.clipboardAvailable = settled.catch(() => undefined)
+        if (!pasted) await settled
       }
       if (pasted) this.dependencies.onPasted?.()
       return pasted ? 'pasted' : 'copied'

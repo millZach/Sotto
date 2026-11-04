@@ -1,3 +1,4 @@
+import { markDictationTiming, setDictationTimingSink } from '../../../shared/dictationTiming'
 import {
   createContext,
   createElement,
@@ -29,9 +30,10 @@ import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
 import type { DictationRecord } from '../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../shared/platform'
-import { cloudTranscriptionOn, type AppSettings, type SettingsPatch } from '../../../shared/settings'
+import { cloudTranscriptionOn, dictationOn, type AppSettings, type SettingsPatch } from '../../../shared/settings'
 import { isPastePermissionNotice, type PastePermissionNoticeCode, type RecoveryNotice, type RecoveryNoticeEvent } from '../../../shared/recoveryNotice'
 import { AudioRecorder, type AudioRecorderOptions } from '../audio/audioRecorder'
+import { PreparedAudioCapture } from '../audio/preparedAudioCapture'
 import { SoundCuePlayer } from '../audio/soundCues'
 import {
   DictationController,
@@ -77,7 +79,7 @@ export interface AppController {
   retry?(route?: 'local'): Promise<void>
   /** Clears an error, letting go of a kept recording. */
   dismiss?(): Promise<void>
-  prewarm?(): Promise<void>
+  prewarm?(enabled?: boolean): Promise<void>
   /** Tells main the new controller holds no session, so a widget left over from a reload returns to idle. */
   announceIdle?(): void
   dispose(): void
@@ -109,6 +111,7 @@ export type AppControllerFactory = (
 
 export interface ProductionControllerFactories {
   readonly createRecorder: (options: AudioRecorderOptions) => DictationRecorder
+  readonly createAudioCapture?: () => PreparedAudioCapture
   readonly createTranscriber: (bindings: AppControllerFactoryBindings) => DictationTranscriber
   readonly createCuePlayer: () => DictationCuePlayer
 }
@@ -122,6 +125,7 @@ function createProductionTranscriber(
 
 const productionFactories: ProductionControllerFactories = {
   createRecorder: (options) => new AudioRecorder(options),
+  createAudioCapture: () => new PreparedAudioCapture(),
   createTranscriber: createProductionTranscriber,
   createCuePlayer: () => new SoundCuePlayer(),
 }
@@ -132,8 +136,10 @@ export function createProductionDictationController(
 ): AppController {
   const polish = bindings.polishTranscript
   const platform = bindings.platform
+  const audioCapture = factories.createAudioCapture?.()
   const dependencies: DictationControllerDependencies = {
-    createRecorder: factories.createRecorder,
+    createRecorder: audioCapture === undefined ? factories.createRecorder : options => audioCapture.createRecorder(options),
+    ...(audioCapture === undefined ? {} : { audioCapture }),
     transcriber: factories.createTranscriber(bindings),
     cuePlayer: factories.createCuePlayer(),
     getSettings: bindings.getSettings,
@@ -602,6 +608,7 @@ export function AppProvider({
         // returning user came back for, and dictation is one tab away.
         setNavigation(loadedSettings.onboardingComplete ? 'threads' : 'onboarding')
 
+        setDictationTimingSink(bridge.dictationTiming ? mark => bridge.dictationTiming!.mark(mark) : undefined)
         let controller!: AppController
         const bindings: AppControllerFactoryBindings = {
           platform,
@@ -675,6 +682,7 @@ export function AppProvider({
             commitSettings(authoritativeSettings)
           })
           unsubscribeCommands = bridge.onDictationCommand((command) => {
+            markDictationTiming('dictation-command-received')
             if (!isCurrentGeneration(generation) || localController !== controller) return
             switch (command.type) {
               case 'toggle': void invokeController(controller, (value) => value.toggle()); break
@@ -687,7 +695,6 @@ export function AppProvider({
           })
           setDictation(controller.getState())
           setStatus('ready')
-          void invokeController(controller, (value) => value.prewarm?.() ?? Promise.resolve())
         } catch {
           try { unsubscribeSettings?.() } catch { /* listener is already unreachable */ }
           unsubscribeSettings = null
@@ -730,6 +737,15 @@ export function AppProvider({
       localController = null
     }
   }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, commitUpdate, createController, isCurrentGeneration, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
+
+  // Honour a saved off switch while its startup feature answer is still in flight.
+  const captureEnabled = settings !== null && (settings.dictationEnabled ||
+    (update !== null && dictationOn(settings, update.owlFeatures?.['dictation-off'] === true)))
+  useEffect(() => {
+    if (status === 'ready') {
+      void invokeController(controllerRef.current, controller => controller.prewarm?.(captureEnabled) ?? Promise.resolve())
+    }
+  }, [captureEnabled, status])
 
   const actions = useMemo<AppActions>(() => ({
     start: () => invokeController(controllerRef.current, (controller) => controller.start()),

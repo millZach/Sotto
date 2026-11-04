@@ -1,3 +1,4 @@
+import { dictationTimingNow } from '../../../shared/dictationTiming'
 import {
   AlertCircle,
   Check,
@@ -185,7 +186,7 @@ function WidgetAnnouncements({
         aria-atomic="true"
         data-announcement-channel="polite"
       >
-        {politeCopy === null ? null : <><span>{politeCopy.title}.</span>{' '}<span>{politeCopy.detail}</span></>}
+        {politeCopy === null ? null : <><span>{politeCopy.title}{politeCopy.detail ? '.' : ''}</span>{' '}<span>{politeCopy.detail}</span></>}
       </div>
       <div
         className="widget-live-region"
@@ -234,9 +235,12 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform, i18n: I18n):
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'requesting-permission':
-      return {
+      return snapshot.permissionPending ? {
         tone: 'permission', title: i18n._(msg`Waiting for microphone`), detail: copy.widgetPermissionPromptDetail,
         icon: <ShieldAlert aria-hidden="true" size={22} strokeWidth={2.1} />,
+      } : {
+        tone: 'permission', title: i18n._(msg`Connecting to your microphone.`), detail: '',
+        icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'listening': {
       const shortcut = formatAccelerator(snapshot.shortcut, platform, 'display')
@@ -449,7 +453,7 @@ export function WidgetApp({
     onPresentationChange?.(presentation)
   }, [onPresentationChange, presentation, visibilityGeneration])
 
-  if (snapshot.status === 'idle') {
+  if (isIdle) {
     return (
       <aside
         className="widget-shell"
@@ -521,10 +525,10 @@ export function WidgetApp({
       <Square aria-hidden="true" size={10} fill="currentColor" />
     </WidgetAction>
   )
-  // While main holds Escape across every app, Escape cancels and the pill
-  // carries Stop alone. Where it does not (always on Linux, and on Windows or
-  // macOS when another app holds the key) the pill keeps a cancel ×.
-  const cancelAction = snapshot.cancellable && snapshot.escapeClaimed !== true && (
+  // Startup always offers Cancel. Once listening, main's Escape binding can
+  // take its place; without that binding the pill keeps a cancel ×.
+  const cancelAction = snapshot.cancellable &&
+    (snapshot.status === 'requesting-permission' || snapshot.escapeClaimed !== true) && (
     <WidgetAction label={t`Cancel dictation`} onClick={onCancel}>
       <X aria-hidden="true" size={11} strokeWidth={2.6} />
     </WidgetAction>
@@ -681,6 +685,30 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
       if (!visibility.visible) setDragCancellationVersion((version) => version + 1)
     })
   }, [bridge, preview])
+
+  const waitingForMicrophone = snapshot?.status === 'requesting-permission' && snapshot.permissionPending === true
+  useLayoutEffect(() => {
+    const timing = bridge?.dictationTiming
+    if (preview !== null || timing === undefined) return undefined
+    if (waitingForMicrophone) {
+      timing.mark({ event: 'widget-permission-waiting-committed', atMs: dictationTimingNow() })
+      return undefined
+    }
+    const status = snapshot?.status
+    if (status !== 'listening' && status !== 'idle') return undefined
+    if (status === 'listening') timing.mark({ event: 'widget-listening-committed', atMs: dictationTimingNow() })
+    // The second animation frame follows the first opportunity to paint the committed state.
+    let nextFrame: number | undefined
+    const frame = requestAnimationFrame(() => {
+      nextFrame = requestAnimationFrame(() => {
+        timing.mark({ event: status === 'listening' ? 'widget-listening-shown' : 'widget-ready', atMs: dictationTimingNow() })
+      })
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      if (nextFrame !== undefined) cancelAnimationFrame(nextFrame)
+    }
+  }, [bridge, preview, snapshot?.status, waitingForMicrophone])
 
   const systemDark = useWidgetSystemDark()
   const scheme = snapshot === null ? null : resolveWidgetScheme(snapshot.theme, systemDark)

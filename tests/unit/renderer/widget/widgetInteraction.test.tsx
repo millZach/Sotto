@@ -197,7 +197,7 @@ describe('WidgetApp', () => {
   })
 
   it.each([
-    ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'permission' })],
+    ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'permission', permissionPending: true })],
     ['listening', snapshot({ status: 'listening', sessionId: 'listening', startedAt: 0, speaking: true })],
     ['processing', snapshot({
       status: 'processing', sessionId: 'processing', startedAt: 0,

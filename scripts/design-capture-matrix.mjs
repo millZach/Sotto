@@ -46,7 +46,7 @@ for (const [id, category, state] of [
   ['threads-tour-projects', 'threads', 'tour-projects'],
   ['dictate-ready', 'dictate', 'ready'],
   ['dictate-listening', 'dictate', 'listening'],
-  ['dictate-pasted', 'dictate', 'success-pasted'],
+  // Pasted returns directly to Ready; the live journey asserts delivery before Ready.
   ['dictate-processing', 'dictate', 'processing'],
   ['dictate-error', 'dictate', 'error'],
   // The Dictate room's Journal, where transcripts live now that there is no History page (#1293).
@@ -91,7 +91,6 @@ for (const [id, category, state] of [
   ['onboarding-step-4-speech-model-light', 'onboarding', 'speech-model'],
   ['dictate-ready-light', 'dictate', 'ready'],
   ['dictate-listening-light', 'dictate', 'listening'],
-  ['dictate-pasted-light', 'dictate', 'success-pasted'],
   ['dictate-error-light', 'dictate', 'error'],
   ['dictate-journal-open-light', 'dictate', 'journal-open-feedback'],
   ['settings-feedback-light', 'settings', 'saved-feedback'],

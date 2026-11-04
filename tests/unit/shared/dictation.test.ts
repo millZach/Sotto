@@ -24,6 +24,19 @@ function startListening(sessionId = 'current', startedAt = 100): DictationState 
 }
 
 describe('dictation reducer', () => {
+  it('shows permission waiting only from a matching observation while starting', () => {
+    const requested = reduceDictation(initialDictationState, { type: 'REQUESTED', sessionId: 'session' })
+    expect(requested).toEqual({ status: 'requesting-permission', sessionId: 'session' })
+    const waiting = reduceDictation(requested, { type: 'PERMISSION_WAIT_CHANGED', sessionId: 'session', waiting: true })
+    expect(waiting).toMatchObject({ permissionPending: true })
+    expect(reduceDictation(waiting, { type: 'PERMISSION_WAIT_CHANGED', sessionId: 'older', waiting: false })).toBe(waiting)
+    const answered = reduceDictation(waiting, { type: 'PERMISSION_WAIT_CHANGED', sessionId: 'session', waiting: false })
+    expect(answered).toEqual(requested)
+    const cancelled = reduceDictation(waiting, { type: 'CANCELLED', sessionId: 'session' })
+    expect(reduceDictation(cancelled, { type: 'PERMISSION_WAIT_CHANGED', sessionId: 'session', waiting: true })).toBe(cancelled)
+    expect(reduceDictation(cancelled, { type: 'STARTED', sessionId: 'session', startedAt: 1 })).toBe(cancelled)
+  })
+
   it('starts idle and requests permission for a new session', () => {
     expect(initialDictationState).toEqual({ status: 'idle' })
 

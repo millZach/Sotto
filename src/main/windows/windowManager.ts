@@ -1,3 +1,4 @@
+import { markDictationTiming } from '../../shared/dictationTiming'
 import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, APP_WINDOW_VISIBLE, WIDGET_VISIBILITY } from '../../shared/channels'
 import { APP_NAME } from '../../shared/constants'
 import type {
@@ -767,6 +768,7 @@ export class WindowManager {
   }
 
   async showWidget(): Promise<void> {
+    markDictationTiming('widget-show-started')
     this.widgetWanted = true
     if (this.widgetSuppressed) return
     const visibilityGeneration = this.widgetVisible
@@ -860,6 +862,7 @@ export class WindowManager {
         this.widgetVisible = true
         this.startWidgetMonitor()
       }
+      markDictationTiming('widget-shown')
     } finally {
       if (this.widgetRevealGeneration === visibilityGeneration) {
         this.widgetRevealGeneration = null

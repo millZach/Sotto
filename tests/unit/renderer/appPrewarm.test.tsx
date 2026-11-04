@@ -6,6 +6,7 @@ import { App } from '../../../src/renderer/src/App'
 import { AppProvider, type AppControllerFactory } from '../../../src/renderer/src/state/AppContext'
 import { type SottoBridge } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import { owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
 
 describe('transcription pipeline prewarm', () => {
   function createPrewarmHarness(bridge: SottoBridge) {
@@ -87,5 +88,37 @@ describe('transcription pipeline prewarm', () => {
       })
     })
     await waitFor(() => expect(prewarm).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps preparation off at startup when dictation is off', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, dictationEnabled: false })),
+      getUpdateStatus: vi.fn(async () => ({
+        currentVersion: '3.4.0', phase: { phase: 'unsupported' as const }, checkedAt: null,
+        owlFeatures: owlFeaturesForTrack('stable'),
+      })),
+    })
+    const prewarm = createPrewarmHarness(bridge)
+
+    await waitFor(() => expect(prewarm).toHaveBeenCalledWith(false))
+    expect(prewarm).toHaveBeenCalledOnce()
+  })
+
+  it('updates preparation when dictation turns off and back on', async () => {
+    let emitSettings: ((next: AppSettings) => void) | undefined
+    const bridge = createBridge({
+      getUpdateStatus: vi.fn(async () => ({
+        currentVersion: '3.4.0', phase: { phase: 'unsupported' as const }, checkedAt: null,
+        owlFeatures: owlFeaturesForTrack('stable'),
+      })),
+      onSettingsChanged: vi.fn(listener => { emitSettings = listener; return () => undefined }),
+    })
+    const prewarm = createPrewarmHarness(bridge)
+    await waitFor(() => expect(prewarm).toHaveBeenCalledWith(true))
+
+    act(() => emitSettings?.({ ...DEFAULT_SETTINGS, dictationEnabled: false }))
+    await waitFor(() => expect(prewarm).toHaveBeenLastCalledWith(false))
+    act(() => emitSettings?.({ ...DEFAULT_SETTINGS, dictationEnabled: true }))
+    await waitFor(() => expect(prewarm).toHaveBeenLastCalledWith(true))
   })
 })

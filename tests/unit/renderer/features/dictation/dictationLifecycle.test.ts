@@ -89,7 +89,7 @@ describe('DictationController', () => {
     const stopping = deferred<null>()
     const harness = createHarness({
       recorder: {
-        start: vi.fn(() => starting.promise),
+        start: vi.fn(async (onReady: () => void) => { await starting.promise; onReady() }),
         stop: vi.fn(() => stopping.promise),
       },
     })
@@ -123,21 +123,19 @@ describe('DictationController', () => {
     await stop
   })
 
-  it.each(['stop', 'toggle'] as const)('remembers %s while connecting and cancels when the microphone is ready', async (action) => {
+  it.each(['stop', 'toggle'] as const)('cancels %s immediately while connecting and ignores late readiness', async (action) => {
     const starting = deferred<void>()
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }
     const harness = createHarness({
-      recorder: { start: vi.fn(() => starting.promise) },
+      recorder: { start: vi.fn(async (onReady: () => void) => { await starting.promise; onReady() }) },
       cuePlayer,
     })
     const start = harness.controller.start()
 
     await harness.controller[action]()
-    await harness.controller[action]()
-    await harness.controller.start()
-    expect(harness.controller.getState().status).toBe('requesting-permission')
+    expect(harness.controller.getState().status).toBe('cancelled')
     expect(harness.createRecorder).toHaveBeenCalledTimes(1)
-    expect(harness.recorder.cancel).not.toHaveBeenCalled()
+    expect(harness.recorder.cancel).toHaveBeenCalledOnce()
     recorderOptions(harness).onSegment?.({
       samples: new Float32Array([0.5]), sourceSampleRate: 16_000, durationMs: 300,
     })
@@ -150,7 +148,7 @@ describe('DictationController', () => {
     expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.addHistory).not.toHaveBeenCalled()
-    expect(cuePlayer.playStart).not.toHaveBeenCalled()
+    expect(cuePlayer.playStart).toHaveBeenCalledOnce()
     expect(cuePlayer.playStop).not.toHaveBeenCalled()
     expect(snapshots(harness).some((snapshot) => snapshot.status === 'listening')).toBe(false)
 
@@ -181,7 +179,7 @@ describe('DictationController', () => {
 
   it('invalidates before cancelling while microphone permission is pending', async () => {
     const starting = deferred<void>()
-    const harness = createHarness({ recorder: { start: vi.fn(() => starting.promise) } })
+    const harness = createHarness({ recorder: { start: vi.fn(async (onReady: () => void) => { await starting.promise; onReady() }) } })
     const start = harness.controller.start()
 
     await harness.controller.cancel()
@@ -199,6 +197,8 @@ describe('DictationController', () => {
     await harness.controller.start()
     await harness.controller.cancel()
     expect(harness.controller.getState().status).toBe('cancelled')
+    expect(harness.setTimer).toHaveBeenCalledTimes(1)
+    expect(harness.setTimer).toHaveBeenCalledWith(expect.any(Function), harness.currentSettings.successDisplayMs)
     harness.fireTimers()
     expect(harness.controller.getState()).toEqual({ status: 'idle' })
     expect(snapshots(harness).at(-1)).toMatchObject({ status: 'idle', cancellable: false })
@@ -355,11 +355,12 @@ describe('DictationController', () => {
     expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'parakeet' }))
   })
 
-  it('resets only the terminal session whose timer is still current', async () => {
-    const harness = createHarness({ ids: ['first', 'second'] })
+  it('ignores a copied result reset after a new session starts', async () => {
+    const harness = createHarness({ ids: ['first', 'second'], deliverOutput: async () => 'copied' as const })
     await harness.controller.start()
     await harness.controller.stop()
     expect(harness.setTimer).toHaveBeenCalledTimes(1)
+    const reset = harness.setTimer.mock.calls[0]![0]
 
     await harness.controller.start()
     expect(harness.clearTimer).toHaveBeenCalled()
@@ -367,11 +368,23 @@ describe('DictationController', () => {
       status: 'listening',
       sessionId: 'second',
     })
-    harness.fireTimers()
+    reset()
     expect(harness.controller.getState()).toMatchObject({
       status: 'listening',
       sessionId: 'second',
     })
+  })
+
+  it('accepts another dictation immediately after a pasted result', async () => {
+    const harness = createHarness({ ids: ['first', 'second'] })
+    await harness.controller.start()
+    await harness.controller.stop()
+    expect(harness.controller.getState()).toEqual({ status: 'idle' })
+    expect(harness.setTimer).not.toHaveBeenCalled()
+
+    await harness.controller.toggle()
+    expect(harness.controller.getState()).toMatchObject({ status: 'listening', sessionId: 'second' })
+    expect(harness.createRecorder).toHaveBeenCalledTimes(2)
   })
 
   it('invalidates synchronously and suppresses every later emission on dispose', async () => {
@@ -394,6 +407,31 @@ describe('DictationController', () => {
     expect(harness.deliverOutput).not.toHaveBeenCalled()
   })
 
+  it.each(['resolve', 'reject', 'throw'] as const)('disposes optional cues once when cleanup will %s', async outcome => {
+    const cleanup = deferred<void>()
+    const cuePlayer = {
+      playStart: vi.fn(), playStop: vi.fn(),
+      dispose: vi.fn(() => {
+        if (outcome === 'throw') throw new Error('cue cleanup failed')
+        return cleanup.promise
+      }),
+    }
+    const harness = createHarness({ cuePlayer })
+    await harness.controller.start()
+
+    harness.controller.dispose()
+    harness.controller.dispose()
+    if (outcome === 'reject') cleanup.reject(new Error('cue cleanup failed'))
+    else cleanup.resolve()
+    await Promise.resolve()
+
+    expect(cuePlayer.dispose).toHaveBeenCalledOnce()
+    expect(harness.recorder.cancel).toHaveBeenCalledOnce()
+    expect(harness.transcriber.dispose).toHaveBeenCalledOnce()
+    await harness.controller.start()
+    expect(cuePlayer.playStart).toHaveBeenCalledOnce()
+  })
+
   it('suppresses history and success when disposed during output delivery', async () => {
     const output = deferred<DictationOutputResult>()
     const harness = createHarness({ deliverOutput: () => output.promise })
@@ -408,6 +446,23 @@ describe('DictationController', () => {
 
     expect(harness.addHistory).not.toHaveBeenCalled()
     expect(harness.publishWidgetState).toHaveBeenCalledTimes(publicationsBeforeDispose)
+    expect(harness.controller.getState().status).toBe('processing')
+  })
+
+  it('suppresses pasted success and Ready when disposed during history saving', async () => {
+    const history = deferred<void>()
+    const harness = createHarness({ addHistory: () => history.promise })
+    await harness.controller.start()
+    const stop = harness.controller.stop()
+    await vi.waitFor(() => expect(harness.addHistory).toHaveBeenCalledTimes(1))
+    const publicationsBeforeDispose = harness.publishWidgetState.mock.calls.length
+
+    harness.controller.dispose()
+    history.resolve()
+    await stop
+
+    expect(harness.publishWidgetState).toHaveBeenCalledTimes(publicationsBeforeDispose)
+    expect(harness.setTimer).not.toHaveBeenCalled()
     expect(harness.controller.getState().status).toBe('processing')
   })
 

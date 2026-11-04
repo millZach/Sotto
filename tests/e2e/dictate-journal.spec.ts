@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
@@ -93,9 +94,14 @@ test.describe('the Dictate room as a Journal (#1293)', () => {
       await expect(page.getByText('History is off. New dictations keep their numbers only; older transcripts stay here until you delete them.')).toBeVisible()
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
-      await expect(page.getByRole('heading', { level: 1, name: 'Pasted into Sotto.' })).toBeVisible()
+      await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+        clipboardText: E2E_TRANSCRIPT,
+        pasteAttempts: 1,
+      })
+      await expect(page.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
       // Its numbers count today; its words were not kept.
       await expect(page.getByRole('complementary', { name: 'Your dictation' })).toContainText('in 4 dictations')
+      await expect(page.getByText(E2E_TRANSCRIPT, { exact: true })).toHaveCount(0)
       for (const [width, height] of [[1280, 800], [820, 560]] as const) {
         await resizeContentWindow(launched, width, height, [820, 560])
         await shoot(page, `journal-history-off-${width}x${height}.png`)
@@ -109,7 +115,12 @@ test.describe('the Dictate room as a Journal (#1293)', () => {
       await expect(page.getByRole('heading', { level: 1, name: /^Listening\./ })).toBeVisible()
       await shoot(page, 'journal-listening-reduced-motion-light-1280x800.png')
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
-      await expect(page.getByRole('heading', { level: 1, name: 'Pasted into Sotto.' })).toBeVisible()
+      await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+        clipboardText: E2E_TRANSCRIPT,
+        pasteAttempts: 1,
+      })
+      await expect(page.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
+      await expect(page.getByText(E2E_TRANSCRIPT, { exact: true })).toBeVisible()
     })
   })
 })

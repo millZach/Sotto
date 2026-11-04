@@ -3,7 +3,7 @@ import type { WidgetPalette } from './themeBranding'
 
 export type DictationState =
   | { status: 'idle' }
-  | { status: 'requesting-permission'; sessionId: string }
+  | { status: 'requesting-permission'; sessionId: string; permissionPending?: true | undefined }
   /**
    * `speaking` is whether the microphone is registering a voice (`SpeakingGate`), not its level: the level arrives
    * about every 33 ms and only the meters read it, from the controller's live level, so the window and the widget are
@@ -147,7 +147,7 @@ interface WidgetSnapshotMetadata {
 export type WidgetSnapshot = WidgetSnapshotMetadata &
   (
     | { readonly status: 'idle' }
-    | { readonly status: 'requesting-permission'; readonly sessionId: string }
+    | { readonly status: 'requesting-permission'; readonly sessionId: string; readonly permissionPending?: true | undefined }
     | {
         readonly status: 'listening'
         readonly sessionId: string
@@ -185,6 +185,7 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
 
 export type DictationEvent =
   | { type: 'REQUESTED'; sessionId: string }
+  | { type: 'PERMISSION_WAIT_CHANGED'; sessionId: string; waiting: boolean }
   | { type: 'STARTED'; sessionId: string; startedAt: number }
   | { type: 'SPEAKING_CHANGED'; sessionId: string; speaking: boolean }
   | { type: 'STOPPED'; sessionId: string }
@@ -224,6 +225,11 @@ export function reduceDictation(
       return state.status === 'idle'
         ? { status: 'requesting-permission', sessionId: event.sessionId }
         : state
+
+    case 'PERMISSION_WAIT_CHANGED':
+      if (state.status !== 'requesting-permission' || state.sessionId !== event.sessionId ||
+        (state.permissionPending === true) === event.waiting) return state
+      return { status: state.status, sessionId: state.sessionId, ...(event.waiting ? { permissionPending: true as const } : {}) }
 
     case 'STARTED':
       if (state.status !== 'requesting-permission' || state.sessionId !== event.sessionId) {

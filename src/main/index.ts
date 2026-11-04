@@ -1,3 +1,5 @@
+import { createDictationTiming } from './performance/dictationTiming'
+import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
 import { mediaThumbnailMaker } from './agents/mediaThumbnail'
 import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
@@ -134,7 +136,8 @@ import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { createDictationShortcutRouter, type DictationShortcutEvent } from './hotkeys/dictationShortcutRouter'
 import { holdCanStart } from './hotkeys/chordMatcher'
-import { createKeyListener } from './hotkeys/keyListener'
+import { createKeyListener, type KeyListener } from './hotkeys/keyListener'
+import { createKeyListenerPasteAdapter } from './hotkeys/keyListenerPaste'
 import { createDictationShortcutLifecycle, interruptOnLockAndSleep } from './hotkeys/dictationShortcutLifecycle'
 import { spawnKeyListenerHelper } from './hotkeys/keyListenerHelpers'
 import { parseDictationEdge } from './hotkeys/dictationCommand'
@@ -762,6 +765,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Dock and Finder launch with the system PATH. Provider CLIs live in the user's login PATH.
   await installGuiPath()
   const userDataPath = app.getPath('userData')
+  const dictationTiming = process.env.SOTTO_DICTATION_TIMING === '1' || process.argv.includes('--dictation-timing')
+    ? createDictationTiming(userDataPath) : undefined
   const memoryStore = openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
   const memoryProfile = memoryStore === undefined ? undefined : new MemoryProfile(memoryStore)
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
@@ -954,7 +959,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
-      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
+      const featureArguments = [...(dictationTiming && (mainRenderer || widgetRenderer) ? [DICTATION_TIMING_ARGUMENT] : []), ...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
         ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
@@ -1526,6 +1531,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
     : null
   const pasteCommands = createPasteCommands(platform)
+  // Assigned only by the existing shortcut lifecycle; paste never starts a listener.
+  let pasteKeyListener: KeyListener | null = null
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
     ? createWarmPasteAdapter({
         spawnHelper: (invocation) =>
@@ -1547,13 +1554,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? warmPaste
       ?? (platform === 'darwin'
         // osascript's stderr says which permission refused the paste; it is read, never logged.
-        ? createOsascriptPasteAdapter({
+        ? createKeyListenerPasteAdapter(() => pasteKeyListener, createOsascriptPasteAdapter({
             spawn: (executable, args, options) => spawn(executable, [...args], { ...options, stdio: [...options.stdio] }),
             onDenied: denial => recoveryNotices.publish({
               code: denial === 'automation' ? 'AUTOMATION_PERMISSION_REQUIRED' : 'ACCESSIBILITY_PERMISSION_REQUIRED',
             }),
             log: logOperational,
-          })
+          }))
         : platform === 'linux'
           ? createHyprlandPasteAdapter(undefined, undefined, undefined, () => linuxClipboard!.copyToPrimary())
           : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
@@ -1846,8 +1853,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
 
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
-  const dispatchDictation = (command: DictationCommand): void => {
+  let dictationTimingStartPending = false
+  const dispatchDictation = (command: DictationCommand, receivedAt?: number): void => {
     if (!dictationActive) return
+    if (dictationTiming) {
+      // A second press can arrive before the renderer publishes REQUESTED.
+      const status = dictationTimingStartPending ? 'requesting-permission' : widgetState.status
+      if ((command.type === 'start' || command.type === 'toggle') && !['listening', 'requesting-permission', 'processing'].includes(status)) {
+        dictationTimingStartPending = true
+        dictationTiming.begin(receivedAt)
+      } else if (command.type === 'stop' || (command.type === 'toggle' && ['listening', 'requesting-permission'].includes(status))) {
+        dictationTiming.mark({ event: 'stop-pressed', atMs: receivedAt ?? dictationTimingNow() })
+      }
+    }
+    markDictationTiming('dictation-command-sent')
     void messageDelivery.sendToMain(DICTATION_COMMAND, command).then((delivered) => {
       if (!delivered) {
         logOperational('native-main-send-failed')
@@ -1858,8 +1877,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     if (!dictationActive) return
     void windows.showWidget().catch(() => logOperational('native-widget-show-failed'))
   }
-  const toggleDictation = (): void => {
-    dispatchDictation({ type: 'toggle' })
+  const toggleDictation = (receivedAt?: number): void => {
+    dispatchDictation({ type: 'toggle' }, receivedAt)
     showWidget()
   }
 
@@ -1871,9 +1890,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const hotkeys = new HotkeyManager(
     dictationGate.shortcuts,
     () => {
+      const receivedAt = dictationTiming ? dictationTimingNow() : undefined
       // A hold in progress no longer owns the session the primary shortcut toggled.
       dictationShortcuts?.pressToggled()
-      toggleDictation()
+      toggleDictation(receivedAt)
     },
     () => {
     hotkeys.cancelListening()
@@ -1895,17 +1915,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
     ? createDictationShortcutRouter({
         shortcuts: dictationGate.shortcuts,
-        createListener: handlers => dictationGate.listener(createKeyListener({
-          platform,
-          // The Windows helper can take long to start cold.
-          readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
-          // An E2E run never spawns the helper, so it never asks for Input Monitoring.
-          spawnHelper: e2eConfiguration === null
-            ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
-            : () => null,
-          log: event => logOperational(event as DictationShortcutEvent),
-          ...handlers,
-        })),
+        createListener: handlers => {
+          const listener = dictationGate.listener(createKeyListener({
+            platform,
+            // The Windows helper can take long to start cold.
+            readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
+            // An E2E run never spawns the helper, so it never asks for Input Monitoring.
+            spawnHelper: e2eConfiguration === null
+              ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
+              : () => null,
+            log: event => logOperational(event as DictationShortcutEvent),
+            ...handlers,
+          }))
+          pasteKeyListener = listener
+          return listener
+        },
         canStart: () => holdCanStart(widgetState),
         isFocused: mainWindowFocused,
         dispatch: dispatchDictation,
@@ -2200,6 +2224,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     syncEscape: (state) => {
       widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
+      // Starting from a terminal state publishes RESET/idle before REQUESTED.
+      if (state.status !== 'idle') dictationTimingStartPending = false
       return syncEscapeForWidgetSnapshot(hotkeys, state)
     },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
@@ -2279,7 +2305,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Off, nothing in Sotto may open the microphone: every ask answers no without asking the user (ADR-0107).
   const microphoneAccessWhileOn = microphoneAccess === null ? null : {
     ...microphoneAccess,
-    ensure: () => dictationActive ? microphoneAccess.ensure() : Promise.resolve(false),
+    ensure: (onWaiting?: (waiting: boolean) => void) => dictationActive ? microphoneAccess.ensure(onWaiting) : Promise.resolve(false),
     isGranted: () => dictationActive && microphoneAccess.isGranted(),
   }
   if (platform === 'linux') {
@@ -2579,6 +2605,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           return await shell.openPath(real) === '' ? opened({ ok: true }) : { ok: false, reason: 'unavailable' }
         },
         ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
+        ...(dictationTiming ? { dictationTiming } : {}),
         dictation: {
           request(command): void {
             dispatchDictation(command)

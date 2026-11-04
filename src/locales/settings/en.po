@@ -1896,6 +1896,10 @@ msgstr "Conversation"
 msgid "Copied"
 msgstr "Copied"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Copied message duration saved."
+msgstr "Copied message duration saved."
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Copied the code"
 msgstr "Copied the code"
@@ -2742,8 +2746,8 @@ msgid "How long a stage waits for a thread before its row offers Retry, Use anot
 msgstr "How long a stage waits for a thread before its row offers Retry, Use another model and Go on without it. Nothing is left out on its own."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "How long the success message stays up, in milliseconds (500 to 5000)."
-msgstr "How long the success message stays up, in milliseconds (500 to 5000)."
+msgid "How long Copied stays up, in milliseconds (500 to 5000)."
+msgstr "How long Copied stays up, in milliseconds (500 to 5000)."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "How long to wait before pasting, in milliseconds (50 to 1000)."
@@ -5624,10 +5628,6 @@ msgstr "Subjects and titles start with a type and scope, like feat(threads):. No
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Subtle surface"
 msgstr "Subtle surface"
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Success duration saved."
-msgstr "Success duration saved."
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx

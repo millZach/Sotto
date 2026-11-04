@@ -1,3 +1,4 @@
+import { markDictationTiming } from '../../../shared/dictationTiming'
 import type {
   TranscriptionFailureReason,
   TranscriptionRequest,
@@ -104,6 +105,7 @@ export class LocalTranscriber implements DictationTranscriber {
     // A disposed transcriber is a teardown, not a failure: say so honestly.
     if (this.disposed) return Promise.reject(new TranscriptionError('cancelled'))
 
+    markDictationTiming('transcription-request-started')
     let wav: Uint8Array
     try {
       wav = encodeWavPcm16(options.audio, TRANSCRIPTION_SAMPLE_RATE)
@@ -129,6 +131,7 @@ export class LocalTranscriber implements DictationTranscriber {
         })
         .then(
           (result) => {
+            markDictationTiming('transcription-request-returned')
             // A cancelled or timed-out request already rejected, and settling
             // returns false there; the late answer is simply dropped.
             if (!this.settle(requestId)) return

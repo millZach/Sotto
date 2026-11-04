@@ -39,6 +39,7 @@ function createHarness(options: { platform?: SottoPlatform; taken?: readonly str
     running: () => running,
     ready: () => running && options.ready !== false,
     permission: () => permission,
+    paste: vi.fn(async () => 'not-sent' as const),
     dispose: vi.fn(),
   } satisfies KeyListener
   let idle = true

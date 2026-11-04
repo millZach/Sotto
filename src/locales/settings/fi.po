@@ -1896,6 +1896,10 @@ msgstr ""
 msgid "Copied"
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Copied message duration saved."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Copied the code"
 msgstr ""
@@ -2742,7 +2746,7 @@ msgid "How long a stage waits for a thread before its row offers Retry, Use anot
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "How long the success message stays up, in milliseconds (500 to 5000)."
+msgid "How long Copied stays up, in milliseconds (500 to 5000)."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -5623,10 +5627,6 @@ msgstr ""
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Subtle surface"
-msgstr ""
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Success duration saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts

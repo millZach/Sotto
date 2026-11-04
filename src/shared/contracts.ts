@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { DictationTimingBridge } from './dictationTiming'
 
 import { MAX_TRANSCRIPTION_SAMPLES } from './audio'
 import { WIDGET_ERROR_CODES, type WidgetSnapshot } from './dictation'
@@ -14,6 +15,13 @@ import { widgetPaletteSchema } from './themeBranding'
 export type Unsubscribe = () => void
 
 const boundedSessionId = z.string().min(1).max(128)
+/** Preload owns the request id; it correlates observations, never grants access. */
+export const microphoneAccessRequestSchema = z.string().uuid().optional()
+export const microphoneAccessWaitingSchema = z.object({
+  requestId: z.string().uuid(),
+  waiting: z.boolean(),
+}).strict()
+
 const widgetErrorCodeSchema = z.enum(WIDGET_ERROR_CODES)
 
 export const dictationCommandSchema = z
@@ -35,6 +43,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
     .object({
       status: z.literal('requesting-permission'),
       sessionId: boundedSessionId,
+      permissionPending: z.literal(true).optional(),
       ...widgetMetadataSchema,
     })
     .strict(),
@@ -492,6 +501,9 @@ export interface SottoBridge {
   requestKeyListenerPermission?(): Promise<KeyListenerPermission>
   onKeyListenerPermission?(listener: (permission: KeyListenerPermission) => void): Unsubscribe
 
+  /** Local numeric handoff marks, present only for an explicitly timed run. */
+  readonly dictationTiming?: DictationTimingBridge
+
   requestDictation(command: DictationCommand): Promise<CommandResult>
   onDictationCommand(listener: (command: DictationCommand) => void): Unsubscribe
 
@@ -519,7 +531,7 @@ export interface SottoBridge {
   /** OpenRouter's speech models, best first (Owl `cloud-dictation`, ADR-0160); refused while that feature is off. */
   listCloudSpeechModels(): Promise<CloudSpeechModelList>
   /** Asks the operating system for the microphone before Chromium captures. */
-  ensureMicrophoneAccess(): Promise<boolean>
+  ensureMicrophoneAccess(onWaiting?: (waiting: boolean) => void): Promise<boolean>
 
   getUpdateStatus(): Promise<UpdateStatus | UnavailableResult>
   checkForUpdates(): Promise<UpdateStatus | UnavailableResult>
@@ -558,6 +570,7 @@ export const LIVING_OWL_RENDERER_ARGUMENT = '--sotto-living-owl'
 
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
+  readonly dictationTiming?: DictationTimingBridge
   readonly platform: SottoPlatform
   /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */
   readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge

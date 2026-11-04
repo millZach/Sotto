@@ -182,6 +182,45 @@ func handle(type: CGEventType, event: CGEvent) -> Bool {
   }
 }
 
+// Resolve V with Command down in the current layout, including Dvorak-QWERTY Command.
+// No cached layout or US keycode: the user may switch input sources between dictations.
+func pasteKeyCode() -> CGKeyCode? {
+  guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+        let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+  let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
+  guard let bytes = CFDataGetBytePtr(data) else { return nil }
+  let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
+  let keyboardType = UInt32(LMGetKbdType())
+  return withExtendedLifetime(data) {
+    for code in UInt16(0)..<128 {
+      var deadKeys: UInt32 = 0
+      var length = 0
+      var characters = [UniChar](repeating: 0, count: 4)
+      let status = UCKeyTranslate(layout, code, UInt16(kUCKeyActionDown), UInt32(cmdKey >> 8),
+        keyboardType, OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeys, characters.count, &length, &characters)
+      if status == noErr && length == 1 && (characters[0] == 0x76 || characters[0] == 0x56) { return code }
+    }
+    return nil
+  }
+}
+
+func paste(_ id: String) {
+  // Preflight never prompts. Construct both events before submitting either one.
+  guard CGPreflightPostEventAccess(), let code = pasteKeyCode(),
+        let source = CGEventSource(stateID: .privateState),
+        let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),
+        let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) else {
+    emit("paste \(id) not-sent")
+    return
+  }
+  down.flags = .maskCommand
+  up.flags = .maskCommand
+  down.post(tap: .cghidEventTap)
+  up.post(tap: .cghidEventTap)
+  // Quartz acknowledges submission only; the focused app may still refuse the paste.
+  emit("paste \(id) dispatched")
+}
+
 func command(_ raw: String) {
   let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").map(String.init)
   switch parts.first {
@@ -193,6 +232,8 @@ func command(_ raw: String) {
       if recording { seedHeldModifiers() }
     }
   case "request": _ = CGRequestListenEventAccess()
+  case "paste":
+    if parts.count == 2, let id = UInt64(parts[1]), id > 0 { paste(String(id)) }
   default: break
   }
 }
@@ -482,6 +523,7 @@ func listenGranted() -> Bool {
 // reported: main takes the main shortcut back while it is off. A change to Accessibility makes the tap again.
 var granted = listenGranted()
 emit(granted ? "permission granted" : "permission denied")
+emit("capability paste-v1")
 Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
   let now = granted ? CGPreflightListenEventAccess() : listenGranted()
   if now && tapActive != AXIsProcessTrusted() { _ = installTap() }

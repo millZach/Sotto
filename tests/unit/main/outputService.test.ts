@@ -134,6 +134,7 @@ describe('OutputService', () => {
       const paste = harness.service.deliver('dictation', { autoPaste: true, pasteDelayMs: 0 })
       const copy = harness.service.deliver('history', { autoPaste: false, pasteDelayMs: 0 })
       await vi.advanceTimersByTimeAsync(0)
+      await expect(paste).resolves.toBe('pasted')
       expect(writes).toEqual(['dictation'])
       await vi.advanceTimersByTimeAsync(149)
       expect(writes).toEqual(['dictation'])
@@ -141,6 +142,34 @@ describe('OutputService', () => {
       await expect(paste).resolves.toBe('pasted')
       await expect(copy).resolves.toBe('copied')
       expect(writes).toEqual(['dictation', 'history'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['copy', 'image'] as const)('returns successful delivery while a later %s still waits for clipboard consumption', async next => {
+    vi.useFakeTimers()
+    try {
+      const writes: string[] = []
+      const onPasted = vi.fn()
+      const harness = createHarness({
+        clipboard: { writeText: text => { writes.push(text) } },
+        delay: ms => new Promise(resolve => setTimeout(resolve, ms)),
+        onPasted,
+      })
+      const delivery = harness.service.deliverDictation('dictation', { autoPaste: true, pasteDelayMs: 50 })
+      await vi.advanceTimersByTimeAsync(50)
+      await expect(delivery).resolves.toEqual({ outcome: 'pasted', app: null })
+      expect(onPasted).toHaveBeenCalledOnce()
+
+      const later = next === 'copy'
+        ? harness.service.deliver('history', { autoPaste: false, pasteDelayMs: 0 })
+        : harness.service.afterDeliveries(() => { writes.push('image'); return 'image' })
+      await vi.advanceTimersByTimeAsync(149)
+      expect(writes).toEqual(['dictation'])
+      await vi.advanceTimersByTimeAsync(1)
+      await later
+      expect(writes).toEqual(['dictation', next === 'copy' ? 'history' : 'image'])
     } finally {
       vi.useRealTimers()
     }

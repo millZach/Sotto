@@ -28,6 +28,30 @@ function createAdapter(
 // Gates share the same fresh promise implementation as the window and bootstrap fixtures.
 
 describe('createMicrophoneAccessGate', () => {
+  it.each(['granted', 'denied', 'restricted', 'unknown'] as const)('never reports a prompt for %s access', async status => {
+    const waiting = vi.fn()
+    await createMicrophoneAccessGate(createAdapter(status)).ensure(waiting)
+    expect(waiting).not.toHaveBeenCalled()
+  })
+
+  it('reports only the lifetime of an outstanding OS request, including concurrent callers', async () => {
+    const prompt = createDeferred<boolean>()
+    const gate = createMicrophoneAccessGate(createAdapter('not-determined', () => prompt.promise))
+    const firstWaiting = vi.fn()
+    const secondWaiting = vi.fn()
+    const first = gate.ensure(firstWaiting)
+    const second = gate.ensure(secondWaiting)
+    expect(firstWaiting.mock.calls).toEqual([[true]])
+    expect(secondWaiting.mock.calls).toEqual([[true]])
+    prompt.resolve(true)
+    await Promise.all([first, second])
+    expect(firstWaiting.mock.calls).toEqual([[true], [false]])
+    expect(secondWaiting.mock.calls).toEqual([[true], [false]])
+    const settledWaiting = vi.fn()
+    await gate.ensure(settledWaiting)
+    expect(settledWaiting).not.toHaveBeenCalled()
+  })
+
   it('allows an already granted microphone without prompting', async () => {
     const adapter = createAdapter('granted')
     const gate = createMicrophoneAccessGate(adapter)

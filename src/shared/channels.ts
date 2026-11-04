@@ -60,6 +60,7 @@ export const OPENROUTER_CHECK_KEY = 'sotto:openrouter:check-key' as const
 export const OPENROUTER_LIST_MODELS = 'sotto:openrouter:list-models' as const
 export const OPENROUTER_LIST_SPEECH_MODELS = 'sotto:openrouter:list-speech-models' as const
 export const MICROPHONE_ENSURE_ACCESS = 'sotto:microphone:ensure-access' as const
+export const MICROPHONE_ACCESS_WAITING = 'sotto:microphone:access-waiting' as const
 
 export const UPDATE_GET_STATUS = 'sotto:update:get-status' as const
 export const UPDATE_CHECK = 'sotto:update:check' as const

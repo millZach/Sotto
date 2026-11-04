@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { DESIGN_CAPTURE_BUILT_IN_THEMES, DESIGN_CAPTURE_DEFAULT_THEME, DESIGN_CAPTURE_MINIMUM_WIDTH } from '../../scripts/design-capture-matrix.mjs'
+import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { appThemes, assertDictateState, assertFocusPresentation, assertRenderedRoom, captureFullSurface, capturePage, captureSection, setAppearance, setMainWindowWidth, startSettingsAtHeading } from './support/designCapture'
 import { openJournalRow, openPage } from './support/sottoLaunch'
@@ -38,8 +39,10 @@ test.describe('authoritative design-review captures', () => {
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-listening-light.png', { theme: 'light' })
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
-      await assertDictateState(page, 'success', /^pasted into sotto\.$/i)
-      await capturePage(page, 'dictate-pasted-light.png', { theme: 'light' })
+      await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+        clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1,
+      })
+      await assertDictateState(page, 'idle', /ready when you are/i)
     })
 
     await withSotto({ onboardingComplete: true, scenario: 'transcription-failure', appearance: 'light' }, async ({ page }) => {
