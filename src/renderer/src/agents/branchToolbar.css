@@ -85,32 +85,8 @@
 .branch-toolbar[data-header] { flex-wrap: nowrap; margin: 0; }
 .branch-toolbar[data-header] :is(.branch-toolbar__end, .branch-toolbar__picker) { flex: 0 1 auto; }
 .branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(160px, 100%); }
-/* The working copy beside the toolbar already says this branch, so the picker keeps its glyph and chevron and its name in the tooltip. */
-.thread-workspace__crumb[data-has-working-copy] ~ .thread-workspace__branches .branch-toolbar__branch[data-echoed] > span { display: none; }
-/* A pane too narrow for all of it gives things up whole, rather than leaving stubs or sliding them under the header's buttons (ADR-0182, decision 5):
-   first the project and the branch's name, which stays in the working copy's tooltip, then the picker's button, then the number.
-   The picker stays where its chord can open it, and the pull request stays on the Git action and in Tools. */
-@container thread-pane (max-width: 640px) {
-  .thread-workspace__crumb[data-has-working-copy]:has(~ .thread-workspace__branches .branch-toolbar) > span:first-of-type { display: none; }
-  .thread-workspace__crumb[data-has-working-copy]:has(~ .thread-workspace__branches .branch-toolbar)::before { display: none; }
-  .thread-workspace__crumb[data-has-working-copy]:has(~ .thread-workspace__branches .branch-toolbar) .working-copy__trigger > span { display: none; }
-}
-@container thread-pane (max-width: 560px) {
-  .thread-workspace__branches .branch-toolbar__end > .branch-toolbar__separator { display: none; }
-  .thread-workspace__branches .branch-toolbar__branch:not([aria-expanded='true']) { position: absolute; width: 0; padding: 0; visibility: hidden; }
-}
-@container thread-pane (max-width: 505px) { .thread-workspace__branches .branch-toolbar__pr { display: none; } }
-/* The same three steps for the pane under the window's own controls, which has 120px less of its row. */
-@container thread-pane (max-width: 760px) {
-  .threads-view:not(.threads-view--mac, [data-tools='docked']) .thread-pane[data-under-controls] .thread-workspace__crumb[data-has-working-copy]:has(~ .thread-workspace__branches .branch-toolbar) > span:first-of-type { display: none; }
-  .threads-view:not(.threads-view--mac, [data-tools='docked']) .thread-pane[data-under-controls] .thread-workspace__crumb[data-has-working-copy]:has(~ .thread-workspace__branches .branch-toolbar)::before { display: none; }
-  .threads-view:not(.threads-view--mac, [data-tools='docked']) .thread-pane[data-under-controls] .thread-workspace__crumb[data-has-working-copy]:has(~ .thread-workspace__branches .branch-toolbar) .working-copy__trigger > span { display: none; }
-}
-@container thread-pane (max-width: 720px) {
-  .threads-view:not(.threads-view--mac, [data-tools='docked']) .thread-pane[data-under-controls] .thread-workspace__branches .branch-toolbar__end > .branch-toolbar__separator { display: none; }
-  .threads-view:not(.threads-view--mac, [data-tools='docked']) .thread-pane[data-under-controls] .thread-workspace__branches .branch-toolbar__branch:not([aria-expanded='true']) { position: absolute; width: 0; padding: 0; visibility: hidden; }
-}
-@container thread-pane (max-width: 680px) { .threads-view:not(.threads-view--mac, [data-tools='docked']) .thread-pane[data-under-controls] .thread-workspace__branches .branch-toolbar__pr { display: none; } }
+/* A branch's name reads whole while the row has the room. */
+.branch-toolbar[data-header] .branch-toolbar__branch { max-width: min(260px, 100%); }
 .branch-toolbar[data-header] :is(.branch-toolbar__list, .branch-toolbar__panel) { top: calc(100% + 6px); bottom: auto; }
 .branch-toolbar[data-header] .branch-toolbar__panel { display: flex; flex-direction: column; overflow: hidden; }
 .branch-toolbar[data-header] .branch-toolbar__panel > :not(.branch-toolbar__refs) { flex: none; }

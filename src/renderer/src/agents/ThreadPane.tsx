@@ -465,7 +465,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
     {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
       {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
-          A press on a control inside it, such as the working copy, stays that control's. */}
+          A press on a control inside it, such as the working copy, stays that control's. The name is served first and
+          what stands beside it takes what is left (ADR-0182, November 4 amendment). */}
       <div className="thread-workspace__title" data-pane-handle={handle ? '' : undefined} draggable={handle && !renaming ? true : undefined}
         onPointerDown={handle ? event => { pressedControl.current = (event.target as Element).closest(INSIDE_CONTROL) !== null } : undefined}
         onDragStart={handle ? event => { if (pressedControl.current || renaming) { event.preventDefault(); return } handle.start(event) } : undefined}
@@ -476,11 +477,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           ? <h2><ThreadNameField title={thread.title} label={t`Rename ${title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
           : <h2 title={thread.title}>{thread.title}</h2>}
+        {/* What is left of the row after the name: the project and the working copy, then the branch controls, each giving way whole as this box narrows. */}
+        <span className="thread-workspace__where">
         <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span title={row.project?.title ?? row.provider}>{row.project?.title ?? row.provider}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
         <span className="thread-workspace__branches" ref={setBranchSlot} />
+        </span>
       </div>
       {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows or takes focus: the Git action (once
           the host has read a repository's status), Watch, the Council (Owl only), Tools, the Terminal drawer, the ··· menu

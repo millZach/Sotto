@@ -36,6 +36,10 @@ const fromRight = (scope: Locator): Promise<number[]> => scope.evaluate(head => 
   return [...head.querySelectorAll<HTMLElement>('.thread-workspace__actions > *')].map(control => Math.round(edge - control.getBoundingClientRect().left))
 })
 
+/** How far a pane's name reaches past the left edge of its buttons; a name that stops short of them reads as zero or less. */
+const nameOverButtons = (scope: Locator): Promise<number> => scope.evaluate(head =>
+  head.querySelector('h2')!.getBoundingClientRect().right - head.querySelector('.thread-workspace__actions')!.getBoundingClientRect().left)
+
 /** The parts of the title that are cut off: the name, the project and the folder. */
 const cut = (scope: Locator): Promise<string[]> => scope.evaluate(head =>
   [...head.querySelectorAll<HTMLElement>('h2, .thread-workspace__crumb > span:first-of-type, .working-copy__trigger, .working-copy__label')]
@@ -43,7 +47,7 @@ const cut = (scope: Locator): Promise<string[]> => scope.evaluate(head =>
 
 /** The window's content at exactly this size, held: the nested Linux desktop can hand a new window its first size back. */
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await holdContentSize(launched, width, height, [820, 560])
+  await holdContentSize(launched, width, height, [780, 520])
 }
 
 async function capture(page: Page, name: string): Promise<void> {
@@ -89,10 +93,8 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     expect(await fromRight(right)).toEqual(unfocused)
     await promptField(pane(page, 'wav-stall')).click()
     await expect(pane(page, 'wav-stall')).toHaveAttribute('data-focused')
-    // Two panes side by side at 1600x1000: the title, project and folder are shown, and whole.
+    // Two panes side by side at 1600x1000: the names are whole, and the project reads while its pane has the room.
     await expect(left.locator('.thread-workspace__crumb > span').first()).toHaveText('workshop')
-    await expect(left.locator('.thread-workspace__crumb > span').first()).toBeVisible()
-    await expect(right.locator('.thread-workspace__crumb > span').first()).toBeVisible()
     expect(await cut(left)).toEqual([])
     expect(await cut(right)).toEqual([])
     await capture(page, 'split-1600x1000')
@@ -137,7 +139,8 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     await promptField(pane(page, 'wav-stall')).click()
 
     // Dragging the divider moves the left pane's edge and its controls with it, and moves nothing in either header against
-    // its own pane's right edge: the right pane's controls stay where they were on screen.
+    // its own pane's right edge: the right pane's controls stay where they were on screen. Only Watch, first in the row, takes
+    // its word back as the right pane passes 720px, which grows it leftward into the room beside the name.
     const leftBefore = await fromRight(left), rightBefore = await fromRight(right)
     const rightOnScreen = await right.locator('.thread-workspace__actions').boundingBox()
     const divider = page.getByRole('separator', { name: 'Resize panes' })
@@ -147,8 +150,9 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     await page.mouse.move(box.x - 160, box.y + box.height / 2, { steps: 12 })
     await page.mouse.up()
     expect(await fromRight(left)).toEqual(leftBefore)
-    expect(await fromRight(right)).toEqual(rightBefore)
-    expect((await right.locator('.thread-workspace__actions').boundingBox())!.x).toBeCloseTo(rightOnScreen!.x, 0)
+    expect((await fromRight(right)).slice(1)).toEqual(rightBefore.slice(1))
+    const rightNow = (await right.locator('.thread-workspace__actions').boundingBox())!
+    expect(rightNow.x + rightNow.width).toBeCloseTo(rightOnScreen!.x + rightOnScreen!.width, 0)
     await divider.dblclick()
 
     // Move pane from the menu, by the keyboard: the panes trade places and focus stays on the ··· button.
@@ -167,6 +171,17 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
 
     await size(launched, 1280, 800)
     expect((await controls(left)).filter(control => control !== 'git')).toEqual(['watch', 'tools', 'terminal', 'more', 'close'])
+    // Below a 720px pane Watch is its owl, named as before. Neither name runs under its pane's buttons, the right pane's
+    // least of all, with the window's own controls over its row.
+    await expect(left.locator('.watch-toggle__text')).toBeHidden()
+    await expect(left.getByRole('button', { name: /Watch/ })).toBeVisible()
+    for (const head of [left, right]) expect(await nameOverButtons(head)).toBeLessThanOrEqual(0)
+    await page.evaluate(async title => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'footer-links', title }) }, 'Repository review of the coordinator and its adapters')
+    await expect(right.locator('h2')).toHaveText('Repository review of the coordinator and its adapters')
+    for (const head of [left, right]) expect(await nameOverButtons(head)).toBeLessThanOrEqual(0)
+    expect(await right.locator('h2').evaluate(heading => heading.scrollWidth > heading.clientWidth)).toBe(true)
+    await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'footer-links', title: 'Footer links' }) })
+    await expect(right.locator('h2')).toHaveText('Footer links')
     await capture(page, 'split-1280x800')
     await size(launched, 820, 560)
     // At the minimum the panes become tabs, and the shown pane keeps the same header, nothing clipped.
@@ -177,9 +192,9 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     expect(overflow).toBe(0)
     await capture(page, 'tabs-820x560')
 
-    // The name gives way first, as far as it must. Beside a long name the project and folder stay whole while there is
-    // room; a short name has no gap after it; hovering shows the full name; every control keeps its place.
-    const LONG = 'Fix the desktop thread top bar so the Tools and Terminal symbols come back beside Watch and a long thread name gives way first'
+    // The name is served first: whole if the row can hold it, and only then cut. The project, the branch and the number give
+    // way before it; a short name has no gap after it; hovering shows the full name; every control keeps its place.
+    const LONG = 'Fix the desktop thread top bar so the Tools and Terminal symbols come back beside Watch where he had them'
     await page.evaluate(async title => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'wav-stall', title }) }, LONG)
     await size(launched, 1600, 1000)
     await pane(page, 'footer-links').getByRole('button', { name: 'Close Footer links pane', exact: true }).click()
@@ -189,37 +204,53 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     const name = only.locator('h2')
     await expect(name).toHaveAttribute('title', LONG)
     expect(await cut(only)).toEqual([LONG])
-    expect((await name.boundingBox())!.width).toBeGreaterThanOrEqual(150)
-    // The floor: with something too wide to give way beside it, a long name stops at 14em (about 210px) and goes no further,
-    // while a name narrower than that keeps its own width.
+    // The row's buttons take what they need and the name takes the rest, with nothing left beside it.
+    const row = await only.evaluate(head => ({ name: head.querySelector('h2')!.getBoundingClientRect().right, buttons: head.querySelector('.thread-workspace__actions')!.getBoundingClientRect().left }))
+    expect(row.buttons - row.name).toBeLessThanOrEqual(20)
+    expect(row.buttons - row.name).toBeGreaterThanOrEqual(0)
+    // The floor: when something must keep its place beside the name, a long name stops at 3em (about 45px) and goes no further,
+    // and a name narrower than that keeps its own width.
     const squeezed = (): Promise<{ readonly width: number; readonly full: number }> => only.evaluate(head => {
-      const crumb = head.querySelector<HTMLElement>('.thread-workspace__crumb')!, heading = head.querySelector<HTMLElement>('h2')!
-      crumb.style.cssText = 'flex: none; width: 2000px'
+      const where = head.querySelector<HTMLElement>('.thread-workspace__where')!, heading = head.querySelector<HTMLElement>('h2')!
+      where.style.minWidth = '2000px'
       const measured = { width: heading.getBoundingClientRect().width, full: heading.scrollWidth }
-      crumb.style.cssText = ''
+      where.style.minWidth = ''
       return measured
     })
     const longSqueezed = await squeezed()
-    expect(longSqueezed.width).toBeGreaterThanOrEqual(190)
-    expect(longSqueezed.width).toBeLessThanOrEqual(230)
+    expect(longSqueezed.width).toBeGreaterThanOrEqual(40)
+    expect(longSqueezed.width).toBeLessThanOrEqual(50)
     expect((await controls(only)).filter(control => control !== 'git')).toEqual(['watch', 'tools', 'terminal', 'more'])
     await capture(page, 'long-name-1280x800')
-    // With room for all of it, the same name shows whole.
+    // With room for all of it, the same name shows whole, and Watch has its word.
     await size(launched, 1600, 1000)
     expect(await cut(only)).toEqual([])
+    await expect(only.locator('.watch-toggle__text')).toBeVisible()
     await capture(page, 'long-name-1600x1000')
     // A short name of narrow letters, the kind an estimate of its width would hold open.
-    await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'wav-stall', title: 'Initial fill' }) })
-    await expect(name).toHaveText('Initial fill')
+    await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'wav-stall', title: 'Fix CI' }) })
+    await expect(name).toHaveText('Fix CI')
     expect(await cut(only)).toEqual([])
-    const shortSqueezed = await squeezed()
-    expect(Math.round(shortSqueezed.width)).toBe(shortSqueezed.full)
-    const afterName = await only.evaluate(head => {
+    const afterName = async (): Promise<number> => only.evaluate(head => {
       const text = document.createRange()
       text.selectNodeContents(head.querySelector('h2')!)
       return Math.round(head.querySelector('.thread-workspace__crumb')!.getBoundingClientRect().left - text.getBoundingClientRect().right)
     })
-    expect(afterName).toBeLessThanOrEqual(12)
+    expect(await afterName()).toBeLessThanOrEqual(12)
+    const shortSqueezed = await squeezed()
+    expect(Math.round(shortSqueezed.width)).toBeLessThanOrEqual(Math.round(shortSqueezed.full))
+    // The same at the minimum, where the pane is under 720px: this name held 3em open with 8px after it.
+    await size(launched, 820, 560)
+    const veryShort = 'CI'
+    await page.evaluate(async title => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'wav-stall', title }) }, veryShort)
+    await expect(name).toHaveText(veryShort)
+    const held = await only.evaluate(head => {
+      const heading = head.querySelector<HTMLElement>('h2')!, text = document.createRange()
+      text.selectNodeContents(heading)
+      return Math.round(heading.getBoundingClientRect().right - text.getBoundingClientRect().right)
+    })
+    expect(held).toBeLessThanOrEqual(0)
+    await size(launched, 1600, 1000)
     await capture(page, 'short-name-1600x1000')
   } finally {
     await closeSotto(launched)
