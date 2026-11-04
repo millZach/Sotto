@@ -55,6 +55,10 @@ test('starts and stops dictation from the floating widget', async () => {
     await widget.getByTestId('widget-sliver').click()
     await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
     await widget.getByRole('button', { name: 'Stop dictation', exact: true }).click()
-    await expect(widget.locator('.widget-shell[data-status="success"]')).toBeVisible()
+    await expect.poll(() => launched.page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+      clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1,
+    })
+    await expect(widget.locator('.widget-shell')).toHaveAttribute('data-status', 'idle')
+    await expect(widget.getByTestId('widget-sliver')).toBeVisible()
   } finally { await closeSotto(launched) }
 })

@@ -99,9 +99,9 @@ test('Linux saves a key in Settings and explains Hyprland paste', async () => {
     await expect(page.locator('.app-room__top')).toBeEmpty()
     await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
-    await expect(page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1 })
+    await expect(page.getByRole('heading', { name: 'Ready when you are.', exact: true })).toBeVisible()
     await expect(page.getByText(/With Sotto’s compositor bindings: hold F9 to talk/)).toBeVisible()
-    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1 })
   } finally { await closeSotto(launched) }
 })
 

@@ -2,13 +2,25 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-const source = readFileSync(join(__dirname, '../../../native/key-listener/darwin.swift'), 'utf8')
-const paste = source.slice(source.indexOf('func paste(_ id:'), source.indexOf('func command('))
-const layout = source.slice(source.indexOf('func pasteKeyCode()'), source.indexOf('func paste(_ id:'))
+vi.mock('node:fs', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, readFileSync: vi.fn(fs.readFileSync) }
+})
 
-describe('macOS native paste protocol', () => {
+const sourcePath = join(__dirname, '../../../native/key-listener/darwin.swift')
+const fileSource = readFileSync(sourcePath, 'utf8')
+
+describe.each([
+  ['LF', '\n'],
+  ['CRLF', '\r\n'],
+])('macOS native paste protocol (%s)', (_name, newline) => {
+  vi.mocked(readFileSync).mockReturnValueOnce(fileSource.replace(/\r?\n/g, newline))
+  const source = readFileSync(sourcePath, 'utf8').replace(/\r\n/g, '\n')
+  const paste = source.slice(source.indexOf('func paste(_ id:'), source.indexOf('func command('))
+  const layout = source.slice(source.indexOf('func pasteKeyCode()'), source.indexOf('func paste(_ id:'))
+
   it('advertises the version and acknowledges only validated request IDs', () => {
     expect(source).toContain('emit("capability paste-v1")')
     expect(source).toContain('if parts.count == 2, let id = UInt64(parts[1]), id > 0 { paste(String(id)) }')
