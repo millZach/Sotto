@@ -1,5 +1,25 @@
 import SwiftUI
 import SottoCore
+import Combine
+
+/// Measuring branch only, never merged: what the first frame of a long thread's open is made of (#2120, #1702).
+enum BenchOpen {
+    /// `--bench-open-turns N`: how many of the latest turns the page lays out whole.
+    static let turns: Int = {
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--bench-open-turns"), arguments.indices.contains(index + 1), let turns = Int(arguments[index + 1]) { return turns }
+        return ThreadTimeline.openingTurns
+    }()
+    /// `--bench-hold-early`: the Threads page holds its list before the push starts.
+    static let holdsEarly = ProcessInfo.processInfo.arguments.contains("--bench-hold-early")
+    nonisolated(unsafe) static let holdNow = PassthroughSubject<Void, Never>()
+    @MainActor static func conversation(rows: Int, held: Bool) {
+        #if DEBUG && os(iOS)
+        BenchDriver.conversationBody(rows: rows, held: held)
+        #endif
+    }
+}
+
 #if DEBUG && os(iOS)
 import Darwin
 import UIKit
@@ -29,7 +49,92 @@ import UIKit
     /// The laptop's whole list has been applied: the next Threads body draws it.
     static func listApplied() { running?.waiting.insert("first-list") }
     /// The long thread's detail has been applied: the next conversation body draws it.
-    static func detailApplied() { running?.waiting.insert("open-rendered") }
+    static func detailApplied() {
+        running?.waiting.insert("open-rendered")
+        running?.detailsApplied += 1
+        event("detail-applied")
+    }
+    /// What happened when in an `open` journey's phase, in milliseconds from its start.
+    static func event(_ name: String) { running?.note(name) }
+    static func conversationBody(rows: Int, held: Bool) { running?.conversation(rows: rows, held: held) }
+    private var tracing = false
+    private var events: [[Any]] = []
+    private var detailsApplied = 0
+    private var frameCounts: [String: Int] = [:]
+    private var turnStart: CFTimeInterval = 0
+    private var turnCommit: CFTimeInterval = 0
+    private var turnWatches: [CFRunLoopObserver] = []
+    private static let tracedBodies: Set<String> = ["RootView", "MainTabs", "ThreadsView", "SheetPage", "ThreadListSections", "ThreadView", "Conversation", "ReplyDock"]
+
+    private func note(_ name: String, _ detail: Any? = nil) {
+        guard tracing else { return }
+        let at = ((CACurrentMediaTime() - frames.first) * 10_000).rounded() / 10
+        var line: [Any] = [at, name]
+        if let detail { line.append(detail) }
+        events.append(line)
+    }
+    private func conversation(rows: Int, held: Bool) {
+        guard tracing else { return }
+        note("conversation", ["rows": rows, "held": held] as [String: Any])
+        let key = "rendered-" + phase
+        if rows > 0, waiting.contains(key) {
+            waiting.remove(key)
+            drawing.insert(key)
+        }
+    }
+    /// One line for each turn of the main run loop over 25 ms: the work before Core Animation's commit, and the commit.
+    private func watchTurns() {
+        let main = CFRunLoopGetMain()
+        let woke = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+            MainActor.assumeIsolated { BenchDriver.running?.turnWoke() }
+        }
+        let beforeCommit = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 1_999_999) { _, _ in
+            MainActor.assumeIsolated { BenchDriver.running?.turnCommitting() }
+        }
+        let afterCommit = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+            MainActor.assumeIsolated { BenchDriver.running?.turnEnded() }
+        }
+        for observer in [woke, beforeCommit, afterCommit].compactMap({ $0 }) {
+            CFRunLoopAddObserver(main, observer, .commonModes)
+            turnWatches.append(observer)
+        }
+    }
+    private func turnWoke() { turnStart = CACurrentMediaTime() }
+    private func turnCommitting() { turnCommit = CACurrentMediaTime() }
+    private func turnEnded() {
+        let now = CACurrentMediaTime()
+        guard turnStart > 0, now - turnStart > 0.025 else { return }
+        let work = ((turnCommit - turnStart) * 10_000).rounded() / 10, commit = ((now - turnCommit) * 10_000).rounded() / 10
+        note("turn", ["work": work, "commit": commit])
+    }
+    /// The long thread opened, then twice more in the same process: what's left on a reopen is what isn't once a launch.
+    private func openJourney() async {
+        tracing = true
+        watchTurns()
+        next("open")
+        mark("open-begin")
+        if BenchOpen.holdsEarly { BenchOpen.holdNow.send(()) }
+        waiting.insert("rendered-open")
+        model?.alertOpened = long
+        guard await until({ self.marks["rendered-open"] != nil && self.detailsApplied >= 1 }) else { return finish("no-thread") }
+        await quiet()
+        for round in 1...2 {
+            next("back-\(round)")
+            guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+            guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+            await quiet()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            let phaseName = "reopen-\(round)"
+            let applied = detailsApplied
+            next(phaseName)
+            if BenchOpen.holdsEarly { BenchOpen.holdNow.send(()) }
+            waiting.insert("rendered-" + phaseName)
+            model?.alertOpened = long
+            guard await until({ self.marks["rendered-" + phaseName] != nil && self.detailsApplied > applied }) else { return finish("no-reopen") }
+            await quiet()
+        }
+        finish(nil)
+    }
 
     private weak var model: AppModel?
     private let report: URL
@@ -76,6 +181,7 @@ import UIKit
         guard await until({ self.marks["first-list"] != nil }) else { return finish("no-list") }
         await quiet()
         if kind == "look" { return await look() }
+        if kind == "open" { return await openJourney() }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
@@ -182,6 +288,7 @@ import UIKit
     private func next(_ name: String) {
         phases[phase] = summary()
         frames = Frames(from: CACurrentMediaTime())
+        events = []
         countsAtPhase = BenchProbe.snapshot()
         cpuAtPhase = Self.cpuMs()
         phaseNotes = [:]
@@ -289,10 +396,12 @@ import UIKit
         guard let running else { return }
         BenchProbe.count("page.holds")
         if running.pageInWindow { BenchProbe.count("page.held_in_window") }
+        running.note("holding")
     }
     static func pageWindow(_ inWindow: Bool) { running?.pageMoved(inWindow) }
     private func pageMoved(_ inWindow: Bool) {
         pageInWindow = inWindow
+        note(inWindow ? "page-in-window" : "page-out-of-window")
         guard inWindow else {
             if let staleWatch { CFRunLoopRemoveObserver(CFRunLoopGetMain(), staleWatch, .commonModes) }
             staleWatch = nil
@@ -313,6 +422,7 @@ import UIKit
     }
 
     private func body(_ name: String) {
+        if tracing, Self.tracedBodies.contains(name) { note("body." + name) }
         let drawn: String?
         switch name {
         case "ThreadsView": drawn = waiting.contains("first-list") ? "first-list" : nil
@@ -337,6 +447,7 @@ import UIKit
         var result: [String: Any] = ["frames": frames.summary(), "counts": counts, "cpuMs": Self.cpuMs() - cpuAtPhase,
                                      "footprintMB": Self.footprintMB(), "peakFootprintMB": peakFootprint]
         result.merge(phaseNotes) { _, new in new }
+        if tracing { result["events"] = events }
         return result
     }
 
@@ -348,6 +459,17 @@ import UIKit
     fileprivate func tick(_ link: CADisplayLink) {
         let previous = frames.last
         frames.tick(link)
+        if tracing, link.timestamp - previous > 0.025 {
+            // What each late frame made: the counts since the last late frame.
+            let now = BenchProbe.snapshot()
+            var made: [String: Int] = ["ms": Int((link.timestamp - previous) * 1000)]
+            for key in ["textview.make", "body.MessageView", "body.FoldedRun", "body.ThreadListRow", "body.ThreadListSections"] {
+                let change = (now[key] ?? 0) - (frameCounts[key] ?? 0)
+                if change != 0 { made[key] = change }
+            }
+            frameCounts = now
+            note("frame", made)
+        }
         if link.timestamp - previous > BenchSampler.longFrame { sampler?.longFrame(from: previous, to: link.timestamp) }
         if !drawing.isEmpty {
             drawing.forEach(mark)

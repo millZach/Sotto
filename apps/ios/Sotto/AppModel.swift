@@ -3051,8 +3051,10 @@ struct RailAsk: Equatable {
         #if DEBUG && os(iOS)
         if isUIFixture, let ref, ref.hostID == benchLaptop, ref.threadID == BenchWire.longThreadID, let frame = benchLongFrame {
             // The benchmarks' long thread is read as a computer's `detail` push, through the frame reader and `push`.
+            BenchDriver.event("select")
             let data = await frame.value
             guard selected == ref else { return }
+            BenchDriver.event("detail-read")
             await benchDeliver(data, kind: "detail")
             BenchDriver.detailApplied()
             return

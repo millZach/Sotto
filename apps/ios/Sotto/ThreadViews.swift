@@ -557,7 +557,7 @@ private final class TimelineCache {
         cached = BenchProbe.time("timeline.rows") {
             let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
                                              earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
-            var start = ThreadTimeline.latestTurnsStart(items)
+            var start = ThreadTimeline.latestTurnsStart(items, turns: BenchOpen.turns)
             // A new turn moves the oldest whole turn into the lazy stack, which makes its rows again. While words in a
             // reply are selected the split stays where it was, so the selection and its Add to prompt survive (ADR-0129).
             if !ReplySelection.views.isEmpty, let held = self.latestTurnsStartID,
@@ -651,6 +651,7 @@ private struct Conversation: View {
         let _ = BenchProbe.body("Conversation")
         let detail = model.shown(for: ref)
         let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
+        let _ = BenchOpen.conversation(rows: rows.count, held: detail != nil && model.detail(for: ref) == nil)
         let pending = model.pending(for: ref)
         let tail = Tail(revision: detail?.revision, rows: rows.count, last: rows.last?.id, pending: pending.map(\.id),
                         failed: model.failedReplies[ref.id] != nil)

@@ -135,6 +135,7 @@ struct ThreadsView: View {
         .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
         .onAppear { held = nil; openForShare(model.shareOpened) }
         .onDisappear { hold() }
+        .onReceive(BenchOpen.holdNow) { _ in hold() }
         .benchPageWindow()
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
