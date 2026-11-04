@@ -334,16 +334,14 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   </div>
 }
 
-const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, startOpen = false, onDisclosure }: {
+const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, onDisclosure }: {
   readonly node: ActivityNode; readonly connected: boolean; readonly provider: string
   /** The group heading already says the outcome is unknown; the row keeps it for assistive tech only. */
   readonly quietUnknown: boolean
-  /** The running turn's plan: it starts open, because its checklist is what says how far along the turn is. */
-  readonly startOpen?: boolean
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const [open, setOpen] = useState(startOpen)
+  const [open, setOpen] = useState(false)
   const detailId = useId()
   const { record, children } = node
   const count = children.length
@@ -425,8 +423,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
 })
 
 /**
- * A group's rows, drawn only while they show. A running turn shows its newest six, with its plan open above them wherever it
- * was first reported: the checklist is where the reader sees how far along the turn is, so newer rows never push it away.
+ * A group's rows, drawn only while they show. A running turn shows its newest six, with Show N earlier for the rest. Its plan
+ * is one of its steps (ADR-0134).
  */
 function ActivityGroupRows({ id, group, live, connected, provider, onDisclosure, outcome }: {
   readonly id: string
@@ -442,18 +440,15 @@ function ActivityGroupRows({ id, group, live, connected, provider, onDisclosure,
   const lines = useMemo(() => !quiet ? null : shared ? shared.lines : turnBrowserLines(browserLinesByTurn(records), group.turnId),
     [quiet, shared, records, group.turnId])
   const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
-  const plan = live ? shown.findLast(item => item.node?.record.kind === 'plan' && item.node.record.steps?.length) : undefined
-  const others = plan ? shown.filter(item => item !== plan) : shown
-  const earlier = live && !showAll ? Math.max(0, others.length - LIVE_ROWS) : 0
+  const earlier = live && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
   const row = (item: ActivityItem): ReactNode => item.run
     ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
-    : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} startOpen={item === plan} onDisclosure={onDisclosure} />
+    : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />
   if (!shown.length) return null
   return <ul id={id} className="thread-activity__rows">
-    {plan ? row(plan) : null}
     {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
       onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
-    {(earlier ? others.slice(-LIVE_ROWS) : others).map(row)}
+    {(earlier ? shown.slice(-LIVE_ROWS) : shown).map(row)}
   </ul>
 }
 

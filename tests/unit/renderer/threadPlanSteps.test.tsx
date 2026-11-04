@@ -48,8 +48,9 @@ describe('a plan a provider reported', () => {
       ] }),
     ] }))
     fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 1 step so far' }))
-    // The running turn's plan starts open, so opening the steps shows it.
-    expect(within(transcript).getByRole('button', { name: /^Plan, 1 of 3 done/u })).toHaveAttribute('aria-expanded', 'true')
+    const row = within(transcript).getByRole('button', { name: /^Plan, 1 of 3 done/u })
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(row)
     const steps = within(transcript).getByRole('list', { name: 'Plan, 1 of 3 done' })
     expect([...steps.querySelectorAll('li')].map(step => [step.dataset.status, step.textContent])).toEqual([
       ['completed', 'Read the failing testDone'], ['running', 'Fix the adapterIn progress'], ['pending', 'Run the suiteTo do'],
@@ -59,7 +60,7 @@ describe('a plan a provider reported', () => {
     expect(steps.querySelectorAll('.thread-activity__step-mark')).toHaveLength(2)
   })
 
-  it('keeps the plan above the newest rows however many follow it', () => {
+  it('counts the plan as one of the newest six, and folds it under Show earlier once six newer rows follow', () => {
     const { transcript } = mount(stateWith({ status: 'running', activities: [
       lifecycle({ status: 'running', startedAt: iso(-5_000) }),
       activity({ id: 'plan', kind: 'plan', title: 'Plan', status: 'running', steps: [{ text: 'Fix the adapter', status: 'running' }] }),
@@ -67,8 +68,25 @@ describe('a plan a provider reported', () => {
     ] }))
     fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 10 steps so far' }))
     const rows = within(transcript).getByTestId('thread-activity-live').querySelector('.thread-activity__rows')!
-    expect(rows.firstElementChild).toHaveTextContent('Plan')
-    expect(within(transcript).getByRole('button', { name: 'Show 3 earlier' })).toBeVisible()
-    expect(within(transcript).getByRole('button', { name: /step 8\b/u })).toBeVisible()
+    // Ten steps, six in view: the plan is first of the four earlier, and nothing stands above the button.
+    expect(rows.firstElementChild).toHaveTextContent('Show 4 earlier')
+    expect(rows.children).toHaveLength(7)
+    expect(within(transcript).queryByRole('button', { name: /^Plan, /u })).toBeNull()
+    expect(within(transcript).getByRole('button', { name: /step 8/u })).toBeVisible()
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Show 4 earlier' }))
+    expect(within(transcript).getByRole('button', { name: /^Plan, /u })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('keeps the plan in the order it was reported while it is among the newest six', () => {
+    const { transcript } = mount(stateWith({ status: 'running', activities: [
+      lifecycle({ status: 'running', startedAt: iso(-5_000) }),
+      activity({ id: 'c0', command: 'step 0' }),
+      activity({ id: 'plan', kind: 'plan', title: 'Plan', status: 'running', steps: [{ text: 'Fix the adapter', status: 'running' }] }),
+      activity({ id: 'c1', command: 'step 1' }),
+    ] }))
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 3 steps so far' }))
+    const rows = within(transcript).getByTestId('thread-activity-live').querySelector('.thread-activity__rows')!
+    expect([...rows.children].map(row => /Plan/u.test(row.textContent ?? ''))).toEqual([false, true, false])
+    expect(within(transcript).queryByRole('button', { name: /earlier/u })).toBeNull()
   })
 })
