@@ -26,4 +26,4 @@ function run(args) {
 run([npm, 'run', 'test:recovery'])
 run([join(root, 'node_modules/@playwright/test/cli.js'), 'test',
   'tests/e2e/daily-workspace.spec.ts', 'tests/e2e/settings-index.spec.ts', 'tests/e2e/widget-dictation.spec.ts',
-  'tests/e2e/terminal-search-links-zoom.spec.ts', '--workers=1'])
+  'tests/e2e/terminal-search-links-zoom.spec.ts', 'tests/e2e/host-client-updates.spec.ts', 'tests/e2e/update-all.spec.ts', '--workers=1'])
