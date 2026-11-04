@@ -3,6 +3,8 @@ import type { Root } from 'hast'
 export interface Highlighter {
   registered(language: string): boolean
   highlight(language: string, code: string): Root
+  /** Picks the likeliest of `subset`; a diff with no file name to go on asks this once, when it opens. */
+  highlightAuto(code: string, options: { readonly subset: string[] }): Root
 }
 
 // The grammar set is a large module; it loads the first time a fenced block names a language.

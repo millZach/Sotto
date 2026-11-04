@@ -81,7 +81,7 @@ describe('native activity rows', () => {
     const user = userEvent.setup()
     view([claudeEdit])
     await user.click(screen.getByRole('button', { name: 'Edited src/a.ts, completed' }))
-    expect(screen.getByLabelText('diff code block')).toHaveTextContent('-a -b +c')
+    expect(screen.getByRole('group', { name: 'Diff' })).toHaveTextContent(/Removed: a.*Removed: b.*Added: c/u)
     expect(screen.queryByText(/old_string/u)).toBeNull()
   })
 })

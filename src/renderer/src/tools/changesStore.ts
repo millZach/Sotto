@@ -32,8 +32,10 @@ export interface ChangesView {
   readonly wrap: boolean
   readonly ignoreWhitespace: boolean
   readonly fileTree: boolean
+  /** Draws one file of the comparison at a time, for a comparison too long to read through. */
+  readonly oneFile: boolean
 }
-export const DEFAULT_CHANGES_VIEW: ChangesView = { layout: 'stacked', wrap: true, ignoreWhitespace: false, fileTree: false }
+export const DEFAULT_CHANGES_VIEW: ChangesView = { layout: 'stacked', wrap: true, ignoreWhitespace: false, fileTree: false, oneFile: false }
 
 /** Where the Diff layout, Hide whitespace changes and Default diff file state settings say Changes starts. */
 export interface ChangesStartingView {

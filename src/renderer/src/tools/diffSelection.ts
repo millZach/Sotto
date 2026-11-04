@@ -29,15 +29,30 @@ export function reviewLine(line: DiffLine): ReviewLine | null {
     ? { kind: line.kind, text: line.text.endsWith('\r') ? line.text.slice(0, -1) : line.text, oldLine: line.oldLine, newLine: line.newLine } : null
 }
 
-/** The rows for one layout. Split aligns each run of removals and additions pair by pair, as Git reads them. */
-export function diffRows(lines: readonly DiffLine[], split: boolean): DiffRow[] {
+/** How one file's rows are arranged, once the lines have been compared; without it, the file's own order. */
+export interface RowArrangement {
+  /** Which added line each removed line became: split draws each beside the other. */
+  readonly pairs?: ReadonlyMap<number, number> | undefined
+  /** The lines in the order they read best stacked, a document's edited lines under what they replaced. */
+  readonly order?: readonly number[] | null | undefined
+}
+
+/**
+ * The rows for one layout. Split aligns each run of removals and additions pair by pair, as Git reads them, or as
+ * `arrangement.pairs` matched them, with a lone line across from nothing.
+ */
+export function diffRows(lines: readonly DiffLine[], split: boolean, arrangement?: RowArrangement): DiffRow[] {
   const rows: DiffRow[] = []
   let position = 0
   const push = (row: Omit<DiffRow, 'position'>): void => { rows.push({ ...row, position: row.indices.length > 0 ? position++ : null }) }
   if (!split) {
-    lines.forEach((line, index) => push({ key: String(index), line, indices: reviewLine(line) ? [index] : [] }))
+    const order = arrangement?.order
+    if (order) for (const index of order) push({ key: String(index), line: lines[index]!, indices: reviewLine(lines[index]!) ? [index] : [] })
+    else lines.forEach((line, index) => push({ key: String(index), line, indices: reviewLine(line) ? [index] : [] }))
     return rows
   }
+  const pairs = arrangement?.pairs
+  const partners = pairs ? new Set(pairs.values()) : null
   for (let index = 0; index < lines.length;) {
     const line = lines[index]!
     if (line.kind === 'remove' || line.kind === 'add') {
@@ -49,11 +64,21 @@ export function diffRows(lines: readonly DiffLine[], split: boolean): DiffRow[] 
         else after.push(index)
         index++
       }
-      for (let offset = 0; offset < Math.max(before.length, after.length); offset++) {
-        const old = before[offset], next = after[offset]
+      const pushRow = (offset: number, old: number | undefined, next: number | undefined): void => {
         push({ key: `${start}-${offset}`, old: old === undefined ? undefined : lines[old], next: next === undefined ? undefined : lines[next],
           indices: [old, next].filter((value): value is number => value !== undefined) })
       }
+      if (pairs && partners) {
+        let r = 0, a = 0, offset = 0
+        while (r < before.length || a < after.length) {
+          const old = before[r], next = after[a]
+          if (old !== undefined && next !== undefined && pairs.get(old) === next) { pushRow(offset++, old, next); r++; a++ }
+          else if (old !== undefined && !pairs.has(old)) { pushRow(offset++, old, undefined); r++ }
+          else if (next !== undefined && !partners.has(next)) { pushRow(offset++, undefined, next); a++ }
+          else if (old !== undefined) { pushRow(offset++, old, undefined); r++ }
+          else { pushRow(offset++, undefined, next); a++ }
+        }
+      } else for (let offset = 0; offset < Math.max(before.length, after.length); offset++) pushRow(offset, before[offset], after[offset])
     } else {
       push(line.kind === 'context' ? { key: String(index), old: line, next: line, indices: [index] } : { key: String(index), line, indices: [] })
       index++

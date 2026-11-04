@@ -34,13 +34,16 @@ const hovered = [['sidebar', hover], ['surface-elevated', hover], ['surface-over
 /** Changes lines: context on the code background, and added and removed lines with their tint over it. */
 const context = ['code-bg'] as const, added = ['code-bg', '--changes-added'] as const, removed = ['code-bg', '--changes-removed'] as const
 const lines = [context, added, removed] as const
+/** The words that changed, with the stronger wash over their line's. */
+const wordAdded = [...added, '--changes-word-added'] as const, wordRemoved = [...removed, '--changes-word-removed'] as const
+/** What a line's words are drawn in: the code's own ink, and syntax colour on the keys Changes draws them. */
+const CHANGES_CODE_INKS = ['--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type', 'text', 'text-muted'] as const
 const RICH_CODE_INKS = ['--rich-code-keyword', '--rich-code-string', '--rich-code-number', '--rich-code-title', '--rich-code-type', '--rich-code-comment', '--rich-code-meta'] as const
 const RICH_TEXT_INKS = ['--rich-text', '--rich-strong', '--rich-muted', '--rich-link-hover'] as const
 
 export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // Body and secondary text: titles, labels, message bodies (a user's bubble is secondary text), keycaps.
   ...['text', 'text-2'].flatMap(ink => each(ink, [...rooms, ['selected'], ['hover-strong'], ['bubble'], ['kbd'], ...hovered, ...glass], 'body and secondary text')),
-  pair('text-2', ['code-bg', 'accent-wash'], 'Changes hunk header'),
   // Muted text: timestamps on the current and hovered rows and in the bubble, subtitles on a highlighted choice,
   // metadata on cards, menus and glass, Changes line numbers, and ghost buttons on the bubble and warning card.
   ...each('text-muted', [...rooms, ['selected'], ['hover-strong'], ['bubble'], ['warning-surface'], [followups], ...hovered, ...glass], 'muted text'),
@@ -53,6 +56,13 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // Changes lines: the code, and on a picked line the numbers and signs (changes.css).
   ...lines.flatMap(line => each('code-text', [line, [...line, hover], [...line, picked]], 'Changes code')),
   ...lines.map(line => pair('text', [...line, picked], 'picked line number')),
+  // The words that changed take the body ink on their stronger wash, in code and in documents (changes.css).
+  ...each('text', [wordAdded, wordRemoved], 'changed words'),
+  // A document's lines: body ink on an added line, secondary on a removed one.
+  pair('text', added, 'added line of a document'),
+  pair('text-2', removed, 'removed line of a document'),
+  // Inside the changed words syntax colour gives way to the body ink, so it only ever sits on the line's wash.
+  ...CHANGES_CODE_INKS.flatMap(ink => each(ink, [context, added, removed], 'syntax colour in a diff')),
   ...each('success', [added, [...added, hover]], 'added line sign'),
   pair('--changes-picked-add', [...added, picked], 'picked added line sign'),
   ...each('error-text', [removed, [...removed, hover]], 'removed line sign'),
@@ -103,7 +113,7 @@ function stylesheetProperty(path: string, name: string): string {
 
 /** Adds the layers and inks the stylesheets compose on top of tokens.css, read from the stylesheets that declare them. */
 export function withPaintedLayers(declarations: Map<string, string>): Map<string, string> {
-  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name))
+  for (const name of ['--changes-added', '--changes-removed', '--changes-picked', '--changes-picked-add', '--changes-picked-remove', '--changes-word-added', '--changes-word-removed', '--changes-code-keyword', '--changes-code-string', '--changes-code-number', '--changes-code-type']) declarations.set(name, stylesheetProperty('src/renderer/src/tools/changes.css', name))
   for (const name of [...RICH_CODE_INKS, ...RICH_TEXT_INKS]) declarations.set(name, stylesheetProperty('src/renderer/src/agents/rich-messages.css', name))
   // threads.css aliases the field with a fallback colour the resolver does not read.
   declarations.set('--threads-field', 'var(--tt-field)')

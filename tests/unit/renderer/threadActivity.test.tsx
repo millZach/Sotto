@@ -131,7 +131,7 @@ describe('settled activity in the transcript', () => {
     expect(within(details).getAllByRole('button', { name: /^Copy/ })).toHaveLength(2)
 
     await user.click(within(transcript).getByRole('button', { name: 'Edited src/voice.ts, 1 line added, 1 line removed, completed' }))
-    expect(within(transcript).getByLabelText('diff code block')).toHaveTextContent('-old +new')
+    expect(within(transcript).getByRole('group', { name: 'Diff' })).toHaveTextContent(/Removed: old.*Added: new/u)
   })
 
   it('folds what Escape is inside, one level at a time, with focus on the button that opened it', async () => {

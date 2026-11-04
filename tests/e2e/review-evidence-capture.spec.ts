@@ -467,6 +467,43 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     })
     await closeTools(page)
   } },
+  // The rest of reading a long comparison, and a diff away from the default palette. Controls are found by what they are,
+  // since a new control's words only reach a build once the catalogs are extracted.
+  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-one-file', 'changes-clay', 'doc-edit-clay'], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Thread store on a worker')
+    const panel = await toolsTab(page, 'Changes')
+    await panel.locator('.changes-scope__select').selectOption('branch')
+    await expect(panel.locator('.changes-file').nth(29)).toBeAttached({ timeout: 60_000 })
+    const treeButton = panel.locator('.changes-bar__view button:has(svg.lucide-folder-tree)')
+    if (await treeButton.getAttribute('data-on') === null) await treeButton.click()
+    await panel.locator('.changes-tree__filter').fill('worker')
+    await capture.shoot('changes-tree-filter', 'The file tree filtered to the files with "worker" in their path, their long names cut in the middle.')
+    await panel.locator('.changes-tree__filter').fill('')
+    await treeButton.click()
+    const oneFile = panel.locator('.changes-bar__view button:has(svg.lucide-file-text)')
+    await oneFile.click()
+    await panel.locator('.changes-bar__view button:has(svg.lucide-chevron-down)').click()
+    await expect(panel.locator('.changes-file')).toHaveCount(1)
+    await page.waitForTimeout(500)
+    await capture.shoot('changes-one-file', 'One file at a time, after a press on Next file, with the tree off.')
+    await oneFile.click()
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
+    await treeButton.click()
+    await wheelToFile(page, panel, 'CONTEXT.md')
+    await capture.shoot('changes-clay', 'A document\'s change in Changes on the Clay theme, to check the marks away from the default palette.')
+    await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
+    await capture.shoot('changes-clay', 'Code in Changes on the Clay theme, to check syntax colour away from the default palette.', '', { modes: ['dark'], size: [1280, 800] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await closeTools(page)
+    await openThread(page, 'Write the split plan down')
+    const log = transcript(page)
+    await log.getByRole('button', { name: /^Worked for/u }).click()
+    await log.getByRole('button', { name: /Edited docs\/plans\/agent-control-split\.md/u }).click()
+    await page.waitForTimeout(300)
+    await capture.shoot('doc-edit-clay', 'The same document edit in the transcript on the Clay theme.')
+    await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
+  } },
   { name: 'pr', covers: ['pr-checks-running', 'pr-checks-failed', 'pr-ready'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')

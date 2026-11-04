@@ -1,6 +1,7 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { t } from '@lingui/core/macro'
 import { CodeBlock, MessageContent } from './MessageContent'
+import { DiffBlock } from '../tools/DiffBlock'
 import type { ActivityBodyView } from './activityBodies'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import './activityBodies.css'
@@ -105,7 +106,8 @@ const partial = (view: ActivityBodyView): boolean => view.state === 'loading' ||
 /**
  * A cut body drawn as a code block: command output, a diff or tool input. `cut` says this body was the one cut; a body of
  * the same record that came whole is drawn as it always is. The block is the same element before and after the rest
- * arrives, so the reader keeps their place: output keeps its end in view, text and diffs their start.
+ * arrives, so the reader keeps their place: output keeps its end in view, text and diffs their start. A diff is drawn
+ * as every diff is, by DiffBlock.
  */
 export function CutCode({ view, kind, text, language, cut }: {
   readonly view: ActivityBodyView; readonly kind: 'output' | 'diff' | 'input'; readonly text: string; readonly language: string
@@ -117,6 +119,10 @@ export function CutCode({ view, kind, text, language, cut }: {
   const code = text.replace(/\n$/u, '')
   if (waiting && !code) return <Empty view={view} said={said} />
   const after = !waiting ? null : view.state === 'failed' ? <Problem view={view} said={said} rest /> : view.state === 'disconnected' ? <Offline view={view} said={said} rest /> : null
+  if (kind === 'diff') return <>
+    <DiffBlock diff={code} cut={waiting ? { line: said.line, status: view.state === 'loading' ? <span className="activity-body__status"><Dot /><span>{said.more}</span></span> : said.only } : undefined} />
+    {after}
+  </>
   return <>
     <div className="rich-message">
       <CodeBlock code={code} language={language} anchorEnd={kind === 'output' && cut}

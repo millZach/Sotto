@@ -18,6 +18,7 @@ import { isMarkdownPath } from '../../../shared/files'
 import { rememberLinkOpener } from '../tools/linkedFile'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
+import { DiffBlock } from '../tools/DiffBlock'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
@@ -307,6 +308,8 @@ function MarkdownCodeBlock({ source, language, start, end }: { source: string; l
   const run = useRunCommand()
   const { text, streaming } = useContext(MarkdownSourceContext)
   const complete = !streaming || (start !== undefined && end !== undefined && isFenceClosed(text.slice(start, end)))
+  // A finished diff is drawn the way Changes draws one. Until its fence closes it stays text, so a chunk reads nothing.
+  if (language === 'diff' && complete) return <DiffBlock diff={source} />
   return <CodeBlock code={source} language={language} run={complete ? run : undefined} />
 }
 

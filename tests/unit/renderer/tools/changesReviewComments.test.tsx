@@ -7,6 +7,7 @@ import { ReviewCommentStore } from '../../../../src/renderer/src/agents/reviewCo
 import { ChangesSurface } from '../../../../src/renderer/src/tools/ChangesSurface'
 import { ChangesStore } from '../../../../src/renderer/src/tools/changesStore'
 import { TOKEN_A } from '../../../fixtures/renderer/fakeFilesBridge'
+import { diffLine } from '../../../fixtures/renderer/diffLineText'
 
 const THREAD = 'visual-gate'
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,4 +3,4 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n end\n'
@@ -53,7 +54,7 @@ describe('review comments in Changes', () => {
   it('picks a line with a click and more with Shift, writes a comment under them and marks it until deleted', async () => {
     const user = userEvent.setup()
     const { comments } = setup()
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-new-line="4"]'))
     expect(row('[data-new-line="4"]')).toHaveAttribute('aria-selected', 'true')
     await user.click(row('[data-new-line="5"]'))
@@ -89,7 +90,7 @@ describe('review comments in Changes', () => {
   it('opens a draft straight from a line number, and Escape drops it without adding anything', async () => {
     const user = userEvent.setup()
     const { comments } = setup()
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
     const draft = screen.getByRole('textbox', { name: 'Comment on app.ts L6' })
     await user.type(draft, 'Why keep this?{Escape}')
@@ -103,7 +104,7 @@ describe('review comments in Changes', () => {
   it('walks, picks and comments from the keyboard alone, one tab stop per file', async () => {
     const user = userEvent.setup()
     const { comments } = setup()
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     const tabbable = grid().querySelectorAll('[data-position][tabindex="0"]')
     expect(tabbable).toHaveLength(1)
     ;(tabbable[0] as HTMLElement).focus()
@@ -137,14 +138,14 @@ describe('review comments in Changes', () => {
   it('keeps a comment on the diff when its lines change, at the file’s end and saying so, and back under them when they return', async () => {
     const user = userEvent.setup()
     const { comments, git } = setup()
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-kind="add"]'))
     await user.click(screen.getByRole('button', { name: 'Comment on app.ts L4' }))
     await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L4' }), 'Check this')
     await user.click(screen.getByRole('button', { name: 'Comment' }))
     expect(screen.getByText('Check this')).toBeInTheDocument()
     git.change(PATCH.replace('+export const ready = true', '+export const ready = maybe'))
-    await screen.findByText('export const ready = maybe')
+    await screen.findByText(diffLine('export const ready = maybe'))
     const moved = screen.getByText('Check this').closest('.changes-comment--marker')!
     expect(moved).toHaveTextContent('These lines have changed since. The comment still sends them as they were.')
     // It sits after the file's last line, which is where the reader finds the rest of the file's comments.
@@ -158,7 +159,7 @@ describe('review comments in Changes', () => {
   it('lets go of picked lines on Escape from the Comment button, and leaves that Escape to nobody else', async () => {
     const user = userEvent.setup()
     setup()
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-kind="add"]'))
     const pill = screen.getByRole('button', { name: 'Comment on app.ts L4' })
     pill.focus()
@@ -171,7 +172,7 @@ describe('review comments in Changes', () => {
     const user = userEvent.setup()
     const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
     setup(git)
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
     await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Keep writing')
     // Another file: a pick, then the picked line's own number, which re-renders nothing, while the worded draft is open.
@@ -195,7 +196,7 @@ describe('review comments in Changes', () => {
     // A new file of 3,100 lines: past the 3,000 rows Changes draws before Show all.
     const long = `diff --git a/src/app.ts b/src/app.ts\n--- /dev/null\n+++ b/src/app.ts\n@@ -0,0 +1,3100 @@\n${Array.from({ length: 3100 }, (_, index) => `+line ${index + 1}`).join('\n')}\n`
     const { comments } = setup(fakeGit([file(long)]))
-    await screen.findByText('line 1')
+    await screen.findByText(diffLine('line 1'))
     await user.click(screen.getByRole('button', { name: 'Show all' }))
     await user.click(row('[data-new-line="3050"]'))
     await user.click(screen.getByRole('button', { name: 'Comment on app.ts L3050' }))
@@ -215,7 +216,7 @@ describe('review comments in Changes', () => {
     const user = userEvent.setup()
     const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
     const { comments } = setup(git)
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-kind="add"]'))
     await user.click(screen.getByRole('button', { name: 'Comment on app.ts L4' }))
     await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L4' }), 'Still wanted')
@@ -237,7 +238,7 @@ describe('review comments in Changes', () => {
   it('shows a new pick while a worded draft is open, its Comment waiting on that draft', async () => {
     const user = userEvent.setup()
     setup(fakeGit([file(PATCH), file(OTHER, 'src/other.ts')]))
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
     await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Half written')
     // The draft's own pick shows no Comment: the draft is under it.
@@ -268,7 +269,7 @@ describe('review comments in Changes', () => {
     const user = userEvent.setup()
     const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
     const { comments } = setup(git)
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
     await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Unfinished')
     // src/app.ts is committed away; the draft is listed after the files with its words.
@@ -290,7 +291,7 @@ describe('review comments in Changes', () => {
   it('opens a collapsed file to take the user to its worded draft', async () => {
     const user = userEvent.setup()
     setup(fakeGit([file(PATCH), file(OTHER, 'src/other.ts')]))
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
     await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Unfinished')
     await user.click(screen.getByRole('button', { name: 'Collapse src/app.ts' }))
@@ -307,7 +308,7 @@ describe('review comments in Changes', () => {
     const user = userEvent.setup()
     const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
     const { comments } = setup(git)
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'a', oldLine: null, newLine: 1 }], text: 'First' })
     comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'b', oldLine: null, newLine: 2 }], text: 'Second' })
     const list = await screen.findByRole('region', { name: 'Comments on lines this comparison does not show' })
@@ -328,7 +329,7 @@ describe('review comments in Changes', () => {
   it('keeps a full message’s Comment reachable with its reason, and opens nothing', async () => {
     const user = userEvent.setup()
     const { comments } = setup()
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     for (let index = 0; index < 20; index++) comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'x', oldLine: null, newLine: index + 1 }], text: 'Note' })
     await user.click(row('[data-kind="add"]'))
     const pill = screen.getByRole('button', { name: 'Comment on app.ts L4' })
@@ -342,7 +343,7 @@ describe('review comments in Changes', () => {
     const user = userEvent.setup()
     const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
     const { comments } = setup(git)
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     await user.click(row('[data-kind="add"]'))
     await user.click(screen.getByRole('button', { name: 'Comment on app.ts L4' }))
     await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L4' }), 'Mode only now')
@@ -382,7 +383,7 @@ describe('review comments in Changes', () => {
   it('picks split rows too, a pair quoting both of its lines', async () => {
     const user = userEvent.setup()
     const { store, comments } = setup()
-    await screen.findByText('export const ready = true')
+    await screen.findByText(diffLine('export const ready = true'))
     store.setView({ layout: 'split' })
     await waitFor(() => expect(grid().querySelector('.changes-split__row')).not.toBeNull())
     const pair = grid().querySelector<HTMLElement>('.changes-split__row[data-old-line="4"]')!

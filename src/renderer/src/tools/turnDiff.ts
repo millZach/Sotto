@@ -9,7 +9,7 @@ const CONTEXT = 3
 const MAX_EDITS = 1000
 
 interface Line { readonly text: string; readonly newline: boolean }
-type Edit = { readonly kind: 'same'; readonly old: number; readonly new: number } | { readonly kind: 'remove'; readonly old: number } | { readonly kind: 'add'; readonly new: number }
+export type Edit = { readonly kind: 'same'; readonly old: number; readonly new: number } | { readonly kind: 'remove'; readonly old: number } | { readonly kind: 'add'; readonly new: number }
 
 function lines(text: string): Line[] {
   if (text === '') return []
@@ -51,6 +51,9 @@ function myers(a: readonly string[], b: readonly string[], limit: number): Edit[
   }
   return null
 }
+
+/** The shortest edit script between two lists of strings, for drawing one change; null past `limit` edits. */
+export const shortestEdits = (a: readonly string[], b: readonly string[], limit: number): Edit[] | null => myers(a, b, limit)
 
 function script(before: readonly Line[], after: readonly Line[], key: (line: Line) => string): Edit[] {
   const a = before.map(key), b = after.map(key)
