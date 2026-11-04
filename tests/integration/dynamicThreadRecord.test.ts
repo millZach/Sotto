@@ -3,7 +3,8 @@
 // a restart keep it. With the Owl feature off, nothing sets it and a saved mark stays whole.
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
-import { OVERSEER_NOTE_OFF, overseerNoteOn } from '../../src/shared/dynamicThreads'
+import { WorkerRoles } from '../../src/main/agents/subagentRoles'
+import { OVERSEER_NOTE_OFF, overseerInstructions, overseerNoteOn } from '../../src/shared/dynamicThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
@@ -91,6 +92,36 @@ it('tells a thread that began ordinary by a note when it turns Dynamic later', a
   expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
   expect(sends().at(-1)).toBe(overseerNoteOn())
   expect(f.control.shell().host.threads.find(item => item.id === id)?.dynamicSession).toEqual({ created: false, told: true })
+})
+
+it('reaches the adapter by its session, whichever ID each side keeps, for its instructions, its note and letting go of its process', async () => {
+  const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
+  cleanups.push(workspace.remove)
+  workspace.host.allowDynamicThreads()
+  let source: { overseer?(id: string): string | undefined; overseerNote?(id: string): string | undefined } | undefined
+  ;(workspace.adapters.claude as unknown as { useWorkerRoles(roles: typeof source): void }).useWorkerRoles = roles => { source = roles }
+  const released: string[] = []
+  ;(workspace.adapters.claude as unknown as { threadInstructionsChanged(id: string): Promise<void> }).threadInstructionsChanged = async id => { released.push(id) }
+  workspace.host.useWorkerRoles(new WorkerRoles(() => []))
+  const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
+    control: { historyEnabled: () => true, watcherEnabled: false, dynamicThreadsEnabled: true } })
+  cleanups.push(async () => { f.control.dispose(); await f.control.closed(); await workspace.stop() })
+  await f.control.start()
+  await f.control.commandShell({ type: 'connect', provider: 'claude' })
+  const shell = f.control.shell().host, id = randomUUID()
+  const project = shell.projects.find(item => item.providerId === 'claude')!, model = shell.models.find(item => item.providerId === 'claude')!
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: id, projectId: project.id, title: 'Synthetic thread', modelId: model.id })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
+  const sessionId = workspace.registry.byThread(id)!.sessionId
+  expect(sessionId).not.toBe(id)
+  const held = workspace.adapters.claude.state.threads.find(thread => thread.id === sessionId)!
+  held.status = 'idle'; workspace.adapters.claude.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'claude' })
+  expect(source!.overseer!(sessionId)).toBeUndefined()
+  expect((await f.control.commandShell({ type: 'set-thread-dynamic', threadId: id, dynamic: true })).error).toBeNull()
+  expect(source!.overseer!(sessionId)).toBe(overseerInstructions())
+  expect(source!.overseerNote!(sessionId)).toBe(overseerNoteOn())
+  expect(released).toEqual([sessionId])
 })
 
 it('refuses a provider that cannot oversee yet, in plain words, and sets nothing', async () => {

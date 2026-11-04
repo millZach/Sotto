@@ -42,6 +42,7 @@ import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { OverseerOwnChangeFor, WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
 import { isDynamicThread } from '../../../shared/dynamicThreads'
+import { resolveModel } from '../../../shared/modelCatalog'
 import { useRepliesKeptInView, WatcherAfterMessage } from '../watcher/WatcherReceipts'
 import { HandoverFromContext, HandoverMessage } from '../watcher/WatcherHandover'
 import { ContinuedFromNote, ContinuedInNotes } from './ContinueThread'
@@ -308,8 +309,8 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
  */
-/** Whether the thread drawn is a Dynamic thread (ADR-0191), whose replies carry a mark if its overseer changed files itself. */
-const OverseenContext = createContext(false)
+/** The model overseeing the thread drawn, where it is a Dynamic thread (ADR-0191): its replies carry a mark if it changed files itself. */
+const OverseenContext = createContext<string | undefined>(undefined)
 const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
@@ -384,7 +385,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
       : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
-    {overseen && message.role === 'assistant' && !writing ? <OverseerOwnChangeFor message={message} /> : null}
+    {overseen !== undefined && message.role === 'assistant' && !writing ? <OverseerOwnChangeFor message={message} overseer={overseen} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
     {forkHere || councilHere ? <div className="thread-message__actions">
       {councilHere ? <CouncilPress text={message.text} ask={askCouncil!} /> : null}
@@ -756,7 +757,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
 }): ReactNode {
   const { t } = useLingui()
   const thread = row.thread
-  const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads'))
+  const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads')) ? resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId : undefined
   const quoting = useOwlFeature('reply-quote')
   // A tip under the working words (ADR-0159; Owl only).
   const tipLine = useTipLine({ row, state, store, watcher, onFocusPrompt: onQuoted })

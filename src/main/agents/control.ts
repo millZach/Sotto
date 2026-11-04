@@ -1676,7 +1676,7 @@ export class AgentControl {
     // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
     // own-change line already shows.
     const requests = this.watcherRequestsShown()
-    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, requests), watcherMessageRequests(requests)))
+    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, requests), watcherMessageRequests(requests)), this.dependencies.dynamicThreadsEnabled === true)
     // A thread that began from another shows its first message as the user's words, with its handover beside them (#1028).
     if (this.dependencies.threadStartsEnabled === true) {
       const incoming = this.incoming
@@ -4131,17 +4131,12 @@ export class AgentControl {
     this.publish()
     return this.reply()
   }
-  private async setThreadDynamic(command: Extract<AgentCommand, { type: 'set-thread-dynamic' }>): Promise<AgentState> {
-    try {
-      if (this.dependencies.dynamicThreadsEnabled !== true) throw new Error('Dynamic threads are available in Sotto Owl. Nothing changed.')
-      this.thread(command.threadId)
-      if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
-      this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
-      this.state.error = null
-      await this.persist().catch(() => { throw new Error('Could not save that. Retry when storage is available.') })
-    } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'Could not change Dynamic for this thread.') }
-    this.publish()
-    return this.reply()
+  /** In the thread's own lane, so a change waits behind a send on its way and a send behind a change (ADR-0191). */
+  private async setThreadDynamic(command: Extract<AgentCommand, { type: 'set-thread-dynamic' }>): Promise<void> {
+    if (this.dependencies.dynamicThreadsEnabled !== true) throw new Error('Dynamic threads are available in Sotto Owl. Nothing changed.')
+    this.thread(command.threadId)
+    if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
+    this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
   }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
@@ -4563,7 +4558,6 @@ export class AgentControl {
     if (command.type === 'cancel-restart') return Promise.resolve(this.cancelRestart(command))
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
-    if (command.type === 'set-thread-dynamic') return this.setThreadDynamic(command)
     // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.
     if (command.type === 'regenerate-thread-title') return this.regenerateThreadTitle(command.threadId)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
@@ -5253,6 +5247,7 @@ export class AgentControl {
   }
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
     client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
+    if (command.type === 'set-thread-dynamic') return this.setThreadDynamic(command)
     const origin = this.watcherOrigins.get(command); origin?.guard()
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     const heldChoice = heldProviderChosenBy(command, this.held)

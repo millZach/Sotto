@@ -229,7 +229,22 @@ export class SottoThreadHost implements AgentHost {
     })))
   }
   /** The role table names no thread or session, so it passes through as it is. */
-  useWorkerRoles(roles: WorkerRoleSource): void { this.inner.useWorkerRoles?.(roles) }
+  /** Dynamic's answers cross this boundary as a thread's do: the adapter asks by session, and they are kept by Sotto thread ID (ADR-0002). */
+  useWorkerRoles(roles: WorkerRoleSource): void {
+    const bySession = (read: (threadId: string) => string | undefined) => (sessionId: string): string | undefined => {
+      const threadId = this.threadFor(sessionId)
+      return threadId ? read(threadId) : undefined
+    }
+    const { overseer, overseerNote } = roles
+    this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
+      ...overseer ? { overseer: bySession(threadId => overseer.call(roles, threadId)) } : {}, ...overseerNote ? { overseerNote: bySession(threadId => overseerNote.call(roles, threadId)) } : {} })
+  }
+  async threadInstructionsChanged(threadId: string): Promise<void> {
+    const binding = this.registry.byThread(threadId)
+    // A session an early start made has no binding yet, and it is the one to let go of (ADR-0057).
+    const sessionId = binding?.provider === this.provider ? binding.sessionId : this.unbound.get(threadId)
+    if (sessionId) await this.inner.threadInstructionsChanged?.(sessionId)
+  }
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
     if (this.liveSessions) this.keepSessionsLive(this.liveSessions)

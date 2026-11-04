@@ -277,7 +277,7 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
    * prompt's UserPromptSubmit hook takes it as context: a steer, or a turn Claude Code starts itself, never does.
    */
   requestNote?: { readonly note: string; readonly text: string } | undefined
-  /** Whether this CLI registered the hook that carries a note: a Watcher's, or one with an overseer note waiting at its launch. */
+  /** Whether this CLI registered the hook that carries a note: a Watcher's, or any where Dynamic threads are on. */
   takesNotes: boolean
   /**
    * The widest permission this CLI's role agents were given at launch (#1042). The thread's permission narrowing below it
@@ -287,7 +287,7 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
   /** The level this CLI runs Ultracode at, from its launch or its last confirmed change; undefined while Ultracode is off (ADR-0148). */
   ultracodeEffort?: UltracodeEffort | undefined }
 /**
- * The one hook a Watcher's CLI is started with (ADR-0073), or a Dynamic thread's with an overseer note waiting (ADR-0191): UserPromptSubmit, answered on this process's own control
+ * The one hook a Watcher's CLI is started with (ADR-0073), and every thread's where Dynamic threads are on (ADR-0191), since a thread can owe a note at any send: UserPromptSubmit, answered on this process's own control
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
  */
 const WATCHER_REQUEST_HOOK = 'sotto_watcher_request'
@@ -1644,7 +1644,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
-      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, takesNotes: !!profile || this.workerRoles?.overseerNote?.(id) !== undefined, subagentMode: roles?.subagents?.widest,
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, takesNotes: !!profile || this.workerRoles?.overseerNote !== undefined, subagentMode: roles?.subagents?.widest,
         ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
@@ -1892,7 +1892,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     const hook = frame.type === 'control_request' ? object(frame.request) : undefined
     if (hook?.subtype === 'hook_callback' && typeof frame.request_id === 'string') {
-      // Only a Watcher's CLI, or one with an overseer note to carry, registers a hook, and its note goes once, as context for the prompt it was written with.
+      // Only a Watcher's CLI, or one that could be sent an overseer note, registers a hook, and a note goes once, as context for the prompt it was written with.
       const input = object(hook.input), pending = runtime.requestNote
       const note = runtime.takesNotes && pending && hook.callback_id === WATCHER_REQUEST_HOOK && input?.hook_event_name === 'UserPromptSubmit'
         && (typeof input.prompt !== 'string' || input.prompt.trim() === pending.text.trim()) ? pending.note : undefined

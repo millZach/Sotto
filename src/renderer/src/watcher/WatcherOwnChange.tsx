@@ -10,18 +10,16 @@ import { shownCount } from '../state/interfaceNumbers'
 export const WatcherOwnChangesContext = createContext<ReadonlyMap<string, WatcherOwnChange> | null>(null)
 
 /** The line's first words, which say what Sotto saw whether or not Watcher said so. */
-export function ownChangeHeadline(count: number, who: OwnChangeBy = 'watcher'): string {
+export function ownChangeHeadline(count: number, overseer?: string): string {
   const files = shownCount(count)
-  return who === 'overseer' ? plural(count, { one: `The overseer changed ${files} file itself.`, other: `The overseer changed ${files} files itself.` })
+  return overseer !== undefined ? plural(count, { one: `${overseer} changed ${files} file itself.`, other: `${overseer} changed ${files} files itself.` })
     : plural(count, { one: `Watcher changed ${files} file itself.`, other: `Watcher changed ${files} files itself.` })
 }
-/** Whose reply a line marks: Watcher's, or a Dynamic thread's overseer's (ADR-0191), which is meant to hand its changes on too. */
-export type OwnChangeBy = 'watcher' | 'overseer'
 
-/** The mark under a Dynamic thread's reply in which its overseer changed files itself, from what the reply's history kept. */
-export function OverseerOwnChangeFor({ message }: { readonly message: AgentMessage }): ReactNode {
+/** The mark under a Dynamic thread's reply in which its model changed files itself (ADR-0191), which it is meant to hand on too, from what the reply's history kept. */
+export function OverseerOwnChangeFor({ message, overseer }: { readonly message: AgentMessage; readonly overseer: string }): ReactNode {
   const kept = watcherOwnChangeSchema.safeParse((message as Readonly<Record<string, unknown>>)['watcherOwnChange'])
-  return kept.success && kept.data !== undefined ? <WatcherOwnChangeLine change={kept.data} who="overseer" /> : null
+  return kept.success && kept.data !== undefined ? <WatcherOwnChangeLine change={kept.data} overseer={overseer} /> : null
 }
 
 /**
@@ -42,7 +40,7 @@ export function WatcherOwnChangeFor({ message }: { readonly message: AgentMessag
  * meant to hand changes to a thread. Sotto marks it from the provider's own record of file changes in that turn, so
  * the line is there whatever the reply says. The file names show on request, and Escape folds them again.
  */
-export function WatcherOwnChangeLine({ change, who = 'watcher' }: { readonly change: WatcherOwnChange; readonly who?: OwnChangeBy }): ReactNode {
+export function WatcherOwnChangeLine({ change, overseer }: { readonly change: WatcherOwnChange; readonly overseer?: string }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
@@ -59,7 +57,7 @@ export function WatcherOwnChangeLine({ change, who = 'watcher' }: { readonly cha
     }}>
     <p className="watcher-own__line tt-paragraph">
       <FilePen size={14} aria-hidden="true" className="watcher-own__icon" />
-      <span className="watcher-own__words"><strong>{ownChangeHeadline(count, who)}</strong>{' '}
+      <span className="watcher-own__words"><strong>{ownChangeHeadline(count, overseer)}</strong>{' '}
         {reason === null ? <span className="watcher-own__none"><Trans>It gave no reason.</Trans></span>
           : <><span className="watcher-own__said"><Trans>Its reason:</Trans></span> <Trans comment="Watcher's own reason, in its words, between the quotation marks">“{reason}”</Trans></>}</span>
       {change.files.length > 0 ? <button ref={toggle} type="button" className="watcher-own__toggle tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
@@ -67,7 +65,7 @@ export function WatcherOwnChangeLine({ change, who = 'watcher' }: { readonly cha
         {open ? plural(count, { 1: 'Hide the file', other: `Hide the ${files} files` }) : plural(count, { 1: 'Show the file', other: `Show the ${files} files` })}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
       </button> : null}
     </p>
-    {open ? <ul id={listId} className="watcher-own__files" aria-label={who === 'overseer' ? t`Files the overseer changed` : t`Files Watcher changed`}>
+    {open ? <ul id={listId} className="watcher-own__files" aria-label={overseer !== undefined ? t`Files ${overseer} changed` : t`Files Watcher changed`}>
       {change.files.map(file => <li key={file}><FileText size={13} aria-hidden="true" /><code title={file}>{file}</code></li>)}
       {unnamed > 0 ? <li className="watcher-own__more">{plural(unnamed, { one: `and ${more} file more`, other: `and ${more} files more` })}</li> : null}
     </ul> : null}

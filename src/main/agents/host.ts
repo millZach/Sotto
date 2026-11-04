@@ -44,7 +44,7 @@ export interface WorkerRoleSource {
   table(): readonly SubagentRole[]
   /** What a Dynamic thread is told in place of the table (ADR-0191), or undefined for any other thread. Read at a launch. */
   overseer?(threadId: string): string | undefined
-  /** The note a thread's next message must carry (ADR-0191), so a launch can ready the channel it goes through. */
+  /** The note a thread's next message must carry (ADR-0191). Present where Dynamic threads are on, so a launch can ready its channel. */
   overseerNote?(threadId: string): string | undefined
   /** Called after the user's Settings change; returns what stops it. */
   onChange(listener: () => void): () => void
@@ -535,5 +535,5 @@ export interface AgentHost {
    * A thread at rest has turned Dynamic on or off (ADR-0191). The adapter lets go of its idle process, as the reaper does,
    * so its next send starts one without its role agents, or with them, and ready to carry an overseer note.
    */
-  threadInstructionsChanged?(threadId: string): Promise<void>
+  threadInstructionsChanged?(threadId: string, provider?: ProviderId): Promise<void>
 }

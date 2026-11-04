@@ -23,7 +23,7 @@ async function notedTurns(make: (directory: string) => AgentHost & { threadInstr
   const host = make(directory)
   // Nothing in the conversation can answer these questions, so only what the session was told can.
   let note: string | undefined
-  host.useWorkerRoles!({ table: () => [], onChange: () => () => undefined, overseerNote: () => note })
+  host.useWorkerRoles!({ table: () => [], onChange: () => () => undefined, overseerNote: () => undefined })
   try {
     const connected = await host.connect()
     const model = connected.models.find(item => item.ready && pick(item)) ?? connected.models.find(item => item.ready)

@@ -1,5 +1,6 @@
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { isDynamicThread, overseerInstructions, overseerNoteFor, whyNotDynamic } from '../../shared/dynamicThreads'
+import { compactionPending } from '../../shared/compaction'
 import { withKeptMessageMetadata } from '../../shared/agents'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
@@ -860,6 +861,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useWorkerRoles(roles: WorkerRoleSource): void {
+    if (!this.dynamicThreads) { this.inner.useWorkerRoles?.(roles); return }
     this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
       overseer: threadId => { const thread = this.threadById(threadId); return thread && isDynamicThread(thread, this.dynamicThreads) ? overseerInstructions() : undefined },
       overseerNote: threadId => { const thread = this.threadById(threadId); return thread && overseerNoteFor(thread, this.dynamicThreads) } })
@@ -3638,6 +3640,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!thread) continue
       if (this.watched.has(id) || !this.declared) this.loadWindow(id)
       else { this.touched(thread).messages = []; delete thread.earlierAvailable; thread.summary = this.threadSummary(thread) }
+      // A Dynamic thread's overseer is marked as Watcher is, once a turn has ended rather than on every update (ADR-0191).
+      if (isDynamicThread(thread, this.dynamicThreads) && thread.status !== 'running' && this.markOwnChanges(thread)) this.writeEvents()
     }
     this.markWatcherReplies()
   }
@@ -3645,24 +3649,27 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private markWatcherReplies(): void {
     if (!this.eventSourced || !this.watcherEnabled) return
     let changed = false
-    for (const thread of this.state.snapshot.threads) if (thread.kind === 'watcher') {
-      // Pane visibility cannot decide whether early edits survive the activity window. This temporary
-      // history read includes the current user turn without putting a background transcript in the shell.
-      const messages = thread.messages.length ? thread.messages : this.readWindow(thread.id, FIRST_WINDOW_TURNS)?.messages
-      if (!messages?.length) continue
-      const annotated = annotateWatcherOwnChanges({ ...thread, messages })
-      let replaced = false
-      for (const [index, message] of annotated.entries()) if (message !== messages[index]) {
-        this.recordEvent(thread.id, { kind: 'message-replaced', at: new Date().toISOString(), message })
-        changed = true; replaced = true
-      }
-      if (thread.messages.length) {
-        // The same messages again are no change to the record; a message annotated afresh is.
-        if (replaced || annotated.length !== thread.messages.length) this.touch(thread.id)
-        thread.messages = annotated
-      }
-    }
+    for (const thread of this.state.snapshot.threads) if (thread.kind === 'watcher' && this.markOwnChanges(thread)) changed = true
     if (changed) this.writeEvents()
+  }
+  /** One thread's replies marked for the files its turn changed. Whether anything changed, for the caller to write. */
+  private markOwnChanges(thread: AgentThread): boolean {
+    // Pane visibility cannot decide whether early edits survive the activity window. This temporary
+    // history read includes the current user turn without putting a background transcript in the shell.
+    const messages = thread.messages.length ? thread.messages : this.readWindow(thread.id, FIRST_WINDOW_TURNS)?.messages
+    if (!messages?.length) return false
+    const annotated = annotateWatcherOwnChanges({ ...thread, messages })
+    let replaced = false
+    for (const [index, message] of annotated.entries()) if (message !== messages[index]) {
+      this.recordEvent(thread.id, { kind: 'message-replaced', at: new Date().toISOString(), message })
+      replaced = true
+    }
+    if (thread.messages.length) {
+      // The same messages again are no change to the record; a message annotated afresh is.
+      if (replaced || annotated.length !== thread.messages.length) this.touch(thread.id)
+      thread.messages = annotated
+    }
+    return replaced
   }
   /** Every message the store holds for a thread, for an adapter about to read its provider's history. */
   messageIdentities(threadId: string): readonly StoredMessageIdentity[] {
@@ -4683,7 +4690,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
-      ...(old?.dynamicSession ? { dynamicSession: old.compaction?.status === 'running' && thread.compaction?.status === 'completed' ? { ...old.dynamicSession, told: old.dynamicSession.created } : old.dynamicSession } : {}),
+      ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? { ...old.dynamicSession, told: old.dynamicSession.created } : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
       ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
       ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
@@ -5333,7 +5340,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (dynamic) this.touched(thread).dynamic = true
       else delete this.touched(thread).dynamic
       this.dirty = true; await this.flush(); this.publish()
-      await this.inner.threadInstructionsChanged?.(threadId)
+      await this.inner.threadInstructionsChanged?.(threadId, thread.providerId)
     }
     return this.workspaceSnapshot()
   }

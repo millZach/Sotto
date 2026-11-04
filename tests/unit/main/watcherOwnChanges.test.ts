@@ -29,14 +29,16 @@ describe('A Dynamic thread\'s overseer (ADR-0191)', () => {
   it('takes the reason line off the reply as it is shown, as the mark already says it', () => {
     const t = overseer('I changed it.\n\nOverseer change reason: one line was quicker.')
     const marked = { ...t, messages: annotateWatcherOwnChanges(t) }
-    const shown = watcherRepliesAsShown({ threads: [marked] } as unknown as AgentHostSnapshot).threads[0]!.messages.at(-1)!
+    const shown = watcherRepliesAsShown({ threads: [marked] } as unknown as AgentHostSnapshot, true).threads[0]!.messages.at(-1)!
     expect(shown.text).toBe('I changed it.')
     expect(shown.watcherOwnChange?.reason).toBe('one line was quicker.')
+    // Where the feature is off no mark shows it, so the reply keeps its reason.
+    expect(watcherRepliesAsShown({ threads: [marked] } as unknown as AgentHostSnapshot).threads[0]!.messages.at(-1)!.text).toContain('Overseer change reason:')
   })
   it('leaves an ordinary thread\'s reply as it was written', () => {
     const t = { ...overseer('Overseer change reason: words of its own.'), dynamic: undefined }
     const marked = { ...t, messages: t.messages.map(item => item.id === 'reply' ? { ...item, watcherOwnChange: { replyMessageId: 'reply', turnId: 'user', fileCount: 1, files: [], reason: 'words of its own.', source: 'provider-file-change' } } : item) } as AgentThread
-    expect(watcherRepliesAsShown({ threads: [marked] } as unknown as AgentHostSnapshot).threads[0]!.messages.at(-1)!.text).toBe('Overseer change reason: words of its own.')
+    expect(watcherRepliesAsShown({ threads: [marked] } as unknown as AgentHostSnapshot, true).threads[0]!.messages.at(-1)!.text).toBe('Overseer change reason: words of its own.')
   })
 })
 

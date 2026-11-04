@@ -101,9 +101,9 @@ describe('A Dynamic thread\'s overseer on Claude Code (ADR-0191)', () => {
   it('gets the overseer\'s instructions in place of the role table and agents when it starts, and a note with its next message after a change', async () => {
     const f = await claudeFixture(undefined, 10_000); cleanups.push(f.cleanup)
     await writeFile(join(f.root, 'models.json'), JSON.stringify([{ value: 'fixture-model', displayName: 'fixture-model', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }]))
-    let told: string | undefined = 'Synthetic overseer words', note: string | undefined
+    let told: string | undefined = 'Synthetic overseer words'
     const source = new WorkerRoles(() => [role('building', 'claude', 'fixture-model', 'high', 'full-access')])
-    f.adapter.useWorkerRoles({ table: () => source.table(), onChange: listener => source.onChange(listener), overseer: () => told, overseerNote: () => note })
+    f.adapter.useWorkerRoles({ table: () => source.table(), onChange: listener => source.onChange(listener), overseer: () => told, overseerNote: () => undefined })
     f.adapter.useThreadTools([delegateTool()])
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
@@ -119,11 +119,11 @@ describe('A Dynamic thread\'s overseer on Claude Code (ADR-0191)', () => {
     const initializes = (await f.driver.requests()).filter(record => record.method === 'initialize').map(record => (record.params!.frame as { request: { agents?: unknown } }).request)
     expect(initializes.filter(request => request.agents)).toEqual([])
     // A session keeps what it was created with, so a change goes by a note: the idle CLI goes, and the next one has the hook.
-    expect(initializes.filter(request => (request as { hooks?: { UserPromptSubmit?: unknown } }).hooks?.UserPromptSubmit)).toEqual([])
-    told = undefined; note = 'Synthetic overseer note'
+    const note = 'Synthetic overseer note'
+    told = undefined
     await f.adapter.threadInstructionsChanged(id)
     await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic second turn', overseerNote: note })
-    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'hook-context').map(record => (record.params!.frame as { additionalContext: string | null }).additionalContext), { timeout: 10_000 }).toEqual(['Synthetic overseer note'])
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'hook-context').map(record => (record.params!.frame as { additionalContext: string | null }).additionalContext).filter(context => context !== null), { timeout: 10_000 }).toEqual(['Synthetic overseer note'])
     // Its role agents are back, and the message went as typed.
     const after = (await f.driver.requests()).filter(record => record.method === 'initialize').map(record => (record.params!.frame as { request: { agents?: Record<string, unknown> } }).request).at(-1)!
     expect(after.agents).toHaveProperty('sotto_building')

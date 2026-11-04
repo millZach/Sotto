@@ -16,7 +16,7 @@ import type { AgentCommand } from './agents'
 export const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set<AgentCommand['type']>([
   'set-aside-send', 'manual-send', 'steer', 'steer-followup', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
   'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
-  'reclaim-thread-worktree', 'preview-reclaim-thread-worktree', 'load-earlier-messages', 'start-thread-session',
+  'reclaim-thread-worktree', 'preview-reclaim-thread-worktree', 'load-earlier-messages', 'start-thread-session', 'set-thread-dynamic',
 ])
 
 /**
