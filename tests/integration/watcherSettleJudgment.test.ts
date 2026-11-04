@@ -76,6 +76,23 @@ async function fixture(on = true, babysittingRetired = false, pullRequestState?:
   return { ...f, workspace, service, tools, setting, native, emit, endTurn, watched, thread, settled, watching, watcherHears, watcherId, request, settle, links, branchRead }
 }
 
+it('refuses to settle a thread still waiting on an open to-do of its own, and settles it once that is gone', async () => {
+  const f = await fixture(), target = await f.watched()
+  await f.endTurn(target.threadId)
+  await f.watcherHears()
+  const machines = [{ hostId: target.hostId, thisComputer: true, items: [{ id: 'a', title: 'Hand test links', threadId: target.threadId, by: 'thread' as const, waits: true, seen: true, addedAt: '2026-11-03T00:00:00.000Z' }] }]
+  f.service.useToDos({ machines: () => machines, subscribe: () => () => undefined })
+  const held = await f.settle(await f.request(), target)
+  expect(held).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(held.message).toContain('Hand test links')
+  expect(held.message).toContain('Nothing was settled.')
+  expect(f.settled(target.threadId)).toBe(false)
+  machines[0]!.items = []
+  await f.endTurn(f.watcherId)
+  expect(await f.settle(await f.request(), target)).toMatchObject({ status: 'ok' })
+  expect(f.settled(target.threadId)).toBe(true)
+})
+
 it('never settles a finished watched thread by itself, whatever the setting says', async () => {
   const f = await fixture(), target = await f.watched()
   await f.endTurn(target.threadId)
