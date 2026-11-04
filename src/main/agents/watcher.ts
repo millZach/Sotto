@@ -58,6 +58,7 @@ import type { WatcherEvent } from '../../shared/watcherNews'
 import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
+import type { TeamProjectFact, TeamThreadFact } from '../../shared/teams'
 import { isToldRequest, toldRequestRoot, toldUserMessage, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
@@ -130,6 +131,8 @@ function setIfChanged<T extends object, K extends keyof T>(target: T, field: K, 
  */
 const FROZEN_WRITES_THROW = (() => { try { (Object.freeze({ probe: 0 }) as { probe: number }).probe = 1; return false } catch { return true } })()
 const nativeHead = (thread: AgentThread) => lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id ?? null
+/** A team summary holds at most this many threads, the most active first. */
+const TEAM_SUMMARY_THREADS_MAX = 60
 type PromptTurn = NonNullable<WatcherRecord['promptTurns']>[number]
 /** A thread of one host snapshot by its ID, the first a search of its list finds. */
 type ThreadLookup = (threadId: string) => AgentThread | undefined
@@ -690,7 +693,7 @@ export class WatcherService implements WatcherControlHooks {
   private endingSettled = false
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
-    historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
+    historyEnabled: () => boolean; workerHost?: boolean; teamMessageGoing?: () => boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
     /**
      * The user's worker roles, present only while that Owl feature is on (#1041). Read once per start that names a role,
      * when it is asked, never on publish or observe.
@@ -1192,6 +1195,51 @@ export class WatcherService implements WatcherControlHooks {
     if (!told || told.sentHead !== undefined) return
     const master = current && this.localThread(current.target.threadId)
     told.sentHead = master ? nativeHead(master) : null
+  }
+  /**
+   * The user's own message the running Watcher turn answers, as a name that lasts the turn: undefined in a wake-up, a turn
+   * a thread's message started and anything else the user did not send, so a teammate is asked only at their word
+   * (ADR-0187, decision 5).
+   */
+  teamTurn(threadId: string): string | undefined {
+    const request = this.turnRequest(threadId)
+    return request && !isToldRequest(request) ? `${request.id} ${request.userFollowups?.length ?? 0}` : undefined
+  }
+  /** What a team summary is made from: nothing of a thread but its title, where it stands and its pull requests (ADR-0187). */
+  teamThreadFacts(): TeamThreadFact[] {
+    const facts: TeamThreadFact[] = []
+    for (const hostId of this.teamHosts()) {
+      const snapshot = this.owningSnapshot(hostId)
+      if (!snapshot) continue
+      const titles = new Map(snapshot.projects.map(project => [project.id, project.title]))
+      for (const thread of snapshot.threads) {
+        const project = snapshot.projects.find(item => item.id === thread.projectId)
+        if (thread.delegatedBy || this.protectedThread(thread) || isWorkspaceThreadSettled(thread, project)) continue
+        facts.push({ project: titles.get(thread.projectId) ?? '', projectKey: `${hostId} ${thread.projectId}`, title: thread.title,
+          stands: thread.requests.length ? 'waiting-on-its-owner' : isThreadTurnRunning(thread) ? 'working' : thread.lastTurn?.status === 'failed' ? 'failed' : 'idle',
+          pullRequests: (thread.pullRequests ?? []).filter(item => item.state !== 'closed' && item.state !== 'merged').map(item => ({ number: item.number, title: item.title ?? '', state: item.state, draft: item.draft ?? false })) })
+      }
+    }
+    const order = { 'waiting-on-its-owner': 0, working: 1, failed: 2, idle: 3 }
+    return facts.sort((left, right) => order[left.stands] - order[right.stands]).slice(0, TEAM_SUMMARY_THREADS_MAX)
+  }
+  /** The projects the Teams tab lists, so the user can leave any out of their summaries. */
+  teamProjectFacts(): TeamProjectFact[] {
+    return this.teamHosts().flatMap(hostId => {
+      const snapshot = this.owningSnapshot(hostId), machine = hostId === this.hostId() ? 'This computer' : this.remote?.hosts().find(host => host.hostId === hostId)?.name ?? ''
+      return (snapshot?.projects ?? []).filter(project => !this.reservedProject(project.path)).map(project => ({ key: `${hostId} ${project.id}`, title: project.title, machine }))
+    })
+  }
+  private teamHosts(): string[] { return [this.hostId(), ...(this.remote?.hosts() ?? []).map(host => host.hostId).filter(hostId => hostId !== this.hostId())] }
+  /** The model of Watcher's provider a team answer's side call runs on; undefined before there is a Watcher. */
+  teamModel(): string | undefined {
+    const current = this.view().current
+    return current ? this.localThread(current.target.threadId)?.modelId : undefined
+  }
+  /** The newest message in Watcher's conversation, which a teammate's message goes under. */
+  teamAnchor(): string | null {
+    const current = this.view().current, master = current && this.localThread(current.target.threadId)
+    return master ? master.messages.at(-1)?.id ?? nativeHead(master) : null
   }
   /** Whether Watcher's running turn is one a thread's message started, and no message of the user's has come since. */
   private inToldTurn(): boolean {
@@ -3425,7 +3473,7 @@ export class WatcherService implements WatcherControlHooks {
     if (command.type === 'steer' && _draftId && command.threadId === this.view().current?.target.threadId) {
       // A try of the same message again keeps what its first try recorded.
       const opened = this.view().requests.find(item => item.rootUserMessageId === command.messageId)
-      if (opened) return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(opened.id, this.hostId())) }
+      if (opened) return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(opened.id, this.hostId(), false, this.options.teamMessageGoing?.() === true)) }
       const answered = this.turnRequest(command.threadId)
       if (answered) {
         // A request that has recorded a thousand of the user's messages takes no more: the steer is refused rather than
@@ -3452,7 +3500,7 @@ export class WatcherService implements WatcherControlHooks {
         state: 'active', createdAt: now(), closedAt: null, participants: [], ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}) }
       this.options.control.mutateWatcher(record => { withdrawQueuedDraft(record, _draftId, command.messageId); record.requests.push(created) })
       this.lastSteer = { threadId: command.threadId, requestId: created.id, messageId: command.messageId, headBefore: this.headOf(command.threadId) }
-      return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(created.id, this.hostId())) }
+      return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(created.id, this.hostId(), false, this.options.teamMessageGoing?.() === true)) }
     }
     if (command.type !== 'send' || command.wakeUp || command.threadId !== this.view().current?.target.threadId) return command
     const record = this.view()
@@ -3490,7 +3538,7 @@ export class WatcherService implements WatcherControlHooks {
     // The user's text goes as typed. The request rides beside it, through the provider's own context channel.
     // After a compaction the note also tells Watcher to read its state back first (#1189).
     this.lookAtState()
-    const note = watcherRequestNote(request.id, this.hostId(), this.stateOwed)
+    const note = watcherRequestNote(request.id, this.hostId(), this.stateOwed, this.options.teamMessageGoing?.() === true)
     // Codex and Claude Code are sent the words alone, and their display proof says so: a proven message is never
     // searched for an older footer, even one the user typed. Grok Build's request line is taken off by its exact
     // provenance instead (watcherRequestNote.ts), since a skill prompt can change what its adapter sends.
