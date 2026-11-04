@@ -68,6 +68,17 @@ final class AlertModelTests: XCTestCase {
         let (_, alerts, _) = try await fixture([("a", "error", ["r1"], false), ("b", "idle", [], true)], switches: allOn)
         XCTAssertTrue(alerts.posted.isEmpty, "What a computer already had is not news")
     }
+    /// ADR-0188: a computer's to-do list stands only while its connection does, however that ends, so one that stops offering it shows nothing.
+    @MainActor func testAComputersToDoListGoesWithItsConnection() async throws {
+        let (model, _, _) = try await fixture([("a", "running", [], false)], switches: allOn)
+        XCTAssertFalse(model.toDoStore.book.offered, "A computer that pushes no list shows no icon")
+        let connection = try XCTUnwrap(HostConnection.instances.last { $0.hostID == laptop })
+        connection.push(.toDos([ToDoItem(id: "a", title: "Hand test", seen: false)]))
+        XCTAssertEqual(model.toDoStore.book.rows.map(\.item.id), ["a"])
+        XCTAssertEqual(model.toDoStore.book.unseen, 1)
+        connection.disconnect()
+        XCTAssertFalse(model.toDoStore.book.offered)
+    }
     @MainActor func testNewsAlertsOnceWithItsComputerAndSound() async throws {
         var switches = allOn; switches[PhonePreferenceKey.notifySound] = true
         let (model, alerts, _) = try await fixture([("a", "running", [], false), ("b", "running", [], false)], switches: switches)

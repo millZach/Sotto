@@ -68,6 +68,7 @@ struct HostRefusal: Error, LocalizedError {
     var onPush: ((IncomingFrame, Int) -> Void)?
     var onLiveness: (() -> Void)?
     var onDisconnect: (() -> Void)?
+    var onClosed: (() -> Void)?
     var operations: [String] = []
     var commands: [JSONValue] = []
     /// Every Watcher operation this connection carried, with its request ID.
@@ -143,7 +144,7 @@ struct HostRefusal: Error, LocalizedError {
         if op == "attachment-file", let handler = Self.fileHandler { return try await handler(op, operation["request"] ?? .null) }
         return .null
     }
-    func disconnect() { disconnects += 1 }
+    func disconnect() { disconnects += 1; onClosed?() }
     func close() { disconnect() }
     func health(endpoint: HostEndpoint) async throws -> Health { guard let health = Self.foundHealth else { throw ClientError.disconnected }; return health }
     func pair(endpoint: HostEndpoint, expectedHostID: String, code: String) async throws -> Pairing { Self.pairCalls += 1; guard let pairing = Self.freshPairing else { throw ClientError.disconnected }; return pairing }
