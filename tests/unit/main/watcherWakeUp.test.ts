@@ -13,6 +13,7 @@ import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurn
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
+import { TO_DOS_HOST_NOT_KNOWN, type MachineToDos, type ToDo } from '../../../src/shared/toDos'
 import { WATCHER_SYSTEM_PROMPT } from '../../../src/main/agents/watcherPrompt'
 
 const cleanups: (() => void)[] = []
@@ -2183,6 +2184,69 @@ describe('#1263: held finishes say they were released, and the same facts are no
 })
 
 // October 24, 2026: Watcher kept telling the user a card waited on them after they had answered it, since nothing said so.
+describe('news of the to-do list (ADR-0188)', () => {
+  const list = (...items: Partial<ToDo>[]): MachineToDos[] => [{ hostId: centerTarget.hostId, thisComputer: true, items: items.map(item => ({ id: 'a', title: 'Hand test links', by: 'thread' as const, waits: false, seen: false, addedAt: '2026-11-03T00:00:00.000Z', ...item })) }]
+  const told = (f: ReturnType<typeof fixture>) => f.delivered.flatMap(news => news.events).filter(event => event.kind === 'to-do-added' || event.kind === 'to-do-checked')
+  it('tells Watcher once when a watched thread adds one and when the user takes it off, and calls neither an approval', async () => {
+    const f = fixture()
+    f.wakes.toDosChanged(list())
+    f.wakes.toDosChanged(list({ threadId: centerTarget.threadId }))
+    await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS)
+    expect(told(f)).toEqual([expect.objectContaining({ kind: 'to-do-added', target: centerTarget, toDoId: 'a', toDoTitle: 'Hand test links' })])
+    const added = watcherNewsText(f.delivered.at(-1)!)
+    expect(added).toContain('This thread put "Hand test links" on the user\'s to-do list, in its own words. Mention it once in passing. It approves nothing.')
+    f.wakes.toDosChanged(list({ threadId: centerTarget.threadId }))
+    f.wakes.toDosChanged(list())
+    await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS)
+    expect(told(f).map(event => event.kind)).toEqual(['to-do-added', 'to-do-checked'])
+    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('It approves nothing.')
+  })
+  it('says nothing of what a computer already held when first read, of a thread nobody watches, or of the user\'s own', async () => {
+    const f = fixture()
+    f.wakes.toDosChanged(list({ threadId: centerTarget.threadId }))
+    f.wakes.toDosChanged(list({ threadId: centerTarget.threadId }, { id: 'b', threadId: 'nobody-watches' }, { id: 'c', by: 'user' }, { id: 'd', by: 'watcher' }))
+    f.wakes.toDosChanged(list({ threadId: centerTarget.threadId }, { id: 'd', by: 'watcher' }))
+    await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS)
+    expect(told(f)).toEqual([])
+  })
+  it('leaves out a computer that does not know its host ID yet, and a computer gone away is not a check-off', async () => {
+    const f = fixture()
+    const held = list({ threadId: centerTarget.threadId })
+    f.wakes.toDosChanged(held)
+    f.wakes.toDosChanged([])
+    f.wakes.toDosChanged(held)
+    f.wakes.toDosChanged([{ ...held[0]!, hostId: TO_DOS_HOST_NOT_KNOWN, items: [] }])
+    await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS)
+    expect(told(f)).toEqual([])
+  })
+  it('does not call it a check-off when a host comes back holding nothing, as after a restart with history off', async () => {
+    const f = fixture()
+    f.wakes.toDosChanged(list({ threadId: centerTarget.threadId }))
+    f.wakes.toDosChanged([])
+    f.wakes.toDosChanged(list())
+    await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS)
+    expect(told(f)).toEqual([])
+  })
+  it('tells Watcher when the user checks off its own, under no request', async () => {
+    const f = fixture()
+    f.wakes.toDosChanged(list({ by: 'watcher' }))
+    f.wakes.toDosChanged(list())
+    await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS)
+    expect(told(f)).toEqual([expect.objectContaining({ kind: 'to-do-checked', requestId: WATCHER_UNWATCHED_REQUEST_ID, toDoTitle: 'Hand test links' })])
+    const said = watcherNewsText(f.delivered.at(-1)!)
+    expect(said).toContain('The user took your to-do "Hand test links" off their list')
+    expect(said).not.toContain(WATCHER_UNWATCHED_REQUEST_ID)
+  })
+  it('names a thread on a paired host by its own ID', async () => {
+    const f = fixture()
+    const hostId = centerTarget.hostId
+    f.wakes.toDosChanged(list())
+    f.wakes.toDosChanged(list({ threadId: `host:${hostId}:${centerTarget.threadId}` }))
+    await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS)
+    expect(told(f)).toEqual([expect.objectContaining({ target: centerTarget })])
+  })
+})
+
 describe('news that a card or prototype no longer waits on the user', () => {
   const card = (id = 'card', kind: 'question' | 'permission' = 'permission') => ({ id, kind, text: 'synthetic private command', options: [] })
   const events = (f: ReturnType<typeof fixture>) => f.delivered.flatMap(news => news.events)

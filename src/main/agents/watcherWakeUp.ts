@@ -8,6 +8,7 @@ import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { GIT_PULL_REQUEST_LINKS_MAX, pullRequestKey } from '../../shared/gitPullRequests'
+import { TO_DOS_HOST_NOT_KNOWN, toDoThreadId, type MachineToDos, type ToDo } from '../../shared/toDos'
 import { WatcherEvidenceStore, isMergeFact, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
 import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, toldEventsForLater, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
@@ -186,7 +187,7 @@ const workSettledScope = (target: WatcherThreadTarget, turnId: string | undefine
  * part in a newer request is not told its last finish again, and the saved IDs say so after a restart too.
  */
 const TOLD_ONCE: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled', 'needs-user', 'quiet', 'prototype-ready',
-  'request-closed', 'prototype-closed'])
+  'request-closed', 'prototype-closed', 'to-do-added', 'to-do-checked'])
 /** Who answered a card, as the coordinator says when an answer goes: the user, or Sotto sending a prototype's question back. */
 export type WatcherCardAnswerer = 'user' | 'sotto'
 /**
@@ -326,6 +327,8 @@ export class WatcherWakeUp {
   readonly observations = new Map<string, WatcherObservation>()
   private readonly progress = new Map<string, Progress>()
   private readonly seen = new Set<string>()
+  /** Each computer's to-dos as last read, for what changed (`toDosChanged`). */
+  private readonly knownToDos = new Map<string, ReadonlyMap<string, ToDo>>()
   private readonly latestEvidence = new Map<string, { fingerprint: string; id: string; legacyId?: string; restoredRefs?: Set<string>; attention?: string }>()
   private readonly rememberPending = new Set<string>()
   /** Each thread's own facts (working copy, Git, checkpoints) as Watcher was last told them, so a turn's end says only what differs. */
@@ -832,6 +835,37 @@ export class WatcherWakeUp {
       return { kind: 'thread-told', target, requestId: opened ?? one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
         observedAt: new Date(this.now()).toISOString(), told, id }
     })
+  }
+  /**
+   * What changed on the computers' to-do lists (ADR-0188, decision 9): news of what a watched thread adds, and of what the
+   * user takes off a watched thread's or Watcher's. A computer's list stands only while it is connected, so one gone away is
+   * forgotten, and it comes back as a first read, which is no news: a host restarted with history off holds nothing, which
+   * no one checked off. Read only when a list changed, never on an update.
+   */
+  toDosChanged(machines: readonly MachineToDos[]): void {
+    const present = new Set(machines.map(machine => machine.hostId))
+    for (const hostId of this.knownToDos.keys()) if (!present.has(hostId)) this.knownToDos.delete(hostId)
+    for (const machine of machines) {
+      if (machine.hostId === TO_DOS_HOST_NOT_KNOWN) continue
+      const before = this.knownToDos.get(machine.hostId)
+      this.knownToDos.set(machine.hostId, new Map(machine.items.map(item => [item.id, item])))
+      if (!before) continue
+      const now = new Set(machine.items.map(item => item.id))
+      for (const item of machine.items) if (!before.has(item.id) && item.by === 'thread') this.toDoEvent('to-do-added', machine.hostId, item)
+      for (const item of before.values()) if (!now.has(item.id)) this.toDoEvent('to-do-checked', machine.hostId, item)
+    }
+  }
+  private toDoEvent(kind: 'to-do-added' | 'to-do-checked', hostId: string, item: ToDo): void {
+    const fields = { toDoId: item.id, toDoTitle: item.title }
+    if (item.by === 'thread' && item.threadId !== undefined) {
+      this.event(kind, { hostId, threadId: toDoThreadId(item.threadId) }, [hostId, item.id], fields)
+      return
+    }
+    // Watcher's own has no thread to watch, so its check-off is news of Watcher's own thread, under no request.
+    const current = this.record().current
+    if (item.by !== 'watcher' || !current || !this.started || this.closed) return
+    this.tell([{ kind, target: current.target, requestId: WATCHER_UNWATCHED_REQUEST_ID, generation: 0, observedAt: new Date(this.now()).toISOString(),
+      id: observationDigest([kind, hostId, item.id]), ...fields }])
   }
   /** Saved messages from threads go out: just made, or back from a restart that found them untold. */
   tellSaved(events: readonly WatcherEvent[]): void {
@@ -1619,6 +1653,8 @@ export class WatcherWakeUp {
     // A move is news while Watcher is there, whether or not a request watched the thread; a settled one is news too (#1178).
     // So is a thread's own message: the thread was told it got through, watched or not, delegated or not.
     if (event.kind === 'thread-moved' || event.kind === 'thread-told') return !!this.record().current
+    // Watcher's own to-do is news while Watcher is there; a watched thread's goes on as that thread's news does.
+    if (event.kind === 'to-do-checked' && event.requestId === WATCHER_UNWATCHED_REQUEST_ID) return !!this.record().current
     // A restart is news while Watcher is there and its thread still is, whether or not a request watches it (ADR-0144).
     if (event.kind === 'threads-restarted') {
       if (!this.record().current) return false
@@ -1645,7 +1681,7 @@ export class WatcherWakeUp {
     const thread = this.thread(snapshot, event.target)
     if (!thread || isThreadArchived(thread) || !standing && (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)))) return false
     if ((event.kind === 'turn-finished' || event.kind === 'work-settled') && this.options.swarmPending?.(event.target)) return false
-    if (event.kind === 'swarm-progress') return true
+    if (event.kind === 'swarm-progress' || event.kind === 'to-do-added' || event.kind === 'to-do-checked') return true
     if (event.kind === 'delivery-changed') {
       const operation = record.operations.find(item => item.id === event.operationId)
       return !!operation && receiptNeedsWatcher(operation) && event.revision === receiptRevision(operation) && this.toldReceipts.get(operation.id) !== event.revision

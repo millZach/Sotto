@@ -3,9 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { ToDoStore, ToDoRefused, type ToDoStoreOptions } from '../../../src/main/agents/toDos'
-import { ToDoToolServer } from '../../../src/main/agents/toDoTools'
+import { ToDoAdder, ToDoToolServer, toDoWatcherDefinition } from '../../../src/main/agents/toDoTools'
+import { WATCHER_SYSTEM_PROMPT, WATCHER_TO_DO_LINES, watcherSystemPrompt } from '../../../src/main/agents/watcherPrompt'
+import { WatcherToolServer } from '../../../src/main/agents/watcherTools'
+import type { WatcherService } from '../../../src/main/agents/watcher'
 import { FollowupStore } from '../../../src/main/agents/followups'
 import { foldWakeUpNews, isBabysitNews, isToDoNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { AGENT_TEXT_MAX } from '../../../src/shared/agents'
 import { TO_DO_LIMIT, TO_DO_NOTE_MAX, TO_DOS_MAX, toDoAddSchema, type ToDo } from '../../../src/shared/toDos'
 import { isOwlFeatureEnabled } from '../../../src/shared/owlFeatures'
@@ -116,6 +120,27 @@ describe('Checking one off', () => {
     await expect(store.request({ kind: 'check', id: item.id })).resolves.toBeUndefined()
     expect(store.view()).toEqual([])
   })
+  test('a save that fails after the thread was told leaves the item standing, and the next press only saves', async () => {
+    const { store, told } = await setup()
+    const item = await store.add({ title: 'Hand test', waits: true }, 'thread', 't1')
+    const save = vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('The disk is full.'))
+    await expect(store.request({ kind: 'check', id: item.id })).rejects.toThrow('The disk is full')
+    expect(store.view().map(entry => entry.id)).toEqual([item.id])
+    await store.request({ kind: 'check', id: item.id })
+    save.mockRestore()
+    expect(store.view()).toEqual([])
+    expect(told).toHaveBeenCalledExactlyOnceWith('t1', 'Hand test', undefined)
+  })
+  test('words the user writes after a failed save still reach the thread', async () => {
+    const { store, told } = await setup()
+    const item = await store.add({ title: 'Hand test', waits: true }, 'thread', 't1')
+    const save = vi.spyOn(AtomicJsonStore.prototype, 'write').mockRejectedValueOnce(new Error('The disk is full.'))
+    await expect(store.request({ kind: 'check', id: item.id })).rejects.toThrow('The disk is full')
+    await store.request({ kind: 'check', id: item.id, didNotWork: 'It opened twice' })
+    save.mockRestore()
+    expect(told.mock.calls).toEqual([['t1', 'Hand test', undefined], ['t1', 'Hand test', 'It opened twice']])
+    expect(store.view()).toEqual([])
+  })
   test('two presses at once tell the thread once', async () => {
     const { store, told } = await setup()
     const item = await store.add({ title: 'Hand test', waits: true }, 'thread', 't1')
@@ -178,12 +203,113 @@ describe('add_to_do', () => {
     expect(store.view()).toHaveLength(2)
     await tools.close()
   })
+  test('a refused add costs nothing against the limit, so a thread is heard once the list has room', async () => {
+    const { store, tools } = await server()
+    await Promise.all(Array.from({ length: TO_DOS_MAX }, (_, index) => store.add({ title: `Filler ${index}` }, 'watcher')))
+    for (let index = 0; index < TO_DO_LIMIT + 2; index++) {
+      const refused = await tools.call('t1', 'add_to_do', { title: `Retry ${index}` })
+      expect(refused.isError).toBe(true)
+      expect(JSON.stringify(refused.content)).toContain(`already holds ${TO_DOS_MAX}`)
+    }
+    await store.request({ kind: 'check', id: store.view()[0]!.id })
+    expect((await tools.call('t1', 'add_to_do', { title: 'There is room now' })).isError).toBeUndefined()
+    await tools.close()
+  })
+  test('a refused add gives back its own slot, not one another call\'s add was kept on', async () => {
+    let now = 1_000
+    const waiting: { resolve: () => void; reject: (error: Error) => void }[] = []
+    const added: string[] = []
+    const store = { open: () => undefined, add: vi.fn((input: { title: string }) => new Promise((resolve, reject) => {
+      waiting.push({ resolve: () => { added.push(input.title); resolve({}) }, reject })
+    })) } as unknown as Pick<ToDoStore, 'add' | 'open'>
+    const tools = new ToDoToolServer(store, { admits: () => true }, () => now)
+    const first = tools.call('t1', 'add_to_do', { title: 'First' })
+    now += 60_000
+    const second = tools.call('t1', 'add_to_do', { title: 'Second' })
+    await vi.waitFor(() => { expect(waiting).toHaveLength(2) })
+    waiting[1]!.resolve()
+    await second
+    waiting[0]!.reject(new ToDoRefused('The list is full.'))
+    expect((await first).isError).toBe(true)
+    // The second's slot stands for its whole window: nine more fit in it, and the tenth is refused.
+    now += 9.5 * 60_000
+    for (let index = 0; index < TO_DO_LIMIT - 1; index++) {
+      const call = tools.call('t1', 'add_to_do', { title: `More ${index}` })
+      await vi.waitFor(() => { expect(waiting).toHaveLength(3 + index) })
+      waiting[2 + index]!.resolve()
+      expect((await call).isError).toBeUndefined()
+    }
+    expect((await tools.call('t1', 'add_to_do', { title: 'Past it' })).isError).toBe(true)
+    await tools.close()
+  })
   test('a thread the host does not admit gets no server and adds nothing', async () => {
     const { store, tools } = await server(false)
     expect(await tools.mcpServer('t1')).toBeUndefined()
     expect((await tools.call('t1', 'add_to_do', { title: 'x' })).isError).toBe(true)
     expect(store.view()).toEqual([])
     await tools.close()
+  })
+})
+
+describe('add_to_do as Watcher has it', () => {
+  const adder = async () => { const { store } = await setup(false); return { store, adder: new ToDoAdder(store) } }
+  test('adds in Watcher\'s name, with no thread and no wait, and a retry changes nothing', async () => {
+    const { store, adder: add } = await adder()
+    const first = await add.forWatcher({ title: 'Send the invoice', steps: ['Open it', 'Send it'] })
+    expect(first.isError).toBeUndefined()
+    await add.forWatcher({ title: 'Send the invoice' })
+    expect(store.view()).toEqual([expect.objectContaining({ title: 'Send the invoice', by: 'watcher', waits: false })])
+    expect(store.view()[0]!.threadId).toBeUndefined()
+  })
+  test('refuses a wait, since Watcher has no thread to wait', async () => {
+    const { store, adder: add } = await adder()
+    expect((await add.forWatcher({ title: 'Send it', waits: true })).isError).toBe(true)
+    expect(store.view()).toEqual([])
+    expect(toDoWatcherDefinition.inputSchema).not.toHaveProperty('properties.waits')
+  })
+  test('holds Watcher to the same limit as a thread', async () => {
+    const { store, adder: add } = await adder()
+    for (let index = 0; index < TO_DO_LIMIT; index++) await add.forWatcher({ title: `Item ${index}` })
+    const past = await add.forWatcher({ title: 'Past it' })
+    expect(past.isError).toBe(true)
+    expect(JSON.stringify(past.content)).toContain('You have added')
+    expect(store.view()).toHaveLength(TO_DO_LIMIT)
+  })
+})
+
+describe('What Watcher is offered (ADR-0188)', () => {
+  const service = { isCurrent: () => true } as unknown as WatcherService
+  const readState = (server: WatcherToolServer) => server.definitions.find(item => item.name === 'read_state') as { description: string; outputSchema: unknown }
+  test('stable offers no to-do tool, and read_state says nothing of them', () => {
+    const server = new WatcherToolServer(service)
+    expect(server.definitions.map(item => item.name)).not.toContain('add_to_do')
+    expect(JSON.stringify(readState(server))).not.toContain('toDos')
+    expect(server.instructions).toBeUndefined()
+  })
+  test('with the list on it offers add_to_do, and read_state says it lists them', () => {
+    const server = new WatcherToolServer(service, { toDos: { forWatcher: async () => ({ content: [] }) } })
+    expect(server.definitions.map(item => item.name)).toContain('add_to_do')
+    expect(JSON.stringify(readState(server).outputSchema)).toContain('toDos')
+    expect(readState(server).description).toContain('Only what it and toDos list wait on the user')
+    expect(readState(server).description).not.toContain('carry those separately')
+    expect(server.instructions).toContain(WATCHER_TO_DO_LINES)
+  })
+})
+
+describe('What Watcher is told (ADR-0188, decision 9)', () => {
+  test('stable keeps its Needs you lines, whole and untouched', () => {
+    expect(watcherSystemPrompt(false)).toBe(WATCHER_SYSTEM_PROMPT)
+    expect(WATCHER_SYSTEM_PROMPT).toContain('Every reply you give the user names, under Needs you, each thing waitingOnUser lists, every time, until the user answers it.')
+    expect(WATCHER_SYSTEM_PROMPT).not.toContain('add_to_do')
+  })
+  test('with the to-do list on, nothing tells Watcher to repeat what waits on the user', () => {
+    const told = watcherSystemPrompt(false, false, false, false, false, true)
+    expect(told).toContain(WATCHER_TO_DO_LINES)
+    expect(told).not.toContain('Every reply you give the user names')
+    expect(told).not.toContain('Never write Needs you: nothing')
+    expect(told).not.toContain('carry the ask in your replies until the card is up')
+    expect(told).toContain('call read_state: only what it lists waits on them')
+    expect(told).toContain('You decide when a watched thread is finished')
   })
 })
 

@@ -35,6 +35,8 @@ export class ToDoStore {
   private readonly listeners = new Set<() => void>()
   private tail: Promise<unknown> = Promise.resolve()
   private unread = false
+  /** What a to-do's thread has heard, while saving its check-off has not succeeded yet. Held here, since the save is what failed. */
+  private readonly toldOf = new Map<string, { readonly didNotWork: string | undefined }>()
   private readonly clock: () => number
   private shown: { items: readonly ToDo[]; made: readonly ToDo[]; view: readonly ToDo[] } | undefined
   constructor(private readonly options: ToDoStoreOptions) {
@@ -56,8 +58,8 @@ export class ToDoStore {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
-  /** The open to-do with these words from this thread, if there is one: adding it again would change nothing. */
-  open(title: string, threadId: string): ToDo | undefined { return this.items.find(item => item.title === title && item.threadId === threadId && item.by === 'thread') }
+  /** The open to-do with these words from this source, if there is one: adding it again would change nothing. */
+  open(title: string, by: 'thread' | 'watcher', threadId?: string): ToDo | undefined { return this.items.find(item => item.title === title && item.threadId === threadId && item.by === by) }
   /** Something a client sees changed from outside the list, such as a prototype's mark. */
   madeItemsChanged(): void { this.changed() }
   /** Adds one for a thread or Watcher. Words the same source has open change nothing, so a retry is safe. */
@@ -96,9 +98,16 @@ export class ToDoStore {
       const item = this.items.find(entry => entry.id === id)
       // A second press finds nothing, and tells nobody twice.
       if (!item) return
-      // Told first: news that cannot be saved or sent leaves the item standing, and the press says so.
-      if (item.waits && item.threadId) await this.options.told(item.threadId, item.title, didNotWork)
+      // Told first: news that cannot be saved or sent leaves the item standing, and the press says so. A save that fails
+      // after that leaves it standing too, and the next press retries the save without saying the same thing twice. Words
+      // the user has only now written are new, so they still go.
+      const heard = this.toldOf.get(item.id)
+      if (item.waits && item.threadId && (!heard || (didNotWork !== undefined && didNotWork !== heard.didNotWork))) {
+        await this.options.told(item.threadId, item.title, didNotWork)
+        this.toldOf.set(item.id, { didNotWork })
+      }
       await this.write(this.items.filter(entry => entry !== item))
+      this.toldOf.delete(item.id)
     })
   }
   /** Keep local history changed: turned off, nothing stays on disk; turned on, what is held now is saved. */

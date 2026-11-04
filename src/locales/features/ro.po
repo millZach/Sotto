@@ -233,6 +233,10 @@ msgstr ""
 msgid "{count, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "{count} to do"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr ""
@@ -780,12 +784,24 @@ msgstr ""
 msgid "{starting, plural, one {# starting} other {# starting}}"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "{stepCount, plural, one {Hide # step} other {Hide # steps}}"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "{stepCount, plural, one {Show # step} other {Show # steps}}"
+msgstr ""
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "{streak, plural, one {#-day streak} other {#-day streak}}"
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{text} for {model}"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "{threadName} is waiting"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
@@ -1008,8 +1024,16 @@ msgstr ""
 msgid "A thread"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "A thread added this"
+msgstr ""
+
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 msgid "A thread begins its first turn. It shows which providers and ways of starting get used."
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "A thread is waiting"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -1089,12 +1113,20 @@ msgstr ""
 msgid "Add a computer"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Add a to-do of your own"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/ComputersStep.tsx
 msgid "Add another computer"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ProjectStep.tsx
 msgid "Add another folder"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Add your own"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
@@ -1434,6 +1466,7 @@ msgstr ""
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Cancel"
@@ -1522,6 +1555,10 @@ msgstr ""
 msgid "Check for updates"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Check off: {title}"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Check that the microphone above is the one you speak into, then say something."
 msgstr ""
@@ -1532,6 +1569,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Check your microphone"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Checked off: {title}"
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -2853,6 +2894,10 @@ msgstr ""
 msgid "It continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports the move."
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "It didn't work"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "It gave no reason."
 msgstr ""
@@ -3561,6 +3606,10 @@ msgstr ""
 msgid "Needs your choice"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "New"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread"
@@ -3961,6 +4010,10 @@ msgstr ""
 msgid "Nothing is lost. Choose another model, or reinstall it in the app that downloaded it."
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Nothing left to do."
+msgstr ""
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Nothing matches “{searched}”."
 msgstr ""
@@ -4036,6 +4089,10 @@ msgstr ""
 #. Follows a thread’s name: the computer it runs on
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "on {computer}"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "on {host}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -4162,6 +4219,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Open the prototype, {name}"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Open the thread {threadName}"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -5035,6 +5096,10 @@ msgstr ""
 msgid "Revoked"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Roll up"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Room left"
 msgstr ""
@@ -5110,6 +5175,10 @@ msgstr ""
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Saving…"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Say what happened"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -5482,8 +5551,16 @@ msgstr ""
 msgid "Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals. Release any held keys first."
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Sotto could not add “{title}”, so it is not on your list. Your list may be full. Check something off and try again."
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Sotto could not ask the Council. Nothing was started. Try again."
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Sotto could not check off “{title}”, so it is still on your list. Try again."
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -5640,6 +5717,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Sotto could not save the verdict in the thread’s message box. Nothing was sent. Try again."
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Sotto could not send your words about “{title}”, so it is still on your list. Your words are still in the box. Try again."
 msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
@@ -6216,8 +6297,16 @@ msgstr ""
 msgid "Teams"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Tell {threadName}"
+msgstr ""
+
 #: src/renderer/src/features/performance/PerformanceSettings.tsx
 msgid "Tell me when main freezes"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Tell the thread"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -6550,6 +6639,10 @@ msgstr ""
 msgid "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "This computer keeps no list right now"
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
 msgstr ""
@@ -6652,6 +6745,22 @@ msgstr ""
 
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
 msgid "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "To-do"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "To-do, {count} to do, {newCount} new. Unroll the list."
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "To-do, {count} to do. Roll up the list."
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "To-do, {count} to do. Unroll the list."
 msgstr ""
 
 #: src/renderer/src/features/dictate/journalFacts.ts
@@ -6874,8 +6983,13 @@ msgstr ""
 msgid "under 1%"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Undo"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Undo checking off: {title}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatchControls.tsx
@@ -7175,6 +7289,10 @@ msgstr ""
 msgid "Watched: Watcher watches this thread from your first message. Press again to leave it unwatched"
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Watcher added this"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Watcher could not be started. Nothing was sent."
 msgstr ""
@@ -7296,6 +7414,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "What are your preferences for keeping history?"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "What happened with {title}"
 msgstr ""
 
 #: src/renderer/src/features/memory/questions.ts
@@ -7467,6 +7589,10 @@ msgstr ""
 #: src/renderer/src/features/dictate/journalFacts.ts
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Yesterday"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "You added this"
 msgstr ""
 
 #. placeholder {0}: linkNames.join(', ')

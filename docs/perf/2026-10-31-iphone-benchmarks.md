@@ -102,6 +102,7 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.cpu_per_chunk` | CPU time per streamed word. |
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
 | `stream.worst_per_chunk.<count>` | The Threads list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
+| `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for the budgets of zero. |
 | `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
 | `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
@@ -236,3 +237,50 @@ the first two. The two-axis review found that the list's equality, now the only 
 out a thread's state and the delegated thread a Needs you row waits in, and that the look and back checks could pass
 without proving anything; all are fixed. The fixes were not measured again: they add words to an equality check and
 make the checks stricter.
+
+## The Threads list's fade under the status bar
+
+The third change. The first full comparison of #2023 showed the list's longest scroll frame rising from 109 to 319 ms
+(#2100). The fade under the status bar was state on `SheetPage`, so its body ran as the page left its top and as it came
+back, and went back over everything on the page. In about one journey in six SwiftUI then drew all 241 rows again without
+asking the list's equality. A diagnostic, [run 41658511677](https://github.com/millZach/Sotto/actions/runs/41658511677),
+counted two page bodies in all 50 scrolls, placed the redraws at those two moments, and found no field of the equality
+changed in any of them. Why SwiftUI skips the equality after some launches is still unknown, and the fix does not depend
+on it. Now the fade is published to one small view, as Watcher's page already did, so that view is all that runs.
+
+[Run 41679524784](https://github.com/millZach/Sotto/actions/runs/41679524784) took turns between main at `7e900174c` and
+the fix on one runner, 8 rounds of five journeys a side. The fix's longest frame, hitch time and hitches were lower in all
+8 rounds, the most an exact sign-flip test can say with 8 (p = 0.008):
+
+| Metric, in the list's scroll | Main | With the fix | Unit |
+| --- | ---: | ---: | --- |
+| `app.longest_frame`, median journey | 94 | 17 | ms |
+| `app.longest_frame`, worst journey | 587 | 40 | ms |
+| Journeys with a frame over 100 ms | 18 | 0 | of 40 |
+| Journeys with a frame over 250 ms | 5 | 0 | of 40 |
+| `app.hitch_time_ratio`, median journey | 13.5 | 0 | ms/s |
+| `app.hitches`, median journey | 3 | 0 | count |
+| Journeys that ran the list's body | 7 | 0 | of 40 |
+| Journeys that drew its rows again | 6 | 0 | of 40 |
+| `body.SheetPage`, per scroll | 2 | 0 | count |
+
+Main has no probe on `SheetPage`, so its 2 comes from the diagnostic, and a comparison against a base from before this
+change shows 0 in that column. The gain is wider than the redraws: main's journeys that drew nothing again still had a
+frame near 90 ms, the page's body and SwiftUI going back over the page, and those went too.
+
+The other phases moved within the runner's noise in both directions: `open.app.tap_to_drawn` 2,946 to 2,844 ms, the
+stream's CPU 13.1 to 12.5 s, the journey's peak memory 154.8 to 154.5 MB. One small thing rose in all 8 rounds: memory as
+launch ends, 102.2 to 103.9 MB, and at the list's scroll, 102.9 to 104.5 MB. Later phases go both ways and the peak does
+not rise. What it is has not been found; one small object on each page does not account for it by size.
+
+The fix does not stop the list drawing elsewhere. In 2 of its 40 journeys the held list drew 1,928 rows while the long
+thread opened, with that phase's longest frame at 3,952 and 6,116 ms, against a median of 2,795. Builds without the fix did
+the same in 3 of 145 journeys, too few to say the fix changes the rate. That is #2120. A journey like this on a pull request's head
+fails the workflow on the stream's budgets of zero, if it draws during the stream too.
+
+The page, the list and the rows have budgets of zero in the list's scroll in any journey. The benchmark scrolls 50 points
+a frame, so it crosses the fade's 24 points at once and changes it once at each end. A finger changes it on every frame
+of those 24 points, so main likely cost a person more than these numbers show, but that is read from the code and not
+measured. The benchmark builds Debug with optimization, so whether Release builds drew the rows again is also not
+measured. The workflow's look step photographs the long thread and not this fade, so the fade's look rests on the code:
+the same view, opacity and 24 points.

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted November 3, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/to-do-scroll` (variant A). **Number provisional until merge** (docs/agents/domain.md).
+Accepted November 3, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/to-do-scroll` (variant A).
 
 It is an Owl feature (`to-do-list`, ADR-0072). Stable keeps today's Needs you lines in Watcher's replies until Zach sends it.
 
@@ -38,7 +38,7 @@ A thread that said it waits is told, and only then: a wake-up in Sotto's voice, 
 
 Nothing new is contacted. The words are the user's and their threads', so they are saved only while Keep local history is on, as Watcher's kept lines are, and they reach no log and no product event.
 
-**9. What Watcher writes changes.** While the feature is on, its replies carry no Needs you lines: cards pop up by themselves. It still calls `read_state`, which works out `waitingOnUser` as before and now also lists the open to-dos, so it knows what waits on the user and does not add one twice. A worker's reply that asks the user to do something by hand becomes a to-do, not a line it repeats. A worker's ask for a decision with no card still goes back to the thread to ask on a card, and Watcher says it once. News tells Watcher when a watched thread adds a to-do, which it mentions once in passing, and when the user checks one off. A thread with an open to-do it waits on is not finished, so it does not settle.
+**9. What Watcher writes changes.** While the feature is on, its replies carry no Needs you lines: cards pop up by themselves. It still calls `read_state`, which works out `waitingOnUser` as before and now also lists the open to-dos, so it knows what waits on the user and does not add one twice. A worker's reply that asks the user to do something by hand becomes a to-do, not a line it repeats. A worker's ask for a decision with no card still goes back to the thread to ask on a card, and Watcher says it once. News tells Watcher when a watched thread adds a to-do, which it mentions once in passing, and when the user checks off a watched thread's or Watcher's own. The user's own and an unwatched thread's make no news, since each would cost Watcher a turn and neither is its work; `read_state` still lists them. A thread with an open to-do it waits on is not finished, so it does not settle.
 
 **10. A prototype waiting for review is a to-do of its own kind.** Sotto makes it from the **Prototype ready** mark (ADR-0108); it is not saved as an item. Its link opens the page, and opening it clears the mark, which takes the to-do off, as checking it does. Replying in the thread clears it too, as it does today. The thread pane's own Prototype ready line stays.
 
