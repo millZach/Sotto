@@ -53,6 +53,7 @@ import SottoCore
                 (self?.shown[key] ?? 0) > 0
             }
             guard let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }
+            BenchProbe.count("pictures.decoded")
             self?.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID, activityID: key.activityID), cost: image.bytesPerRow * image.height)
             return image
         }
@@ -507,6 +508,7 @@ struct AgentPictures: View {
         steps.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
     }
     var body: some View {
+        let _ = BenchProbe.body("AgentPictures")
         let items = self.items
         let gifs = self.gifs
         let videos = self.videos
@@ -701,6 +703,7 @@ private struct AgentPictureTile: View {
     @State private var frames: GIFFrames?
     @State private var began = Date()
     var body: some View {
+        let _ = BenchProbe.body("AgentPictureTile")
         Rectangle().fill(Palette.raised)
             .aspectRatio(1.5, contentMode: .fit)
             .overlay {
