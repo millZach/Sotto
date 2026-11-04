@@ -330,6 +330,8 @@ export class CodexActivityProjection {
     if (item.aggregatedOutput != null) activity.output = item.aggregatedOutput
     if (item.exitCode != null) activity.exitCode = item.exitCode
     if (item.error) activity.error = item.error.message
+    // Codex reports the user's Deny as `declined`, which maps to failed; the row says Denied instead (#2159).
+    if (item.status === 'declined') activity.denied = true
     if (item.changes) activity.changes = item.changes.map(change => ({ path: change.path, kind: change.kind?.type ?? 'change', ...(change.diff !== undefined ? { diff: change.diff } : {}) }))
     if (summarized) activity.text = item.summary!.join('\n\n')
     if (item.type === 'plan') activity.text = item.text ?? ''

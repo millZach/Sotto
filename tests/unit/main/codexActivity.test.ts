@@ -128,6 +128,18 @@ describe('Codex activity projection', () => {
     expect(unfinished.activities?.find(record => record.kind === 'command')?.status).toBe('unknown')
   })
 
+  it('keeps a declined change, which the user denied, apart from one that failed (#2159)', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    const item = (id: string, status: string) => codexItemSchema.parse({ id, type: 'fileChange', status,
+      changes: [{ path: '/tmp/repo/tests/new.test.ts', kind: { type: 'add' }, diff: '+it()' }] })
+    projection.item(t, item('declined', 'declined'), { ...context, phase: 'completed' })
+    projection.item(t, item('failed', 'failed'), { ...context, phase: 'completed' })
+    const [declined, failure] = t.activities!
+    expect(declined).toMatchObject({ kind: 'file-change', status: 'failed', denied: true })
+    expect(failure).toMatchObject({ kind: 'file-change', status: 'failed' })
+    expect(failure!.denied).toBeUndefined()
+  })
+
   it('does not append an evicted historical prefix after recent activity when native history is reread', () => {
     const t = thread(); const projection = new CodexActivityProjection()
     for (let index = 0; index < MAX_AGENT_ACTIVITIES + 1; index++) projection.item(t, codexItemSchema.parse({ ...activityItems.change, id: `change-${index}` }), { turnId: 'turn', phase: 'history' })
