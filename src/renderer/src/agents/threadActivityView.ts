@@ -327,6 +327,87 @@ export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: s
   return (thread.activities ?? []).filter(record => record.turnId === turnId && !isTurnRecord(record) && record.status === 'running').sort(bySequence).at(-1)
 }
 
+/** A file's name or a command kept in its own direction inside a sentence of either direction (ADR-0123). */
+const isolated = (text: string): string => `\u2068${text}\u2069`
+
+const SHELL_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  powershell: ['-command', '-c'], pwsh: ['-command', '-c'], cmd: ['/c', '/k'], bash: ['-c', '-lc'], sh: ['-c', '-lc'], zsh: ['-c', '-lc'],
+}
+
+/**
+ * The command a shell was asked to run, without the shell: `"C:\\…\\powershell.exe" -Command 'npm test'` reads as `npm test`,
+ * and so do `cmd /c npm test` and `bash -lc 'npm test'`. Anything else comes back as it was.
+ */
+export function innerCommand(command: string): string {
+  const text = oneLine(command)
+  const parts = /^(?:"([^"]+)"|'([^']+)'|(\S+))\s*(.*)$/u.exec(text)
+  if (parts === null) return text
+  const name = (parts[1] ?? parts[2] ?? parts[3])!.split(/[\\/]/u).at(-1)!.toLowerCase().replace(/\.exe$/u, '')
+  const flags = Object.hasOwn(SHELL_FLAGS, name) ? SHELL_FLAGS[name]! : undefined
+  if (flags === undefined) return text
+  const words = parts[4]!.split(' ')
+  const at = words.findIndex(word => flags.includes(word.toLowerCase()))
+  if (at < 0) return text
+  const rest = words.slice(at + 1).join(' ').trim()
+  // One pair of matching outer quotes comes off. Inside PowerShell's single quotes, two quotes stand for one.
+  const quote = rest.charAt(0)
+  if (rest.length < 2 || (quote !== "'" && quote !== '"') || !rest.endsWith(quote)) return rest || text
+  const inner = rest.slice(1, -1)
+  return (quote === "'" ? inner.replaceAll("''", "'") : inner) || text
+}
+
+const fileName = (path: string): string => isolated(path.split(/[\\/]/u).filter(Boolean).at(-1) ?? path)
+
+/** A tool that reads a file, by the name its provider gives it: Claude's Read, read_file, Grok's "Read file". */
+const READ_TOOL = /^(?:read|view|open)(?:[ _-]?file)?$/iu
+/** A provider that says what it reads in the title itself: "Read src/app.ts". */
+const READ_TITLE = /^read(?:ing)?\s+(\S.*)$/iu
+
+/** A running step in the working line's words: what the provider reported, and never a guess at what it means. */
+function runningWords(record: AgentActivity): string {
+  const label = activityLabel(record)
+  switch (record.kind) {
+    case 'command': {
+      if (!record.command) return label.subject
+      const command = isolated(innerCommand(record.command))
+      return t({ message: `Running ${command}`, comment: 'The working line while a command runs; {command} is the command, such as npm test.' })
+    }
+    case 'file-change': {
+      const changes = record.changes
+      if (!changes?.length) return label.subject
+      const name = fileName(changes[0]!.path)
+      const more = changes.length - 1
+      return more > 0
+        ? t({ message: `Editing ${name} and ${{ more: shownCount(more) }} more`, comment: 'The working line while files change; {name} is the first file\'s name, such as control.ts.' })
+        : t({ message: `Editing ${name}`, comment: 'The working line while a file changes; {name} is the file\'s name, such as control.ts.' })
+    }
+    case 'subagent': return label.subject
+    default: {
+      const titled = record.kind === 'tool' ? READ_TITLE.exec(record.title)?.[1] : undefined
+      const read = titled ?? (record.kind === 'tool' && READ_TOOL.test(record.title) ? label.preview : '')
+      if (read) {
+        const name = fileName(read)
+        return t({ message: `Reading ${name}`, comment: 'The working line while a tool reads a file; {name} is the file\'s name, such as threads.css.' })
+      }
+      const subject = label.subject.startsWith('mcp__') ? label.subject.split('__').at(-1)! : label.subject
+      return [subject, label.preview].filter(Boolean).join(' ')
+    }
+  }
+}
+
+/**
+ * What the working line says the turn is doing now, from its steps alone: the newest step running, else the reply being
+ * written. Null when neither is known, which is what thinking and a gap between steps are, since a provider reports its
+ * tool calls and not the thinking between them; the Spaceballs words carry that wait (ADR-0134, November 4 amendment).
+ * A plan's record stays running for the whole turn, so it says nothing about what is going on now. Reads without copying.
+ */
+export function workingNow(steps: readonly AgentActivity[], replyId?: string): string | null {
+  const running = steps.findLast(record => record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
+  if (running) return runningWords(running)
+  if (replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)) return t({ message: 'Writing a reply', comment: 'The working line while the agent writes its reply.' })
+  return null
+}
+
 /** The plan as it stands: the newest plan record of a turn that has steps. */
 const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)
 

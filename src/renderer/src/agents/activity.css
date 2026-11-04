@@ -121,15 +121,16 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 /* The working line at the end of a running turn: the working words, with the turn's steps folded under them. */
 .thread-activity-live { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; min-height: 32px; margin: 0 0 24px; color: var(--tt-text-2); font-size: var(--tt-type-body); }
 .thread-activity-live__line {
-  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; margin-left: -6px; padding: 0 10px 0 6px;
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; min-height: 32px; margin-left: -6px; padding: 0 10px 0 6px;
   border: 0; border-radius: var(--tt-radius-row); background: transparent; color: inherit; font: inherit; text-align: left;
 }
 button.thread-activity-live__line { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 button.thread-activity-live__line:hover { background: var(--tt-hover); }
 button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-hover-strong); }
-.thread-activity-live__state { flex: none; font-variant-numeric: tabular-nums; }
-/* Words change in place, so the line's own width must not shift with them. */
-.thread-activity-live__word { position: relative; display: inline-block; }
+.thread-activity-live__line > svg { flex: none; }
+.thread-activity-live__state { flex: 0 1 auto; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
+/* One line, cut at its end, with the light still crossing its letters: a step's name can be a long command. */
+.thread-activity-live__word { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
 .thread-activity-live__steps > .thread-activity { margin: 0; }
 
@@ -172,7 +173,7 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word { color: var(--tt-text-muted); }
   :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::after {
-    content: attr(data-word); position: absolute; inset: 0; color: var(--tt-working-light); pointer-events: none; white-space: nowrap;
+    content: attr(data-word); position: absolute; inset: 0; overflow: hidden; color: var(--tt-working-light); pointer-events: none; text-overflow: ellipsis; white-space: nowrap;
     -webkit-mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
     mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
     animation: thread-activity-glow 4.2s cubic-bezier(.45, 0, .55, 1) infinite;

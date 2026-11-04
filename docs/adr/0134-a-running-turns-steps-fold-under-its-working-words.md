@@ -4,6 +4,8 @@
 
 Accepted October 24, 2026. Zach picked variant A, **Quote only**, of `docs/prototypes/turn-steps-glow-prototype.html` (tag `prototype/turn-steps-glow`), with the slower glow in the accent light, no sign of a failed step on the line and no clock. It goes straight to stable. It changes how [ADR-0051](0051-the-iphone-takes-the-glow-look.md) draws the iPhone's working line (see its October 24 amendment). **Number provisional until merge** (docs/agents/domain.md).
 
+Amended November 4, 2026, by Zach's pick of variant B: the line names the step when one is known (see the amendment at the end). His picks of October 24 and 26 stay in the record below.
+
 ## Context
 
 While a turn ran, the desktop listed its steps as it went: a row for each command, edit, tool call and agent, the newest six in view, between the user's message and the reply. Under them the working line said "Working for 1m 4s" and the step running now, or carried the wait with the Spaceballs words ("Combing the desert") when it had no step to name. A busy turn filled the transcript with rows the reader did not ask for, and pushed the replies written on the way apart. A finished turn already folded all of it under one **Worked for** line, but it kept every failed step in view beside that line.
@@ -66,3 +68,17 @@ This replaces "starts folded" for the working line and "opens on a press" for th
 Zach changed his mind on the clock: the line should be the Spaceballs words alone, with the light crossing their letters. The line now reads only the words ("Combing the desert"), and the chevron once the turn has a step. The light, the words' timing, reduced motion and the button's name are as the October 25 amendment left them.
 
 This takes back **The clock** in the October 25 amendment, so "There is no clock on the line" in the Decision holds again. Only the working line loses its clock. A running step's own clock in the opened steps ("Running 12s"), the line that says a turn on one of the user's own servers is still waiting (ADR-0124), the **Worked for** line and the held action's creature keep theirs, because none of them sits beside the words.
+
+## November 4, 2026 amendment: the line names the step when one is known
+
+Zach chose this. On October 24 he picked the quieter line, and on October 26 he said the line should be the Spaceballs words alone. On November 4 he tried both answers in the design pass's prototype `sotto-council/prototypes/working-line/index.html`, kept outside the repository, and picked B: the step when one is known, or his words.
+
+**What the line says.** While a step runs, the line names it, in place of the words: "Running npm test", "Reading threads.css", "Editing control.ts". While the reply arrives it says "Writing a reply". When nothing is known, which is what thinking and a gap between steps are, his words carry the wait as before. It comes from real activity only, the same records the opened steps show, so every provider gets it, and it says only what that provider reports: a tool Sotto has no verb for reads as the tool's own name and input. A long command is cut with an ellipsis at the end of the line, with the light still crossing its letters.
+
+**What stays.** The light, its timing, the chevron, reduced motion and the steps under the line are unchanged. There is still no clock and no sign of a failed step on the line. The count stays in the button's name and on the **Worked for** line, so there is no "Thinking" and no "3 of 7 done" on the line. The button keeps its name, "Working, 12 steps so far"; the step is its description, so a screen reader is not read a new name at each step.
+
+**It does not flicker.** What is on the line holds it for at least 1.5 seconds, so a quick run of steps reads one at a time, and his words come back only after a gap of 1.5 seconds, so a short gap between two steps never shows. The line writes its own text, as the words always did, and works out what to say only when the turn's steps or its newest reply change, reading them without a copy, so a reply streaming in costs it nothing.
+
+**What it costs.** The line moves more than the quiet one he chose. The wording is only as good as what each provider reports.
+
+This replaces "shows only the working words" in the Decision and takes back the October 26 amendment's "the Spaceballs words alone" for a step that is known; the considered option **The words with the step running now under them** stays declined, since the step takes the words' place rather than a second line. The iPhone keeps its line (ADR-0051's October 24 amendment) until Zach asks for this there.

@@ -167,13 +167,13 @@ describe('the running turn', () => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
     const { transcript } = mount(stateWith({ status: 'running', activities: running() }))
     const liveRow = within(transcript).getByTestId('thread-activity-live')
-    // The line carries the wait in words; assistive tech hears how far the turn has got instead.
-    expect(liveRow.querySelector('.thread-activity-live__word')).toHaveTextContent('Combing the desert')
-    // The light draws a lit copy of the word, so the copy follows the word.
-    expect(liveRow.querySelector('.thread-activity-live__word')).toHaveAttribute('data-word', 'Combing the desert')
-    // The words stand alone: no clock beside them, no step and no count.
+    // The line names the step it is on; assistive tech hears how far the turn has got instead.
+    const words = liveRow.querySelector('.thread-activity-live__word')!
+    expect(words.textContent).toBe('Running ⁨npm test⁩')
+    // The light draws a lit copy of the words, so the copy follows them.
+    expect(words).toHaveAttribute('data-word', words.textContent)
+    // No clock beside them and no count.
     expect(liveRow.querySelector('[data-elapsed]')).toBeNull()
-    expect(liveRow).not.toHaveTextContent('npm test')
     expect(liveRow).not.toHaveTextContent('2 steps')
     const line = within(liveRow).getByRole('button', { name: 'Working, 2 steps so far' })
     expect(line).toHaveAttribute('aria-expanded', 'false')

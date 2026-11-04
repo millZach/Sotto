@@ -7,12 +7,12 @@ import type { MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
-import type { AgentThread } from '../../../shared/agents'
+import { isVisualMessage, type AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
+  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
   activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
@@ -183,27 +183,60 @@ const WORKING_WORDS = [
 const WORD_MS = 3800
 const FADE_MS = 220
 
-/** Changes its own word instead of re-rendering the transcript, and never repeats the word it is replacing. */
-function WorkingWord(): ReactNode {
+/** How long what is on the line holds it, so a quick run of steps reads rather than flickers, and a short gap between two steps never shows. */
+const HOLD_MS = 1500
+
+function writeWorking(node: HTMLElement, words: string): void {
+  node.textContent = words
+  // The light crossing the words draws a lit copy of them, which reads the words from here.
+  node.dataset.word = words
+  const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+  if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+}
+
+const nextWord = (current: number): number => (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
+
+/**
+ * The working line's words: the step the turn is on when one is known (`workingNow`), else the Spaceballs words. Writes its own
+ * text instead of re-rendering the transcript, and never repeats the word it is replacing.
+ */
+function WorkingWord({ now }: { readonly now: string | null }): ReactNode {
   const { t } = useLingui()
   const ref = useRef<HTMLSpanElement>(null)
+  // The first words only: from here the effects write them, so a redraw of the line never undoes it.
+  const [first] = useState(now ?? WORKING_WORDS[0])
+  const line = useRef({ step: now, at: 0, word: 0 })
   useEffect(() => {
-    let current = 0
+    const state = line.current
     const timer = window.setInterval(() => {
       const node = ref.current
-      if (!node) return
-      current = (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
-      node.textContent = WORKING_WORDS[current]!
-      // The light crossing the words draws a lit copy of them, which reads the word from here.
-      node.dataset.word = WORKING_WORDS[current]!
-      const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
-      if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+      if (!node || state.step !== null || Date.now() - state.at < WORD_MS) return
+      state.word = nextWord(state.word)
+      writeWorking(node, WORKING_WORDS[state.word]!)
     }, WORD_MS)
     return () => window.clearInterval(timer)
   }, [])
-  // The word is decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
+  useEffect(() => {
+    const state = line.current
+    if (state.step === now) return
+    const show = (): void => {
+      const node = ref.current
+      if (!node) return
+      state.step = now
+      state.at = Date.now()
+      if (now !== null) { writeWorking(node, now); return }
+      state.word = nextWord(state.word)
+      writeWorking(node, WORKING_WORDS[state.word]!)
+    }
+    // The words come back only after a gap that lasts; a new step waits out the hold of the one on the line.
+    const wait = now === null ? HOLD_MS : state.at + HOLD_MS - Date.now()
+    if (wait <= 0) { show(); return }
+    const timer = window.setTimeout(show, wait)
+    return () => window.clearTimeout(timer)
+  }, [now])
+  // The words are decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
   return <>
-    <span ref={ref} className="thread-activity-live__word" data-word={WORKING_WORDS[0]} aria-hidden="true">{WORKING_WORDS[0]}</span>
+    <span ref={ref} className="thread-activity-live__word" data-word={first} aria-hidden="true">{first}</span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
   </>
 }
@@ -498,7 +531,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   /** The tip under the working words for this running turn (ADR-0159), when tips are on. */
   readonly tip?: ((turnId: string) => ReactNode) | undefined
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
   // The turn whose steps the user opened or folded here, so the next turn starts as the user last left any turn's steps
   // even though this line stays mounted between turns.
   const [pressed, setPressed] = useState<{ readonly turnId: string; readonly open: boolean } | null>(null)
@@ -527,6 +560,11 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // again, one cell walking round while the server reads the prompt, and a step round for each piece of text it writes.
   const mark = server === undefined || turn === undefined ? null : <LiveServerMark thread={thread} turn={turn} heard={heard} attempt={server.attempt} />
   const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
+  const last = thread.messages.at(-1)
+  // A reply from before this turn began, such as the one above a Watcher news turn, is not being written now.
+  const replyId = last?.role === 'assistant' && !isVisualMessage(last) && !(turn?.startedAt && Date.parse(last.createdAt) < Date.parse(turn.startedAt)) ? last.id : undefined
+  // Read again only when the turn's steps or its newest reply change, not for each word of a reply streaming in.
+  const now = useMemo(() => workingNow(steps, replyId), [steps, replyId, i18n.locale]) // eslint-disable-line react-hooks/exhaustive-deps -- The words are in the interface language.
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
@@ -556,10 +594,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
     return <OwnServerLine actions={own} server={server} mark={mark} startedAt={turn.startedAt} steps={disclosure} />
   }
-  // The words alone carry the wait: no clock sits beside them (ADR-0134, October 26 amendment).
+  // No clock sits beside the words (ADR-0134, October 26 amendment), and no sign of a failed step.
   const words = <>
     {mark ?? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />}
-    <span className="thread-activity-live__state">{connected ? <WorkingWord /> : t`Last seen working`}</span>
+    <span className="thread-activity-live__state">{connected ? <WorkingWord now={now} /> : t`Last seen working`}</span>
   </>
   // A tip sits under the words while the provider is connected, and above the steps once they open.
   const tipLine = connected && turnId !== null && tip ? tip(turnId) : null
@@ -574,7 +612,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
     onKeyDown={disclosure.onKeyDown}>
     <button type="button" className="thread-activity-live__line tt-focusable" aria-expanded={open} aria-controls={open ? stepsId : undefined} aria-label={name}
-      onClick={disclosure.onToggle}>
+      aria-description={connected ? now ?? undefined : undefined} onClick={disclosure.onToggle}>
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
