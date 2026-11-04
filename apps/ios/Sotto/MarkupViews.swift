@@ -65,16 +65,13 @@ struct CalloutNotes: View {
 /// The inks as this theme draws them: red and amber are its danger and warning colours, plain its text.
 struct MarkupInks {
     let stroke: [MarkInk: ThemeRGB]
-    let noteText: [MarkInk: ThemeRGB]
+    let noteEdge: [MarkInk: ThemeRGB]
     init(_ theme: ThemeSwatch) {
         let stroke: [MarkInk: ThemeRGB] = [.red: theme.rgb(.danger), .amber: theme.rgb(.warning), .plain: theme.rgb(.ink)]
         self.stroke = stroke
-        // A note's words take whichever of the theme's canvas and text reads better on its ink, and black or white
-        // where neither reaches 4.5:1 on it, as on the desktop.
-        let canvas = theme.rgb(.canvas), text = theme.rgb(.ink)
-        noteText = stroke.mapValues { ink in
-            let words = Self.contrast(ink, canvas) >= Self.contrast(ink, text) ? canvas : text
-            if Self.contrast(ink, words) >= 4.5 { return words }
+        // The edge around a note's words is black or white, whichever stands further from its ink, as on the desktop.
+        // The picture under the words could be anything, and one of the two is always at least 4.5:1 on any ink.
+        noteEdge = stroke.mapValues { ink in
             let white = ThemeRGB(1, 1, 1), black = ThemeRGB(0, 0, 0)
             return Self.contrast(ink, white) >= Self.contrast(ink, black) ? white : black
         }
@@ -127,18 +124,40 @@ enum MarkupDrawing {
                     let width = Markup.penWidth(pressure: from.pressure, pressed: pressed, size: size)
                     context.stroke(piece, with: .color(ink), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
                 }
-            case .note(let at, let text):
-                let words = context.resolve(Text(verbatim: text).font(.custom(Font.figtreeFace(.semibold), fixedSize: Markup.noteFontSize(size)))
-                    .foregroundStyle(inks.noteText[mark.ink]!.color))
-                let measured = words.measure(in: CGSize(width: size.width, height: size.height))
-                let box = Markup.noteBox(at: at, textWidth: measured.width, size: size)
-                context.fill(Path(roundedRect: CGRect(x: box.x, y: box.y, width: box.width, height: box.height), cornerRadius: box.radius), with: .color(ink))
-                context.draw(words, at: CGPoint(x: box.textX, y: at.y), anchor: .leading)
+            case .note(let at, let text, let scale, _):
+                func resolved(_ colour: Color) -> GraphicsContext.ResolvedText {
+                    context.resolve(Text(verbatim: text).font(.custom(Font.figtreeFace(.semibold), fixedSize: Markup.noteFontSize(size, scale: scale))).foregroundStyle(colour))
+                }
+                // The edge is the words drawn in a ring around their place, with the words over it. No label: only the
+                // words sit on the picture. SwiftUI has no stroked text, and this is what a Canvas and the copy both draw.
+                let edge = resolved(inks.noteEdge[mark.ink]!.color), reach = Markup.noteEdgeWidth(size, scale: scale) / 2
+                for step in 0..<16 {
+                    let angle = Double(step) / 16 * 2 * .pi
+                    context.draw(edge, at: CGPoint(x: at.x + cos(angle) * reach, y: at.y + sin(angle) * reach), anchor: .leading)
+                }
+                context.draw(resolved(ink), at: CGPoint(x: at.x, y: at.y), anchor: .leading)
             case .drag:
                 let (stroke, fill) = path(mark, size: size)
                 context.stroke(stroke, with: .color(ink), style: style)
                 context.fill(fill, with: .color(ink))
             }
+        }
+    }
+
+    /// The selected mark's outline, the mark it sits on if it is a note, and its handles, which no copy carries. `unit` is
+    /// the picture's pixels to a point on screen, so they keep their size as the picture is zoomed.
+    static func drawSelection(_ mark: MarkupShape, marks: [MarkupShape], layout: MarkupLayout, unit: Double, accent: Color, surface: Color, in context: inout GraphicsContext) {
+        func around(_ item: MarkupShape, dash: [CGFloat]) {
+            let box = layout.bounds(item).outset(6 * unit)
+            context.stroke(Path(CGRect(x: box.x, y: box.y, width: box.width, height: box.height)), with: .color(accent),
+                           style: StrokeStyle(lineWidth: 1.5 * unit, dash: dash.map { $0 * CGFloat(unit) }))
+        }
+        around(mark, dash: [5, 4])
+        if case .note(_, _, _, let on?) = mark.shape, let holder = marks.first(where: { $0.id == on }) { around(holder, dash: [2, 4]) }
+        for (_, point) in layout.handles(mark) {
+            let dot = Path(ellipseIn: CGRect(x: point.x - 5 * unit, y: point.y - 5 * unit, width: 10 * unit, height: 10 * unit))
+            context.fill(dot, with: .color(surface))
+            context.stroke(dot, with: .color(accent), lineWidth: 1.5 * unit)
         }
     }
 
@@ -162,7 +181,10 @@ enum MarkupDrawing {
 /// text, with Undo and Redo, and Add to reply, which puts a copy with the marks on it into the thread's reply box, or
 /// Watcher's, the way a chosen photo goes in. The picture in the thread stays as it was. Once an Apple Pencil has drawn,
 /// or when Only Draw with Apple Pencil is on, the pen draws and a finger moves and zooms the picture, until
-/// Draw with a finger too says otherwise.
+/// Draw with a finger too says otherwise. The Move tool selects a mark, with a finger or the pen: it can then be dragged,
+/// resized by its handles, sized if it is text, or deleted. The drawing tools only ever draw, so a stroke across a mark
+/// stays a stroke, and with Move a finger on the empty picture still moves it. Text on a mark belongs to it and follows
+/// it, and text off every mark is free.
 struct MarkupEditor: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -171,15 +193,23 @@ struct MarkupEditor: View {
     let target: MarkupTarget
     let onAdded: () -> Void
     @State private var history = MarkupHistory()
-    @State private var tool: MarkTool = .arrow
+    @State private var tool: MarkupTool = .draw(.arrow)
     @State private var ink: MarkInk = .red
     @State private var live: MarkupShape?
+    @State private var selectedID: Int?
+    /// A move or resize under way, and what the marks are while it lasts.
+    @State private var dragging: MarkDrag?
+    @State private var shownMarks: [MarkupShape]?
+    /// The size the next note is set in, and the last the user chose.
+    @State private var noteScale = 1.0
     @State private var notice: String?
     @State private var pencilDraws = MarkupEditor.prefersPencil
     @State private var fingerDraws = false
     @State private var zoom: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var notePlace: MarkPoint?
+    /// How near a mark the note's press counted as on it, in the picture's pixels.
+    @State private var noteReach = 0.0
     @State private var noteText = ""
     @State private var adding = false
     /// The agent's callouts (part 6): shown while marking, and kept in the copy, unless the user says otherwise.
@@ -195,6 +225,21 @@ struct MarkupEditor: View {
     }
     private var size: MarkupSize { MarkupSize(width: Double(target.image.width), height: Double(target.image.height)) }
     private var inks: MarkupInks { MarkupInks(theme) }
+    /// Sets a note's words in the face and at the size the canvas does, to say how wide they are.
+    private var layout: MarkupLayout {
+        MarkupLayout(size: size) { text, font in
+            let face = UIFont(name: Font.figtreeFace(.semibold), size: font) ?? .systemFont(ofSize: font, weight: .semibold)
+            return Double(ceil((text as NSString).size(withAttributes: [.font: face]).width))
+        }
+    }
+    private var selected: MarkupShape? { selectedID.flatMap { id in history.marks.first { $0.id == id } } }
+    private var moving: Bool { tool == .move }
+
+    /// A drag on a mark: where it began and the marks as they were, for a move, or the handle, for a resize.
+    private enum MarkDrag {
+        case move(from: MarkPoint, base: [MarkupShape], ids: Set<Int>, lead: Int, travelled: Bool)
+        case resize(base: [MarkupShape], id: Int, handle: MarkHandle)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -217,6 +262,7 @@ struct MarkupEditor: View {
             GeometryReader { room in stage(in: room.size) }
                 .clipped()
             if !target.callouts.isEmpty { calloutsPanel }
+            markRow
             if let notice {
                 Text(notice).font(.sotto(.small)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
                     .padding(.horizontal, 20).padding(.top, 8).paragraphDirection()
@@ -237,6 +283,8 @@ struct MarkupEditor: View {
         }
         .accessibilityAction(.escape) { dismiss() }
         .onChange(of: notice) { _, words in if let words { UIAccessibility.post(notification: .announcement, argument: words) } }
+        // Undo or Delete with a second finger stops a drag on the spot, rather than showing the drag until it lifts.
+        .onChange(of: history.marks) { _, _ in if dragging != nil { dragging = nil; shownMarks = nil } }
     }
 
     // MARK: The picture
@@ -248,7 +296,9 @@ struct MarkupEditor: View {
 
     private func stage(in room: CGSize) -> some View {
         let fit = fitted(in: room)
-        let marks = history.marks, drawing = live, inks = self.inks, size = self.size
+        let marks = shownMarks ?? history.marks, drawing = live, inks = self.inks, size = self.size, layout = self.layout
+        let picked = selectedID.flatMap { id in marks.first { $0.id == id } }
+        let surface = theme.rgb(.canvas).color, currentZoom = zoom
         let callouts = showCallouts ? target.callouts : [], accent = theme.rgb(.accent).color, onAccent = theme.rgb(.onAccent).color
         return ZStack {
             ZStack {
@@ -257,6 +307,9 @@ struct MarkupEditor: View {
                     context.scaleBy(x: canvas.width / size.width, y: canvas.height / size.height)
                     CalloutDrawing.draw(callouts, size: size, accent: accent, onAccent: onAccent, in: &context)
                     MarkupDrawing.draw(marks + (drawing.map { [$0] } ?? []), size: size, inks: inks, in: &context)
+                    if let picked {
+                        MarkupDrawing.drawSelection(picked, marks: marks, layout: layout, unit: size.width / Double(canvas.width) / Double(currentZoom), accent: accent, surface: surface, in: &context)
+                    }
                 }
                 .allowsHitTesting(false)
             }
@@ -268,10 +321,12 @@ struct MarkupEditor: View {
             .accessibilityValue(Text(verbatim: target.name))
             .accessibilityAddTraits(.isImage)
             MarkupTouches(fingerMoves: pencilDraws && !fingerDraws,
-                          began: { point, force, pencil in began(at: picturePoint(point, room: room, fit: fit), force: force, pencil: pencil) },
-                          moved: { point, force in moved(to: picturePoint(point, room: room, fit: fit), force: force) },
-                          ended: { point in ended(at: picturePoint(point, room: room, fit: fit)) },
-                          cancelled: { live = nil },
+                          grabs: { point in moving && grabs(picturePoint(point, room: room, fit: fit), unit: pictureUnit(fit)) },
+                          elsewhere: { if moving { selectedID = nil } },
+                          began: { point, force, pencil in began(at: picturePoint(point, room: room, fit: fit), force: force, pencil: pencil, unit: pictureUnit(fit)) },
+                          moved: { point, force in moved(to: picturePoint(point, room: room, fit: fit), force: force, unit: pictureUnit(fit)) },
+                          ended: { point in ended(at: picturePoint(point, room: room, fit: fit), unit: pictureUnit(fit)) },
+                          cancelled: { live = nil; dragging = nil; shownMarks = nil },
                           panned: { delta in offset = CGSize(width: offset.width + delta.width, height: offset.height + delta.height) },
                           pinched: { scale, anchor in pinch(scale, around: anchor, room: room) })
                 .accessibilityHidden(true)
@@ -286,6 +341,19 @@ struct MarkupEditor: View {
         return MarkPoint(x: min(size.width, max(0, x)), y: min(size.height, max(0, y)))
     }
 
+    /// The picture's pixels to a point on screen, under the current zoom.
+    private func pictureUnit(_ fit: CGSize) -> Double { size.width / Double(fit.width) / Double(zoom) }
+    /// How near a press must be to count as on a line, in the picture's pixels. A finger or a pen, it is the same reach.
+    private func reach(_ unit: Double) -> Double { 18 * unit }
+    private func handle(at point: MarkPoint, unit: Double) -> MarkHandle? {
+        guard let selected else { return nil }
+        return layout.handles(selected).first { hypot($0.point.x - point.x, $0.point.y - point.y) <= 22 * unit }?.handle
+    }
+    /// Whether a press here would pick something up, rather than move the picture.
+    private func grabs(_ point: MarkPoint, unit: Double) -> Bool {
+        handle(at: point, unit: unit) != nil || layout.mark(at: point, reach: reach(unit), in: history.marks) != nil
+    }
+
     private func pinch(_ scale: CGFloat, around anchor: CGPoint, room: CGSize) {
         let next = min(6, max(1, zoom * scale)), applied = next / zoom
         let from = CGSize(width: anchor.x - room.width / 2, height: anchor.y - room.height / 2)
@@ -295,17 +363,42 @@ struct MarkupEditor: View {
 
     // MARK: Drawing
 
-    private func began(at point: MarkPoint, force: Double?, pencil: Bool) {
+    private func began(at point: MarkPoint, force: Double?, pencil: Bool, unit: Double) {
         if pencil && !pencilDraws { pencilDraws = true }
         notice = nil
+        guard case .draw(let drawn) = tool else {
+            if let grip = handle(at: point, unit: unit), let selected {
+                dragging = .resize(base: history.marks, id: selected.id, handle: grip)
+                return
+            }
+            let mark = layout.mark(at: point, reach: reach(unit), in: history.marks)
+            selectedID = mark?.id
+            if let mark { dragging = .move(from: point, base: history.marks, ids: layout.movingWith(mark.id, in: history.marks), lead: mark.id, travelled: false) }
+            return
+        }
         let id = history.newID()
-        switch tool {
+        switch drawn {
         case .note: live = nil
         case .pen: live = MarkupShape(id: id, ink: ink, shape: .pen(samples: [PenSample(point, pressure: force ?? 0.5)], pressed: force != nil))
-        default: live = MarkupShape(id: id, ink: ink, shape: .drag(tool, from: point, to: point))
+        default: live = MarkupShape(id: id, ink: ink, shape: .drag(drawn, from: point, to: point))
         }
     }
-    private func moved(to point: MarkPoint, force: Double? = nil) {
+    private func moved(to point: MarkPoint, force: Double? = nil, unit: Double) {
+        switch dragging {
+        case .move(let from, let base, let ids, let lead, let travelled):
+            let now = travelled || hypot(point.x - from.x, point.y - from.y) > 4 * unit
+            guard now else { return }
+            if !travelled { dragging = .move(from: from, base: base, ids: ids, lead: lead, travelled: true) }
+            shownMarks = layout.move(base, ids, dx: point.x - from.x, dy: point.y - from.y)
+            return
+        case .resize(let base, let id, let grip):
+            if let next = layout.resize(base, id: id, handle: grip, to: point) { shownMarks = next }
+            return
+        case nil: break
+        }
+        extendLive(to: point, force: force)
+    }
+    private func extendLive(to point: MarkPoint, force: Double? = nil) {
         guard var mark = live else { return }
         switch mark.shape {
         case .pen(var samples, let pressed):
@@ -316,17 +409,95 @@ struct MarkupEditor: View {
         }
         live = mark
     }
-    private func ended(at point: MarkPoint) {
-        if tool == .note { noteText = ""; notePlace = point; return }
-        moved(to: point)
+    private func ended(at point: MarkPoint, unit: Double) {
+        if let drag = dragging {
+            dragging = nil
+            finish(drag, unit: unit)
+            return
+        }
+        guard case .draw(let drawn) = tool else { return }
+        if drawn == .note {
+            noteText = ""; notePlace = point; noteReach = reach(unit)
+            return
+        }
+        extendLive(to: point)
         if let mark = live { history.add(mark, size: size) }
         live = nil
+    }
+    /// Keeps what a move or a resize came to. A note let go takes up with whatever is under it now, and says so, since
+    /// nothing else shows it.
+    private func finish(_ drag: MarkDrag, unit: Double) {
+        defer { shownMarks = nil }
+        guard let shown = shownMarks else { return }
+        switch drag {
+        case .resize(let base, _, _): history.replace(with: shown, madeFrom: base)
+        case .move(_, let base, _, let lead, _):
+            let settled = layout.settle(shown, note: lead, reach: reach(unit))
+            guard history.replace(with: settled, madeFrom: base) else { return }
+            let was = holderID(base.first { $0.id == lead }), now = holderID(settled.first { $0.id == lead })
+            if base.first(where: { $0.id == lead })?.tool == .note, was != now { notice = noteMovedWords(now, in: settled) }
+        }
+    }
+    private func holderID(_ mark: MarkupShape?) -> Int? {
+        if case .note(_, _, _, let on)? = mark?.shape { return on }
+        return nil
+    }
+    private func noteMovedWords(_ on: Int?, in marks: [MarkupShape]) -> String {
+        switch on.flatMap({ id in marks.first { $0.id == id } })?.tool {
+        case .box: return String(localized: "The note now moves with the box.")
+        case .ellipse: return String(localized: "The note now moves with the circle.")
+        case .arrow: return String(localized: "The note now moves with the arrow.")
+        case .pen: return String(localized: "The note now moves with the pen line.")
+        default: return String(localized: "The note is free now. It stays where you put it.")
+        }
     }
     private func placeNote() {
         defer { notePlace = nil; noteText = "" }
         guard let place = notePlace else { return }
         let words = String(noteText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Markup.noteMaxLength))
-        history.add(MarkupShape(id: history.newID(), ink: ink, shape: .note(at: place, text: words)), size: size)
+        let note = MarkupShape(id: history.newID(), ink: ink, shape: .note(at: place, text: words, scale: noteScale, on: nil))
+        guard !words.isEmpty else { return }
+        // The words stay on the picture, however near its edge they were pressed, and on what they were pressed on.
+        let placed = layout.move([note], [note.id], dx: 0, dy: 0)[0]
+        if let settled = layout.settle(history.marks + [placed], note: note.id, reach: noteReach).last { history.add(settled, size: size) }
+    }
+
+    // MARK: A selected mark, and text
+
+    /// What can be done to the selected mark: size its text, or the next note's while Note is picked, and delete it.
+    /// Always there and in one place, so the picture doesn't jump when a mark is selected.
+    private var markRow: some View {
+        let note: (scale: Double, id: Int)? = {
+            if case .note(_, _, let scale, _)? = selected?.shape, let id = selectedID { return (scale, id) }
+            return nil
+        }()
+        let sizing = note != nil || tool == .draw(.note), current = note?.scale ?? noteScale
+        return HStack(spacing: 6) {
+            Button { stepNoteSize(-1) } label: { Image(systemName: "textformat.size.smaller").frame(width: 44, height: 44) }
+                .disabled(!sizing || current <= (Markup.noteScales.first ?? 0)).accessibilityLabel(Text("Make the text smaller"))
+            Button { stepNoteSize(1) } label: { Image(systemName: "textformat.size.larger").frame(width: 44, height: 44) }
+                .disabled(!sizing || current >= (Markup.noteScales.last ?? 0)).accessibilityLabel(Text("Make the text larger"))
+            Button {
+                if let id = selectedID { history.remove(id); selectedID = nil }
+            } label: { Label("Delete", systemImage: "trash").font(.sotto(.small)).frame(minHeight: 44).padding(.horizontal, 10) }
+                .disabled(selected == nil).accessibilityLabel(Text("Delete the selected mark"))
+        }
+        .foregroundStyle(Palette.ink)
+        .padding(.top, 4)
+    }
+    private func stepNoteSize(_ by: Int) {
+        var current = noteScale, text: (id: Int, at: MarkPoint, words: String, on: Int?)?
+        if case .note(let at, let words, let scale, let on)? = selected?.shape, let id = selectedID { current = scale; text = (id, at, words, on) }
+        let next = Markup.nextNoteScale(current, by: by)
+        noteScale = next
+        guard let text, next != current else { return }
+        let sized = history.marks.map { mark -> MarkupShape in
+            guard mark.id == text.id else { return mark }
+            var kept = mark
+            kept.shape = .note(at: text.at, text: text.words, scale: next, on: text.on)
+            return kept
+        }
+        history.replace(with: layout.move(sized, [text.id], dx: 0, dy: 0))
     }
 
     // MARK: Add to reply
@@ -370,8 +541,8 @@ struct MarkupEditor: View {
 
     private var palette: some View {
         let tools = HStack(spacing: 2) {
-            ForEach(MarkTool.allCases, id: \.self) { item in
-                Button { tool = item } label: {
+            ForEach(MarkupTool.all, id: \.self) { item in
+                Button { tool = item; if item != .move { selectedID = nil } } label: {
                     Image(systemName: Self.symbol(item)).frame(width: 44, height: 44)
                         .background(tool == item ? AnyShapeStyle(Palette.accent.opacity(0.18)) : AnyShapeStyle(Color.clear), in: Circle())
                 }
@@ -390,9 +561,9 @@ struct MarkupEditor: View {
                 .accessibilityLabel(Text(Self.inkName(item)))
                 .accessibilityAddTraits(ink == item ? .isSelected : [])
             }
-            Button { history.undo() } label: { Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 44) }
+            Button { history.undo(); keepSelection() } label: { Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 44) }
                 .disabled(!history.canUndo).accessibilityLabel(Text("Undo"))
-            Button { history.redo() } label: { Image(systemName: "arrow.uturn.forward").frame(width: 44, height: 44) }
+            Button { history.redo(); keepSelection() } label: { Image(systemName: "arrow.uturn.forward").frame(width: 44, height: 44) }
                 .disabled(!history.canRedo).accessibilityLabel(Text("Redo"))
             if pencilDraws {
                 Button { fingerDraws.toggle() } label: { Image(systemName: "hand.point.up.left").frame(width: 44, height: 44) }
@@ -410,22 +581,27 @@ struct MarkupEditor: View {
         .padding(.horizontal, 12)
     }
 
-    private static func symbol(_ tool: MarkTool) -> String {
+    /// A mark Undo or Redo took away can't stay selected.
+    private func keepSelection() { if selected == nil { selectedID = nil } }
+
+    private static func symbol(_ tool: MarkupTool) -> String {
         switch tool {
-        case .arrow: return "arrow.up.right"
-        case .ellipse: return "circle"
-        case .box: return "square"
-        case .pen: return "pencil.tip"
-        case .note: return "textformat"
+        case .move: return "arrow.up.and.down.and.arrow.left.and.right"
+        case .draw(.arrow): return "arrow.up.right"
+        case .draw(.ellipse): return "circle"
+        case .draw(.box): return "square"
+        case .draw(.pen): return "pencil.tip"
+        case .draw(.note): return "textformat"
         }
     }
-    private static func name(_ tool: MarkTool) -> LocalizedStringKey {
+    private static func name(_ tool: MarkupTool) -> LocalizedStringKey {
         switch tool {
-        case .arrow: return LocalizedStringKey("Arrow")
-        case .ellipse: return LocalizedStringKey("Circle")
-        case .box: return LocalizedStringKey("Box")
-        case .pen: return LocalizedStringKey("Pen")
-        case .note: return LocalizedStringKey("Note")
+        case .move: return LocalizedStringKey("Move")
+        case .draw(.arrow): return LocalizedStringKey("Arrow")
+        case .draw(.ellipse): return LocalizedStringKey("Circle")
+        case .draw(.box): return LocalizedStringKey("Box")
+        case .draw(.pen): return LocalizedStringKey("Pen")
+        case .draw(.note): return LocalizedStringKey("Note")
         }
     }
     private static func inkName(_ ink: MarkInk) -> LocalizedStringKey {
@@ -438,9 +614,12 @@ struct MarkupEditor: View {
 }
 
 /// The touches over the picture: one draws, with the pen's force when an Apple Pencil draws. When `fingerMoves`, a
-/// finger moves the picture and two zoom it, and only the pen draws.
+/// finger moves the picture and two zoom it, and only the pen draws. With the Move tool, a finger on what `grabs` says
+/// can be picked up takes it rather than the picture, and a press on nothing is `elsewhere`.
 private struct MarkupTouches: UIViewRepresentable {
     let fingerMoves: Bool
+    let grabs: (CGPoint) -> Bool
+    let elsewhere: () -> Void
     let began: (CGPoint, Double?, Bool) -> Void
     let moved: (CGPoint, Double?) -> Void
     let ended: (CGPoint) -> Void
@@ -472,14 +651,23 @@ private struct MarkupTouches: UIViewRepresentable {
         func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             recognizers.contains(gesture) && recognizers.contains(other)
         }
+        // A finger on a mark moves the mark, so the picture's recognizers never see it.
+        func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            !(owner?.grabs(touch.location(in: self)) ?? false)
+        }
         private weak var drawing: UITouch?
 
-        private func draws(_ touch: UITouch) -> Bool { touch.type == .pencil || !(owner?.fingerMoves ?? false) }
+        private func draws(_ touch: UITouch) -> Bool {
+            touch.type == .pencil || !(owner?.fingerMoves ?? false) || (owner?.grabs(touch.location(in: self)) ?? false)
+        }
         private func force(_ touch: UITouch) -> Double? {
             touch.type == .pencil && touch.maximumPossibleForce > 0 ? Double(touch.force / touch.maximumPossibleForce) : nil
         }
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-            guard drawing == nil, let touch = touches.first(where: draws) else { return }
+            guard drawing == nil, let touch = touches.first(where: draws) else {
+                if drawing == nil { owner?.elsewhere() }
+                return
+            }
             drawing = touch
             owner?.began(touch.location(in: self), force(touch), touch.type == .pencil)
         }
