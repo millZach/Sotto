@@ -351,7 +351,7 @@ export function delegatedLine(view: DelegationView, state: DelegatedState, now: 
  * started nothing, so it counts only as refused. With `checks`, where Work across machines shows them, a check counts as
  * a check (#1312). Empty when there is none.
  */
-export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined, checks = false): string {
+export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined, checks = false, dynamic = false): string {
   const kinds: Record<DelegatedKind, number> = { work: 0, check: 0, review: 0, 'muse-review': 0 }
   let asking = 0, failed = 0, unknown = 0, refused = 0
   for (const view of views) {
@@ -363,8 +363,8 @@ export function delegatedSummary(views: readonly DelegationView[], threadOf: (vi
     if (view.outcome === 'unknown') unknown++
   }
   const work = kinds.work, checked = kinds.check, reviews = kinds.review, museReviews = kinds['muse-review']
-  // A Dynamic thread's workers are told by how many and on how many providers, since which it chose is the point (ADR-0191).
-  const overseen = views.filter(view => view.outcome !== 'refused' && view.why !== undefined)
+  // A Dynamic thread's workers are told by how many and on how many providers, since which it chose is the point (ADR-0191). Stable keeps its usual words.
+  const overseen = dynamic ? views.filter(view => view.outcome !== 'refused' && view.chosen !== undefined) : []
   const providers = new Set(overseen.flatMap(view => { const provider = threadOf(view)?.providerId; return provider ? [provider] : [] })).size
   return [
     ...overseen.length ? [plural(overseen.length, { one: '# worker', other: '# workers' }) + ' ' + plural(providers, { one: 'on # provider', other: 'on # providers' })]

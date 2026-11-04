@@ -4754,6 +4754,10 @@ msgid "It stays readable there. <0>Open it</0>"
 msgstr ""
 
 #: src/renderer/src/agents/DelegatedWork.tsx
+msgid "It took over from {replacedTitle}."
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
 msgid "It took over from an earlier worker."
 msgstr ""
 
