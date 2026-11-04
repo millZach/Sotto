@@ -486,4 +486,12 @@ describe('file changes that did not go through', () => {
     expect(summary(groups)).toBe('Changed 1 file')
     expect(statusText(failed(), true)).toBe('Failed')
   })
+
+  it('keeps counting a change a stopped turn cut short or whose end was never seen, since it may be on disk', () => {
+    const stopped = change('stopped', 'src/stopped.ts', 'update', { status: 'interrupted' })
+    const unseen = change('unseen', 'src/unseen.ts', 'update', { status: 'unknown' })
+    const groups = groupsOf([denied(), stopped, unseen])
+    expect(turnChanges(groups).map(item => item.path)).toEqual(['src/stopped.ts', 'src/unseen.ts'])
+    expect(summary(groups)).toBe('Changed 2 files')
+  })
 })

@@ -1,6 +1,6 @@
 import { posix, win32 } from 'node:path'
 import { isVisualMessage, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
-import { changeWentThrough } from '../../shared/agentActivity'
+import type { AgentActivity } from '../../shared/agentActivity'
 import type { WatcherOwnChange } from '../../shared/watcherChanges'
 
 const REASON_PREFIX = 'Watcher change reason:'
@@ -136,7 +136,7 @@ function observedChanges(thread: AgentThread) {
     }
   }
   for (const activity of activities) {
-    if (!changeWentThrough(activity) || ambiguous.has(activity.turnId)) continue
+    if (!successfulChange(activity) || ambiguous.has(activity.turnId)) continue
     let anchor = turns.get(activity.turnId)
     if (anchor === undefined && activity.afterMessageId) anchor = userAt.get(activity.afterMessageId)
     if (anchor === undefined) continue
@@ -225,3 +225,7 @@ export function annotateWatcherOwnChanges(thread: AgentThread): AgentMessage[] {
   })
 }
 
+function successfulChange(activity: AgentActivity): boolean {
+  return activity.kind === 'file-change' && activity.status === 'completed' && !activity.error
+    && (activity.exitCode === undefined || activity.exitCode === 0)
+}

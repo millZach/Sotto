@@ -6,7 +6,7 @@ import { questionInstructions } from '../../../src/main/agents/questionInstructi
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
-import { changeWentThrough, mergeAgentActivities, type AgentActivity } from '../../../src/shared/agentActivity'
+import { mergeAgentActivities, type AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentHostSnapshot, AgentMessage, AgentThread } from '../../../src/shared/agents'
 
 const at = '2026-10-13T00:00:00.000Z'
@@ -66,7 +66,6 @@ describe('Watcher own changes', () => {
     projection.turn(t, { id: 'codex-turn', status: 'completed' })
     expect(t.activities?.find(record => record.kind === 'file-change' && record.denied)).toBeDefined()
     expect(watcherOwnChanges(t)).toEqual([])
-    expect(t.activities!.filter(changeWentThrough)).toEqual([])
   })
 
   it.each(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])('extracts acknowledged Claude %s changes', name => {

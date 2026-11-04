@@ -208,12 +208,13 @@ export function isTerminalActivity(status: AgentActivity['status']): boolean {
 }
 
 /**
- * A file change that went through: the provider finished it with no error. A denied or failed change did not, so it is
- * not a file the turn changed (#2159). The turn's count, its steps' summary and Watcher's own-change line all ask this.
+ * A file change known not to have gone through: the provider reported it failed, which is also what one the user denied
+ * becomes. A turn's count of changed files leaves these out and nothing else (#2159): a change still running, one a
+ * stopped turn cut short or one whose end Sotto never saw may be on disk, so the count keeps it. Watcher's own-change
+ * line keeps its own stricter rule, which counts only what finished.
  */
-export function changeWentThrough(record: AgentActivity): boolean {
-  return record.kind === 'file-change' && record.status === 'completed' && !record.error
-    && (record.exitCode === undefined || record.exitCode === 0)
+export function changeFailed(record: AgentActivity): boolean {
+  return record.kind === 'file-change' && record.status === 'failed'
 }
 
 const terminalAgent = (status: string): boolean => ['completed', 'failed', 'errored', 'interrupted', 'shutdown', 'notFound'].includes(status)
