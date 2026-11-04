@@ -56,15 +56,13 @@
 .thread-nav__attention-dismiss[aria-disabled='true'] { cursor: default; opacity: .6; }
 /* Needs you (ADR-0135): under the search, one entry per thread that needs the user. A filled card like every
    container (ADR-0110); need is said by each entry's ring and status words, never by an outline or a capsule. */
-.needs-you { flex: none; margin: 0 8px 8px; padding: 6px 8px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
-.needs-you__head { display: flex; align-items: center; gap: 6px; min-height: 20px; }
+.needs-you { flex: none; margin: 0 8px 8px; padding: 6px 8px 2px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
+.needs-you__head { display: flex; align-items: center; gap: 6px; padding-bottom: 2px; }
 .needs-you__heading { margin: 0; font-size: var(--tt-type-small); font-weight: 600; }
 .needs-you__count { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
-/* The first entry is the oldest and says its own wait, so this is read rather than drawn twice. */
-.needs-you__oldest { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.needs-you__oldest { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
 .needs-you__entries { margin: 2px 0 0; padding: 0; list-style: none; }
-.needs-you__entry { padding: 4px 0; }
-.needs-you__entry + .needs-you__entry { border-top: 1px solid var(--tt-hairline); }
+.needs-you__entry { padding: 5px 0; border-top: 1px solid var(--tt-hairline); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .needs-you__entry { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .needs-you__top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .needs-you__top > .thread-nav__ring { flex: none; }
@@ -72,27 +70,14 @@
 .needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .needs-you__status { color: var(--threads-warning-text); font-weight: 500; }
 .needs-you__tag { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-weight: 600; }
-/* What it needs, then its press, on one line under the title. The press is a filled control, not an outlined one, so a card
-   of them stays quieter than the words it serves. */
-.needs-you__need { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; min-height: 20px; margin: 0 0 0 16px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+/* What the thread needs, then its one press: on one line while they fit, the press under the words when they do not. */
+.needs-you__need { display: flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; margin: 2px 0 0 16px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .needs-you__need > .needs-you__status { margin-right: auto; }
-.needs-you__actions { display: flex; flex-wrap: wrap; gap: 4px; margin-block: -2px; margin-left: auto; }
-.needs-you__actions .tt-button { min-height: 24px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text); font-size: var(--tt-type-caption); box-shadow: none; }
-.needs-you__actions .tt-button:hover:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
-.needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0 0; border-top: 1px solid var(--tt-hairline); }
-.needs-you__foot .tt-button { min-height: 24px; padding: 0 6px; font-size: var(--tt-type-caption); }
+.needs-you__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+/* The entry's press is the compact size so it sits beside the words rather than under them. */
+.needs-you__actions .tt-button { min-height: 24px; padding: 0 5px; font-size: var(--tt-type-caption); }
+.needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 4px; border-top: 1px solid var(--tt-hairline); }
 .needs-you__overflow { margin-right: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-/* In a short window the sidebar is mostly this card, so an entry is one line: the ring and the title, and the press, whose words
-   say what it needs. The status and the wait stay readable by a screen reader; a failure's Dismiss waits in the card Show why pops. */
-@media (max-height: 640px) {
-  .needs-you { padding-block: 4px; }
-  .needs-you__entry { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
-  .needs-you__top { flex: 1 1 0; }
-  .needs-you__wait, .needs-you__need > :not(.needs-you__actions) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .needs-you__need { flex: none; min-height: 0; margin: 0; }
-  .needs-you__actions { margin-block: 0; }
-  .needs-you__actions .tt-button:has(+ .tt-button) { display: none; }
-}
 /* A waiting thread's card, popped open over the sidebar beside its entry or its rail tile (ADR-0135, October 29
    amendment). It holds the thread's own request card, or why its last turn failed. */
 .needs-you-card { position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto;
@@ -272,7 +257,7 @@
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }
 }
-.thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; padding: 9px 8px; row-gap: 5px; width: 100%; }
+.thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; padding: 9px 10px; row-gap: 5px; width: 100%; }
 .thread-nav__row--details .thread-nav__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
 /* A title may take two lines; the ring and the clock stay on its first. */
 .thread-nav__row--details :is(.thread-nav__ring, .thread-nav__time) { align-self: start; }
@@ -335,22 +320,6 @@
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }
-/* A row at rest, a plain Done, draws no words: most of a long list is finished threads, and their silence is what lets the
-   ones still doing something be seen. A row a Needs you entry speaks for keeps its ring and leaves the words to the entry. */
-.thread-nav__row:is([data-quiet], [data-queued]) .thread-nav__status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-/* In the sidebar's usual width such a row is one line. At rest its provider's mark takes the idle ring's place, since that ring
-   said nothing; a row Needs you speaks for keeps its amber ring and puts the mark beside the time. */
-@container thread-sidebar (max-width: 339px) {
-  .thread-nav .thread-nav__row--details:is([data-quiet], [data-queued]) .thread-nav__item { padding-block: 8px; }
-  .thread-nav__row--details:is([data-quiet], [data-queued]) .thread-nav__metadata { display: contents; }
-  .thread-nav__row--details[data-quiet] .thread-nav__ring { display: none; }
-  .thread-nav__row--details[data-quiet] .thread-nav__provider { grid-area: 1 / 1; align-self: start; height: calc(var(--tt-type-body) * 1.4); }
-  .thread-nav .thread-nav__row--details[data-queued] .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto auto; }
-  .thread-nav__row--details[data-queued] .thread-nav__provider { grid-area: 1 / 3; align-self: start; height: calc(var(--tt-type-body) * 1.4); }
-  .thread-nav__row--details[data-queued] .thread-nav__time { grid-area: 1 / 4; }
-  /* On one line the row's shortcuts would stand over its title, and they are pointer shortcuts: the keyboard has the row's menu. */
-  .thread-nav__row--details:is([data-quiet], [data-queued]):focus-within:not(:hover) .thread-nav__row-actions { opacity: 0; pointer-events: none; }
-}
 @container thread-sidebar (max-width: 285px) { .thread-nav__wordmark { display: none; } }
 @container thread-sidebar (max-width: 339px) {
   .thread-folder__toggle .host-badge { padding-inline: 5px; }

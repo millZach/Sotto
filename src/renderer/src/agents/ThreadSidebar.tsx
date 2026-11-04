@@ -163,11 +163,6 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // Restarts at 3:00 pm (ADR-0144; Owl only) stands where a stopped thread's failure line would be.
   const restartOn = useRestartStopped()
   const { text: status, finished, babysitting, prototype, background, restart } = rowStatus(row, { restart: restartOn })
-  // A plain Done is a row at rest, so it draws no words and takes one line; its status stays the row's description.
-  const quiet = row.state === 'done' && row.settledBy === null && row.connected && !finished && !babysitting && !prototype && !background && !restart
-  // A thread standing in Needs you is said to need the user there; its ring keeps saying so here (ADR-0135, November 4 amendment).
-  const queueOn = useOwlFeature('needs-you-queue')
-  const queued = queueOn && row.state === 'needs' && (row.waitingFor !== null || row.settledBy === null)
   // What the row offers beyond opening it, the same as its rail tile's (ADR-0164).
   const offers = threadOffers(row, panes)
   const { beside: besideAvailable, rename: canRename, watch: canWatch, shelfKeys } = offers
@@ -225,7 +220,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
     </span>
   </li>{swarm}</>
-  return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-quiet={quiet && !watched ? true : undefined} data-queued={queued || undefined}
+  return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined}
     onContextMenu={event => { event.preventDefault(); rowButton.current?.focus(); setMenu(rowMenuPlace(event)) }}>
     <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined} {...{ [ROVING_KEY]: `thread:${id}` }}

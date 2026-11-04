@@ -8,8 +8,6 @@ Amends ADR-0092 in one place: while this feature is on, the "N need attention" l
 
 Amended October 27, 2026: every question its provider lets the user decline now has **Skip question** (or **Skip questions**) beside **Send answer**, on the card wherever it is drawn and on the sidebar's inline question, not only an optional one. Before, a required question, which is every Claude Code question, could only be answered. A skip is its own answer, `skipped: true` on the `answer` command, never an empty answer, and only a request the adapter marked `skippable` takes it; main refuses it on any other. A host that predates it marks nothing, so its cards offer no Skip and no client sends it one. Each provider is told in its own way, and the turn goes on: Claude Code's question tool is refused with "The user skipped this question. Proceed using your own judgement.", as its own client refuses a dismissed question; Cursor's is answered `skipped`; Codex's question is answered with no answers and its form declined; Devin's is declined; Muse's input is cancelled with that sentence as its reason, which Muse tells its model as a declined answer; and OpenCode's form is closed with that sentence, which OpenCode tells its model. Grok Build's question tool has only a cancel, which Sotto sends when a thread stops, and nothing shows the turn goes on after it, so a Grok question has no Skip. Claude Code's resume dialog has none either: it is a choice of how to go on, not a question. The card does not show a second Skip when its send button already skips, and a skipped question reads "Question skipped." on its card and "You skipped *thread*'s question." in Watcher's answered line. Permission cards keep Deny and gain nothing.
 
-Amended November 4, 2026: the card takes less of the sidebar, and its rows are quieter below it (below, "November 4, 2026 amendment: the room it takes").
-
 Amended October 29, 2026: an entry no longer draws its ask or answers in place. It says only what its thread needs, and one press pops the thread's card open over the sidebar (below, "October 29, 2026 amendment: the entry says what it needs").
 
 ## Context
@@ -65,10 +63,3 @@ Zach's call, from a screenshot of an entry carrying a thirty-line command: the s
 - **The rail.** On Owl's rail (ADR-0146), while this feature is on, a waiting tile whose entry would pop a card pops the same card beside the rail, named as the entry's press is; every other tile opens its thread. The rail draws no text and no tray, so nothing else changes there.
 - **Focus.** When an entry answered in its card leaves, the focus goes on as when any entry leaves, because the card is drawn inside its entry. When a tile's card closes because its thread stopped waiting, a focus the card held goes back to the tile.
 
-## November 4, 2026 amendment: the room it takes
-
-Reviewers comparing Sotto with three other apps called Needs you the best attention signal among them, and said it took too much: at 820x560 nearly half the sidebar, with the same threads saying the same words again below it.
-
-- **The entry.** Its press is a filled control rather than an outlined one, and the entry's lines sit closer. The heading's oldest wait is read by a screen reader and no longer drawn, since the first entry is the oldest and says it.
-- **A short window.** At 640px tall or less an entry is one line: its ring, its title and its press, whose words say what it needs. Its status and wait stay in its accessible text. A failure offers Show why, whose card holds Dismiss.
-- **The row below.** A row whose thread stands in the card keeps its amber ring and leaves the words to the entry: "need is said in one place", which this ADR already asked of a closed folder's dots. Its accessible description still says it. The thread still appears twice, as decided above, and the row keeps every action.
