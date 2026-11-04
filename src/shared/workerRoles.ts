@@ -381,6 +381,28 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
   return parts.join(' ')
 }
 
+/** Words a model's name can carry that say nothing of which model it is, so a message saying one names none. */
+const GENERAL_MODEL_WORDS: ReadonlySet<string> = new Set(['auto', 'build', 'code', 'fast', 'full', 'high', 'large', 'lite', 'low', 'max', 'medium', 'mini', 'model', 'nano', 'other', 'plus', 'preview', 'pro', 'small', 'synthetic', 'test', 'thinking', 'turbo'])
+/** Text as lowercase words between spaces, whichever way it was typed or dictated, keeping the point in "6.1". */
+const spokenWords = (text: string): string => ` ${text.toLowerCase().replace(/[^\p{L}\p{N}.]+|\.(?!\p{N})/gu, ' ').trim().replace(/ +/gu, ' ')} `
+/**
+ * Whether the user's message names a model (#1202): its name, its ID, a word of its name that is its own ("Sol", "Opus"),
+ * or its provider ("have Codex review this"). The text is the user's own, from Sotto's record, never an agent's word for
+ * what the user said.
+ */
+export function messageNamesModel(text: string, model: Pick<AgentModel, 'id' | 'name' | 'providerId'>): boolean {
+  const said = spokenWords(text)
+  const says = (phrase: string): boolean => phrase.trim() !== '' && spokenWords(phrase).trim() !== '' && said.includes(spokenWords(phrase))
+  if (says(model.name) || says(parsePublicProviderEntityId(model.id)?.value ?? model.id)) return true
+  if (model.providerId && (says(model.providerId) || says(PROVIDER_LABELS[model.providerId]))) return true
+  return spokenWords(model.name).trim().split(' ').some(word => word.length >= 3 && /^\p{L}+$/u.test(word) && !GENERAL_MODEL_WORDS.has(word) && says(word))
+}
+/** What a start's receipt says when its role held against the model the call named (#1202), for the agent to pass on. */
+export function roleHeldNote(role: WorkerKind, named: string, roleModel: string): string {
+  const { name } = workerRole(role)
+  return `This call named ${named}, but the user's ${name} role starts on ${roleModel}, and the user's own newest message does not name ${named}, so this start is on ${roleModel}. The user chooses this in Settings, or by naming a model in a message.`
+}
+
 /** The roles in a line, for instructions that name them. */
 export const WORKER_KIND_LIST = WORKER_KINDS.join(', ')
 
