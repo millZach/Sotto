@@ -1,2 +1,0 @@
-b1d654df62bc8f4e821073cbefd7fc877142e8c50404d46efd295c3fde4c250a  Sotto-0.1.38-linux-x64.tar.gz
-501ee993e9ee68a6ffa129fdd619c10b963d1b368f0afea135719b6855f5cd10  sotto-bin-0.1.38-1-x86_64.pkg.tar.zst

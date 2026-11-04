@@ -1,7 +1,0 @@
-{
-  "head": "1681abdb50a75056bdf724addae5c6549c488044",
-  "started": "2026-10-15T01:10:09.780Z",
-  "command": "npm run build && npx playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts",
-  "childPid": 28276,
-  "evidenceRoot": "D:/Talk to Text Application/.zstack/perf-991-remaining/step5-app-01-captures"
-}

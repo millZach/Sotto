@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway): two desks and the merge order</title>
+<style>
+  /* Throwaway. Sample data only. Colours are Sotto's Dark and Light themes; font is the app's Figtree. Nothing here sends anything. */
+  @font-face { font-family: "Figtree"; src: url("fonts/figtree-latin.woff2") format("woff2"); font-weight: 300 900; font-display: swap; }
+  :root { --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265); --overlay: oklch(0.215 0.008 265); --message: oklch(0.205 0.014 265); --text: oklch(0.985 0.005 280); --muted: oklch(0.72 0.014 265); --border: oklch(0.305 0.02 265); --accent: oklch(0.714403 0.104089 183.092); --accent-fg: oklch(0.16 0.012 190); --accent-surface: oklch(0.32 0.05 185); --warning: oklch(0.772406 0.172798 65.367); --error: oklch(0.72 0.17 23); --scene: .32; }
+  :root[data-look="light"] { --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.955 0.006 85); --overlay: oklch(0.945 0.007 85); --message: oklch(0.955 0.006 85); --text: oklch(0.235 0.014 75); --muted: oklch(0.5 0.014 75); --border: oklch(0.86 0.012 80); --accent: oklch(0.53 0.095 186); --accent-fg: oklch(0.99 0.003 85); --accent-surface: oklch(0.88 0.04 186); --warning: oklch(0.5 0.12 65); --error: oklch(0.509494 0.208583 28.513); --scene: .3; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--canvas); color: var(--text); }
+  body { font: 15px/1.45 "Figtree", ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
+  button { font: inherit; color: inherit; }
+  .scene { position: fixed; inset: 0; margin: 0; overflow: hidden; color: var(--muted); opacity: var(--scene); font: 11px/1 ui-monospace, Menlo, Consolas, monospace; white-space: pre; pointer-events: none; }
+  .app { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
+  .strip { display: flex; align-items: center; gap: 14px; padding: 10px 16px; min-height: 52px; flex: none; }
+  .tile { width: 28px; height: 28px; border-radius: 8px; background: var(--accent-surface); display: grid; place-items: center; font: 600 10px/1 ui-monospace, Menlo, Consolas, monospace; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .seg { display: inline-flex; background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .seg button { background: transparent; border: 0; border-radius: 7px; padding: 5px 12px; color: var(--muted); }
+  .seg button[aria-selected="true"] { background: var(--accent-surface); color: var(--text); }
+  .grow { flex: 1; min-width: 0; }
+  .chip { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .needs { font-size: 14px; color: var(--muted); padding: 2px 0 8px; border-bottom: 1px solid var(--border); margin: 0 auto; width: min(1140px, calc(100% - 32px)); flex: none; }
+  .stage { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 72px; }
+  .wrap { max-width: 1140px; margin: 0 auto; background: var(--canvas); border-radius: 16px; padding: 14px; }
+  .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .head h2 { font-size: 18px; margin: 0; font-weight: 650; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .btn { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; min-height: 34px; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+  .btn.ghost { background: transparent; }
+  .btn.small { min-height: 26px; padding: 1px 8px; font-size: 13px; border-radius: 7px; }
+  .order { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
+  .order__top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .order__top strong { font-size: 14px; }
+  .order__list { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+  .order__list li { display: flex; align-items: center; gap: 7px; background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 5px 9px; font-size: 13px; min-width: 0; }
+  .order__list b { color: var(--accent); }
+  .who { color: var(--muted); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .desk { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; min-width: 0; }
+  .desk h3 { font-size: 15px; margin: 0 0 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .project { font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  .thread { padding: 7px 0; border-top: 1px solid var(--border); min-width: 0; }
+  .thread__title { display: block; overflow-wrap: anywhere; }
+  .stands { font-size: 13px; color: var(--muted); }
+  .stands i { display: inline-block; width: 7px; height: 7px; border-radius: 99px; margin-right: 6px; background: var(--muted); vertical-align: 1px; }
+  .stands.working i { background: var(--accent); } .stands.waiting i { background: var(--warning); } .stands.failed i { background: var(--error); }
+  .pr { font-size: 13px; color: var(--text); display: block; }
+  .empty { padding: 18px 6px; text-align: center; color: var(--muted); font-size: 14px; }
+  .warn { color: var(--error); }
+  .bubble { border-radius: 12px; padding: 8px 11px; margin: 0 0 3px; background: var(--message); }
+  .bubble.you { background: var(--overlay); }
+  .time { font-size: 12px; color: var(--muted); margin: 0 2px 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 0 8px 5px; }
+  td { padding: 7px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+  td.n { color: var(--accent); font-weight: 650; width: 28px; }
+  .short { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fine { color: var(--muted); font-size: 13px; margin: 12px 2px 0; }
+  .bar { position: fixed; z-index: 5; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: max-content; max-width: calc(100vw - 16px); background: oklch(0.2 0.03 300); color: #fff; border-radius: 12px; padding: 6px 10px; font-size: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+  .bar b { color: oklch(0.85 0.1 300); }
+  .bar label { display: inline-flex; gap: 5px; align-items: center; }
+  .bar select, .bar button { font: inherit; background: oklch(0.3 0.03 300); color: #fff; border: 1px solid oklch(0.45 0.03 300); border-radius: 6px; padding: 2px 5px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 760px) { .cols, .short { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<pre class="scene" id="scene" aria-hidden="true"></pre>
+<div class="app">
+  <header class="strip">
+    <div class="brand"><span class="tile" aria-hidden="true">o,o</span><span>Watcher</span></div>
+    <div class="seg" role="tablist" aria-label="Watcher's room"><button role="tab" aria-selected="false">Watcher</button><button role="tab" aria-selected="true">Teams</button></div>
+    <span class="chip">All threads 9</span><div class="grow"></div>
+  </header>
+  <p class="needs"><u>This computer</u> 2 working</p>
+  <main class="stage"><div class="wrap" id="stage"></div></main>
+</div>
+<form class="bar" id="bar" onsubmit="return false" aria-label="Prototype controls"></form>
+<script>
+const YOURS = [
+  { project: 'Sotto', title: 'Teams: two desks and the merge order', stands: 'working', prs: [{ n: 2160, t: 'Open two desks from a team link', s: 'checks passed' }] },
+  { project: 'Sotto', title: 'Markdown side panel follow-up', stands: 'waiting', prs: [{ n: 2163, t: 'Keep the panel open across threads', s: 'checks running' }] },
+  { project: 'Hollowed', title: 'Chapter 10 render pass', stands: 'idle', prs: [] },
+]
+const DRAKES = [
+  { project: 'Sotto', title: 'iPhone on the unfolded Duo', stands: 'working', prs: [{ n: 2158, t: 'One rail pill on the Duo', s: 'checks passed' }] },
+  { project: 'Sotto', title: 'Android pairing', stands: 'idle', prs: [{ n: 2161, t: 'Pair an Android phone by code', s: 'draft' }] },
+]
+const AUTO = [
+  { n: 2160, t: 'Open two desks from a team link', who: 'yours', s: 'checks passed' },
+  { n: 2158, t: 'One rail pill on the Duo', who: 'Drake', s: 'checks passed' },
+  { n: 2163, t: 'Keep the panel open across threads', who: 'yours', s: 'checks running' },
+  { n: 2161, t: 'Pair an Android phone by code', who: 'Drake', s: 'draft' },
+]
+const STAND = { working: 'Working', waiting: 'Waiting on its owner', idle: 'Idle', failed: 'Last turn failed' }
+const params = new URLSearchParams(location.search)
+const S = { desk: params.get('desk') || 'A', read: params.get('read') || 'read', order: params.get('order') || 'auto', look: params.get('look') || 'dark', mine: [...AUTO], proposed: false }
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+const threads = list => { let last = ''; return list.map(t => { const head = t.project !== last ? `<div class="project">${esc(t.project)}</div>` : ''; last = t.project; return `${head}<div class="thread"><span class="thread__title">${esc(t.title)}</span><span class="stands ${t.stands}"><i></i>${STAND[t.stands]}</span>${t.prs.map(p => `<span class="pr">#${p.n} ${esc(p.t)} <span class="muted">· ${p.s}</span></span>`).join('')}</div>` }).join('') }
+const drakeBody = (body) => S.read === 'never' ? `<div class="empty">Nothing from Drake yet.<br>Press <b>Get Drake's desk</b> to ask their computer once.</div>`
+  : S.read === 'failed' ? `<div class="empty"><span class="warn">Drake's computer did not answer.</span><br>Nothing is waiting to send. Try again when it is on.</div>` : body
+const readLine = () => S.read === 'read' ? `<span class="muted">As of 1:24 AM</span>` : ''
+function orderStrip() {
+  if (S.read !== 'read') return `<section class="order" aria-label="Merge order"><div class="order__top"><strong>Merge order</strong><span class="muted">Needs Drake's desk first. Your own, for now: #2160, #2163.</span></div></section>`
+  const list = S.order === 'auto' ? AUTO : S.mine
+  const note = S.order === 'auto' ? 'Advice, worked out here: checks passed first, then oldest. Nothing merges from this.'
+    : S.order === 'arrange' ? 'Your own order, kept on this computer. Drake does not see it. Nothing merges from this.'
+    : S.proposed ? 'Sent to Drake at 1:26 AM. It shows on their Teams tab as your suggestion. It changes nothing there.' : 'Your suggestion. Nothing goes until you send it. Nothing merges from this.'
+  const move = S.order === 'auto' ? () => '' : (i) => `<button class="btn small" data-up="${i}" aria-label="Move #${list[i].n} earlier" ${i === 0 ? 'disabled' : ''}>&larr;</button>`
+  return `<section class="order" aria-label="Merge order"><div class="order__top"><strong>Merge order</strong><span class="muted">${note}</span>${S.order === 'propose' ? `<button class="btn small" data-send>${S.proposed ? 'Send again' : 'Send to Drake'}</button>` : ''}</div>
+    <ol class="order__list">${list.map((p, i) => `<li><b>${i + 1}</b> #${p.n} <span class="who">${p.who}</span> <span class="muted">${p.s}</span>${move(i)}</li>`).join('')}</ol></section>`
+}
+function deskA() { return `${orderStrip()}<div class="cols">
+  <section class="desk" aria-label="Your desk"><h3>Yours <span class="muted">This computer, now</span></h3>${threads(YOURS)}</section>
+  <section class="desk" aria-label="Drake's desk"><h3>Drake's ${readLine()}</h3>${drakeBody(threads(DRAKES))}</section></div>` }
+function deskB() { return `${orderStrip()}<div class="cols">
+  <section class="desk" aria-label="What you asked"><h3>You asked</h3><div class="bubble you">Coordinate merge priority with Drake's Watcher so we aren't stepping on each other.</div><div class="time">1:13 AM, through Watcher</div><div class="bubble you">Give me a list of what Drake is working on for Sotto.</div><div class="time">1:23 AM, through Watcher</div></section>
+  <section class="desk" aria-label="What came back"><h3>Drake's computer said</h3><div class="bubble">One pull request here has checks passed, #2158. #2161 is a draft. Nothing here needs to go first.</div><div class="time">1:13 AM</div><div class="bubble">One thread is working: iPhone on the unfolded Duo, with #2158. Android pairing is idle, with a draft, #2161.</div><div class="time">1:23 AM</div></section></div>` }
+function deskC() {
+  const list = S.order === 'auto' ? AUTO : S.mine
+  const up = S.order === 'auto' ? () => '' : i => `<button class="btn small" data-up="${i}" aria-label="Move #${list[i].n} earlier" ${i === 0 ? 'disabled' : ''}>&larr;</button>`
+  const table = S.read === 'read' ? `<table><thead><tr><th></th><th>Pull request</th><th>Whose</th><th>Where it stands</th><th></th></tr></thead><tbody>${list.map((p, i) => `<tr><td class="n">${i + 1}</td><td>#${p.n} ${esc(p.t)}</td><td>${p.who}</td><td class="muted">${p.s}</td><td>${up(i)}</td></tr>`).join('')}</tbody></table>` : drakeBody('')
+  const line = l => l.map(t => `<div class="thread"><span class="thread__title">${esc(t.title)}</span><span class="stands ${t.stands}"><i></i>${STAND[t.stands]}</span></div>`).join('')
+  return `<section class="desk" aria-label="Merge order"><h3>Merge order <span class="muted">Advice. Nothing merges from this.</span></h3>${table}</section>
+  <div class="short"><section class="desk" aria-label="Your desk"><h3>You're on</h3>${line(YOURS)}</section><section class="desk" aria-label="Drake's desk"><h3>Drake's on ${readLine()}</h3>${drakeBody(line(DRAKES))}</section></div>` }
+function render() {
+  document.documentElement.dataset.look = S.look
+  document.getElementById('stage').innerHTML = `<div class="head"><button class="btn ghost">&larr; Teams</button><h2>You and Drake</h2><div class="grow"></div>${readLine()}<button class="btn primary" data-get>${S.read === 'read' ? 'Get it again' : "Get Drake's desk"}</button></div>
+    ${S.desk === 'B' ? deskB() : S.desk === 'C' ? deskC() : deskA()}
+    <p class="fine">Asks still go through Watcher. Drake's Teams tab lists each time you read their desk, and their left-out projects never come.</p>`
+  document.title = `PROTOTYPE: desks ${S.desk}`
+  const u = new URL(location.href); for (const k of ['desk', 'read', 'order', 'look']) u.searchParams.set(k, S[k]); history.replaceState(null, '', u)
+  const sel = (id, label, opts) => `<label>${label}<select data-k="${id}">${opts.map(([v, t]) => `<option value="${v}" ${S[id] === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`
+  document.getElementById('bar').innerHTML = `<b>PROTOTYPE, sample data</b>` + sel('desk', 'Desks', [['A', 'A Work desks'], ['B', 'B Conversation desks'], ['C', 'C Merge order first']]) + sel('read', "Drake's desk", [['read', 'Read'], ['never', 'Not asked yet'], ['failed', 'Did not answer']]) + sel('order', 'Order', [['auto', '1 Sotto works it out'], ['arrange', '2 You arrange it'], ['propose', '3 You send a suggestion']]) + sel('look', 'Look', [['dark', 'Dark'], ['light', 'Light']])
+}
+document.getElementById('bar').addEventListener('change', e => { const k = e.target.dataset.k; if (k) { S[k] = e.target.value; S.proposed = false; render() } })
+document.getElementById('stage').addEventListener('click', e => {
+  const up = e.target.closest('[data-up]'); if (up) { const i = +up.dataset.up; [S.mine[i - 1], S.mine[i]] = [S.mine[i], S.mine[i - 1]]; S.proposed = false; render(); return }
+  if (e.target.closest('[data-send]')) { S.proposed = true; render(); return }
+  if (e.target.closest('[data-get]')) { S.read = 'read'; render() }
+})
+let seed = 9137; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+const G = '.:-=+*#%'; let L = []; for (let r = 0; r < 70; r++) { let l = ''; for (let c = 0; c < 220; c++) { const x = rnd(); l += x < .012 ? '*' : x < .03 ? '.' : x < .05 ? G[Math.floor(rnd() * G.length)] : ' ' } L.push(l) }
+document.getElementById('scene').textContent = L.join('\n')
+render()
+</script>
+</body>
+</html>
