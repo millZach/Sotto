@@ -16,6 +16,8 @@ Run 41880135669 on the small iPhone gave the first pictures: [the loud count](..
 
 Run 41895334740 (job 126803529190) took `testToDoListStandsInEveryPageAndAChecksOffWithUndo` to its end on the small iPhone at `b07d80783`: the count, unrolling, the steps, a check-off, Undo, "It didn't work" and its Cancel, rolling up to the quiet count, and the icon in Settings and in a thread's bar. Its pictures showed two things no assertion reads. In a thread's bar the system's pill cut the count in half, and the roll hung 12 points under the paper with the page showing between. The next commit moves both; only a later run's pictures can show them right.
 
+The large iPhone's pictures in run 41915788994 (job 126875268623, at the accessibility-large text size) at `b8deb588f` showed what that move left. The bar's digit was whole, but the count's disc was still shaved flat about 2 points at the top. In the page heading the page's own clip at the clock's band shaved about 1 point off it. The large phone showed no roll at rest at all, at `b07d80783` as well, while the small phone showed one. Why it goes on that phone was not proved. The next commit lowers the count in both places and makes the resting roll the paper's own, as wide as the paper as on the desktop, so reduced motion keeps it too. It also ends the paper at the roll on the way, where `b8deb588f` would have let up to 12 points hang under it. Only that commit's pictures can show these right; the motion is still unread by eye.
+
 ## What was not proved
 
 - The Duo. CI's iPhones skip the Duo journeys, so the rail's tile, folded and sideways, and the swap with the sidebar button have compiled at most. Upright can only be proved by hand, as `2026-11-03-iphone-duo-thread-rail.md` says.

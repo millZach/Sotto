@@ -23,9 +23,10 @@ struct ToDoIcon: View {
                 .contentShape(Rectangle())
             }
             .modifier(CircleIfNotBar(inBar: inBar))
-            // Outside the button, since a button's own shape may clip what it draws. In a thread's bar the system's pill clips
-            // what stands above it, so the count sits down on the circle's shoulder, inside the pill.
-            .overlay(alignment: .topTrailing) { badge.offset(x: inBar ? -6 : 3, y: inBar ? 8 : -3).allowsHitTesting(false) }
+            // Outside the button, since a button's own shape may clip what it draws. A page clips what rises past the clock's
+            // band, and in a thread's bar the system's pill clips the top 4 points of what it holds, so the count stands low
+            // enough to keep its whole shape in both.
+            .overlay(alignment: .topTrailing) { badge.offset(x: inBar ? -3 : 3, y: inBar ? 11 : 0).allowsHitTesting(false) }
             .accessibilityLabel(label)
             .accessibilityHint(toDos.open ? String(localized: "Roll up the list") : String(localized: "Unroll the list"))
             .accessibilityIdentifier("to-do-icon")
@@ -78,7 +79,32 @@ struct ToDoScroll: View {
     }
 }
 
-/// Unrolls what it holds from its top edge, with the roll at the edge of what shows.
+/// The roll itself, the same while it travels and at rest on the paper's bottom edge.
+private struct ToDoRoll: View {
+    let height: CGFloat
+    var body: some View {
+        Capsule().fill(Palette.overlay)
+            .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+            .frame(height: height)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+}
+
+private struct ToDoRollTravelling: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    /// True only while the list unrolls or rolls up, when the reveal draws the roll in place of the paper.
+    var toDoRollTravelling: Bool {
+        get { self[ToDoRollTravelling.self] }
+        set { self[ToDoRollTravelling.self] = newValue }
+    }
+}
+
+/// Unrolls what it holds from its top edge, with the roll at the edge of what shows. The roll at rest is the paper's own, since
+/// the large iPhone showed none from here once the list had opened, and reduced motion has no reveal.
 private struct RollReveal: ViewModifier, Animatable {
     var progress: CGFloat
     /// The room left under the paper, which is outside what the roll travels: it stays on the paper's bottom edge.
@@ -86,24 +112,28 @@ private struct RollReveal: ViewModifier, Animatable {
     var animatableData: CGFloat { get { progress } set { progress = newValue } }
     func body(content: Content) -> some View {
         content
+            .environment(\.toDoRollTravelling, progress < 1)
             .mask(alignment: .top) {
-                GeometryReader { place in Rectangle().frame(height: place.size.height * progress) }
+                // The paper shows only down to the roll, so none of it hangs under the roll on the way.
+                GeometryReader { place in
+                    Rectangle().frame(height: progress < 1 ? (place.size.height - foot) * progress + 8 : place.size.height)
+                }
             }
             .overlay(alignment: .top) {
-                GeometryReader { place in
-                    Capsule().fill(Palette.overlay)
-                        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                        .frame(height: 24 - 8 * progress)
-                        .offset(y: max(0, (place.size.height - foot) * progress - 8))
+                if progress < 1 {
+                    GeometryReader { place in
+                        ToDoRoll(height: 24 - 8 * progress)
+                            .padding(.horizontal, Space.s2)
+                            .offset(y: max(0, (place.size.height - foot) * progress - 8))
+                    }
                 }
-                .accessibilityHidden(true)
-                .allowsHitTesting(false)
             }
     }
 }
 
 private struct ToDoSheet: View {
     @EnvironmentObject var toDos: ToDoStore
+    @Environment(\.toDoRollTravelling) private var rollTravelling
     @State private var rowsHeight: CGFloat = 0
     var body: some View {
         let count = toDos.book.left
@@ -149,6 +179,7 @@ private struct ToDoSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.raised, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.hairline, lineWidth: 1))
+        .overlay(alignment: .bottom) { if !rollTravelling { ToDoRoll(height: 16).offset(y: 8) } }
         .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
         // Over the page, as a sheet is: VoiceOver stays inside it, and its escape gesture rolls it up. It is one element
         // holding the rest, since otherwise what follows lands on everything inside and replaces each control's own name.
