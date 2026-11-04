@@ -1,5 +1,5 @@
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
-import { whyNotDynamic } from '../../shared/dynamicThreads'
+import { isDynamicThread, overseerInstructions, overseerNoteFor, whyNotDynamic } from '../../shared/dynamicThreads'
 import { withKeptMessageMetadata } from '../../shared/agents'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
@@ -859,7 +859,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
-  useWorkerRoles(roles: WorkerRoleSource): void { this.inner.useWorkerRoles?.(roles) }
+  useWorkerRoles(roles: WorkerRoleSource): void {
+    this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
+      overseer: threadId => { const thread = this.threadById(threadId); return thread && isDynamicThread(thread, this.dynamicThreads) ? overseerInstructions() : undefined },
+      overseerNote: threadId => { const thread = this.threadById(threadId); return thread && overseerNoteFor(thread, this.dynamicThreads) } })
+  }
+  /** Dynamic threads' Owl answer (ADR-0191), given once at start. */
+  private dynamicThreads = false
+  allowDynamicThreads(): void { this.dynamicThreads = true }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(this.watcherEnabled ? tools : tools.filter(tool => tool.name !== 'sotto_threads')) }
   readonly concurrentProviders: boolean
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
@@ -4675,6 +4682,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089) and where it began (#1028).
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
+      // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
+      ...(old?.dynamicSession ? { dynamicSession: old.compaction?.status === 'running' && thread.compaction?.status === 'completed' ? { ...old.dynamicSession, told: old.dynamicSession.created } : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
       ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
       ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
@@ -4704,7 +4713,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     } else {
       const nativeMessages = this.legacyMessages(merged, thread.messages)
       const retained = new Map(old?.messages.filter(message => message.watcherOwnChange || message.watcherObservedChanges).map(message => [message.id, message]) ?? [])
-      const messages = merged.kind === 'watcher' ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message =>
+      const messages = merged.kind === 'watcher' || merged.dynamic === true ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message =>
         withKeptMessageMetadata(message, retained.get(message.id) ?? this.message(merged.id, message.id))) }) : nativeMessages
       merged.messages = this.record(merged, messages, old?.historyEpoch)
       merged.summary = this.threadSummary(merged, this.storeUnavailable ? merged.messages : messages)
@@ -5324,6 +5333,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (dynamic) this.touched(thread).dynamic = true
       else delete this.touched(thread).dynamic
       this.dirty = true; await this.flush(); this.publish()
+      await this.inner.threadInstructionsChanged?.(threadId)
     }
     return this.workspaceSnapshot()
   }
@@ -5824,12 +5834,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         this.turnStarts.set(thread.id, turnStart)
       }
       if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks, command.hiddenWakeUp === true)
-      const dispatched = command.type === 'send' ? withoutWakeUp(preparedSkills ? { ...command, skills: preparedSkills } : command)
+      // A session keeps the instructions it was created with, so a change since then goes as a note with this message (ADR-0191).
+      const overseerNote = command.type === 'send' && !firstSend ? overseerNoteFor(thread, this.dynamicThreads) : undefined
+      const dispatched = command.type === 'send' ? withoutWakeUp({ ...preparedSkills ? { ...command, skills: preparedSkills } : command, ...overseerNote ? { overseerNote } : {} })
         : command.type === 'configure-thread' ? this.hostRead(command) : command
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       watcherGuard?.()
       const result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(dispatched, watcherGuard) : this.inner.execute(dispatched))
       turnBegan = result.accepted
+      if (command.type === 'send' && result.accepted && (firstSend || overseerNote)) this.dynamicSessionTold(thread.id, firstSend)
       // A continued thread's first message begins with its handover; its branch is named from the user's words (ADR-0089).
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, continuedPromptWords(thread, command.text))
       if (command.type === 'configure-thread') {
@@ -5845,6 +5858,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       releaseSend?.()
       if (inspectAfter) this.inspectAfterSend(thread.id)
     }
+  }
+  /** What a thread's provider session now knows of Dynamic: from its creation, or the note that just went with a send. */
+  private dynamicSessionTold(threadId: string, created: boolean): void {
+    const thread = this.thread(threadId), told = isDynamicThread(thread, this.dynamicThreads)
+    if (created && !told) return
+    this.touched(thread).dynamicSession = { created: created ? told : thread.dynamicSession?.created ?? false, told }
+    this.dirty = true; this.writeSoon()
   }
   private requireCreation(provider?: ProviderId): void {
     const status = this.state.snapshot.providers?.find(item => item.id === provider)

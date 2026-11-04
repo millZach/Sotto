@@ -2,8 +2,11 @@ import { posix, win32 } from 'node:path'
 import { isVisualMessage, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { WatcherOwnChange } from '../../shared/watcherChanges'
+import { OVERSEER_REASON_PREFIX } from '../../shared/dynamicThreads'
 
 const REASON_PREFIX = 'Watcher change reason:'
+/** The line a reply gives its reason on: Watcher's, or a Dynamic thread's overseer's (ADR-0191). */
+const reasonPrefixOf = (thread: Pick<AgentThread, 'kind'>): string => isWatcherConversation(thread) ? REASON_PREFIX : OVERSEER_REASON_PREFIX
 const REASON_MAX = 2_000
 
 /**
@@ -11,7 +14,7 @@ const REASON_MAX = 2_000
  * exact words is that line even when it misses the space after the colon or runs long: its reason is trimmed, and cut
  * to 2,000 characters with an ellipsis, rather than dropped. An empty one gives no reason. Two such lines give none.
  */
-function reasonLine(lines: readonly string[]): { index: number; reason: string | null } | null {
+function reasonLine(lines: readonly string[], prefix: string): { index: number; reason: string | null } | null {
   const found: number[] = []
   let fence: { character: string; length: number } | undefined
   for (const [index, line] of lines.entries()) {
@@ -21,16 +24,16 @@ function reasonLine(lines: readonly string[]): { index: number; reason: string |
       else if (marker[0] === fence.character && marker.length >= fence.length) fence = undefined
       continue
     }
-    if (!fence && line.startsWith(REASON_PREFIX)) found.push(index)
+    if (!fence && line.startsWith(prefix)) found.push(index)
   }
   if (found.length !== 1) return null
-  const reason = lines[found[0]!]!.slice(REASON_PREFIX.length).trim()
+  const reason = lines[found[0]!]!.slice(prefix.length).trim()
   return { index: found[0]!, reason: !reason ? null : reason.length <= REASON_MAX ? reason : `${reason.slice(0, REASON_MAX - 1).trimEnd()}…` }
 }
 
 /** A defined reply line, never an interpretation of narration or tool output. */
-function changeReason(text: string): string | null {
-  return reasonLine(text.split(/\r\n|\n|\r/u))?.reason ?? null
+function changeReason(text: string, prefix: string): string | null {
+  return reasonLine(text.split(/\r\n|\n|\r/u), prefix)?.reason ?? null
 }
 
 /**
@@ -38,13 +41,13 @@ function changeReason(text: string): string | null {
  * comes off, with one blank line beside it when it stood in a paragraph of its own; every other character, line break
  * and fenced example stays. A reply with no own-change reason, or nothing else in it, is shown as it was written.
  */
-export function watcherReplyAsShown(message: AgentMessage): string {
+export function watcherReplyAsShown(message: AgentMessage, prefix: string = REASON_PREFIX): string {
   const mark = message.role === 'assistant' && message.watcherOwnChange?.replyMessageId === message.id ? message.watcherOwnChange : undefined
-  if (!mark || !message.text.includes(REASON_PREFIX)) return message.text
+  if (!mark || !message.text.includes(prefix)) return message.text
   // Even entries are lines, odd entries the break after each, so the reply's own line endings survive.
   const parts = message.text.split(/(\r\n|\n|\r)/u)
   const lines = parts.filter((_, index) => index % 2 === 0), breaks = parts.filter((_, index) => index % 2 === 1)
-  const found = reasonLine(lines)
+  const found = reasonLine(lines, prefix)
   if (!found || found.reason !== mark.reason) return message.text
   const blank = (index: number): boolean => lines[index]!.trim() === ''
   let start = found.index, end = found.index + 1
@@ -58,14 +61,16 @@ export function watcherReplyAsShown(message: AgentMessage): string {
 }
 
 const shownReplies = new WeakMap<AgentMessage, { readonly text: string; readonly reason: string | null | undefined; readonly shown: AgentMessage }>()
-const isWatcherConversation = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
-const carriesReason = (message: AgentMessage): boolean => Boolean(message.role === 'assistant' && message.watcherOwnChange
-  && message.text.includes(REASON_PREFIX))
-function shownReply(message: AgentMessage): AgentMessage {
+function isWatcherConversation(thread: Pick<AgentThread, 'kind'>): boolean { return thread.kind === 'watcher' || thread.kind === 'watcher-history' }
+/** A conversation whose replies can give an own-change reason: Watcher's, or a Dynamic thread's. */
+const givesReasons = (thread: AgentThread): boolean => isWatcherConversation(thread) || thread.dynamic === true
+const carriesReason = (message: AgentMessage, prefix: string): boolean => Boolean(message.role === 'assistant' && message.watcherOwnChange
+  && message.text.includes(prefix))
+function shownReply(message: AgentMessage, prefix: string): AgentMessage {
   const cached = shownReplies.get(message)
   const reason = message.watcherOwnChange?.reason
   if (cached?.text === message.text && cached.reason === reason) return cached.shown
-  const text = watcherReplyAsShown(message)
+  const text = watcherReplyAsShown(message, prefix)
   const shown = text === message.text ? message : { ...message, text }
   shownReplies.set(message, { text: message.text, reason, shown })
   return shown
@@ -77,9 +82,13 @@ function shownReply(message: AgentMessage): AgentMessage {
  * Taking it off again is a no-op, and the mark keeps the reason, so the own-change line is unchanged.
  */
 export function watcherRepliesAsShown(snapshot: AgentHostSnapshot): AgentHostSnapshot {
-  if (!snapshot.threads.some(thread => isWatcherConversation(thread) && thread.messages.some(carriesReason))) return snapshot
-  return { ...snapshot, threads: snapshot.threads.map(thread => isWatcherConversation(thread) && thread.messages.some(carriesReason)
-    ? { ...thread, messages: thread.messages.map(message => carriesReason(message) ? shownReply(message) : message) } : thread) }
+  const carrying = (thread: AgentThread): boolean => givesReasons(thread) && thread.messages.some(message => carriesReason(message, reasonPrefixOf(thread)))
+  if (!snapshot.threads.some(carrying)) return snapshot
+  return { ...snapshot, threads: snapshot.threads.map(thread => {
+    if (!carrying(thread)) return thread
+    const prefix = reasonPrefixOf(thread)
+    return { ...thread, messages: thread.messages.map(message => carriesReason(message, prefix) ? shownReply(message, prefix) : message) }
+  }) }
 }
 
 /** Compare equivalent provider paths without changing the spelling the provider reported. */
@@ -197,7 +206,7 @@ export function watcherOwnChanges(thread: AgentThread | undefined): WatcherOwnCh
     const paths = [...changed.values()]
     // A reply shown without its reason line still has the reason its mark read from the line.
     marks.set(reply.id, { replyMessageId: reply.id, turnId, files: paths, fileCount: paths.length,
-      reason: changeReason(reply.text) ?? (previous?.turnId === turnId ? previous.reason : null), source: 'provider-file-change' })
+      reason: changeReason(reply.text, reasonPrefixOf(thread)) ?? (previous?.turnId === turnId ? previous.reason : null), source: 'provider-file-change' })
   }
   return messages.flatMap(message => { const mark = marks.get(message.id); return mark ? [mark] : [] })
 }

@@ -3,6 +3,7 @@
 // a restart keep it. With the Owl feature off, nothing sets it and a saved mark stays whole.
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
+import { OVERSEER_NOTE_OFF, overseerNoteOn } from '../../src/shared/dynamicThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
@@ -12,6 +13,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 async function fixture(enabled = true) {
   const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
   cleanups.push(workspace.remove)
+  if (enabled) workspace.host.allowDynamicThreads()
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => true, watcherEnabled: false, dynamicThreadsEnabled: enabled } })
   cleanups.push(async () => { f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -40,6 +42,55 @@ it('sets and clears the mark on a thread at rest, asking the provider nothing', 
   expect(f.mark(id)).toBe(true)
   expect((await f.set(id, false)).error).toBeNull()
   expect(f.mark(id)).toBeUndefined()
+})
+
+it('sends no note with a first message, since the session starts on the overseer\'s instructions, and one note after a change', async () => {
+  const f = await fixture(), id = await f.thread('claude')
+  const sends = () => f.workspace.adapters.claude.commands.filter(command => command.type === 'send').map(command => (command as { overseerNote?: string }).overseerNote)
+  const send = async () => {
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
+    const binding = f.workspace.registry.byThread(id)!
+    const held = f.workspace.adapters.claude.state.threads.find(thread => thread.id === binding.sessionId)!
+    held.status = 'idle'; f.workspace.adapters.claude.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'claude' })
+  }
+  expect((await f.set(id, true)).error).toBeNull()
+  await send()
+  expect(sends()).toEqual([undefined])
+  expect(f.control.shell().host.threads.find(item => item.id === id)?.dynamicSession).toEqual({ created: true, told: true })
+  await send()
+  expect(sends()).toEqual([undefined, undefined])
+  // Turned off: the next message says so, once.
+  expect((await f.set(id, false)).error).toBeNull()
+  await send()
+  expect(sends().at(-1)).toBe(OVERSEER_NOTE_OFF)
+  expect(f.control.shell().host.threads.find(item => item.id === id)?.dynamicSession).toEqual({ created: true, told: false })
+  await send()
+  expect(sends().at(-1)).toBeUndefined()
+  // On and off again before a message goes: it knows where it stands, so nothing is owed.
+  expect((await f.set(id, true)).error).toBeNull()
+  expect((await f.set(id, false)).error).toBeNull()
+  await send()
+  expect(sends().at(-1)).toBeUndefined()
+  // On again: the note carries the instructions.
+  expect((await f.set(id, true)).error).toBeNull()
+  await send()
+  expect(sends().at(-1)).toBe(overseerNoteOn())
+})
+
+it('tells a thread that began ordinary by a note when it turns Dynamic later', async () => {
+  const f = await fixture(), id = await f.thread('codex')
+  const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send').map(command => (command as { overseerNote?: string }).overseerNote)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
+  expect(sends()).toEqual([undefined])
+  expect(f.control.shell().host.threads.find(item => item.id === id)?.dynamicSession).toBeUndefined()
+  const binding = f.workspace.registry.byThread(id)!
+  f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!.status = 'idle'; f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect((await f.set(id, true)).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
+  expect(sends().at(-1)).toBe(overseerNoteOn())
+  expect(f.control.shell().host.threads.find(item => item.id === id)?.dynamicSession).toEqual({ created: false, told: true })
 })
 
 it('refuses a provider that cannot oversee yet, in plain words, and sets nothing', async () => {

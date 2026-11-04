@@ -16,6 +16,30 @@ const thread = (): AgentThread => ({ id: 'watcher', projectId: 'p', title: 'Watc
 const change = (id = 'change', turnId = 'user', paths = ['src/a.ts']): AgentActivity => ({ id, turnId, sequence: 0,
   afterMessageId: 'user', kind: 'file-change', title: 'File changes', status: 'completed', changes: paths.map(path => ({ path, kind: 'edit' })) })
 
+describe('A Dynamic thread\'s overseer (ADR-0191)', () => {
+  const overseer = (text: string): AgentThread => ({ ...thread(), id: 'overseer', kind: 'project', dynamic: true, messages: [message('user', 'user'), message('reply', 'assistant', text)], activities: [change()] })
+  it('marks a reply in which it changed files itself, with the reason on its own line', () => {
+    const [mark] = watcherOwnChanges(overseer('I changed it.\n\nOverseer change reason: one line was quicker.'))
+    expect(mark).toMatchObject({ replyMessageId: 'reply', fileCount: 1, reason: 'one line was quicker.' })
+  })
+  it('gives no reason for one the reply did not give, and reads no Watcher line as its reason', () => {
+    expect(watcherOwnChanges(overseer('I changed it.'))[0]).toMatchObject({ reason: null })
+    expect(watcherOwnChanges(overseer('Watcher change reason: not mine.'))[0]).toMatchObject({ reason: null })
+  })
+  it('takes the reason line off the reply as it is shown, as the mark already says it', () => {
+    const t = overseer('I changed it.\n\nOverseer change reason: one line was quicker.')
+    const marked = { ...t, messages: annotateWatcherOwnChanges(t) }
+    const shown = watcherRepliesAsShown({ threads: [marked] } as unknown as AgentHostSnapshot).threads[0]!.messages.at(-1)!
+    expect(shown.text).toBe('I changed it.')
+    expect(shown.watcherOwnChange?.reason).toBe('one line was quicker.')
+  })
+  it('leaves an ordinary thread\'s reply as it was written', () => {
+    const t = { ...overseer('Overseer change reason: words of its own.'), dynamic: undefined }
+    const marked = { ...t, messages: t.messages.map(item => item.id === 'reply' ? { ...item, watcherOwnChange: { replyMessageId: 'reply', turnId: 'user', fileCount: 1, files: [], reason: 'words of its own.', source: 'provider-file-change' } } : item) } as AgentThread
+    expect(watcherRepliesAsShown({ threads: [marked] } as unknown as AgentHostSnapshot).threads[0]!.messages.at(-1)!.text).toBe('Overseer change reason: words of its own.')
+  })
+})
+
 describe('Watcher own changes', () => {
   it('has a watched thread end its turn on a pushed pull request and Watcher act on its checks news', () => {
     expect(WATCHER_PULL_REQUEST_NEWS_PROMPT).toContain('A watched thread that pushed to a pull request ends its turn instead of watching CI itself')

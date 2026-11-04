@@ -66,6 +66,8 @@ const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cu
 /** The source key of Watcher's request note in a turn's `additionalContext` (experimental; codex-cli 0.162.1's schema). */
 const WATCHER_REQUEST_CONTEXT = 'sotto_watcher_request'
 const WATCHER_NEWS_CONTEXT = 'sotto_watcher_news'
+/** The source key of an overseer note in a turn's `additionalContext` (ADR-0191). */
+const OVERSEER_NOTE_CONTEXT = 'sotto_overseer_note'
 const clientInfo = { clientInfo: { name: 'sotto', title: 'Sotto threads', version: '1.0' }, capabilities: { experimentalApi: true } }
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
 // Codex's previous policy is auto-accept-edits; preserve it for old aliases and
@@ -389,6 +391,8 @@ export class CodexAppServerHost implements AgentHost {
   private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<LaunchRoles> {
     this.roleModes.delete(id)
     if (!this.workerRoles || this.watcherProfiles.has(id)) return { instructions: undefined, widest: undefined }
+    const overseer = this.workerRoles.overseer?.(id)
+    if (overseer) return { instructions: overseer, widest: undefined }
     const table = this.workerRoles.table()
     const written = codexTakesRoles(this.state.version) ? await this.roleFiles.write(table, mode, this.state.models) : undefined
     if (written) config.agents = written.agents
@@ -587,6 +591,9 @@ export class CodexAppServerHost implements AgentHost {
    * tail stays where it is, because reading it from the start again would report every past native message as
    * a fresh takeover.
    */
+  async threadInstructionsChanged(id: string): Promise<void> {
+    if (!this.busy(id)) this.stopSession(id)
+  }
   private stopSession(id: string): void {
     if (this.live.delete(id)) this.emit()
     this.log.release(id)
@@ -2112,7 +2119,8 @@ export class CodexAppServerHost implements AgentHost {
                 ...((command.watcherRequestNote || command.watcherNews) && this.watcherProfiles.has(id)
                   ? { additionalContext: command.watcherRequestNote
                     ? { [WATCHER_REQUEST_CONTEXT]: { value: command.watcherRequestNote, kind: 'application' } }
-                    : { [WATCHER_NEWS_CONTEXT]: { value: command.watcherNews, kind: 'application' } } } : {}) }, value => {
+                    : { [WATCHER_NEWS_CONTEXT]: { value: command.watcherNews, kind: 'application' } } }
+                  : command.overseerNote ? { additionalContext: { [OVERSEER_NOTE_CONTEXT]: { value: command.overseerNote, kind: 'application' } } } : {}) }, value => {
                 const { turn } = turnResponse.parse(value)
                 origin.turnId = turn.id
                 if (this.usageEnabled) this.usageTurnStarts.set(JSON.stringify([id, turn.id]), origin.createdAt)
