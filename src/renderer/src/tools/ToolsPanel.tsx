@@ -480,7 +480,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} machine={hostName} />
   // A paired host pushes no change events: the Changes bridge for its thread asks it on a timer while Changes shows it.
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesFor} platform={platform} onStatus={showStatus}
-    onOpenFile={path => { store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
+    onOpenFile={path => { store.closeLinkedFile(thread.id); store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={filesFor} platform={platform} onPathAction={pathAction} linkedFile={linkedFile} host={hostName}
     onCloseLinkedFile={() => { store.closeLinkedFile(thread.id); focusLinkOpener(() => document.getElementById('tools-tab-files')?.focus()) }} />
 

@@ -214,7 +214,7 @@ export function BesideLinkedFile({ file, host, waiting, onFocus }: {
   }, [])
   return <section id={BESIDE_FILE_ID} className="thread-pane watcher-beside" data-region="pane" data-under-controls="" role="region" aria-label={t`Markdown file`}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}>
-    <LinkedFilePanel key={file.path} file={file} host={host} backTo={waiting} onClose={close} />
+    <LinkedFilePanel key={`${file.threadId}:${file.path}`} file={file} host={host} backTo={waiting} onClose={close} />
   </section>
 }
 

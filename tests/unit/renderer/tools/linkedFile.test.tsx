@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LinkedFilePanel } from '../../../../src/renderer/src/tools/LinkedFilePanel'
+import { BesideLinkedFile } from '../../../../src/renderer/src/watcher/WatcherBeside'
 import { focusLinkOpener, linkedFileThread, rememberLinkOpener } from '../../../../src/renderer/src/tools/linkedFile'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { threadLinkRouter } from '../../../../src/renderer/src/tools/webLinks'
@@ -96,6 +97,20 @@ describe('the linked file panel', () => {
     expect(await screen.findByRole('heading', { name: 'Later' })).toBeInTheDocument()
     await act(async () => { first(ready); await Promise.resolve() })
     expect(screen.queryByRole('heading', { name: 'The plan' })).toBeNull()
+  })
+})
+
+describe('the linked file beside Watcher', () => {
+  it('shows Loading, not the file from before, while the same path loads from another thread', async () => {
+    const previewLink = vi.fn().mockImplementationOnce(async () => ready).mockImplementation(() => new Promise(() => undefined))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: bridge({ previewLink }) }
+    const beside = (threadId: string): React.ReactElement => <BesideLinkedFile file={{ threadId, path: 'README.md', revision: 1 }} host={undefined} waiting={undefined} onFocus={() => undefined} />
+    const { rerender } = render(beside('watcher'))
+    expect(await screen.findByRole('heading', { name: 'The plan' })).toBeInTheDocument()
+    rerender(beside('worker'))
+    await waitFor(() => expect(previewLink).toHaveBeenLastCalledWith({ threadId: 'worker', path: 'README.md' }))
+    expect(screen.queryByRole('heading', { name: 'The plan' })).toBeNull()
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
   })
 })
 
