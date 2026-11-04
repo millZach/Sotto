@@ -461,24 +461,6 @@ private struct WatcherTail: Equatable {
     let followups: [WatcherPage.Followup]
 }
 
-/// How far the page's ground fades in under the status bar: clear at the page's top, where Watcher's hero meets the
-/// status bar, and whole once the page has moved 24 points, as on a tab's page (`SheetPage`). Published to the fade
-/// alone, so the conversation never redraws for it.
-private final class WatcherTopFade: ObservableObject {
-    @Published private(set) var amount: CGFloat = 0
-    /// `travelled` is how far the page has moved up from its top.
-    func moved(_ travelled: CGFloat) {
-        let next = min(1, max(0, travelled / 24))
-        if next != amount { amount = next }
-    }
-}
-
-/// The page's ground under the status bar, as much of it as the page's travel calls for.
-private struct WatcherStatusBarFade: View {
-    @ObservedObject var fade: WatcherTopFade
-    var body: some View { StatusBarFade().opacity(fade.amount) }
-}
-
 private struct WatcherConversationPane: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -496,7 +478,7 @@ private struct WatcherConversationPane: View {
     /// the top.
     @State private var visible: CGFloat = 0
     /// How far the page's ground fades in under the status bar, held here without watching it: only the fade redraws.
-    @State private var topFade = WatcherTopFade()
+    @State private var topFade = TopFade()
     /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
     /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
@@ -647,7 +629,7 @@ private struct WatcherConversationPane: View {
             .onChange(of: toTop) { _, _ in toHero(proxy) }
         }
         // Where the page meets the status bar, its own ground fades in once it moves, as on a tab's page: no band.
-        .overlay(alignment: .top) { WatcherStatusBarFade(fade: topFade) }
+        .overlay(alignment: .top) { TopFadeView(fade: topFade) }
         .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .watcher(hostID: hostID)) }
     }
 
