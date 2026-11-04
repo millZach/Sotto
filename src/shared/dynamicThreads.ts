@@ -21,8 +21,9 @@ export const workersAtOnceSchema = z.number().int().min(1).max(WORKERS_AT_ONCE_M
  * the user has seen it: the first time they turn Dynamic on is when it is made, so a provider connected later never joins
  * a list they already agreed to.
  */
+const allowedProvidersSchema = z.array(providerIdSchema).max(providerIdSchema.options.length)
 export const dynamicThreadSettingsSchema = z.object({
-  providers: z.array(providerIdSchema).max(providerIdSchema.options.length).optional(),
+  providers: allowedProvidersSchema.optional(),
   highestEffort: dynamicEffortSchema,
   workersAtOnce: workersAtOnceSchema,
 }).strict()
@@ -32,7 +33,7 @@ export const DEFAULT_DYNAMIC_THREADS: DynamicThreadSettings = { highestEffort: D
 /** Read one field at a time, so a damaged value costs only itself. A damaged list is no list, so it is asked for again. */
 export function parseDynamicThreadSettings(input: unknown): DynamicThreadSettings {
   const saved = input !== null && typeof input === 'object' ? input as Record<string, unknown> : {}
-  const providers = z.array(providerIdSchema).max(providerIdSchema.options.length).safeParse(saved.providers)
+  const providers = allowedProvidersSchema.safeParse(saved.providers)
   const highestEffort = dynamicEffortSchema.safeParse(saved.highestEffort)
   const workersAtOnce = workersAtOnceSchema.safeParse(saved.workersAtOnce)
   return { ...providers.success ? { providers: [...new Set(providers.data)] } : {},
