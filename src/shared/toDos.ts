@@ -57,7 +57,9 @@ export const toDoSchema = z.object({
   addedAt: z.string().min(1).max(40),
 }).strict()
 export type ToDo = z.infer<typeof toDoSchema>
-export const toDoListSchema = z.array(toDoSchema).max(TO_DOS_MAX + 256)
+/** The most prototypes waiting for review one computer lists as to-dos, past its saved ones. */
+export const TO_DOS_MADE_MAX = 256
+export const toDoListSchema = z.array(toDoSchema).max(TO_DOS_MAX + TO_DOS_MADE_MAX)
 
 /** A press on one computer's list. `didNotWork` carries the user's own words for the thread that waits on it. */
 export const toDoRequestSchema = z.discriminatedUnion('kind', [

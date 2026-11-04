@@ -57,6 +57,7 @@
 .to-do-row__link:hover { text-decoration: underline; }
 .to-do-row__link[data-kind='thread'] { color: var(--tt-text-2); }
 .to-do-row__waits { color: var(--tt-warning-text); }
+.to-do-row__pages { margin-top: 8px; }
 .to-do-row__steps { margin: 8px 0 2px; padding: 8px 10px 8px 30px; border-radius: var(--tt-radius-inset); background: var(--tt-canvas); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
 .to-do-row__steps > li { padding: 2px 0; }
 .to-do-row__steps > li::marker { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }

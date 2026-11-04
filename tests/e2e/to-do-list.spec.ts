@@ -8,7 +8,7 @@
  *
  * With `SOTTO_E2E_EVIDENCE=publish` the screenshots go to artifacts/to-do-list/ for the verification note.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
@@ -179,6 +179,57 @@ test('reduced motion fades the list in place', async () => {
     expect(properties).toBe('opacity')
     await page.keyboard.press('Escape')
   } finally { await close(launched) }
+})
+
+test('a prototype waiting for review is on the list, and opening its page takes it off (ADR-0188, decision 10)', async () => {
+  test.setTimeout(120_000)
+  const previous = process.env['SOTTO_OWL_FEATURES']
+  process.env['SOTTO_OWL_FEATURES'] = 'to-do-list=1'
+  const launched = await launchSotto().finally(() => { if (previous === undefined) delete process.env['SOTTO_OWL_FEATURES']; else process.env['SOTTO_OWL_FEATURES'] = previous })
+  const { page, app, userData } = launched
+  try {
+    await app.evaluate(({ shell }) => {
+      const state = globalThis as unknown as { pagesOpened: string[] }
+      state.pagesOpened = []
+      shell.openPath = async path => { state.pagesOpened.push(path); return '' }
+    })
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, defaultModelId: 'claude:test' } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+    })
+    const folder = join(userData, 'prototype-project')
+    await mkdir(join(folder, 'docs'), { recursive: true })
+    await writeFile(join(folder, 'docs', 'greeting-prototype.html'), '<!doctype html><h1>Hello</h1>')
+    const threadId = await page.evaluate(async folder => {
+      const agents = window.sotto!.agents!
+      let state = await agents.command({ type: 'create-project', title: 'Greeting', path: folder, useExisting: true })
+      const project = state.host.projects.find(item => item.title === 'Greeting')!
+      state = await agents.command({ type: 'create-thread', title: 'Greeting restyle', projectId: project.id, modelId: 'claude:test' })
+      const id = state.host.threads.find(item => item.title === 'Greeting restyle')!.id
+      await agents.command({ type: 'manual-send', threadId: id, text: 'Make a prototype first.' })
+      return id
+    }, folder)
+    await page.reload()
+    await openThreads(page)
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, status: 'idle', text: 'The prototype is at docs/greeting-prototype.html.' }), threadId)
+
+    await expect(page.locator('.to-do__badge')).toHaveText('1')
+    await expect(page.locator('.to-do__badge')).toHaveAttribute('data-loud')
+    await icon(page).click()
+    await expect(page.getByText('Review the prototype')).toBeVisible()
+    await expect(scroll(page).getByRole('button', { name: /^Open the thread / })).toBeVisible()
+    await expect(scroll(page).getByRole('button', { name: 'It didn\'t work' })).toHaveCount(0)
+    await expect(page.locator('.to-do__badge')).not.toHaveAttribute('data-loud')
+    await shot(page, 'prototype-dark')
+    await scroll(page).getByRole('link', { name: 'Open the prototype, greeting-prototype.html', exact: true }).click()
+    await expect.poll(() => app.evaluate(() => (globalThis as unknown as { pagesOpened: string[] }).pagesOpened.length)).toBe(1)
+    // Opening clears the mark, which takes the to-do off, and the last item going rolls the list up.
+    await expect(page.locator('.to-do__badge')).toHaveCount(0)
+    await expect(scroll(page)).toHaveCount(0)
+    await expect(page.locator('.prototype-ready')).toHaveCount(0)
+
+  } finally { await closeSotto(launched) }
 })
 
 test('stable shows nothing of it, and keeps its saved list whole', async () => {

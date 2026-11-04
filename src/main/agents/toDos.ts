@@ -3,10 +3,13 @@ import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { TO_DOS_MAX, toDoAddSchema, toDoListSchema, type ToDo, type ToDoAddInput, type ToDoRequest } from '../../shared/toDos'
+import { TO_DOS_MADE_MAX, TO_DOS_MAX, toDoAddSchema, toDoListSchema, type ToDo, type ToDoAddInput, type ToDoRequest } from '../../shared/toDos'
 
 const FILE = 'to-dos.json'
-const savedSchema = z.object({ items: toDoListSchema }).strict()
+// `madeSeen`: which of the to-dos Sotto makes have been seen, by ID alone, so opening the list quiets them across a restart.
+const savedSchema = z.object({ items: toDoListSchema, madeSeen: z.array(z.string().min(1).max(64)).max(TO_DOS_MADE_MAX).default([]) }).strict()
+/** How long a saved list that could not be read waits before it is read again. */
+const READ_AGAIN_MS = 30_000
 type Saved = z.infer<typeof savedSchema>
 
 /** Why a press or an add changed nothing, in words the caller can act on. */
@@ -22,6 +25,12 @@ export interface ToDoStoreOptions {
   readonly madeItems?: () => readonly ToDo[]
   /** Its to-do was checked off: the mark is let go. */
   readonly madeItemChecked?: (id: string) => boolean
+  /** The list was opened: what it made is new no longer. True when that changed anything. */
+  readonly madeItemsSeen?: () => boolean
+  /** Which of what it made have been seen, to save, and what a restart read back. */
+  readonly madeSeenIds?: () => readonly string[]
+  readonly restoreMadeSeen?: (ids: readonly string[]) => void
+  readonly readAgainMs?: number
   readonly clock?: () => number
 }
 
@@ -41,11 +50,20 @@ export class ToDoStore {
   private shown: { items: readonly ToDo[]; made: readonly ToDo[]; view: readonly ToDo[] } | undefined
   constructor(private readonly options: ToDoStoreOptions) {
     this.clock = options.clock ?? Date.now
-    this.store = new AtomicJsonStore(join(options.directory, FILE), input => savedSchema.parse(input), () => ({ items: [] }))
+    this.store = new AtomicJsonStore(join(options.directory, FILE), input => savedSchema.parse(input), () => ({ items: [], madeSeen: [] }))
+    this.unread = options.historyEnabled()
     void this.inTurn(async () => {
-      if (options.historyEnabled()) { this.items = (await this.store.read()).items; this.changed() } else await this.removeSaved()
-    }).catch(() => { this.unread = true })
+      if (options.historyEnabled()) await this.ensureRead()
+      else await this.removeSaved()
+    }).catch(() => { this.readAgain() })
   }
+  /** A saved list that could not be read is read again by itself, since nothing shows it for a press to ask. */
+  private readAgain(): void {
+    const timer = setTimeout(() => { void this.inTurn(() => this.ensureRead()).catch(() => { this.readAgain() }) }, this.options.readAgainMs ?? READ_AGAIN_MS)
+    timer.unref?.()
+  }
+  /** The saved list has not been read, or could not be, so what `view` shows is no sign of what is saved: no client is shown it yet. */
+  get notRead(): boolean { return this.unread }
   /** Every to-do this computer holds, the oldest first, with the prototypes waiting for review after them. */
   view(): readonly ToDo[] {
     const made = this.options.madeItems?.() ?? NONE, shown = this.shown
@@ -83,7 +101,11 @@ export class ToDoStore {
       })
     }
     if (request.kind === 'seen') {
-      return this.change(items => ({ items: items.some(item => !item.seen) ? items.map(item => item.seen ? item : { ...item, seen: true }) : items, result: undefined }))
+      return this.inTurn(async () => {
+        await this.ensureRead()
+        const made = this.options.madeItemsSeen?.() === true
+        if (made || this.items.some(item => !item.seen)) await this.write(this.items.map(item => item.seen ? item : { ...item, seen: true }))
+      })
     }
     return this.check(request.id, request.didNotWork)
   }
@@ -113,17 +135,23 @@ export class ToDoStore {
   /** Keep local history changed: turned off, nothing stays on disk; turned on, what is held now is saved. */
   privacyChanged(): Promise<void> {
     return this.inTurn(async () => {
-      if (this.options.historyEnabled()) await this.store.write({ items: [...this.items] })
+      if (this.options.historyEnabled()) await this.store.write(this.toSave(this.items))
       else await this.removeSaved()
     })
   }
+  private toSave(items: readonly ToDo[]): Saved { return { items: [...items], madeSeen: [...this.options.madeSeenIds?.() ?? []] } }
   private async ensureRead(): Promise<void> {
     if (!this.unread) return
-    if (this.options.historyEnabled()) this.items = (await this.store.read()).items
+    if (this.options.historyEnabled()) {
+      const saved = await this.store.read()
+      this.items = saved.items
+      this.options.restoreMadeSeen?.(saved.madeSeen)
+    }
     this.unread = false
+    this.changed()
   }
   private async write(items: readonly ToDo[]): Promise<void> {
-    if (this.options.historyEnabled()) await this.store.write({ items: [...items] })
+    if (this.options.historyEnabled()) await this.store.write(this.toSave(items))
     else await this.removeSaved()
     this.items = items
     this.changed()

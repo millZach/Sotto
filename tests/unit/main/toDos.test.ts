@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -84,6 +84,54 @@ describe('A computer keeps its own to-dos', () => {
     await store.drain()
     expect(await readdir(directory)).not.toContain('to-dos.json')
     expect(store.view()).toHaveLength(2)
+  })
+})
+
+describe('A saved list that could not be read', () => {
+  test('stands for nothing until it is read again by itself, and tells everyone when it is', async () => {
+    const { directory, make } = await setup()
+    const first = make()
+    await first.add({ title: 'Saved' }, 'watcher')
+    await first.drain()
+    const read = vi.spyOn(AtomicJsonStore.prototype, 'read').mockRejectedValueOnce(new Error('The disk is busy.'))
+    const store = new ToDoStore({ directory, historyEnabled: () => true, told: async () => undefined, readAgainMs: 5 })
+    const heard = vi.fn()
+    store.subscribe(heard)
+    await store.drain()
+    expect(store.notRead).toBe(true)
+    expect(store.view()).toEqual([])
+    await vi.waitFor(() => { expect(store.notRead).toBe(false) })
+    read.mockRestore()
+    expect(heard).toHaveBeenCalled()
+    expect(store.view().map(item => item.title)).toEqual(['Saved'])
+  })
+  test('is not read at all with Keep local history off, so it stands for what is held', async () => {
+    const { store } = await setup(false)
+    expect(store.notRead).toBe(false)
+    await store.drain()
+    expect(store.notRead).toBe(false)
+  })
+})
+
+describe('A list that holds to-dos Sotto made', () => {
+  test('saves which were seen by ID alone, and reads them back after a restart', async () => {
+    const { directory } = await setup()
+    const seen = ['prototype-abc']
+    const store = new ToDoStore({ directory, historyEnabled: () => true, told: async () => undefined, madeItemsSeen: () => true, madeSeenIds: () => seen })
+    await store.request({ kind: 'seen' })
+    const saved = JSON.parse(await readFile(join(directory, 'to-dos.json'), 'utf8')) as { items: unknown[]; madeSeen: string[] }
+    expect(saved).toEqual({ items: [], madeSeen: ['prototype-abc'] })
+    const restored = vi.fn()
+    const again = new ToDoStore({ directory, historyEnabled: () => true, told: async () => undefined, restoreMadeSeen: restored })
+    await again.drain()
+    expect(restored).toHaveBeenCalledExactlyOnceWith(['prototype-abc'])
+  })
+  test('reads a list saved before there was anything to say of them', async () => {
+    const { directory } = await setup()
+    await writeFile(join(directory, 'to-dos.json'), JSON.stringify({ items: [] }))
+    const store = new ToDoStore({ directory, historyEnabled: () => true, told: async () => undefined })
+    await store.drain()
+    expect(store.notRead).toBe(false)
   })
 })
 

@@ -74,6 +74,7 @@ import { RequestWaits } from './requestWaits'
 import { CommandSummaries, type CommandSummaryWrite } from './commandSummaries'
 import { FinishedUnread, settledIn } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
+import type { PrototypeReady as PrototypeReadyMark } from '../../shared/agents'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
 import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -1686,6 +1687,16 @@ export class AgentControl {
   }
   /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
   questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
+  /**
+   * Hears each thread's Prototype ready mark come, go or change, for the to-do list (ADR-0188, decision 10). Only where the
+   * to-do list is on, so stable keeps no list of them. `changed` runs on the update path and must only note the change.
+   */
+  onPrototypeMarksChanged(changed: () => void): void {
+    this.prototypeReady.onMarksChanged = changed
+    // What was marked before anyone listened, as a restart's first snapshot may be.
+    for (const thread of this.state.host.threads) if (thread.prototypeReady) this.prototypeReady.noteMark(thread.id, thread.prototypeReady)
+  }
+  prototypeMarks(): ReadonlyMap<string, PrototypeReadyMark> { return this.prototypeReady.currentMarks() }
   /**
    * One of a question's or reply's pages was opened, from this computer or through the page route (ADR-0108). The
    * prototype it belongs to is reviewed: its mark clears on every client, and the record is saved so a restart keeps it.

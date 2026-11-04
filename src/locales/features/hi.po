@@ -4233,6 +4233,10 @@ msgstr ""
 msgid "Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again."
 msgstr ""
 
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Opened in the thread's browser, and Tools is pinned to another thread. Unpin it to see the page."
+msgstr ""
+
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Opened in your browser"
 msgstr ""
@@ -4329,6 +4333,10 @@ msgstr ""
 
 #: src/renderer/src/components/AppShell.tsx
 msgid "Pages"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Pages to review"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
@@ -5086,6 +5094,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Review current replacement"
+msgstr ""
+
+#: src/renderer/src/features/toDos/ToDoCorner.tsx
+msgid "Review the prototype"
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx

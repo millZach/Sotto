@@ -315,6 +315,8 @@ A press on the icon unrolls the list downward, as long as what it holds, up to t
 
 Check an item off and it is gone, with **Undo** for five seconds. Those seconds go on if you roll the list up or move to another page, and nothing reaches the computer that holds it until they end. If the window closes first, the item stays on the list. If a press fails, the list unrolls to say so, and the item stays. A thread that said it waits on an item is told when you check it off, and no other thread is. **It didn't work** stands on those items, and sends your words to the thread at once. Neither approves anything.
 
+A prototype waiting for review is on the list too. Sotto puts it there itself from the thread's **Prototype ready** mark, with **Open the prototype**. Opening its page, checking it off or replying in the thread takes it off, and the thread's own Prototype ready line goes with it.
+
 Watcher works from the list too. On Owl its replies don't repeat what waits on you, because cards come to you by themselves. When a worker asks you to do something by hand, Watcher puts it on the list, and it hears when you check something off. A thread still waiting on its to-do doesn't settle.
 
 Each computer keeps its own list, and the window joins the lists of every computer it is connected to. A press goes back to the computer that holds the item. While a computer is away its items aren't shown, and they come back with it. The words are saved only while **Keep local history** is on.
