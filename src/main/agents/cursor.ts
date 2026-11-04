@@ -17,6 +17,7 @@ import { compareCursorVersions, cursorEnvironment, CursorRejected, CursorRpc, Cu
   readCursorSignIn, readCursorVersion, writeCursorConfig, writeCursorSideConfig, type CursorFrame, type CursorProgram } from './cursorRpc'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
+import { watcherMayWrite } from './host'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
@@ -1284,7 +1285,7 @@ export class CursorAcpHost implements AgentHost {
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const generation = this.generation
-    if (await this.checkLaunchProfile(id) && prompt.purpose !== 'next-prompt') return null
+    if (await this.checkLaunchProfile(id) && !watcherMayWrite(prompt.purpose)) return null
     const alias = this.aliases[id], program = this.program
     if (!this.state.connected || !program || !alias?.cursorSessionId) return null
     const cwd = await existingWorkingDirectory(alias.cwd)

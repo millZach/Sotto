@@ -2559,6 +2559,11 @@ msgstr "Foundation"
 msgid "From your SSH configuration"
 msgstr "From your SSH configuration"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Generated command summaries"
+msgstr "Generated command summaries"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Generated commit messages"
@@ -6995,6 +7000,10 @@ msgstr "When a thread has finished everything"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "When a thread needs you"
 msgstr "When a thread needs you"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a thread's model asks to run a command and sends no summary, Sotto asks that thread's own provider what the command does. It uses your subscription, and only that provider sees the command."
+msgstr "When a thread's model asks to run a command and sends no summary, Sotto asks that thread's own provider what the command does. It uses your subscription, and only that provider sees the command."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "When a turn ends, or you open a new thread, the thread's own model suggests what to ask next. For a new thread it reads the project's recent work and your latest thread titles there. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."

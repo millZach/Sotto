@@ -152,6 +152,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'project-defaults', label: msg`Project defaults`, section: 'settings-agents', words: 'working copy worktree' },
     { id: 'reply-streaming', label: msg`Replies in threads`, section: 'settings-agents', words: 'streaming as written' },
     { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
+    { id: 'command-summaries', label: msg`Generated command summaries`, section: 'settings-agents', words: 'permission approve explain' },
     { id: 'next-prompt', label: msg`Suggest a next prompt`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
     { id: 'thread-tips', label: msg`Show tips`, section: 'settings-agents', words: 'tips hints shortcuts skills hidden again', gate: 'thread-tips' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },

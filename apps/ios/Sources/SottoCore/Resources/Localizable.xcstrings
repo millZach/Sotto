@@ -1345,6 +1345,198 @@
         }
       }
     },
+    "%@ couldn’t give a summary of this command." : {
+      "comment" : "%@ is the coding agent's name, such as Codex.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر على %@ تلخيص هذا الأمر."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ এই কমান্ডের সারাংশ দিতে পারেনি।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: tento příkaz se nepodařilo shrnout."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kunne ikke opsummere denne kommando."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ konnte diesen Befehl nicht zusammenfassen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: δεν ήταν δυνατή η περίληψη αυτής της εντολής."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ couldn’t give a summary of this command."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no pudo dar un resumen de este comando."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no pudo dar un resumen de este comando."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no pudo dar un resumen de este comando."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ei pystynyt tekemään tästä komennosta yhteenvetoa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a pas pu résumer cette commande."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ इस कमांड का सारांश नहीं दे सका।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: ezt a parancsot nem sikerült összefoglalni."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è riuscito a riepilogare questo comando."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのコマンドの概要を示せませんでした。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ला या कमांडचा सारांश देता आला नाही."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ klarte ikke å oppsummere denne kommandoen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kon geen samenvatting van deze opdracht geven."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: nie udało się podsumować tego polecenia."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não conseguiu resumir este comando."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não conseguiu resumir este comando."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nu a putut rezuma această comandă."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kunde inte sammanfatta det här kommandot."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ இந்தக் கட்டளையின் சுருக்கத்தைத் தர முடியவில்லை."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ఈ కమాండ్ సారాంశం ఇవ్వలేకపోయింది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ bu komutu özetleyemedi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: не вдалося підсумувати цю команду."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ اس کمانڈ کا خلاصہ نہیں دے سکا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 无法提供此命令的摘要。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 無法提供此指令的摘要。"
+          }
+        }
+      }
+    },
     "%@ decides what to ask you about." : {
       "comment" : "What a thread does under Allow actions. %@ is the agent's name, such as Codex.",
       "extractionState" : "manual",
@@ -28527,6 +28719,198 @@
         }
       }
     },
+    "Asking %@ for a summary…" : {
+      "comment" : "Shown while Sotto waits for a summary of a command. The user can answer without waiting. %@ is the coding agent's name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ طلب ملخص من %@…"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@-এর কাছে সারাংশ চাওয়া হচ্ছে…"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Žádost o shrnutí: %@…"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beder %@ om et resumé…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird um eine Zusammenfassung gebeten…"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ζητείται περίληψη από το %@…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asking %@ for a summary…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pidiendo a %@ un resumen…"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pidiendo a %@ un resumen…"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pidiendo a %@ un resumen…"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pyydetään yhteenvetoa: %@…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demande d’un résumé à %@…"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ से सारांश माँगा जा रहा है…"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Összefoglaló kérése: %@…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richiesta di un riepilogo a %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に概要を依頼しています…"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ कडे सारांश मागत आहे…"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ber %@ om et sammendrag…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ om een samenvatting vragen…"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prośba o podsumowanie do %@…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pedindo um resumo ao %@…"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pedir um resumo ao %@…"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se cere un rezumat de la %@…"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ber %@ om en sammanfattning…"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@-இடம் சுருக்கம் கேட்கப்படுகிறது…"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@‌ను సారాంశం అడుగుతోంది…"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ için özet isteniyor…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запит підсумку в %@…"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ سے خلاصہ مانگا جا رہا ہے…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在向 %@ 请求摘要…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在向 %@ 請求摘要…"
+          }
+        }
+      }
+    },
     "Asks before it edits files or runs commands." : {
       "comment" : "What a thread does under Ask before actions.",
       "extractionState" : "manual",
@@ -54481,6 +54865,390 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已略過"
+          }
+        }
+      }
+    },
+    "Sotto asked %@ what this does" : {
+      "comment" : "Over a summary of a command that Sotto asked the coding agent's provider for. %@ is its name, such as Codex.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سأل Sotto %@ عمّا يفعله هذا"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto %@-কে জিজ্ঞেস করেছে এটি কী করে"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto se zeptalo %@, co to dělá"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto spurgte %@, hvad dette gør"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto hat %@ gefragt, was das bewirkt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Sotto ρώτησε το %@ τι κάνει αυτό"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto asked %@ what this does"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto preguntó a %@ qué hace esto"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto preguntó a %@ qué hace esto"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto preguntó a %@ qué hace esto"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kysyi palvelulta %@, mitä tämä tekee"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto a demandé à %@ ce que cela fait"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ने %@ से पूछा कि यह क्या करता है"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Sotto megkérdezte: %@ – mit csinál ez"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ha chiesto a %@ cosa fa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto が %@ にこの内容を尋ねました"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ने %@ ला विचारले की हे काय करते"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto spurte %@ hva dette gjør"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto vroeg %@ wat dit doet"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto zapytało %@, co to robi"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto perguntou ao %@ o que isto faz"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto perguntou ao %@ o que isto faz"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto a întrebat %@ ce face asta"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto frågade %@ vad det här gör"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இது என்ன செய்கிறது என்று Sotto %@-இடம் கேட்டது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఇది ఏమి చేస్తుందో Sotto %@‌ను అడిగింది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto, %@ için bunun ne yaptığını sordu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto запитав у %@, що це робить"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto نے %@ سے پوچھا کہ یہ کیا کرتا ہے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 询问了 %@ 这条命令的作用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 詢問了 %@ 這條指令的作用"
+          }
+        }
+      }
+    },
+    "Sotto asked %@ what this does: %@" : {
+      "comment" : "The first %@ is the coding agent's name, such as Codex; the second is the summary its provider gave.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سأل Sotto %@ عمّا يفعله هذا: %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto %@-কে জিজ্ঞেস করেছে এটি কী করে: %@"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto se zeptalo %@, co to dělá: %@"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto spurgte %@, hvad dette gør: %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto hat %@ gefragt, was das bewirkt: %@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Sotto ρώτησε το %@ τι κάνει αυτό: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto asked %@ what this does: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto preguntó a %@ qué hace esto: %@"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto preguntó a %@ qué hace esto: %@"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto preguntó a %@ qué hace esto: %@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kysyi palvelulta %@, mitä tämä tekee: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto a demandé à %@ ce que cela fait : %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ने %@ से पूछा कि यह क्या करता है: %@"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Sotto megkérdezte: %@ – mit csinál ez: %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ha chiesto a %@ cosa fa: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto が %@ にこの内容を尋ねました：%@"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ने %@ ला विचारले की हे काय करते: %@"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto spurte %@ hva dette gjør: %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto vroeg %@ wat dit doet: %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto zapytało %@, co to robi: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto perguntou ao %@ o que isto faz: %@"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto perguntou ao %@ o que isto faz: %@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto a întrebat %@ ce face asta: %@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto frågade %@ vad det här gör: %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இது என்ன செய்கிறது என்று Sotto %@-இடம் கேட்டது: %@"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఇది ఏమి చేస్తుందో Sotto %@‌ను అడిగింది: %@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto, %@ için bunun ne yaptığını sordu: %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto запитав у %@, що це робить: %@"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto نے %@ سے پوچھا کہ یہ کیا کرتا ہے: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 询问了 %@ 这条命令的作用：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 詢問了 %@ 這條指令的作用：%@"
           }
         }
       }

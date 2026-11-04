@@ -397,6 +397,8 @@ export interface AppSettings {
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
    */
   threadTitles: boolean
+  /** Ask a thread's own provider for a command summary when the model sent none (ADR-0185). */
+  commandSummaries: boolean
   /**
    * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side
    * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
@@ -557,6 +559,7 @@ const fieldSchemas = {
   llmMode: z.enum(LLM_MODES),
   llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
+  commandSummaries: z.boolean(),
   nextPromptSuggestions: z.boolean(),
   threadTips: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
@@ -681,6 +684,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
+  commandSummaries: true,
   nextPromptSuggestions: true,
   threadTips: true,
   threadWorkingCopyDefault: 'shared',
@@ -879,6 +883,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMode: parseField(persisted, 'llmMode', defaults),
     llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    commandSummaries: parseField(persisted, 'commandSummaries', defaults),
     nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadTips: parseField(persisted, 'threadTips', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),

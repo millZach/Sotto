@@ -18,22 +18,31 @@ public enum RequestText {
         return rest.range(of: #"^(?:\s|[0-9]+\.|[()/;,])*$"#, options: .regularExpression) != nil ? nil : request.text
     }
 
-    /// The line over the words a model wrote about what it asks, so they read as its own and not as Sotto's account (ADR-0185).
-    public static func says(provider: String) -> String {
-        String(localized: "\(provider) says", bundle: .module, comment: "Over the words a coding agent wrote about what it asks to do. %@ is its name, such as Claude Code.")
+    /// The line over a summary, saying whose words they are: the model's own, or what Sotto got by asking its provider about
+    /// the command alone. Sotto checks neither, so they never read as Sotto's account (ADR-0185).
+    public static func summaryHeading(_ context: RequestContext, provider: String) -> String {
+        context.summaryAsk == "answered"
+            ? String(localized: "Sotto asked \(provider) what this does", bundle: .module, comment: "Over a summary of a command that Sotto asked the coding agent's provider for. %@ is its name, such as Codex.")
+            : String(localized: "\(provider) says", bundle: .module, comment: "Over the words a coding agent wrote about what it asks to do. %@ is its name, such as Claude Code.")
     }
 
-    /// What a permission's card says of a command the model gave no summary of.
-    public static func noSummary(provider: String) -> String {
-        String(localized: "\(provider) gave no summary of this command.", bundle: .module, comment: "%@ is the coding agent's name, such as Codex.")
+    /// What a command's card says while it has no summary: Sotto is asking, asking failed, or none came.
+    public static func noSummary(_ context: RequestContext, provider: String) -> String {
+        switch context.summaryAsk {
+        case "waiting": return String(localized: "Asking \(provider) for a summary…", bundle: .module, comment: "Shown while Sotto waits for a summary of a command. The user can answer without waiting. %@ is the coding agent's name.")
+        case "failed": return String(localized: "\(provider) couldn’t give a summary of this command.", bundle: .module, comment: "%@ is the coding agent's name, such as Codex.")
+        default: return String(localized: "\(provider) gave no summary of this command.", bundle: .module, comment: "%@ is the coding agent's name, such as Codex.")
+        }
     }
 
     /// What a permission's short card says it asks. A command's words sit over its command, so they are the summary and
     /// never the command again; any other request has only its own text.
     public static func permissionAsk(_ request: AgentRequest, provider: String) -> String {
         guard let context = request.context, context.command != nil else { return request.text }
-        guard let summary = context.summary else { return noSummary(provider: provider) }
-        return String(localized: "\(provider) says: \(summary)", bundle: .module, comment: "The first %@ is the coding agent's name, such as Claude Code; the second is the words it wrote about what it asks to do.")
+        guard let summary = context.summary else { return noSummary(context, provider: provider) }
+        return context.summaryAsk == "answered"
+            ? String(localized: "Sotto asked \(provider) what this does: \(summary)", bundle: .module, comment: "The first %@ is the coding agent's name, such as Codex; the second is the summary its provider gave.")
+            : String(localized: "\(provider) says: \(summary)", bundle: .module, comment: "The first %@ is the coding agent's name, such as Claude Code; the second is the words it wrote about what it asks to do.")
     }
 
     /// What a permission's sheet leads with, and the rest of its words (#1855). A command's words never lead: they can hold
