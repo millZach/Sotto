@@ -15,8 +15,9 @@ import UIKit
 /// Threads list, then `finished`. Each phase lasts until the screen is quiet, and records its frames, hitches, CPU time,
 /// memory and what the probes counted. With `--bench-journey launch` it stops after the first. With `--bench-journey look`
 /// it opens the long thread and photographs the page at fixed distances above its end (`look`), so two builds can be held
-/// to the same look. It reads and changes nothing the app shows, but for the draft that moves the reply box, which it
-/// takes out again.
+/// to the same look. With `--bench-journey place` it scrolls the Threads list fast, opens and closes the long thread, and
+/// goes back to the top, noting and photographing where everything stands (`place`). It reads and changes nothing the app
+/// shows, but for the draft that moves the reply box, which it takes out again.
 @MainActor final class BenchDriver {
     private static var running: BenchDriver?
 
@@ -76,6 +77,7 @@ import UIKit
         guard await until({ self.marks["first-list"] != nil }) else { return finish("no-list") }
         await quiet()
         if kind == "look" { return await look() }
+        if kind == "place" { return await place() }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
@@ -149,13 +151,75 @@ import UIKit
         finish(nil)
     }
 
+    /// The Threads list at speed, where a lazy list could lose its place: down and back to the top, part of the way down,
+    /// the long thread opened from there and closed, a little way up, then the top again. Each stop notes the list's offset and height and
+    /// photographs the window at a pixel a point (`stop-<name>` in the report, a PNG of that name beside it).
+    private func place() async {
+        next("place")
+        guard let view = Self.pageScroller() else { return finish("no-page") }
+        let top = -view.adjustedContentInset.top
+        phaseNotes["top"] = Double(top)
+        func stop(_ name: String) async {
+            await quiet()
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            snapSmall(name, page: view)
+            phaseNotes["stop-" + name] = ["offset": Double(view.contentOffset.y), "height": Double(view.contentSize.height)]
+        }
+        func move(to distance: CGFloat, speed: CGFloat, watching name: String? = nil) async {
+            let from = view.contentOffset.y, to = top + distance
+            // Photos as it goes, of what is on screen then, so a gap that closes before the list stops still shows.
+            let photos = Task {
+                guard let name else { return }
+                for index in 1...3 {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    if motion != nil { snapSmall("moving-\(name)-\(index)", page: view, settled: false) }
+                }
+            }
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                motion = Motion(view: view, from: from, to: to, seconds: Double(abs(to - from) / speed), done: done)
+            }
+            await photos.value
+        }
+        await stop("start")
+        for (distance, name) in [(9_000, "far"), (0, "top-again"), (5_000, "before-open")] as [(CGFloat, String)] {
+            await move(to: distance, speed: 12_000, watching: name)
+            await stop(name)
+        }
+        model?.alertOpened = long
+        guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
+        await quiet()
+        guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+        guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+        await stop("after-close")
+        await move(to: 4_640, speed: 2_000)
+        await stop("up-a-little")
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top), animated: true)
+        await stop("end-top")
+        finish(nil)
+    }
+
+    /// The window at a pixel a point: enough to see where rows stand, and quick to compare. `settled` waits for the screen's
+    /// next update; otherwise it is what stands on screen now.
+    private func snapSmall(_ name: String, page: UIScrollView, settled: Bool = true) {
+        guard let window = page.window else { return }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        photograph(name, window: window, renderer: UIGraphicsImageRenderer(bounds: window.bounds, format: format), settled: settled)
+    }
+
     /// The window as drawn below the bar, written beside the report. The bar is left out: its Working light breathes.
     private func snap(_ name: String, page: UIScrollView) {
         guard let window = page.window else { return }
         let top = page.convert(CGPoint(x: 0, y: page.bounds.minY + page.adjustedContentInset.top), to: window).y
         let area = CGRect(x: 0, y: top, width: window.bounds.width, height: window.bounds.height - top)
-        let image = UIGraphicsImageRenderer(bounds: area).image { _ in
-            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        photograph(name, window: window, renderer: UIGraphicsImageRenderer(bounds: area))
+    }
+
+    /// The window through `renderer`, written beside the report.
+    private func photograph(_ name: String, window: UIWindow, renderer: UIGraphicsImageRenderer, settled: Bool = true) {
+        let image = renderer.image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: settled)
         }
         let file = URL(fileURLWithPath: report.deletingPathExtension().path + "-" + name + ".png")
         try? image.pngData()?.write(to: file, options: .atomic)

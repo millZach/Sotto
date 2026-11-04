@@ -711,6 +711,7 @@ struct ThreadSidebar: View, Equatable {
 /// unfolded Duo's sidebar shows it beside a thread. A Needs you row is a row like the others: its thread opens on its
 /// question.
 struct ThreadListSections: View, Equatable {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let groups: FocusThreads
     /// What it reads from Watcher for its rows. Its caller reads it from the model, so the list watches nothing itself and
     /// draws again only when what it shows has changed, not with every update to any thread.
@@ -728,6 +729,8 @@ struct ThreadListSections: View, Equatable {
     let setWatched: (HostedThread, Bool) -> Void
     /// Settle or Restore, pressed on a row.
     let shelve: (HostedThread, AppModel.ShelfAction) -> Void
+    /// How tall a row stands at this text size, measured from a hidden row (`section`). Nothing is known until the first layout.
+    @State private var rowHeight: CGFloat?
     var body: some View {
         let _ = BenchProbe.body("ThreadListSections")
         VStack(alignment: .leading, spacing: 0) {
@@ -743,7 +746,7 @@ struct ThreadListSections: View, Equatable {
     }
     /// A Needs you row can stand for a delegated thread that asks (ADR-0081): a press opens the row's thread and then
     /// the one that asks, so its question opens there and Back returns to the thread that delegated it.
-    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, asking: HostedThread? = nil) -> some View {
+    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, asking: HostedThread? = nil) -> ThreadListRow {
         let isWatched = watch.watched.contains(row.id)
         let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
         // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
@@ -753,7 +756,6 @@ struct ThreadListSections: View, Equatable {
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
                              setWatched: { on in setWatched(row, on) },
                              shelve: { action in shelve(row, action) })
-            .equatable()
     }
     /// It draws from these alone: the rows' threads, which section each is in, who asks and what they wait on, what
     /// Watcher and the shelf offer for each, the chosen one and its identifiers. It watches no model, so `drawn` must name everything
@@ -777,13 +779,38 @@ struct ThreadListSections: View, Equatable {
         }
         return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent)
     }
-    @ViewBuilder private func section<Row: View>(_ title: String, _ id: String, _ rows: [HostedThread],
-                                                 @ViewBuilder row: @escaping (HostedThread) -> Row) -> some View {
+    /// A section makes its rows as they scroll into view, so a long list costs its launch and its reopens only the rows on
+    /// screen (#2120). A lazy stack guesses its height from the rows it has made, and in the benchmark's fast scrolls that
+    /// guess doubled Working now when a thread closed and moved every row below it (`docs/perf/2026-10-31-iphone-benchmarks.md`),
+    /// so the section stands at its rows' known height. That holds only for rows of one height: see `standsOneHeight`.
+    /// Any other section makes all its rows at once, as does every section at the accessibility text sizes, where rows wrap.
+    @ViewBuilder private func section(_ title: String, _ id: String, _ rows: [HostedThread],
+                                      row: @escaping (HostedThread) -> ThreadListRow) -> some View {
         if !rows.isEmpty {
             ThreadListHeading(title: title, count: rows.count, id: id)
-            ForEach(rows) { row($0) }
+            if !typeSize.isAccessibilitySize && !Self.benchWholeList && Words.agoDrawsInFigtree && rows.allSatisfy({ row($0).standsOneHeight }) {
+                LazyVStack(alignment: .leading, spacing: 0) { ForEach(rows) { row($0).equatable() } }
+                    .frame(height: rowHeight.map { CGFloat(rows.count) * $0 }, alignment: .top)
+                    .background(alignment: .top) {
+                        row(rows[0]).equatable()
+                            .fixedSize(horizontal: false, vertical: true)
+                            .hidden()
+                            .accessibilityHidden(true)
+                            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { rowHeight = $0 }
+                    }
+            } else {
+                ForEach(rows) { row($0).equatable() }
+            }
         }
     }
+    /// The benchmarks' list with every row made at once, to hold the lazy one to (`Bench.swift`'s `place`).
+    private static let benchWholeList: Bool = {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--bench-whole-list")
+        #else
+        false
+        #endif
+    }()
 }
 
 /// Settle or Restore in a row's long-press menu, as in a thread's •••. It acts at once, and the banner that confirms it
@@ -866,6 +893,9 @@ struct ThreadListRow: View, Equatable {
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
     }
     private var state: ThreadState { ThreadState(row.thread) }
+    /// Below the accessibility text sizes a row is one line of title and one line of place, so it stands as tall as any
+    /// other row as long as Figtree draws both. A glyph from another font can make its line taller.
+    var standsOneHeight: Bool { FigtreeText.drawsAlone(row.thread.title) && FigtreeText.drawsAlone(line) }
     private var unread: Bool { if case .recent(true) = kind { return true } else { return false } }
     private var tone: Light.Tone {
         switch kind {
@@ -1165,6 +1195,8 @@ enum Words {
     static func date(_ iso: String?) -> Date? { iso.flatMap { stamp.date(from: $0) ?? plainStamp.date(from: $0) } }
     /// "4 min. ago", or nothing when the host did not say.
     static func ago(_ iso: String?) -> String? { date(iso).map { relative.localizedString(for: $0, relativeTo: Date()) } }
+    /// Whether the interface's language writes "4 min. ago" in Figtree, which a row's height relies on (`standsOneHeight`).
+    static let agoDrawsInFigtree = FigtreeText.drawsAlone(relative.localizedString(fromTimeInterval: -240))
     /// A card's or row's second line: the agent, the project and the computer.
     static func place(_ row: HostedThread) -> String {
         [provider(row.thread.providerId), row.project, row.computer].compactMap { $0 }.joined(separator: " · ")

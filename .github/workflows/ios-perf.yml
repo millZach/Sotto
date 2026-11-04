@@ -89,6 +89,11 @@ jobs:
         # Named, so the step runs with pipefail and the comparison's failure is not lost in tee.
         shell: bash
         run: python3 apps/ios/Scripts/bench-summary.py look "$RUNNER_TEMP/bench/before" "$RUNNER_TEMP/bench/after" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Hold the Threads list to its place
+        # The lazy list against the same build's whole list, in the change's own photos and numbers: see `place` in the summary.
+        if: always()
+        shell: bash
+        run: python3 apps/ios/Scripts/bench-summary.py place "$RUNNER_TEMP/bench/after" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -104,5 +109,6 @@ jobs:
             ${{ runner.temp }}/bench/*/trace-samples.json
             ${{ runner.temp }}/bench/*/app/*.json
             ${{ runner.temp }}/bench/*/look/*
+            ${{ runner.temp }}/bench/*/place/*
           if-no-files-found: warn
           retention-days: 30

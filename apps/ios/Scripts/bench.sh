@@ -9,8 +9,8 @@ mkdir -p "$1"
 out=$(cd "$1" && pwd)
 # A folder used before keeps nothing from that run: Xcode refuses an existing result bundle, and old reports would be
 # summarized with the new ones.
-rm -rf "$out/app" "$out/look" "$out/bench.xcresult" "$out/summary.json" "$out/summary.md"
-mkdir -p "$out/app" "$out/look"
+rm -rf "$out/app" "$out/look" "$out/place" "$out/bench.xcresult" "$out/summary.json" "$out/summary.md"
+mkdir -p "$out/app" "$out/look" "$out/place"
 
 # One phone for every run, so a branch and main are measured on the same simulated hardware.
 xcrun simctl list runtimes --json > "$out/runtimes.json"
@@ -98,6 +98,19 @@ for run in 1 2; do
     journey "$out/look/look-$run.json" 300 look
     echo "Look $run: $outcome"
     [ "$outcome" = finished ] || status=1
+done
+
+# The Threads list's place, kept against the same build with every row made at once (`bench-summary.py place`). A base from
+# before this journey has nothing to hold it to, so only the change's side compares. Rows in other fonts stand taller.
+for arm in lazy whole; do
+    extra=""; [ "$arm" = whole ] && extra="--bench-whole-list"
+    for fonts in figtree other; do
+        more=""; [ "$fonts" = other ] && more="--bench-other-fonts"
+        # shellcheck disable=SC2086
+        journey "$out/place/$arm-$fonts.json" 300 place $extra $more
+        echo "Place, $arm, $fonts: $outcome"
+        [ "$outcome" = finished ] || status=1
+    done
 done
 xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
 

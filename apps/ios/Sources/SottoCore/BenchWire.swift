@@ -11,11 +11,12 @@ public enum BenchWire {
     public static let streamingMessageID = "bench-reply-stream"
 
     /// `count` thread records as the host sends them (`ThreadSummary`), the long thread first, newest first, each
-    /// about the size a working computer's records are (#1910 measured 820 bytes on average).
-    public static func threadRecords(count: Int, hostID: String, now: Date) -> [String] {
+    /// about the size a working computer's records are (#1910 measured 820 bytes on average). With `otherFonts`, every
+    /// seventh title has words Figtree can't draw, whose rows stand taller.
+    public static func threadRecords(count: Int, hostID: String, now: Date, otherFonts: Bool = false) -> [String] {
         var records = [longThreadRecord(hostID: hostID, now: now)]
         for index in 1..<max(1, count) {
-            records.append(record(id: "bench-\(index)", index: index, hostID: hostID, now: now, running: index % 40 == 0, title: titles[index % titles.count] + " \(index)"))
+            records.append(record(id: "bench-\(index)", index: index, hostID: hostID, now: now, running: index % 40 == 0, title: titles[index % titles.count] + " \(index)" + (otherFonts && index % 7 == 0 ? " \u{0E44}\u{0E17}\u{0E22} \u{1F389}" : "")))
         }
         return records
     }

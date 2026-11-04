@@ -46,7 +46,7 @@ Then:
    responsive frame.
 2. **The journey, five times**, each from a cold launch by `simctl` with nothing attached. The app walks it by itself
    (`Sotto/Bench.swift`):
-   - `launch`: to the first frame that shows all 300 threads.
+   - `launch`: to the first frame of the Threads list once all 300 threads are in it. Since #2120 that frame makes the rows on screen, not all 300.
    - `list-scroll`: the list scrolled 12,000 points down and back at 3,000 points a second.
    - `open`: the long thread opened as a notification opens it, to its first drawn frame.
    - `thread-scroll`: the long thread scrolled 12,000 points up and back.
@@ -102,7 +102,8 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.cpu_per_chunk` | CPU time per streamed word. |
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
 | `stream.worst_per_chunk.<count>` | The Threads list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
-| `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for the budgets of zero. |
+| `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for their budgets: zero for the page and the list, and the rows it makes as they scroll in (#2120). |
+| `launch.worst.body.ThreadListRow` | The rows made by the end of the launch in the worst of the five journeys, for its budget: those on screen, not all 300 (#2120). |
 | `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
 | `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
@@ -284,3 +285,34 @@ of those 24 points, so main likely cost a person more than these numbers show, b
 measured. The benchmark builds Debug with optimization, so whether Release builds drew the rows again is also not
 measured. The workflow's look step photographs the long thread and not this fade, so the fade's look rests on the code:
 the same view, opacity and 24 points.
+
+## The Threads list makes its rows as they scroll in
+
+The change for #2120. In some processes SwiftUI draws the Threads list again and again while a long thread opens, and every
+drawing made all 300 rows. What sets those drawings off is still not found: SwiftUI never calls the list's
+`==`, and each `AppModel` update runs `ThreadsView` twice. So this fixes the cost and not the cause. Each section is now a
+`LazyVStack`, so a drawing makes the rows on screen.
+
+A lazy stack guesses its height, and the guesses cost three rounds of measuring on the 16 Pro Max simulator:
+
+| Version | No gap in the list | Scroll to the top reaches it | Closing a thread keeps its place |
+| --- | --- | --- | --- |
+| One lazy stack for the whole list ([run 41881182656](https://github.com/millZach/Sotto/actions/runs/41881182656)) | no: up to 378 pt blank | no: short in 4 of 9 | yes |
+| One per section ([run 41891071088](https://github.com/millZach/Sotto/actions/runs/41891071088)) | yes | yes | no: rows moved down 467 pt |
+| One per section at its rows' height ([run 41916956226](https://github.com/millZach/Sotto/actions/runs/41916956226)) | yes | yes | yes |
+
+In the second version Working now went from 467 to 934 pt when the thread closed, after a scroll at 12,000 points a second or
+more or a jump (6 of 6), and not after a scroll of 5,000 points at 2,000 (2 of 2). Why it doubles is not known; going to the top
+put it back. Standing each section at its rows' height held it in all 13 journeys, and every photo away from the top was
+today's, byte for byte.
+
+That height is rows times one row's height, measured from a hidden row, so it is right only for rows of one height. Below the
+accessibility text sizes a row is one line of title and one of place, and all three Figtree faces share one line height. Another
+font's glyph can make a line taller, so a section with any character Figtree doesn't draw, an interface language whose
+"4 min. ago" it doesn't draw, and the accessibility text sizes all make every row at once, as before, and gain nothing.
+
+`bench-summary.py place` holds this: the same build's lazy and whole lists, with Figtree titles and with others, must keep their
+height and offset and match byte for byte at every stop away from the top. At the top, where the Working lights breathe and the
+newest ages tick, the rows' words between them must match. Photos taken during the fast scrolls must show no blank band more than
+12 points taller than the whole list's. `testPressingTheChosenTabAgainScrollsItsPageToTheTop` covers the app's own way to the
+top. None of this is a finger, the scroll bar or a status-bar tap.

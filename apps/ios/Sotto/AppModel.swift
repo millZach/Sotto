@@ -1802,9 +1802,10 @@ struct RailAsk: Equatable {
         BenchDriver.start(model: self, chunks: number("--bench-chunks") ?? 200, journey: journey ?? "all",
                           long: ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID))
         let now = Date()
+        let otherFonts = arguments.contains("--bench-other-fonts")
         benchLongFrame = Task.detached(priority: .userInitiated) { BenchWire.longDetailFrame(turns: turns, now: now) }
         Task { [weak self] in
-            let records = await Task.detached(priority: .userInitiated) { BenchWire.threadRecords(count: threads, hostID: laptop, now: now) }.value
+            let records = await Task.detached(priority: .userInitiated) { BenchWire.threadRecords(count: threads, hostID: laptop, now: now, otherFonts: otherFonts) }.value
             guard let self else { return }
             benchShellRevision = 1
             await benchDeliver(BenchWire.shellFrame(state: stateData, revision: 1, base: nil, changed: records), kind: "shell-full")

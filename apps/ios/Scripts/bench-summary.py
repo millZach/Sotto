@@ -5,6 +5,7 @@
   bench-summary.py compare <before> <after>   prints a Markdown table of both folders' summaries, and before over after
   bench-summary.py budget <folder>            fails when a work count in the folder's summary is over its budget
   bench-summary.py look <before> <after>      fails when the long thread's photos differ from the base's (bench.sh's look)
+  bench-summary.py place <folder>             fails when the Threads list loses its place (bench.sh's place)
 
 Every number is the median over the benchmark's iterations: five launches or journeys, or the rounds PhoneBenchTests
 times each core step. Lower is better for all of them but journey.completed, which counts only journeys that finished.
@@ -12,7 +13,9 @@ times each core step. Lower is better for all of them but journey.completed, whi
 import json
 import re
 import statistics
+import struct
 import sys
+import zlib
 from pathlib import Path
 
 MEASURED = re.compile(r"Test Case '-\[\S+ (\w+)\]' measured \[(.+?), (\S+?)\] average: ([-\d.]+), relative standard deviation: ([\d.]+)%, values: \[([^\]]*)\]")
@@ -56,7 +59,11 @@ BUDGETS = {
     # page ran twice a scroll before, and in about one journey in six that drew the whole list again, a frame of 240 to 590 ms.
     "list-scroll.worst.body.SheetPage": 0,
     "list-scroll.worst.body.ThreadListSections": 0,
-    "list-scroll.worst.body.ThreadListRow": 0,
+    # Its rows are made as they scroll in, once each (#2120): 12,000 points of rows, and no more than that.
+    "list-scroll.worst.body.ThreadListRow": 450,
+    # The launch makes the rows on screen and not all 300 (#2120): about 18, one hidden row a section to measure, and room for
+    # one drawing again in the launch, which #2120 did not stop.
+    "launch.worst.body.ThreadListRow": 60,
     # The Threads page lets go of its held list before the first frame that shows it again, in every journey.
     "journey.page.stale_frames": 0,
 }
@@ -149,6 +156,9 @@ def app_metrics(folder):
         values = [c.get(key, 0) for c in counts["list-scroll"]]
         if values:
             rows[f"list-scroll.worst.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
+    values = [c.get("body.ThreadListRow", 0) for c in counts["launch"]]
+    if values:
+        rows["launch.worst.body.ThreadListRow"] = {"value": max(values), "unit": "count", "n": len(values)}
     for kind in ["delta", "shell"]:
         put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
         put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")
@@ -272,6 +282,115 @@ def look(before, after):
         sys.exit(1)
 
 
+def png_rows(path):
+    """An 8-bit photo's pixel rows, and its bytes a pixel."""
+    data = path.read_bytes()
+    at, compressed, width, height, channels = 8, [], 0, 0, 0
+    while at < len(data):
+        size, kind = struct.unpack(">I4s", data[at:at + 8])
+        body = data[at + 8:at + 8 + size]
+        at += 12 + size
+        if kind == b"IHDR":
+            width, height, depth, colour = struct.unpack(">IIBB", body[:10])
+            channels = {0: 1, 2: 3, 4: 2, 6: 4}[colour] * (depth // 8)
+        elif kind == b"IDAT":
+            compressed.append(body)
+    raw, stride, rows, above, at = zlib.decompress(b"".join(compressed)), width * channels, [], bytearray(width * channels), 0
+    for _ in range(height):
+        kind, row = raw[at], bytearray(raw[at + 1:at + 1 + stride])
+        at += 1 + stride
+        for x in range(stride):
+            left = row[x - channels] if x >= channels else 0
+            up, corner = above[x], above[x - channels] if x >= channels else 0
+            if kind == 1:
+                row[x] = (row[x] + left) & 255
+            elif kind == 2:
+                row[x] = (row[x] + up) & 255
+            elif kind == 3:
+                row[x] = (row[x] + ((left + up) >> 1)) & 255
+            elif kind == 4:
+                guess = left + up - corner
+                near = min((abs(guess - left), 0, left), (abs(guess - up), 1, up), (abs(guess - corner), 2, corner))
+                row[x] = (row[x] + near[2]) & 255
+        rows.append(bytes(row))
+        above = row
+    return rows, channels
+
+
+def same_words(first, second):
+    """Whether two photos at the top of the list show the same rows. It reads between the Working lights and the ages, and
+    below the note above the rows, in the journeys' 440-point phone. The ages tick and the lights breathe; the wash behind them
+    moves a little from launch to launch, which no letter's edge is near."""
+    (one, channels), (other, _) = png_rows(first), png_rows(second)
+    for y in range(180, 850):
+        a, b = one[y][56 * channels:340 * channels], other[y][56 * channels:340 * channels]
+        if a != b and max(abs(p - q) for p, q in zip(a, b)) > 32:
+            return False
+    return True
+
+
+def blank_band(path):
+    """The tallest run of pixel rows that are one colour across the content's width, between the bar and the tabs."""
+    rows, channels = png_rows(path)
+    tallest = run = 0
+    for row in rows[100:880]:
+        sums = [sum(row[x * channels:x * channels + 3]) for x in range(19, 408)]
+        run = run + 1 if max(sums) - min(sums) <= 9 else 0
+        tallest = max(tallest, run)
+    return tallest
+
+
+def place(folder):
+    """The lazy list against the same build's whole list. For each of bench.sh's place journeys: the top is the top, with the
+    same rows on it, closing the thread keeps the offset and the photo, the height never moves, every stop away from the top
+    looks the same as the whole list's, byte for byte, and no photo during the fast scrolls has a taller gap than the whole
+    list's, give or take 12 points."""
+    folder = Path(folder) / "place"
+    wrong = []
+    print("| Rows' fonts | Rows made, lazy | Rows made, whole | Height, lazy | Height, whole | Kept its place |")
+    print("| --- | ---: | ---: | ---: | ---: | --- |")
+    for fonts in ["figtree", "other"]:
+        reports = {arm: json.loads((folder / f"{arm}-{fonts}.json").read_text()) for arm in ["lazy", "whole"]}
+        if any(r.get("phase") != "finished" for r in reports.values()):
+            wrong.append(f"{fonts}: a journey did not finish")
+            continue
+        phase = {arm: r["phases"]["place"] for arm, r in reports.items()}
+        stops = {arm: {k[5:]: v for k, v in p.items() if k.startswith("stop-")} for arm, p in phase.items()}
+        before = len(wrong)
+        for arm in ["lazy", "whole"]:
+            top = phase[arm]["top"]
+            for name in ["start", "top-again", "end-top"]:
+                if abs(stops[arm][name]["offset"] - top) > 0.5:
+                    wrong.append(f"{fonts}, {arm}: {name} stands at {stops[arm][name]['offset']}, not the top, {top}")
+            if stops[arm]["before-open"]["offset"] != stops[arm]["after-close"]["offset"]:
+                wrong.append(f"{fonts}, {arm}: closing the thread moved the list")
+            if (folder / f"{arm}-{fonts}-before-open.png").read_bytes() != (folder / f"{arm}-{fonts}-after-close.png").read_bytes():
+                wrong.append(f"{fonts}, {arm}: rows moved when the thread closed")
+            heights = {round(stop["height"], 1) for stop in stops[arm].values()}
+            if len(heights) != 1:
+                wrong.append(f"{fonts}, {arm}: the height moved, {sorted(heights)}")
+        tall = {arm: max(stop["height"] for stop in stops[arm].values()) for arm in stops}
+        if abs(tall["lazy"] - tall["whole"]) > 0.5:
+            wrong.append(f"{fonts}: the lazy list is {tall['lazy']} tall and the whole list {tall['whole']}")
+        for name in ["far", "before-open", "after-close", "up-a-little"]:
+            if (folder / f"lazy-{fonts}-{name}.png").read_bytes() != (folder / f"whole-{fonts}-{name}.png").read_bytes():
+                wrong.append(f"{fonts}: the lazy list looks different at {name}")
+        for name in ["start", "top-again", "end-top"]:
+            if not same_words(folder / f"whole-{fonts}-start.png", folder / f"lazy-{fonts}-{name}.png"):
+                wrong.append(f"{fonts}: the rows at the top are not the whole list's at {name}")
+        gaps = {arm: max([blank_band(p) for p in folder.glob(f"{arm}-{fonts}-moving-*.png")], default=None) for arm in ["lazy", "whole"]}
+        print(f"Tallest gap during the scrolls, {fonts}: lazy {gaps['lazy']} pt, whole {gaps['whole']} pt\n")
+        if None in gaps.values():
+            wrong.append(f"{fonts}: no photos were taken during the scrolls")
+        elif gaps["lazy"] > gaps["whole"] + 12:
+            wrong.append(f"{fonts}: the lazy list had a gap of {gaps['lazy']} pt during a scroll, the whole list {gaps['whole']} pt")
+        made = {arm: phase[arm].get("counts", {}).get("body.ThreadListRow", 0) + reports[arm]["phases"]["launch"].get("counts", {}).get("body.ThreadListRow", 0) for arm in phase}
+        print(f"| {fonts} | {fmt(made['lazy'])} | {fmt(made['whole'])} | {fmt(tall['lazy'])} | {fmt(tall['whole'])} | {'yes' if len(wrong) == before else 'no'} |")
+    if wrong:
+        print("\n" + "\n".join(wrong))
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "summarize":
         summarize(sys.argv[2])
@@ -281,5 +400,7 @@ if __name__ == "__main__":
         budget(sys.argv[2])
     elif len(sys.argv) == 4 and sys.argv[1] == "look":
         look(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 3 and sys.argv[1] == "place":
+        place(sys.argv[2])
     else:
         sys.exit(__doc__)
