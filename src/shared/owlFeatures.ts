@@ -71,6 +71,7 @@ export const OWL_FEATURES = [
   { id: 'teams', name: 'Teams', owlSince: '2026-11-03', owner: 'docs/adr/0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md', sentToStable: false },
   { id: 'popup', name: 'The popup', owlSince: '2026-11-02', owner: 'docs/adr/0181-a-shortcut-shows-a-popup-that-prompts-a-thread-or-watcher.md', sentToStable: false },
   { id: 'to-do-list', name: 'To-do list', owlSince: '2026-11-03', owner: 'docs/adr/0188-a-to-do-list-holds-what-only-the-users-hands-can-do.md', sentToStable: false },
+  { id: 'next-turn-choice', name: 'A choice for the next turn while a thread works', owlSince: '2026-11-04', owner: 'docs/adr/0190-a-thread-keeps-a-choice-for-its-next-turn.md', sentToStable: false },
   { id: 'hide-menu-bar-icon', name: 'Hide the menu bar icon', owlSince: '2026-11-03', owner: 'docs/adr/0114-the-menu-bar-owl-is-alive.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 

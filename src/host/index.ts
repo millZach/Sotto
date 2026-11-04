@@ -201,7 +201,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const runtime = await createAgentRuntime({
       toDoListEnabled: owlFeatures['to-do-list'],
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
       nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { hostForThread, type AgentCommand, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread } from '../../../shared/agents'
+import { hostForThread, type AgentCommand, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread, type AgentThreadOptions } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 
 /** The settings an option chip changes: the three choice chips and the speed bolt (ADR-0143), whose kind is still `fast`. */
@@ -63,10 +63,42 @@ export const speedPatch = (value: string, model?: AgentModel): SettingsPatch => 
  * refusal's `error`, and the bolt's line says it in its own words; it is never shown as it is.
  */
 export const SPEED_NOT_CARRIED = 'speed-not-carried'
-/** Each setting's value on this thread as its own model reads it: the defaults are the model's. */
+type ThreadSettings = Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode' | 'speed' | 'fastMode'>
+/**
+ * Each setting's value on this thread as its chips show it, read by the model it names: the defaults are the model's. That
+ * is what the thread runs on, or, where main keeps a choice for its next turn (ADR-0190), that choice over it.
+ */
 export function settingValues(state: AgentState, thread: AgentThread): SettingValues {
-  const model = resolveModel(hostForThread(state.host, thread).models, thread.modelId)
-  return settingValuesFor(thread, model)
+  const choice = nextTurnChoiceOf(state, thread.id)
+  const shown = choice === undefined ? thread : nextTurnSettings(thread, choice)
+  return settingValuesFor(shown, resolveModel(hostForThread(state.host, thread).models, shown.modelId))
+}
+/** Each setting's value on this thread as it runs now, whatever main keeps for its next turn. */
+export function settingValuesInForce(state: AgentState, thread: AgentThread): SettingValues {
+  return settingValuesFor(thread, resolveModel(hostForThread(state.host, thread).models, thread.modelId))
+}
+/** The choice main keeps for this thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0190), while one waits. */
+export function nextTurnChoiceOf(state: Pick<AgentState, 'nextTurnSettings'> | null, threadId: string): AgentThreadOptions | undefined {
+  return state?.nextTurnSettings?.find(item => item.threadId === threadId)
+}
+/** The settings a kept choice changes, as the chips that show them. */
+export function nextTurnKinds(choice: AgentThreadOptions | undefined): ReadonlySet<SettingKind> {
+  const kinds = new Set<SettingKind>()
+  if (choice === undefined) return kinds
+  if (choice.modelId !== undefined) kinds.add('model')
+  if (choice.reasoningEffort !== undefined) kinds.add('effort')
+  if (choice.runtimeMode !== undefined || choice.providerMode !== undefined) kinds.add('permissions')
+  if (choice.speed !== undefined || choice.fastMode !== undefined) kinds.add('fast')
+  return kinds
+}
+/** The settings the thread's next turn starts on: the kept choice over what it runs on, a new model at its own default effort. */
+export function nextTurnSettings(thread: ThreadSettings, choice: AgentThreadOptions): ThreadSettings {
+  const modelId = choice.modelId ?? thread.modelId
+  const reasoningEffort = choice.reasoningEffort ?? (modelId === thread.modelId ? thread.reasoningEffort : undefined)
+  const runtimeMode = choice.runtimeMode ?? thread.runtimeMode, providerMode = choice.providerMode ?? thread.providerMode
+  const speed = choice.speed !== undefined ? choice.speed : choice.fastMode !== undefined ? (choice.fastMode ? 'fast' : null) : threadSpeed(thread)
+  return { modelId, speed, ...reasoningEffort !== undefined ? { reasoningEffort } : {}, ...runtimeMode !== undefined ? { runtimeMode } : {},
+    ...providerMode !== undefined ? { providerMode } : {} }
 }
 export function settingValuesFor(thread: Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode' | 'speed' | 'fastMode'>, model: AgentModel | undefined): SettingValues {
   return {

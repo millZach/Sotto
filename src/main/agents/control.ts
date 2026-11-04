@@ -51,6 +51,8 @@ import { CLIENT_CHECK_INTERVAL_MS, locateClient as locateClientOnDisk, ProviderC
 import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { NextTurnChoices, pressedOnto, stillToChange, type NextTurnChoice, type NextTurnOptions } from './nextTurnChoices'
+import { compactionPending } from '../../shared/compaction'
 import { AttachmentPreviews } from './attachmentPreviews'
 import { AttachmentStore, inlineStager, type StageInline } from './attachmentStore'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
@@ -619,6 +621,10 @@ export class AgentControl {
   private readonly delegationOrigins = new WeakSet<object>()
   /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
   private readonly idleCompactions = new WeakSet<object>()
+  /** Each thread's choice kept for its next turn (ADR-0190), present only while `next-turn-choice` is on. */
+  private readonly nextTurns = new NextTurnChoices()
+  /** The commands that send a kept choice, among the machine commands above: Sotto's, never the user's or Watcher's. */
+  private readonly nextTurnSends = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
     const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
       ...this.watcher.creation ? [this.watcher.creation.identity] : []]
@@ -1378,6 +1384,11 @@ export class AgentControl {
     attachAnyFile?: boolean
     /** The Owl answer for images on question answers (ADR-0176), read once at start: an answer may carry images. */
     answerImages?: boolean
+    /**
+     * The Owl answer for a choice for the next turn (ADR-0190), read once at start: a chip pressed while a thread works is
+     * kept for its next turn instead of refused.
+     */
+    nextTurnChoice?: boolean
     /** The pictures this host's agents made or looked at (ADR-0170), present only while `inline-media` is on. */
     threadMedia?: ThreadMediaStore
     /**
@@ -2015,6 +2026,78 @@ export class AgentControl {
   /** Lets Watcher's queue go on once the choice it waited for has gone (watcher.ts). */
   resumeWatcherQueue(): void { this.pumpFollowups() }
   /**
+   * Whether a thread rests as sending a kept choice needs (ADR-0190): no turn, no request, no compaction, a connected
+   * provider and nothing of its own on its way. What only waits in its queue does not count; the queue waits for the choice.
+   */
+  private restsForNextTurn(thread: AgentThread): boolean {
+    return thread.status !== 'running' && thread.requests.length === 0 && !compactionPending(thread.compaction) && this.threadSettingsCanGo(thread.id)
+  }
+  /**
+   * A chip pressed while its thread works, kept for the thread's next turn (ADR-0190) and sent nowhere now. A press names
+   * one setting, so it joins the choice that waits; what the thread already runs on goes from it, so pressing the value in
+   * force puts the choice away. While a choice is on its way, a press follows it whole. The choice is checked as a change
+   * would be, and a wider permission against the pressing client's grant, now and again when it is sent (ADR-0004). False
+   * when the change may go now: a thread at rest with nothing kept, Watcher's own, a closed one or one whose provider is gone.
+   */
+  private keepForNextTurn(command: Extract<AgentCommand, { type: 'configure-thread' }>, client: ClientIdentity): boolean {
+    const thread = this.thread(command.threadId)
+    if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || isThreadClosed(thread) || !isThreadProviderConnected(this.state.host, thread)) return false
+    const waiting = this.nextTurns.waiting(thread.id), sending = this.nextTurns.sent(thread.id)
+    if (waiting === undefined && sending === undefined && this.restsForNextTurn(thread)) return false
+    if (thread.nativeSessionStarted !== false && command.modelId && thread.providerId && resolveModel(this.state.host.models, command.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
+    const press: NextTurnOptions = { ...command.modelId !== undefined ? { modelId: command.modelId } : {}, ...command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {},
+      ...command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}, ...command.providerMode !== undefined ? { providerMode: command.providerMode } : {},
+      ...command.speed !== undefined ? { speed: command.speed } : command.fastMode !== undefined ? { fastMode: command.fastMode } : {} }
+    const merged = pressedOnto(waiting?.options ?? sending ?? {}, press, thread, this.state.host.models)
+    const options = sending !== undefined ? merged : stillToChange(merged, thread, this.state.host.models)
+    if (options === null) { this.nextTurns.drop(thread.id); return true }
+    validateThreadOptions(this.state.host, options, thread.modelId)
+    const permission = press.runtimeMode !== undefined || press.providerMode !== undefined
+    if (permission) this.guardThreadPermission(client, press, resolveModel(this.state.host.models, options.modelId ?? thread.modelId))
+    this.nextTurns.keep(thread.id, { options, client: permission ? client : waiting?.client ?? client })
+    this.sendNextTurns()
+    return true
+  }
+  /**
+   * Sends each kept choice whose thread rests, as the configure-thread a press at rest makes, on the thread's own lane and
+   * before its queue. What the thread runs on by then goes from it, and a choice that has nothing left, or whose thread is
+   * gone, is put away. Asked on every pump, and costs nothing while no choice is kept.
+   */
+  private sendNextTurns(): void {
+    if (this.dependencies.nextTurnChoice !== true) return
+    let changed = false
+    for (const threadId of this.nextTurns.threadIds()) {
+      if (this.nextTurns.sent(threadId)) continue
+      const choice = this.nextTurns.waiting(threadId)!
+      const thread = this.threadById(threadId)
+      if (!thread || isThreadClosed(thread)) { this.nextTurns.drop(threadId); changed = true; continue }
+      if (!this.restsForNextTurn(thread)) continue
+      const options = stillToChange(choice.options, thread, this.state.host.models)
+      if (options === null) { this.nextTurns.drop(threadId); changed = true; continue }
+      this.sendNextTurn(thread, choice, options)
+    }
+    if (changed) this.publish()
+  }
+  /**
+   * One kept choice on its way. It goes with the client that chose its permission, so a wider one is asked of that grant
+   * again, and as Sotto's own command, so it neither sets nor clears the window's error itself. Refused, the choice goes,
+   * the chips show what the thread runs on, and the window says so; a turn that starts meanwhile runs on what the thread
+   * had. With no result, main keeps it as it keeps any such change (#1192) and the chips mark it unconfirmed.
+   */
+  private sendNextTurn(thread: AgentThread, choice: NextTurnChoice, options: NextTurnOptions): void {
+    const { id: threadId, title } = thread
+    this.nextTurns.startSending(threadId, options)
+    const parsed = agentCommandSchema.parse({ type: 'configure-thread', threadId, ...options })
+    this.watcherOrigins.set(parsed, { guard: () => { if (this.disposed) throw new Error('Sotto is stopping.') } }); this.nextTurnSends.add(parsed)
+    void this.admitCommandShell(parsed, choice.client)
+      .then(result => result.error, (error: unknown) => error instanceof Error ? error.message : 'Sotto could not complete this action.')
+      .then(error => {
+        this.nextTurns.drop(threadId, choice)
+        if (error && !this.settingsUnconfirmed(threadId)) this.state.error = `Sotto could not change ${title}’s settings for its next turn. ${error} Its chips show what it runs on now. If that is not your choice, choose again.`
+      })
+      .finally(() => { this.nextTurns.endSending(threadId); this.publish(); this.pumpFollowups() })
+  }
+  /**
    * Where one thread's files are, from the live state. Files, Git changes, the terminal and the browser
    * ask this several times per listing and every couple of seconds per watched workspace; answering from
    * `get()` copied every loaded history to read six fields. The binding is a new object of strings.
@@ -2067,6 +2150,7 @@ export class AgentControl {
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
     const unconfirmedSettings = this.unconfirmedSettings()
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
+    if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
     this.attachmentPreviews.decorate(state.host)
     this.hideWatcher(state)
     return state
@@ -2131,7 +2215,7 @@ export class AgentControl {
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
-    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence'] as const) {
+    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'nextTurnSettings'] as const) {
       const records = state[key]
       if (records) (state as Record<string, unknown>)[key] = kept<{ threadId: string }>(records, item => this.threadAvailable(item.threadId))
     }
@@ -2208,6 +2292,8 @@ export class AgentControl {
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
     const unconfirmedSettings = this.unconfirmedSettings()
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
+    // Shared, never copied: the list is frozen and made again only when a choice changes (nextTurnChoices.ts).
+    if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
     this.hideWatcher(state)
     return state
   }
@@ -4608,7 +4694,7 @@ export class AgentControl {
       if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
       else this.state.globalLaneBusy = true
       // Sotto's own idle compaction leaves the window's error as it found it.
-      if (!privateDraftReply && !this.idleCompactions.has(command)) this.state.error = null
+      if (!privateDraftReply && !this.idleCompactions.has(command) && !this.nextTurnSends.has(command)) this.state.error = null
       this.publish()
       const turn = RECORDED_COMMAND_TYPES.has(command.type)
         ? this.beginTurn({
@@ -4814,6 +4900,8 @@ export class AgentControl {
   }
   private pumpFollowups(): void {
     if (this.disposed) return
+    // A choice kept for a thread's next turn goes once the thread rests, ahead of its queue (ADR-0190).
+    if (this.nextTurns.size) this.sendNextTurns()
     // Read, not copied: this runs for every host snapshot. `first` below may be held across the dispatch
     // awaits, which is safe because the store replaces its state rather than editing it.
     const items = this.followupStore.peek().items
@@ -4828,6 +4916,8 @@ export class AgentControl {
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
       // Watcher's model, effort or speed kept for its next turn goes before anything queued for it (watcher.ts).
       if (this.watcherHooks?.holdsQueue?.(threadId)) continue
+      // So does a choice kept for any thread's next turn while it is on its way (ADR-0190).
+      if (this.nextTurns.sent(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
       // A delegation's news waits whole while delegation is off, as on a stable run after an Owl one (ADR-0072), and
       // holds nothing back: news folded with it is set apart from it first, and the queue goes on past it (ADR-0081).
@@ -5631,6 +5721,9 @@ export class AgentControl {
           validateThreadOptions(this.state.host, { modelId: wanted.modelId, ...wanted.reasoningEffort ? { reasoningEffort: wanted.reasoningEffort } : {},
             ...wanted.speed !== undefined ? { speed: wanted.speed } : {} }, thread.modelId)
         })) return
+        // Any other thread's chip pressed while it works is kept for its next turn instead of refused (ADR-0190). Sotto's
+        // own send of that choice has an origin and goes on as any change.
+        if (!origin && this.dependencies.nextTurnChoice === true && this.keepForNextTurn(command, client)) return
         validate()
         // The thread interface exposes two distinct commands. Each has its own durable identity;
         // a partial or uncertain save cannot be mistaken for an atomic update.

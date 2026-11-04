@@ -347,6 +347,13 @@ describe('desktop host routing', () => {
     remote.state.unconfirmedSettings = [{ threadId: 'thread', runtimeMode: 'full-access' }]
     expect(router.shell().unconfirmedSettings).toEqual([{ threadId: hostEntityKey(REMOTE, 'thread'), runtimeMode: 'full-access' }])
   })
+  it("names each host's choices kept for a thread's next turn by the thread's client key (#2158)", () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    expect(router.shell().nextTurnSettings).toBeUndefined()
+    remote.state.nextTurnSettings = [{ threadId: 'thread', reasoningEffort: 'high' }]
+    expect(router.shell().nextTurnSettings).toEqual([{ threadId: hostEntityKey(REMOTE, 'thread'), reasoningEffort: 'high' }])
+  })
   it('keeps selection client-local and uses the chosen host for commands without references', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add(remote.connection)

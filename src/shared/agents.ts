@@ -1117,6 +1117,12 @@ export const agentStateSchema = z.object({
    * it or the provider says otherwise, and takes no other action on the thread meanwhile. Absent when there are none.
    */
   unconfirmedSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
+  /**
+   * The choice kept for each thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0190): what the user pressed on its
+   * chips while it worked, only where it differs from what the thread runs on. Main sends it once the thread rests, before
+   * its queue sends anything, and nothing of it reaches the provider before. Absent when none waits.
+   */
+  nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
