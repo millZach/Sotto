@@ -1731,9 +1731,14 @@ final class WatcherModelTests: XCTestCase {
 
     func testWatcherPermissionWordsFollowTheiPhonesOwn() {
         XCTAssertEqual(WatcherPermissions.modes.map(WatcherPermissions.name), ["Ask before actions", "Allow edits", "Allow actions", "Full access"])
-        XCTAssertEqual(WatcherPermissions.line("auto", provider: "Codex", computer: "Laptop"), "Codex decides what to ask you about.")
-        XCTAssertEqual(WatcherPermissions.line("full-access", provider: "Codex", computer: "Laptop"),
+        XCTAssertEqual(WatcherPermissions.line("auto", provider: "Claude Code", computer: "Laptop"), "Claude Code decides what to ask you about.")
+        XCTAssertEqual(WatcherPermissions.line("full-access", provider: "Claude Code", computer: "Laptop"),
                        "Edits files and runs any command without asking, anywhere on Laptop.")
+        // A Codex Watcher reads a Codex thread's lines (#2161).
+        XCTAssertEqual(WatcherPermissions.line("auto-accept-edits", provider: "Codex", providerID: "codex", computer: "Laptop"),
+                       "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.")
+        XCTAssertEqual(WatcherPermissions.line("auto", provider: "Codex", providerID: "codex", computer: "Laptop"),
+                       "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.")
         XCTAssertEqual(WatcherPermissions.foot, "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.")
         XCTAssertFalse(WatcherPermissions.grants("approval-required"))
         XCTAssertTrue(WatcherPermissions.grants("auto-accept-edits"))
