@@ -345,3 +345,7 @@ When a record's output, its text or both only grew at their end, and every other
 Only the main window is sent appends. Main's detail stream asks each listener whether it applies them when it subscribes, and only the window's IPC stream does. Every other listener, the desktop's socket server among them, is sent the same delta with each append replaced by the record whole, read from the history the delta takes the thread to. The host protocol is unchanged: `detail-delta` pushes carry records and removals as before, every client takes them as it did, and no host feature was added. A client of the protocol that wants appends is a later change with its own feature.
 
 Nothing a provider or model receives changes. This is what main sends its own window; the history the providers are given, and what a thread can do, are as they were.
+
+## Amendment: a team link is not a paired client (November 3, 2026)
+
+[ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) admits another owner's computer by a code on a listener of its own. Its token never opens a host session, and this record's client kinds do not cover it.
