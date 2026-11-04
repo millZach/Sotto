@@ -101,6 +101,7 @@ private struct RollReveal: ViewModifier, Animatable {
 
 private struct ToDoSheet: View {
     @EnvironmentObject var toDos: ToDoStore
+    @State private var rowsHeight: CGFloat = 0
     var body: some View {
         let count = toDos.book.left
         VStack(alignment: .leading, spacing: 0) {
@@ -109,11 +110,14 @@ private struct ToDoSheet: View {
                 Text("\(count) to do").font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, Space.s4).padding(.top, Space.s3).padding(.bottom, Space.s2)
-            // Only as long as what it holds, and it scrolls once that is more than the page has.
-            ViewThatFits(in: .vertical) {
-                rows
-                ScrollView { rows }.scrollBounceBehavior(.basedOnSize)
+            // Only as long as what it holds, and it scrolls once that is more than the page has. One scroll view holds the
+            // one set of rows: a row's open steps and unsent words are its own, so a second set to fall back on would lose
+            // them just as they made the list too long.
+            ScrollView {
+                rows.onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { rowsHeight = $0 }
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: rowsHeight)
             if toDos.failed {
                 Text("Sotto could not change your list. Try again.").font(.sotto(.small)).foregroundStyle(Palette.warningText)
                     .paragraphDirection()
@@ -143,7 +147,9 @@ private struct ToDoSheet: View {
         .background(Palette.raised, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
-        // Over the page, as a sheet is: VoiceOver stays inside it, and its escape gesture rolls it up.
+        // Over the page, as a sheet is: VoiceOver stays inside it, and its escape gesture rolls it up. It is one element
+        // holding the rest, since otherwise what follows lands on everything inside and replaces each control's own name.
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityAction(.escape) { toDos.rollUp() }
         .accessibilityIdentifier("to-do-scroll")

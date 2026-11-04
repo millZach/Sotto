@@ -1558,6 +1558,8 @@ struct RailAsk: Equatable {
         let studio = "22222222-2222-4222-8222-222222222222"
         // The to-do list's journey: the laptop keeps a list, with one thing new, one with steps and one a thread waits on.
         if ProcessInfo.processInfo.arguments.contains("--ui-to-dos") {
+            // A check-off waits longer than on a phone: one look at the page can take a CI runner more than the real five seconds.
+            toDoStore.undoNanoseconds = 30_000_000_000
             toDoStore.take(hostID: laptop, items: [
                 ToDoItem(id: "hand-test", title: "Hand test links on a paired host", why: "Links in a host's thread now open in the system browser.",
                          steps: ["Open a thread on the studio Mac", "Press a link in a reply", "See it open in Safari"], by: "watcher"),
