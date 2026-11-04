@@ -29,7 +29,7 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - name: Photograph the list both ways
+      - name: Scroll the list both ways
         timeout-minutes: 50
         run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 0 0
       - name: Keep the reports

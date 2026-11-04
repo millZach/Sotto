@@ -1,7 +1,7 @@
 #!/bin/sh
 # What opening a long thread costs, and what part of it comes only once a launch (#2120, #1702). Measuring branch only.
-# One build, one runner, one iPhone 16 Pro Max: photographs of the Threads list as it stands and with its rows lazy, at
-# the standard text size and a large one. Usage:
+# One build, one runner, one iPhone 16 Pro Max: what a person can do to the Threads list as it stands and with its rows
+# lazy, photographed at each stop, at the standard text size and a large one. Usage:
 #   sh apps/ios/Scripts/open-why.sh <report folder> <rounds> <minutes to stop starting rounds at>
 set -u
 start=$(date +%s)
@@ -81,15 +81,15 @@ while [ "$round" -le "$rounds" ]; do
     fi
     round=$((round + 1))
 done
-kind=listlook
-for run in 1 2; do
-    arm base "$out/look-base-$run.json" 240
-    arm lazy "$out/look-lazy-$run.json" 240
+for kind in listwalk listjump listscrub; do
+    arm base "$out/$kind-std-base-1.json" 240
+    arm lazy "$out/$kind-std-lazy-1.json" 240
+    arm lazy "$out/$kind-std-lazy-2.json" 240
 done
 xcrun simctl ui "$device" content_size accessibility-large
-for run in 1 2; do
-    arm base "$out/big-base-$run.json" 240
-    arm lazy "$out/big-lazy-$run.json" 240
+for kind in listwalk listjump listscrub; do
+    arm base "$out/$kind-big-base-1.json" 240
+    arm lazy "$out/$kind-big-lazy-1.json" 240
 done
 xcrun simctl ui "$device" content_size large
 xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true

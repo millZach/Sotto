@@ -215,7 +215,7 @@ import UIKit
         await quiet()
         if kind == "look" { return await look() }
         if kind == "open" { return await openJourney() }
-        if kind == "listlook" { return await listLook() }
+        if kind.hasPrefix("list") { return await listReach(kind) }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
@@ -289,36 +289,95 @@ import UIKit
         finish(nil)
     }
 
-    /// The Threads list photographed from its top, by points scrolled, and again after a thread has been opened over it
-    /// and closed, with where the scroller stands at each.
-    private func listLook() async {
+    /// What a person can do to a list whose rows may be made as they come into view, photographed at each stop with where
+    /// the scroller stands. `listwalk` scrolls at a finger's speed and flings, from a cold launch. `listjump` repeats the
+    /// one-step jumps that left a blank row, then waits and nudges to see if it clears. `listscrub` moves as dragging the
+    /// scroll bar does, from a cold launch. Each ends by opening a thread over the list, closing it and going to the top.
+    private func listReach(_ kind: String) async {
         tracing = true
         next("list-look")
-        func photo(_ name: String, _ view: UIScrollView) async {
-            await quiet()
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            snap(name, page: view)
-            phaseNotes["stand-" + name] = ["offset": Double(view.contentOffset.y), "height": Double(view.contentSize.height)]
-        }
         guard let view = Self.pageScroller() else { return finish("no-page") }
         let top = -view.adjustedContentInset.top
-        for distance in [0, 1_000, 5_000, 9_000] as [CGFloat] {
-            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top + distance), animated: false)
-            await photo("list-\(Int(distance))", view)
+        func stop(_ name: String) async {
+            await quiet()
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            snapSmall(name, page: view)
+            phaseNotes["stand-" + name] = ["offset": Double(view.contentOffset.y), "height": Double(view.contentSize.height)]
         }
-        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top + 5_000), animated: false)
-        await photo("list-5000-again", view)
+        func move(_ distance: CGFloat, speed: CGFloat) async {
+            let from = view.contentOffset.y
+            let to = top + distance
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                motion = Motion(view: view, from: from, to: to, seconds: Double(abs(to - from) / speed), done: done)
+            }
+        }
+        func jump(_ distance: CGFloat) { view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top + distance), animated: false) }
+        await stop("start")
+        switch kind {
+        case "listwalk":
+            for (distance, name) in [(1_000, "walk-1000"), (5_000, "walk-5000"), (9_000, "walk-9000"), (5_000, "walk-5000-up"), (1_000, "walk-1000-up"), (0, "walk-0-up")] as [(CGFloat, String)] {
+                await move(distance, speed: 2_000)
+                await stop(name)
+            }
+            for (distance, name) in [(9_000, "fling-9000"), (5_000, "fling-5000-up"), (0, "fling-0-up")] as [(CGFloat, String)] {
+                await move(distance, speed: 12_000)
+                await stop(name)
+            }
+            // A lazy list's height grows as its rows are made, so its end is reached when no more is left to go.
+            for _ in 0..<6 {
+                let end = view.contentSize.height + view.adjustedContentInset.bottom - view.bounds.height
+                if view.contentOffset.y >= end - 1 { break }
+                await move(end - top, speed: 3_000)
+            }
+            await stop("walk-end")
+            await move(5_000, speed: 2_000)
+        case "listjump":
+            for (distance, name) in [(1_000, "jump-1000"), (5_000, "jump-5000"), (9_000, "jump-9000"), (5_000, "jump-5000-up")] as [(CGFloat, String)] {
+                jump(distance)
+                await stop(name)
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await stop("jump-waited")
+            jump(5_004)
+            await stop("jump-nudge-4")
+            jump(5_060)
+            await stop("jump-nudge-60")
+            await move(4_700, speed: 2_000)
+            await stop("jump-walk-up-360")
+        default:
+            for (distance, name) in [(9_000, "scrub-9000"), (5_000, "scrub-5000-up"), (0, "scrub-0-up")] as [(CGFloat, String)] {
+                await move(distance, speed: 14_000)
+                await stop(name)
+            }
+            for (distance, name) in [(9_000, "hop-9000"), (5_000, "hop-5000-up")] as [(CGFloat, String)] {
+                await move(distance, speed: 90_000)
+                await stop(name)
+            }
+        }
+        await stop("before-open")
         waiting.insert("rendered-list-look")
         openLong()
         guard await until({ self.marks["rendered-list-look"] != nil }) else { return finish("no-thread") }
         await quiet()
         guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
         guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
-        guard let back = Self.pageScroller() else { return finish("no-page") }
-        await photo("list-5000-back", back)
-        back.setContentOffset(CGPoint(x: back.contentOffset.x, y: top), animated: false)
-        await photo("list-0-back", back)
+        await stop("after-back")
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top), animated: true)
+        await stop("to-top")
         finish(nil)
+    }
+
+    /// The window at one pixel a point: enough to see where rows stand, and quick to compare.
+    private func snapSmall(_ name: String, page: UIScrollView) {
+        guard let window = page.window else { phaseNotes["no-window-" + name] = true; return }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let file = URL(fileURLWithPath: report.deletingPathExtension().path + "-" + name + ".png")
+        try? image.pngData()?.write(to: file, options: .atomic)
     }
 
     /// The window as drawn below the bar, written beside the report. The bar is left out: its Working light breathes.
