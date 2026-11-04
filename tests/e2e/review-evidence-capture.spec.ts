@@ -314,6 +314,9 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   { name: 'thread-long', covers: [], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
+    // The header fills in once the host has read the folder's Git status: without this the first image is taken before that
+    // read and the second after it, and the two modes seem to hold different things.
+    await expect(focusedPane(page).locator('.git-action')).toBeVisible()
     // A long thread opens on its newest turns; the reader's own presses bring the rest in.
     const earlier = transcript(page).locator('.thread-transcript__earlier').getByRole('button')
     await expect(async () => {
@@ -466,7 +469,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => !ONLY || ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name))
+const BY_NAME_ONLY = ['shell-check']
+const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {
   try { await run() } catch (error) { failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`) }
@@ -536,6 +540,27 @@ test.describe('review evidence', () => {
         await runState('watcher-room', () => withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'design-threads', agents: 'design-threads' }, async launched => {
           const { page } = launched
           await freezeMain(launched)
+  // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
+  { name: 'shell-check', covers: [], run: async capture => {
+    const { page } = capture
+    const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
+    for (const [link, state] of pages) {
+      await openThreads(page)
+      await page.getByRole('link', { name: link, exact: true }).click()
+      await page.waitForTimeout(800)
+      for (const size of SMALLER_SIZES) await capture.shoot(`${state}-sizes`, `The ${link} page at a smaller window.`, '', { modes: ['dark'], size })
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+    }
+    await openThreads(page)
+    await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
+    for (const size of SMALLER_SIZES) await capture.shoot('dictate-sizes', 'The Dictate room at a smaller window.', '', { modes: ['dark'], size })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await openThreads(page)
+    await openThread(page, 'Repository review')
+    await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
+    await capture.shoot('thread-clay', 'A finished thread on the Clay theme.')
+    await setAppearance(page, { appearance: 'dark', lightTheme: 'sotto', darkTheme: 'sotto' }, 'dark')
+  } },
           await freezeRenderer(page)
           await resizeContentWindowFor(launched, 1600, 1000)
           await seedWatcherRoom(page, { watched: ['visual-gate', 'footer-links', 'weekly-note', 'grok-previews'], idPrefix: 'review-watcher' })
