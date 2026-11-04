@@ -139,7 +139,7 @@
 .usage-index__viz { align-self: center; color: var(--tt-accent-text); }
 .usage-index__note { grid-column: 1 / -1; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; text-overflow: ellipsis; }
 /* A measure with nothing to show: its name and what is missing, and no large dash standing in for a figure. */
-.usage-index__item[data-empty] { padding-block: 9px; }
+.usage-index__item[data-empty] { align-content: center; padding-block: 9px; }
 .usage-index__item[data-empty] :is(.usage-index__value, .usage-index__viz) { display: none; }
 .usage-index__item[data-empty]:not([aria-selected='true']) .usage-index__label { color: var(--tt-text-2); }
 .usage-mini-rings { display: flex; gap: 4px; }

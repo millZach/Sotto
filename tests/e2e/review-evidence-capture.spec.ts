@@ -8,6 +8,7 @@ import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { EVIDENCE_THREADS, PERMISSION_REQUEST, STREAM_MESSAGE_ID, STREAM_MOMENTS, STREAM_REPLY, STREAM_SHOWN, STREAM_THREAD_ID, evidenceThread, minutesAgo, streamActivities } from '../fixtures/reviewEvidence/content'
 import { buildEvidenceRepository, EVIDENCE_PULL, evidenceRoot, writePullRequestMoment, type EvidenceRepository, type PullRequestMoment } from '../fixtures/reviewEvidence/repository'
+import { DEFAULT_THEME_ID } from '../../src/shared/themes/library'
 import { pageBoundProblems, setAppearance } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { openThreads, toggleTools, type LaunchedSotto } from './support/sottoLaunch'
@@ -541,6 +542,27 @@ test.describe('review evidence', () => {
           const { page } = launched
           await freezeMain(launched)
   // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
+  // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
+  { name: 'shell-check', covers: [], run: async capture => {
+    const { page } = capture
+    const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
+    for (const [link, state] of pages) {
+      await openThreads(page)
+      await page.getByRole('link', { name: link, exact: true }).click()
+      await page.waitForTimeout(800)
+      for (const size of SMALLER_SIZES) await capture.shoot(`${state}-sizes`, `The ${link} page at a smaller window.`, '', { modes: ['dark'], size })
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+    }
+    await openThreads(page)
+    await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
+    for (const size of SMALLER_SIZES) await capture.shoot('dictate-sizes', 'The Dictate room at a smaller window.', '', { modes: ['dark'], size })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await openThreads(page)
+    await openThread(page, 'Repository review')
+    await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
+    await capture.shoot('thread-clay', 'A finished thread on the Clay theme.')
+    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+  } },
   { name: 'shell-check', covers: [], run: async capture => {
     const { page } = capture
     const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
