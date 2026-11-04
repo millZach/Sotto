@@ -1343,12 +1343,16 @@ struct RailAsk: Equatable {
     /// The journey that reads what a Watch press said holds it up (`--ui-watch-notice-stays`): a look at the page can take
     /// longer on a loaded simulator than the eight seconds it lasts.
     private static let watchNoticeStays = ProcessInfo.processInfo.arguments.contains("--ui-watch-notice-stays")
+    /// The journey that reads the line over Watcher's box holds its Codex back (`--ui-watcher-permission-unconfirmed`): a
+    /// look at Watcher's page can outlast the while before Codex confirms.
+    private static let watcherPermissionUnconfirmed = ProcessInfo.processInfo.arguments.contains("--ui-watcher-permission-unconfirmed")
     /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
     /// app did before the draft and detail stores, and before a computer's unchanged state was left unpublished.
     private static let publishesEverything = ProcessInfo.processInfo.arguments.contains("--ui-publish-everything")
     #else
     private static let publishesEverything = false
     private static let watchNoticeStays = false
+    private static let watcherPermissionUnconfirmed = false
     #endif
     /// Called after a store publishes a change. Only the comparison publishes it on the model too.
     private func publishOnModelIfComparing() {
@@ -2094,11 +2098,11 @@ struct RailAsk: Equatable {
         }
     }
     /// The laptop keeps the mode for Watcher a moment after it is chosen, and Watcher's provider confirms it a while later,
-    /// so the chip says what is still in force between the two. The while is long enough for CI's SE, where one look at
-    /// Watcher's page can take eight seconds, to find the caption before it goes.
+    /// so the chip says what is still in force between the two. `--ui-watcher-permission-unconfirmed` holds the second back.
     private func setFixtureWatcherPermission(_ mode: String, on hostID: String) async {
         try? await Task.sleep(nanoseconds: 300_000_000)
         changeFixtureWatcher(on: hostID) { $0["runtimeMode"] = mode }
+        guard !Self.watcherPermissionUnconfirmed else { return }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 15_000_000_000)
             self?.changeFixtureWatcher(on: hostID) { page in

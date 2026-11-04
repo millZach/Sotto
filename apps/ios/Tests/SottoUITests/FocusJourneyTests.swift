@@ -957,8 +957,9 @@ import UIKit
     @discardableResult private func openWatcher() -> XCUIElement {
         let tab = app.tab("Watcher")
         XCTAssertTrue(tab.waitForExistence(timeout: 10), "A computer that runs Watcher gives it a tab")
-        tab.tap()
-        XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
+        let state = byID("watcher-state")
+        press(tab, until: NSPredicate { _, _ in state.exists }, timeout: 30, untouched: { !state.exists })
+        XCTAssertTrue(state.waitForExistence(timeout: 10), "Watcher's page opens with its state")
         return tab
     }
     /// Something shared to Sotto opens the Watcher tab with its file in the box and its link in the field (ADR-0157).
@@ -1645,8 +1646,13 @@ import UIKit
     /// Watcher's permissions are Permissions in its box's settings pill (ADR-0166, amended November 1, 2026), in this
     /// iPhone's own words (control A, #1276): it opens the four modes, a choice shows on the pill at once, and until
     /// Watcher's provider confirms it the line over the box says what is still in force.
+    ///
+    /// The fixture's Codex confirms fifteen seconds after the choice, and on a loaded CI simulator one look on this page has
+    /// taken over twenty, so the line could go before the journey saw it (#2067). So Codex waits here until the journey has
+    /// read the line, and only the second launch lets it confirm, where nothing has to catch the line.
     func testWatchersPermissionsChangeFromItsBox() {
-        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-reply-box-stays-full"])
+        let arguments = Self.watcher + ["--ui-watcher-can-answer", "--ui-reply-box-stays-full"]
+        launch(arguments + ["--ui-watcher-permission-unconfirmed"])
         openWatcher()
         let reply = byID("watcher-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
@@ -1670,14 +1676,24 @@ import UIKit
         XCTAssertTrue(waitUntilGone(edits), "Choosing closes the list")
         XCTAssertTrue(watcherPill(pill, says: "Allow edits"), "The pill says the choice at once")
         let inForce = byID("watcher-permissions-in-force")
-        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the line over the box says what is still in force")
+        XCTAssertTrue(inForce.waitForExistence(timeout: 30), "Until Codex confirms it, the line over the box says what is still in force")
         XCTAssertEqual(inForce.label, "Codex stays on Ask before actions until it confirms.")
         XCTAssertLessThanOrEqual(inForce.frame.maxY, reply.frame.minY, "Over the box")
         capture("watcher-permissions-pending-dark")
-        // The fixture's Codex confirms fifteen seconds after the choice. On CI's SE each look for the caption on Watcher's
-        // long page took eight seconds or more, so twenty seconds held only three looks, and once ran out with the caption
-        // already gone from the screen. A deadline that is never reached costs nothing.
-        XCTAssertTrue(waitUntilGone(inForce, timeout: 60), "Once Codex confirms it, nothing more is said")
+
+        // With nothing holding it, Codex confirms and the line goes. On CI one look for it has taken 31 seconds, so sixty
+        // seconds held only three looks and once ran out with the line already gone from the screen. A deadline that is
+        // never reached costs nothing.
+        launch(arguments)
+        openWatcher()
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        openWatcherPermissions(pill)
+        XCTAssertTrue(edits.waitForExistence(timeout: 5))
+        reveal(edits)
+        edits.tap()
+        XCTAssertTrue(waitUntilGone(edits), "Choosing closes the list")
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"), "The choice is made before the line can go")
+        XCTAssertTrue(waitUntilGone(inForce, timeout: 120), "Once Codex confirms it, nothing more is said")
         XCTAssertTrue(watcherPill(pill, says: "Allow edits"))
         // Writing in the box leaves the pill where it is.
         reply.tap()
