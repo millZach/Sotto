@@ -60,7 +60,8 @@ export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
  * T3 Code offers. `afterDays` counts idle days since the thread's last activity; `null` is never.
  * `unchanged` means the folder's commits are all in the repository's default branch already;
  * `merged` means GitHub reports the branch's pull request merged; `onSettle` reclaims when the
- * thread is settled. Each applies only to a clean folder with nothing in it but installed dependencies.
+ * thread is settled. Each applies only to a clean folder whose ignored files are installed dependencies and build
+ * output the repository marks or a tool tags as a cache.
  */
 export type LlmMode = 'default' | 'nitro' | 'floor'
 export const LLM_MODES = ['default', 'nitro', 'floor'] as const satisfies readonly LlmMode[]

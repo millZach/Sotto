@@ -38,8 +38,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private var reader: Task<Void, Never>?
     private var heartbeat: Task<Void, Never>?
     private var pending: [String: CheckedContinuation<Received<Reply>, Error>] = [:]
-    /// A reply's bytes, and the model catalog this connection held when it arrived, which its shell may name.
-    private struct Reply: Sendable { let data: Data; let catalog: ModelCatalogCache }
+    /// A reply's bytes, and the model catalog and thread records this connection held when it arrived, which its shell
+    /// may name or be measured from.
+    private struct Reply: Sendable { let data: Data; let catalog: ModelCatalogCache; let records: ThreadRecordsCache }
     /// The last model catalog this connection was sent whole. It is kept as frames arrive, so every shell is
     /// read against the catalog that was current at its place in the socket, and a reconnect empties it.
     private var catalog = ModelCatalogCache()
@@ -176,15 +177,16 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         let current = generation
         let reply = try await request(operation, id: id)
         let value = try await Wire.readReply(reply.value.data, as: type)
-        return Received(try whole(value, catalog: reply.value.catalog, generation: current), sequence: reply.sequence)
+        return Received(try whole(value, reply: reply.value, generation: current), sequence: reply.sequence)
     }
-    /// A shell or hello with its model catalog put back from what this connection held when the reply arrived.
-    /// One naming a catalog this connection was never sent cannot be shown whole, and must not read as a
-    /// computer with no models, so the connection starts again: the host sends a new connection's hello whole.
-    private func whole<T>(_ value: T, catalog: ModelCatalogCache, generation current: UUID) throws -> T {
+    /// A shell or hello with its model catalog and thread records put back from what this connection held when the reply
+    /// arrived. One naming a catalog this connection was never sent, or measured from records it does not hold, cannot be
+    /// shown whole, and must not read as a computer with no models or threads, so the connection starts again: the host
+    /// sends a new connection's hello whole.
+    private func whole<T>(_ value: T, reply: Reply, generation current: UUID) throws -> T {
         let restored: T?
-        if let shell = value as? Shell { restored = catalog.whole(shell).flatMap { $0 as? T } }
-        else if let hello = value as? Hello { restored = catalog.whole(hello).flatMap { $0 as? T } }
+        if let shell = value as? Shell { restored = reply.catalog.whole(shell).flatMap { reply.records.reply($0) }.flatMap { $0 as? T } }
+        else if let hello = value as? Hello { restored = reply.catalog.whole(hello).flatMap { $0 as? T } }
         else { return value }
         if let restored { return restored }
         if generation == current { disconnect(); onDisconnect?() }
@@ -223,7 +225,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             if let carried { catalog.hold(carried) }
             // The records a hello or a shell read listed whole, which the next push is measured from.
             if let records { threadRecords.hold(records) }
-            finish(id: id, result: .success(Received(Reply(data: data, catalog: catalog), sequence: received)))
+            finish(id: id, result: .success(Received(Reply(data: data, catalog: catalog, records: threadRecords), sequence: received)))
         case .refusal(let id, let failure): finish(id: id, result: .failure(HostRefusal(failure: failure)))
         case .shell(let shell):
             catalog.hold(shell)

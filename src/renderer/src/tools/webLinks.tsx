@@ -99,14 +99,19 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
   }
 }
 
-/** Gives links inside a thread's transcript that thread's browser. `focused` should be the pane's own focus state. */
-export function ThreadWebLinks({ threadId, threadTitle, children, bridge, store, focused = true }: {
+/**
+ * Gives links inside a thread's transcript that thread's browser. `focused` should be the pane's own focus state.
+ * `onPairedHost` says the thread runs on a paired host. Sotto's browser is on this computer and that thread's Browser
+ * tool is on the host, so its links open in the system browser whatever the setting says, and this computer's browser
+ * bridge, which refuses another host's thread by throwing, is never asked.
+ */
+export function ThreadWebLinks({ threadId, threadTitle, children, bridge, store, focused = true, onPairedHost = false }: {
   readonly threadId: string; readonly threadTitle: string; readonly children: ReactNode; readonly bridge?: BrowserBridge | undefined; readonly store?: ToolsPanelStore
-  readonly focused?: boolean
+  readonly focused?: boolean; readonly onPairedHost?: boolean
 }): ReactNode {
   const route = useContext(BrowserPageRouteContext)
   // A thread whose browser cannot be shown from here has none to open links in.
-  const resolved = route === null ? undefined : bridge ?? bridgeBrowser()
+  const resolved = route === null || onPairedHost ? undefined : bridge ?? bridgeBrowser()
   const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused, route ?? undefined), [threadId, threadTitle, resolved, store, focused, route])
   return <WebLinkRouterContext.Provider value={router}>{children}</WebLinkRouterContext.Provider>
 }

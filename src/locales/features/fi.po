@@ -3549,6 +3549,10 @@ msgstr ""
 msgid "No outside research: the panelists work from the snapshot and the conversation."
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No outside research: the panelists work from the thread's folder and the conversation."
+msgstr ""
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "No preference"
 msgstr ""
@@ -4776,6 +4780,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Research outside the snapshot"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Research outside the thread's folder"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
@@ -6232,6 +6240,14 @@ msgstr ""
 msgid "The panelists research outside the snapshot with their own tools."
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools: {reason}"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools."
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilSeats.tsx
 msgid "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
 msgstr ""
@@ -7192,6 +7208,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Working in a snapshot of {branch} at {commit}."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx

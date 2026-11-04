@@ -159,13 +159,14 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// Thread settings changes the provider never gave a result for, which the computer keeps (ADR-0166). Read item by item.
     public var unconfirmedSettings: ThreadList<UnconfirmedSetting>? = nil
     /// The thread records a shell push carried beside a state whose own list is empty, from a host that sends this
-    /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
-    /// which puts the whole list back (`ThreadRecordsCache`).
+    /// connection only the ones that changed (`changed-thread-records`), or that a command's answer carried inside it
+    /// (`command-changed-thread-records`). Always nil once a shell leaves `HostConnection`, which puts the whole list back
+    /// (`ThreadRecordsCache`).
     public var threadRecords: ChangedThreadRecords? = nil
     /// How many settled threads the computer's list leaves out, from a host that sends this phone only threads that are
     /// not settled (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
     public let settledHeldBack: Int?
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, settledHeldBack }
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, threadRecords, settledHeldBack }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -181,6 +182,7 @@ public struct Shell: Decodable, Equatable, Sendable {
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
         unconfirmedSettings = c.tolerant(ThreadList<UnconfirmedSetting>.self, .unconfirmedSettings)
+        threadRecords = try c.decodeIfPresent(ChangedThreadRecords.self, forKey: .threadRecords)
         settledHeldBack = try c.decodeIfPresent(Int.self, forKey: .settledHeldBack)
     }
     public func validate(hostID: String) throws {
