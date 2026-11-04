@@ -45,12 +45,19 @@ export class ToDoToolServer implements ScopedThreadTools {
   private admits(threadId: string): boolean {
     try { return this.handlers.admits(threadId) } catch { return false }
   }
-  private withinLimit(threadId: string): boolean {
+  /** Takes a slot on this thread's limit, and answers the one it took, or nothing when there is none left. */
+  private takeSlot(threadId: string): number | undefined {
     const now = this.clock(), times = (this.recent.get(threadId) ?? []).filter(at => now - at < TO_DO_LIMIT_WINDOW_MS)
     for (const [other, kept] of this.recent) if (other !== threadId && kept.every(at => now - at >= TO_DO_LIMIT_WINDOW_MS)) this.recent.delete(other)
-    if (times.length >= TO_DO_LIMIT) { this.recent.set(threadId, times); return false }
-    times.push(now); this.recent.set(threadId, times)
-    return true
+    this.recent.set(threadId, times)
+    if (times.length >= TO_DO_LIMIT) return undefined
+    times.push(now)
+    return now
+  }
+  /** Gives back the slot this call took, not whichever was taken last: another call's add may have been kept since. */
+  private giveBackSlot(threadId: string, slot: number): void {
+    const times = this.recent.get(threadId), at = times?.indexOf(slot) ?? -1
+    if (at >= 0) times?.splice(at, 1)
   }
   private async invoke(threadId: string, args: unknown): Promise<ThreadToolResult> {
     const text = (value: string, isError = false): ThreadToolResult => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError: true } : {}) })
@@ -59,10 +66,13 @@ export class ToDoToolServer implements ScopedThreadTools {
     if (!input.success) return text(`Give a short title, and for a link its label and a web address. ${NOTHING}`, true)
     // A retry of words it already has open changes nothing, so it costs nothing either.
     const again = this.store.open(input.data.title, threadId) !== undefined
-    if (!again && !this.withinLimit(threadId)) return text(`This thread has added ${TO_DO_LIMIT} to-dos in the last ${TO_DO_LIMIT_WINDOW_MS / 60_000} minutes, so ${NOTHING.toLowerCase()} Put it in your reply.`, true)
+    const slot = again ? undefined : this.takeSlot(threadId)
+    if (!again && slot === undefined) return text(`This thread has added ${TO_DO_LIMIT} to-dos in the last ${TO_DO_LIMIT_WINDOW_MS / 60_000} minutes, so ${NOTHING.toLowerCase()} Put it in your reply.`, true)
     try {
       await this.store.add(input.data, 'thread', threadId)
     } catch (error) {
+      // Only an add that was kept counts: a thread retrying while the list is full is not locked out once it has room.
+      if (slot !== undefined) this.giveBackSlot(threadId, slot)
       if (error instanceof ToDoRefused) return text(error.message, true)
       throw error
     }
