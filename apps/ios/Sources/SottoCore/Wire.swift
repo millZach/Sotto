@@ -513,6 +513,9 @@ public struct RequestOption: Decodable, Equatable, Identifiable, Sendable { publ
 public struct Question: Decodable, Equatable, Identifiable, Sendable {
     public let id: String; public let question: String; public let header: String?; public let options: [RequestOption]
     public let multiSelect: Bool; public let allowFreeText: Bool; public let required: Bool?; public let unavailableReason: String?
+    /// True when the agent asked for this answer masked (#2153): its own-answer box hides what is typed. Absent from a
+    /// computer that predates it, and from every question that is not secret.
+    public let secret: Bool?
 }
 public struct PermissionChoice: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let kind: String; public let description: String? }
 public struct RequestContext: Decodable, Equatable, Sendable {
