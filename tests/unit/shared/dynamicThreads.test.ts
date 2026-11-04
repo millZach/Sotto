@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_DYNAMIC_THREADS, isDynamicThread, parseDynamicThreadSettings, whyNotDynamic } from '../../../src/shared/dynamicThreads'
+import { DEFAULT_DYNAMIC_THREADS, isDynamicThread, OVERSEER_NOTE_OFF, overseerNoteFor, overseerNoteOn, OVERSEER_REASON_PREFIX, overseerInstructions, parseDynamicThreadSettings, whyNotDynamic } from '../../../src/shared/dynamicThreads'
 import { isOwlFeatureEnabled } from '../../../src/shared/owlFeatures'
 
 describe('Dynamic threads (ADR-0191)', () => {
@@ -31,6 +31,30 @@ describe('Dynamic threads (ADR-0191)', () => {
   ] as const)('says why %j cannot be Dynamic', (thread, words) => {
     expect(whyNotDynamic(thread as never)).toContain(words)
     expect(isDynamicThread({ ...thread, dynamic: true } as never, true)).toBe(false)
+  })
+
+  it('tells an overseer to hand work on, how to choose, and how to say it changed something itself', () => {
+    const words = overseerInstructions()
+    expect(words).toContain('You do no work yourself')
+    expect(words).toContain('Call read_delegation with no delegation')
+    expect(words).toContain(`"${OVERSEER_REASON_PREFIX}"`)
+    expect(words).toContain('name its delegation in replaces')
+    // No authority in it: the permission a worker gets is still the delegate tool's to hold.
+    expect(words).not.toMatch(/approve|grant/iu)
+  })
+
+  it('owes a note only when the session and the thread disagree', () => {
+    const thread = (dynamic: boolean, told?: boolean) => ({ providerId: 'claude', ...dynamic ? { dynamic: true } : {}, ...told === undefined ? {} : { dynamicSession: { created: false, told } } }) as never
+    expect(overseerNoteFor(thread(true), true)).toBe(overseerNoteOn())
+    expect(overseerNoteOn()).toContain(overseerInstructions())
+    expect(overseerNoteFor(thread(true, false), true)).toBe(overseerNoteOn())
+    expect(overseerNoteFor(thread(true, true), true)).toBeUndefined()
+    expect(overseerNoteFor(thread(false, true), true)).toBe(OVERSEER_NOTE_OFF)
+    expect(overseerNoteFor(thread(false), true)).toBeUndefined()
+    expect(overseerNoteFor(thread(false, false), true)).toBeUndefined()
+    // None at all with the feature off, whatever a saved record says.
+    expect(overseerNoteFor(thread(true), false)).toBeUndefined()
+    expect(overseerNoteFor(thread(false, true), false)).toBeUndefined()
   })
 
   it('reads the mark only on a thread that can hold it, while the feature is on', () => {

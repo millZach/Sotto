@@ -19,6 +19,7 @@ Approved by Zach on November 4, 2026, to build in this order. The decisions are 
 - **A first-use dialog** names the companies the first time Dynamic is turned on.
 - **"Workers per message" means at once.** Four at a time, with the next starting as one returns.
 - **A worker may delegate,** held to the list and to Highest effort. He turned down a rule that workers could not delegate at all.
+- **Dynamic can change mid-thread, by a note.** The live check found that real clients ignore new instructions on resume, so a change after the first message goes as one **overseer note** with the next message.
 - **#1202 lands first:** the role holds, and the result says so, unless the user's newest message names the model.
 
 Already the rule in the code:
@@ -71,12 +72,12 @@ Tests: `tests/integration/settingsHistoryIpc.test.ts` catches a missing allow-li
 
 - `src/shared/workerRoles.ts` or a new `src/shared/dynamicThreads.ts`: one function that writes the standing instructions. No edits, a piece per worker, name the model with `why`, prefer room, one writer at a time in a shared checkout.
 - `src/main/agents/claude.ts` (`subagentRoles`, `--append-system-prompt`) and `src/main/agents/codex.ts` (`launchRoles`, `developerInstructions`): on a Dynamic thread, send these in place of the role table and leave out the role agents.
-- Turning it on or off reloads the provider session at the next send, through each adapter's existing way of starting again.
+- A thread set before its first message starts on these instructions. One that changes later owes an **overseer note**, which the workspace puts on its next send, through the channel Watcher's request note uses (`claude.ts`'s prompt hook, `codex.ts`'s `additionalContext`). A change at rest also lets go of the idle process, so the next one starts without role agents, or with them.
 - `src/main/agents/watcherOwnChanges.ts` and `src/renderer/src/watcher/WatcherOwnChange.tsx`: let the mark serve an overseer too. It names the model, and the thread's transcript draws it when `speaker` is not Watcher.
 
 Tests: integration over the fake Claude Code and Codex for what each launch and reload sends, and for the role table's absence. The live check below.
 
-**Check first, on the real clients.** That a resumed Codex thread takes new developer instructions, and a restarted Claude Code keeps its provider session with a new appended prompt. The code passes them on resume, but no test proves the model obeys them. Live suites stay behind `SOTTO_CLAUDE_LIVE` and `SOTTO_CODEX_LIVE`, one short turn each. If one fails, the switch can only be set before a thread's first send on that provider, and I'll say so before Part 6.
+**Checked on the real clients, November 4, 2026.** Both obey instructions given at creation and ignore new ones on resume, and both obey an overseer note. `dynamicThreadInstructionsLive.test.ts` stays behind `SOTTO_CLAUDE_LIVE` and `SOTTO_CODEX_LIVE`. This also means a changed role table doesn't reach a resumed thread's instructions, which ADR-0091 decision 9 assumed; that is its own follow-up.
 
 ## Part 4: `delegate` on a Dynamic thread
 

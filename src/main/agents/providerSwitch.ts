@@ -801,6 +801,11 @@ export class ConfiguredProviderHost implements AgentHost {
     this.publish()
   }
   /** Handed to the provider's own host whatever its slot holds: an adapter that is not connected does nothing. */
+  /** A thread before its first send has no owner on record yet, so whoever knows its model says whose it is. */
+  async threadInstructionsChanged(threadId: string, provider?: ProviderId): Promise<void> {
+    const owner = provider ?? this.providerForThread(threadId)
+    if (owner) await this.options.hosts[owner].threadInstructionsChanged?.(threadId)
+  }
   async clientUpdated(provider: ProviderId): Promise<void> {
     await this.options.hosts[provider].clientUpdated?.(provider)
   }

@@ -62,3 +62,41 @@ export function whyNotDynamic(thread: DynamicThreadFacts): string | undefined {
 export function isDynamicThread(thread: DynamicThreadFacts & Pick<AgentThread, 'dynamic'>, enabled: boolean): boolean {
   return enabled && thread.dynamic === true && whyNotDynamic(thread) === undefined
 }
+
+/** The line an overseer's reply gives its reason on, if it changed anything itself (ADR-0191 decision 2). */
+export const OVERSEER_REASON_PREFIX = 'Overseer change reason:'
+
+/**
+ * What a Dynamic thread's model is told, in place of the role table, each time its provider session loads (ADR-0191). It
+ * is told and marked rather than blocked, so nothing here grants or holds back anything: `delegate` holds the limits.
+ */
+export function overseerInstructions(): string {
+  return [
+    'The user made you this thread\'s overseer. Plan the work and hand each piece to a delegated thread with the delegate tool, on the model you judge best for that piece. You do no work yourself: you read code, write briefs, check what comes back and answer the user.',
+    'Call read_delegation with no delegation to see the models you may use, what each can do and how much of its limit is left. Choose from those alone, and prefer a provider with room.',
+    'For each new thread, name its provider, model, effort and permission, and give why in one short plain line the user will read. Leave speed out unless the user\'s message asks for one. A brief is all a worker sees of this thread, so write it in full.',
+    'Do not edit project files or run commands that change anything. If you must, list the files or commands in your reply, and give the reason once, on a line of its own that starts with exactly "' + OVERSEER_REASON_PREFIX + '". Sotto marks the reply either way.',
+    'One worker at a time may write in the shared checkout. Give any other writer its own worktree with working_copy, and say so in its brief.',
+    'If a worker stopped at a limit, give the piece to another model and name its delegation in replaces. Its partial work stays in the folder, so tell the new worker.',
+    'When the user names a model, use it. If delegate refuses a provider because it is off the list, tell the user they can tick it in Settings, under Threads.',
+  ].join('\n\n')
+}
+
+/**
+ * What a provider session has been told of Dynamic (ADR-0191). A session keeps the instructions it was created with and
+ * ignores new ones on resume, so a thread that changes after its first send is told by an **overseer note** with its next
+ * message: `created` is what the session began as, and `told` what it last heard. Absent, a session that began ordinary.
+ */
+export type DynamicSession = NonNullable<AgentThread['dynamicSession']>
+
+/** The note that turns a session into its thread's overseer, once, beside the user's message. */
+export const overseerNoteOn = (): string => `From this message on, this thread is Dynamic. Earlier instructions about worker roles no longer apply to you.\n\n${overseerInstructions()}`
+/** The note that ends it. */
+export const OVERSEER_NOTE_OFF = 'From this message on, this thread is no longer Dynamic. You are not its overseer any more, whatever you were told before: do the work yourself, or hand pieces on as your other instructions say.'
+
+/** The note a thread's next message must carry, or undefined when its session already knows where it stands. */
+export function overseerNoteFor(thread: DynamicThreadFacts & Pick<AgentThread, 'dynamic' | 'dynamicSession'>, enabled: boolean): string | undefined {
+  if (!enabled) return undefined
+  const dynamic = isDynamicThread(thread, true), told = thread.dynamicSession?.told ?? false
+  return dynamic === told ? undefined : dynamic ? overseerNoteOn() : OVERSEER_NOTE_OFF
+}

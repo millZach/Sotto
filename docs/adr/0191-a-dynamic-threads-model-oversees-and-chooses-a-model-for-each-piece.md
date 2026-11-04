@@ -22,7 +22,9 @@ What providers allow decides the shape. A thread stays on one provider session f
 
 ## Decision
 
-**1. A switch on one thread.** **Dynamic** is a switch at the foot of the model menu, off by default, with the sentence "Opus 5.5 oversees and chooses a model for each piece. It does no work itself." With it on, the composer reads "Opus 5.5 oversees". It changes only at rest, and the thread's provider session reloads at the next send, since Claude Code and Codex read standing instructions when a thread loads. The thread keeps its Sotto thread ID and provider session.
+**1. A switch on one thread.** **Dynamic** is a switch at the foot of the model menu, off by default, with the sentence "Opus 5.5 oversees and chooses a model for each piece. It does no work itself." With it on, the composer reads "Opus 5.5 oversees". It changes only at rest. The thread keeps its Sotto thread ID and provider session.
+
+Claude Code and Codex obey instructions given when a provider session is created, and ignore new ones on resume: checked live on November 4, 2026, on Claude Code 2.1.318 and Codex 0.166.0 (`dynamicThreadInstructionsLive.test.ts`). So a thread set before its first message starts on the overseer's instructions, and a thread that changes after that is told by an **overseer note**: one note, on or off, beside its next message, through the channel Watcher's request note uses (Claude Code's prompt hook, Codex's turn context), so it never joins the user's words. Zach chose this over fixing the switch at the first message. A note lives in the conversation rather than in the session's instructions, so a compaction can lose it: one Sotto sees finish sends the note again with the next message.
 
 The first time the user turns it on, a small dialog names the companies the allowed list would send work to, with **Turn on** and **Choose providers**. After that the switch just switches.
 
@@ -77,9 +79,10 @@ The user overrules it by naming a model in a message, by **Stop this worker** on
 - Every message pays for two models, even a one-line fix, and each worker starts cold. A trimmed Claude sub-agent's first turn still costs 6.6k tokens (ADR-0091).
 - Until **its record** exists, it chooses on limits, abilities and what it believes about models, which is thin for models newer than it. It may favour its own maker. Nothing has tested this yet, and the plan measures it.
 - Without a keep-back setting, the overseer alone decides when a provider is too close to its limit, until a worker actually stops. A reading can be stale, and each computer has its own.
+- A provider's own compaction that Sotto does not see can lose an overseer note, and a thread that began Dynamic keeps its first instructions after a note turns it off, so the note asks the model to set them aside. It may not always.
 - Two workers writing in one checkout would collide. The overseer is told to run one writer at a time there, or to give a worker its own worktree. That is told, not enforced.
 - Limits are per computer and per provider, so what it sees can be wrong when the user works outside Sotto on another machine.
 
 ## Proof
 
-To be written with the build (`docs/plans/dynamic-threads.md`). Integration over the fake providers for the allowed list, held effort, workers at once, `replaces` cancelling a restart, a worker's own `delegate` held to the list, instructions at launch and reload, and all of it absent with the feature off. An end-to-end journey for the switch, a row with its reason and the Settings card. A comparison on real tasks, in `docs/verification/`, before Zach decides on stable.
+To be written with the build (`docs/plans/dynamic-threads.md`). Integration over the fake providers for the allowed list, held effort, workers at once, `replaces` cancelling a restart, a worker's own `delegate` held to the list, instructions at creation, an overseer note going once, and all of it absent with the feature off. A live check of both on the real clients. An end-to-end journey for the switch, a row with its reason and the Settings card. A comparison on real tasks, in `docs/verification/`, before Zach decides on stable.

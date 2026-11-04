@@ -473,6 +473,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // and offered again when Settings change. A headless host's threads start concretely, as their workers do.
   const workerRoles = options.workerRolesEnabled === true && options.runsAs !== 'headless-host'
     ? new WorkerRoles(() => subagentRoleTable(options.settings().workerRoles, agentControl.watcherSnapshot().models)) : undefined
+  if (options.dynamicThreadsEnabled === true) agentHost.allowDynamicThreads()
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
