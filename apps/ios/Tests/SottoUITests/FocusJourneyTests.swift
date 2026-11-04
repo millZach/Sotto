@@ -568,6 +568,85 @@ import UIKit
     func testAThreadWithPicturesStaysAtItsEnd() { picturesStayAtTheEnd(streaming: false) }
     func testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams() { picturesStayAtTheEnd(streaming: true) }
 
+    /// A reader up among a picture thread's runs stays where they are while the thread works, and their drags move the
+    /// page by what they dragged. On the phone such a thread threw its reader to another picture and would not let them
+    /// scroll (Zach, November 2026): each update handed every run's grid its steps again, and a grid given them laid its
+    /// unmade rows out afresh, so the page above the reader grew by thousands of points in one frame while its offset
+    /// stood still. No element here would show that, as an offset alone does not, so the app walks the thread itself
+    /// (`Bench.swift`) and reports the page's offset and height each frame and what the screen shows each second; this
+    /// journey reads that report and is the finger. A picture landing adds one row, under 200 points on any phone.
+    func testAPictureThreadStaysStillUnderItsReader() throws {
+        continueAfterFailure = true
+        let report = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("picture-page-\(UUID().uuidString).json")
+        app.launchEnvironment["SOTTO_BENCH_FILE"] = report.path
+        launch(Self.fixture + ["--ui-pictures", "--bench-threads", "30", "--bench-turns", "4", "--bench-chunks", "1",
+                               "--bench-journey", "pictures", "--bench-pictures", "full"], opensOnThreads: false)
+        let window = app.windows.firstMatch
+        let size = window.frame.size
+        let read = { () -> [String: Any]? in
+            (try? Data(contentsOf: report)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        }
+        let reached = { (phase: String) -> Bool in
+            let deadline = Date().addingTimeInterval(420)
+            while Date() < deadline {
+                if read()?["phase"] as? String == phase { return true }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return false
+        }
+        guard reached("finger") else { return XCTFail("The journey never reached the finger's turn; it stood at \(read()?["phase"] ?? "no report")") }
+
+        // Three drags up the page and three back as the thread goes on working. The app reads what each did.
+        let distance: CGFloat = 180
+        let x = size.width - 32, middle = size.height * 0.45
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        let towardEnd = [false, false, false, true, true, true]
+        for down in towardEnd {
+            Thread.sleep(forTimeInterval: 1)
+            let direction: CGFloat = down ? -1 : 1
+            origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2)),
+                       withVelocity: .slow, thenHoldForDuration: 0.15)
+        }
+        Thread.sleep(forTimeInterval: 1.2)
+        FileManager.default.createFile(atPath: report.path + ".done", contents: nil)
+        XCTAssertTrue(reached("finished"), "The journey must finish")
+
+        let phases = read()?["phases"] as? [String: [String: Any]] ?? [:]
+        func page(_ phase: String, _ name: String) -> Double { (phases[phase]?["page"] as? [String: Any])?[name] as? Double ?? -1 }
+        func note(_ phase: String, _ name: String) -> Double { phases[phase]?[name] as? Double ?? -1 }
+        for (phase, what) in [("hold-mid", "held still in the thread's middle"), ("working-mid", "held among older runs while the thread works"),
+                              ("working-live", "held inside the growing run while the thread works")] {
+            let pixels = note(phase, "pixelsChangedFromFirstPct"), step = page(phase, "biggestHeightStep"), moved = page(phase, "biggestOffsetStep")
+            print("[picture page] \(phase): pixels \(pixels)% height step \(step) offset step \(moved) height changes \(page(phase, "heightChanges"))")
+            XCTAssert((0...5).contains(pixels), "A reader \(what) must see the same screen; \(pixels)% of its pixels changed")
+            XCTAssert((0...200).contains(step), "A reader \(what) must not have the page swing; its height stepped \(step) points in a frame")
+            XCTAssert((0...1).contains(moved), "A reader \(what) must not be moved; the offset stepped \(moved) points in a frame")
+        }
+        let fingerPage = phases["finger"]?["page"] as? [String: Any]
+        let drags = fingerPage?["drags"] as? [[String: Double]] ?? []
+        for big in fingerPage?["swings"] as? [[String: Double]] ?? [] { print("[picture page] finger swing \(big)") }
+        XCTAssertEqual(drags.count, towardEnd.count, "Every drag must move the page; it followed \(drags.count) of \(towardEnd.count)")
+        for (drag, down) in zip(drags, towardEnd) {
+            let moved = (drag["moved"] ?? 0) * (down ? 1 : -1)
+            print("[picture page] drag \(down ? "down" : "up") moved \(Int(moved))")
+            XCTAssert(moved > Double(distance) * 0.7 && moved < Double(distance) * 1.3,
+                      "A drag of \(Int(distance)) points must move the page about that far; it moved \(Int(moved))")
+        }
+        let swing = page("finger", "biggestHeightStep")
+        print("[picture page] finger: height step \(swing) height changes \(page("finger", "heightChanges"))")
+        XCTAssert((0...200).contains(swing), "Under a finger the page must not swing; its height stepped \(swing) points in a frame")
+
+        if let data = try? Data(contentsOf: report) {
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "picture-page-report"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        try? FileManager.default.removeItem(at: report)
+        try? FileManager.default.removeItem(atPath: report.path + ".done")
+    }
+
     private func picturesStayAtTheEnd(streaming: Bool) {
         launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []))
         let thread = row("drives")
