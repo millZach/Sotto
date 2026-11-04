@@ -1,13 +1,13 @@
 /* The Teams tab and a teammate's message in Watcher's conversation (ADR-0186, ADR-0187). */
 .watcher-head__tabs { display: inline-flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); -webkit-app-region: no-drag; }
-.watcher-head__tab { min-height: 26px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); font-size: var(--tt-type-small); cursor: pointer; }
+.watcher-head__tab { min-height: 26px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); font-size: var(--tt-type-small); }
 .watcher-head__tab:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-head__tab[aria-selected='true'] { background: var(--tt-hover-strong); color: var(--tt-text); }
 
 /* Above the owls' canvas, which lies over the room's words, and on a ground of its own so its words clear the scene. */
 .teams-page { position: relative; z-index: 5; flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 8px 16px 24px; scrollbar-gutter: stable both-edges; }
 .teams-page__column { display: grid; gap: 12px; width: min(720px, 100%); margin: 0 auto; padding: 8px 12px 16px; border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); }
-.teams-page__art { margin: 4px 0 0; color: var(--tt-accent-text); font: 13px/1.3 var(--tt-font-mono); text-align: center; white-space: pre; overflow: hidden; }
+.teams-page__art { margin: 4px 0 0; color: var(--tt-accent-text); font: var(--tt-type-small)/1.3 var(--tt-font-mono); text-align: center; white-space: pre; overflow: hidden; }
 .teams-page__title { margin: 0; color: var(--tt-text); font-size: var(--tt-type-figure); font-weight: 650; text-align: center; }
 .teams-page__sub, .teams-page__fine { margin: 0; text-align: center; }
 .teams-page__error { margin: 0; }
@@ -28,7 +28,7 @@
 .teams-facts__row { display: contents; }
 
 .teams-projects { display: grid; gap: 2px; max-height: 220px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
-.teams-projects__row { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--tt-text); font-size: var(--tt-type-small); cursor: pointer; }
+.teams-projects__row { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--tt-text); font-size: var(--tt-type-small); }
 .teams-projects__row > :nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
 .teams-projects__row > :last-child { margin-left: auto; flex: none; }
 
