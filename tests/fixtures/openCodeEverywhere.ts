@@ -65,6 +65,7 @@ export function openCodeEverywhere(): AgentState {
     obsoleteDrafts: [receipt(opencodeThread, 13), receipt(codexThread, 14)],
     busyThreadIds: [opencodeThread, codexThread],
     unconfirmedSettings: [{ threadId: opencodeThread, modelId: zen }, { threadId: codexThread, modelId: codexModel }],
+    nextTurnSettings: [{ threadId: opencodeThread, modelId: zen }, { threadId: codexThread, modelId: codexModel }],
     globalLaneBusy: false, notice: '', error: null, credentials: { reasoning: false, secure: true },
   })
 }
@@ -89,5 +90,6 @@ export function openCodeOnlyInLinks(): AgentState {
     deliveries: state.deliveries!.filter(item => keep(item.threadId)), followups: state.followups!.filter(item => keep(item.threadId)),
     followupReceipts: state.followupReceipts!.filter(item => keep(item.threadId)), deliveredDrafts: state.deliveredDrafts!.filter(item => keep(item.threadId)),
     obsoleteDrafts: state.obsoleteDrafts!.filter(item => keep(item.threadId)), busyThreadIds: [codexThread],
-    unconfirmedSettings: state.unconfirmedSettings!.filter(item => keep(item.threadId)) }
+    unconfirmedSettings: state.unconfirmedSettings!.filter(item => keep(item.threadId)),
+    nextTurnSettings: state.nextTurnSettings!.filter(item => keep(item.threadId)) }
 }

@@ -395,7 +395,11 @@ export const agentRequestSchema = z.object({
   questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional(),
     /** Its written answer reaches the agent as the user's own words, not as a value a form checks, so images may go in it
      *  (ADR-0176). The adapter of an agent's own question tool sets it; a typed form field never has it. */
-    prose: z.literal(true).optional() })).max(100).optional(),
+    prose: z.literal(true).optional(),
+    /** Its written answer is a **secret answer** (#2153): the agent asked for it masked, as Codex's `isSecret` does. Every
+     *  client masks it, Sotto never saves its words, and it carries no images. Older clients drop the mark and show a
+     *  plain field. */
+    secret: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(),
     /** The asking model's own words for what it asks (a **command summary**, ADR-0185). Absent when it gave none; Sotto never writes one. */
@@ -1121,6 +1125,12 @@ export const agentStateSchema = z.object({
    * it or the provider says otherwise, and takes no other action on the thread meanwhile. Absent when there are none.
    */
   unconfirmedSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
+  /**
+   * The choice kept for each thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0192): what the user pressed on its
+   * chips while it worked, only where it differs from what the thread runs on. Main sends it once the thread rests, before
+   * its queue sends anything, and nothing of it reaches the provider before. Absent when none waits.
+   */
+  nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
@@ -1743,8 +1753,8 @@ export function isThreadProviderConnected(host: AgentHostSnapshot, thread: Agent
 
 /**
  * The question an answer's images are named in (ADR-0176): the last whose written answer reaches the agent as the user's
- * own words. A typed form field is never one, so a number or a date never carries them.
+ * own words. A typed form field is never one, so a number or a date never carries them, and nor is a secret answer.
  */
 export function answerImageCarrier(request: Pick<AgentRequest, 'questions'> | undefined): NonNullable<AgentRequest['questions']>[number] | undefined {
-  return request?.questions?.findLast(question => question.prose === true && question.allowFreeText && !question.unavailableReason)
+  return request?.questions?.findLast(question => question.prose === true && question.allowFreeText && !question.unavailableReason && question.secret !== true)
 }

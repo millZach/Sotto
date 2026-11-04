@@ -1085,6 +1085,11 @@ msgstr ""
 msgid "{provider} uses its own permission profiles; a new thread starts on its first."
 msgstr ""
 
+#. Under a masked answer field. {provider} is the coding agent’s name, such as Codex.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} will see this and keep it in its own session file. Sotto does not save it."
+msgstr ""
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "{providerName} model sources"
@@ -4506,6 +4511,11 @@ msgstr ""
 msgid "hidden"
 msgstr ""
 
+#. Stands for the words of a saved answer the agent asked for masked, which Sotto never saves or shows.
+#: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+msgid "Hidden answer"
+msgstr ""
+
 #. Hides the list under a project
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Hide"
@@ -4952,6 +4962,10 @@ msgstr ""
 #. Keeps a saved answer instead of discarding it.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Keep"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Keep current settings"
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
@@ -9309,6 +9323,11 @@ msgstr ""
 #. Heads the speed card of a thread on the user’s own model server while its turn runs.
 #: src/renderer/src/agents/ServerMark.tsx
 msgid "This turn"
+msgstr ""
+
+#. {now} lists the model, effort, speed and permission mode a running turn uses, such as "GPT-6.1 Terra, Low effort, Auto"; {next} lists the ones chosen for the next turn, such as "Medium effort".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "This turn runs on {now}. The next turn starts on {next}."
 msgstr ""
 
 #: src/renderer/src/agents/InteractiveVisual.tsx

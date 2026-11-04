@@ -26,7 +26,7 @@ export function withoutThreads(state: AgentState, hidden: ReadonlySet<string>): 
     ...(state.activeThreadId !== null && hidden.has(state.activeThreadId) ? { activeThreadId: null, activeProjectId: null } : {}),
     ...(hiddenDraft ? { draft: '', draftThreadId: null, draftRequestId: null, draftAttachments: [], composing: false } : {}),
   }
-  for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'unconfirmedSettings'] as const) {
+  for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'unconfirmedSettings', 'nextTurnSettings'] as const) {
     const records = visible[key]
     if (records) (visible as Record<string, unknown>)[key] = records.filter(item => !hidden.has(item.threadId))
   }

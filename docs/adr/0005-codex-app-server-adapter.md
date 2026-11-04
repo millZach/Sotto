@@ -254,3 +254,43 @@ No Windows line. With Codex's Windows sandbox off, `workspace-write` could fall 
 same day on Zach's Windows 11 PC with Codex 0.166.0: under `workspace-write` Codex wrote in the project without asking
 and printed no sandbox warning, and under `read-only` the write was denied. That PC sets `[windows] sandbox =
 "elevated"` in Codex's own config; a PC without it was not checked, and the menu claims nothing about one.
+
+## Amendment: a secret answer is masked and never saved (November 4, 2026, #2153)
+
+Codex marks a `request_user_input` question `isSecret` when it wants the answer masked: its own client shows `*` while
+it is typed and dots in its history. Sotto dropped the mark, so the answer was typed in a plain box, saved with every
+keystroke to `request-drafts.json` like any answer draft, and shown and copied by the Saved answer card. Zach's pick,
+November 4, 2026, variant A: mask it, never save it, the phone can answer too.
+
+**The mark travels as `secret: true`.** The adapter reads `isSecret` and marks the normalized question; the shared
+question schema keeps the mark, so it reaches the window, Needs you, Watcher's room, the popup, a paired desktop and the
+iPhone. Host protocol v1 carries it as an optional field (`docs/host-protocol.md`). A desktop or phone from before it
+drops the field and shows a plain box. The host does not hold the question back from them: telling them apart needs a
+new feature in hello's `accepts` and the question changed for each such client in every shell, detail and delta, which
+is a change of its own.
+
+**The card masks it.** A secret question's own-answer box, alone or as **Write my own answer**, is one password field
+with autocomplete and spelling off and no button to show it. Its accessible name is the question's. A line under it says
+that the provider will see the words and keep them in its own session file, and that Sotto does not save them. On the
+iPhone it is a `SecureField` with the same line.
+
+**Its words are never saved.** The window sends the form's draft without a secret answer's words, and main blanks them
+again before it writes, by its own request's marks as well as the draft's, so `request-drafts.json` holds only its
+choices. The words live in the window only while the user may still send them: they are forgotten once the answer is
+sent or held unconfirmed, and when the last card for the request closes, so leaving the thread, a restart or a reload
+starts the box empty. A question about a prototype with a secret answer is never sent back for its page
+([ADR-0108](0108-a-prototype-waiting-for-review-needs-you.md)), since an answer to Sotto's copy becomes the user's message. Binding a held answer to its delivery compares the answer the user sent with the saved form without the
+secret words, rather than not binding secret answers at all, so a delivered answer is still retired by exact proof and an
+unconfirmed one still waits for Check. A delayed older answer with different secret words and the same choices could bind
+the newer held form; the held form never carries the words, so nothing is resent either way. Turning off **Keep local
+history** is unrelated: it never touched unsent thread answers, and there is now nothing secret in them to remove.
+
+**A saved form says Hidden answer.** The Saved answer and Unconfirmed answer cards show **Hidden answer** for a secret
+question, after any choice made on it, and **Copy answer** leaves the question out. A form whose only content was a
+secret answer is not offered back at all. A secret question never carries an answer's images
+([ADR-0176](0176-images-dropped-on-a-question-card-go-with-the-answer.md)).
+
+Codex itself still sees the words and records them in its rollout as the tool output the model reads, and the model can
+repeat them in a reply, which Sotto then shows. Sotto's own logs never held answer text, and a test now says so for the
+thread's messages, its files and its log lines. Dictation into the field is not turned off: dictation is a system-wide
+paste, and with **Keep local history** on the Journal keeps the transcript of what was dictated.

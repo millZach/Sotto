@@ -27,13 +27,14 @@ export function aboutPrototype(request: AgentRequest, reply?: string): boolean {
   return requestWords(request).some(saysPrototype) || (reply !== undefined && saysPrototype(reply))
 }
 
-/** The answer that sends a question back, or undefined when it cannot carry the note: a question that only takes listed choices. */
+/** The answer that sends a question back, or undefined when it cannot carry the note: a question that only takes listed choices.
+ * Nor is a form with a secret answer sent back (#2153): an answer to Sotto's copy becomes the user's message. */
 export type PrototypeSendBack = { readonly answer: string; readonly questionAnswers?: AgentQuestionAnswers }
 export function sendBackAnswer(request: AgentRequest): PrototypeSendBack | undefined {
   if (request.kind !== 'question') return undefined
   const questions = request.questions ?? []
   if (!questions.length) return { answer: PROTOTYPE_SEND_BACK_NOTE }
-  if (questions.some(question => !question.allowFreeText || question.unavailableReason)) return undefined
+  if (questions.some(question => !question.allowFreeText || question.unavailableReason || question.secret)) return undefined
   return { answer: PROTOTYPE_SEND_BACK_NOTE, questionAnswers: Object.fromEntries(questions.map(question => [question.id, { optionIds: [], text: PROTOTYPE_SEND_BACK_NOTE }])) }
 }
 

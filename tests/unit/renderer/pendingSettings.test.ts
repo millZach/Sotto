@@ -3,7 +3,7 @@ import { deferred } from '../../fixtures/deferred'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, type AgentState, type AgentThread } from '../../../src/shared/agents'
-import { CONFIRMED_HOLD_MS, PendingSettingsStore, SPEED_NOT_CARRIED, unconfirmedKinds, type SendSettings, type SettingsPatch, type SettingValues } from '../../../src/renderer/src/agents/pendingSettings'
+import { CONFIRMED_HOLD_MS, nextTurnKinds, nextTurnSettings, PendingSettingsStore, settingValues, settingValuesInForce, SPEED_NOT_CARRIED, unconfirmedKinds, type SendSettings, type SettingsPatch, type SettingValues } from '../../../src/renderer/src/agents/pendingSettings'
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 function state(thread: Partial<AgentThread> = {}, error: string | null = null, unconfirmed?: AgentState['unconfirmedSettings']): AgentState {
@@ -131,5 +131,34 @@ describe('pending settings store', () => {
     expect(store.view('thread').refusals.permissions).toBeDefined()
     store.prune(new Set(['other']))
     expect(store.view('thread')).toEqual({ pending: {}, refusals: {} })
+  })
+})
+
+describe('a choice kept for the next turn (#2158)', () => {
+  const kept = (choice: NonNullable<AgentState['nextTurnSettings']>[number]): AgentState => ({ ...state({ status: 'running' }), nextTurnSettings: [choice] })
+
+  it('shows the kept choice over what the thread runs on, and keeps what it runs on apart', () => {
+    const current = kept({ threadId: 'thread', reasoningEffort: 'high', runtimeMode: 'full-access' })
+    const thread = current.host.threads[0]!
+    expect(settingValues(current, thread)).toEqual({ model: 'model', effort: 'high', permissions: 'full-access', fast: 'standard' })
+    expect(settingValuesInForce(current, thread)).toEqual({ model: 'model', effort: 'low', permissions: 'approval-required', fast: 'standard' })
+    expect([...nextTurnKinds(current.nextTurnSettings![0])]).toEqual(['effort', 'permissions'])
+    expect([...nextTurnKinds(undefined)]).toEqual([])
+  })
+
+  it('starts a kept model on its own default effort and keeps the speed chosen', () => {
+    expect(nextTurnSettings({ modelId: 'model', reasoningEffort: 'high', runtimeMode: 'auto', speed: 'fast' }, { modelId: 'other' }))
+      .toEqual({ modelId: 'other', runtimeMode: 'auto', speed: 'fast' })
+    expect(nextTurnSettings({ modelId: 'model', reasoningEffort: 'high' }, { fastMode: true })).toEqual({ modelId: 'model', reasoningEffort: 'high', speed: 'fast' })
+  })
+
+  it('lets go of a press once the window draws main keeping it', async () => {
+    const store = new PendingSettingsStore()
+    const reply = kept({ threadId: 'thread', reasoningEffort: 'high' })
+    store.press('thread', 'effort', 'high', { reasoningEffort: 'high' }, async () => reply, drawn('approval-required'))
+    await settle()
+    store.observe('thread', settingValues(reply, reply.host.threads[0]!))
+    expect(store.view('thread').pending.effort).toBeUndefined()
+    store.clear()
   })
 })

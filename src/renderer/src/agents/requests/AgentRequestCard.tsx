@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import React, { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
 import { msg, plural } from '@lingui/core/macro'
@@ -23,6 +23,7 @@ import {
 } from './requestAnswers'
 import './requests.css'
 
+const UNNAMED_AGENT = msg({ message: 'The agent', comment: 'Stands in for the coding agent’s name when it is not known, as in “The agent says”.' })
 /** Images dropped on a question card, by its owner and request, kept until sent so leaving the thread loses none (ADR-0176). */
 const cardImages = new Map<string, AgentAttachmentHandle[]>()
 /** Images still being added to each card, and the cards whose answer went with images, so late ones are dropped. */
@@ -72,6 +73,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
     request.delivery === 'uncertain' ? 'uncertain' : request.answerRetryReady === true ? 'retry-ready' : undefined)
   const [checking, setChecking] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  // A secret answer's words live only while a card shows them (#2153): the last card for this request to close forgets them.
+  const secretIds = JSON.stringify((request.questions ?? []).filter(question => question.secret === true).map(question => question.id))
+  useEffect(() => secretIds !== '[]' ? store.holdSecrets(entryOwner, request.id, JSON.parse(secretIds) as string[]) : undefined, [store, entryOwner, request.id, secretIds])
   const imagesKey = `${entryOwner}\n${request.id}`
   const [images, showImages] = useState(() => cardImages.get(imagesKey) ?? [])
   const setImages = (next: AgentAttachmentHandle[]): void => { if (next.length) cardImages.set(imagesKey, next); else cardImages.delete(imagesKey); showImages(next) }
@@ -141,6 +145,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
 
   const questionCount = questions.length
   const fields = questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []} pages={index === 0 ? pages : []} owner={{ threadId: ownerId, requestId: request.id, watcher }}
+    providerId={providerId}
     linkMissing={index === 0 && request.linkMissing === true}
     selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
     onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)
@@ -397,7 +402,7 @@ export function MessageLinks({ links, pages = [], owner, linkMissing = false, la
   </div></>
 }
 
-function QuestionField({ name, question, selection, disabled, onChange, links = [], pages = [], owner, linkMissing = false }: {
+function QuestionField({ name, question, selection, disabled, onChange, links = [], pages = [], owner, linkMissing = false, providerId }: {
   readonly name: string; readonly question: StructuredQuestion; readonly selection: typeof EMPTY_SELECTION
   readonly disabled: boolean; readonly onChange: (selection: typeof EMPTY_SELECTION) => void
   /** The message's links, shown under this question's words: the first question's, when a form has several. */
@@ -407,6 +412,8 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
   readonly owner?: PageOwner | undefined
   /** No page opens for this question's prototype (ADR-0108): the first question's, when a form has several. */
   readonly linkMissing?: boolean
+  /** The asking thread's provider, which a secret answer's line names as the one that keeps it. */
+  readonly providerId?: ProviderId | undefined
 }): ReactNode {
   const { t } = useLingui()
   const type = question.multiSelect ? 'checkbox' : 'radio'
@@ -428,8 +435,10 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
     {isUnavailable(question) ? <p className="agent-request__unavailable" data-required={!optional || undefined}>{question.unavailableReason}</p> : <>
       {question.multiSelect && !onlyText ? <span className="agent-request__note"><Trans>Choose any that apply.</Trans></span> : null}
       {onlyText ? question.allowFreeText
-        ? <textarea id={textId} className="agent-request__input" rows={2} aria-label={question.header ?? question.question} value={selection.text}
-          placeholder={t`Type your answer…`} onChange={event => onChange({ ...selection, text: event.target.value })} />
+        ? question.secret ? <SecretAnswer id={textId} label={question.header ?? question.question} value={selection.text} providerId={providerId}
+          onChange={text => onChange({ ...selection, text })} />
+          : <textarea id={textId} className="agent-request__input" rows={2} aria-label={question.header ?? question.question} value={selection.text}
+            placeholder={t`Type your answer…`} onChange={event => onChange({ ...selection, text: event.target.value })} />
         : <p className="agent-request__note tt-paragraph"><Trans>This question has no choices Sotto can show.</Trans></p>
         : <div className="agent-request__options">
           {question.options.map(option => {
@@ -446,13 +455,34 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
             <input id={`${name}-other`} type={type} name={name} value="" checked={selection.other}
               onChange={event => onChange(pickOther(question, selection, event.target.checked))} />
             <span><label className="agent-request__label" htmlFor={`${name}-other`}><Trans>Write my own answer</Trans></label>
-              <textarea id={textId} className="agent-request__input" rows={2} aria-label={t`Other answer to: ${prompt}`} value={selection.text}
-                placeholder={t`Type your answer…`} onChange={event => onChange({ ...pickOther(question, selection, true), text: event.target.value })} /></span>
+              {question.secret ? <SecretAnswer id={textId} label={t`Other answer to: ${prompt}`} value={selection.text} providerId={providerId}
+                onChange={text => onChange({ ...pickOther(question, selection, true), text })} />
+                : <textarea id={textId} className="agent-request__input" rows={2} aria-label={t`Other answer to: ${prompt}`} value={selection.text}
+                  placeholder={t`Type your answer…`} onChange={event => onChange({ ...pickOther(question, selection, true), text: event.target.value })} />}</span>
           </div> : null}
         </div>}
       {clearable ? <button type="button" className="agent-request__clear tt-focusable" aria-label={t`Clear choice for ${prompt}`} onClick={clear}><Trans>Clear choice</Trans></button> : null}
     </>}
   </fieldset>
+}
+
+/**
+ * A **secret answer**'s field (#2153, Zach's pick on November 4, 2026): one masked line in place of the text box, with
+ * nothing that would learn or suggest its words and no way to show them, and a line under it saying who keeps them. Its
+ * accessible name is the question's, never the value.
+ */
+function SecretAnswer({ id, label, value, providerId, onChange }: {
+  readonly id: string; readonly label: string; readonly value: string; readonly providerId: ProviderId | undefined
+  readonly onChange: (text: string) => void
+}): ReactNode {
+  const { t } = useLingui()
+  const provider = providerId ? PROVIDER_LABELS[providerId] : t(UNNAMED_AGENT)
+  return <>
+    <input id={id} type="password" className="agent-request__input" autoComplete="off" spellCheck={false} aria-label={label} aria-describedby={`${id}-kept`}
+      value={value} placeholder={t`Type your answer…`} onChange={event => onChange(event.target.value)} />
+    <span id={`${id}-kept`} className="agent-request__note agent-request__secret-note">{t({ message: `${provider} will see this and keep it in its own session file. Sotto does not save it.`,
+      comment: 'Under a masked answer field. {provider} is the coding agent’s name, such as Codex.' })}</span>
+  </>
 }
 
 /** What a form carries beyond its fields: the provider's own explanation, then the command, folder and details it acts on. */
@@ -477,7 +507,7 @@ function FormContext({ request }: { readonly request: AgentRequest }): ReactNode
 function CommandSummaryLine({ summary, ask, isCommand, providerId }: { readonly summary: string | undefined; readonly ask: 'waiting' | 'answered' | 'failed' | undefined; readonly isCommand: boolean; readonly providerId: ProviderId | undefined }): ReactNode {
   const { t } = useLingui()
   const named = providerId ? PROVIDER_LABELS[providerId] : undefined
-  const provider = named ?? t({ message: 'The agent', comment: 'Stands in for the coding agent’s name when it is not known, as in “The agent says”.' })
+  const provider = named ?? t(UNNAMED_AGENT)
   const inSentence = named ?? t({ message: 'the agent', comment: 'Stands in for the coding agent’s name in mid-sentence, as in “Asking the agent for a summary”.' })
   if (summary) return <p className="agent-request__summary tt-paragraph"><span className="agent-request__summary-who">{ask === 'answered'
     ? t({ message: `Sotto asked ${inSentence} what this does`, comment: 'Over a summary of a command that Sotto asked the coding agent’s provider for. {inSentence} is its name.' })

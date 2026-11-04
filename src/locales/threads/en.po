@@ -1085,6 +1085,11 @@ msgstr "{provider} still runs anything without asking until it confirms."
 msgid "{provider} uses its own permission profiles; a new thread starts on its first."
 msgstr "{provider} uses its own permission profiles; a new thread starts on its first."
 
+#. Under a masked answer field. {provider} is the coding agent’s name, such as Codex.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} will see this and keep it in its own session file. Sotto does not save it."
+msgstr "{provider} will see this and keep it in its own session file. Sotto does not save it."
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "{providerName} model sources"
@@ -4506,6 +4511,11 @@ msgstr "Help"
 msgid "hidden"
 msgstr "hidden"
 
+#. Stands for the words of a saved answer the agent asked for masked, which Sotto never saves or shows.
+#: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+msgid "Hidden answer"
+msgstr "Hidden answer"
+
 #. Hides the list under a project
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Hide"
@@ -4953,6 +4963,10 @@ msgstr "Just finished"
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Keep"
 msgstr "Keep"
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Keep current settings"
+msgstr "Keep current settings"
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Keep draft"
@@ -9310,6 +9324,11 @@ msgstr "This thread’s worktree. Both threads change the same files."
 #: src/renderer/src/agents/ServerMark.tsx
 msgid "This turn"
 msgstr "This turn"
+
+#. {now} lists the model, effort, speed and permission mode a running turn uses, such as "GPT-6.1 Terra, Low effort, Auto"; {next} lists the ones chosen for the next turn, such as "Medium effort".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "This turn runs on {now}. The next turn starts on {next}."
+msgstr "This turn runs on {now}. The next turn starts on {next}."
 
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "This window cannot show the page."
