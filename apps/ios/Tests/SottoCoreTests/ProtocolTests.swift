@@ -84,6 +84,15 @@ final class ProtocolTests: XCTestCase {
         XCTAssertThrowsError(try Commands.answer(threadID: "t", request: req, currentRequests: [req], answers: ["q": QuestionAnswer(text: "unsupported")]))
         XCTAssertThrowsError(try Commands.answer(threadID: "t", request: req, currentRequests: [req]))
     }
+    /// A secret answer (#2153): the mark is read when a computer sends it, and a question without it is not secret.
+    func testSecretQuestionMarkIsReadAndOptional() throws {
+        let secret = try request(#"{"id":"r","kind":"question","text":"Token","options":[],"questions":[{"id":"q","question":"Paste the fake token","options":[],"multiSelect":false,"allowFreeText":true,"prose":true,"secret":true}]}"#)
+        XCTAssertEqual(secret.questions?.first?.secret, true)
+        let plain = try request(#"{"id":"r","kind":"question","text":"Name","options":[],"questions":[{"id":"q","question":"Name it","options":[],"multiSelect":false,"allowFreeText":true}]}"#)
+        XCTAssertNil(plain.questions?.first?.secret)
+        let result = try Commands.answer(threadID: "t", request: secret, currentRequests: [secret], answers: ["q": QuestionAnswer(text: "fake-secret-123")])
+        XCTAssertEqual(result["questionAnswers"]["q"]["text"], .string("fake-secret-123"))
+    }
     func testPendingMarkerHasNoPromptAndCannotCrossHosts() throws {
         let pending = PendingOperation(hostID: host, clientID: "phone", threadID: "thread", draftID: UUID().uuidString, kind: "reply", id: "stable")
         let encoded = try JSONEncoder().encode(pending)

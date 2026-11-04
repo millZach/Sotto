@@ -4799,6 +4799,198 @@
         }
       }
     },
+    "%@ will see this and keep it in its own session file. Sotto does not save it." : {
+      "comment" : "Under a masked answer box. %@ is the agent's name, such as Codex.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سيرى %@ هذا ويحتفظ به في ملف جلسته الخاص. لا يحفظه Sotto."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ এটি দেখবে এবং নিজের সেশন ফাইলে রেখে দেবে। Sotto এটি সংরক্ষণ করে না।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ to uvidí a uloží si to do vlastního souboru relace. Sotto to neukládá."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vil se dette og gemme det i sin egen sessionsfil. Sotto gemmer det ikke."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sieht dies und behält es in seiner eigenen Sitzungsdatei. Sotto speichert es nicht."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το %@ θα το δει και θα το κρατήσει στο δικό του αρχείο συνεδρίας. Το Sotto δεν το αποθηκεύει."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ will see this and keep it in its own session file. Sotto does not save it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ lo verá y lo guardará en su propio archivo de sesión. Sotto no lo guarda."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ lo verá y lo guardará en su propio archivo de sesión. Sotto no lo guarda."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ lo verá y lo guardará en su propio archivo de sesión. Sotto no lo guarda."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ näkee tämän ja säilyttää sen omassa istuntotiedostossaan. Sotto ei tallenna sitä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ verra ceci et le conservera dans son propre fichier de session. Sotto ne l’enregistre pas."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ इसे देखेगा और अपनी सत्र फ़ाइल में रखेगा। Sotto इसे सहेजता नहीं है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ látni fogja, és megőrzi a saját munkamenetfájljában. A Sotto nem menti."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ lo vedrà e lo conserverà nel proprio file di sessione. Sotto non lo salva."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこれを確認し、自身のセッションファイルに保存します。Sotto は保存しません。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ हे पाहील आणि स्वतःच्या सत्र फाइलमध्ये ठेवेल. Sotto ते जतन करत नाही."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vil se dette og beholde det i sin egen øktfil. Sotto lagrer det ikke."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ziet dit en bewaart het in een eigen sessiebestand. Sotto slaat het niet op."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ zobaczy to i zachowa we własnym pliku sesji. Sotto tego nie zapisuje."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ verá isto e o manterá no próprio arquivo de sessão. O Sotto não o salva."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ verá isto e guardá-lo-á no seu próprio ficheiro de sessão. O Sotto não o guarda."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ va vedea acest lucru și îl va păstra în propriul fișier de sesiune. Sotto nu îl salvează."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ser detta och behåller det i sin egen sessionsfil. Sotto sparar det inte."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ இதைப் பார்த்து, தனது சொந்த அமர்வுக் கோப்பில் வைத்திருக்கும். Sotto இதைச் சேமிப்பதில்லை."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ దీన్ని చూసి తన సొంత సెషన్ ఫైల్‌లో ఉంచుకుంటుంది. Sotto దీన్ని సేవ్ చేయదు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ bunu görecek ve kendi oturum dosyasında saklayacak. Sotto bunu kaydetmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ побачить це й збереже у власному файлі сеансу. Sotto цього не зберігає."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ اسے دیکھے گا اور اپنی سیشن فائل میں رکھے گا۔ Sotto اسے محفوظ نہیں کرتا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 会看到此内容，并将其保存在自己的会话文件中。Sotto 不会保存它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 會看到此內容，並將其保留在自己的工作階段檔案中。Sotto 不會儲存它。"
+          }
+        }
+      }
+    },
     "%@, %lld added, %lld removed" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -78,7 +78,7 @@ export function stateWithoutProviders<T extends AgentState>(state: T, unknown: H
   const provider = unknown.has(configuration.provider) ? enabledProviders?.[0] ?? 'codex' : configuration.provider
   /** Every list the shell keeps by thread, without the hidden threads' entries. */
   const kept = <I extends { threadId: string }>(items: I[] | undefined): I[] | undefined => items && hidden.size ? items.filter(item => !hidden.has(item.threadId)) : items
-  const { skillCatalogs, threadDrafts, threadDraftPersistence, deliveries, followups, followupReceipts, deliveredDrafts, obsoleteDrafts, unconfirmedSettings } = state
+  const { skillCatalogs, threadDrafts, threadDraftPersistence, deliveries, followups, followupReceipts, deliveredDrafts, obsoleteDrafts, unconfirmedSettings, nextTurnSettings } = state
   return {
     ...state,
     host: hostWithout(state.host, unknown, threads),
@@ -100,6 +100,7 @@ export function stateWithoutProviders<T extends AgentState>(state: T, unknown: H
     ...(deliveredDrafts ? { deliveredDrafts: kept(deliveredDrafts) } : {}),
     ...(obsoleteDrafts ? { obsoleteDrafts: kept(obsoleteDrafts) } : {}),
     ...(unconfirmedSettings ? { unconfirmedSettings: kept(unconfirmedSettings)!.filter(item => !unknownModelId(item.modelId, unknown)) } : {}),
+    ...(nextTurnSettings ? { nextTurnSettings: kept(nextTurnSettings)!.filter(item => !unknownModelId(item.modelId, unknown)) } : {}),
     ...(state.busyThreadIds && hidden.size ? { busyThreadIds: state.busyThreadIds.filter(id => !hidden.has(id)) } : {}),
     ...(state.activeThreadId && hidden.has(state.activeThreadId) ? { activeThreadId: null } : {}),
     ...(state.draftThreadId && hidden.has(state.draftThreadId) ? { draftThreadId: null } : {}),
@@ -135,6 +136,7 @@ function namesAny(state: AgentState, unknown: HeldProviders): boolean {
     || (state.clientUpdateRun?.line?.some(id => unknown.has(id)) ?? false)
     || (state.skillCatalogs?.some(catalog => unknown.has(catalog.providerId)) ?? false)
     || (state.unconfirmedSettings?.some(item => unknownModelId(item.modelId, unknown)) ?? false)
+    || (state.nextTurnSettings?.some(item => unknownModelId(item.modelId, unknown)) ?? false)
 }
 
 /**

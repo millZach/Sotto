@@ -211,8 +211,10 @@ public enum EffortWords {
 /// What the chips say about permissions and about a change that did not land, in the desktop's words
 /// (`permissionInForceCaption`, `settingRefusalText`, `unconfirmedSettingText` in `ThreadOptions.tsx`).
 public enum ThreadSettingWords {
-    /// What a thread does under one of Sotto's modes, said as its agent doing it.
-    public static func permissionLine(_ mode: String, provider: String) -> String? {
+    /// What a thread does under one of Sotto's modes, said as its agent doing it. A Codex thread takes Codex's own
+    /// lines, on `computer`, the one it runs on.
+    public static func permissionLine(_ mode: String, provider: String, providerID: String? = nil, computer: String? = nil) -> String? {
+        if providerID == "codex", let computer { return codexPermissionLine(mode, computer: computer) }
         switch mode {
         case "approval-required": return String(localized: "Asks before it edits files or runs commands.", bundle: .module, comment: "What a thread does under Ask before actions.")
         case "auto-accept-edits": return String(localized: "Edits files in the project without asking. Asks before commands.", bundle: .module, comment: "What a thread does under Allow edits.")
@@ -221,10 +223,26 @@ public enum ThreadSettingWords {
         default: return nil
         }
     }
-    /// The line above the box while a permission change waits: what is still in force, in the agent's name.
-    public static func inForce(provider: String, runtimeMode: String?, providerModeName: String?) -> String {
+    /// What Codex does under each of Sotto's four modes, in the desktop's words (`codexModeLine` in `ThreadOptions.tsx`,
+    /// ADR-0005, Zach's pick on November 4, 2026), for a Codex thread and a Codex Watcher. They are Codex 0.166.0's
+    /// behaviour under the mapping in the desktop's `codex.ts`; Full access names the computer, since this is an iPhone.
+    public static func codexPermissionLine(_ mode: String, computer: String) -> String? {
+        switch mode {
+        case "approval-required": return String(localized: "Codex asks before every command, even one that only reads, and before every edit.", bundle: .module, comment: "What a Codex thread does under Ask before actions.")
+        case "auto-accept-edits": return String(localized: "Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.", bundle: .module, comment: "What a Codex thread does under Allow edits.")
+        case "auto": return String(localized: "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.", bundle: .module, comment: "What a Codex thread does under Allow actions. Allow edits is the name of another permission mode.")
+        case "full-access": return String(localized: "Codex runs any command and edits any file without asking, anywhere on \(computer) and online.", bundle: .module, comment: "What a Codex thread does under Full access. %@ is the computer's name.")
+        default: return nil
+        }
+    }
+    /// The line above the box while a permission change waits: what is still in force, in the agent's name. Under
+    /// Codex's Allow actions a reviewer model answers in the user's place, so that caption says so.
+    public static func inForce(provider: String, runtimeMode: String?, providerModeName: String?, providerID: String? = nil) -> String {
         if let providerModeName {
             return String(localized: "\(provider) stays on \(providerModeName) until it confirms.", bundle: .module, comment: "The first %@ is the agent's name; the second is the agent's own name for a permission mode.")
+        }
+        if providerID == "codex", runtimeMode == "auto" {
+            return String(localized: "Codex’s reviewer still answers what would come to you until it confirms.", bundle: .module, comment: "Said while a Codex thread waits to leave Allow actions.")
         }
         switch runtimeMode {
         case "approval-required": return String(localized: "\(provider) still asks before acting until it confirms.", bundle: .module, comment: "%@ is the agent's name, such as Claude Code.")
@@ -483,7 +501,8 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
         let permissionUnconfirmed = pending.unconfirmed(.permissions) != nil
         let caption: String? = pendingPermission && !permissionUnconfirmed
             ? ThreadSettingWords.inForce(provider: provider, runtimeMode: ThreadSettings.usesProviderModes(confirmed) ? nil : drawn.permissions.nilIfEmpty,
-                                         providerModeName: ThreadSettings.usesProviderModes(confirmed) ? confirmed.permissions.first { $0.id == drawn.permissions }?.name : nil)
+                                         providerModeName: ThreadSettings.usesProviderModes(confirmed) ? confirmed.permissions.first { $0.id == drawn.permissions }?.name : nil,
+                                         providerID: providerID)
             : nil
         let fixed = ThreadSettings.fixed(thread, providerConnected: providerConnected, online: online, unconfirmed: unconfirmed, promptOnItsWay: promptOnItsWay)
         func named(_ kind: ThreadSettingKind, _ value: String, on owner: ThreadModel) -> String {

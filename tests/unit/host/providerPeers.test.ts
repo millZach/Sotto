@@ -124,7 +124,7 @@ describe('a whole shell with OpenCode in every field', () => {
     expect([codex.continuedFrom, codex.delegatedBy, codex.startedFrom, codex.messages[0]!.handover]).toEqual([undefined, undefined, undefined, undefined])
     expect(codex.messages[0]!.text).toBe('Carry on')
     for (const list of [view.skillCatalogs, view.threadDrafts, view.threadDraftPersistence, view.deliveries, view.followups, view.followupReceipts,
-      view.deliveredDrafts, view.obsoleteDrafts, view.unconfirmedSettings]) expect(list!.map(item => item.threadId)).toEqual([codexThread])
+      view.deliveredDrafts, view.obsoleteDrafts, view.unconfirmedSettings, view.nextTurnSettings]) expect(list!.map(item => item.threadId)).toEqual([codexThread])
     expect(view.busyThreadIds).toEqual([codexThread])
     expect([view.activeThreadId, view.activeProjectId, view.draftThreadId]).toEqual([null, null, null])
     expect(view.host.clientHosts?.[0]?.agentModelId).toBeUndefined()

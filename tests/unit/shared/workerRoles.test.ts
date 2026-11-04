@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from '../../../src/shared/agents'
-import { capRuntimeMode, fitEffort, fitSpeed, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, watcherProvidersInWords, withRoleRow, workerCounts, WORKER_COUNTS, WORKER_ROLE_IDS,
+import { capRuntimeMode, fitEffort, fitSpeed, isRoleDefault, messageNamesModel, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, watcherProvidersInWords, withRoleRow, workerCounts, WORKER_COUNTS, WORKER_ROLE_IDS,
   type WorkerRoleChoices, type WorkerRoleId } from '../../../src/shared/workerRoles'
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
@@ -229,4 +229,17 @@ describe('Watcher’s providers in words', () => {
     expect(watcherProvidersInWords(new Set(['muse', 'opencode', 'cursor']))).toBe('Codex, Claude Code or Grok Build')
     expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build, Muse or Cursor')
   })
+})
+
+describe('messageNamesModel (#1202)', () => {
+  const sol = { id: publicProviderEntityId('codex', 'model', 'gpt-6.1-sol'), name: 'GPT-6.1 Sol', providerId: 'codex' as const }
+  const opus = { id: 'claude-opus-5-5', name: 'Opus 5.5', providerId: 'claude' as const }
+  const wonder = { id: 'muse-wonder-full', name: 'Muse Wonder Full', providerId: 'muse' as const }
+  it.each([
+    ['Use GPT-6.1 Sol for the review', sol], ['run it on gpt 6.1 sol', sol], ['have Sol look at it.', sol], ['Have Codex review this', sol],
+    ['use opus', opus], ['Opus 5.5, please', opus], ['claude-opus-5-5', opus], ['Let Claude Code do it', opus], ['send it to Wonder', wonder], ['a Muse review', wonder],
+  ])('finds the model in %j', (text, model) => { expect(messageNamesModel(text, model)).toBe(true) })
+  it.each([
+    ['Review the change', sol], ['Use GPT-6 Astra', sol], ['ask GPT', sol], ['the solution is close', sol], ['consolidate these', sol], ['fix this', opus], ['a magnum opus-free day', sol], ['full access', wonder], ['', sol],
+  ])('finds no model in %j', (text, model) => { expect(messageNamesModel(text, model)).toBe(false) })
 })

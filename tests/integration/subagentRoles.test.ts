@@ -97,6 +97,73 @@ describe('Claude Code threads', () => {
   })
 })
 
+describe('A Dynamic thread\'s overseer on Claude Code (ADR-0191)', () => {
+  it('gets the overseer\'s instructions in place of the role table and agents when it starts, and a note with its next message after a change', async () => {
+    const f = await claudeFixture(undefined, 10_000); cleanups.push(f.cleanup)
+    await writeFile(join(f.root, 'models.json'), JSON.stringify([{ value: 'fixture-model', displayName: 'fixture-model', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }]))
+    let told: string | undefined = 'Synthetic overseer words'
+    const source = new WorkerRoles(() => [role('building', 'claude', 'fixture-model', 'high', 'full-access')])
+    f.adapter.useWorkerRoles({ table: () => source.table(), onChange: listener => source.onChange(listener), overseer: () => told, overseerNote: () => undefined })
+    f.adapter.useThreadTools([delegateTool()])
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Synthetic', modelId: f.modelId, runtimeMode: 'auto' })
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic first turn' })
+    await f.driver.completeTurn(id, 'Synthetic complete')
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+    const launchArgs = async () => (await f.driver.requests()).filter(record => ['launch', 'resume'].includes(record.method ?? '')).map(record => (record.params!.frame as { args: string[] }).args).filter(args => args.includes('--append-system-prompt'))
+    const prompt = (args: string[]) => args[args.indexOf('--append-system-prompt') + 1]!
+    expect(prompt((await launchArgs()).at(-1)!)).toContain('Synthetic overseer words')
+    expect(prompt((await launchArgs()).at(-1)!)).not.toContain('sotto_building')
+    const initializes = (await f.driver.requests()).filter(record => record.method === 'initialize').map(record => (record.params!.frame as { request: { agents?: unknown } }).request)
+    expect(initializes.filter(request => request.agents)).toEqual([])
+    // A session keeps what it was created with, so a change goes by a note: the idle CLI goes, and the next one has the hook.
+    const note = 'Synthetic overseer note'
+    told = undefined
+    await f.adapter.threadInstructionsChanged(id)
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic second turn', overseerNote: note })
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'hook-context').map(record => (record.params!.frame as { additionalContext: string | null }).additionalContext).filter(context => context !== null), { timeout: 10_000 }).toEqual(['Synthetic overseer note'])
+    // Its role agents are back, and the message went as typed.
+    const after = (await f.driver.requests()).filter(record => record.method === 'initialize').map(record => (record.params!.frame as { request: { agents?: Record<string, unknown> } }).request).at(-1)!
+    expect(after.agents).toHaveProperty('sotto_building')
+    const written = (await f.driver.requests()).filter(record => record.method === 'user-message' || record.method === 'prompt').map(record => JSON.stringify(record.params))
+    expect(written.join()).not.toContain('Synthetic overseer note')
+  })
+})
+
+describe('A Dynamic thread\'s overseer on Codex (ADR-0191)', () => {
+  it('gets the overseer\'s instructions in place of the role table and role files when it starts, and a note with its next turn after a change', async () => {
+    const f = await codexFixture(undefined, false, 10_000, { logEvent: vi.fn() }); cleanups.push(f.cleanup)
+    await f.script({ version: 'codex/0.162.1', developerInstructions: 'Synthetic project developer instructions',
+      models: [{ id: 'fixture-model', model: 'fixture-model', displayName: 'fixture-model', isDefault: true, defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }] })
+    let told: string | undefined = 'Synthetic overseer words'
+    const source = new WorkerRoles(() => [role('research', 'codex', 'fixture-model', 'high', 'approval-required')])
+    f.adapter.useWorkerRoles({ table: () => source.table(), onChange: listener => source.onChange(listener), overseer: () => told })
+    f.adapter.useThreadTools([delegateTool()])
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Synthetic', modelId: f.modelId, runtimeMode: 'auto' })
+    const loads = async () => (await f.driver.requests()).filter(record => ['thread/start', 'thread/resume'].includes(record.method ?? ''))
+    const [start] = await loads()
+    expect((start!.params as { developerInstructions: string }).developerInstructions).toContain('Synthetic overseer words')
+    expect((start!.params as { developerInstructions: string }).developerInstructions).toContain('Synthetic project developer instructions')
+    expect((start!.params!.config as { agents?: unknown }).agents).toBeUndefined()
+    // Later, the note goes with the turn as its context, never in the message; and its role files are back on the load.
+    told = undefined
+    await f.adapter.threadInstructionsChanged(id)
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic turn', overseerNote: 'Synthetic overseer note' })
+    await expect.poll(async () => (await loads()).length, { timeout: 10_000 }).toBeGreaterThan(1)
+    const resumed = (await loads()).at(-1)!
+    expect(resumed.method).toBe('thread/resume')
+    expect((resumed.params!.config as { agents?: Record<string, unknown> }).agents).toHaveProperty('sotto_research')
+    const turn = (await f.driver.requests()).filter(record => record.method === 'turn/start').at(-1)!
+    expect(turn.params!.additionalContext).toEqual({ sotto_overseer_note: { value: 'Synthetic overseer note', kind: 'application' } })
+    expect(JSON.stringify(turn.params!.input)).not.toContain('Synthetic overseer note')
+  })
+})
+
 describe('Codex threads', () => {
   const TABLE = [role('computer-use', 'codex', 'fixture-model', 'high', 'full-access'), role('code-review', 'codex', 'fixture-second-model', 'low', 'approval-required'),
     role('research', 'codex', 'retired-model', 'low', 'approval-required'), role('building', 'claude', 'opus', 'xhigh', 'auto-accept-edits')]

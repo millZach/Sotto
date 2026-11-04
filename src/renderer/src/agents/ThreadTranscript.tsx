@@ -1,6 +1,6 @@
 import { ThreadMediaTiles } from './ThreadMediaTiles'
 import { isCouncilPromptText } from '../../../shared/council'
-import React, { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useResponseStreaming } from './responseStreaming'
 import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
@@ -40,7 +40,9 @@ import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherOwl } from '../watcher/WatcherOwl'
-import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
+import { OverseerOwnChangeFor, WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
+import { isDynamicThread } from '../../../shared/dynamicThreads'
+import { resolveModel } from '../../../shared/modelCatalog'
 import { useRepliesKeptInView, WatcherAfterMessage } from '../watcher/WatcherReceipts'
 import { HandoverFromContext, HandoverMessage } from '../watcher/WatcherHandover'
 import { ContinuedFromNote, ContinuedInNotes } from './ContinueThread'
@@ -307,6 +309,8 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
  */
+/** The model overseeing the thread drawn, where it is a Dynamic thread (ADR-0191): its replies carry a mark if it changed files itself. */
+const OverseenContext = createContext<string | undefined>(undefined)
 const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
@@ -325,6 +329,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   readonly activity?: ActivityContext | undefined
 }): ReactNode {
   const { t } = useLingui()
+  const overseen = useContext(OverseenContext)
   const article = useRef<HTMLElement>(null)
   // The transcript finds this message's row by its ID, without searching the page (#1452).
   const rows = useContext(MessageRowsContext)
@@ -380,6 +385,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
       : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
+    {overseen !== undefined && message.role === 'assistant' && !writing ? <OverseerOwnChangeFor message={message} overseer={overseen} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
     {forkHere || councilHere ? <div className="thread-message__actions">
       {councilHere ? <CouncilPress text={message.text} ask={askCouncil!} /> : null}
@@ -751,6 +757,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
 }): ReactNode {
   const { t } = useLingui()
   const thread = row.thread
+  const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads')) ? resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId : undefined
   const quoting = useOwlFeature('reply-quote')
   // A tip under the working words (ADR-0159; Owl only).
   const tipLine = useTipLine({ row, state, store, watcher, onFocusPrompt: onQuoted })
@@ -1164,8 +1171,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
-          delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider>
+          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null

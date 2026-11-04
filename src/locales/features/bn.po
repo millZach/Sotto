@@ -177,6 +177,10 @@ msgstr ""
 msgid "{count, plural, one {{name}, # thread} other {{name}, # threads}}"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "{count, plural, one {{overseer} changed {files} file itself.} other {{overseer} changed {files} files itself.}}"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{count, plural, one {{range}: {shown} prompt} other {{range}: {shown} prompts}}"
 msgstr ""
@@ -2504,6 +2508,10 @@ msgstr ""
 
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 msgid "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "Files {overseer} changed"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx

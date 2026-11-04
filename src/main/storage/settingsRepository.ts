@@ -11,6 +11,8 @@ export interface SettingsRepositoryOptions {
    * reset keeps them, and a patch that would change them is refused. Absent keeps today's behaviour, as in tests.
    */
   workerRolesEnabled?: boolean
+  /** The Owl list's answer for Dynamic threads (ADR-0191), read once at start. Off, its limits stay as saved, as worker roles do. */
+  dynamicThreadsEnabled?: boolean
   /** Worker counts and this machine's ceiling survive saves and resets while the swarm switch is off. */
   workerSwarmsEnabled?: boolean
   /** The Owl list's answer for extra and hold dictation shortcuts, read once at start. Off, a save or a reset keeps the saved lists. */
@@ -34,6 +36,7 @@ export class SettingsRepository {
   private readonly omarchyTheme: (() => OmarchyTheme | null) | undefined
   private readonly shellPillInUse: (() => boolean) | undefined
   private readonly workerRolesEnabled: boolean
+  private readonly dynamicThreadsEnabled: boolean
   private readonly workerSwarmsEnabled: boolean
   private readonly dictationHoldShortcutsEnabled: boolean
   private readonly interfaceLanguageEnabled: boolean
@@ -41,6 +44,7 @@ export class SettingsRepository {
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.workerRolesEnabled = options.workerRolesEnabled ?? true
+    this.dynamicThreadsEnabled = options.dynamicThreadsEnabled ?? true
     this.workerSwarmsEnabled = options.workerSwarmsEnabled ?? true
     this.dictationHoldShortcutsEnabled = options.dictationHoldShortcutsEnabled ?? true
     this.interfaceLanguageEnabled = options.interfaceLanguageEnabled ?? true
@@ -81,6 +85,10 @@ export class SettingsRepository {
         throw new Error('Worker roles are available in Sotto Owl. Nothing was changed.')
       }
       if (!this.workerRolesEnabled) delete patchSnapshot.workerRoles
+      if (!this.dynamicThreadsEnabled && patchSnapshot.dynamicThreads !== undefined && JSON.stringify(patchSnapshot.dynamicThreads) !== JSON.stringify(current.dynamicThreads)) {
+        throw new Error('Dynamic threads are available in Sotto Owl. Nothing was changed.')
+      }
+      if (!this.dynamicThreadsEnabled) delete patchSnapshot.dynamicThreads
       if (!this.workerSwarmsEnabled) {
         if (patchSnapshot.workerCeiling !== undefined && patchSnapshot.workerCeiling !== current.workerCeiling
           || patchSnapshot.workerMachineCeilings !== undefined && JSON.stringify(patchSnapshot.workerMachineCeilings) !== JSON.stringify(current.workerMachineCeilings)
@@ -108,9 +116,9 @@ export class SettingsRepository {
 
   /** What a build without an Owl feature keeps as it was saved, whatever a whole save or a reset brings. */
   private async keepHeld(settings: AppSettings): Promise<AppSettings> {
-    if (this.workerRolesEnabled && this.workerSwarmsEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
+    if (this.workerRolesEnabled && this.dynamicThreadsEnabled && this.workerSwarmsEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
     const saved = await this.readSettings()
-    return this.keepSwarms({ ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
+    return this.keepSwarms({ ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }), ...(this.dynamicThreadsEnabled ? {} : { dynamicThreads: saved.dynamicThreads }),
       ...(this.dictationHoldShortcutsEnabled ? {} : { hotkeyStandby: saved.hotkeyStandby, pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
       ...(this.interfaceLanguageEnabled ? {} : { interfaceLanguage: saved.interfaceLanguage }) }, saved)
   }

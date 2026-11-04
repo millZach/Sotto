@@ -381,6 +381,38 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
   return parts.join(' ')
 }
 
+/** Words a model's name can carry that say nothing of which model it is, so a message saying one names none. */
+const GENERAL_MODEL_WORDS: ReadonlySet<string> = new Set(['auto', 'build', 'claude', 'code', 'deepseek', 'fast', 'full', 'gemini', 'glm', 'gpt', 'grok', 'high', 'kimi', 'large', 'lite', 'low', 'max', 'medium', 'mini', 'model', 'muse', 'nano', 'other', 'plus', 'preview', 'pro', 'small', 'synthetic', 'test', 'thinking', 'turbo'])
+/** Text as lowercase words between spaces, whichever way it was typed or dictated, keeping the point in "6.1". */
+const spokenWords = (text: string): string => ` ${text.toLowerCase().replace(/[^\p{L}\p{N}.]+|\.(?!\p{N})/gu, ' ').trim().replace(/ +/gu, ' ')} `
+/**
+ * Whether the user's message names a model (#1202): its name, its ID, a word of its name that is its own ("Sol", "Opus"),
+ * or its provider ("have Codex review this"). The text is the user's own, from Sotto's record, never an agent's word for
+ * what the user said.
+ */
+export function messageNamesModel(text: string, model: Pick<AgentModel, 'id' | 'name' | 'providerId'>): boolean {
+  const said = spokenWords(text)
+  const says = (phrase: string): boolean => phrase.trim() !== '' && spokenWords(phrase).trim() !== '' && said.includes(spokenWords(phrase))
+  if (says(model.name) || says(parsePublicProviderEntityId(model.id)?.value ?? model.id)) return true
+  if (model.providerId && (says(model.providerId) || says(PROVIDER_LABELS[model.providerId]))) return true
+  return spokenWords(model.name).trim().split(' ').some(word => word.length >= 3 && /^\p{L}+$/u.test(word) && !GENERAL_MODEL_WORDS.has(word) && says(word))
+}
+/**
+ * Whether a role holds against the model a start names (#1202), which every path that starts by role asks: the role's
+ * model and what the receipt says, for the agent to pass on. Undefined where the start stands: it names the role's own
+ * model, the role has no model, or `userNames` finds that model in the user's own words.
+ */
+export function roleHold(role: WorkerKind, choices: WorkerRoleChoices, models: readonly AgentModel[], named: { readonly id: string; readonly providerId?: ProviderId | undefined },
+  userNames: (model: Pick<AgentModel, 'id' | 'name' | 'providerId'>) => boolean): { readonly model: AgentModel; readonly note: string } | undefined {
+  const inForce = roleInForce(role, choices, models).start
+  const model = inForce && resolveModel(models, inForce.modelId)
+  const asked = resolveModel(models, named.id)
+  if (!model || asked?.id === model.id) return undefined
+  const askedName = asked?.name ?? named.id
+  if (userNames(asked ?? { id: named.id, name: named.id, ...named.providerId ? { providerId: named.providerId } : {} })) return undefined
+  return { model, note: `This call named ${askedName}, but the user's ${workerRole(role).name} role starts on ${model.name}, and the user's own newest message does not name ${askedName}, so this start is on ${model.name}. The user chooses this in Settings, or by naming a model in a message.` }
+}
+
 /** The roles in a line, for instructions that name them. */
 export const WORKER_KIND_LIST = WORKER_KINDS.join(', ')
 

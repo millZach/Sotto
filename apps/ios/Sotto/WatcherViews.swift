@@ -1882,7 +1882,8 @@ private struct WatcherPermissionSheet: View {
 
     var body: some View {
         let computer = model.name(hostID)
-        let provider = model.watcherPage(hostID)?.current.map { AgentNames.name($0.provider) }
+        let providerID = model.watcherPage(hostID)?.current?.provider
+        let provider = providerID.map { AgentNames.name($0) }
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: Space.s1) {
@@ -1909,7 +1910,7 @@ private struct WatcherPermissionSheet: View {
                 }
                 VStack(spacing: Space.s2) {
                     ForEach(model.watcherPermissionModes(hostID), id: \.self) { mode in
-                        option(mode, provider: provider ?? String(localized: "The provider", comment: "Stands in for the provider's name at the start of a sentence"), computer: computer)
+                        option(mode, provider: provider ?? String(localized: "The provider", comment: "Stands in for the provider's name at the start of a sentence"), providerID: providerID, computer: computer)
                     }
                 }
                 .padding(.top, Space.s1)
@@ -1928,13 +1929,13 @@ private struct WatcherPermissionSheet: View {
         .presentationCornerRadius(Radius.xl)
     }
 
-    private func option(_ mode: String, provider: String, computer: String) -> some View {
+    private func option(_ mode: String, provider: String, providerID: String?, computer: String) -> some View {
         let chosen = model.watcherPermission(hostID) == mode
         return Button { if chosen { dismiss() } else { choose(mode) } } label: {
             HStack(alignment: .top, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(WatcherPermissions.name(mode)).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                    Text(WatcherPermissions.line(mode, provider: provider, computer: computer)).font(.sotto(.small))
+                    Text(WatcherPermissions.line(mode, provider: provider, providerID: providerID, computer: computer)).font(.sotto(.small))
                         .foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                         .paragraphDirection()
                 }
