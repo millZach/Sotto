@@ -70,6 +70,8 @@
   .thread-workspace__where:has(.branch-toolbar) .working-copy { display: none; }
   .thread-workspace__branches .branch-toolbar__end > .branch-toolbar__separator { display: none; }
 }
+/* Below this the branch's name would be a letter or two, so it leaves whole and stays in the button's tooltip. */
+@container pane-where (width < 150px) { .thread-workspace__branches .branch-toolbar__branch:not([aria-expanded='true']) > span { display: none; } }
 @container pane-where (width < 120px) {
   .working-copy__trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .thread-workspace__branches .branch-toolbar__picker:not(:has([aria-expanded='true'])) { display: none; }
