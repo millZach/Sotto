@@ -91,7 +91,10 @@
 
 /* The comparison: files, and the tree above them in a narrow panel or beside them in a wide one. */
 .changes-review { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
-.changes-files { flex: 1; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+/* Positioned on purpose. The visually hidden words in each line are absolutely placed, and without a positioned box here
+   they belong to the panel: every one of them counts as overflow of the panel and the workspace, far below the window. A
+   press that lines a file up would then scroll the whole workspace, which clips and so has no scrollbar to bring it back. */
+.changes-files { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-tree { order: -1; flex: none; max-height: clamp(96px, 30%, 220px); overflow: auto; padding: 6px 8px; border-bottom: 1px solid var(--tt-hairline); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 @container tools-body (min-width: 640px) {
   .changes-review[data-tree] { display: grid; grid-template-columns: minmax(0, 1fr) clamp(160px, 28%, 256px); }
