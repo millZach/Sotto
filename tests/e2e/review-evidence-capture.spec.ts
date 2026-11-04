@@ -345,6 +345,46 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await streamTo(page, 'third')
     await capture.shoot('streaming-3', 'The same turn further on, its reply cut off inside the code block as it arrives.', differs)
   } },
+  { name: 'reading', covers: ['reading-copy', 'reading-scrubber', 'reading-jump-focus', 'reading-new-messages', 'reading-clay'], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Split AgentControl')
+    await scrollTranscript(page, 'middle')
+    const pane = focusedPane(page)
+    const user = transcript(page).locator('.thread-message[data-role="user"]').filter({ hasText: 'titleRequests' }).first()
+    // Focus holds the control open through the shoot's resize, which a pointer's hover does not survive.
+    await page.keyboard.press('Tab')
+    await user.locator('.thread-message__copy').focus()
+    await capture.shoot('reading-copy', 'The keyboard on the copy control of a message the user sent, in the bubble\'s bottom-left corner.')
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    const lane = pane.locator('.message-scrubber')
+    if (await lane.count()) {
+      const box = (await lane.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2 - 2, box.y + box.height / 2 - 2)
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await capture.shoot('reading-scrubber', 'The pointer on the message scrubber, with the ticks risen and a card showing.')
+      await page.mouse.move(800, 300)
+    }
+    // Tab first, so the focus ring is the keyboard's: a modifier alone does not count as the keyboard.
+    await page.keyboard.press('Tab')
+    await pane.getByRole('button', { name: 'Jump to latest' }).focus()
+    await capture.shoot('reading-jump-focus', 'Jump to latest with the keyboard on it.')
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    // A reply arrives while the reader is back up the thread, and the button says so.
+    const long = EVIDENCE_THREADS.find(thread => thread.title === 'Split AgentControl')!
+    const tell = (messages: readonly (typeof long.messages)[number][]): Promise<void> => page.evaluate(async ({ thread, messages }) => {
+      await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread.id, text: '', status: thread.status, messages: [...messages], ...(thread.activities ? { activities: [...thread.activities] } : {}) })
+    }, { thread: long, messages })
+    const last = long.messages.at(-1)!
+    await tell([...long.messages, { ...last, id: 'review-evidence-arrived', text: 'One more thing: the pull request is ready for your review.' }])
+    await expect(pane.getByRole('button', { name: 'New messages' })).toBeVisible()
+    await capture.shoot('reading-new-messages', 'New messages, after a reply arrived while the reader was back up the thread.', 'The reply is told to the thread by the fake provider host and taken back afterwards.')
+    await tell(long.messages)
+    await openThread(page, 'Repository review')
+    await scrollTranscript(page, 'top-of-turn')
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
+    await capture.shoot('reading-clay', 'A finished reply in the Clay theme, to check the reading surface away from the default palette.')
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
+  } },
   { name: 'steps', covers: ['steps-collapsed', 'steps-expanded'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Plan the split')
