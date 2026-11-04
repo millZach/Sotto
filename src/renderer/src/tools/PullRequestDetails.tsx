@@ -1,12 +1,16 @@
-import React, { memo, useMemo, type ReactNode } from 'react'
-import { CircleAlert, ExternalLink } from 'lucide-react'
+import React, { memo, useMemo, useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleDashed, CircleMinus, CircleX, ExternalLink, type LucideIcon } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
-import type { GitPullRequestDetail, GitPullRequestFile } from '../../../shared/gitPullRequests'
+import type { GitPullRequestCheck, GitPullRequestDetail, GitPullRequestFile } from '../../../shared/gitPullRequests'
 import { MessageContent } from '../agents/MessageContent'
 import { Button } from '../components/Button'
 import { shownCount } from '../state/interfaceNumbers'
-import { fileOnGitHub, filesByWeight, filesOnGitHub, pathParts } from './pullRequestSurface.logic'
+import { checkNameParts, checksInOrder, checksOnGitHub, checkTime, checkWord, fileOnGitHub, filesByWeight, filesOnGitHub, pathParts } from './pullRequestSurface.logic'
 
+const CHECK_ICONS: Readonly<Record<GitPullRequestCheck['status'], LucideIcon>> = {
+  success: CircleCheck, failure: CircleX, cancelled: CircleX, pending: CircleDashed, 'action-required': Circle, skipped: CircleMinus, neutral: CircleMinus,
+}
+const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url)
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
 
 /** One count of lines, "+2,114" or "−2,097", in the interface language's digits. */
@@ -21,6 +25,63 @@ function LineCounts({ additions, deletions }: { readonly additions: number; read
   </span>
 }
 export { LineCounts as PullRequestLineCounts }
+
+/**
+ * Every check, inside its fold below Merge, each named, with its state and how long it took, and a press that opens it
+ * where GitHub says it lives. What stands comes first; what settled folds away behind one press while anything still
+ * stands, and is simply listed once nothing does. GitHub's own full list is one press away at its foot.
+ */
+export const PullRequestChecks = memo(function PullRequestChecks({ url, checks }: { readonly url: string; readonly checks: readonly GitPullRequestCheck[] }): ReactNode {
+  const { t } = useLingui()
+  const { standing, settled } = checksInOrder(checks)
+  const [settledOpen, setSettledOpen] = useState(false)
+  const folds = standing.length > 0 && settled.length > 0
+  const count = shownCount(settled.length)
+  const onlyPassed = settled.every(check => check.status === 'success')
+  const listLabel = t({ message: 'Checks', comment: 'The list of a pull request\'s checks.' })
+  return <div className="pr-surface__checks">
+    <ul className="pr-surface__check-list" aria-label={listLabel}>
+      {standing.map((check, index) => <CheckRow key={`${check.name}\n${index}`} check={check} />)}
+      {!folds || settledOpen ? settled.map((check, index) => <CheckRow key={`${check.name}\n${index}`} check={check} />) : null}
+    </ul>
+    {folds ? <button type="button" className="pr-surface__check-more tt-focusable" aria-expanded={settledOpen} onClick={() => setSettledOpen(value => !value)}>
+      {settledOpen ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+      {settledOpen
+        ? onlyPassed ? t({ message: 'Hide the ones that passed', comment: 'Folds away the checks that passed.' }) : t({ message: 'Hide the ones that finished', comment: 'Folds away the checks that passed or were skipped.' })
+        : onlyPassed ? t({ message: `Show ${count} passed`, comment: '{count} is how many checks passed.' }) : t({ message: `Show ${count} finished`, comment: '{count} is how many checks passed or were skipped.' })}
+    </button> : null}
+    <div className="pr-surface__fold-actions">
+      <Button variant="ghost" onClick={() => openExternal(checksOnGitHub(url))}><ExternalLink size={14} aria-hidden="true" />{t`Open all checks on GitHub`}</Button>
+    </div>
+  </div>
+})
+
+function CheckRow({ check }: { readonly check: GitPullRequestCheck }): ReactNode {
+  const { t } = useLingui()
+  const Icon = CHECK_ICONS[check.status]
+  const { group, own } = checkNameParts(check.name)
+  const word = checkWord(check)
+  const took = checkTime(check)
+  const name = check.name
+  const content = <>
+    <Icon size={15} aria-hidden="true" data-status={check.status} />
+    <span className="pr-surface__check-name">{group ? <span className="pr-surface__check-group">{group} / </span> : null}<span>{own}</span>
+      {check.description ? <small className="pr-surface__check-why">{check.description}</small> : null}</span>
+    <span className="pr-surface__check-word">{word}</span>
+    <span className="pr-surface__check-time">{took}</span>
+  </>
+  const url = check.url
+  return <li className="pr-surface__check" data-status={check.status}>
+    {url
+      ? <button type="button" className="pr-surface__check-row tt-focusable" title={onGitHub(url) ? t`Open on GitHub` : t`Open in the browser`} onClick={() => openExternal(url)}
+        aria-label={onGitHub(url)
+          ? took ? t({ message: `Open ${name} on GitHub. ${word}, ${took}`, comment: '{name} is a check\'s name; {word} is its state, as in Failed; {took} how long it took.' }) : t({ message: `Open ${name} on GitHub. ${word}`, comment: '{name} is a check\'s name; {word} is its state, as in Failed.' })
+          : took ? t({ message: `Open ${name} in the browser. ${word}, ${took}`, comment: '{name} is a check\'s name; {word} is its state, as in Failed; {took} how long it took.' }) : t({ message: `Open ${name} in the browser. ${word}`, comment: '{name} is a check\'s name; {word} is its state, as in Failed.' })}>
+        {content}<ExternalLink size={13} aria-hidden="true" className="pr-surface__check-go" />
+      </button>
+      : <div className="pr-surface__check-row" data-still="">{content}<span className="pr-surface__check-go" /></div>}
+  </li>
+}
 
 /** The pull request's description, drawn by the transcript's own Markdown reader, which leaves pictures unloaded until asked. */
 export const PullRequestDescription = memo(function PullRequestDescription({ detail }: { readonly detail: Pick<GitPullRequestDetail, 'body' | 'author'> }): ReactNode {

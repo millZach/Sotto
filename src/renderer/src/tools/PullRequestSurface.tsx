@@ -20,7 +20,7 @@ import { useRestartStopped } from '../agents/RestartStopped'
 import { shownCount } from '../state/interfaceNumbers'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import { OpenPullRequests } from './OpenPullRequests'
-import { PullRequestDescription, PullRequestFiles, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
+import { PullRequestChecks, PullRequestDescription, PullRequestFiles, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
 import {
   canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, holdsBack, limitedWords, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
   resolveMergeMethod, stateLabel, type ChecklistLine, type ConfirmedAction, type LineFix, type LineTone,
@@ -56,8 +56,8 @@ const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url
  * up to date with the base, no conflicts, ready for review), each done or carrying the one press that fixes it.
  * One large Merge, in the method chosen beside it, is enabled only when no line holds it back; Merge when ready
  * arms GitHub's auto-merge instead. The plain answer stays on top and the rest is folded below it, a press away: the
- * description, the changed files, the linked pull requests and the repository's open pull requests; the rest is in the
- * ··· menu. The list of every check stays on GitHub (ADR-0027), a press away from Open check and Open on GitHub. Nothing happens from viewing: every change is a press,
+ * description, every check, the changed files, the linked pull requests and the repository's open pull requests; the
+ * rest is in the ··· menu. Nothing happens from viewing: every change is a press,
  * and the merge, turning on auto-merge, closing and Update with rebase ask first. A pull request chosen from the open
  * ones that this thread does not know is read only, until it is linked. ToolsPanel keys it by the thread, so another
  * thread starts it afresh: nothing of one thread's pull request, choice or notice carries over.
@@ -84,6 +84,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
   const [confirming, setConfirming] = useState<ConfirmedAction | null>(null)
   const [linking, setLinking] = useState(false)
   const [descriptionOpen, setDescriptionOpen] = useState(false)
+  const [checksOpen, setChecksOpen] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   const [openListOpen, setOpenListOpen] = useState(false)
@@ -182,7 +183,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
   }
   const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
   /** A linked or listed pull request opens here; the view starts again at its top line. */
-  const show = (url: string | null): void => { setChosen(url === ownUrl ? null : url); setDescriptionOpen(false); setFilesOpen(false); if (body.current) body.current.scrollTop = 0; requestAnimationFrame(() => top.current?.focus()) }
+  const show = (url: string | null): void => { setChosen(url === ownUrl ? null : url); setDescriptionOpen(false); setChecksOpen(false); setFilesOpen(false); if (body.current) body.current.scrollTop = 0; requestAnimationFrame(() => top.current?.focus()) }
   const linkDialog = linking && command ? <LinkPullRequestDialog threadId={thread.id} command={command} onClose={() => setLinking(false)}
     onLinked={text => { setLinking(false); setNotice({ text, tone: 'status' }) }} /> : null
   /** `docked`: the notice is a refused Stop that the babysitting line shows instead. */
@@ -339,6 +340,9 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
       <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
         <PullRequestDescription detail={detail} />
       </Fold>
+      {detail.checks.length ? <Fold label={t({ message: 'Checks', comment: 'A pull request\'s checks, listed in a fold.' })} count={detail.checks.length} open={checksOpen} onToggle={() => setChecksOpen(value => !value)}>
+        <PullRequestChecks url={detail.url} checks={detail.checks} />
+      </Fold> : null}
       {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
         aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
         <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />

@@ -69,7 +69,7 @@ The surface's layout is the owner's pick among three prototypes of #127's pull r
 - **How it merged.** GitHub records when a pull request merged, not how, so the merged block gives the time and not the method.
 - **Create PR** with no pull request is the Git action's own press (`git-action` with `create_pr`), enabled and explained by the same rules, and its progress shows in the pane's Git notice.
 
-Variant A's controls that C did not show are kept or dropped this way: Open on GitHub and Refresh stay beside the menu; Update with rebase, Convert to draft, Copy link, Link pull request, Unlink from thread and Close pull request are in the ··· menu; Merge now is dropped, since Merge waits for the checklist and Merge when ready covers the rest; the list of every check and the head and base line are dropped for the checklist's lines, with the full list on GitHub; the separate Linked pull requests view is now the fold, and unlinking any but the pull request shown is done by opening it first.
+Variant A's controls that C did not show are kept or dropped this way: Open on GitHub and Refresh stay beside the menu; Update with rebase, Convert to draft, Copy link, Link pull request, Unlink from thread and Close pull request are in the ··· menu; Merge now is dropped, since Merge waits for the checklist and Merge when ready covers the rest; the list of every check and the head and base line are dropped for the checklist's lines, with the full list on GitHub (Zach brought the list of every check back on November 4, 2026, as one more fold: see that amendment below); the separate Linked pull requests view is now the fold, and unlinking any but the pull request shown is done by opening it first.
 
 ## Amendment: review comments (#270)
 
@@ -201,3 +201,11 @@ A desktop from before this, on a host from after it, has its merges, closes and 
 ## Amendment: the quiet composer moves its branch controls (October 29, 2026)
 
 After trying Owl `.5`, Drake asked for no machine/workspace/branch line below the quiet pill. While `quiet-composer` is on, the existing workspace and branch controls live in the pane header beside the folder instead (ADR-0161). The full composer keeps its toolbar. This changes their placement, not Git behavior, permission, host choice or keyboard shortcuts.
+
+## Amendment, November 4, 2026: every check, one more fold below Merge
+
+Zach chose this. His pick of variant C on September 23 dropped the list of every check, with the full list on GitHub. On November 4 he tried both answers in the design pass's prototype `sotto-council/prototypes/pr-checks/index.html`, kept outside the repository, and picked B: the same surface with one more fold.
+
+**Checks** folds under the checklist and Merge, after the description, closed until pressed, as every fold is. It holds every check, each with its state in a word, how long it took and a press that opens it where GitHub says it lives. What failed or still runs comes first, and the checks that finished fold behind **Show 10 passed** while any of those stands. **Open all checks on GitHub** stands at its foot. A check GitHub gives no address for is a plain row, with nothing to press.
+
+The checklist and Merge do not change: **Checks passing** still names the first failing check and carries **Open check**, and the merge is decided by the same lines. The fold adds no read of GitHub, since the read the checklist comes from already holds these checks and their times. It costs a fifth row under Merge and one more piece of code to keep.

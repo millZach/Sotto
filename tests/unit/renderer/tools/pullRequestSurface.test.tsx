@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, fileOnGitHub, filesByWeight, limitedWords, linesLeft, listMatches, mergedWhen, mergeEffect, mergeReady, pathParts, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, checksInOrder, checksOnGitHub, checkTime, checkWord, confirmationFor, fileOnGitHub, filesByWeight, limitedWords, linesLeft, listMatches, mergedWhen, mergeEffect, mergeReady, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
@@ -736,16 +736,34 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
 })
 
 describe('the drill-in under the merge checklist', () => {
-  it('keeps the checks to the plain line and Open check, with no list of them here (ADR-0027)', async () => {
-    const { openExternalLink, command } = mount({ detail: detail({ checks: [check('CI / build', 'success', 'https://github.com/o/r/actions/runs/1'), check('CI / lint', 'failure', 'https://github.com/o/r/actions/runs/2')] }) })
+  const FAILED = 'https://github.com/o/r/actions/runs/2'
+  const timed = (name: string, status: GitPullRequestCheck['status'], url: string | null, minutes: number | null): GitPullRequestCheck => ({ name, status, url, description: null,
+    startedAt: minutes === null ? null : '2026-09-23T10:00:00.000Z', completedAt: minutes === null || status === 'pending' ? null : new Date(Date.parse('2026-09-23T10:00:00.000Z') + minutes * 60_000).toISOString() })
+  it('folds every check below Merge, closed even when one failed, and the checklist stays as it was', async () => {
+    const { openExternalLink, command } = mount({ detail: detail({ checks: [timed('CI / build', 'success', 'https://github.com/o/r/actions/runs/1', 4), timed('CI / lint', 'failure', FAILED, 2), timed('CI / e2e', 'pending', null, null)] }) })
+    await opened()
+    expect(screen.queryByRole('list', { name: 'Checks' })).toBeNull()
+    expect(within(lines()[0]!).getByRole('button', { name: 'Open CI / lint on GitHub' })).toBeInTheDocument()
+    expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
+    const fold = screen.getByRole('button', { name: 'Checks 3' })
+    expect(fold).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(fold)
+    const list = screen.getByRole('list', { name: 'Checks' })
+    // What failed first, what passed folded; a check with nowhere to open has no press.
+    expect(within(list).getAllByRole('listitem').map(row => row.textContent)).toEqual(['CI / lintFailed2m 0s', 'CI / e2eQueued'])
+    expect(within(list).getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 passed' }))
+    expect(within(list).getByText('build')).toBeInTheDocument()
+    fireEvent.click(within(list).getByRole('button', { name: 'Open CI / lint on GitHub. Failed, 2m 0s' }))
+    expect(openExternalLink).toHaveBeenCalledWith(FAILED)
+    fireEvent.click(screen.getByRole('button', { name: 'Open all checks on GitHub' }))
+    expect(openExternalLink).toHaveBeenCalledWith('https://github.com/o/r/pull/74/checks')
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('has no Checks fold where GitHub reports none', async () => {
+    mount({ detail: detail({ checks: [] }) })
     await opened()
     expect(screen.queryByRole('button', { name: /^Checks/u })).toBeNull()
-    expect(screen.queryByRole('list', { name: 'Checks' })).toBeNull()
-    expect(lines()[0]).toHaveTextContent('CI / lint failed')
-    fireEvent.click(within(lines()[0]!).getByRole('button', { name: 'Open CI / lint on GitHub' }))
-    expect(openExternalLink).toHaveBeenCalledWith('https://github.com/o/r/actions/runs/2')
-    expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
-    expect(command).not.toHaveBeenCalled()
   })
   it('lists the changed files, the most changed first, each opening on GitHub', async () => {
     const onReview = vi.fn()
@@ -831,6 +849,18 @@ describe('the drill-in under the merge checklist', () => {
     expect(mergeButton()).toBeInTheDocument()
   })
   it('works out the order, the addresses and the matches the folds use', () => {
+    expect(checksOnGitHub('https://github.com/o/r/pull/74/?x=1')).toBe('https://github.com/o/r/pull/74/checks')
+    const { standing, settled } = checksInOrder([check('a', 'success'), check('b', 'pending'), check('c', 'skipped'), check('d', 'failure'), check('e', 'cancelled'), check('f', 'action-required')])
+    expect(standing.map(item => item.name)).toEqual(['d', 'e', 'f', 'b'])
+    expect(settled.map(item => item.name)).toEqual(['a', 'c'])
+    expect(checkWord({ status: 'pending', startedAt: null })).toBe('Queued')
+    expect(checkWord({ status: 'pending', startedAt: '2026-09-23T10:00:00.000Z' })).toBe('Running')
+    expect(checkTime({ startedAt: '2026-09-23T10:00:00.000Z', completedAt: '2026-09-23T10:04:12.000Z' })).toBe('4m 12s')
+    expect(checkTime({ startedAt: '2026-09-23T10:00:00.000Z', completedAt: null }, Date.parse('2026-09-23T10:00:30.000Z'))).toBe('30s')
+    expect(checkTime({ startedAt: null, completedAt: null })).toBeNull()
+    expect(checkTime({})).toBeNull()
+    expect(checkNameParts('CI / Test / shard 1')).toEqual({ group: 'CI', own: 'Test / shard 1' })
+    expect(checkNameParts('deploy/preview')).toEqual({ group: null, own: 'deploy/preview' })
     expect(filesByWeight([{ path: 'b', additions: 1, deletions: 1 }, { path: 'a', additions: 1, deletions: 1 }, { path: 'c', additions: 9, deletions: 0 }]).map(file => file.path)).toEqual(['c', 'a', 'b'])
     expect(pathParts('src/main/x.ts')).toEqual({ folder: 'src/main/', name: 'x.ts' })
     expect(pathParts('x.ts')).toEqual({ folder: '', name: 'x.ts' })
