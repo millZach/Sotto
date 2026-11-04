@@ -58,6 +58,16 @@ describe('Watcher own changes', () => {
       fileCount: 2, reason: null, source: 'provider-file-change' }])
   })
 
+  it('counts a declined Codex patch as no change, as the turn\'s own count does (#2159)', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    projection.anchor(t, 'codex-turn', 'user')
+    for (const [id, status] of [['denied', 'declined'], ['failed', 'failed']] as const) projection.item(t, codexItemSchema.parse({ id, type: 'fileChange', status,
+      changes: [{ path: `/project/src/${id}.ts`, kind: { type: 'add' }, diff: 'Patch' }] }), { turnId: 'codex-turn', phase: 'completed', afterMessageId: 'user' })
+    projection.turn(t, { id: 'codex-turn', status: 'completed' })
+    expect(t.activities?.find(record => record.kind === 'file-change' && record.denied)).toBeDefined()
+    expect(watcherOwnChanges(t)).toEqual([])
+  })
+
   it.each(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])('extracts acknowledged Claude %s changes', name => {
     const t = thread(); const projection = new ClaudeActivity()
     const input = name === 'NotebookEdit' ? { notebook_path: '/project/book.ipynb' } : { file_path: '/project/src/a.ts' }

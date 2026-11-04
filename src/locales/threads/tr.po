@@ -3635,6 +3635,11 @@ msgstr ""
 msgid "Deleting…"
 msgstr ""
 
+#. An action the user denied, beside its row.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Denied"
+msgstr ""
+
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
