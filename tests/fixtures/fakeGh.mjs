@@ -99,9 +99,21 @@ if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument
   delete viewed.statusCheckRollup
   process.stdout.write(JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4999, resetAt: '2099-01-01T00:00:00Z' }, viewer: { login: 'sotto-fixture' }, repository: {
     mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: true,
-    pullRequest: { ...viewed, viewerCanUpdateBranch: true, baseRef: { compare: { behindBy: pull.behindBy ?? 0 } }, latestOpinionatedReviews: { nodes: pull.reviews ?? [] },
+    pullRequest: { ...viewed, viewerCanUpdateBranch: true,
+      // A record that names them answers as GitHub does: its lines, its author and its changed files with their counts.
+      ...pull.additions === undefined ? {} : { additions: pull.additions, deletions: pull.deletions ?? 0 }, ...pull.author ? { author: { login: pull.author } } : {},
+      ...pull.files ? { changedFiles: pull.changedFiles ?? pull.files.length, files: { nodes: pull.files } } : {}, baseRef: { compare: { behindBy: pull.behindBy ?? 0 } }, latestOpinionatedReviews: { nodes: pull.reviews ?? [] },
       commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: contexts } } } }] } },
   } } }) + '\n')
+} else if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument.startsWith('query=query PullRequestList'))) {
+  // The Pull request surface's list of the repository's open pull requests, the most recently updated first.
+  const open = data.pulls.filter(pull => pull.state === 'OPEN').sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+  save(data)
+  process.stdout.write(JSON.stringify({ data: { rateLimit: RATE_LIMIT, viewer: { login: 'sotto-fixture' }, repository: { pullRequests: { totalCount: open.length, nodes: open.slice(0, 50).map(pull => ({
+    number: pull.number, title: pull.title, url: pull.url, isDraft: pull.isDraft ?? false, updatedAt: pull.updatedAt ?? '2026-09-23T00:00:00Z', additions: pull.additions ?? 0, deletions: pull.deletions ?? 0, changedFiles: pull.changedFiles ?? pull.files?.length ?? 0,
+    reviewDecision: pull.reviewDecision ?? '', headRefName: pull.headRefName, author: { login: pull.author ?? 'sotto-fixture' },
+    commits: { nodes: [{ commit: { statusCheckRollup: pull.rollup ? { state: pull.rollup } : null } }] },
+  })) } } } }) + '\n')
 } else if (args[0] === 'repo' && args[1] === 'view') {
   save(data)
   process.stdout.write(JSON.stringify({ defaultBranchRef: { name: 'main' } }) + '\n')

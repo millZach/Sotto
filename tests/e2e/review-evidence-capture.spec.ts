@@ -279,9 +279,19 @@ const PR_NOTES: Readonly<Record<PullRequestMoment, string>> = {
 }
 const PR_STATE: Readonly<Record<PullRequestMoment, string>> = { 'checks-running': 'pr-checks-running', 'checks-failed': 'pr-checks-failed', ready: 'pr-ready' }
 
+/** The pull request surface opened on a moment, and read. */
+async function pullRequestMomentRead(capture: Capture, moment: PullRequestMoment): Promise<void> {
+  const { page, repository } = capture
+  await writePullRequestMoment(repository, moment)
+  const panel = await toolsTab(page, 'Pull request')
+  await refreshBranch(page, 'Thread store on a worker')
+  await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
+  await expect(panel.getByRole('list', { name: 'Merge checklist' })).toContainText(moment === 'ready' ? 'Approved by mira' : /fail/iu, { timeout: 30_000 })
+}
+
 async function pullRequestMoment(capture: Capture, moment: PullRequestMoment): Promise<void> {
   const { page, repository } = capture
-  await writePullRequestMoment(repository.ghState, moment)
+  await writePullRequestMoment(repository, moment)
   const panel = await toolsTab(page, 'Pull request')
   await refreshBranch(page, 'Thread store on a worker')
   const refresh = panel.getByRole('button', { name: 'Refresh pull request', exact: true })
@@ -456,6 +466,65 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await resizeContentWindowFor(capture.launched, 1600, 1000)
     await closeTools(page)
   } },
+  // The drill-in folded under the plain answer: every check, the changed files, the description, the repository's open pull requests and one of them read.
+  { name: 'pr-detail', covers: ['pr-checks-fold', 'pr-all-checks', 'pr-files', 'pr-review-in-changes', 'pr-description', 'pr-clay', 'pr-open-list', 'pr-other'], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Thread store on a worker')
+    const scripted = 'The pull request and the repository\'s others live in the scripted gh: checks, times, files and counts are data, read through the real status reader and surface. The files and their counts are the real diff\'s.'
+    await pullRequestMomentRead(capture, 'checks-failed')
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
+    const checks = panel.getByRole('button', { name: /^Checks \d+/u })
+    await checks.click()
+    await expect(panel.getByRole('list', { name: 'Checks', exact: true })).toBeVisible()
+    await capture.shoot('pr-checks-fold', 'A failed pull request with its Checks fold opened below Merge: what failed and still runs first, with state and time, and the passed ones folded.', scripted)
+    await resizeContentWindowFor(capture.launched, 820, 560)
+    await panel.locator('.pr-surface__body').evaluate(body => { body.scrollTop += body.querySelector('.pr-surface__checks')!.getBoundingClientRect().top - body.getBoundingClientRect().top - 44 })
+    await capture.shoot('pr-checks-fold', 'The Checks fold at the smallest window, scrolled to: a check\'s state goes under its name.', scripted, { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await panel.getByRole('button', { name: /^Show \d+ passed$/u }).click()
+    await capture.shoot('pr-all-checks', 'The same fold with the passed checks shown too: every named check, its state, how long it took, and a press to open it.', scripted)
+    await pullRequestMomentRead(capture, 'ready')
+    const files = panel.getByRole('button', { name: /^Changed files/u })
+    await checks.click()
+    await files.click()
+    await expect(panel.getByRole('list', { name: 'Changed files' })).toBeVisible()
+    await capture.shoot('pr-files', 'Ready to merge, with the changed files opened below Merge: the most changed first, each with its added and removed lines.', scripted)
+    await capture.shoot('pr-files', 'Ready to merge, with the changed files opened below Merge: the most changed first, each with its added and removed lines.', scripted, { modes: ['dark'], size: [1280, 800] })
+    await resizeContentWindowFor(capture.launched, 820, 560)
+    await panel.locator('.pr-surface__body').evaluate(body => { body.scrollTop += body.querySelector('.pr-surface__files')!.getBoundingClientRect().top - body.getBoundingClientRect().top - 44 })
+    await capture.shoot('pr-files', 'The changed files at the smallest window, scrolled to: the folder gives way before the name.', scripted, { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await panel.getByRole('button', { name: 'Review in Changes', exact: true }).click()
+    await expect(panel.locator('.changes-scope__select')).toHaveValue('branch', { timeout: 30_000 })
+    await expect(panel.locator('.changes-file').nth(29)).toBeAttached({ timeout: 60_000 })
+    await capture.shoot('pr-review-in-changes', 'Review in Changes pressed from the changed files: Changes on the branch against its base.', scripted)
+    await panel.getByRole('tab', { name: 'Pull request', exact: true }).click()
+    // Coming back opens the surface afresh, as any other Tools tab does: everything is folded again.
+    await expect(panel.getByRole('button', { name: /^Changed files/u })).toBeVisible({ timeout: 30_000 })
+    await panel.getByRole('button', { name: 'Description' }).click()
+    await capture.shoot('pr-description', 'Ready to merge with its description unfolded, drawn as Markdown.', scripted)
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
+    await page.waitForTimeout(400)
+    await files.click()
+    await capture.shoot('pr-clay', 'The same surface with its files open in the Clay theme, to check it away from the default palette.', scripted)
+    await files.click()
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
+    await panel.getByRole('button', { name: 'Description' }).click()
+    const list = panel.getByRole('button', { name: /^Open pull requests/u })
+    await list.click()
+    await expect(panel.getByRole('list', { name: 'Open pull requests' })).toContainText('#1640', { timeout: 30_000 })
+    await capture.shoot('pr-open-list', 'The repository\'s open pull requests, read on the press that opened the fold: a search, and for each its state, title, checks, author, age and line counts.', scripted)
+    await resizeContentWindowFor(capture.launched, 820, 560)
+    await panel.locator('.pr-surface__body').evaluate(body => { body.scrollTop += body.querySelector('.pr-surface__open-list')!.getBoundingClientRect().top - body.getBoundingClientRect().top - 90 })
+    await capture.shoot('pr-open-list', 'The repository\'s open pull requests at the smallest window, scrolled to.', scripted, { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await panel.getByRole('button', { name: /^Show #1638:/u }).click()
+    await expect(panel.getByRole('heading', { name: /^#1638 / })).toBeVisible({ timeout: 30_000 })
+    await capture.shoot('pr-other', 'Another open pull request read from the list: its checklist, with no Merge and a press to link it to this thread, and Back to the thread\'s own.', scripted)
+    await panel.getByRole('button', { name: 'Back to #1612', exact: true }).click()
+    await expect(panel.getByRole('heading', { name: new RegExp(`^#${EVIDENCE_PULL} `, 'u') })).toBeVisible({ timeout: 30_000 })
+    await closeTools(page)
+  } },
   { name: 'git-dialog', covers: [], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
@@ -556,7 +625,7 @@ test.describe('review evidence', () => {
     const kept = await readFile(join(out, 'composer', 'boxes.json'), 'utf8').then(text => JSON.parse(text) as Record<string, Box>).catch(() => ({} as Record<string, Box>))
     for (const [file, box] of Object.entries(kept)) boxes.set(file, box)
     const repository = await buildEvidenceRepository()
-    await writePullRequestMoment(repository.ghState, 'checks-running')
+    await writePullRequestMoment(repository, 'checks-running')
     process.env.SOTTO_E2E_GH_SCRIPT = resolve('tests/fixtures/fakeGh.mjs')
     process.env.SOTTO_E2E_GH_EXECUTABLE = process.execPath
     process.env.FAKE_GH_STATE = repository.ghState

@@ -1,6 +1,6 @@
 /* The Pull request surface in Tools (ADR-0027): the merge checklist. A top line names the pull request; five lines
-   each done or carrying the press that fixes it; one large Merge docked under them; the description and the linked
-   pull requests fold below. */
+   each done or carrying the press that fixes it; one large Merge docked under them; the description, every check, the
+   changed files and the linked and the open pull requests fold below. */
 .pr-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
 .pr-surface :is(svg[data-state='open']) { color: var(--tt-success); }
 .pr-surface :is(svg[data-state='merged']) { color: var(--tt-activity); }
@@ -9,7 +9,8 @@
 .pr-surface__top { gap: 6px; }
 .pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
 .pr-surface__lead > svg { flex: none; }
-.pr-surface__name { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+/* Two lines in the top line's height, so a title is read rather than cut at its first few words. */
+.pr-surface__name { display: -webkit-box; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .pr-surface__name:focus { outline: none; }
 .pr-surface__name:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-tag); }
 .pr-surface__number { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
@@ -37,6 +38,27 @@
 .pr-surface__line[data-tone='done'] strong { color: var(--tt-text-2); font-weight: 400; }
 .pr-surface__why { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; }
 .pr-surface__fix .tt-button { min-height: 28px; padding: 0 10px; font-size: var(--tt-type-small); }
+
+/* Every check, in its fold. Each row is a press that opens it; words and times line up down the list. */
+.pr-surface__checks { justify-self: stretch; display: grid; gap: 4px; margin-right: -6px; }
+.pr-surface__check-list { margin: 0; padding: 0; list-style: none; }
+.pr-surface__check-row { display: grid; grid-template-columns: 15px minmax(0, 1fr) minmax(8ch, auto) 9ch 13px; align-items: center; column-gap: 8px; width: 100%; min-height: 28px; padding: 4px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); text-align: left; }
+button.pr-surface__check-row:hover { background: var(--tt-hover); color: var(--tt-text); }
+button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
+.pr-surface__check-row > svg:first-child { color: var(--tt-text-muted); }
+.pr-surface__check-row > svg[data-status='success'] { color: var(--tt-success); }
+.pr-surface__check-row > svg:is([data-status='failure'], [data-status='cancelled']) { color: var(--tt-error-text); }
+.pr-surface__check-row > svg:is([data-status='pending'], [data-status='action-required']) { color: var(--tt-warning-text); }
+.pr-surface__check:is([data-status='failure'], [data-status='cancelled'], [data-status='action-required']) .pr-surface__check-name { color: var(--tt-text); font-weight: 500; }
+.pr-surface__check-name { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
+.pr-surface__check-group { color: var(--tt-text-muted); font-weight: 400; }
+.pr-surface__check-why { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; }
+.pr-surface__check-word { color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
+.pr-surface__check[data-status='failure'] .pr-surface__check-word, .pr-surface__check[data-status='cancelled'] .pr-surface__check-word { color: var(--tt-error-text); }
+.pr-surface__check-time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pr-surface__check-go { color: var(--tt-text-muted); }
+.pr-surface__check-more { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 26px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
+.pr-surface__check-more:hover { background: var(--tt-hover); color: var(--tt-text); }
 
 /* Merge stays in reach under the lines while the folds below scroll. */
 .pr-surface__dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
@@ -84,8 +106,51 @@
 .pr-surface__dock + .pr-surface__fold { margin-top: 6px; }
 .pr-surface__fold-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); font-weight: 500; text-align: left; }
 .pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
-.pr-surface__fold-body { display: grid; gap: 8px; justify-items: start; padding: 0 0 14px 23px; }
-.pr-surface__description { color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pr-surface__fold-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 0 0 14px 23px; }
+.pr-surface__fold-body[data-wide] { justify-items: stretch; padding-left: 0; }
+.pr-surface__fold-aside { margin-left: auto; font-weight: 400; }
+.pr-surface__fold-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pr-surface__fold-actions .tt-button { min-height: 30px; padding: 0 10px; font-size: var(--tt-type-small); }
+.pr-surface__from { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.pr-surface__description { justify-self: stretch; min-width: 0; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; overflow-wrap: anywhere; }
+
+/* Lines added and removed: the success and error roles, in figures that line up. */
+.pr-surface__counts { flex: none; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pr-surface__counts [data-side='added'] { color: var(--tt-success); }
+.pr-surface__counts [data-side='removed'] { color: var(--tt-error-text); }
+
+/* The changed files: the name is read, its folder recedes and gives way first. */
+.pr-surface__files { justify-self: stretch; margin: 0 -6px 0 0; padding: 0; list-style: none; }
+.pr-surface__file { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 28px; padding: 4px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); text-align: left; }
+.pr-surface__file:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pr-surface__file:active { background: var(--tt-hover-strong); }
+.pr-surface__file .pr-surface__counts { display: inline-grid; grid-template-columns: repeat(2, minmax(6ch, max-content)); text-align: right; }
+.pr-surface__file-path { display: flex; flex: 1; min-width: 0; }
+.pr-surface__file-folder { flex: 0 1 auto; min-width: 2ch; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.pr-surface__file-name { flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+
+/* The repository's open pull requests: a search, then rows that say what, how it stands, who and how big. */
+.pr-surface__list-tools { display: flex; align-items: center; gap: 6px; }
+.pr-surface__search { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-code-bg); color: var(--tt-text-muted); }
+.pr-surface__search:focus-within { border-color: var(--tt-focus-ring); box-shadow: 0 0 0 1px var(--tt-focus-ring); }
+.pr-surface__search > svg { flex: none; }
+.pr-surface__search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); }
+.pr-surface__search input::placeholder { color: var(--tt-text-muted); opacity: 1; }
+.pr-surface__search input::-webkit-search-cancel-button { display: none; }
+.pr-surface__open-list { margin: 0; padding: 0; list-style: none; }
+.pr-surface__open-row { display: grid; grid-template-columns: 15px minmax(0, 1fr) 14px; grid-template-areas: 'icon title checks' '. meta meta'; column-gap: 8px; row-gap: 2px; align-items: start; width: 100%; padding: 8px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; }
+.pr-surface__open-row:hover { background: var(--tt-hover); }
+.pr-surface__open-row:active { background: var(--tt-hover-strong); }
+.pr-surface__open-row[aria-current] { background: var(--tt-hover-strong); }
+.pr-surface__open-row > svg:first-child { grid-area: icon; margin-top: 2px; }
+.pr-surface__open-title { grid-area: title; display: -webkit-box; overflow: hidden; font-size: var(--tt-type-small); font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pr-surface__open-checks { grid-area: checks; margin-top: 2px; color: var(--tt-text-muted); }
+.pr-surface__open-checks[data-checks='passed'] { color: var(--tt-success); }
+.pr-surface__open-checks[data-checks='failing'] { color: var(--tt-error-text); }
+.pr-surface__open-checks[data-checks='running'] { color: var(--tt-warning-text); }
+.pr-surface__open-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.pr-surface__list-failed { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--tt-error-text); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
+.pr-surface__finished[data-state='unlinked'] > svg { color: var(--tt-warning-text); }
 .pr-surface__links { justify-self: stretch; margin: 0; padding: 0; list-style: none; }
 .pr-surface__link { border-top: 1px solid var(--tt-hairline); }
 .pr-surface__link:first-child { border-top: 0; }
@@ -127,8 +192,17 @@
   .pr-surface__line { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
   .pr-surface__line > svg { margin-top: 1px; }
   .pr-surface__fix { grid-column: 2; justify-self: start; margin-top: 8px; }
+  /* A check's state goes under its name, so the name keeps the row's width. */
+  .pr-surface__check-row { grid-template-columns: 15px minmax(0, 1fr) auto 13px; grid-template-areas: 'icon name time go' '. word word .'; row-gap: 0; }
+  .pr-surface__check-row > svg:first-child { grid-area: icon; }
+  .pr-surface__check-name { grid-area: name; }
+  .pr-surface__check-word { grid-area: word; }
+  .pr-surface__check-time { grid-area: time; }
+  .pr-surface__check-go { grid-area: go; }
 }
 @container tools-body (max-width: 439px) {
+  /* The title takes the word's room; the state's icon stays, and the word stays for a screen reader. */
+  .pr-surface__tag { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
   .pr-surface__body { padding-inline: 12px; }
   .pr-surface__dock { margin-inline: -12px; padding-inline: 12px; }
 }

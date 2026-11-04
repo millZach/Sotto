@@ -1,6 +1,7 @@
 import { plural, t } from '@lingui/core/macro'
 import { shownCount } from '../state/interfaceNumbers'
-import { GIT_PULL_REQUEST_MERGE_METHOD_LABELS, type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestLinkSource, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
+import { elapsedLabel } from './rosterTime'
+import { GIT_PULL_REQUEST_MERGE_METHOD_LABELS, type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestLinkSource, type GitPullRequestListItem, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
 
 type Detail = Pick<GitPullRequestDetail, 'state' | 'draft' | 'checks' | 'checksUnknown' | 'reviewDecision' | 'reviews' | 'mergeable' | 'behindBy' | 'canUpdateBranch' | 'baseBranch' | 'url'>
 
@@ -172,6 +173,76 @@ export const MERGE_METHOD_SHORT: Readonly<Record<GitPullRequestMergeMethod, stri
 /** What the method leaves on the base branch, said under Merge and in the method menu. */
 export function mergeEffect(method: GitPullRequestMergeMethod, base: string): string {
   return method === 'squash' ? t`One commit on ${base}` : method === 'rebase' ? t`Every commit, replayed onto ${base}` : t`Every commit, plus a merge commit`
+}
+
+/**
+ * The checks in their fold, in the order a reader needs them (as the iPhone's sheet has them, ADR-0102): those
+ * that hold the merge back or still run first, then the settled ones, which fold away while any of the first kind stands.
+ */
+const CHECK_ORDER: Readonly<Record<GitPullRequestCheck['status'], number>> = { failure: 0, cancelled: 1, 'action-required': 2, pending: 3, success: 4, neutral: 5, skipped: 6 }
+const SETTLED_CHECK: ReadonlySet<GitPullRequestCheck['status']> = new Set(['success', 'neutral', 'skipped'])
+export function checksInOrder(checks: readonly GitPullRequestCheck[]): { readonly standing: readonly GitPullRequestCheck[]; readonly settled: readonly GitPullRequestCheck[] } {
+  const ordered = checks.map((check, index) => ({ check, index })).sort((a, b) => CHECK_ORDER[a.check.status] - CHECK_ORDER[b.check.status] || a.index - b.index).map(({ check }) => check)
+  return { standing: ordered.filter(check => !SETTLED_CHECK.has(check.status)), settled: ordered.filter(check => SETTLED_CHECK.has(check.status)) }
+}
+/** A check's state in a word, beside its icon and colour, so neither has to be read to know it. */
+export function checkWord(check: Pick<GitPullRequestCheck, 'status' | 'startedAt'>): string {
+  switch (check.status) {
+    case 'success': return t({ message: 'Passed', comment: 'A check on a pull request passed.' })
+    case 'failure': return t({ message: 'Failed', comment: 'A check on a pull request failed.' })
+    case 'cancelled': return t({ message: 'Cancelled', comment: 'A check on a pull request was cancelled.' })
+    case 'pending': return check.startedAt ? t({ message: 'Running', comment: 'A check on a pull request is running now.' }) : t({ message: 'Queued', comment: 'A check on a pull request has not started.' })
+    case 'action-required': return t({ message: 'Needs approval', comment: 'A check on a pull request waits for someone to approve it on GitHub.' })
+    case 'skipped': return t({ message: 'Skipped', comment: 'A check on a pull request was skipped.' })
+    case 'neutral': return t({ message: 'Neutral', comment: 'A check on a pull request finished without passing or failing.' })
+  }
+}
+/** How long a check took, or has taken so far as of this read; null where GitHub records no times, as for a status another service posted. */
+export function checkTime(check: Pick<GitPullRequestCheck, 'startedAt' | 'completedAt'>, now = Date.now()): string | null {
+  const started = check.startedAt ? Date.parse(check.startedAt) : Number.NaN
+  if (Number.isNaN(started)) return null
+  const completed = check.completedAt ? Date.parse(check.completedAt) : Number.NaN
+  return elapsedLabel((Number.isNaN(completed) ? now : completed) - started)
+}
+/** A check's name as GitHub's Actions writes it, "workflow / job", cut so the job is what the eye reads. */
+export function checkNameParts(name: string): { readonly group: string | null; readonly own: string } {
+  const at = name.indexOf(' / ')
+  return at > 0 ? { group: name.slice(0, at), own: name.slice(at + 3) } : { group: null, own: name }
+}
+/** The files a pull request changes, the most changed first, as the iPhone's sheet lists them (ADR-0102). */
+export function filesByWeight(files: readonly GitPullRequestFile[]): GitPullRequestFile[] {
+  return [...files].sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions) || a.path.localeCompare(b.path))
+}
+/** The full list of a pull request's checks, on GitHub. */
+export const checksOnGitHub = (pullRequestUrl: string): string => `${pullRequestUrl.replace(/[?#].*$/u, '').replace(/\/+$/u, '')}/checks`
+/** A file's path cut into the folder, which recedes, and the name, which is read. */
+export function pathParts(path: string): { readonly folder: string; readonly name: string } {
+  const at = path.lastIndexOf('/')
+  return at < 0 ? { folder: '', name: path } : { folder: path.slice(0, at + 1), name: path.slice(at + 1) }
+}
+/** The pull request's changed files on GitHub. */
+export const filesOnGitHub = (pullRequestUrl: string): string => `${pullRequestUrl.replace(/[?#].*$/u, '').replace(/\/+$/u, '')}/files`
+/** The address of one file in a pull request's changes on GitHub, which anchors each file by the SHA-256 of its path. */
+export async function fileOnGitHub(pullRequestUrl: string, path: string): Promise<string> {
+  const base = filesOnGitHub(pullRequestUrl)
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(path))
+    return `${base}#diff-${[...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')}`
+  } catch { return base }
+}
+/** Whether a row of the open pull requests answers what was typed: its number, title, author or branch. */
+export function listMatches(item: Pick<GitPullRequestListItem, 'number' | 'title' | 'author' | 'headBranch'>, query: string): boolean {
+  const needle = query.trim().toLowerCase().replace(/^#/u, '')
+  return !needle || `${item.number} ${item.title} ${item.author ?? ''} ${item.headBranch}`.toLowerCase().includes(needle)
+}
+/** What a row of the open pull requests says of its checks, for a reader who cannot see their mark. */
+export function listChecksWord(checks: GitPullRequestListItem['checks']): string {
+  switch (checks) {
+    case 'passed': return t({ message: 'Checks passed', comment: 'Said of a pull request in the list of open ones.' })
+    case 'failing': return t({ message: 'A check failed', comment: 'Said of a pull request in the list of open ones.' })
+    case 'running': return t({ message: 'Checks running', comment: 'Said of a pull request in the list of open ones.' })
+    case 'none': return t({ message: 'No checks', comment: 'Said of a pull request in the list of open ones.' })
+  }
 }
 
 export function stateLabel(detail: Pick<GitPullRequestDetail, 'state' | 'draft'>): string {

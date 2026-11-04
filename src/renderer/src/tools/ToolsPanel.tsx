@@ -468,6 +468,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
   // Babysit pull request is offered where the thread's host babysits (ADR-0061 decision 11), naming the agent as the transcript does.
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
+    onReviewChanges={() => { store.showBranchChanges(changesFor, thread.id) }}
     babysit={babysitShown && offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
       ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
   // Files, Changes and Agents are read from a paired host; its browser and test iPhone are on that machine, and so is its terminal off Owl.

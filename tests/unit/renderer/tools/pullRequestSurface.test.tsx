@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { deferred } from '../../../fixtures/deferred'
 import { threadsStateFixture } from '../../../fixtures/agentState'
 import React from 'react'
@@ -5,14 +6,14 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, limitedWords, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, checksInOrder, checksOnGitHub, checkTime, checkWord, confirmationFor, fileOnGitHub, filesByWeight, limitedWords, linesLeft, listMatches, mergedWhen, mergeEffect, mergeReady, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { usePullRequestMergeMethod } from '../../../../src/renderer/src/tools/usePullRequestMergeMethod'
 import { BABYSIT_ENDINGS_DISMISSED_KEY } from '../../../../src/renderer/src/tools/babysitEndingsDismissed'
-import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestRead, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
+import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestListItem, type GitPullRequestRead, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
 
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
@@ -731,5 +732,143 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     mount({ babysit: { agent: 'Claude Code' }, thread: ending(new Date().toISOString()) })
     await opened()
     expect(screen.getByRole('group', { name: 'Not babysitting' })).toBeInTheDocument()
+  })
+})
+
+describe('the drill-in under the merge checklist', () => {
+  const FAILED = 'https://github.com/o/r/actions/runs/2'
+  const timed = (name: string, status: GitPullRequestCheck['status'], url: string | null, minutes: number | null): GitPullRequestCheck => ({ name, status, url, description: null,
+    startedAt: minutes === null ? null : '2026-09-23T10:00:00.000Z', completedAt: minutes === null || status === 'pending' ? null : new Date(Date.parse('2026-09-23T10:00:00.000Z') + minutes * 60_000).toISOString() })
+  it('folds every check below Merge, closed even when one failed, and the checklist stays as it was', async () => {
+    const { openExternalLink, command } = mount({ detail: detail({ checks: [timed('CI / build', 'success', 'https://github.com/o/r/actions/runs/1', 4), timed('CI / lint', 'failure', FAILED, 2), timed('CI / e2e', 'pending', null, null)] }) })
+    await opened()
+    expect(screen.queryByRole('list', { name: 'Checks' })).toBeNull()
+    expect(within(lines()[0]!).getByRole('button', { name: 'Open CI / lint on GitHub' })).toBeInTheDocument()
+    expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
+    const fold = screen.getByRole('button', { name: 'Checks 3' })
+    expect(fold).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(fold)
+    const list = screen.getByRole('list', { name: 'Checks' })
+    // What failed first, what passed folded; a check with nowhere to open has no press.
+    expect(within(list).getAllByRole('listitem').map(row => row.textContent)).toEqual(['CI / lintFailed2m 0s', 'CI / e2eQueued'])
+    expect(within(list).getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 passed' }))
+    expect(within(list).getByText('build')).toBeInTheDocument()
+    fireEvent.click(within(list).getByRole('button', { name: 'Open CI / lint on GitHub. Failed, 2m 0s' }))
+    expect(openExternalLink).toHaveBeenCalledWith(FAILED)
+    fireEvent.click(screen.getByRole('button', { name: 'Open all checks on GitHub' }))
+    expect(openExternalLink).toHaveBeenCalledWith('https://github.com/o/r/pull/74/checks')
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('has no Checks fold where GitHub reports none', async () => {
+    mount({ detail: detail({ checks: [] }) })
+    await opened()
+    expect(screen.queryByRole('button', { name: /^Checks/u })).toBeNull()
+  })
+  it('lists the changed files, the most changed first, each opening on GitHub', async () => {
+    const onReview = vi.fn()
+    const openExternalLink = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest: vi.fn(async () => detail({ additions: 12, deletions: 3, changedFiles: 2, files: [{ path: 'src/a.ts', additions: 1, deletions: 1 }, { path: 'src/deep/b.ts', additions: 11, deletions: 2 }] })) }, openExternalLink })
+    render(<PullRequestSurface thread={thread()} command={vi.fn()} onStatus={vi.fn()} onReviewChanges={onReview} />)
+    await opened()
+    const fold = screen.getByRole('button', { name: /^Changed files 2/u })
+    expect(fold).toHaveTextContent('+12')
+    fireEvent.click(fold)
+    const list = screen.getByRole('list', { name: 'Changed files' })
+    expect(within(list).getAllByRole('button').map(row => row.getAttribute('aria-label'))).toEqual(['Open src/deep/b.ts on GitHub. 11 added, 2 removed', 'Open src/a.ts on GitHub. 1 added, 1 removed'])
+    fireEvent.click(within(list).getAllByRole('button')[0]!)
+    await waitFor(() => expect(openExternalLink).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/github\.com\/o\/r\/pull\/74\/files#diff-[0-9a-f]{64}$/u)))
+    fireEvent.click(screen.getByRole('button', { name: 'Review in Changes' }))
+    expect(onReview).toHaveBeenCalledOnce()
+  })
+  it('says how many it does not list, and hides the fold from a host that did not read the files', async () => {
+    mount({ detail: detail({ changedFiles: 240, files: [{ path: 'a.ts', additions: 1, deletions: 0 }] }) })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Changed files 240/u }))
+    expect(screen.getByText('Showing the 1 first of 240 files.')).toBeInTheDocument()
+    cleanup()
+    mount()
+    await opened()
+    expect(screen.queryByRole('button', { name: /^Changed files/u })).toBeNull()
+  })
+  const listed = (number: number, title: string, change: Partial<GitPullRequestListItem> = {}): GitPullRequestListItem => ({ number, title, url: `https://github.com/o/r/pull/${number}`, draft: false, author: 'mira', headBranch: `feat/${number}`, updatedAt: '2026-09-23T10:00:00.000Z', additions: 5, deletions: 1, changedFiles: 2, checks: 'passed', reviewDecision: null, ...change })
+  it('reads the repository\'s open pull requests only when its fold opens, and searches them here', async () => {
+    const { gitPullRequest } = mount()
+    const gitPullRequestList = vi.fn(async () => ({ repository: 'o/r', total: 3, pullRequests: [listed(74, 'Make the greeting friendlier'), listed(80, 'Fix the socket flake', { checks: 'failing', author: 'drake' }), listed(81, 'Draft the plan', { draft: true, checks: 'none' })] }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
+    await opened()
+    expect(gitPullRequestList).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open pull requests' }))
+    const list = await screen.findByRole('list', { name: 'Open pull requests' })
+    expect(gitPullRequestList).toHaveBeenCalledExactlyOnceWith({ threadId: 'thread-1' })
+    expect(within(list).getAllByRole('button')).toHaveLength(3)
+    expect(within(list).getByRole('button', { name: /^Show #74:/u })).toHaveAttribute('aria-current', 'true')
+    expect(within(list).getByRole('button', { name: /^Show #80: Fix the socket flake\. A check failed\./u })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: /^Search open pull requests/u }), { target: { value: 'drake' } })
+    expect(within(list).getAllByRole('button')).toHaveLength(1)
+    fireEvent.change(screen.getByRole('searchbox', { name: /^Search open pull requests/u }), { target: { value: 'nothing like it' } })
+    expect(screen.getByText('No open pull request matches that search.')).toBeInTheDocument()
+    expect(gitPullRequestList).toHaveBeenCalledOnce()
+  })
+  it('says so when GitHub holds the list back or the project has no remote, and keeps the rows it has', async () => {
+    const { gitPullRequest } = mount()
+    const gitPullRequestList = vi.fn<() => Promise<unknown>>(async () => ({ repository: 'o/r', total: 1, pullRequests: [listed(74, 'Make the greeting friendlier')] }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Open pull requests/u }))
+    await screen.findByRole('list', { name: 'Open pull requests' })
+    gitPullRequestList.mockResolvedValueOnce({ limited: { retryAt: '2099-01-01T00:00:00.000Z' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh open pull requests' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/GitHub is limiting requests/u)
+    expect(screen.getByRole('list', { name: 'Open pull requests' })).toBeInTheDocument()
+    gitPullRequestList.mockResolvedValueOnce(null)
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh open pull requests' }))
+    expect(await screen.findByText(/has no GitHub remote/u)).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Open pull requests' })).toBeNull()
+  })
+  it('reads one the thread does not know with nothing to press but linking it, and goes back to its own', async () => {
+    const other = 'https://github.com/o/r/pull/80'
+    const { gitPullRequest, command } = mount({ detail: request => request.reference === other
+      ? detail({ number: 80, url: other, title: 'Fix the socket flake', branch: false, linked: null, behindBy: 2 }) : detail() })
+    const gitPullRequestList = vi.fn(async () => ({ repository: 'o/r', total: 1, pullRequests: [listed(80, 'Fix the socket flake')] }))
+    vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: /^Open pull requests/u }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Show #80:/u }))
+    await screen.findByRole('heading', { name: '#80 Fix the socket flake' })
+    expect(screen.queryByRole('button', { name: 'Merge #80' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Update branch' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Close pull request' })).toBeNull()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect(command).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Link to this thread' }))
+    await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-link-pull-request', threadId: 'thread-1', reference: other }]))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to #74' }))
+    await opened()
+    expect(mergeButton()).toBeInTheDocument()
+  })
+  it('works out the order, the addresses and the matches the folds use', () => {
+    expect(checksOnGitHub('https://github.com/o/r/pull/74/?x=1')).toBe('https://github.com/o/r/pull/74/checks')
+    const { standing, settled } = checksInOrder([check('a', 'success'), check('b', 'pending'), check('c', 'skipped'), check('d', 'failure'), check('e', 'cancelled'), check('f', 'action-required')])
+    expect(standing.map(item => item.name)).toEqual(['d', 'e', 'f', 'b'])
+    expect(settled.map(item => item.name)).toEqual(['a', 'c'])
+    expect(checkWord({ status: 'pending', startedAt: null })).toBe('Queued')
+    expect(checkWord({ status: 'pending', startedAt: '2026-09-23T10:00:00.000Z' })).toBe('Running')
+    expect(checkTime({ startedAt: '2026-09-23T10:00:00.000Z', completedAt: '2026-09-23T10:04:12.000Z' })).toBe('4m 12s')
+    expect(checkTime({ startedAt: '2026-09-23T10:00:00.000Z', completedAt: null }, Date.parse('2026-09-23T10:00:30.000Z'))).toBe('30s')
+    expect(checkTime({ startedAt: null, completedAt: null })).toBeNull()
+    expect(checkTime({})).toBeNull()
+    expect(checkNameParts('CI / Test / shard 1')).toEqual({ group: 'CI', own: 'Test / shard 1' })
+    expect(checkNameParts('deploy/preview')).toEqual({ group: null, own: 'deploy/preview' })
+    expect(filesByWeight([{ path: 'b', additions: 1, deletions: 1 }, { path: 'a', additions: 1, deletions: 1 }, { path: 'c', additions: 9, deletions: 0 }]).map(file => file.path)).toEqual(['c', 'a', 'b'])
+    expect(pathParts('src/main/x.ts')).toEqual({ folder: 'src/main/', name: 'x.ts' })
+    expect(pathParts('x.ts')).toEqual({ folder: '', name: 'x.ts' })
+    const item = { number: 74, title: 'Make it friendlier', author: 'mira', headBranch: 'feat/hello' }
+    for (const query of ['', '#74', '74', 'FRIEND', 'mira', 'feat/hello']) expect(listMatches(item, query)).toBe(true)
+    expect(listMatches(item, 'drake')).toBe(false)
+  })
+  it('anchors a file on GitHub by the SHA-256 of its path', async () => {
+    await expect(fileOnGitHub('https://github.com/o/r/pull/74/?x=1', 'a.txt')).resolves.toBe(`https://github.com/o/r/pull/74/files#diff-${createHash('sha256').update('a.txt').digest('hex')}`)
   })
 })
