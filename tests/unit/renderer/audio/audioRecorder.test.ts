@@ -14,6 +14,129 @@ import {
 import { createHarness, deferred } from '../../../fixtures/renderer/audioRecorderHarness'
 
 describe('AudioRecorder', () => {
+  it('reports readiness after source connection without yielding between them', async () => {
+    const harness = createHarness()
+    const order: string[] = []
+    harness.context.source.connect.mockImplementation(node => { order.push('connect'); return node })
+    const recorder = harness.recorder()
+    await recorder.start(() => {
+      order.push('ready')
+      expect(harness.context.source.connect).toHaveBeenCalledOnce()
+      void Promise.resolve().then(() => { order.push('microtask') })
+    })
+    expect(order).toEqual(['connect', 'ready', 'microtask'])
+    await recorder.cancel()
+  })
+
+  it('connects immediately but waits for post-permission resume before reporting readiness', async () => {
+    const entered = deferred<void>()
+    const resume = deferred<void>()
+    const harness = createHarness()
+    const order: string[] = []
+    harness.getUserMedia.mockImplementation(async () => {
+      harness.context.state = 'suspended'
+      return harness.stream
+    })
+    harness.context.resume.mockImplementation(() => {
+      order.push('resume')
+      entered.resolve()
+      return resume.promise
+    })
+    harness.context.source.connect.mockImplementation(node => { order.push('connect'); return node })
+    const recorder = harness.recorder()
+    let finished = false
+    const start = recorder.start(() => {
+      order.push('ready')
+      expect(harness.context.source.connect).toHaveBeenCalledOnce()
+      expect(harness.context.state).toBe('running')
+      void Promise.resolve().then(() => { order.push('microtask') })
+    }).then(() => { finished = true })
+
+    await entered.promise
+    expect(order).toEqual(['resume', 'connect'])
+    expect(finished).toBe(false)
+    harness.context.state = 'running'
+    resume.resolve()
+    await start
+    expect(order).toEqual(['resume', 'connect', 'ready', 'microtask'])
+    await recorder.cancel()
+  })
+
+  it.each([
+    ['stop', 'before-microphone'], ['cancel', 'before-microphone'],
+    ['stop', 'after-microphone'], ['cancel', 'after-microphone'],
+  ] as const)('preserves %s while resuming %s without reconnecting', async (action, phase) => {
+    const entered = deferred<void>()
+    const resume = deferred<void>()
+    const harness = createHarness()
+    harness.context.resume.mockImplementation(() => { entered.resolve(); return resume.promise })
+    if (phase === 'before-microphone') harness.context.state = 'suspended'
+    else harness.getUserMedia.mockImplementation(async () => {
+      harness.context.state = 'suspended'
+      return harness.stream
+    })
+    const ready = vi.fn()
+    const recorder = harness.recorder()
+    const outcome = recorder.start(ready).then(() => 'started', () => 'cancelled')
+    await entered.promise
+    expect(harness.context.source.connect).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
+    await recorder[action]()
+    resume.resolve()
+    expect(await outcome).toBe(action === 'stop' ? 'started' : 'cancelled')
+    expect(ready).not.toHaveBeenCalled()
+    expect(harness.context.source.connect).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
+    expect(harness.context.source.disconnect).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
+    expect(harness.track.stop).toHaveBeenCalledTimes(phase === 'before-microphone' ? 0 : 1)
+    expect(harness.worklet.port.onmessage).toBeNull()
+    expect(harness.dependencies.setTimer).not.toHaveBeenCalled()
+    expect(harness.context.close).toHaveBeenCalledOnce()
+    expect(recorder).toHaveProperty('session', null)
+  })
+
+  it('releases the connected source and microphone when the post-permission resume fails', async () => {
+    const entered = deferred<void>()
+    const resume = deferred<void>()
+    const harness = createHarness()
+    harness.getUserMedia.mockImplementation(async () => {
+      harness.context.state = 'suspended'
+      return harness.stream
+    })
+    harness.context.resume.mockImplementation(() => { entered.resolve(); return resume.promise })
+    const ready = vi.fn()
+    const recorder = harness.recorder()
+    const start = recorder.start(ready)
+    await entered.promise
+    expect(ready).not.toHaveBeenCalled()
+    expect(harness.context.source.connect).toHaveBeenCalledOnce()
+
+    resume.reject(new Error('resume failed'))
+    await expect(start).rejects.toMatchObject({ code: 'START_FAILED' })
+    expect(harness.context.source.disconnect).toHaveBeenCalledOnce()
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+    expect(harness.worklet.port.onmessage).toBeNull()
+    expect(harness.context.close).toHaveBeenCalledOnce()
+    expect(recorder).toHaveProperty('session', null)
+  })
+
+  it('does not reopen a stopped microphone when its first constraint request rejects late', async () => {
+    const entered = deferred<void>()
+    const media = deferred<MediaStreamAdapter>()
+    const harness = createHarness()
+    harness.getUserMedia.mockImplementation(() => { entered.resolve(); return media.promise })
+    const recorder = harness.recorder()
+    const ready = vi.fn()
+    const start = recorder.start(ready)
+    await entered.promise
+    await recorder.stop()
+    const error = new Error('constraints')
+    error.name = 'OverconstrainedError'
+    media.reject(error)
+    await start
+    expect(harness.getUserMedia).toHaveBeenCalledOnce()
+    expect(ready).not.toHaveBeenCalled()
+    expect(harness.context.source.connect).not.toHaveBeenCalled()
+  })
+
   it('resumes a context the permission dialog left suspended', async () => {
     const harness = createHarness()
     const order: string[] = []

@@ -1,5 +1,6 @@
 import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
+import { TeamLinksOnHosts } from '../../watcher/TeamsPage'
 import { LocalAppsSettings } from './LocalAppsSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
@@ -435,7 +436,7 @@ export function SettingsView({
     draft.settle(submission, saved, true)
   }
   const savePasteDelay = (): Promise<void> => saveBoundedNumber(pasteDelayDraft, 'pasteDelayMs', 50, 1_000, setPasteDelayError, msg`Paste delay saved.`)
-  const saveSuccessDuration = (): Promise<void> => saveBoundedNumber(successDurationDraft, 'successDisplayMs', 500, 5_000, setSuccessDurationError, msg`Success duration saved.`)
+  const saveSuccessDuration = (): Promise<void> => saveBoundedNumber(successDurationDraft, 'successDisplayMs', 500, 5_000, setSuccessDurationError, msg`Copied message duration saved.`)
   const saveTypingSpeed = (): Promise<void> => saveBoundedNumber(typingSpeedDraft, 'typingSpeedWpm', TYPING_SPEED_MIN_WPM, TYPING_SPEED_MAX_WPM, setTypingSpeedError, msg`Typing speed saved.`)
 
   // One busy flag for all three: they are the same button row, and only one of
@@ -727,7 +728,7 @@ export function SettingsView({
                   <Toggle setting="clipboard-copy" label={t`Automatic clipboard copy`} checked disabled onCheckedChange={() => undefined} description={t`Always on. Every successful transcript is copied.`} />
                   <Toggle setting="auto-paste" label={t`Automatic paste`} checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
                   <div className="settings-input-action"><Field setting="paste-delay" label={t`Paste delay`} description={t`How long to wait before pasting, in milliseconds (50 to 1000).`} {...(pasteDelayError === undefined ? {} : { error: shownWords(pasteDelayError) })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft.value} onBlur={() => void savePasteDelay()} onChange={(event) => { pasteDelayDraft.edit(event.currentTarget.value) }} /></Field></div>
-                  <div className="settings-input-action"><Field setting="success-duration" label={t`Success message duration`} description={t`How long the success message stays up, in milliseconds (500 to 5000).`} {...(successDurationError === undefined ? {} : { error: shownWords(successDurationError) })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
+                  <div className="settings-input-action"><Field setting="success-duration" label={t`Success message duration`} description={t`How long Copied stays up, in milliseconds (500 to 5000).`} {...(successDurationError === undefined ? {} : { error: shownWords(successDurationError) })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
                 </SettingsGroup>
                 </> : null}
               </Card>
@@ -769,6 +770,7 @@ export function SettingsView({
                 <SettingsGroup title={t`In a thread`} icon={MessageSquareText}>
                   <Field label={t`Replies in threads`} description={t`Show replies as they are written or once finished. Commands and tool calls always show as they run.`}><SegmentedControl setting="reply-streaming" label={t`Replies in threads`} value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: t`As written` }, { value: 'complete', label: t`When finished` }]} /></Field>
                   <Toggle setting="thread-titles" label={t`Generated thread titles`} checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description={t`The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept.`} />
+                  <Toggle setting="command-summaries" label={t`Generated command summaries`} checked={settings.commandSummaries} onCheckedChange={(checked) => void save({ commandSummaries: checked })} description={t`When a thread's model asks to run a command and sends no summary, Sotto asks that thread's own provider what the command does. It uses your subscription, and only that provider sees the command.`} />
                   {/* ADR-0132, ADR-0173: an Owl feature; the switch is read for every ask, and told to connected hosts. */}
                   {nextPromptOn ? <Toggle setting="next-prompt" label={t`Suggest a next prompt`} checked={settings.nextPromptSuggestions} onCheckedChange={checked => void save({ nextPromptSuggestions: checked })}
                     description={t`When a turn ends, or you open a new thread, the thread's own model suggests what to ask next. For a new thread it reads the project's recent work and your latest thread titles there. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one.`} /> : null}
@@ -841,6 +843,7 @@ export function SettingsView({
                   <PhonesSettings phoneAccess={settings.phoneAccess} phoneAccessName={settings.phoneAccessName} onUpdateSettings={onUpdateSettings}
                     onOpenHosts={() => { const panel = document.getElementById('settings-hosts'); const control = panel && findSettingControl(panel, 'local-host'); if (control) revealSetting(control) }} />
                 </SettingsGroup>
+                <TeamLinksOnHosts />
                 {localAppsOn ? <SettingsGroup title={t`Apps on this computer`} icon={AppWindow} rows={false}>
                   <LocalAppsSettings localApps={settings.localApps} onUpdateSettings={onUpdateSettings} />
                 </SettingsGroup> : null}

@@ -7,6 +7,7 @@ import type { ProjectSetupRequest } from '../../shared/workerMachine'
 import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/babysitting'
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
+import { commandSummaryWriter } from '../llm/commandSummary'
 import { threadBranchWriter } from '../llm/threadBranch'
 import { nextPromptOpeningWriter, nextPromptWriter } from '../llm/nextPrompt'
 import { NextPrompts } from './nextPrompts'
@@ -34,7 +35,7 @@ import { MainCheckoutKeeper, type MainCheckoutEvent } from './mainCheckout'
 import type { PullRequestObservation } from './watcherEvidence'
 import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
-import { WatcherToolServer } from './watcherTools'
+import { WatcherToolServer, type WatcherTeamTools } from './watcherTools'
 import { DelegationService } from './delegation'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
@@ -117,6 +118,8 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
   workerRolesEnabled?: boolean
   workerSwarmsEnabled?: boolean
+  /** Teams, on the desktop while its Owl feature is on (ADR-0186): Watcher's two tools for it, and the moment a user message goes. */
+  teams?: (WatcherTeamTools & { userMessageGoing(): boolean }) | undefined
   /** The Owl list's answer for continuing a thread on another provider (ADR-0089), read once by the process owner. Absent fails closed. */
   continueEnabled?: boolean
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
@@ -437,6 +440,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
     ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
+    writeCommandSummary: commandSummaryWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
     ...(nextPrompts ? { nextPrompts } : {}),
     reasoner,
@@ -510,7 +514,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const pullRequestState = options.worktreeCleanup?.pullRequestState
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const watcher = moving.watcher = options.watcherEnabled === true
-    ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
+    ? new WatcherService({ directory, control: agentControl, host: agentHost, ...options.teams ? { teamMessageGoing: () => options.teams!.userMessageGoing() } : {}, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
       settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
@@ -622,7 +626,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, ...threadMoves ? { moves: threadMoves } : {} }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, ...threadMoves ? { moves: threadMoves } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's

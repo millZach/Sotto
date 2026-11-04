@@ -47,7 +47,7 @@ it('retains failed dictation across navigation and later dictation, and copies w
   let recordings = 0
   const transcribe = vi.fn(async () => ({ text: `Completed words ${++recordings}`, language: 'en' }))
   const factory: AppControllerFactory = bindings => createProductionDictationController(bindings, {
-    createRecorder: () => ({ start: async () => undefined, stop: async () => ({ samples: new Float32Array([0.2]), sourceSampleRate: 16_000, durationMs: 500 }), cancel: async () => undefined }),
+    createRecorder: () => ({ start: async onReady => { onReady() }, stop: async () => ({ samples: new Float32Array([0.2]), sourceSampleRate: 16_000, durationMs: 500 }), cancel: async () => undefined }),
     createTranscriber: () => ({ transcribe, cancel: () => undefined, dispose: () => undefined }),
     createCuePlayer: () => ({ playStart: () => undefined, playStop: () => undefined }),
   })
@@ -98,7 +98,7 @@ it('retains failed dictation across navigation and later dictation, and copies w
 
 it('does not report a History failure when a dictation record is refused while history is off', async () => {
   const factory: AppControllerFactory = bindings => createProductionDictationController(bindings, {
-    createRecorder: () => ({ start: async () => undefined, stop: async () => ({ samples: new Float32Array([0.2]), sourceSampleRate: 16_000, durationMs: 500 }), cancel: async () => undefined }),
+    createRecorder: () => ({ start: async onReady => { onReady() }, stop: async () => ({ samples: new Float32Array([0.2]), sourceSampleRate: 16_000, durationMs: 500 }), cancel: async () => undefined }),
     createTranscriber: () => ({ transcribe: async () => ({ text: 'Off the record', language: 'en' }), cancel: () => undefined, dispose: () => undefined }),
     createCuePlayer: () => ({ playStart: () => undefined, playStop: () => undefined }),
   })

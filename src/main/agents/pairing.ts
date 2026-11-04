@@ -86,11 +86,13 @@ export class PairedClients {
   private readonly codes = new Map<string, { expiresAt: number }>()
   private readonly now: () => number
   private readonly createId: () => string
+  private readonly codeLifetimeMs: number
 
-  constructor(directory: string, options: { now?: () => number; createId?: () => string } = {}) {
+  constructor(directory: string, options: { now?: () => number; createId?: () => string; codeLifetimeMs?: number } = {}) {
     this.filePath = join(directory, 'paired-clients.json')
     this.now = options.now ?? Date.now
     this.createId = options.createId ?? randomUUID
+    this.codeLifetimeMs = options.codeLifetimeMs ?? PAIRING_CODE_LIFETIME_MS
     this.store = new AtomicJsonStore(join(directory, 'paired-clients.json'), pairedClientsFileSchema.parse,
       () => ({ secret: newSecret(), clients: [] }))
   }
@@ -117,7 +119,7 @@ export class PairedClients {
     if (this.codes.size >= 100) throw new Error('Too many pairing codes are open. Wait five minutes and try again.')
     let code = randomCode()
     while (this.codes.has(code)) code = randomCode()
-    const expiresAt = at + PAIRING_CODE_LIFETIME_MS
+    const expiresAt = at + this.codeLifetimeMs
     this.codes.set(code, { expiresAt })
     return { code, expiresAt: new Date(expiresAt).toISOString() }
   }

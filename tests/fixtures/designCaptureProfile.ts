@@ -52,6 +52,8 @@ async function createProfile(
     readonly memory?: boolean
     /** The click effect (ADR-0156); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
     readonly clickEffect?: boolean
+    /** More files for the profile, by name, such as what a stand-in or a feature reads at its start. */
+    readonly files?: Readonly<Record<string, string>>
   },
 ): Promise<string> {
   const owner = await ownedE2EProfile({ prefix: 'sotto-e2e-design-' })
@@ -73,6 +75,7 @@ async function createProfile(
   const records = options.records ?? (options.history === populatedHistory ? populatedRecords : undefined)
   if (records !== undefined) await writeFile(join(profile, 'dictation-records.jsonl'), records.map((record) => `${JSON.stringify(record)}\n`).join(''), 'utf8')
   if (options.agents !== undefined) await writeFile(join(profile, 'agents.json'), `${JSON.stringify(designAgentsState(), null, 2)}\n`, 'utf8')
+  for (const [name, text] of Object.entries(options.files ?? {})) await writeFile(join(profile, name), text, 'utf8')
   return profile
 }
 
@@ -91,6 +94,7 @@ export async function withSotto(
     readonly memory?: boolean
     /** The click effect (ADR-0156); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
     readonly clickEffect?: boolean
+    readonly files?: Readonly<Record<string, string>>
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {

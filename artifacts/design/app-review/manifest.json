@@ -17,7 +17,7 @@
     "Capture launches disable GPU compositing to avoid Electron tile tearing; application layout and CSS rendering remain authoritative.",
     "Verification permits only negligible Windows raster variance: at most max(100, 0.05%) pixels and max(1000, 0.5% pixel-count) total channel delta."
   ],
-  "count": 145,
+  "count": 143,
   "entries": [
     {
       "theme": "dark",
@@ -186,34 +186,6 @@
       "width": 1080,
       "height": 720,
       "sha256": "ea6e550528e4f86f70b57de0c1cac128e10dd38768382e75dcda26f8373403fa"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "dictate-pasted",
-      "category": "dictate",
-      "state": "success-pasted",
-      "relativePath": "artifacts/design/app-review/baseline/dictate-pasted.png",
-      "width": 1080,
-      "height": 720,
-      "sha256": "d63b6dbc10560067123c907f90899ce47e79092e4628467a5848e7cfd99ec70b"
-    },
-    {
-      "theme": "light",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "dictate-pasted-light",
-      "category": "dictate",
-      "state": "success-pasted",
-      "relativePath": "artifacts/design/app-review/baseline/dictate-pasted-light.png",
-      "width": 1080,
-      "height": 720,
-      "sha256": "3a9b9de8dd0e599029ff2fd4a793e77bac35431acaf30815484350359af63c7c"
     },
     {
       "theme": "dark",

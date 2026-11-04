@@ -79,6 +79,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
   const { t } = useLingui()
   const systemDark = useSystemPrefersDark()
   const menuBarOwl = useOwlFeature('menu-bar-owl') && platform === 'darwin'
+  const hideMenuBarIcon = useOwlFeature('hide-menu-bar-icon')
   const creatureToggle = useOwlFeature('creature-toggle')
   // A creature this build holds (Lardo, outside Owl) shows and is marked as Sotto's own; the saved choice stays as it was.
   const creature = creatureShown(settings.creature, useLardoOffered())
@@ -187,7 +188,9 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
           {interfaceLanguage
             ? <LanguagePicker value={settings.interfaceLanguage} onChoose={choice => void chooseLanguage(choice)} />
             : null}
-          {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} onChoose={(patch, text) => void onSave(patch, text).catch(() => false)} /> : null}
+          {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} shown={!hideMenuBarIcon || settings.showMenuBarIcon}
+            onChoose={(patch, text) => void onSave(patch, text).catch(() => false)}
+            onShow={hideMenuBarIcon ? showMenuBarIcon => void onSave({ showMenuBarIcon }, showMenuBarIcon ? msg`Menu bar icon shown.` : msg`Menu bar icon hidden.`).catch(() => false) : undefined} /> : null}
         </div>
       </section>
 

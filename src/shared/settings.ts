@@ -149,6 +149,8 @@ export interface AppSettings {
   menuBarOwlBody: MenuBarOwlBody
   /** The colour its eyes glow. */
   menuBarOwlEyes: MenuBarOwlEyes
+  /** Off takes Sotto's icon out of a Mac's menu bar, where the `hide-menu-bar-icon` Owl feature is on; kept whole elsewhere. */
+  showMenuBarIcon: boolean
   /** The place Watcher's night scene is set in (ADR-0149); kept whole where Watcher is off. */
   watcherScene: WatcherScene
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
@@ -397,6 +399,8 @@ export interface AppSettings {
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
    */
   threadTitles: boolean
+  /** Ask a thread's own provider for a command summary when the model sent none (ADR-0185). */
+  commandSummaries: boolean
   /**
    * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side
    * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
@@ -482,6 +486,7 @@ const fieldSchemas = {
   effortColor: z.enum(EFFORT_COLORS),
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
+  showMenuBarIcon: z.boolean(),
   watcherScene: z.enum(WATCHER_SCENES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
@@ -557,6 +562,7 @@ const fieldSchemas = {
   llmMode: z.enum(LLM_MODES),
   llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
+  commandSummaries: z.boolean(),
   nextPromptSuggestions: z.boolean(),
   threadTips: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
@@ -609,6 +615,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   effortColor: 'ember',
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
+  showMenuBarIcon: true,
   watcherScene: DEFAULT_WATCHER_SCENE,
   creature: 'sotto',
   showCreature: true,
@@ -681,6 +688,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
+  commandSummaries: true,
   nextPromptSuggestions: true,
   threadTips: true,
   threadWorkingCopyDefault: 'shared',
@@ -804,6 +812,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     effortColor: parseField(persisted, 'effortColor', defaults),
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
+    showMenuBarIcon: parseField(persisted, 'showMenuBarIcon', defaults),
     watcherScene: parseField(persisted, 'watcherScene', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
@@ -879,6 +888,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMode: parseField(persisted, 'llmMode', defaults),
     llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    commandSummaries: parseField(persisted, 'commandSummaries', defaults),
     nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadTips: parseField(persisted, 'threadTips', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),

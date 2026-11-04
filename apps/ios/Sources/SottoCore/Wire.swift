@@ -519,6 +519,9 @@ public struct RequestContext: Decodable, Equatable, Sendable {
     public let toolName: String?; public let command: String?; public let cwd: String?; public let details: String?
     /// The asking model's own words for what it asks (ADR-0185). Sotto writes none, and a computer from before it sends none.
     public let summary: String?
+    /// Set when Sotto asked the thread's own provider for the summary: `waiting`, `answered` or `failed`. Absent when the
+    /// summary is the model's own or none was asked for, and from a computer that predates it.
+    public let summaryAsk: String?
     /// What a request that is not a command does, and the path or address it acts on.
     public let action: String?; public let target: String?
 }

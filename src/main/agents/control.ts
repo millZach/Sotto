@@ -71,6 +71,7 @@ import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../sha
 import { FailuresSeen } from './failuresSeen'
 import { BRING_BACK_UNSUPPORTED } from '../../shared/bringChangesBack'
 import { RequestWaits } from './requestWaits'
+import { CommandSummaries, type CommandSummaryWrite } from './commandSummaries'
 import { FinishedUnread, settledIn } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
@@ -1227,6 +1228,7 @@ export class AgentControl {
   private readonly failuresSeen: FailuresSeen
   /** When each pending request started waiting, stamped as it is first shown (ADR-0135). */
   private readonly requestWaits: RequestWaits
+  private readonly commandSummaries: CommandSummaries | undefined
   /** The sends whose reply's first output the coordinator is watching for, to time it. */
   private readonly firstOutputs = new FirstOutputWatches()
   /**
@@ -1353,6 +1355,8 @@ export class AgentControl {
      * that writes nothing and every failure resolve to. Absent here means no thread is ever named by Sotto.
      */
     writeThreadTitle?: (threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>
+    /** Asks a thread's own provider for a command summary when the model sent none (ADR-0185). */
+    writeCommandSummary?: CommandSummaryWrite
     /**
      * The first-message title for a thread's first message: its opening words, given the moment it is sent so
      * the thread is not "New thread" while its first turn runs. `null` (generation off) leaves the stand-in;
@@ -1415,6 +1419,12 @@ export class AgentControl {
     this.prototypeReady.onEvicted = id => { this.reshow.add(id); this.evictions?.push(id) }
     this.failuresSeen.onMoved = id => { this.marksMoved.add(id) }
     this.requestWaits.onMoved = id => { this.marksMoved.add(id) }
+    this.commandSummaries = dependencies.writeCommandSummary ? new CommandSummaries(dependencies.writeCommandSummary) : undefined
+    if (this.commandSummaries) {
+      this.commandSummaries.onMoved = id => { this.marksMoved.add(id) }
+      // Taken like a new snapshot, so the stored thread carries the outcome and every client is told.
+      this.commandSummaries.onChanged = () => { if (!this.disposed) this.acceptSnapshot(this.state.host) }
+    }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -1670,6 +1680,7 @@ export class AgentControl {
       snapshot = startHandoversShown(snapshot, gone && incoming ? id => this.threadAvailable(id) ? incoming.get(id) : undefined : undefined)
     }
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
+    if (this.commandSummaries) snapshot = this.commandSummaries.decorate(snapshot, gone)
     // Each request is stamped with when its wait began as it is first shown (ADR-0135), Sotto's own included.
     return this.requestWaits.decorate(snapshot, gone)
   }
@@ -6913,6 +6924,7 @@ export class AgentControl {
   }
   dispose(): void {
     this.disposed = true
+    this.commandSummaries?.close()
     // No snapshot is accepted from here on, so no first output can be seen: the records waiting for one are written now.
     this.firstOutputs.closeAll()
     // A held broadcast dies with the control: its listeners are going away, and a run that

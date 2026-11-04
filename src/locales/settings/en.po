@@ -1896,6 +1896,10 @@ msgstr "Conversation"
 msgid "Copied"
 msgstr "Copied"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Copied message duration saved."
+msgstr "Copied message duration saved."
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Copied the code"
 msgstr "Copied the code"
@@ -2559,6 +2563,11 @@ msgstr "Foundation"
 msgid "From your SSH configuration"
 msgstr "From your SSH configuration"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Generated command summaries"
+msgstr "Generated command summaries"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Generated commit messages"
@@ -2737,8 +2746,8 @@ msgid "How long a stage waits for a thread before its row offers Retry, Use anot
 msgstr "How long a stage waits for a thread before its row offers Retry, Use another model and Go on without it. Nothing is left out on its own."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "How long the success message stays up, in milliseconds (500 to 5000)."
-msgstr "How long the success message stays up, in milliseconds (500 to 5000)."
+msgid "How long Copied stays up, in milliseconds (500 to 5000)."
+msgstr "How long Copied stays up, in milliseconds (500 to 5000)."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "How long to wait before pasting, in milliseconds (50 to 1000)."
@@ -3192,6 +3201,14 @@ msgstr "may slow down"
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "memory unknown"
 msgstr "memory unknown"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon hidden."
+msgstr "Menu bar icon hidden."
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon shown."
+msgstr "Menu bar icon shown."
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -3672,6 +3689,10 @@ msgstr "Off, nothing stands above the composer. The sidebar still says when a th
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Off, one theme paints light and dark."
 msgstr "Off, one theme paints light and dark."
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Off, open Sotto from the Dock."
+msgstr "Off, open Sotto from the Dock."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Off. Sotto turns it on for {who} before anything else, so the host starts before anyone signs in to {name} and keeps running after they sign out. If {name} asks for an administrator, nothing on {name} changes: run this there, then press Start at boot again. Sotto never runs sudo."
@@ -4890,6 +4911,10 @@ msgstr "Show floating widget when idle"
 msgid "Show hidden tips again"
 msgstr "Show hidden tips again"
 
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Show in menu bar"
+msgstr "Show in menu bar"
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Show or hide the focused pane’s terminal drawer."
 msgstr "Show or hide the focused pane’s terminal drawer."
@@ -5603,10 +5628,6 @@ msgstr "Subjects and titles start with a type and scope, like feat(threads):. No
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Subtle surface"
 msgstr "Subtle surface"
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Success duration saved."
-msgstr "Success duration saved."
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -6995,6 +7016,10 @@ msgstr "When a thread has finished everything"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "When a thread needs you"
 msgstr "When a thread needs you"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a thread's model asks to run a command and sends no summary, Sotto asks that thread's own provider what the command does. It uses your subscription, and only that provider sees the command."
+msgstr "When a thread's model asks to run a command and sends no summary, Sotto asks that thread's own provider what the command does. It uses your subscription, and only that provider sees the command."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "When a turn ends, or you open a new thread, the thread's own model suggests what to ask next. For a new thread it reads the project's recent work and your latest thread titles there. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."

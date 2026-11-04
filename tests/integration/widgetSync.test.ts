@@ -468,7 +468,7 @@ describe('AppProvider dictation integration', () => {
 
 describe('production controller seam', () => {
   it('constructs the recorder, local transcriber, and sound cue player through injectable factories', async () => {
-    const recorder = { start: vi.fn(async () => undefined), stop: vi.fn(async () => null), cancel: vi.fn(async () => undefined) }
+    const recorder = { start: vi.fn(async (onReady: () => void) => { onReady() }), stop: vi.fn(async () => null), cancel: vi.fn(async () => undefined) }
     const transcriber = { transcribe: vi.fn(), cancel: vi.fn(), dispose: vi.fn() }
     const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }
     const createRecorder = vi.fn(() => recorder)
@@ -486,6 +486,7 @@ describe('production controller seam', () => {
 
     await controller.start()
     expect(createRecorder).toHaveBeenCalledOnce()
+    expect(controller.getState().status).toBe('listening')
     expect(bindings.publishWidgetState).toHaveBeenCalled()
     controller.dispose()
     expect(transcriber.dispose).toHaveBeenCalledOnce()

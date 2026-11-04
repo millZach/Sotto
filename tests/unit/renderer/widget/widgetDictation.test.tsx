@@ -19,6 +19,25 @@ import { setupWidgetTests, snapshot, win32Copy } from '../../../fixtures/rendere
 setupWidgetTests()
 
 describe('WidgetApp', () => {
+  it('shows cancellable startup and waits only for an actual permission prompt', () => {
+    const onCancel = vi.fn()
+    const { rerender } = render(<WidgetApp platform="darwin" now={0}
+      onCancel={onCancel}
+      snapshot={snapshot({ status: 'requesting-permission', sessionId: 'starting', cancellable: true, escapeClaimed: true })} />)
+    expect(screen.queryByText('Waiting for microphone')).toBeNull()
+    expect(screen.getByText('Connecting to your microphone.')).toBeVisible()
+    expect(screen.queryByTestId('widget-sliver')).toBeNull()
+    expect(screen.queryByText('Click to dictate')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
+    expect(onCancel).toHaveBeenCalledOnce()
+    rerender(<WidgetApp platform="darwin" now={0}
+      onCancel={onCancel}
+      snapshot={snapshot({ status: 'requesting-permission', sessionId: 'starting', cancellable: true, escapeClaimed: true, permissionPending: true })} />)
+    expect(screen.getByText('Waiting for microphone')).toBeVisible()
+    expect(screen.queryByTestId('widget-sliver')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Cancel dictation' })).toBeVisible()
+  })
+
   it('directs Linux clipboard failure to Dictate without suggesting the stale selection can be pasted', () => {
     const { container } = render(<WidgetApp platform="linux" now={0}
       snapshot={snapshot({ status: 'error', sessionId: 'fallback', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })} />)
@@ -86,7 +105,7 @@ describe('WidgetApp', () => {
 
     rerender(
       <WidgetApp
-        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: true })}
+        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', permissionPending: true, cancellable: true })}
         platform="darwin"
         now={0}
       />,
@@ -124,7 +143,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({
-          status: 'requesting-permission', sessionId: 'permission', cancellable: true, ...privateFields,
+          status: 'requesting-permission', sessionId: 'permission', permissionPending: true, cancellable: true, ...privateFields,
         })}
         platform="win32" now={15_340}
       />,
@@ -334,7 +353,7 @@ describe('WidgetApp', () => {
     const onCancel = vi.fn()
     const { rerender } = render(
       <WidgetApp
-        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: false })}
+        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', permissionPending: true, cancellable: false })}
         platform="linux" now={0}
         onCancel={onCancel}
       />,
@@ -342,7 +361,7 @@ describe('WidgetApp', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     rerender(
       <WidgetApp
-        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', cancellable: true })}
+        snapshot={snapshot({ status: 'requesting-permission', sessionId: 'permission', permissionPending: true, cancellable: true })}
         platform="linux" now={0}
         onCancel={onCancel}
       />,

@@ -134,7 +134,7 @@ export function dictateSentence(
     return { sentence: t`The speech model is not ready yet.`, tone: 'normal' }
   }
   switch (state.status) {
-    case 'requesting-permission': return { sentence: t`Connecting to your microphone.`, detail: copy.homeRequestingPermissionDetail, tone: 'normal' }
+    case 'requesting-permission': return { sentence: t`Connecting to your microphone.`, ...(state.permissionPending ? { detail: copy.homeRequestingPermissionDetail } : {}), tone: 'normal' }
     case 'listening': return { sentence: t`Listening.`, tone: 'normal' }
     case 'processing': return { sentence: t`Turning speech into text.`, tone: 'normal' }
     case 'success': return { sentence: state.output === 'pasted' ? deliveredApp === undefined ? t`Pasted.` : t`Pasted into ${deliveredApp}.` : t`Copied.`, tone: 'normal' }

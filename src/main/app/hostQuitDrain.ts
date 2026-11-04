@@ -8,6 +8,7 @@ export interface HostQuitHandles {
   phoneAccess?: AsyncClose
   /** Let apps on this computer connect's loopback listener (ADR-0180). */
   localApps?: AsyncClose
+  teams?: AsyncClose
   hostSetup?: AsyncClose
   hostSetupTools?: AsyncClose
   visualTools?: AsyncClose
@@ -51,7 +52,7 @@ export function registerHostQuitDrain(app: Parameters<typeof registerQuitDrain>[
     stopPublishing()
     // Closing the local runtime drains a worktree cleanup sweep in progress before its host closes (ADR-0041).
     // Remove phone access before closing the host it serves (ADR-0033).
-    await Promise.all([handles.phoneAccess?.close().catch(phoneFailed), handles.localApps?.close().catch(() => undefined)])
+    await Promise.all([handles.phoneAccess?.close().catch(phoneFailed), handles.localApps?.close().catch(() => undefined), handles.teams?.close().catch(() => undefined)])
     // A setup running now ends as Stop setup would, before the hosts it checks and adds close.
     await handles.hostSetup?.close().catch(() => undefined)
     handles.providerJobs?.close()

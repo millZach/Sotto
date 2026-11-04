@@ -7,6 +7,25 @@ final class RequestTextTests: XCTestCase {
     private let database = #"{"id":"0","question":"Which database?","header":"Database","options":[{"id":"Postgres","label":"Postgres"},{"id":"SQLite","label":"SQLite"}],"multiSelect":false,"allowFreeText":true}"#
     private let service = #"{"id":"1","question":"Name the service","options":[],"multiSelect":false,"allowFreeText":true}"#
 
+    // MARK: Command summary
+
+    private func command(_ context: String) throws -> AgentRequest {
+        try request(#"{"id":"r","kind":"permission","text":"Run a command\nnpm test","options":[],"context":{"command":"npm test""# + context + "}}")
+    }
+
+    func testAShortCardSaysWhoseSummaryItIsAndWhatBecameOfIt() throws {
+        XCTAssertEqual(RequestText.permissionAsk(try command(#","summary":"Runs the tests""#), provider: "Claude Code"), "Claude Code says: Runs the tests")
+        XCTAssertEqual(RequestText.permissionAsk(try command(#","summary":"Runs the tests","summaryAsk":"answered""#), provider: "Codex"), "Sotto asked Codex what this does: Runs the tests")
+        XCTAssertEqual(RequestText.permissionAsk(try command(#","summaryAsk":"waiting""#), provider: "Codex"), "Asking Codex for a summary…")
+        XCTAssertEqual(RequestText.permissionAsk(try command(#","summaryAsk":"failed""#), provider: "Codex"), "Codex couldn’t give a summary of this command.")
+        XCTAssertEqual(RequestText.permissionAsk(try command(""), provider: "Devin"), "Devin gave no summary of this command.")
+    }
+
+    func testARequestThatIsNotACommandKeepsItsOwnWords() throws {
+        let edit = try request(#"{"id":"r","kind":"permission","text":"Edit a file: /a.ts","options":[],"context":{"action":"Edit a file","target":"/a.ts"}}"#)
+        XCTAssertEqual(RequestText.permissionAsk(edit, provider: "Claude Code"), "Edit a file: /a.ts")
+    }
+
     // MARK: Explanation
 
     /// The same requests as the desktop's "does not repeat text a provider built from its own question prompts and choices".

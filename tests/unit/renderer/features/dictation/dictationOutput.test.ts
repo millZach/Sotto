@@ -27,8 +27,8 @@ describe('DictationController', () => {
     expect(harness.setTimer).not.toHaveBeenCalled()
   })
 
-  it('copies a successful result and records returned metadata', async () => {
-    const harness = createHarness()
+  it('publishes a pasted result and returns to Ready without a timer', async () => {
+    const harness = createHarness({ currentSettings: settings({ successDisplayMs: 5_000 }) })
 
     await harness.controller.start()
     await harness.controller.stop()
@@ -36,7 +36,7 @@ describe('DictationController', () => {
     expect(harness.deliverOutput).toHaveBeenCalledWith({
       text: 'hello world',
       autoPaste: true,
-      pasteDelayMs: 150,
+      pasteDelayMs: harness.currentSettings.pasteDelayMs,
       dictationId: 'session',
     })
     expect(harness.addHistory).toHaveBeenCalledWith({
@@ -47,12 +47,56 @@ describe('DictationController', () => {
       language: 'en',
       modelPreset: 'parakeet',
     })
-    expect(harness.controller.getState()).toEqual({
+    expect(harness.publishedStates.slice(-2)).toEqual([{
       status: 'success',
       sessionId: 'session',
       text: 'hello world',
       output: 'pasted',
+    }, { status: 'idle' }])
+    expect(snapshots(harness).slice(-2)).toMatchObject([
+      { status: 'success', output: 'pasted', cancellable: false },
+      { status: 'idle', cancellable: false },
+    ])
+    expect(harness.controller.getState()).toEqual({ status: 'idle' })
+    expect(harness.setTimer).not.toHaveBeenCalled()
+    harness.controller.dispose()
+    expect(harness.recorder.cancel).not.toHaveBeenCalled()
+    expect(harness.transcriber.cancel).not.toHaveBeenCalled()
+  })
+
+  it('keeps Copied until the configured success duration ends', async () => {
+    const harness = createHarness({
+      currentSettings: settings({ successDisplayMs: 2_345 }),
+      deliverOutput: async () => 'copied' as const,
     })
+    await harness.controller.start()
+    await harness.controller.stop()
+
+    expect(harness.controller.getState()).toMatchObject({ status: 'success', output: 'copied', text: 'hello world' })
+    expect(snapshots(harness).at(-1)).toMatchObject({ status: 'success', output: 'copied' })
+    expect(harness.setTimer).toHaveBeenCalledTimes(1)
+    expect(harness.setTimer).toHaveBeenCalledWith(expect.any(Function), 2_345)
+    harness.fireTimers()
+    expect(harness.controller.getState()).toEqual({ status: 'idle' })
+    expect(snapshots(harness).at(-1)).toMatchObject({ status: 'idle', cancellable: false })
+  })
+
+  it('finishes the history save before publishing pasted success and Ready', async () => {
+    const history = deferred<void>()
+    const harness = createHarness({ addHistory: () => history.promise })
+    await harness.controller.start()
+    const stop = harness.controller.stop()
+    await vi.waitFor(() => expect(harness.addHistory).toHaveBeenCalledOnce())
+    expect(harness.controller.getState().status).toBe('processing')
+    expect(snapshots(harness).some(snapshot => snapshot.status === 'success')).toBe(false)
+
+    history.resolve()
+    await stop
+    expect(harness.publishedStates.slice(-2)).toEqual([
+      { status: 'success', sessionId: 'session', text: 'hello world', output: 'pasted' },
+      { status: 'idle' },
+    ])
+    expect(harness.setTimer).not.toHaveBeenCalled()
   })
 
   it('delivers output before it records history', async () => {
@@ -80,7 +124,8 @@ describe('DictationController', () => {
       sourceSampleRate: 16_000,
       durationMs: 60_000,
     })
-    await vi.waitFor(() => expect(harness.controller.getState().status).toBe('success'))
+    await vi.waitFor(() => expect(harness.controller.getState().status).toBe('idle'))
+    expect(harness.publishedStates).toContainEqual(expect.objectContaining({ status: 'success', output: 'pasted' }))
 
     expect(harness.recorder.stop).not.toHaveBeenCalled()
     expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(1)
@@ -136,8 +181,15 @@ describe('DictationController', () => {
       await harness.controller.start()
       await harness.controller.stop()
 
-      expect(harness.controller.getState()).toMatchObject({ status: 'success', output: outcome })
-      expect(snapshots(harness).at(-1)).toMatchObject({ status: 'success', output: outcome })
+      expect(harness.publishedStates).toContainEqual({ status: 'success', sessionId: 'session', text: 'hello world', output: outcome })
+      expect(snapshots(harness)).toContainEqual(expect.objectContaining({ status: 'success', output: outcome }))
+      if (outcome === 'pasted') {
+        expect(harness.controller.getState()).toEqual({ status: 'idle' })
+        expect(snapshots(harness).at(-1)).toMatchObject({ status: 'idle' })
+      } else {
+        expect(harness.controller.getState()).toMatchObject({ status: 'success', output: 'copied' })
+        expect(snapshots(harness).at(-1)).toMatchObject({ status: 'success', output: 'copied' })
+      }
       expect(harness.addHistory).toHaveBeenCalledTimes(1)
     },
   )
@@ -196,6 +248,9 @@ describe('DictationController', () => {
     await harness.controller.stop()
 
     expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'HISTORY_FAILED' })
+    expect(harness.setTimer).not.toHaveBeenCalled()
+    harness.fireTimers()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'HISTORY_FAILED' })
     const widget = JSON.stringify(snapshots(harness).at(-1))
     expect(widget).not.toContain('private transcript')
     expect(widget).not.toContain('C:/secret')
@@ -207,7 +262,8 @@ describe('DictationController', () => {
     await harness.controller.stop()
     expect(harness.deliverOutput).toHaveBeenCalledTimes(1)
     expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ id: 'session', durationMs: 500 }))
-    expect(harness.controller.getState().status).toBe('success')
+    expect(harness.controller.getState().status).toBe('idle')
+    expect(harness.publishedStates.at(-2)).toMatchObject({ status: 'success', output: 'pasted' })
   })
 
   it('does not fail a dictation whose record could not be kept while history is disabled', async () => {
@@ -217,7 +273,8 @@ describe('DictationController', () => {
     })
     await harness.controller.start()
     await harness.controller.stop()
-    expect(harness.controller.getState()).toMatchObject({ status: 'success', output: 'pasted' })
+    expect(harness.controller.getState()).toEqual({ status: 'idle' })
+    expect(harness.publishedStates.at(-2)).toMatchObject({ status: 'success', output: 'pasted' })
   })
 
   it('contains optional cue failures and obeys the session cue setting', async () => {
@@ -230,7 +287,7 @@ describe('DictationController', () => {
     await enabled.controller.stop()
     expect(cuePlayer.playStart).toHaveBeenCalledTimes(1)
     expect(cuePlayer.playStop).toHaveBeenCalledTimes(1)
-    expect(enabled.controller.getState().status).toBe('success')
+    expect(enabled.controller.getState().status).toBe('idle')
 
     const disabledCue = { playStart: vi.fn(), playStop: vi.fn() }
     const disabled = createHarness({
@@ -315,7 +372,8 @@ describe('DictationController', () => {
     })
     await harness.controller.start()
     await harness.controller.stop()
-    expect(harness.controller.getState().status).toBe('success')
+    expect(harness.controller.getState().status).toBe('idle')
+    expect(harness.publishedStates.at(-2)).toMatchObject({ status: 'success', output: 'pasted' })
   })
 })
 

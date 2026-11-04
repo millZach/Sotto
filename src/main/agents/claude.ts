@@ -25,6 +25,7 @@ import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchem
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import { watcherMayWrite } from './host'
 import { claudeSubagents, narrowerMode } from './subagentRoles'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
@@ -795,7 +796,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const generation = this.generation
     const profile = await this.watcherProfile(id)
     this.checkProfileContinuation(id, generation)
-    if ((profile && prompt.purpose !== 'next-prompt') || this.aliases[id]?.kind === 'personal') return null
+    if ((profile && !watcherMayWrite(prompt.purpose)) || this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias || !this.executable) return null
     const effort = sideWritingEffort(this.state.models, alias.modelId)
