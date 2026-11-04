@@ -21,21 +21,26 @@ Approved by Zach on November 4, 2026, to build in this order. The decisions are 
 - **A worker may delegate,** held to the list and to Highest effort. He turned down a rule that workers could not delegate at all.
 - **#1202 lands first:** the role holds, and the result says so, unless the user's newest message names the model.
 
-Also from reading the code, with nothing to choose:
+Already the rule in the code:
 
 - **Ultracode is never the overseer's to choose.** ADR-0148 and `delegate` already refuse it.
+
+In the plan Zach approved, without a card of their own:
+
 - **No swarms on a Dynamic thread.** A swarm's lead, counts and model come from a role.
-- **No effort offer on a Dynamic thread.**
+- **No effort offer on a Dynamic thread.** Its model does none of the work the offer speaks to.
+- **A provider that reports no limits starts unticked,** as the mock-up drew it.
+- **Give it to another model…** comes after the comparison. The first version's ··· holds Open this thread and Stop this worker.
 
 ## Order
 
-Backend first, so the switch never appears before it does something. Each part is one pull request, and each merges to Owl behind `dynamic-threads`.
+Main first, so the switch never appears before it does something. Each part is one pull request. Part 1 goes to stable on its own; every other part is behind `dynamic-threads`.
 
 | Part | What | Needs |
 | --- | --- | --- |
 | 0 | ADR, glossary and README | Nothing |
 | 1 | #1202: roles hold on every other thread | Part 0 |
-| 2 | The record and the settings | Part 0 |
+| 2 | The record and the settings | Part 1 |
 | 3 | The overseer's instructions and the mark | Part 2 |
 | 4 | `delegate` on a Dynamic thread | Parts 2 and 3 |
 | 5 | Rows | Part 4 |
@@ -66,12 +71,12 @@ Tests: `tests/integration/settingsHistoryIpc.test.ts` catches a missing allow-li
 
 - `src/shared/workerRoles.ts` or a new `src/shared/dynamicThreads.ts`: one function that writes the standing instructions. No edits, a piece per worker, name the model with `why`, prefer room, one writer at a time in a shared checkout.
 - `src/main/agents/claude.ts` (`subagentRoles`, `--append-system-prompt`) and `src/main/agents/codex.ts` (`launchRoles`, `developerInstructions`): on a Dynamic thread, send these in place of the role table and leave out the role agents.
-- Turning it on or off reloads the session at the next send, through each adapter's existing way of starting again.
+- Turning it on or off reloads the provider session at the next send, through each adapter's existing way of starting again.
 - `src/main/agents/watcherOwnChanges.ts` and `src/renderer/src/watcher/WatcherOwnChange.tsx`: let the mark serve an overseer too. It names the model, and the thread's transcript draws it when `speaker` is not Watcher.
 
 Tests: integration over the fake Claude Code and Codex for what each launch and reload sends, and for the role table's absence. The live check below.
 
-**Check first, on the real clients.** That a resumed Codex thread takes new developer instructions, and a restarted Claude Code keeps its session with a new appended prompt. The code passes them on resume, but no test proves the model obeys them. Live suites stay behind `SOTTO_CLAUDE_LIVE` and `SOTTO_CODEX_LIVE`, one short turn each. If one fails, the switch can only be set before a thread's first send on that provider, and I'll say so before Part 6.
+**Check first, on the real clients.** That a resumed Codex thread takes new developer instructions, and a restarted Claude Code keeps its provider session with a new appended prompt. The code passes them on resume, but no test proves the model obeys them. Live suites stay behind `SOTTO_CLAUDE_LIVE` and `SOTTO_CODEX_LIVE`, one short turn each. If one fails, the switch can only be set before a thread's first send on that provider, and I'll say so before Part 6.
 
 ## Part 4: `delegate` on a Dynamic thread
 
@@ -86,15 +91,15 @@ All in `src/main/agents/delegation.ts`, `delegationTools.ts` and `src/shared/del
 - A start by a Dynamic thread's worker finds the Dynamic thread above it and is held to its list and **Highest effort**.
 - `listing`: only allowed providers, adding what each can do and its limits left, read through `UsageService` when the tool is called.
 - A delegation stopped by a limit says the provider and reset, in its read and its news.
-- `replaces` links the rows and calls `LimitRestart.cancel` for the old thread.
+- `replaces` links the rows and calls `LimitRestart.cancel` for the old thread. If that restart has already gone, it stops the old thread as `cancel_delegation` does.
 
-Tests: a new `tests/integration/delegationDynamic.test.ts`, on `delegationByRole.test.ts`'s pattern, one case per line above, a worker's own start among them, plus a wake-up reaching an overseer that was stopped at a limit once it restarts. If `listing` copies state, its line goes on `tests/fixtures/copySites.json` with its reason. Nothing here runs on the update path, so `streamingCopyBudget` and `ownerScaleWorkBudget` should not move.
+Tests: a new `tests/integration/delegationDynamic.test.ts`, on `delegationByRole.test.ts`'s pattern, one case per line above, a worker's own start and a restart that has already gone among them, plus a wake-up reaching an overseer that was stopped at a limit once it restarts. If `listing` copies state, its line goes on `tests/fixtures/copySites.json` with its reason. Nothing here runs on the update path, so `streamingCopyBudget` and `ownerScaleWorkBudget` should not move.
 
 **Check first.** `delegate`'s schema takes any provider ID, while its description names five. Whether a start reaches Cursor, OpenCode and DeepSeek Harness gets read and tested here. Any that can't stay out of the list.
 
 ## Part 5: Rows
 
-`src/renderer/src/agents/DelegatedWork.tsx`, `delegation.css` and the shared view: the model, the effort and "Why:" on a row whose thread is a Dynamic thread's worker; "3 workers on 2 providers" on the Worked for line; the held-effort line; a moved row naming the row it replaced. Rows on other threads don't change. The reason follows Keep local history as a check's reply excerpt does.
+`src/renderer/src/agents/DelegatedWork.tsx`, `delegation.css` and the shared view: the model, the effort and "Why:" on a row whose thread is a Dynamic thread's worker; a ··· with **Open this thread** and **Stop this worker**; "3 workers on 2 providers" on the Worked for line; the held-effort line; a moved row naming the row it replaced. Rows on other threads don't change. The reason follows Keep local history as a check's reply excerpt does.
 
 Tests: unit tests of the row's words. `tests/e2e/thread-delegation.spec.ts` gains a case. Colour stays on `--tt-*` tokens, and a state keeps its word and its shape.
 
