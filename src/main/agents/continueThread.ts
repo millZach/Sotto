@@ -100,6 +100,14 @@ export function continuedWordsOnly(thread: Pick<AgentThread, 'continuedFrom'>, m
   return words
 }
 
+/**
+ * A message's words as the user's own, for what is read from them (#1202): none of a handover, which is another thread's
+ * words. A thread that began from a handover sends it as its own first message, so that message has none.
+ */
+export function userWordsOf(thread: Pick<AgentThread, 'continuedFrom' | 'startedFrom'>, message: AgentMessage): string | undefined {
+  return thread.startedFrom?.handover?.sent?.messageId === message.id ? undefined : continuedWordsOnly(thread, message).text
+}
+
 /** The user's words in a prompt a continued thread sent, for what is named from them (its branch); otherwise the prompt. */
 export function continuedPromptWords(thread: Pick<AgentThread, 'continuedFrom'>, prompt: string): string {
   const proof = proofOf(thread)

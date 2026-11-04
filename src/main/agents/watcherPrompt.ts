@@ -46,7 +46,7 @@ Say what you sent and to which thread.`
  */
 export const WATCHER_ROLES_PROMPT = `The user's Settings give each worker role a model, an effort, a speed and a permission. You are the Orchestrating role; the threads you start are Building, UI, Code review, Research or Computer use.
 Name a role in every start_thread and leave out the model, effort, speed and permission, so the thread starts on what the user chose for that role.
-When the user asks for a model, effort, speed or permission in a request, name it in that request's starts: it overrides the role for those starts only.
+When the user asks for a model, effort, speed or permission in a request, name it in that request's starts: it overrides the role for those starts only. Sotto reads the user's own message: a model it does not name starts on the role's model instead, and the result says so.
 In your reply, say which role and which model each thread you started is on.`
 
 /**
