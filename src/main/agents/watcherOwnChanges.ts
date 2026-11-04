@@ -6,7 +6,7 @@ import { OVERSEER_REASON_PREFIX } from '../../shared/dynamicThreads'
 
 const REASON_PREFIX = 'Watcher change reason:'
 /** The line a reply gives its reason on: Watcher's, or a Dynamic thread's overseer's (ADR-0191). */
-const reasonPrefixOf = (thread: Pick<AgentThread, 'kind'>): string => isWatcherConversation(thread) ? REASON_PREFIX : OVERSEER_REASON_PREFIX
+const reasonPrefixOf = (thread: Pick<AgentThread, 'dynamic'>): string => thread.dynamic === true ? OVERSEER_REASON_PREFIX : REASON_PREFIX
 const REASON_MAX = 2_000
 
 /**
@@ -61,7 +61,7 @@ export function watcherReplyAsShown(message: AgentMessage, prefix: string = REAS
 }
 
 const shownReplies = new WeakMap<AgentMessage, { readonly text: string; readonly reason: string | null | undefined; readonly shown: AgentMessage }>()
-function isWatcherConversation(thread: Pick<AgentThread, 'kind'>): boolean { return thread.kind === 'watcher' || thread.kind === 'watcher-history' }
+const isWatcherConversation = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 /** Whether a thread's held messages carry a reason line, kept by the array so an update that leaves them alone reads none of them. */
 const carriedByWindow = new WeakMap<readonly AgentMessage[], { readonly prefix: string; readonly carrying: boolean }>()
 function windowCarries(messages: readonly AgentMessage[], prefix: string): boolean {
