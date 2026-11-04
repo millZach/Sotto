@@ -12,6 +12,11 @@ export type NextTurnOptions = Pick<AgentThreadOptions, 'modelId' | 'reasoningEff
 export interface NextTurnChoice {
   readonly options: NextTurnOptions
   readonly client: ClientIdentity
+  /**
+   * Sent, with no result from the provider: main keeps the change as it keeps any such change (#1192) and asks for it
+   * before the thread's next turn, so the choice stays shown and is not sent again until main lets the change go.
+   */
+  readonly unconfirmed?: true
 }
 
 const threadSpeed = (thread: Pick<AgentThread, 'speed' | 'fastMode'>) => thread.speed !== undefined ? thread.speed : thread.fastMode === true ? 'fast' : null
@@ -67,7 +72,8 @@ export class NextTurnChoices {
   waiting(threadId: string): NextTurnChoice | undefined { return this.kept.get(threadId) }
   /** The choice on its way to the provider for this thread, while it is. */
   sent(threadId: string): NextTurnOptions | undefined { return this.sending.get(threadId) }
-  threadIds(): readonly string[] { return [...this.kept.keys()] }
+  /** Read in place on every pump while a choice waits; a choice put away meanwhile is simply not visited again. */
+  threadIds(): IterableIterator<string> { return this.kept.keys() }
 
   keep(threadId: string, choice: NextTurnChoice): void { this.kept.set(threadId, choice); this.publish() }
   /** Puts the choice away; with `only`, only while it is still that choice, so a newer press stays. */

@@ -169,6 +169,21 @@ describe('a choice for the next turn while a thread works (#2158)', () => {
     expect((await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Carry on' })).error).toBeNull()
   })
 
+  it('keeps showing a choice the provider gave no result for, and sends it no second time', async () => {
+    const f = await fixture()
+    await f.working()
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'medium' })
+    f.host.event({ type: 'settings-unconfirmed', threadId: 'workshop', text: 'Claude Code did not confirm the settings change.' })
+    f.rests()
+    await vi.waitFor(() => expect(f.control.shell().unconfirmedSettings).toEqual([{ threadId: 'workshop', reasoningEffort: 'medium' }]))
+    expect(f.kept()).toEqual([{ threadId: 'workshop', reasoningEffort: 'medium' }])
+    expect(f.control.shell().error).toBeNull()
+    // The provider takes it at the thread's next start; main lets the change go, and the choice with it.
+    f.host.event({ type: 'settings', threadId: 'workshop', text: 'apply' })
+    await vi.waitFor(() => expect(f.kept()).toEqual([]))
+    expect(f.configures()).toHaveLength(1)
+  })
+
   it('refuses the press as before where the feature is off (stable)', async () => {
     const f = await fixture({ nextTurnChoice: false })
     await f.working()

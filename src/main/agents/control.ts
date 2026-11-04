@@ -2071,6 +2071,10 @@ export class AgentControl {
       const choice = this.nextTurns.waiting(threadId)!
       const thread = this.threadById(threadId)
       if (!thread || isThreadClosed(thread)) { this.nextTurns.drop(threadId); changed = true; continue }
+      if (choice.unconfirmed) {
+        if (!this.settingsUnconfirmed(threadId)) { this.nextTurns.drop(threadId); changed = true }
+        continue
+      }
       if (!this.restsForNextTurn(thread)) continue
       const options = stillToChange(choice.options, thread, this.state.host.models)
       if (options === null) { this.nextTurns.drop(threadId); changed = true; continue }
@@ -2082,7 +2086,8 @@ export class AgentControl {
    * One kept choice on its way. It goes with the client that chose its permission, so a wider one is asked of that grant
    * again, and as Sotto's own command, so it neither sets nor clears the window's error itself. Refused, the choice goes,
    * the chips show what the thread runs on, and the window says so; a turn that starts meanwhile runs on what the thread
-   * had. With no result, main keeps it as it keeps any such change (#1192) and the chips mark it unconfirmed.
+   * had. With no result, main keeps the change as it keeps any such change (#1192), and the choice stays shown, not sent
+   * again, until main lets that change go.
    */
   private sendNextTurn(thread: AgentThread, choice: NextTurnChoice, options: NextTurnOptions): void {
     const { id: threadId, title } = thread
@@ -2092,8 +2097,10 @@ export class AgentControl {
     void this.admitCommandShell(parsed, choice.client)
       .then(result => result.error, (error: unknown) => error instanceof Error ? error.message : 'Sotto could not complete this action.')
       .then(error => {
-        this.nextTurns.drop(threadId, choice)
-        if (error && !this.settingsUnconfirmed(threadId)) this.state.error = `Sotto could not change ${title}’s settings for its next turn. ${error} Its chips show what it runs on now. If that is not your choice, choose again.`
+        const unknown = Boolean(error) && this.settingsUnconfirmed(threadId)
+        if (unknown && this.nextTurns.waiting(threadId) === choice) this.nextTurns.keep(threadId, { ...choice, unconfirmed: true })
+        else this.nextTurns.drop(threadId, choice)
+        if (error && !unknown) this.state.error = `Sotto could not change ${title}’s settings for its next turn. ${error} Its chips show what it runs on now. If that is not your choice, choose again.`
       })
       .finally(() => { this.nextTurns.endSending(threadId); this.publish(); this.pumpFollowups() })
   }

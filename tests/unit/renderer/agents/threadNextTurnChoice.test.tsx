@@ -81,6 +81,16 @@ describe('a choice for the next turn while a thread works (#2158)', () => {
     expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('Low')
   })
 
+  it('shows nothing of a kept choice on stable', () => {
+    gate.on = false
+    mount(kept(codexRunning(), { threadId: 'thread', reasoningEffort: 'medium' }))
+    const effort = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    expect(effort).toHaveTextContent('Low')
+    expect(effort).not.toHaveAttribute('data-pending')
+    expect(screen.queryByText(/The next turn starts on/u)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Keep current settings' })).toBeNull()
+  })
+
   it('says nothing under the chips while a turn runs and nothing is kept', () => {
     gate.on = true
     const state = codexRunning()

@@ -255,6 +255,15 @@ describe('the startup shell cache', () => {
     expect(localStorage.getItem(SHELL_CACHE_KEY)).toBeNull()
   })
 
+  it('never keeps a choice for a thread’s next turn, which lives in main’s memory alone (#2158, ADR-0190)', () => {
+    const state = { ...fullState([thread('workshop', [])]), nextTurnSettings: [{ threadId: 'workshop', runtimeMode: 'full-access' as const }] }
+    writeShellCache(state)
+    expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('nextTurnSettings')
+    expect(readShellCache()!.nextTurnSettings).toBeUndefined()
+    localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(state))
+    expect(readShellCache()!.nextTurnSettings).toBeUndefined()
+  })
+
   it('writes the last change at the end of the throttle window', async () => {
     vi.useFakeTimers()
     const state = fullState([thread('first', [])])

@@ -522,13 +522,13 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const nextTurn = watcher && room?.currentThreadId === thread.id ? room.state?.nextTurnOptions : undefined
   const nextTurnModel = nextTurn === undefined ? undefined : resolveModel(state.host.models, nextTurn.modelId)
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
-  const drawn = nextTurn === undefined ? settingValues(state, thread)
+  const drawn = nextTurn === undefined ? keepsForNextTurn ? settingValues(state, thread) : settingValuesInForce(state, thread)
     : settingValuesFor({ modelId: nextTurn.modelId, ...(nextTurn.reasoningEffort ? { reasoningEffort: nextTurn.reasoningEffort } : {}),
       ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
       speed: nextTurn.speed !== undefined ? nextTurn.speed : threadSpeed(thread) }, nextTurnModel)
   const unconfirmed = unconfirmedKinds(state, thread.id)
   /** What main keeps for this thread's next turn, which `drawn` already shows on the chips, and the chips it changes. */
-  const nextTurnChoice = watcher ? undefined : nextTurnChoiceOf(state, thread.id)
+  const nextTurnChoice = keepsForNextTurn ? nextTurnChoiceOf(state, thread.id) : undefined
   const kept = nextTurnKinds(nextTurnChoice)
   /**
    * The chips are fixed by what a provider actually refuses: a turn under way, an unanswered request, an archived

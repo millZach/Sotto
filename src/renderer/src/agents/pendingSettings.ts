@@ -81,14 +81,17 @@ export function settingValuesInForce(state: AgentState, thread: AgentThread): Se
 export function nextTurnChoiceOf(state: Pick<AgentState, 'nextTurnSettings'> | null, threadId: string): AgentThreadOptions | undefined {
   return state?.nextTurnSettings?.find(item => item.threadId === threadId)
 }
+/** Adds the chips that show the settings a change names. */
+function addKinds(kinds: Set<SettingKind>, options: AgentThreadOptions): void {
+  if (options.modelId !== undefined) kinds.add('model')
+  if (options.reasoningEffort !== undefined) kinds.add('effort')
+  if (options.runtimeMode !== undefined || options.providerMode !== undefined) kinds.add('permissions')
+  if (options.speed !== undefined || options.fastMode !== undefined) kinds.add('fast')
+}
 /** The settings a kept choice changes, as the chips that show them. */
 export function nextTurnKinds(choice: AgentThreadOptions | undefined): ReadonlySet<SettingKind> {
   const kinds = new Set<SettingKind>()
-  if (choice === undefined) return kinds
-  if (choice.modelId !== undefined) kinds.add('model')
-  if (choice.reasoningEffort !== undefined) kinds.add('effort')
-  if (choice.runtimeMode !== undefined || choice.providerMode !== undefined) kinds.add('permissions')
-  if (choice.speed !== undefined || choice.fastMode !== undefined) kinds.add('fast')
+  if (choice !== undefined) addKinds(kinds, choice)
   return kinds
 }
 /** The settings the thread's next turn starts on: the kept choice over what it runs on, a new model at its own default effort. */
@@ -119,11 +122,7 @@ export const permissionPatch = (model: AgentModel | undefined, mode: string): Se
 export function unconfirmedKinds(state: AgentState | null, threadId: string): ReadonlySet<SettingKind> {
   const kinds = new Set<SettingKind>()
   for (const item of state?.unconfirmedSettings ?? []) {
-    if (item.threadId !== threadId) continue
-    if (item.modelId !== undefined) kinds.add('model')
-    if (item.reasoningEffort !== undefined) kinds.add('effort')
-    if (item.runtimeMode !== undefined || item.providerMode !== undefined) kinds.add('permissions')
-    if (item.speed !== undefined || item.fastMode !== undefined) kinds.add('fast')
+    if (item.threadId === threadId) addKinds(kinds, item)
   }
   return kinds
 }

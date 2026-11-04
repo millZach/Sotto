@@ -26,11 +26,11 @@ Codex's `turn/settings/update` changes the turn that runs (#2160). It is experim
 
 **4. A wider permission is checked twice.** When it is pressed, against the pressing client's grant, as a change at rest is. When it is sent, against that client's grant again, so a phone whose grant ended meanwhile does not widen the thread.
 
-**5. Refused, it goes.** If the provider or the check refuses it, the choice goes, the chips show what the thread runs on, and the window says what happened. A turn that starts anyway runs on what the thread had, never on a guess. A change the provider gives no result for is kept as any such change is (#1192).
+**5. Refused, it goes.** If the provider or the check refuses it, the choice goes, the chips show what the thread runs on, and the window says what happened. A turn that starts anyway runs on what the thread had, never on a guess. A change the provider gives no result for is kept as any such change is (#1192): the choice stays on the chips and is not sent again until main lets that change go.
 
 **6. What the user sees (look A).** The pressed chip shows the kept value with the existing pending mark. A line under the chips, where the composer puts what it says about them, reads, for example, "This turn runs on GPT-6.1 Terra, Low effort, Auto. The next turn starts on Medium effort.", with **Keep current settings** beside it. That button sends the values in force, which puts the choice away, and hands focus back to the first chip it was about. The line is quiet text, not a warning, and it describes each chip that shows a kept value.
 
-**7. It is kept in memory.** Quitting or restarting Sotto drops it, with nothing written to disk. Persisting it with the thread would mean sending a remembered permission choice after a restart, with a grant that may have ended, so it is left out until there is a reason for it.
+**7. It is kept in memory.** Quitting or restarting Sotto drops it, with nothing written to disk, the window's startup cache included. Persisting it with the thread would mean sending a remembered permission choice after a restart, with a grant that may have ended, so it is left out until there is a reason for it.
 
 **8. Where it applies.** Every thread of every provider on the computer whose main runs with the Owl answer on, including a headless host's threads. Watcher keeps its own next-turn choice (ADR-0073) and its fixed permission chip. The iPhone and Android chips stay fixed while a thread works, and show the host's settings once the choice is sent.
 
