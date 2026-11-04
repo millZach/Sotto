@@ -47,8 +47,11 @@ function setup(git = fakeGit(), startCollapsed = false) {
 const grid = () => screen.getByRole('grid', { name: 'Lines of src/app.ts' })
 const row = (line: string) => grid().querySelector<HTMLElement>(`[data-position]${line}`)!
 
-beforeEach(() => { Element.prototype.scrollIntoView = function scrollIntoView() { /* jsdom has no layout */ } })
-afterEach(() => { cleanup(); delete (Element.prototype as Partial<Element>).scrollIntoView })
+beforeEach(() => {
+  Element.prototype.scrollIntoView = function scrollIntoView() { /* jsdom has no layout */ }
+  Element.prototype.scrollTo = function scrollTo() { /* jsdom has no layout */ }
+})
+afterEach(() => { cleanup(); delete (Element.prototype as Partial<Element>).scrollIntoView; delete (Element.prototype as Partial<Element>).scrollTo })
 
 describe('review comments in Changes', () => {
   it('picks a line with a click and more with Shift, writes a comment under them and marks it until deleted', async () => {
