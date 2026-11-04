@@ -17,12 +17,14 @@ it.each(['watcher', 'watcher-history'] as const)('projects every %s collection w
   state.followups = receipts.map(receipt => ({ ...receipt, id: randomUUID(), text: 'Synthetic', attachments: [], status: 'queued', createdAt: at, updatedAt: at }))
   state.threadDraftPersistence = receipts.map(receipt => ({ ...receipt, status: 'saved' }))
   state.unconfirmedSettings = receipts.map(receipt => ({ threadId: receipt.threadId, reasoningEffort: 'high' }))
+  // A choice kept for a thread's next turn (#2158) is the thread's too.
+  state.nextTurnSettings = receipts.map(receipt => ({ threadId: receipt.threadId, runtimeMode: 'full-access' }))
   const before = structuredClone(state)
   const visible = visibleWatcherState(state, false)
   expect(visible.host.threads.map(thread => thread.id)).toEqual(['ordinary'])
   expect(visible).toMatchObject({ activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null,
     draftRequestId: null, draftAttachments: [], composing: false })
-  for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'unconfirmedSettings'] as const) {
+  for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'unconfirmedSettings', 'nextTurnSettings'] as const) {
     expect(visible[key]).toEqual(state[key]!.filter(record => record.threadId === 'ordinary'))
   }
   expect(state).toEqual(before)
