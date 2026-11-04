@@ -94,7 +94,7 @@ const deskText = z.string().max(TEAM_DESK_TEXT_MAX)
  */
 export const teamDeskSchema = z.object({
   threads: z.array(z.object({ project: deskText, title: deskText, stands: z.enum(TEAM_THREAD_STANDS),
-    pullRequests: z.array(z.object({ id: z.string().regex(/^[0-9a-f]{16}$/u), number: z.number().int().positive(), title: deskText, draft: z.boolean(), checks: teamChecksSchema, checksPassedAt: z.iso.datetime().optional() }).strict()).max(TEAM_DESK_PULL_REQUESTS_MAX),
+    pullRequests: z.array(z.object({ number: z.number().int().positive(), title: deskText, draft: z.boolean(), checks: teamChecksSchema, checksPassedAt: z.iso.datetime().optional() }).strict()).max(TEAM_DESK_PULL_REQUESTS_MAX),
   }).strict()).max(TEAM_DESK_THREADS_MAX),
   /** Threads that did not fit, counted and not sent. */
   more: z.number().int().nonnegative(),
@@ -110,7 +110,7 @@ const compareText = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0
 const earlier = (a: string | undefined, b: string | undefined): string | undefined => a === undefined ? b : b === undefined ? a : Date.parse(a) <= Date.parse(b) ? a : b
 /** Two computers' readings of one pull request, the same whichever comes first: a reading beats none, and the less hopeful of two wins. */
 const sameChecks = (a: TeamChecks, b: TeamChecks): TeamChecks => a === 'unknown' ? b : b === 'unknown' ? a : CHECKS_RANK[a] >= CHECKS_RANK[b] ? a : b
-type TeamMergeOrderItem = Omit<TeamMergeOrderRow, 'whose'> & { readonly id: string; readonly whose: readonly ('yours' | 'theirs')[]; readonly checksPassedAt: string | undefined }
+type TeamMergeOrderItem = Omit<TeamMergeOrderRow, 'whose'> & { readonly whose: readonly ('yours' | 'theirs')[]; readonly checksPassedAt: string | undefined }
 /**
  * The merge order (ADR-0189, decision 8): advice, and it merges nothing. Checks passed first, the oldest pass first as in the
  * merge queue; then checks running, not read and failed, each by number; drafts last. Nothing in the sort or in joining two
@@ -120,16 +120,17 @@ export function teamMergeOrder(yours: TeamDesk, theirs: TeamDesk): readonly Team
   const rows = new Map<string, TeamMergeOrderItem>()
   const add = (desk: TeamDesk, side: 'yours' | 'theirs'): void => {
     for (const thread of desk.threads) for (const item of thread.pullRequests) {
-      const held = rows.get(item.id)
-      rows.set(item.id, held ? { ...held, title: compareText(held.title, item.title) <= 0 ? held.title : item.title, project: compareText(held.project, thread.project) <= 0 ? held.project : thread.project,
+      // Its number and title say it is one pull request, and both already cross: no address or hash of one does, because a teammate could test guesses against it (ADR-0189, decision 8).
+      const key = item.title ? `${item.number} ${item.title}` : `${side} ${thread.project} ${item.number}`, held = rows.get(key)
+      rows.set(key, held ? { ...held, project: compareText(held.project, thread.project) <= 0 ? held.project : thread.project,
         draft: held.draft || item.draft, checks: sameChecks(held.checks, item.checks), checksPassedAt: earlier(held.checksPassedAt, item.checksPassedAt), whose: held.whose.includes(side) ? held.whose : [...held.whose, side] }
-        : { id: item.id, number: item.number, title: item.title, project: thread.project, draft: item.draft, checks: item.checks, checksPassedAt: item.checksPassedAt, whose: [side] })
+        : { number: item.number, title: item.title, project: thread.project, draft: item.draft, checks: item.checks, checksPassedAt: item.checksPassedAt, whose: [side] })
     }
   }
   add(yours, 'yours'); add(theirs, 'theirs')
   const rank = (item: TeamMergeOrderItem): number => item.draft ? DRAFT_RANK : CHECKS_RANK[item.checks]
   const passedAt = (item: TeamMergeOrderItem): number => item.checksPassedAt === undefined ? Number.POSITIVE_INFINITY : Date.parse(item.checksPassedAt)
-  return [...rows.values()].sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 && passedAt(a) !== passedAt(b) ? passedAt(a) - passedAt(b) : 0) || a.number - b.number || compareText(a.id, b.id))
+  return [...rows.values()].sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 && passedAt(a) !== passedAt(b) ? passedAt(a) - passedAt(b) : 0) || a.number - b.number || compareText(a.title, b.title) || compareText(a.project, b.project))
     .map(({ number, title, project, draft, checks, whose }) => ({ number, title, project, draft, checks, whose: whose.length > 1 ? 'both' as const : whose[0]! }))
 }
 
@@ -139,11 +140,8 @@ export interface TeamThreadFact {
   readonly projectKey: string
   readonly title: string
   readonly stands: (typeof TEAM_THREAD_STANDS)[number]
-  /**
-   * `key` names the repository and never leaves this computer; a team desk carries only a hash of it (ADR-0189, decision 2).
-   * `checks` and `checksPassedAt` go only on a team desk, never to the writer of an answer.
-   */
-  readonly pullRequests: readonly { readonly key: string; readonly number: number; readonly title: string; readonly state: string; readonly draft: boolean; readonly checks: TeamChecks; readonly checksPassedAt?: string }[]
+  /** `checks` and `checksPassedAt` go only on a team desk (ADR-0189), never to the writer of an answer. */
+  readonly pullRequests: readonly { readonly number: number; readonly title: string; readonly state: string; readonly draft: boolean; readonly checks: TeamChecks; readonly checksPassedAt?: string }[]
 }
 /** The summary's facts, the most active first. `beyondCap` counts the threads past the summary's own cap, so a desk can say so. */
 export interface TeamFacts { readonly threads: readonly TeamThreadFact[]; readonly beyondCap: number }

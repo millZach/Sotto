@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { TEAM_ANSWER_CHARACTERS_MAX, TEAM_DESK_BYTES_MAX, TEAM_DESK_PULL_REQUESTS_MAX, TEAM_DESK_TEXT_MAX, TEAM_DESK_THREADS_MAX, type TeamAsk, type TeamDesk, type TeamThreadFact } from '../../shared/teams'
 
 /**
@@ -15,15 +14,14 @@ const clipDeskText = (text: string): string => text.slice(0, TEAM_DESK_TEXT_MAX)
 const DESK_WRAPPING_BYTES = 128
 /**
  * The summary as a team desk (ADR-0189, decision 5). The most active threads come first, as in `teamThreadFacts`, so what does
- * not fit is the least active, and it is counted, with those past the summary's own cap. This drops `projectKey`, which names a
- * machine, and turns a pull request's address into a hash: two desks can tell it is one pull request, and its repository's name stays here.
+ * not fit is the least active, and it is counted, with those past the summary's own cap. This drops `projectKey`, which names a machine.
  */
 export function teamDesk(threads: readonly TeamThreadFact[], beyondCap = 0): TeamDesk {
   const kept: TeamDesk['threads'][number][] = []
   let bytes = DESK_WRAPPING_BYTES
   for (const thread of threads.slice(0, TEAM_DESK_THREADS_MAX)) {
     const row: TeamDesk['threads'][number] = { project: clipDeskText(thread.project), title: clipDeskText(thread.title), stands: thread.stands,
-      pullRequests: thread.pullRequests.slice(0, TEAM_DESK_PULL_REQUESTS_MAX).map(item => ({ id: createHash('sha256').update(item.key).digest('hex').slice(0, 16), number: item.number, title: clipDeskText(item.title), draft: item.draft, checks: item.checks, ...item.checksPassedAt ? { checksPassedAt: item.checksPassedAt } : {} })) }
+      pullRequests: thread.pullRequests.slice(0, TEAM_DESK_PULL_REQUESTS_MAX).map(item => ({ number: item.number, title: clipDeskText(item.title), draft: item.draft, checks: item.checks, ...item.checksPassedAt ? { checksPassedAt: item.checksPassedAt } : {} })) }
     bytes += Buffer.byteLength(JSON.stringify(row)) + 1
     if (bytes > TEAM_DESK_BYTES_MAX) break
     kept.push(row)

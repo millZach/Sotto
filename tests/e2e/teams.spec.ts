@@ -135,10 +135,10 @@ test.describe('Teams', () => {
   })
 
   const deskAnswer = { status: 'desk', desk: { more: 2, threads: [
-    { project: 'Sotto', title: 'iPhone on the unfolded Duo', stands: 'working', pullRequests: [{ id: 'aaaaaaaaaaaaaaaa', number: 2158, title: 'One rail pill on the Duo', draft: false, checks: 'passed', checksPassedAt: at(40) }, { id: 'bbbbbbbbbbbbbbbb', number: 2164, title: 'A title with <b>markup</b> in it', draft: false, checks: 'unknown' }] },
-    { project: 'Sotto', title: 'Android pairing', stands: 'idle', pullRequests: [{ id: 'cccccccccccccccc', number: 2161, title: 'Pair an Android phone by code', draft: true, checks: 'unknown' }] },
+    { project: 'Sotto', title: 'iPhone on the unfolded Duo', stands: 'working', pullRequests: [{ number: 2158, title: 'One rail pill on the Duo', draft: false, checks: 'passed', checksPassedAt: at(40) }, { number: 2164, title: 'A title with <b>markup</b> in it', draft: false, checks: 'unknown' }] },
+    { project: 'Sotto', title: 'Android pairing', stands: 'idle', pullRequests: [{ number: 2161, title: 'Pair an Android phone by code', draft: true, checks: 'unknown' }] },
     { project: 'Client work', title: 'A long title that keeps going so that a narrow desk has to wrap it rather than run it off the side of the window', stands: 'waiting-on-its-owner', pullRequests: [] },
-    { project: 'Client work', title: 'Nightly import', stands: 'failed', pullRequests: [{ id: 'dddddddddddddddd', number: 88, title: 'Retry the import', draft: false, checks: 'failed' }] },
+    { project: 'Client work', title: 'Nightly import', stands: 'failed', pullRequests: [{ number: 88, title: 'Retry the import', draft: false, checks: 'failed' }] },
   ] } }
 
   for (const appearance of ['dark', 'light'] as const) {

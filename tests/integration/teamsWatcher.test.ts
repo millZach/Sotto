@@ -184,11 +184,11 @@ it('gives a pull request\'s checks only from a fresh read Sotto already has, and
   workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   const pullRequests = () => service.teamThreadFacts().threads.find(item => item.title === 'With a pull request')!.pullRequests
-  expect(pullRequests()).toEqual([{ key: 'synthetic/project#7', number: 7, title: 'Seven', state: 'open', draft: false, checks: 'unknown' }])
+  expect(pullRequests()).toEqual([{ number: 7, title: 'Seven', state: 'open', draft: false, checks: 'unknown' }])
   const evidence = (service as unknown as { wakes: { evidence: { put(slot: string, input: unknown): boolean } } }).wakes.evidence
   const target = { hostId: f.control.hostId(), threadId: worker.id.split(':').at(-1)! }, common = { target, source: 'github', observedAt: now, freshness: 'fresh', availability: 'available', url, headId: 'head-7' }
   evidence.put(`pr:${pullRequestKey(url)}:checks`, { ...common, fact: 'checks-passed', checksState: 'passed', checkCount: 3 })
-  expect(pullRequests()).toEqual([{ key: 'synthetic/project#7', number: 7, title: 'Seven', state: 'open', draft: false, checks: 'passed', checksPassedAt: expect.any(String) }])
+  expect(pullRequests()).toEqual([{ number: 7, title: 'Seven', state: 'open', draft: false, checks: 'passed', checksPassedAt: expect.any(String) }])
   evidence.put(`pr:${pullRequestKey(url)}:checks`, { ...common, observedAt: new Date(Date.now() + 1_000).toISOString(), headId: 'head-8', fact: 'checks-failed', checksState: 'failed', checkCount: 3 })
-  expect(pullRequests()).toEqual([{ key: 'synthetic/project#7', number: 7, title: 'Seven', state: 'open', draft: false, checks: 'failed' }])
+  expect(pullRequests()).toEqual([{ number: 7, title: 'Seven', state: 'open', draft: false, checks: 'failed' }])
 })

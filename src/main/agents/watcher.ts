@@ -1239,7 +1239,7 @@ export class WatcherService implements WatcherControlHooks {
       return { project, projectKey, title: thread.title, stands: standing,
         pullRequests: watcherOpenPullRequests(thread.pullRequests ?? [], evidence).filter(({ summary }) => summary.state === 'open').map(({ pr, summary }) => {
           const checks = summary.stale === true ? 'unknown' : summary.checks ?? 'unknown', passedAt = checks === 'passed' ? this.wakes.evidence.checksPassedSince(target, pr.url) : undefined
-          return { key: pullRequestKey(pr.url) ?? pr.url, number: pr.number, title: pr.title ?? '', state: 'open', draft: pr.draft ?? false, checks, ...passedAt ? { checksPassedAt: passedAt } : {} }
+          return { number: pr.number, title: pr.title ?? '', state: 'open', draft: pr.draft ?? false, checks, ...passedAt ? { checksPassedAt: passedAt } : {} }
         }) }
     }) }
   }

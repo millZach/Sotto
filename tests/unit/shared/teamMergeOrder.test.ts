@@ -3,9 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import { teamMergeOrder, type TeamChecks, type TeamDesk } from '../../../src/shared/teams'
 
-const idOf = (name: string): string => Buffer.from(name.padEnd(8, '.')).toString('hex').slice(0, 16)
-const pr = (number: number, checks: TeamChecks, extra: { readonly draft?: boolean; readonly passed?: string; readonly repository?: string } = {}) =>
-  ({ id: idOf(`${extra.repository ?? 'r'}${number}`), number, title: `Pull request ${number}`, draft: extra.draft ?? false, checks, ...extra.passed ? { checksPassedAt: extra.passed } : {} })
+const pr = (number: number, checks: TeamChecks, extra: { readonly draft?: boolean; readonly passed?: string; readonly title?: string } = {}) =>
+  ({ number, title: extra.title ?? `Pull request ${number}`, draft: extra.draft ?? false, checks, ...extra.passed ? { checksPassedAt: extra.passed } : {} })
 const desk = (project: string, ...pullRequests: ReturnType<typeof pr>[]): TeamDesk => ({ more: 0, threads: [{ project, title: 'A thread', stands: 'idle', pullRequests }] })
 const numbers = (a: TeamDesk, b: TeamDesk) => teamMergeOrder(a, b).map(row => row.number)
 
@@ -32,9 +31,15 @@ describe('teamMergeOrder', () => {
     expect(rows.map(row => [row.number, row.whose])).toEqual([[7, 'both']])
   })
 
-  it('keeps apart two repositories\' same number, even in projects with one name', () => {
-    const rows = teamMergeOrder(desk('Client', pr(7, 'passed', { repository: 'a' })), desk('Client', pr(7, 'passed', { repository: 'b' })))
+  it('keeps apart two pull requests with one number and different titles, even in projects with one name', () => {
+    const rows = teamMergeOrder(desk('Client', pr(7, 'passed', { title: 'One thing' })), desk('Client', pr(7, 'passed', { title: 'Another' })))
     expect(rows.map(row => row.whose).sort()).toEqual(['theirs', 'yours'])
+  })
+
+  it('keeps apart pull requests with no title across the two desks, the same from either side', () => {
+    const a = desk('Client', pr(7, 'passed', { title: '' })), b = desk('Other', pr(7, 'passed', { title: '' }))
+    expect(teamMergeOrder(a, b)).toHaveLength(2)
+    expect(teamMergeOrder(a, b).map(row => row.project)).toEqual(teamMergeOrder(b, a).map(row => row.project))
   })
 
   it('joins two readings of one pull request the same way from either side', () => {

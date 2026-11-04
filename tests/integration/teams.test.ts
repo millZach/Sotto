@@ -14,7 +14,7 @@ const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
 const FACTS: readonly TeamThreadFact[] = [
-  { project: 'Sotto', projectKey: 'h1 sotto', title: 'iPhone thread list', stands: 'working', pullRequests: [{ key: 'owner/secret-repo#2031', number: 2031, title: 'Fix the list', state: 'open', draft: false, checks: 'passed', checksPassedAt: '2026-11-04T01:00:00.000Z' }] },
+  { project: 'Sotto', projectKey: 'h1 sotto', title: 'iPhone thread list', stands: 'working', pullRequests: [{ number: 2031, title: 'Fix the list', state: 'open', draft: false, checks: 'passed', checksPassedAt: '2026-11-04T01:00:00.000Z' }] },
   { project: 'Client work', projectKey: 'h1 client', title: 'Payroll for a client', stands: 'idle', pullRequests: [] },
 ]
 
@@ -573,9 +573,8 @@ describe('two desks (ADR-0189)', () => {
     expect(drake.write).not.toHaveBeenCalled()
     const read = zach.service.get().desks[linkId]!
     expect(read.desk.threads.map(thread => thread.title)).toEqual(['iPhone thread list', 'Payroll for a client'])
-    expect(read.desk.threads[0]!.pullRequests[0]).toEqual({ id: expect.stringMatching(/^[0-9a-f]{16}$/u), number: 2031, title: 'Fix the list', draft: false, checks: 'passed', checksPassedAt: '2026-11-04T01:00:00.000Z' })
+    expect(read.desk.threads[0]!.pullRequests[0]).toEqual({ number: 2031, title: 'Fix the list', draft: false, checks: 'passed', checksPassedAt: '2026-11-04T01:00:00.000Z' })
     expect(JSON.stringify(read.desk)).not.toContain('h1 sotto')
-    expect(JSON.stringify(read.desk)).not.toContain('secret-repo')
     // No teammate's message on either side, so Watcher has nothing to be told of or to read.
     expect(drake.service.get().messages).toHaveLength(anchors)
     expect(zach.service.get().messages).toHaveLength(0)
@@ -605,7 +604,7 @@ describe('two desks (ADR-0189)', () => {
 
   it('keeps a desk within its budget and counts what did not fit', async () => {
     const big = Array.from({ length: 60 }, (_, index): TeamThreadFact => ({ project: 'Sotto', projectKey: 'h1 sotto', title: 'é'.repeat(400), stands: 'idle',
-      pullRequests: Array.from({ length: 9 }, (__, item) => ({ key: `o/r#${index * 10 + item + 1}`, number: index * 10 + item + 1, title: '漢'.repeat(400), state: 'open', draft: false, checks: 'unknown' as const })) }))
+      pullRequests: Array.from({ length: 9 }, (__, item) => ({ number: index * 10 + item + 1, title: '漢'.repeat(400), state: 'open', draft: false, checks: 'unknown' as const })) }))
     const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake', { threads: big })
     await linked(net, zach, drake)
     const linkId = zach.service.get().links[0]!.id
@@ -689,11 +688,21 @@ describe('two desks (ADR-0189)', () => {
     await vi.waitFor(async () => { expect(JSON.parse(await readFile(join(drake.directory, 'team-links.json'), 'utf8')).deskReads).toHaveLength(1) })
   })
 
+  it('puts no address, repository or hash of one on a desk', async () => {
+    const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
+    await linked(net, zach, drake)
+    const linkId = zach.service.get().links[0]!.id
+    await zach.service.command({ type: 'read-desk', linkId })
+    const [pull] = zach.service.get().desks[linkId]!.desk.threads[0]!.pullRequests
+    expect(Object.keys(pull!).sort()).toEqual(['checks', 'checksPassedAt', 'draft', 'number', 'title'])
+  })
+
   it('refuses a desk with anything extra in it', async () => {
     const net = new Tailnet(), zach = await computer(net, 'zach'), drake = await computer(net, 'drake')
     await linked(net, zach, drake)
     const linkId = zach.service.get().links[0]!.id
     const answers = [{ status: 'desk', desk: { threads: [], more: 0 }, approved: true },
+      { status: 'desk', desk: { threads: [{ project: 'p', title: 't', stands: 'idle', pullRequests: [{ id: 'aaaaaaaaaaaaaaaa', number: 1, title: 'x', draft: false, checks: 'unknown' }] }], more: 0 } },
       { status: 'desk', desk: { threads: [{ project: 'p', title: 't', stands: 'idle', pullRequests: [], messages: ['a secret'] }], more: 0 } },
       { status: 'desk', desk: { threads: [{ project: 'p', title: 'x'.repeat(161), stands: 'idle', pullRequests: [] }], more: 0 } }]
     const spy = vi.spyOn(globalThis, 'fetch')
