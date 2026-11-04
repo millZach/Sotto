@@ -868,7 +868,8 @@ export class DictationController {
       { type: 'TRANSCRIBED', sessionId: session.id, text, output },
       session,
     )
-    this.scheduleReset(session)
+    if (output === 'pasted') this.reset(session)
+    else this.scheduleReset(session)
   }
 
   /**
@@ -1044,21 +1045,23 @@ export class DictationController {
 
   private scheduleReset(session: ActiveSession, token = session.token): void {
     this.clearResetTimer()
-    this.resetTimer = this.setTimer(() => {
-      if (
-        this.disposed ||
-        this.session !== session ||
-        this.lifecycleToken !== token ||
-        !isTerminal(this.state)
-      ) {
-        return
-      }
-      this.resetTimer = undefined
-      this.state = reduceDictation(this.state, { type: 'RESET' })
-      markDictationTiming('ready-dispatched')
-      this.publish(session)
-      this.session = null
-    }, session.settings.successDisplayMs)
+    this.resetTimer = this.setTimer(() => this.reset(session, token), session.settings.successDisplayMs)
+  }
+
+  private reset(session: ActiveSession, token = session.token): void {
+    if (
+      this.disposed ||
+      this.session !== session ||
+      this.lifecycleToken !== token ||
+      !isTerminal(this.state)
+    ) {
+      return
+    }
+    this.resetTimer = undefined
+    this.state = reduceDictation(this.state, { type: 'RESET' })
+    markDictationTiming('ready-dispatched')
+    this.publish(session)
+    this.session = null
   }
 
   private clearResetTimer(): void {

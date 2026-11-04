@@ -655,7 +655,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
-  pasteDelayMs: 150,
+  pasteDelayMs: 50,
   successDisplayMs: 1_400,
   launchAtStartup: false,
   startMinimized: false,

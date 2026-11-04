@@ -122,6 +122,7 @@ export function createSpawnProcessAdapter(spawn: SpawnProcess): PasteProcessAdap
 
 export class OutputService {
   private deliveryTail: Promise<void> = Promise.resolve()
+  private clipboardAvailable: Promise<void> = Promise.resolve()
 
   constructor(private readonly dependencies: OutputServiceDependencies) {}
 
@@ -172,10 +173,10 @@ export class OutputService {
     }
   }
 
-  /** Runs `work` once every delivery before it has finished, so another clipboard write cannot replace text waiting to be pasted. */
+  /** Keeps later clipboard writes behind submitted paste input, without holding up its successful delivery result. */
   afterDeliveries<T>(work: () => T | Promise<T>): Promise<T> {
     const run = this.deliveryTail.then(work)
-    this.deliveryTail = run.then(() => undefined, () => undefined)
+    this.deliveryTail = run.then(() => this.clipboardAvailable, () => this.clipboardAvailable)
     return run
   }
 
@@ -219,16 +220,20 @@ export class OutputService {
       markDictationTiming('paste-delay-started')
       await this.dependencies.delay(options.pasteDelayMs)
       markDictationTiming('paste-delay-ended')
-      let pasted: boolean
+      let pasted = false
       try {
         markDictationTiming('paste-keystroke-started')
         pasted = await this.dependencies.process.run(invocation)
         if (pasted) markDictationTiming('paste-keystroke-sent')
       } finally {
-        // A failed or lost acknowledgement can still follow dispatched input.
+        // Submission does not prove the target consumed the clipboard. Protect
+        // later writers while history and Ready proceed after a successful paste.
+        // An unconfirmed paste still waits before offering manual copy recovery.
         markDictationTiming('paste-settle-started')
-        await this.dependencies.delay(PASTE_SETTLE_MS)
-        markDictationTiming('paste-settle-ended')
+        const settled = Promise.resolve(this.dependencies.delay(PASTE_SETTLE_MS))
+          .then(() => { markDictationTiming('paste-settle-ended') })
+        this.clipboardAvailable = settled.catch(() => undefined)
+        if (!pasted) await settled
       }
       if (pasted) this.dependencies.onPasted?.()
       return pasted ? 'pasted' : 'copied'

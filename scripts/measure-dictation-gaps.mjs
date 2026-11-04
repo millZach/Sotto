@@ -73,6 +73,7 @@ const metricPairs = {
   stopToLastSegmentMs: ['stop-pressed', 'last-segment-transcribed'],
   stopToPasteKeystrokeMs: ['stop-pressed', 'paste-keystroke-sent'],
   stopToDeliveryReturnedMs: ['stop-pressed', 'delivery-returned'],
+  stopToReadyMs: ['stop-pressed', 'widget-ready'],
   deliveryMs: ['delivery-started', 'delivery-returned'],
   historyMs: ['history-started', 'history-returned'],
 }
@@ -128,6 +129,7 @@ const handoffPairs = {
   pasteDelayToKeystrokeMs: ['paste-delay-ended', 'paste-keystroke-started'],
   pasteKeystrokeToSettleMs: ['paste-keystroke-sent', 'paste-settle-started'],
   pasteSettleToDeliveryReturnMs: ['paste-settle-ended', 'delivery-returned'],
+  pasteKeystrokeToDeliveryReturnMs: ['paste-keystroke-sent', 'delivery-returned'],
   deliveryToHistoryMs: ['delivery-returned', 'history-started'],
   historyToReadyDispatchMs: ['history-returned', 'ready-dispatched'],
   readyDispatchToWidgetMs: ['ready-dispatched', 'widget-ready'],
@@ -193,6 +195,7 @@ if (values.summarize) {
   if (!Number.isSafeInteger(count) || count < 1) throw new Error('--warm/--cold must be a positive integer')
   const runs = existsSync(outputPath) ? readRuns(outputPath) : []
   mkdirSync(dirname(outputPath), { recursive: true })
+  let readyObservedAt = 0
 
   async function desktopCommand(args, timeout = 15_000) {
     // Keep command output (AX values included) out of saved artifacts and console logs.
@@ -294,6 +297,7 @@ if (values.summarize) {
             }
             if (!active) continue // Startup events and the previous recording cannot satisfy a wait.
             ;(run.events[entry.event] ??= []).push(entry.elapsedMs)
+            if (entry.event === 'widget-ready') readyObservedAt = performance.now()
             for (const waiter of waiters) if (waiter.event === entry.event) {
               waiter.resolve(); waiters.delete(waiter)
             }
@@ -333,6 +337,9 @@ if (values.summarize) {
       run.captureDurationMs = Math.round(run.events['stop-pressed'][0] - run.events['first-audio-chunk'][0])
       await waitFor('paste-keystroke-sent')
       await waitFor('widget-ready')
+      // Clipboard protection can now outlive Ready. Observe it without adding
+      // its duration to the delivery or Ready marks, or truncating its evidence.
+      if (run.events['paste-settle-started']) await waitFor('paste-settle-ended')
       if (run.events['widget-permission-waiting-committed']) {
         throw new Error('Waiting for microphone appeared during a granted-permission measurement')
       }
@@ -345,7 +352,7 @@ if (values.summarize) {
 
   for (let index = 0; index < count; index++) {
     if (values.cold) await coldLaunch()
-    else if (index > 0) await sleep(5_000)
+    else if (index > 0) await sleep(Math.max(0, 5_000 - (performance.now() - readyObservedAt)))
     const run = await measure()
     const summary = summarize([...runs, run])
     appendFileSync(outputPath, `${JSON.stringify(run)}\n`, { mode: 0o600 })

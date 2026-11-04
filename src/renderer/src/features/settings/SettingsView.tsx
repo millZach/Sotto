@@ -435,7 +435,7 @@ export function SettingsView({
     draft.settle(submission, saved, true)
   }
   const savePasteDelay = (): Promise<void> => saveBoundedNumber(pasteDelayDraft, 'pasteDelayMs', 50, 1_000, setPasteDelayError, msg`Paste delay saved.`)
-  const saveSuccessDuration = (): Promise<void> => saveBoundedNumber(successDurationDraft, 'successDisplayMs', 500, 5_000, setSuccessDurationError, msg`Success duration saved.`)
+  const saveSuccessDuration = (): Promise<void> => saveBoundedNumber(successDurationDraft, 'successDisplayMs', 500, 5_000, setSuccessDurationError, msg`Copied message duration saved.`)
   const saveTypingSpeed = (): Promise<void> => saveBoundedNumber(typingSpeedDraft, 'typingSpeedWpm', TYPING_SPEED_MIN_WPM, TYPING_SPEED_MAX_WPM, setTypingSpeedError, msg`Typing speed saved.`)
 
   // One busy flag for all three: they are the same button row, and only one of
@@ -727,7 +727,7 @@ export function SettingsView({
                   <Toggle setting="clipboard-copy" label={t`Automatic clipboard copy`} checked disabled onCheckedChange={() => undefined} description={t`Always on. Every successful transcript is copied.`} />
                   <Toggle setting="auto-paste" label={t`Automatic paste`} checked={settings.autoPaste} onCheckedChange={(checked) => void save({ autoPaste: checked })} description={copy.settingsAutoPasteDescription} />
                   <div className="settings-input-action"><Field setting="paste-delay" label={t`Paste delay`} description={t`How long to wait before pasting, in milliseconds (50 to 1000).`} {...(pasteDelayError === undefined ? {} : { error: shownWords(pasteDelayError) })}><input className="tt-input" inputMode="numeric" value={pasteDelayDraft.value} onBlur={() => void savePasteDelay()} onChange={(event) => { pasteDelayDraft.edit(event.currentTarget.value) }} /></Field></div>
-                  <div className="settings-input-action"><Field setting="success-duration" label={t`Success message duration`} description={t`How long the success message stays up, in milliseconds (500 to 5000).`} {...(successDurationError === undefined ? {} : { error: shownWords(successDurationError) })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
+                  <div className="settings-input-action"><Field setting="success-duration" label={t`Success message duration`} description={t`How long Copied stays up, in milliseconds (500 to 5000).`} {...(successDurationError === undefined ? {} : { error: shownWords(successDurationError) })}><input className="tt-input" inputMode="numeric" value={successDurationDraft.value} onBlur={() => void saveSuccessDuration()} onChange={(event) => { successDurationDraft.edit(event.currentTarget.value) }} /></Field></div>
                 </SettingsGroup>
                 </> : null}
               </Card>

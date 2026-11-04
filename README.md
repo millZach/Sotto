@@ -72,6 +72,8 @@ Pressing the dictation shortcut again while the microphone is connecting cancels
 With dictation on, Sotto prepares its audio processing when it opens. The microphone opens only when you start dictation and closes when you stop.
 Listening appears as soon as the microphone opens. **Waiting for microphone** appears only while the operating system is asking for microphone access.
 
+After automatic paste, Sotto returns to Ready immediately. **Copied** stays up for the success-message duration set in Settings so you can paste manually.
+
 Settings → Threads sets the working-copy default for new threads. Expand **Project defaults** to choose a different default for one project. Previously saved project choices are kept when Sotto updates.
 
 A question's answer is saved quietly as you write it, and only a failed save says so. Saved question answers clear when the computer running the thread confirms receiving them. If **Check again** confirms acceptance, the answer stays sent; it does not become an editable draft again. An unconfirmed answer stays available for recovery and is never sent again automatically. Remote confirmation requires an updated desktop and host. The composer sends its draft in one action. If the host needs an update to save or send that draft, its text stays only in the current window. Update the host before closing the window.

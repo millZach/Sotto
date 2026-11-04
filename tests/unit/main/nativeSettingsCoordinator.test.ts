@@ -501,7 +501,7 @@ describe('NativeSettingsCoordinator dictation shortcuts with real registrations'
     expect(hotkeys.replace(persisted.hotkey)).toEqual({ ok: true })
     const router = createDictationShortcutRouter({
       shortcuts: adapter,
-      createListener: () => ({ watch: vi.fn(), record: vi.fn(), request: vi.fn(), running: () => false, ready: () => false, permission: () => 'unknown' as const, dispose: vi.fn() }),
+      createListener: () => ({ watch: vi.fn(), record: vi.fn(), request: vi.fn(), running: () => false, ready: () => false, permission: () => 'unknown' as const, paste: async () => 'not-sent' as const, dispose: vi.fn() }),
       canStart: () => true,
       isFocused: () => true,
       dispatch: extraToggle,

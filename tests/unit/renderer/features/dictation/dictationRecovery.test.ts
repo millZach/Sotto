@@ -93,7 +93,12 @@ describe('kept recordings', () => {
     expect(calls).toEqual([1, 2, 3, 2])
     expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'part-1 part-2 part-3' }))
     expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ text: 'part-1 part-2 part-3', durationMs: 18_000 }))
-    expect(harness.controller.getState()).toMatchObject({ status: 'success' })
+    expect(harness.publishedStates.slice(-2)).toEqual([
+      { status: 'success', sessionId: 'session', text: 'part-1 part-2 part-3', output: 'pasted' },
+      { status: 'idle' },
+    ])
+    expect(harness.controller.getState()).toEqual({ status: 'idle' })
+    expect(harness.setTimer).not.toHaveBeenCalled()
     expect(snapshots(harness).map((snapshot) => snapshot.status)).toContain('processing')
   })
 

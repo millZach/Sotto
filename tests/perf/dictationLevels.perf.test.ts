@@ -119,8 +119,16 @@ it('keeps first speech scripted 150 ms after the hotkey through to the output tr
   await harness.controller.stop()
   expect(harness.transcriber.transcribe).toHaveBeenCalledOnce()
   expect(harness.transcriber.transcribe.mock.calls[0]![0].audio).toEqual(firstSpeech)
-  expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining(firstWord) }))
-  expect(harness.controller.getState()).toMatchObject({ status: 'success', text: expect.stringContaining(firstWord) })
+  expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: `${firstWord} to dictate` }))
+  expect(harness.publishedStates.slice(-2)).toEqual([
+    { status: 'success', sessionId: 'session', text: `${firstWord} to dictate`, output: 'pasted' },
+    { status: 'idle' },
+  ])
+  expect(snapshots(harness).slice(-2)).toMatchObject([
+    { status: 'success', output: 'pasted' },
+    { status: 'idle', cancellable: false },
+  ])
+  expect(harness.controller.getState()).toEqual({ status: 'idle' })
   expect(audio.track.stop).toHaveBeenCalledOnce()
   expect(audio.context.source.disconnect).toHaveBeenCalledOnce()
   expect(audio.worklet.port.onmessage).toBeNull()

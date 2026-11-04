@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createKeyListener, type KeyListenerChild, type KeyListenerOptions } from '../../../src/main/hotkeys/keyListener'
+import { createKeyListenerPasteAdapter } from '../../../src/main/hotkeys/keyListenerPaste'
 import { spawnKeyListenerHelper } from '../../../src/main/hotkeys/keyListenerHelpers'
 
 vi.mock('../../../src/main/hotkeys/keyListenerWin32', () => ({
@@ -17,17 +18,25 @@ class FakeChild implements KeyListenerChild {
   readonly written: string[] = []
   ended = false
   killed = false
+  writeResult = true
+  writeFailure = false
   private data: ((chunk: unknown) => void) | null = null
   private exitListener: (() => void) | null = null
+  private stdinError: ((error: Error) => void) | null = null
+  private stdinDrain: (() => void) | null = null
   readonly stdin = {
     write: (chunk: string) => {
+      if (this.writeFailure) throw new Error('private pipe error')
       this.written.push(chunk)
-      return true
+      return this.writeResult
     },
     end: () => {
       this.ended = true
     },
-    on: () => undefined,
+    on: (event: 'error' | 'drain', listener: ((error: Error) => void) | (() => void)) => {
+      if (event === 'error') this.stdinError = listener as (error: Error) => void
+      else this.stdinDrain = listener as () => void
+    },
   }
   readonly stdout = {
     on: (_event: 'data', listener: (chunk: unknown) => void) => {
@@ -47,6 +56,13 @@ class FakeChild implements KeyListenerChild {
   }
   exit(): void {
     this.exitListener?.()
+  }
+  error(): void {
+    this.stdinError?.(new Error('private pipe error'))
+  }
+  drain(): void {
+    this.writeResult = true
+    this.stdinDrain?.()
   }
 }
 
@@ -209,6 +225,187 @@ describe('createKeyListener', () => {
     listener.watch(['Fn'])
     expect(children).toHaveLength(1)
     expect(calls).toEqual(['reset', 'exit'])
+  })
+})
+
+describe('macOS paste through the existing key listener', () => {
+  const invocation = { executable: '/usr/bin/osascript', args: ['-e', 'paste'] }
+  function pasteHarness(extra: Partial<KeyListenerOptions> = {}) {
+    const h = setup(extra)
+    const fallback = { run: vi.fn(() => true) }
+    const adapter = createKeyListenerPasteAdapter(() => h.listener, fallback)
+    const ready = () => {
+      h.listener.watch(['Fn'])
+      h.children.at(-1)!.emit('permission granted\ncapability paste-v1\n')
+      return h.children.at(-1)!
+    }
+    return { ...h, fallback, adapter, ready }
+  }
+
+  it('falls back when absent or stopped without starting or retaining a helper', async () => {
+    const h = pasteHarness()
+    expect(await h.adapter.run(invocation)).toBe(true)
+    expect(h.children).toHaveLength(0)
+    const child = h.ready()
+    h.listener.watch([])
+    expect(await h.adapter.run(invocation)).toBe(true)
+    expect(h.fallback.run).toHaveBeenCalledTimes(2)
+    expect(child.killed).toBe(true)
+    expect(h.children).toHaveLength(1)
+    const absent = createKeyListenerPasteAdapter(() => null, h.fallback)
+    expect(await absent.run(invocation)).toBe(true)
+  })
+
+  it('needs both readiness and the advertised capability; old helpers still fall back', async () => {
+    const h = pasteHarness()
+    h.listener.watch(['Fn'])
+    const child = h.children[0]!
+    child.emit('capability paste-v0\npermission granted\n')
+    expect(await h.adapter.run(invocation)).toBe(true)
+    expect(h.fallback.run).toHaveBeenCalledExactlyOnceWith(invocation)
+    expect(child.written).toEqual(['keys Fn\n', 'swallow\n'])
+
+    const unready = pasteHarness()
+    unready.listener.watch(['Fn'])
+    unready.children[0]!.emit('capability paste-v1\n')
+    expect(await unready.listener.paste()).toBe('not-sent')
+  })
+
+  it.each(['win32', 'linux'] as const)('never sends a paste command on %s', async platform => {
+    const h = pasteHarness({ platform })
+    const child = h.ready()
+    expect(await h.listener.paste()).toBe('not-sent')
+    expect(child.written).toEqual(['keys Fn\n', 'swallow\n'])
+  })
+
+  it('accepts only the matching complete ACK and never falls back after dispatch', async () => {
+    const h = pasteHarness()
+    const child = h.ready()
+    const finished = vi.fn()
+    const result = Promise.resolve(h.adapter.run(invocation)).then(value => { finished(value); return value })
+    expect(child.written.at(-1)).toBe('paste 1\n')
+    child.emit('paste 2 dispatched\npaste 1 maybe\npaste 1 dispatched extra\npaste 1 dis')
+    await Promise.resolve()
+    expect(finished).not.toHaveBeenCalled()
+    child.emit('patched\r\n')
+    expect(await result).toBe(true)
+    expect(h.fallback.run).not.toHaveBeenCalled()
+    expect(h.timers.every(timer => timer.cleared)).toBe(true)
+  })
+
+  it('falls back only after an explicit not-sent ACK', async () => {
+    const h = pasteHarness()
+    const child = h.ready()
+    const result = h.adapter.run(invocation)
+    child.emit('paste 1 not-sent\n')
+    expect(await result).toBe(true)
+    expect(h.fallback.run).toHaveBeenCalledExactlyOnceWith(invocation)
+  })
+
+  it('refuses overlap without another command or fallback', async () => {
+    const h = pasteHarness()
+    const child = h.ready()
+    const first = h.adapter.run(invocation)
+    expect(await h.adapter.run(invocation)).toBe(false)
+    expect(child.written.filter(line => line.startsWith('paste '))).toEqual(['paste 1\n'])
+    child.emit('paste 1 dispatched\n')
+    expect(await first).toBe(true)
+    expect(h.fallback.run).not.toHaveBeenCalled()
+  })
+
+  it('terminates the helper after a lost ACK and ignores late replies across sessions', async () => {
+    const h = pasteHarness()
+    const child = h.ready()
+    const first = h.adapter.run(invocation)
+    h.fireTimers()
+    expect(await first).toBe(false)
+    expect(h.fallback.run).not.toHaveBeenCalled()
+    expect(child.ended).toBe(true)
+    expect(child.killed).toBe(true)
+    expect(h.children).toHaveLength(2)
+    expect(h.logs).toEqual(['native-key-listener-restarting'])
+    expect(h.calls).toEqual(['permission granted', 'reset', 'exit'])
+    expect(h.listener.ready()).toBe(false)
+    expect(h.timers).toEqual([{ callback: expect.any(Function), cleared: false, delayMs: 5000 }])
+    const restarted = h.children[1]!
+    expect(restarted.written).toEqual(['keys Fn\n', 'swallow\n']) // No paste replay.
+    child.exit()
+    expect(h.children).toHaveLength(2) // The old exit must not schedule another restart.
+    expect(await h.listener.paste()).toBe('not-sent')
+    restarted.emit('permission granted\ncapability paste-v1\n')
+    const finished = vi.fn()
+    const next = Promise.resolve(h.adapter.run(invocation)).then(value => { finished(value); return value })
+    expect(restarted.written.at(-1)).toBe('paste 2\n')
+    child.emit('paste 1 not-sent\npaste 1 dispatched\npaste 2 not-sent\npaste 2 dispatched\n')
+    restarted.emit('paste 1 not-sent\npaste 1 dispatched\n')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(finished).not.toHaveBeenCalled()
+    restarted.emit('paste 2 dispatched\n')
+    expect(await next).toBe(true)
+    expect(h.fallback.run).not.toHaveBeenCalled()
+  })
+
+  it.each(['throw', 'pipe', 'exit'] as const)('never falls back after a write attempt followed by %s', async failure => {
+    const h = pasteHarness()
+    const child = h.ready()
+    if (failure === 'throw') child.writeFailure = true
+    const result = h.adapter.run(invocation)
+    if (failure === 'pipe') child.error()
+    if (failure === 'exit') child.exit()
+    expect(await result).toBe(false)
+    expect(h.fallback.run).not.toHaveBeenCalled()
+    expect(h.logs.join(' ')).not.toContain('private')
+    expect(h.children).toHaveLength(2) // Only the existing shortcut restart policy.
+    expect(await h.listener.paste()).toBe('not-sent') // No capability inherited by the new process.
+    const restarted = h.children[1]!
+    restarted.emit('permission granted\ncapability paste-v1\n')
+    const next = h.listener.paste()
+    expect(restarted.written.at(-1)).toBe('paste 2\n')
+    child.emit('paste 2 not-sent\n') // The dead process owns none of the new process's replies.
+    restarted.emit('paste 2 dispatched\n')
+    expect(await next).toBe('dispatched')
+  })
+
+  it('treats write(false) as accepted and waits for its ACK without resending', async () => {
+    const h = pasteHarness()
+    const child = h.ready()
+    child.writeResult = false
+    const result = h.adapter.run(invocation)
+    child.drain()
+    child.emit('paste 1 dispatched\n')
+    expect(await result).toBe(true)
+    expect(child.written.filter(line => line.startsWith('paste '))).toEqual(['paste 1\n'])
+    expect(h.fallback.run).not.toHaveBeenCalled()
+  })
+
+  it('does not enqueue paste behind existing backpressure, and resumes only after drain', async () => {
+    const h = pasteHarness()
+    const child = h.ready()
+    child.writeResult = false
+    h.listener.request()
+    expect(await h.listener.paste()).toBe('not-sent')
+    child.drain()
+    const result = h.listener.paste()
+    child.emit('paste 1 dispatched\n')
+    expect(await result).toBe('dispatched')
+  })
+
+  it.each(['dispose', 'unwatch'] as const)('settles pending paste without retaining the helper on %s', async stop => {
+    const h = pasteHarness()
+    const child = h.ready()
+    const result = h.adapter.run(invocation)
+    if (stop === 'dispose') h.listener.dispose()
+    else h.listener.watch([])
+    expect(await result).toBe(false)
+    expect(h.listener.running()).toBe(false)
+    expect(child.killed).toBe(true)
+    expect(h.children).toHaveLength(1)
+    expect(h.timers.every(timer => timer.cleared)).toBe(true)
+    expect(h.fallback.run).not.toHaveBeenCalled()
+    child.emit('paste 1 not-sent\n')
+    h.fireTimers()
+    expect(h.fallback.run).not.toHaveBeenCalled()
   })
 })
 

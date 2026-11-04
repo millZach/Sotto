@@ -11,7 +11,7 @@ import type {
   TranscribeOptions,
   TranscriptionResult
 } from '../../../src/renderer/src/transcription/localTranscriber'
-import { type WidgetSnapshot } from '../../../src/shared/dictation'
+import { type DictationState, type WidgetSnapshot } from '../../../src/shared/dictation'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 
 export { deferred } from '../deferred'
@@ -74,7 +74,11 @@ export function createHarness(options: HarnessOptions = {}) {
   )
   const addHistory = vi.fn(options.addHistory ?? (async () => []))
   const retainOutput = vi.fn()
-  const publishWidgetState = vi.fn(options.publishWidgetState ?? (() => undefined))
+  const publishedStates: DictationState[] = []
+  const publishWidgetState = vi.fn((snapshot: WidgetSnapshot) => {
+    publishedStates.push(controller.getState())
+    return options.publishWidgetState?.(snapshot)
+  })
   const publishLevel = vi.fn<(level: number) => void>()
   const timers = new Map<number, () => void>()
   let nextTimer = 1
@@ -106,11 +110,12 @@ export function createHarness(options: HarnessOptions = {}) {
     createId: () => ids.shift() ?? 'later-session',
     ...(options.clockTimers === true ? {} : { setTimer, clearTimer }),
   }
+  const controller = new DictationController(dependencies)
   return {
     addHistory,
     retainOutput,
     clearTimer,
-    controller: new DictationController(dependencies),
+    controller,
     createRecorder,
     currentSettings,
     deliverOutput,
@@ -120,6 +125,7 @@ export function createHarness(options: HarnessOptions = {}) {
       for (const callback of pending) callback()
     },
     polishTranscript,
+    publishedStates,
     publishLevel,
     publishWidgetState,
     recorder,

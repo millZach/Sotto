@@ -40,6 +40,14 @@ async function snapshot(page: Page): Promise<E2ESnapshot> {
   return value
 }
 
+async function expectPastedAndReady(page: Page, pasteAttempts: number): Promise<void> {
+  await expect.poll(() => snapshot(page)).toMatchObject({
+    clipboardText: DETERMINISTIC_TRANSCRIPT,
+    pasteAttempts,
+  })
+  await expect(page.getByRole('heading', { name: 'Ready when you are.', exact: true })).toBeVisible()
+}
+
 async function closeMainToTray(app: ElectronApplication, page: Page): Promise<void> {
   if (process.platform === 'win32') {
     await page.getByRole('button', { name: 'Close Sotto to tray' }).click()
@@ -127,11 +135,11 @@ test('onboards, dictates through the registered shortcut, pastes, and records lo
     await triggerShortcut(launched.page)
 
     await expect(pasteTarget).toHaveValue(DETERMINISTIC_TRANSCRIPT)
-    await expect(widget.getByText('Pasted', { exact: true })).toBeVisible()
     await expect.poll(() => snapshot(launched.page)).toMatchObject({
       clipboardText: DETERMINISTIC_TRANSCRIPT,
       pasteAttempts: 1,
     })
+    await expect(widget.locator('.widget-shell')).toHaveAttribute('data-status', 'idle')
 
     await finishFirstRunSetupFrom(launched.page, 'shortcut', { microphone: 'test' })
     // Transcripts live in the Dictate room's Journal (#1293).
@@ -152,7 +160,7 @@ test('keeps history disabled without blocking dictation', async () => {
     await expect(launched.page.getByText('Setting saved.')).toBeVisible()
     await launched.page.getByRole('tab', { name: 'Dictate', exact: true }).click()
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
+    await expectPastedAndReady(launched.page, 1)
     await expect(launched.page.getByText('History is off. New dictations keep their numbers only.', { exact: true })).toBeVisible()
     await expect(launched.page.locator('.journal-entry')).toHaveCount(0)
   } finally {
@@ -168,10 +176,10 @@ test('keeps a dictation record with history on and off, and lists older transcri
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
+    await expectPastedAndReady(launched.page, 1)
     await launched.page.evaluate(async () => window.sotto!.updateSettings({ historyEnabled: false }))
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
+    await expectPastedAndReady(launched.page, 2)
 
     // Both dictations keep their numbers and the app Sotto delivered them into; only the first kept its text.
     await expect.poll(async () => (await records()).length).toBe(2)
@@ -181,9 +189,10 @@ test('keeps a dictation record with history on and off, and lists older transcri
       expect(record.words).toBeGreaterThan(0)
     }
     expect(await readFile(join(directory, 'dictation-records.jsonl'), 'utf8')).not.toContain(DETERMINISTIC_TRANSCRIPT.split(' ')[1]!)
-    const saved = JSON.parse(await readFile(join(directory, 'history.json'), 'utf8')) as { id: string; app?: string }[]
+    const saved = JSON.parse(await readFile(join(directory, 'history.json'), 'utf8')) as { id: string; text: string; app?: string }[]
     expect(saved).toHaveLength(1)
     expect(saved[0]!.app).toBe('Sotto')
+    expect(saved[0]!.text).toBe(DETERMINISTIC_TRANSCRIPT)
     expect(await launched.page.evaluate(async () => (await window.sotto!.listDictationRecords()).length)).toBe(2)
     await closeSotto(launched)
 
@@ -229,9 +238,9 @@ test('deletes retained transcripts one at a time from disk while history is off'
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
+    await expectPastedAndReady(launched.page, 1)
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
+    await expectPastedAndReady(launched.page, 2)
     await expect(launched.page.locator('.journal-entry')).toHaveCount(2)
     const retained = JSON.parse(await readFile(join(launched.userData, 'history.json'), 'utf8')) as { id: string }[]
     await launched.page.evaluate(async () => window.sotto!.updateSettings({ historyEnabled: false }))
@@ -323,7 +332,11 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
     if (widget === undefined) throw new Error('Widget window unavailable')
     await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
     await triggerShortcut(launched.page)
-    await expect(widget.getByText('Pasted', { exact: true })).toBeVisible()
+    await expect.poll(() => snapshot(launched.page)).toMatchObject({
+      clipboardText: DETERMINISTIC_TRANSCRIPT,
+      pasteAttempts: 1,
+    })
+    await expect(widget.locator('.widget-shell')).toHaveAttribute('data-status', 'idle')
   } finally {
     await closeSotto(launched)
   }

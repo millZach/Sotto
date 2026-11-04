@@ -132,7 +132,8 @@ import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { createDictationShortcutRouter, type DictationShortcutEvent } from './hotkeys/dictationShortcutRouter'
 import { holdCanStart } from './hotkeys/chordMatcher'
-import { createKeyListener } from './hotkeys/keyListener'
+import { createKeyListener, type KeyListener } from './hotkeys/keyListener'
+import { createKeyListenerPasteAdapter } from './hotkeys/keyListenerPaste'
 import { createDictationShortcutLifecycle, interruptOnLockAndSleep } from './hotkeys/dictationShortcutLifecycle'
 import { spawnKeyListenerHelper } from './hotkeys/keyListenerHelpers'
 import { parseDictationEdge } from './hotkeys/dictationCommand'
@@ -1507,6 +1508,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
     : null
   const pasteCommands = createPasteCommands(platform)
+  // Assigned only by the existing shortcut lifecycle; paste never starts a listener.
+  let pasteKeyListener: KeyListener | null = null
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
     ? createWarmPasteAdapter({
         spawnHelper: (invocation) =>
@@ -1528,13 +1531,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? warmPaste
       ?? (platform === 'darwin'
         // osascript's stderr says which permission refused the paste; it is read, never logged.
-        ? createOsascriptPasteAdapter({
+        ? createKeyListenerPasteAdapter(() => pasteKeyListener, createOsascriptPasteAdapter({
             spawn: (executable, args, options) => spawn(executable, [...args], { ...options, stdio: [...options.stdio] }),
             onDenied: denial => recoveryNotices.publish({
               code: denial === 'automation' ? 'AUTOMATION_PERMISSION_REQUIRED' : 'ACCESSIBILITY_PERMISSION_REQUIRED',
             }),
             log: logOperational,
-          })
+          }))
         : platform === 'linux'
           ? createHyprlandPasteAdapter(undefined, undefined, undefined, () => linuxClipboard!.copyToPrimary())
           : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
@@ -1889,17 +1892,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
     ? createDictationShortcutRouter({
         shortcuts: dictationGate.shortcuts,
-        createListener: handlers => dictationGate.listener(createKeyListener({
-          platform,
-          // The Windows helper can take long to start cold.
-          readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
-          // An E2E run never spawns the helper, so it never asks for Input Monitoring.
-          spawnHelper: e2eConfiguration === null
-            ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
-            : () => null,
-          log: event => logOperational(event as DictationShortcutEvent),
-          ...handlers,
-        })),
+        createListener: handlers => {
+          const listener = dictationGate.listener(createKeyListener({
+            platform,
+            // The Windows helper can take long to start cold.
+            readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
+            // An E2E run never spawns the helper, so it never asks for Input Monitoring.
+            spawnHelper: e2eConfiguration === null
+              ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
+              : () => null,
+            log: event => logOperational(event as DictationShortcutEvent),
+            ...handlers,
+          }))
+          pasteKeyListener = listener
+          return listener
+        },
         canStart: () => holdCanStart(widgetState),
         isFocused: mainWindowFocused,
         dispatch: dispatchDictation,
