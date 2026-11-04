@@ -404,17 +404,12 @@
 /* Narrow windows (the 760px minimum): a slimmer sidebar, the same 44px header, same type sizes. */
 @media (max-width: 980px) {
   .thread-workspace__head { padding-left: 14px; }
-  .thread-workspace__transcript { padding: 22px 18px; }
-  .thread-workspace__compose { padding: 8px 16px 16px; }
-  .thread-message[data-role='user'] { margin-left: 24px; }
-}
-/* Short windows and large display scaling: the transcript keeps the height, the type keeps its size. */
-@media (max-height: 760px) {
-  .thread-workspace__transcript { padding-block: 18px; }
   /* The project crumb is the first thing a narrow row gives up; the thread's name is what identifies the pane. */
   .thread-workspace__crumb { display: none; }
   /* The project name may give way; the working-copy control remains a keyboard-accessible action. */
   .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
+  .thread-workspace__crumb[data-has-working-copy]::before, .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
+  .thread-workspace__crumb .working-copy__trigger { max-width: 160px; }
   .thread-workspace__transcript { padding: 22px 18px; }
   .thread-workspace__compose { padding: 8px 16px 16px; }
   .thread-message[data-role='user'] { --bubble-inset: 24px; }
@@ -422,8 +417,6 @@
 /* Short windows and large display scaling: the transcript keeps the height, the type keeps its size. */
 @media (max-height: 760px) {
   .thread-workspace__transcript { padding-block: 18px; }
-  .thread-workspace__crumb[data-has-working-copy]::before, .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
-  .thread-workspace__crumb .working-copy__trigger { max-width: 160px; }
   .thread-workspace__compose { padding-block: 6px 12px; }
   /* The header is already one row at its smallest; the transcript and composer share what is left. */
   .thread-pane > .thread-transcript { min-height: min(120px, 24%); }

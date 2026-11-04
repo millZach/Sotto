@@ -315,6 +315,9 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await dialog.getByRole('searchbox', { name: 'Search projects' }).fill('sotto')
     await dialog.getByRole('button', { name: /^sotto / }).first().click()
     await expect(dialog).toHaveCount(0)
+    // The header fills in once the host has read the folder's Git status: without this the first image is taken before that
+    // read and the second after it, and the two modes seem to hold different things.
+    await expect(focusedPane(page).locator('.git-action')).toBeVisible()
     await capture.shoot('threads-empty', 'Threads page: a busy sidebar and a new, empty thread with its greeting and composer.', 'The greeting line comes from the held random number.')
   } },
   { name: 'thread-idle', covers: [], run: async capture => {
@@ -325,9 +328,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   { name: 'thread-long', covers: [], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
-    // The header fills in once the host has read the folder's Git status: without this the first image is taken before that
-    // read and the second after it, and the two modes seem to hold different things.
-    await expect(focusedPane(page).locator('.git-action')).toBeVisible()
     // A long thread opens on its newest turns; the reader's own presses bring the rest in.
     const earlier = transcript(page).locator('.thread-transcript__earlier').getByRole('button')
     await expect(async () => {
@@ -344,16 +344,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('thread-long', shows, differs, { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-  } },
-  { name: 'streaming', covers: ['streaming-1', 'streaming-2', 'streaming-3'], run: async capture => {
-    const { page } = capture
-    await openThread(page, 'Trace a permission request')
-    const differs = 'The deltas come from the fake provider host at a steady rate, not a model.'
-    await capture.shoot('streaming-1', 'A streaming turn before its first word: the working line after three steps, one command running.', differs)
-    await streamTo(page, 'second')
-    await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list; the transcript follows the end.', differs)
-    await streamTo(page, 'third')
-    await capture.shoot('streaming-3', 'The same turn further on, its reply cut off inside the code block as it arrives.', differs)
   } },
   { name: 'reading', covers: ['reading-copy', 'reading-scrubber', 'reading-jump-focus', 'reading-new-messages', 'reading-clay'], run: async capture => {
     const { page } = capture
@@ -394,6 +384,16 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
     await capture.shoot('reading-clay', 'A finished reply in the Clay theme, to check the reading surface away from the default palette.')
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
+  } },
+  { name: 'streaming', covers: ['streaming-1', 'streaming-2', 'streaming-3'], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Trace a permission request')
+    const differs = 'The deltas come from the fake provider host at a steady rate, not a model.'
+    await capture.shoot('streaming-1', 'A streaming turn before its first word: the working line after three steps, one command running.', differs)
+    await streamTo(page, 'second')
+    await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list; the transcript follows the end.', differs)
+    await streamTo(page, 'third')
+    await capture.shoot('streaming-3', 'The same turn further on, its reply cut off inside the code block as it arrives.', differs)
   } },
   { name: 'steps', covers: ['steps-collapsed', 'steps-expanded'], run: async capture => {
     const { page } = capture
@@ -592,6 +592,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click()
     await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
     await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.')
+    for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { modes: ['dark'], size })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
   { name: 'pages', covers: ['dictate', 'settings', 'usage', 'help'], run: async capture => {
     const { page } = capture
@@ -612,6 +614,27 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('settings', 'Settings, opened on its first section.')
     await page.keyboard.press('Escape')
     await openThreads(page)
+  } },
+  // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
+  { name: 'shell-check', covers: [], run: async capture => {
+    const { page } = capture
+    const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
+    for (const [link, state] of pages) {
+      await openThreads(page)
+      await page.getByRole('link', { name: link, exact: true }).click()
+      await page.waitForTimeout(800)
+      for (const size of SMALLER_SIZES) await capture.shoot(`${state}-sizes`, `The ${link} page at a smaller window.`, '', { modes: ['dark'], size })
+      await resizeContentWindowFor(capture.launched, 1600, 1000)
+    }
+    await openThreads(page)
+    await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
+    for (const size of SMALLER_SIZES) await capture.shoot('dictate-sizes', 'The Dictate room at a smaller window.', '', { modes: ['dark'], size })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await openThreads(page)
+    await openThread(page, 'Repository review')
+    await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
+    await capture.shoot('thread-clay', 'A finished thread on the Clay theme.')
+    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
   } },
 ]
 
@@ -686,50 +709,6 @@ test.describe('review evidence', () => {
         await runState('watcher-room', () => withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'design-threads', agents: 'design-threads' }, async launched => {
           const { page } = launched
           await freezeMain(launched)
-  // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
-  // Asked for by name only: the pages at the smaller sizes, and a thread and Help on a theme other than the default.
-  { name: 'shell-check', covers: [], run: async capture => {
-    const { page } = capture
-    const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
-    for (const [link, state] of pages) {
-      await openThreads(page)
-      await page.getByRole('link', { name: link, exact: true }).click()
-      await page.waitForTimeout(800)
-      for (const size of SMALLER_SIZES) await capture.shoot(`${state}-sizes`, `The ${link} page at a smaller window.`, '', { modes: ['dark'], size })
-      await resizeContentWindowFor(capture.launched, 1600, 1000)
-    }
-    await openThreads(page)
-    await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
-    for (const size of SMALLER_SIZES) await capture.shoot('dictate-sizes', 'The Dictate room at a smaller window.', '', { modes: ['dark'], size })
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
-    await openThreads(page)
-    await openThread(page, 'Repository review')
-    await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
-    await capture.shoot('thread-clay', 'A finished thread on the Clay theme.')
-    await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
-  } },
-  { name: 'shell-check', covers: [], run: async capture => {
-    const { page } = capture
-    for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { modes: ['dark'], size })
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
-    const pages = [['Usage', 'usage'], ['Help', 'help'], ['Settings', 'settings']] as const
-    for (const [link, state] of pages) {
-      await openThreads(page)
-      await page.getByRole('link', { name: link, exact: true }).click()
-      await page.waitForTimeout(800)
-      for (const size of SMALLER_SIZES) await capture.shoot(`${state}-sizes`, `The ${link} page at a smaller window.`, '', { modes: ['dark'], size })
-      await resizeContentWindowFor(capture.launched, 1600, 1000)
-    }
-    await openThreads(page)
-    await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
-    for (const size of SMALLER_SIZES) await capture.shoot('dictate-sizes', 'The Dictate room at a smaller window.', '', { modes: ['dark'], size })
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
-    await openThreads(page)
-    await openThread(page, 'Repository review')
-    await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
-    await capture.shoot('thread-clay', 'A finished thread on the Clay theme.')
-    await setAppearance(page, { appearance: 'dark', lightTheme: 'sotto', darkTheme: 'sotto' }, 'dark')
-  } },
           await freezeRenderer(page)
           await resizeContentWindowFor(launched, 1600, 1000)
           await seedWatcherRoom(page, { watched: ['visual-gate', 'footer-links', 'weekly-note', 'grok-previews'], idPrefix: 'review-watcher' })
