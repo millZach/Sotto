@@ -12,7 +12,7 @@ import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import { hiddenEvents } from './hiddenWakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { wakeUpNewsSchema, foldWakeUpNews, isAnyRestartNews, isBabysitNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isWatcherNews, isWatcherOnlyWakeUp,
+import { wakeUpNewsSchema, foldWakeUpNews, isAnyRestartNews, isBabysitNews, isToDoNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isWatcherNews, isWatcherOnlyWakeUp,
   WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
@@ -37,6 +37,8 @@ const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ dige
 const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional(),
   phoneOrigin: watcherPhoneOriginSchema.optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
+/** A wake-up holding a checked-off to-do's words, which may be the user's own: saved only while Keep local history is on (ADR-0188). */
+const carriesToDoNews = (item: { readonly news?: readonly WakeUpNews[] | undefined }): boolean => item.news?.some(isToDoNews) === true
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
  * What the file may hold: a follow-up written before ADR-0031 kept its images inline. Each is read as it stands and
@@ -99,7 +101,7 @@ export class FollowupStore {
     const lost = new Set<string>()
     for (const item of stored.items) {
       if (item.watcherOperationId && !this.watcherEnabled()) { this.gatedMachines.set(item.id, structuredClone(item)); continue }
-      if (!this.historyEnabled() && active(item.threadId) && (item.watcherOperationId || this.isWatcherThread(item.threadId))) continue
+      if (!this.historyEnabled() && active(item.threadId) && (item.watcherOperationId || this.isWatcherThread(item.threadId) || carriesToDoNews(item))) continue
       if (!active(item.threadId)) {
         this.dormant.set(item.id, structuredClone(item))
         items.push(queuedSchema.parse({ ...item, attachments: item.attachments.filter(attachment => !('dataUrl' in attachment)) }))
@@ -141,7 +143,7 @@ export class FollowupStore {
     const task = this.tail.catch(() => undefined).then(async () => {
       const next = this.get()
       if (update(next) === false) return
-      await this.store.write({ ...next, items: [...this.gatedMachines.values(), ...next.items.filter(item => !this.active(item.threadId) || this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId)).map(item => this.dormant.get(item.id) ?? item)] }); this.state = next
+      await this.store.write({ ...next, items: [...this.gatedMachines.values(), ...next.items.filter(item => !this.active(item.threadId) || this.historyEnabled() || !item.watcherOperationId && !this.isWatcherThread(item.threadId) && !carriesToDoNews(item)).map(item => this.dormant.get(item.id) ?? item)] }); this.state = next
     })
     this.tail = task
     return task
@@ -170,13 +172,14 @@ export class FollowupStore {
   }
   private privateItem(item: unknown): boolean {
     if (!item || typeof item !== 'object') return false
-    const value = item as { watcherOperationId?: unknown; threadId?: unknown }
+    const value = item as { watcherOperationId?: unknown; threadId?: unknown; news?: unknown }
+    if (Array.isArray(value.news) && value.news.some(news => (news as { source?: unknown } | null)?.source === 'to-do')) return true
     return value.watcherOperationId !== undefined || typeof value.threadId === 'string' && this.isWatcherThread(value.threadId) && this.active(value.threadId)
   }
   private hasPrivateWords(contents: string): boolean {
     try { const value = JSON.parse(contents) as { items?: unknown }; if (Array.isArray(value.items)) return value.items.some(item => this.privateItem(item)) }
     catch { /* Damaged JSON can still name a private item before its broken boundary. */ }
-    if (/(?<!\\)"watcherOperationId"\s*:/u.test(contents)) return true
+    if (/(?<!\\)"watcherOperationId"\s*:/u.test(contents) || /(?<!\\)"source"\s*:\s*"to-do"/u.test(contents)) return true
     for (const match of contents.matchAll(/(?<!\\)"threadId"\s*:\s*("(?:[^"\\]|\\.)*")/gu)) {
       const threadId: unknown = JSON.parse(match[1]!)
       if (typeof threadId === 'string' && this.isWatcherThread(threadId) && this.active(threadId)) return true
@@ -244,7 +247,7 @@ export class FollowupStore {
    * once when the thread is ready and otherwise when it would send the next one. A thread holds one waiting wake-up,
    * and later news folds into it until it goes. Resolves once it is saved.
    */
-  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string, apart?: (news: WakeUpNews) => boolean): Promise<void> {
+  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string, apart?: (news: WakeUpNews) => unknown): Promise<void> {
     return this.change(state => {
       const now = new Date().toISOString()
       // Watcher's news is a hidden wake-up of its own, made whole and never changed (hiddenWakeUp.ts): no news folds into
@@ -252,7 +255,7 @@ export class FollowupStore {
       const hidden = isWatcherNews(news)
       if (hidden && state.items.some(item => item.threadId === threadId && isWatcherOnlyWakeUp(item))) throw new Error('Watcher already has news on its way.')
       // News `apart` picks out may not go yet, so it never shares a wake-up with news that may: neither holds the other.
-      const side = apart?.(news) ?? false
+      const side = apart?.(news)
       // A delegation's news waits in a hidden wake-up of its own, one a thread, and folds into nothing else, nor anything
       // else into it (ADR-0081, October 19, 2026): only the thread's own turn holds it, so it shares no other wake-up's wait.
       const delegation = isDelegationNews(news)

@@ -35,6 +35,8 @@ import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
 import type { CheckQueue } from './checkQueue'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
+import type { ToDo, ToDoRequest } from '../../shared/toDos'
+import type { ToDoStore } from './toDos'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
@@ -175,6 +177,14 @@ export interface HostService {
    * desktop's connection to a host, `checkQueue` is what the host last pushed, and undefined before a push or while the
    * host does not send one.
    */
+  readonly supportsToDos?: boolean
+  /**
+   * The host's own to-do list (`to-dos`, ADR-0188), by its own thread IDs, and a press on it. On a desktop's connection to a
+   * host, what the host last pushed, and undefined before a push or while the host does not send one.
+   */
+  toDos?(): readonly ToDo[] | undefined
+  subscribeToDos?(listener: () => void): () => void
+  toDoRequest?(request: ToDoRequest): Promise<void>
   readonly supportsCheckQueueViews?: boolean
   checkQueue?(): readonly CheckQueueEntry[] | undefined
   subscribeCheckQueue?(listener: () => void): () => void
@@ -464,6 +474,7 @@ export class LocalHostService implements HostService {
     delegationViews?: DelegationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
     checks?: CheckQueue
+    toDos?: ToDoStore
     /** The next prompts this host builds for its threads (ADR-0173), present only while its `next-prompt` Owl answer is on. */
     nextPrompts?: { list(): readonly NextPromptEntry[]; subscribe(listener: (entry: NextPromptEntry) => void): () => void }
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
@@ -508,6 +519,10 @@ export class LocalHostService implements HostService {
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
   }
+  get supportsToDos(): boolean { return this.options.toDos !== undefined }
+  toDos(): readonly ToDo[] | undefined { return this.options.toDos?.view() }
+  subscribeToDos(listener: () => void): () => void { return this.options.toDos?.subscribe(listener) ?? (() => undefined) }
+  toDoRequest(request: ToDoRequest): Promise<void> { return this.options.toDos?.request(request) ?? Promise.reject(new Error('This host keeps no to-do list.')) }
   get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }
   /** The queue's own view, taken only after it changed, so a read copies nothing. */
   checkQueue(): readonly CheckQueueEntry[] | undefined { return this.options.checks?.view() }

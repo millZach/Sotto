@@ -7642,6 +7642,10 @@ msgstr ""
 msgid "Your rules"
 msgstr ""
 
+#: src/renderer/src/App.tsx
+msgid "Your saved to-do list could not be cleared. The file is still on this computer. Repair local storage, then restart Sotto to try again."
+msgstr ""
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "Your speed shows here once you have dictated on two days."
 msgstr ""
