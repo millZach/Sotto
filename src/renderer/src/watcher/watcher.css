@@ -106,6 +106,10 @@
   mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); mask-composite: intersect; }
 .watcher-room__stars { position: absolute; top: 0; left: 0; width: calc(320px + var(--owl-sky-inset)); max-width: 100%; height: 92px; overflow: hidden; }
 .watcher-pane > :is(.watcher-head, .watcher-glance) { position: relative; }
+/* The night scene runs under the conversation's column at a ceiling its words can read over (ADR-0126). Its marks still fret at
+   the edges of small letters, so the words wear a soft halo in the room's own colour. It is drawn with the text, under nothing
+   of the scene's and over no canvas of its own, so the scene paints as it always did. */
+.watcher-pane .thread-message:not([data-role='user']), .watcher-pane > .watcher-glance { text-shadow: 0 0 3px var(--tt-canvas), 0 0 6px var(--tt-canvas); }
 
 /* ---------- Watcher's header ---------- */
 .watcher-head { padding-left: 14px; }
