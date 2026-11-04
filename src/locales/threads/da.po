@@ -2660,6 +2660,10 @@ msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rul
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Collapse permission request"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Collapse question"
 msgstr ""
 
@@ -7609,6 +7613,10 @@ msgstr ""
 
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
 msgid "Show page"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Show permission request"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx

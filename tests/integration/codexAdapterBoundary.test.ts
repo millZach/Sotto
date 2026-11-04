@@ -485,6 +485,26 @@ describe('Codex App Server provider adapter', () => {
     await expect.poll(async () => (await f.driver.requests()).some(r => r.id !== undefined && r.result !== undefined)).toBe(true)
     expect((await f.driver.requests()).some(r => r.result?.decision === 'accept')).toBe(false)
   })
+  // Issue #2149: a form with nothing to fill in is a confirmation. Words never answer it; Deny declines and Allow once accepts.
+  it('answers an empty Codex form only with Allow once or Deny', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    const confirm = { questions: [], mode: 'form', serverName: 'node_repl', message: 'Allow Computer Use to use "Sotto"?', requestedSchema: { type: 'object', properties: {} } }
+    await f.action(threadId, { type: 'question', text: 'Allow Computer Use to use "Sotto"?', method: 'mcpServer/elicitation/request', params: confirm })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const denied = (await f.host.snapshot()).threads[0]!.requests[0]!
+    expect(denied).toMatchObject({ kind: 'permission', confirmation: true })
+    for (const answer of ['yes', 'no', '{}']) {
+      await expect(f.host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: denied.id, answer })).rejects.toThrow('Choose Allow once or Deny.')
+    }
+    expect((await f.driver.requests()).some(r => r.id === nativeRequestId(denied.id) && r.result !== undefined)).toBe(false)
+    await f.host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: denied.id, answer: '', approved: false, permissionChoice: 'decline' })
+    await expect.poll(async () => (await f.driver.requests()).find(r => r.id === nativeRequestId(denied.id))?.result).toEqual({ action: 'decline', content: null })
+    await f.action(threadId, { type: 'question', text: 'Allow Computer Use to use "Sotto"?', method: 'mcpServer/elicitation/request', params: confirm })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const allowed = (await f.host.snapshot()).threads[0]!.requests[0]!
+    await f.host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: allowed.id, answer: '', approved: true, permissionChoice: 'accept' })
+    await expect.poll(async () => (await f.driver.requests()).find(r => r.id === nativeRequestId(allowed.id))?.result).toEqual({ action: 'accept', content: {} })
+  })
   it.each(['item/tool/requestUserInput', 'mcpServer/elicitation/request'])('delivers question answers for %s', async method => {
     const f = await fixture(); const { threadId } = await create(f)
     await f.action(threadId, { type: 'question', text: 'Choose color', method })

@@ -384,6 +384,27 @@ describe('ThreadsView workspace', () => {
     expect(screen.queryByRole('menuitem', { name: /manag/i })).toBeNull()
   })
 
+  // Issue #2149: a confirmation pops up from the top of the composer like a question (Zach's pick, November 4, 2026);
+  // a command's permission keeps its place in the transcript.
+  it('docks a confirmation above the composer and leaves a command’s permission in the transcript', () => {
+    const state = stateFixture()
+    const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+    thread.requests = [
+      { id: 'confirm', kind: 'permission', confirmation: true, text: 'Codex is asking before it uses Computer Use.\nAllow Computer Use to use "Sotto"?', options: [],
+        permissionChoices: [{ id: 'accept', label: 'Allow once', kind: 'allow-once' }, { id: 'decline', label: 'Deny', kind: 'deny' }] },
+      { id: 'command', kind: 'permission', text: 'npm test', options: [], context: { command: 'npm test' },
+        permissionChoices: [{ id: 'accept', label: 'Allow once', kind: 'allow-once' }, { id: 'decline', label: 'Deny', kind: 'deny' }] },
+    ]
+    const { command } = renderThreads(state)
+    const compose = document.querySelector<HTMLElement>('.thread-workspace__compose')!
+    const docked = within(compose).getByRole('region', { name: 'Codex is asking before it uses Computer Use.' })
+    expect(docked).toHaveAttribute('data-placement', 'composer')
+    expect(within(compose).queryByText('npm test')).toBeNull()
+    expect(document.querySelector('.thread-transcript')!.textContent).toContain('npm test')
+    fireEvent.click(within(docked).getByRole('button', { name: 'Allow once' }))
+    expect(command).toHaveBeenLastCalledWith({ type: 'answer', threadId: 'visual-gate', requestId: 'confirm', answer: 'Allow once', approved: true, permissionChoice: 'accept' })
+  })
+
   it('writes an answer in the selected workspace without changing pages', () => {
     const state = stateFixture()
 

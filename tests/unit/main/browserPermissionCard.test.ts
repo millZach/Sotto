@@ -101,16 +101,17 @@ const codexAsk = (params: Record<string, unknown>): string =>
   pendingRequest('c1', 'mcpServer/elicitation/request', { threadId: 'n1', ...params }, 'thread')!.request.text
 
 describe('a Codex elicitation about Sotto’s browser says which browser', () => {
-  it('names the tool when the body carries one', () => {
-    expect(codexAsk({ serverName: BROWSER_MCP_SERVER, request: { name: 'browser_open', arguments: { url: 'http://localhost:5173/' } } })).toContain('open http://localhost:5173/')
+  // Codex 0.166.0 names the tool in `_meta` when the asker gives one (issue #2149); there is no `request` body.
+  it('names the tool when Codex’s _meta carries one', () => {
+    expect(codexAsk({ serverName: BROWSER_MCP_SERVER, _meta: { tool_name: 'browser_open', tool_params: { url: 'http://localhost:5173/' } } })).toContain('open http://localhost:5173/')
   })
 
   it('names the test iPhone for the bare iphone_ tool name', () => {
-    expect(codexAsk({ serverName: BROWSER_MCP_SERVER, request: { name: 'iphone_open', arguments: { url: 'http://localhost:5173/' } } })).toContain('open http://localhost:5173/ on the test iPhone')
+    expect(codexAsk({ serverName: BROWSER_MCP_SERVER, _meta: { tool_name: 'iphone_open', tool_params: { url: 'http://localhost:5173/' } } })).toContain('open http://localhost:5173/ on the test iPhone')
   })
 
-  // The body's shape is not established against a real client, so the server alone still has to read.
-  it('names the browser when the body cannot be read', () => {
+  // Codex's own tool-call approvals send the parameters without the name, so the server alone still has to read.
+  it('names the browser when _meta names no tool', () => {
     const text = codexAsk({ serverName: BROWSER_MCP_SERVER, message: 'Approve app tool call?' })
     expect(text).toContain('Sotto’s browser')
     expect(text).toContain('Approve app tool call?')

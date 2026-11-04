@@ -107,6 +107,8 @@
 .agent-request[data-placement='composer'] { position: relative; margin-top: 0; padding: 16px 18px; border: 0; border-radius: 0; background: var(--tt-card); animation: question-arrive 180ms ease-out; }
 .agent-request[data-placement='composer'] .agent-request__form { gap: 12px; }
 .agent-request[data-placement='composer'] .agent-request__question legend:not(.tt-visually-hidden) { padding-right: 28px; }
+/* A docked confirmation's heading clears the collapse button the way a question's legend does (issue #2149). */
+.agent-request[data-placement='composer'][data-kind='permission'] .agent-request__head { padding-right: 28px; }
 .agent-request[data-placement='composer'] .agent-request__prompt { font-size: var(--tt-type-lead); font-weight: 600; }
 .agent-request[data-placement='composer'] .agent-request__option { padding-block: 10px; border: 1px solid transparent; }
 .agent-request[data-placement='composer'] .agent-request__option[data-checked] { border-color: var(--tt-selected-border); }
