@@ -49,7 +49,7 @@ import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type 
 import { WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
 import { useMoveCards, useMoveProposals, WatcherMoveThreads } from './MoveThreads'
-import { BESIDE_PANE_ID, BesideDivider, BesideLinkedFile, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
+import { BESIDE_FILE_ID, BESIDE_PANE_ID, BesideDivider, BesideLinkedFile, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherGlance } from './WatcherGlance'
 import { WatcherMachines } from './WatcherMachines'
@@ -604,7 +604,14 @@ export function WatcherView({ now: fixedNow, update = null }: {
     opener.current = how.from ?? null
     pendingFocus.current = { threadId, atRequest: how.atRequest === true }
     setFocusedPane('beside')
-    if (roomView.get().besideId === threadId && roomView.get().file === null) { pendingFocus.current = null; focusBeside(how.atRequest === true); return }
+    if (roomView.get().besideId === threadId) {
+      pendingFocus.current = null
+      if (roomView.get().file === null) { focusBeside(how.atRequest === true); return }
+      // The thread is behind a file: it can take focus once the file is gone.
+      roomView.set({ file: null })
+      requestAnimationFrame(() => focusBeside(how.atRequest === true))
+      return
+    }
     roomView.set({ besideId: threadId, file: null })
   }, [command, app])
 
@@ -612,10 +619,12 @@ export function WatcherView({ now: fixedNow, update = null }: {
   // worker's file on another machine, so it is read from the thread whose folder holds it.
   const hostNow = useRef(state?.host)
   hostNow.current = state?.host
-  const openLinkedFile = useCallback<LinkedFileRoute>((threadId, path) => {
-    const reader = threadId === watcherId && hostNow.current ? linkedFileThread(hostNow.current, threadId, path) : threadId
-    roomView.set({ file: { threadId: reader, path, revision: (roomView.get().file?.revision ?? 0) + 1 } })
-    setFocusedPane('beside')
+  const linkedFileRoute = useMemo<LinkedFileRoute>(() => {
+    const readerOf = (threadId: string, path: string): string => threadId === watcherId && hostNow.current ? linkedFileThread(hostNow.current, threadId, path) : threadId
+    return { readerOf, open: (threadId, path) => {
+      roomView.set({ file: { threadId: readerOf(threadId, path), path, revision: (roomView.get().file?.revision ?? 0) + 1 } })
+      setFocusedPane('beside')
+    } }
   }, [watcherId])
 
   const closeBeside = useCallback((): void => {
@@ -741,7 +750,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const linkedThread = linkedFile === null ? undefined : state?.host.threads.find(thread => thread.id === linkedFile.threadId)
   const beside = (besideRow !== undefined || linkedFile !== null) && state !== null
   const share = shownShare(width, view.share)
-  return <LinkedFileRouteContext.Provider value={openLinkedFile}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
+  return <LinkedFileRouteContext.Provider value={linkedFileRoute}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
     <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
@@ -754,11 +763,12 @@ export function WatcherView({ now: fixedNow, update = null }: {
               {watcherContent}
             </section>}</Marked>
             {beside ? <>
-              <BesideDivider width={width} share={view.share} controls={BESIDE_PANE_ID} />
-              {linkedFile !== null ? <BesideLinkedFile file={linkedFile} waiting={besideRow?.thread.title} onFocus={() => setFocusedPane('beside')}
-                host={linkedThread?.remoteHost ? state?.connections?.find(item => item.hostId === linkedThread.hostId)?.name ?? linkedThread.hostLabel : undefined} /> : besideRow !== undefined ? <BesidePane key={besideRow.thread.id} row={besideRow} state={state} command={command} store={agents.threadDrafts} focused={focusedPane === 'beside'} underControls
+              <BesideDivider width={width} share={view.share} controls={linkedFile !== null ? BESIDE_FILE_ID : BESIDE_PANE_ID} />
+              {besideRow !== undefined ? <BesidePane key={besideRow.thread.id} row={besideRow} state={state} command={command} store={agents.threadDrafts} focused={focusedPane === 'beside' && linkedFile === null} underControls
                 error={focusedPane === 'beside' ? error : null} now={fixedNow} onFocus={() => setFocusedPane('beside')} onClose={closeBeside}
-                onOpenInThreads={() => openThread(besideRow.thread.id, { inThreads: true })} /> : null}
+                onOpenInThreads={() => openThread(besideRow.thread.id, { inThreads: true })} behindFile={linkedFile !== null} /> : null}
+              {linkedFile !== null ? <BesideLinkedFile file={linkedFile} waiting={besideRow?.thread.title} onFocus={() => setFocusedPane('beside')}
+                host={linkedThread?.remoteHost ? state?.connections?.find(item => item.hostId === linkedThread.hostId)?.name ?? linkedThread.hostLabel : undefined} /> : null}
             </> : null}
           </div>
         </div>

@@ -69,6 +69,13 @@ describe('the linked file panel', () => {
     await waitFor(() => expect(files.previewLink).toHaveBeenCalledTimes(2))
   })
 
+  it('says each refusal in its own words rather than the English the service answered in', async () => {
+    const files = bridge({ previewLink: vi.fn(async () => ({ ok: false as const, error: { code: 'invalid-request' as const, message: 'from the service' } })) })
+    render(<LinkedFilePanel file={file} bridge={files} onClose={() => undefined} />)
+    expect(await screen.findByText('This link does not lead to a Markdown file. Nothing was opened.')).toBeInTheDocument()
+    expect(screen.queryByText('from the service')).toBeNull()
+  })
+
   it('closes on Escape, on its close and on Back, and names the thread waiting behind it', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
@@ -117,10 +124,18 @@ describe('where a press opens the file', () => {
 
   it('takes the press where a room says, leaving Tools alone', () => {
     const store = new ToolsPanelStore()
-    const route = vi.fn()
+    const route = { open: vi.fn(), readerOf: vi.fn(() => 'worker') }
     threadLinkRouter('thread', 'Thread', undefined, store, true, undefined, route).openFile!('plan.md')
-    expect(route).toHaveBeenCalledWith('thread', 'plan.md')
+    expect(route.open).toHaveBeenCalledWith('thread', 'plan.md')
     expect(store.getSnapshot().open).toBe(false)
+  })
+
+  it('asks the machine that holds the file to show it in its folder, when a room knows which that is', async () => {
+    const revealLink = vi.fn(async () => ({ ok: true as const, value: {} }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink } }
+    const route = { open: vi.fn(), readerOf: vi.fn(() => 'worker') }
+    await threadLinkRouter('watcher', 'Watcher', undefined, new ToolsPanelStore(), true, undefined, route).revealFile!('/home/me/project/plan.md')
+    expect(revealLink).toHaveBeenCalledWith({ threadId: 'worker', path: '/home/me/project/plan.md' })
   })
 
   it('returns focus to the link, or to the fallback when the link is gone', () => {
@@ -144,6 +159,9 @@ describe('whose machine reads a link in Watcher\'s reply', () => {
   it('reads a full path inside a thread\'s folder from that thread, the deepest folder first', () => {
     expect(linkedFileThread(host, 'watcher', '/home/me/project/docs/plan.md')).toBe('forge')
     expect(linkedFileThread(host, 'watcher', '/home/me/project/.worktrees/a/plan.md')).toBe('deeper')
+    // Watcher's own folder does not hide a deeper one inside it, and wins a tie.
+    expect(linkedFileThread({ ...host, threads: [thread('outer', '/srv/repo'), thread('inner', '/srv/repo/.worktrees/task')] }, 'outer', '/srv/repo/.worktrees/task/plan.md')).toBe('inner')
+    expect(linkedFileThread({ ...host, threads: [thread('other', '/srv/repo'), thread('outer', '/srv/repo')] }, 'outer', '/srv/repo/plan.md')).toBe('outer')
     // A thread sharing its project's checkout holds what the project holds.
     expect(linkedFileThread(host, 'watcher', '/srv/checkout/plan.md')).toBe('shared')
   })

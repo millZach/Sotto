@@ -56,9 +56,13 @@ export const BrowserPageRouteContext = createContext<BrowserPageRoute | undefine
 
 /**
  * Where a Markdown file a message linked opens, for a page with no Tools panel beside its panes (Watcher's room). Left
- * unset, Tools > Files beside the panes shows it.
+ * unset, Tools > Files beside the panes shows it. `readerOf` names the thread whose machine a link's path is on, which is
+ * not always the thread whose message names it.
  */
-export type LinkedFileRoute = (threadId: string, path: string) => void
+export interface LinkedFileRoute {
+  open(threadId: string, path: string): void
+  readerOf(threadId: string, path: string): string
+}
 export const LinkedFileRouteContext = createContext<LinkedFileRoute | undefined>(undefined)
 
 /**
@@ -80,14 +84,14 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
   return {
     show: showPage,
     openFile(path) {
-      if (showFile) showFile(threadId, path)
+      if (showFile) showFile.open(threadId, path)
       else store.showLinkedFile(threadId, path, focused)
     },
     async revealFile(path) {
       const files = (window.sotto as { files?: FilesBridge } | undefined)?.files
       if (!files?.revealLink) return { ok: false, message: t`Sotto cannot show files from here. Nothing was opened.` }
       try {
-        const result = await files.revealLink({ threadId, path })
+        const result = await files.revealLink({ threadId: showFile?.readerOf(threadId, path) ?? threadId, path })
         return result.ok ? { ok: true } : { ok: false, message: result.error.message }
       } catch { return { ok: false, message: t`Sotto could not show this file. Nothing was opened.` } }
     },

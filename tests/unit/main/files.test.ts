@@ -61,6 +61,9 @@ describe('a Markdown file a message links to', () => {
   it('refuses a link that leads anywhere but a Markdown file, whatever it is called', async () => {
     await writeFile(join(root, 'secret.txt'), 'key'); await writeFile(join(root, 'notes.md'), 'notes'); await mkdir(join(root, 'folder.md'))
     error(await read('secret.txt'), 'invalid-request')
+    // A real file whose name only looks like a link's location after Markdown's ending is not Markdown.
+    await writeFile(join(root, 'secret.md#L1'), 'key')
+    error(await read('secret.md#L1'), 'invalid-request')
     error(await read('folder.md'), 'not-file')
     error(await read('missing.md'), 'path-unavailable')
     error(await read('notes.md', 'unknown'), 'thread-unavailable')

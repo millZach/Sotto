@@ -56,6 +56,7 @@
 .linked-file__back-button:hover { color: var(--tt-text); }
 .linked-file__notice { flex: none; margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .linked-file .files-preview__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.watcher-room .thread-pane.watcher-beside[data-behind-file] { visibility: hidden; }
 .threads-view .watcher-beside .linked-file .files-preview__head { padding-right: calc(6px + var(--threads-pane-inset, 0px)); -webkit-app-region: drag; }
 .threads-view .watcher-beside .linked-file .files-preview__actions { -webkit-app-region: no-drag; }
 .files-preview__loading { margin: 0; padding: 16px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }

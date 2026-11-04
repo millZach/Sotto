@@ -1845,6 +1845,10 @@ msgstr "Make the test iPhone medium"
 msgid "Make the test iPhone small"
 msgstr "Make the test iPhone small"
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Markdown files open here up to 512 KB. Nothing was opened."
+msgstr "Markdown files open here up to 512 KB. Nothing was opened."
+
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Marking ready..."
 msgstr "Marking ready..."
@@ -3384,6 +3388,14 @@ msgstr "This file could not be read. Nothing was opened."
 msgid "This file is no longer here."
 msgstr "This file is no longer here."
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This file is not on the computer this thread runs on, or it has moved. Nothing was opened."
+msgstr "This file is not on the computer this thread runs on, or it has moved. Nothing was opened."
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This file is not text, so it cannot be read here. Nothing was opened."
+msgstr "This file is not text, so it cannot be read here. Nothing was opened."
+
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "This file points outside the working folder."
 msgstr "This file points outside the working folder."
@@ -3403,6 +3415,18 @@ msgstr "This folder is on the host machine. Open it there."
 #: src/renderer/src/tools/AgentContinue.tsx
 msgid "This handover is thin. {providerName} keeps a subagent’s working history inside its own session, where Sotto can’t fork it, so the new thread knows only the task and the result."
 msgstr "This handover is thin. {providerName} keeps a subagent’s working history inside its own session, where Sotto can’t fork it, so the new thread knows only the task and the result."
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This link does not lead to a Markdown file. Nothing was opened."
+msgstr "This link does not lead to a Markdown file. Nothing was opened."
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This link is not a file. Nothing was opened."
+msgstr "This link is not a file. Nothing was opened."
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This link points outside the thread’s folder. Nothing was opened."
+msgstr "This link points outside the thread’s folder. Nothing was opened."
 
 #. {base} is a Git branch name; {how} is the merge method, as in "squash and merge".
 #: src/renderer/src/tools/pullRequestSurface.logic.ts

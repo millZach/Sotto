@@ -22,6 +22,7 @@ export { roomView, type RoomView } from './watcherRoomView'
 /** The beside pane's composer; Watcher's own is `watcher-prompt`. */
 export const BESIDE_PROMPT_ID = 'watcher-beside-prompt'
 export const BESIDE_PANE_ID = 'watcher-beside-pane'
+export const BESIDE_FILE_ID = 'watcher-beside-file'
 /** Where Escape belongs to something inside the pane: an open popup, or the trigger of one (a picker, a menu button). */
 const POPUP_OWNS_ESCAPE = '[role="dialog"], [role="menu"], [role="listbox"], [aria-expanded="true"]:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])'
 
@@ -149,7 +150,7 @@ export function shownShare(width: number, share: number): number { return clamp(
  * to the Threads page, with the thread selected, as Open in Threads does: its pull request badge opens Tools on the
  * pull request and says so, and a link that opens in Sotto's browser opens Tools on that page.
  */
-export function BesidePane({ row, state, command, store, focused, underControls, error, now, onFocus, onClose, onOpenInThreads }: {
+export function BesidePane({ row, state, command, store, focused, underControls, error, now, onFocus, onClose, onOpenInThreads, behindFile = false }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: AgentConnection['command']
@@ -162,6 +163,8 @@ export function BesidePane({ row, state, command, store, focused, underControls,
   readonly onFocus: () => void
   readonly onClose: () => void
   readonly onOpenInThreads: () => void
+  /** A linked file stands over it: it stays drawn, with its folds, draft and scroll as they are, and out of reach. */
+  readonly behindFile?: boolean
 }): ReactNode {
   const { t } = useLingui()
   const threadId = row.thread.id
@@ -173,7 +176,7 @@ export function BesidePane({ row, state, command, store, focused, underControls,
   }), [onOpenInThreads, t])
   const pages = useMemo<BrowserPageRoute>(() => page => { toolsPanelStore.showBrowserPageOf(page); onOpenInThreads(); return { ok: true } }, [onOpenInThreads])
   const landFork = useCallback((forkId: string): void => landForkBeside(threadId, forkId), [threadId])
-  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><ForkLandingContext.Provider value={landFork}><Marked>{marks => <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-region="pane" {...marks} data-thread-id={threadId} data-focused={focused || undefined}
+  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><ForkLandingContext.Provider value={landFork}><Marked>{marks => <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-behind-file={behindFile || undefined} inert={behindFile} data-region="pane" {...marks} data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {
@@ -195,7 +198,7 @@ export function BesidePane({ row, state, command, store, focused, underControls,
 
 /**
  * A Markdown file a message linked, in the beside pane's place (ADR-0120, November 3 amendment, Zach's pick A). Escape, its
- * close and Back to the thread put the file away; a thread that was beside Watcher comes back with its draft and reading place.
+ * close and Back to the thread put the file away, and a thread that was beside Watcher, drawn behind it, shows again as it was.
  */
 export function BesideLinkedFile({ file, host, waiting, onFocus }: {
   readonly file: LinkedFile
@@ -209,7 +212,7 @@ export function BesideLinkedFile({ file, host, waiting, onFocus }: {
     roomView.set({ file: null })
     requestAnimationFrame(() => focusLinkOpener(() => document.getElementById(BESIDE_PROMPT_ID)?.focus()))
   }, [])
-  return <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-region="pane" data-under-controls="" role="region" aria-label={t`Markdown file`}
+  return <section id={BESIDE_FILE_ID} className="thread-pane watcher-beside" data-region="pane" data-under-controls="" role="region" aria-label={t`Markdown file`}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}>
     <LinkedFilePanel key={file.path} file={file} host={host} backTo={waiting} onClose={close} />
   </section>

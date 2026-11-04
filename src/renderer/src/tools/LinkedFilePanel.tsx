@@ -78,11 +78,25 @@ export function LinkedFilePanel({ file, host, backTo, onClose, bridge = windowFi
   </div>
 }
 
-/** What main said about a file it would not read, in its own words: a link can fail in more ways than a file in the tree. */
+/**
+ * Why a file was not read. The service, which also runs on a paired host, answers in English, so each known refusal is said
+ * here in the interface's language; what could not be reached says why in main's own words, which are already translated.
+ */
 function LinkedFileProblem({ error, onRetry }: { readonly error: FilesError; readonly onRetry: () => void }): ReactNode {
   const { t } = useLingui()
+  const words = (): string => {
+    switch (error.code) {
+      case 'path-unavailable': return t`This file is not on the computer this thread runs on, or it has moved. Nothing was opened.`
+      case 'path-outside-workspace': return t`This link points outside the thread’s folder. Nothing was opened.`
+      case 'not-file': return t`This link is not a file. Nothing was opened.`
+      case 'invalid-request': return t`This link does not lead to a Markdown file. Nothing was opened.`
+      case 'too-large': return t`Markdown files open here up to 512 KB. Nothing was opened.`
+      case 'binary': return t`This file is not text, so it cannot be read here. Nothing was opened.`
+      default: return error.message || t`This file could not be read. Nothing was opened.`
+    }
+  }
   return <div className="files-problem" role="status">
-    <strong>{error.message || t`This file could not be read. Nothing was opened.`}</strong>
+    <strong>{words()}</strong>
     <button type="button" className="files-link tt-focusable" onClick={onRetry}>{t`Read again`}</button>
   </div>
 }

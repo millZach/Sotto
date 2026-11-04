@@ -4,7 +4,7 @@ import { open, opendir, realpath, stat, type FileHandle } from 'node:fs/promises
 import { homedir } from 'node:os'
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { TextDecoder } from 'node:util'
-import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkRequestSchema, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema, isMarkdownPath, withoutLinkLocation,
+import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLinkRequestSchema, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema, isMarkdownFileName, withoutLinkLocation,
   type FileLink, type FileLinkPreview, type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
 import { rasterImage } from './imagePreview'
 
@@ -256,7 +256,7 @@ export class FilesService {
       if (!found) return fail('path-unavailable', 'This file is not on the computer this thread runs on, or it has moved. Nothing was opened.')
       if (found.relativeToThread && !inside(workspace.root, found.absolutePath)) return fail('path-outside-workspace', 'This link points outside the thread’s folder. Nothing was opened.')
       if (!found.stats.isFile()) return fail('not-file', 'This link is not a file. Nothing was opened.')
-      if (!isMarkdownPath(found.written) || !isMarkdownPath(found.absolutePath)) return fail('invalid-request', 'This link does not lead to a Markdown file. Nothing was opened.')
+      if (!isMarkdownFileName(found.written) || !isMarkdownFileName(found.absolutePath)) return fail('invalid-request', 'This link does not lead to a Markdown file. Nothing was opened.')
       if (found.stats.size > BigInt(FILES_MAX_TEXT_BYTES)) return fail('too-large', 'Markdown files open here up to 512 KB. Nothing was opened.')
       const file = await open(found.absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
       try {

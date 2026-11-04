@@ -570,7 +570,8 @@ describe('image viewer', () => {
 
 describe('a link to a Markdown file', () => {
   const opened = vi.fn()
-  const inThread = (text: string): ReturnType<typeof render> => render(<LinkedFileRouteContext.Provider value={opened}><ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text={text} /></ThreadWebLinks></LinkedFileRouteContext.Provider>)
+  const route = { open: opened, readerOf: (threadId: string): string => threadId }
+  const inThread = (text: string): ReturnType<typeof render> => render(<LinkedFileRouteContext.Provider value={route}><ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text={text} /></ThreadWebLinks></LinkedFileRouteContext.Provider>)
   beforeEach(() => { owl.panel = true; opened.mockClear(); (window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn(async () => ({ ok: true as const, value: {} })) } } })
   afterEach(() => { owl.panel = false; delete (window as { sotto?: unknown }).sotto })
 

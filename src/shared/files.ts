@@ -46,8 +46,10 @@ export type FileLinkPreview = z.infer<typeof fileLinkPreviewSchema>
 /** A path as a link wrote it, without a trailing location such as `:12`, `#L12` or `#page=2`. */
 export const withoutLinkLocation = (path: string): string => path.replace(/(?:#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?|#page=\d+|:\d+(?:[:-]\d+)?)$/u, '')
 const MARKDOWN_ENDING = /\.(?:md|markdown|mdown)$/iu
-/** Whether a file's name ends as Markdown's do, with or without a link's trailing location. */
-export const isMarkdownPath = (path: string): boolean => MARKDOWN_ENDING.test(path) || MARKDOWN_ENDING.test(withoutLinkLocation(path))
+/** Whether a real file's name ends as Markdown's do. */
+export const isMarkdownFileName = (name: string): boolean => MARKDOWN_ENDING.test(name)
+/** Whether a path a link wrote names a Markdown file, with or without a trailing location. */
+export const isMarkdownPath = (path: string): boolean => isMarkdownFileName(path) || isMarkdownFileName(withoutLinkLocation(path))
 
 export const fileWorkspaceSchema = z.object({
   threadId: z.string(), projectId: z.string(), workingDirectory: z.string(), workspaceId: workspaceIdSchema,

@@ -182,7 +182,7 @@ for (const appearance of ['dark', 'light'] as const) {
         await page.getByRole('link', { name: `Open ${file} in the side panel` }).click()
         const back = page.getByRole('button', { name: /^Back to /u })
         await expect(back).toBeVisible()
-        await expect(pane.locator('.thread-workspace__transcript')).toHaveCount(0)
+        await expect(pane.locator('.thread-workspace__transcript')).toBeHidden()
         await page.screenshot({ path: join(evidence, `watcher-file-over-thread-${appearance}-1280.png`), animations: 'disabled' })
         await back.click()
         await expect(pane.locator('.thread-workspace__transcript')).toBeVisible()
