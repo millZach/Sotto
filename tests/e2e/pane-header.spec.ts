@@ -137,8 +137,7 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     await promptField(pane(page, 'wav-stall')).click()
 
     // Dragging the divider moves the left pane's edge and its controls with it, and moves nothing in either header against
-    // its own pane's right edge: the right pane's controls stay where they were on screen. Only Watch, first in the row, takes
-    // its word back as the right pane passes 720px, which grows it leftward into the room beside the name.
+    // its own pane's right edge: the right pane's controls stay where they were on screen.
     const leftBefore = await fromRight(left), rightBefore = await fromRight(right)
     const rightOnScreen = await right.locator('.thread-workspace__actions').boundingBox()
     const divider = page.getByRole('separator', { name: 'Resize panes' })
@@ -148,9 +147,8 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     await page.mouse.move(box.x - 160, box.y + box.height / 2, { steps: 12 })
     await page.mouse.up()
     expect(await fromRight(left)).toEqual(leftBefore)
-    expect((await fromRight(right)).slice(1)).toEqual(rightBefore.slice(1))
-    const rightNow = (await right.locator('.thread-workspace__actions').boundingBox())!
-    expect(rightNow.x + rightNow.width).toBeCloseTo(rightOnScreen!.x + rightOnScreen!.width, 0)
+    expect(await fromRight(right)).toEqual(rightBefore)
+    expect((await right.locator('.thread-workspace__actions').boundingBox())!.x).toBeCloseTo(rightOnScreen!.x, 0)
     await divider.dblclick()
 
     // Move pane from the menu, by the keyboard: the panes trade places and focus stays on the ··· button.

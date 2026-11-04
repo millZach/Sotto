@@ -10,8 +10,6 @@ Amended by [ADR-0183](0183-a-paired-hosts-thread-opens-its-terminal-over-ssh.md)
 
 Amended by [ADR-0177](0177-the-council-puts-one-question-to-threads-on-several-providers.md) on November 3, 2026: on Owl, while the Council is on, a Council button sits right after Watch, before Tools, and the drawer has a Council tab before its shells.
 
-Amended November 4, 2026, by the design pass on the shell: decision 5 is reversed (see the amendment at the end).
-
 Amends [ADR-0163](0163-a-pane-header-is-the-git-action-watch-one-menu-and-close.md): this replaces its decision 3 and the Tools and Terminal drawer rows of its decision 2, and adds both buttons to its decision 1. It also amends [ADR-0049](0049-a-thread-pane-has-its-own-terminal-drawer.md), since a thread on a paired host now shows the drawer's button.
 
 ## Context
@@ -45,11 +43,3 @@ The second part had another cause. Sotto hides the drawer on a thread on a paire
 - **Hide the button on a paired host, as before ADR-0163.** Zach would still see no Terminal symbol on the threads he was looking at.
 - **Open Tools below the thread**, as his first words read. A new layout for a panel built to stand beside the panes; he kept it where it was.
 - **A fixed floor on the name.** The prototype's first version did this, and Zach caught the gap it left after short names. Capping the project and branch instead cut them off in wide windows where there was room. A floor estimated from the name's character count, which the prototype he approved used, still left a small gap after narrow letters, so the build measures the name itself.
-
-## November 4, 2026 amendment: the name is served first
-
-Decision 5 gave the name the row's leftovers, and with Tools open or two panes side by side that left "Thread…" at 1600 wide and "Thre." at 820, beside a whole project and branch. Reviewers comparing Sotto with three other apps named it the header's worst fault, and the name is the one thing in the row that tells panes apart.
-
-The buttons still always fit, in the same order and places. Of the rest, the name now comes first: whole if the row can hold it, cut only if it cannot, and capped at 62% of a wide pane (or 22em) so a very long name leaves room for where the thread works. Everything else stands in what is left, in a box that composes by its own width (the container `pane-where`), and gives way a whole part at a time rather than as a cut-off word: the workspace, then the project, then the working copy, then the branch, then the pull request's number. The fixed widths this replaces (720px and 560px for the pane, 980px for the window) knew only the pane, not how long its name is. An open list stays shown whatever the room, so the chords that open the branch and workspace lists keep working.
-
-In a pane under 720px, Watch is its owl alone, with its name unchanged for a screen reader. Beside the branch controls the working copy shows its icon alone, since both named the branch. A new thread's header leaves the project to its greeting, and its greeting leaves the branch to the branch controls.

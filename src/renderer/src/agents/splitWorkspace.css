@@ -77,10 +77,21 @@
    1000px, its padding tightens, so panes of an even split start their transcripts level. */
 @container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) {
   .threads-view .thread-pane .thread-workspace__head { padding-left: 14px; }
+  .threads-view .thread-pane .working-copy__trigger { max-width: 160px; }
   .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px calc(22px + var(--thread-compose-height, 0px)); }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
   .threads-view .thread-pane .thread-message[data-role='user'] { --bubble-inset: 24px; }
+}
+
+/* The project crumb is the first thing a narrow pane gives up; the thread's name is what identifies it. With the header's
+   controls down to the Git action, Watch, ··· and close (ADR-0163), a pane of a two-pane split at 1600 keeps the title,
+   project and folder whole, so the project goes only below 560px. */
+@container thread-pane (max-width: 560px) {
+  .threads-view .thread-pane .thread-workspace__crumb { display: none; }
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy]::before,
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
 }
 
 /* A short pane (rows of panes on a laptop, or a short window) composes like a short window does, so the transcript keeps

@@ -28,50 +28,22 @@
 .thread-workspace__head { display: flex; align-items: center; gap: 4px; flex: none; height: 44px; padding: 0 6px 0 18px; -webkit-app-region: drag; }
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
 .thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
-.thread-workspace__title:has(> .thread-workspace__where) { flex: 1 1 0; margin-right: 0; }
 .thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
-/* The name is what tells panes apart, so it is served first (ADR-0182, November 4 amendment): whole if the row can hold it,
-   and only then cut. A very long name still leaves a wide pane room for where the thread works. */
-.thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; max-width: max(22em, 62cqi); margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Everything beside the name stands in what is left, and gives way a whole part at a time as that narrows, so nothing is
-   drawn as "s…" and nothing is drawn over its neighbour: first the workspace, then the project, then the branch, then the
-   pull request's number. An open list is shown whatever the room, so the chords that open one keep working. The box is
-   empty row too, so its bare stretch still moves the window; in a split, the crumb's words stay the pane's handle. */
-.thread-workspace__head .thread-workspace__title > .thread-workspace__where { position: relative; z-index: 30; display: flex; flex: 1 1 0; align-items: center; gap: 4px; align-self: stretch; min-width: 0; padding-inline: 2px; overflow-x: clip; container: pane-where / inline-size; -webkit-app-region: drag; }
-.thread-workspace__head .thread-workspace__title > .thread-workspace__where:has([aria-expanded='true']) { overflow-x: visible; }
-.thread-workspace__head .thread-workspace__title > .thread-workspace__where:has(.thread-workspace__tag) { min-width: min(148px, 40cqi); }
-.thread-workspace__head .thread-workspace__crumb { -webkit-app-region: no-drag; }
-.thread-workspace__head .thread-workspace__branches { flex: 0 1 auto; min-width: 0; -webkit-app-region: no-drag; }
+.thread-workspace__branches { min-width: 0; }
 .thread-workspace__branches:empty { display: none; }
-.thread-workspace__branches .branch-toolbar__pr { flex: none; }
-/* A branch's name reads whole while the row has the room. */
-.thread-workspace__branches .branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(260px, 100%); }
-.thread-workspace__crumb { display: flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: 100%; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+/* The name gives way first, so what stands beside it stays whole while there is room for it (ADR-0182). It stops at a
+   floor, or at its own width if that is less, so a short name is never held open. */
+.thread-workspace__head h2 { flex: 0 1000 auto; min-width: calc-size(max-content, min(size, 14em, 30cqi)); margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* In a narrow pane the name keeps the row, and the project crumb is what gives way. */
+@container thread-pane (max-width: 720px) { .thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; } }
+.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
-.thread-workspace__crumb > span:first-of-type { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A crumb holding the working copy gives way no faster than the branch controls after it (ADR-0161): its project name
+   shortens, and the working copy keeps its own width, so it is never drawn under them. */
+.thread-workspace__crumb[data-has-working-copy] { flex-shrink: 1; }
+.thread-workspace__crumb[data-has-working-copy] > span:first-of-type { flex: 0 1 auto; min-width: 0; }
 .thread-workspace__crumb > .working-copy { flex: none; }
-/* With the branch controls beside it the working copy needn't say the branch too: its icon stands for it, its panel and name unchanged. */
-.thread-workspace__where:has(.branch-toolbar__branch) .working-copy__trigger { padding-inline: 5px; }
-.thread-workspace__where:has(.branch-toolbar__branch) .working-copy__trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-/* A new thread's greeting names its project, so the header does not; beside the Workspace chooser, its working copy adds nothing yet. */
-.thread-pane[data-greeting] .thread-workspace__crumb > span:first-of-type, .thread-pane[data-greeting] .thread-workspace__crumb::before { display: none; }
-.thread-pane[data-greeting] .thread-workspace__where:has(.branch-toolbar__menu) .working-copy { display: none; }
-@container pane-where (width < 420px) { .thread-workspace__branches .branch-toolbar__menu:not(:has([aria-expanded='true'])) { display: none; } }
-@container pane-where (width < 300px) {
-  .thread-workspace__where:has(.branch-toolbar) .thread-workspace__crumb > span:first-of-type, .thread-workspace__where:has(.branch-toolbar) .thread-workspace__crumb::before { display: none; }
-}
-@container pane-where (width < 180px) {
-  .thread-workspace__crumb > span:first-of-type, .thread-workspace__crumb::before { display: none; }
-  .thread-workspace__where:has(.branch-toolbar) .working-copy { display: none; }
-  .thread-workspace__branches .branch-toolbar__end > .branch-toolbar__separator { display: none; }
-}
-@container pane-where (width < 120px) {
-  .working-copy__trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .thread-workspace__branches .branch-toolbar__picker:not(:has([aria-expanded='true'])) { display: none; }
-}
-@container pane-where (width < 56px) {
-  .thread-workspace__branches .branch-toolbar__pr, .thread-workspace__crumb:not(:has(.thread-workspace__tag)) { display: none; }
-}
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
@@ -417,6 +389,12 @@
 /* Short windows and large display scaling: the transcript keeps the height, the type keeps its size. */
 @media (max-height: 760px) {
   .thread-workspace__transcript { padding-block: 18px; }
+  /* The project crumb is the first thing a narrow row gives up; the thread's name is what identifies the pane. */
+  .thread-workspace__crumb { display: none; }
+  /* The project name may give way; the working-copy control remains a keyboard-accessible action. */
+  .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
+  .thread-workspace__crumb[data-has-working-copy]::before, .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
+  .thread-workspace__crumb .working-copy__trigger { max-width: 160px; }
   .thread-workspace__compose { padding-block: 6px 12px; }
   /* The header is already one row at its smallest; the transcript and composer share what is left. */
   .thread-pane > .thread-transcript { min-height: min(120px, 24%); }

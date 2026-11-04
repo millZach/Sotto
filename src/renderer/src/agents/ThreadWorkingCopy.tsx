@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Folder, FolderGit2, FolderMinus, FolderOpen, RefreshCw, Undo2 } from 'lucide-react'
+import { Folder, FolderGit2, FolderMinus, FolderOpen, GitBranch, RefreshCw, Undo2 } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -139,7 +139,7 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
     window.addEventListener('resize', update)
     return () => { observer?.disconnect(); window.removeEventListener('resize', update) }
   }, [open])
-  const Icon = facts.status === 'pending' || facts.status === 'error' || facts.branch || facts.repositoryRoot ? FolderGit2 : Folder
+  const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.branch || facts.repositoryRoot ? GitBranch : Folder
   const label = facts.label, branch = facts.branch
   return <span className="working-copy" ref={root} data-status={facts.status}
     onKeyDown={event => { if (event.key === 'Escape' && open && !reclaiming) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>

@@ -29,8 +29,7 @@
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watch-toggle:active:not(:disabled):not([aria-pressed='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
-/* In a narrow pane the owl alone says Watch, and the thread's name keeps the room. */
-@container thread-pane (width < 720px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
+@container thread-pane (width < 520px) { .watcher-beside .watch-toggle { padding: 0 7px; } .watcher-beside .watch-toggle__text { display: none; } }
 /* The owl among a sidebar row's actions, in the accent while pressed. */
 .thread-nav__action.watch-row-toggle[aria-pressed='true'] { color: var(--tt-accent-text); }
 /* The owl at the end of a row in All threads: a ring when not watched, lit when watched. It spans the row's first two lines. */
