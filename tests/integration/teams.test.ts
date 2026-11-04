@@ -356,7 +356,15 @@ describe('a teammate\'s words', () => {
     await settled(drake.service, asked(drake.service.ask({ ask: 'merge-priority', words: 'more secret' }, 'd2')))
     await vi.waitFor(async () => expect(await readFile(join(directory, 'team-links.json'), 'utf8')).toContain('more secret'))
     keep = false
-    await service.close(); await service.start()
+    // Main's privacy pass also runs before Teams has started, and must not write over links it has not read.
+    await service.close()
+    const again = new TeamService({ directory, credentials: memoryCredentials(), tailscale: tailscale(net, 'zach.tail1.ts.net'), threads: () => FACTS, projects: () => [], write: async () => 'hello', anchor: () => null,
+      keepHistory: () => keep, openExternal: async () => undefined, hostname: () => 'zach', fetch: net.fetchFor('zach') })
+    again.privacyChanged()
+    await again.start()
+    cleanups.push(() => again.close())
+    expect(again.get().links.map(link => link.name)).toEqual(['drake'])
+    await service.start()
     expect(service.get().messages).toEqual([])
     expect(await readFile(join(directory, 'team-links.json'), 'utf8')).not.toContain('more secret')
   })

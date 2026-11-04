@@ -192,8 +192,8 @@ export class TeamService {
         ...item.answer ? { words: item.answer } : {} })) }
   }
 
-  /** Keep local history changed: with it off, what was saved of a teammate's words goes now. */
-  privacyChanged(): void { if (!this.options.keepHistory()) void this.save() }
+  /** Keep local history changed: with it off, what was saved of a teammate's words goes now. Before `start` nothing is read, so nothing is written. */
+  privacyChanged(): void { if (this.started && !this.options.keepHistory()) void this.save() }
 
   /** A message of the user's is going to Watcher. Moves what Watcher may read, and says whether its note should mention any. */
   userMessageGoing(): boolean {
