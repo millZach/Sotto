@@ -2047,7 +2047,10 @@ export class DelegationService {
     return !head || !isWakeUpOf(thread, head) && !this.records.some(record => record.delegatedThreadId === thread.id && record.messageId === head)
   }
   private pausedThread(thread: AgentThread): boolean {
-    return this.paused.has(thread.id) || this.humanTurnRunning(thread) || this.options.control.hasUserDraft(thread.id)
+    return this.humanTurnRunning(thread) || this.userHolds(thread)
+  }
+  private userHolds(thread: AgentThread): boolean {
+    return this.paused.has(thread.id) || this.options.control.hasUserDraft(thread.id)
   }
   /** Ready models, at most `MODELS_LISTED` of each provider, or of the one named: a provider such as Muse can offer hundreds. */
   private ready(snapshot: AgentHostSnapshot, provider?: string): AgentModel[] {
@@ -2369,13 +2372,15 @@ export class DelegationService {
   /**
    * Asked as the brief dispatches: the delegation still stands, the user is not working in the thread, and its newest user
    * message is the one the delegating thread saw when it asked, so a brief never lands on top of a newer instruction.
+   * `onItsWay` is the adapter asking while it sends. Grok Build asks once more after marking the turn running, so a running
+   * turn then is this brief's own; a turn the user began first has already changed the newest message or refused the send.
    */
-  private guardSend(delegationId: string): void {
+  private guardSend(delegationId: string, onItsWay = false): void {
     this.guardLive(delegationId)
     const record = this.record(delegationId)!
     const thread = this.snapshot().threads.find(item => item.id === record.delegatedThreadId)
     if (!thread) { this.dispatchRefusals.set(delegationId, 'provider'); throw new Error('The delegated thread is gone. Nothing was sent.') }
-    if (this.pausedThread(thread)) { this.dispatchRefusals.set(delegationId, 'paused'); throw new Error('The user is working in this thread. Nothing was sent.') }
+    if (onItsWay ? this.userHolds(thread) : this.pausedThread(thread)) { this.dispatchRefusals.set(delegationId, 'paused'); throw new Error('The user is working in this thread. Nothing was sent.') }
     if (userHead(thread) !== record.expectedLastUserMessageId) { this.dispatchRefusals.set(delegationId, 'target-changed'); throw new Error('This thread received another instruction. Nothing was sent.') }
   }
   /** Sends a waiting brief, known while it is on its way so that a cancel can wait for where it landed. */
@@ -2398,7 +2403,7 @@ export class DelegationService {
       let state: DelegationRecord['deliveryState'] = 'failed'
       try {
         const result = await this.options.control.commandFromDelegation({ type: 'manual-send', threadId: record.delegatedThreadId, draftId: record.draftId, text: brief },
-          () => this.guardSend(delegationId))
+          () => this.guardSend(delegationId, true))
         const delivery = result.deliveries?.find(item => item.draftId === record.draftId && item.threadId === record.delegatedThreadId)
         state = delivery?.status === 'accepted' ? 'accepted' : delivery?.status === 'uncertain' || delivery?.status === 'submitting' ? 'uncertain'
           : result.error ? 'failed' : 'accepted'
