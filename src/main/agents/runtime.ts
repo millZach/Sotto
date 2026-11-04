@@ -179,7 +179,7 @@ export interface AgentRuntimeOptions {
   attachAnyFile?: boolean
   /** Images dropped on a question card go with the answer (ADR-0176): the `answer-images` Owl answer, read once at start. */
   answerImages?: boolean
-  /** A chip pressed while a thread works is kept for its next turn (ADR-0190): the `next-turn-choice` Owl answer, read once at start. */
+  /** A chip pressed while a thread works is kept for its next turn (ADR-0192): the `next-turn-choice` Owl answer, read once at start. */
   nextTurnChoice?: boolean
   /**
    * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex

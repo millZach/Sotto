@@ -255,7 +255,7 @@ describe('the startup shell cache', () => {
     expect(localStorage.getItem(SHELL_CACHE_KEY)).toBeNull()
   })
 
-  it('never keeps a choice for a thread’s next turn, which lives in main’s memory alone (#2158, ADR-0190)', () => {
+  it('never keeps a choice for a thread’s next turn, which lives in main’s memory alone (#2158, ADR-0192)', () => {
     const state = { ...fullState([thread('workshop', [])]), nextTurnSettings: [{ threadId: 'workshop', runtimeMode: 'full-access' as const }] }
     writeShellCache(state)
     expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('nextTurnSettings')

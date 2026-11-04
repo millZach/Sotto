@@ -66,7 +66,7 @@ export const SPEED_NOT_CARRIED = 'speed-not-carried'
 type ThreadSettings = Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode' | 'speed' | 'fastMode'>
 /**
  * Each setting's value on this thread as its chips show it, read by the model it names: the defaults are the model's. That
- * is what the thread runs on, or, where main keeps a choice for its next turn (ADR-0190), that choice over it.
+ * is what the thread runs on, or, where main keeps a choice for its next turn (ADR-0192), that choice over it.
  */
 export function settingValues(state: AgentState, thread: AgentThread): SettingValues {
   const choice = nextTurnChoiceOf(state, thread.id)
@@ -77,7 +77,7 @@ export function settingValues(state: AgentState, thread: AgentThread): SettingVa
 export function settingValuesInForce(state: AgentState, thread: AgentThread): SettingValues {
   return settingValuesFor(thread, resolveModel(hostForThread(state.host, thread).models, thread.modelId))
 }
-/** The choice main keeps for this thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0190), while one waits. */
+/** The choice main keeps for this thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0192), while one waits. */
 export function nextTurnChoiceOf(state: Pick<AgentState, 'nextTurnSettings'> | null, threadId: string): AgentThreadOptions | undefined {
   return state?.nextTurnSettings?.find(item => item.threadId === threadId)
 }

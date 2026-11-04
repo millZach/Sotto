@@ -71,7 +71,7 @@ export function cacheableShell(state: AgentState): AgentState {
     host: trimCatalogsToReferencedModels({ ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], ...NO_LIVE_THREAD_STATE })) }),
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
-    // A choice kept for a thread's next turn lives in main's memory alone (ADR-0190), and a restart drops it.
+    // A choice kept for a thread's next turn lives in main's memory alone (ADR-0192), and a restart drops it.
     nextTurnSettings: undefined,
     notice: '',
     stale: true,

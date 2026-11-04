@@ -6,7 +6,7 @@ import { speedAfterChange, speedRuns } from './threadOptions'
 /** What a thread's chips change: its model, effort, speed and permission mode. */
 export type NextTurnOptions = Pick<AgentThreadOptions, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode' | 'speed' | 'fastMode'>
 /**
- * The choice kept for one thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0190), and the client whose press set its
+ * The choice kept for one thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0192), and the client whose press set its
  * permission, which is asked again when the choice is sent (ADR-0004). Kept in memory only: Sotto quitting drops it.
  */
 export interface NextTurnChoice {

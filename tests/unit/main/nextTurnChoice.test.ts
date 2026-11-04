@@ -14,7 +14,7 @@ import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /**
- * A choice for a thread's next turn (#2158, ADR-0190): a model, effort, speed or permission pressed while the thread works
+ * A choice for a thread's next turn (#2158, ADR-0192): a model, effort, speed or permission pressed while the thread works
  * is kept in main and sent to the provider only once the thread rests, before its queue sends anything. It never reaches
  * a request that waits, and a wider permission is checked when it is pressed and again when it is sent. Stable refuses
  * the press as before.

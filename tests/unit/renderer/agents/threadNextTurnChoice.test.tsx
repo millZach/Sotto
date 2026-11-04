@@ -5,7 +5,7 @@ import { ThreadOptions } from '../../../../src/renderer/src/agents/ThreadOptions
 import type { AgentCommand, AgentState } from '../../../../src/shared/agents'
 import { fixture, LiveThread, mount, setupThreadOptionsTests } from '../../../fixtures/renderer/threadOptionsHarness'
 
-// A choice for the next turn (#2158, ADR-0190) is an Owl feature (ADR-0072); each test says whether this build has it.
+// A choice for the next turn (#2158, ADR-0192) is an Owl feature (ADR-0072); each test says whether this build has it.
 const gate = vi.hoisted(() => ({ on: true }))
 vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/state/owlFeature')>(),

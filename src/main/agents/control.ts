@@ -621,7 +621,7 @@ export class AgentControl {
   private readonly delegationOrigins = new WeakSet<object>()
   /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
   private readonly idleCompactions = new WeakSet<object>()
-  /** Each thread's choice kept for its next turn (ADR-0190), present only while `next-turn-choice` is on. */
+  /** Each thread's choice kept for its next turn (ADR-0192), present only while `next-turn-choice` is on. */
   private readonly nextTurns = new NextTurnChoices()
   /** The commands that send a kept choice, among the machine commands above: Sotto's, never the user's or Watcher's. */
   private readonly nextTurnSends = new WeakSet<object>()
@@ -1387,7 +1387,7 @@ export class AgentControl {
     /** The Owl answer for images on question answers (ADR-0176), read once at start: an answer may carry images. */
     answerImages?: boolean
     /**
-     * The Owl answer for a choice for the next turn (ADR-0190), read once at start: a chip pressed while a thread works is
+     * The Owl answer for a choice for the next turn (ADR-0192), read once at start: a chip pressed while a thread works is
      * kept for its next turn instead of refused.
      */
     nextTurnChoice?: boolean
@@ -2028,14 +2028,14 @@ export class AgentControl {
   /** Lets Watcher's queue go on once the choice it waited for has gone (watcher.ts). */
   resumeWatcherQueue(): void { this.pumpFollowups() }
   /**
-   * Whether a thread rests as sending a kept choice needs (ADR-0190): no turn, no request, no compaction, a connected
+   * Whether a thread rests as sending a kept choice needs (ADR-0192): no turn, no request, no compaction, a connected
    * provider and nothing of its own on its way. What only waits in its queue does not count; the queue waits for the choice.
    */
   private restsForNextTurn(thread: AgentThread): boolean {
     return thread.status !== 'running' && thread.requests.length === 0 && !compactionPending(thread.compaction) && this.threadSettingsCanGo(thread.id)
   }
   /**
-   * A chip pressed while its thread works, kept for the thread's next turn (ADR-0190) and sent nowhere now. A press names
+   * A chip pressed while its thread works, kept for the thread's next turn (ADR-0192) and sent nowhere now. A press names
    * one setting, so it joins the choice that waits; what the thread already runs on goes from it, so pressing the value in
    * force puts the choice away. While a choice is on its way, a press follows it whole. The choice is checked as a change
    * would be, and a wider permission against the pressing client's grant, now and again when it is sent (ADR-0004). False
@@ -4922,7 +4922,7 @@ export class AgentControl {
   }
   private pumpFollowups(): void {
     if (this.disposed) return
-    // A choice kept for a thread's next turn goes once the thread rests, ahead of its queue (ADR-0190).
+    // A choice kept for a thread's next turn goes once the thread rests, ahead of its queue (ADR-0192).
     if (this.nextTurns.size) this.sendNextTurns()
     // Read, not copied: this runs for every host snapshot. `first` below may be held across the dispatch
     // awaits, which is safe because the store replaces its state rather than editing it.
@@ -4938,7 +4938,7 @@ export class AgentControl {
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
       // Watcher's model, effort or speed kept for its next turn goes before anything queued for it (watcher.ts).
       if (this.watcherHooks?.holdsQueue?.(threadId)) continue
-      // So does a choice kept for any thread's next turn while it is on its way (ADR-0190).
+      // So does a choice kept for any thread's next turn while it is on its way (ADR-0192).
       if (this.nextTurns.sent(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
       // A delegation's news waits whole while delegation is off, as on a stable run after an Owl one (ADR-0072), and
@@ -5743,7 +5743,7 @@ export class AgentControl {
           validateThreadOptions(this.state.host, { modelId: wanted.modelId, ...wanted.reasoningEffort ? { reasoningEffort: wanted.reasoningEffort } : {},
             ...wanted.speed !== undefined ? { speed: wanted.speed } : {} }, thread.modelId)
         })) return
-        // Any other thread's chip pressed while it works is kept for its next turn instead of refused (ADR-0190). Sotto's
+        // Any other thread's chip pressed while it works is kept for its next turn instead of refused (ADR-0192). Sotto's
         // own send of that choice has an origin and goes on as any change.
         if (!origin && this.dependencies.nextTurnChoice === true && this.keepForNextTurn(command, client)) return
         validate()

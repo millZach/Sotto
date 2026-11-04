@@ -492,7 +492,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
-  // A chip pressed while the thread works is kept for its next turn (ADR-0190; Owl only). Watcher keeps its own (ADR-0073).
+  // A chip pressed while the thread works is kept for its next turn (ADR-0192; Owl only). Watcher keeps its own (ADR-0073).
   const keepsForNextTurn = useOwlFeature('next-turn-choice') && !watcher
   const nextTurnLineId = useId()
   // A thread on one of the user's own model servers wears the server mark in its chip, with its speed card (ADR-0124).
@@ -562,7 +562,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const busy = thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)
   // Watcher's model, effort and speed are not fixed by its work: main keeps a change made meanwhile for its next turn.
   // Its permissions are. On Owl every other thread's chips are free too, permissions included: main keeps the choice for
-  // the thread's next turn and sends it once the thread rests, never to a turn or a request under way (ADR-0190).
+  // the thread's next turn and sends it once the thread rests, never to a turn or a request under way (ADR-0192).
   const fixed = Boolean(thread.archivedAt) || (busy && !watcher && !keepsForNextTurn) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
   const permissionsFixed = fixed || (busy && !keepsForNextTurn)
@@ -670,7 +670,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const inForce = settingValuesInForce(state, thread)
   const offeredInForce = offeredSpeeds(confirmedModel, confirmedModel?.providerId ?? thread.providerId)
   /**
-   * The line under the chips while main keeps a choice for the next turn (ADR-0190, Zach's look A): what this turn runs on,
+   * The line under the chips while main keeps a choice for the next turn (ADR-0192, Zach's look A): what this turn runs on,
    * then what the next one starts on, in the chips' order. It describes each chip that shows a kept value.
    */
   const nextTurnLine = nextTurnChoice === undefined ? null : (() => {
