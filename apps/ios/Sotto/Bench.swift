@@ -19,6 +19,14 @@ enum BenchOpen {
     /// `--bench-lazy-sections`: each section's rows are made as they come into view, below the accessibility text sizes,
     /// where a section's rows are all one height.
     static let lazySections = ProcessInfo.processInfo.arguments.contains("--bench-lazy-sections")
+    /// `--bench-pin-sections`: each lazy section is set to its rows' height, to see whether that keeps the rows in place
+    /// when a thread closes. One row is 175 device pixels on the iPhone 16 Pro Max at the standard text size, the only
+    /// place this arm runs.
+    static let pinSections = ProcessInfo.processInfo.arguments.contains("--bench-pin-sections")
+    static let rowPitch: CGFloat = 175.0 / 3.0
+    /// Each lazy section's height as last laid out, which a list journey writes down at each stop.
+    nonisolated(unsafe) static var sectionHeights: [String: Double] = [:]
+    static func noteSection(_ name: String, height: CGFloat) { sectionHeights[name] = Double(height) }
     /// `--bench-tap-row`: the journey opens the long thread as a press on its row does, not as a notification does.
     static let tapsRow = ProcessInfo.processInfo.arguments.contains("--bench-tap-row")
     nonisolated(unsafe) static let tap = PassthroughSubject<ThreadRef, Never>()
@@ -305,7 +313,7 @@ import UIKit
             await quiet()
             try? await Task.sleep(nanoseconds: 700_000_000)
             snapSmall(name, page: view)
-            phaseNotes["stand-" + name] = ["offset": Double(view.contentOffset.y), "height": Double(view.contentSize.height)]
+            phaseNotes["stand-" + name] = ["offset": Double(view.contentOffset.y), "height": Double(view.contentSize.height), "sections": BenchOpen.sectionHeights] as [String: Any]
         }
         func move(_ distance: CGFloat, speed: CGFloat) async {
             let from = view.contentOffset.y
@@ -347,6 +355,13 @@ import UIKit
             await stop("jump-nudge-60")
             await move(4_700, speed: 2_000)
             await stop("jump-walk-up-360")
+        // Part of the way down from the top at a finger's speeds, with the rows below never made.
+        case "listpart":
+            await move(5_000, speed: 2_000)
+            await stop("part-5000")
+        case "listflick":
+            await move(5_000, speed: 12_000)
+            await stop("flick-5000")
         default:
             for (distance, name) in [(9_000, "scrub-9000"), (5_000, "scrub-5000-up"), (0, "scrub-0-up")] as [(CGFloat, String)] {
                 await move(distance, speed: 14_000)
@@ -365,6 +380,8 @@ import UIKit
         guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
         guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
         await stop("after-back")
+        await move(view.contentOffset.y - top - 360, speed: 2_000)
+        await stop("back-up-360")
         view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top), animated: true)
         await stop("to-top")
         finish(nil)

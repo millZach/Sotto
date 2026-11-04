@@ -1,7 +1,7 @@
 #!/bin/sh
 # What opening a long thread costs, and what part of it comes only once a launch (#2120, #1702). Measuring branch only.
 # One build, one runner, one iPhone 16 Pro Max: long-thread opens, then what a person can do to the Threads list as it
-# stands and with each section's rows lazy, photographed at each stop, at the standard text size and a large one. Usage:
+# stands, with each section's rows lazy, and with each lazy section pinned to its rows' height, photographed at each stop. Usage:
 #   sh apps/ios/Scripts/open-why.sh <report folder> <rounds> <minutes to stop starting rounds at>
 set -u
 start=$(date +%s)
@@ -62,6 +62,7 @@ arm() {
         base) journey "$2" "$3" ;;
         lazy) journey "$2" "$3" --bench-lazy-list ;;
         sect) journey "$2" "$3" --bench-lazy-sections ;;
+        pin) journey "$2" "$3" --bench-lazy-sections --bench-pin-sections ;;
         tap) journey "$2" "$3" --bench-tap-row ;;
     esac
 }
@@ -69,8 +70,8 @@ round=1
 while [ "$round" -le "$rounds" ]; do
     if [ $(( ($(date +%s) - start) / 60 )) -ge "$limit" ]; then echo "Stopped before round $round: past $limit minutes."; break; fi
     case $((round % 2)) in
-        1) order="base sect" ;;
-        0) order="sect base" ;;
+        1) order="base pin" ;;
+        0) order="pin base" ;;
     esac
     for side in $order; do
         for run in 1 2; do arm "$side" "$out/$side-$round-$run.json" 180; done
@@ -81,20 +82,16 @@ while [ "$round" -le "$rounds" ]; do
     fi
     round=$((round + 1))
 done
-for kind in listwalk listjump listscrub; do
+# Rows moved after a thread closed in every jump and scrub, so those run most, beside the two that go part of the way down.
+for kind in listpart listflick listjump listscrub; do
     arm base "$out/$kind-std-base-1.json" 240
     arm sect "$out/$kind-std-sect-1.json" 240
     arm sect "$out/$kind-std-sect-2.json" 240
+    arm pin "$out/$kind-std-pin-1.json" 240
+    arm pin "$out/$kind-std-pin-2.json" 240
+    arm pin "$out/$kind-std-pin-3.json" 240
 done
-# The gap came and went, so the moves that found it run more often.
-for kind in listjump listscrub; do
-    arm sect "$out/$kind-std-sect-3.json" 240
-    arm sect "$out/$kind-std-sect-4.json" 240
-done
-xcrun simctl ui "$device" content_size accessibility-large
-for kind in listwalk listjump listscrub; do
-    arm base "$out/$kind-big-base-1.json" 240
-    arm sect "$out/$kind-big-sect-1.json" 240
-done
-xcrun simctl ui "$device" content_size large
+kind=listwalk
+arm base "$out/$kind-std-base-1.json" 240
+arm pin "$out/$kind-std-pin-1.json" 240
 xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true

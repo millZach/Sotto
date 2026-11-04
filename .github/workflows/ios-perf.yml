@@ -31,7 +31,7 @@ jobs:
           swift --version
       - name: Open a long thread and scroll the list both ways
         timeout-minutes: 60
-        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 3 20
+        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 1 20
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4

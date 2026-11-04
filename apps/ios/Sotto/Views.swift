@@ -797,6 +797,11 @@ struct ThreadListSections: View, Equatable {
             ThreadListHeading(title: title, count: rows.count, id: id)
             if BenchOpen.lazySections && !typeSize.isAccessibilitySize {
                 LazyVStack(alignment: .leading, spacing: 0) { ForEach(rows) { row($0) } }
+                    .frame(height: BenchOpen.pinSections ? CGFloat(rows.count) * BenchOpen.rowPitch : nil, alignment: .top)
+                    .background(GeometryReader { geometry in
+                        let _ = BenchOpen.noteSection(identifier + id, height: geometry.size.height)
+                        Color.clear
+                    })
             } else {
                 ForEach(rows) { row($0) }
             }
