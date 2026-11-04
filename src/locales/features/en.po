@@ -3262,6 +3262,10 @@ msgstr "Main was blocked {blocked} of the last minute. The longest freeze was {l
 msgid "Make a code"
 msgstr "Make a code"
 
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "Markdown file"
+msgstr "Markdown file"
+
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "Match {system}"
 msgstr "Match {system}"

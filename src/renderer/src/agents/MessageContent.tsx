@@ -1,4 +1,4 @@
-import React, { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
 import type { MessageDescriptor } from '@lingui/core'
 import { Check, Copy, FileText, Image as ImageIcon, Play } from 'lucide-react'
@@ -14,6 +14,8 @@ import { isFenceClosed } from '../../../shared/diagramSource'
 import { useCopyImage, useTransientFlag, writeClipboard } from './richActions'
 import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
+import { isMarkdownPath } from '../../../shared/files'
+import { rememberLinkOpener } from '../tools/linkedFile'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
@@ -131,6 +133,9 @@ interface LinkActions {
   readonly menu: (url: string, anchor: HTMLElement, at: { x: number; y: number }) => void
   /** Shows a linked file in its folder, when this message is in a thread that can. */
   readonly reveal?: ((path: string) => void) | undefined
+  /** Opens a Markdown file in the side panel (ADR-0120, November 3 amendment); absent where that is not on or not possible. */
+  readonly markdown?: ((path: string, opener: HTMLElement) => void) | undefined
+  readonly fileMenu?: ((path: string, anchor: HTMLElement, at: { x: number; y: number }) => void) | undefined
 }
 const LinkContext = createContext<LinkActions>({ open: () => undefined, menu: () => undefined })
 /** The Markdown being rendered, so a fenced diagram can tell whether its closing fence has arrived. */
@@ -305,12 +310,37 @@ function MarkdownCodeBlock({ source, language, start, end }: { source: string; l
   return <CodeBlock code={source} language={language} run={complete ? run : undefined} />
 }
 
+/** What a link to a Markdown file does: a press opens it in the side panel, and its menu offers the folder and the path. */
+function markdownLinkProps(file: string, { markdown, fileMenu }: LinkActions, label: string) {
+  const beside = (element: HTMLElement): { x: number; y: number } => { const rect = element.getBoundingClientRect(); return { x: rect.left, y: rect.bottom + 4 } }
+  return {
+    title: label, 'aria-label': label,
+    onClick: (event: MouseEvent<HTMLElement>) => markdown?.(file, event.currentTarget),
+    onAuxClick: (event: MouseEvent<HTMLElement>) => event.preventDefault(),
+    onContextMenu: (event: MouseEvent<HTMLElement>) => {
+      event.preventDefault()
+      // A keyboard-invoked context menu reports no pointer position, so it opens beside the link.
+      fileMenu?.(file, event.currentTarget, event.clientX === 0 && event.clientY === 0 ? beside(event.currentTarget) : { x: event.clientX, y: event.clientY })
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      if (event.key === 'Enter') { event.preventDefault(); markdown?.(file, event.currentTarget) }
+      else if ((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') { event.preventDefault(); fileMenu?.(file, event.currentTarget, beside(event.currentTarget)) }
+    },
+  }
+}
+
+/** Inline code that names a Markdown file by a relative path: `README.md`, `docs/plan.md:12`. Spaces and shell characters make it something else. */
+const MARKDOWN_CODE_PATH = /^[^\s`'"<>|*?;&$()]+\.(?:md|markdown|mdown)(?::\d+(?:[:-]\d+)?|#L\d+\S*)?$/iu
+
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
   const { t } = useLingui()
-  const { open, menu, reveal } = useContext(LinkContext)
+  const actions = useContext(LinkContext)
+  const { open, menu, reveal, markdown } = actions
   const url = safeLinkUrl(href)
-  const file = !url && reveal ? localFilePath(href) : null
+  const file = !url && (reveal || markdown) ? localFilePath(href) : null
   const manager = fileManager()
+  // No href here either: the side panel reads the file, and the window never navigates to it.
+  if (file && markdown && isMarkdownPath(file)) return <a className="rich-link tt-focusable" role="link" tabIndex={0} {...markdownLinkProps(file, actions, t({ message: `Open ${ph({ file: leftToRight(file) })} in the side panel`, comment: '{file} is a path to a Markdown file.' }))}>{children}</a>
   // No href: a file path never becomes something the window could navigate to.
   if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
     aria-label={t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
@@ -357,15 +387,17 @@ const InsideLink = createContext(false)
  * shell command offers Run (ADR-0139); a lone path stays a file link, so a press still does one thing.
  */
 function InlineCode({ node, children }: { node?: Element | undefined; children?: ReactNode }): ReactNode {
-  const { reveal } = useContext(LinkContext)
+  const actions = useContext(LinkContext)
+  const { reveal, markdown } = actions
   const run = useRunCommand()
   const insideLink = useContext(InsideLink)
   const text = typeof children === 'string' ? children.trim() : ''
-  const file = reveal && !insideLink && /^(?:~[\\/]|\/[^/\s]+\/|[a-z]:[\\/])\S*$/iu.test(text) ? localFilePath(text) : null
+  const file = !insideLink && (reveal && /^(?:~[\\/]|\/[^/\s]+\/|[a-z]:[\\/])\S*$/iu.test(text) || markdown && MARKDOWN_CODE_PATH.test(text)) ? localFilePath(text) : null
   const { t } = useLingui()
   // What runs is the span's own text, the same characters the reply shows.
   const command = !file && run && !insideLink ? runnableInline(hastText(node)) : null
   if (run && command !== null) return <RunnableInline command={command} run={run}>{children}</RunnableInline>
+  if (file && markdown && isMarkdownPath(file)) return <code className="rich-link tt-focusable" role="link" tabIndex={0} {...markdownLinkProps(file, actions, t({ message: `Open ${ph({ file: leftToRight(file) })} in the side panel`, comment: '{file} is a path to a Markdown file.' }))}>{children}</code>
   if (!file || !reveal) return <code>{children}</code>
   const manager = fileManager()
   return <code className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
@@ -489,6 +521,8 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   const copyFeedback = copyOutcome === 'copied' ? t`Link copied` : copyOutcome === 'failed' ? t`Could not copy the link` : null
   const router = useWebLinkRouter()
   const revealLinks = useOwlFeature('reveal-linked-files')
+  const markdownPanel = useOwlFeature('markdown-side-panel')
+  const [fileMenu, setFileMenu] = useState<{ path: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
   const opener = useRef<(url: string, destination?: WebLinkDestination) => Promise<WebLinkResult> | WebLinkResult>(openWithBridge)
   opener.current = onOpenLink ?? ((url, destination) => router.open(url, destination))
   const context = useMemo<LinkActions>(() => ({
@@ -507,7 +541,15 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
       setLinkNotice(null)
       void router.revealFile?.(path).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice(msg`Sotto could not show this file. Nothing was opened.`))
     } : undefined,
-  }), [router, revealLinks])
+    // Opening Markdown files in the side panel is an Owl feature (ADR-0120, November 3 amendment): while it is off they show in their folder.
+    markdown: markdownPanel && router.openFile ? (path, opener) => {
+      setFailedLink(null)
+      setLinkNotice(null)
+      rememberLinkOpener(opener)
+      router.openFile?.(path)
+    } : undefined,
+    fileMenu: (path, anchor, at) => setFileMenu({ path, anchor, at }),
+  }), [router, revealLinks, markdownPanel])
   const menuItems = (url: string): LinkMenuItem[] => {
     const web = !url.startsWith('mailto:')
     return [
@@ -517,6 +559,15 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
     ]
   }
   const closeLinkMenu = useMemo(() => () => setLinkMenu(null), [])
+  const closeFileMenu = useMemo(() => () => setFileMenu(null), [])
+  const fileMenuItems = ({ path, anchor }: { path: string; anchor: HTMLElement }): LinkMenuItem[] => {
+    const manager = fileManager()
+    return [
+      { id: 'open', label: t`Open in side panel`, run: () => context.markdown?.(path, anchor) },
+      ...(context.reveal ? [{ id: 'show', label: t({ message: `Show in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager.' }), run: () => context.reveal?.(path) }] : []),
+      { id: 'copy', label: t`Copy path`, run: () => { void writeClipboard(path).then(() => setLinkNotice(msg`Path copied.`), () => setLinkNotice(msg`Could not copy the path.`)) } },
+    ]
+  }
   const copyFailedLink = (): void => {
     if (!failedLink) return
     void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyOutcome('copied') }, () => showCopyOutcome('failed'))
@@ -534,6 +585,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
         {failedLink ? <><span>{shownWords(linkNotice) ?? t({ message: `Could not open ${failedHost}.`, comment: '{failedHost} is a web site\'s host name or an email address.' })}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>{t`Copy link`}</button></> : shownWords(linkNotice) ?? copyFeedback}
       </div>
     </div>
+    {fileMenu ? <LinkMenu at={fileMenu.at} label={t({ message: `Link: ${ph({ file: leftToRight(fileMenu.path) })}`, comment: '{file} is a path to a Markdown file.' })} items={fileMenuItems(fileMenu)} returnFocus={fileMenu.anchor} onClose={closeFileMenu} /> : null}
     {linkMenu ? <LinkMenu at={linkMenu.at} label={t`Link: ${menuHost}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}
   </RunCommandContext.Provider></LinkContext.Provider>
 })

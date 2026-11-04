@@ -34,7 +34,7 @@ import { markLegacyModels } from '../../shared/modelLineup'
 import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE, ultracodeRunsAt, type UltracodeEffort } from '../../shared/ultracode'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
-import { questionInstructions } from './questionInstructions'
+import { MARKDOWN_LINK_INSTRUCTIONS, questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -231,6 +231,8 @@ function toolAllowance(servers: readonly { server: Pick<ThreadMcpServer, 'name'>
 }
 export interface ClaudeStreamJsonHostOptions {
   usageEnabled?: boolean
+  /** Linked Markdown files in the side panel (ADR-0120, November 3 amendment), the Owl answer read once at start: the thread is told to link them. */
+  markdownLinks?: boolean
   /** Keeps a tool result's pictures and answers their handles (ADR-0170); absent while `inline-media` is off. */
   captureMedia?: MediaCapture
   /** Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn stopped at a usage limit says so on its `lastTurn`. */
@@ -1627,9 +1629,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // permission, and the table in the instructions. Watcher starts its workers through its own tools instead.
     const roles = profile ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
+    const questions = this.options.markdownLinks === true ? `${CLAUDE_QUESTIONS}\n\n${MARKDOWN_LINK_INSTRUCTIONS}` : CLAUDE_QUESTIONS
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
+      '--append-system-prompt', profile ? `${questions}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode)]
     let runtime: Runtime

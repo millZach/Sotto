@@ -56,7 +56,7 @@ import { capRuntimeMode, subagentRoleInstructions } from '../../shared/workerRol
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
-import { questionInstructions } from './questionInstructions'
+import { MARKDOWN_LINK_INSTRUCTIONS, questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { AGENT_FORK_ARCHIVED, AGENT_FORK_GONE, FORK_SOURCE_MISSING, FORKED_THREAD_SOURCE_MISSING } from '../../shared/threadStarts'
 import type { ThreadForkRequest } from './host'
@@ -264,6 +264,8 @@ export interface CodexAppServerHostOptions {
   captureMediaFile?: MediaFileCapture
   /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
   usageEnabled?: boolean
+  /** Linked Markdown files in the side panel (ADR-0120, November 3 amendment), the Owl answer read once at start: the thread is told to link them. */
+  markdownLinks?: boolean
   /**
    * Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn stopped at a usage limit says so on its
    * `lastTurn`, with the reset from the newest limits Codex reported, which are kept for that even while Usage is off.
@@ -290,6 +292,7 @@ export class CodexAppServerHost implements AgentHost {
   /** When each thread's context was last reported as its compaction started, so the end can tell whether a reading came since. */
   private readonly compactionReadings = new Map<string, string>()
   private readonly usageEnabled: boolean
+  private readonly markdownLinks: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly watcherProfiles = new Map<string, WatcherLaunchProfile>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
@@ -510,6 +513,7 @@ export class CodexAppServerHost implements AgentHost {
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.activity = new CodexActivityProjection(undefined, options.captureMedia, options.captureMediaFile, id => { this.changed(id); this.emit() })
     this.usageEnabled = options.usageEnabled === true
+    this.markdownLinks = options.markdownLinks === true
     this.roleFiles = new CodexRoleFiles(join(options.userDataPath, 'codex-roles'), runtimePolicy, event => options.logEvent?.(event))
     this.usage = new NativeUsage(options.userDataPath, 'codex', options.usageEnabled)
     if (options.usageEnabled) {
@@ -1124,7 +1128,7 @@ export class CodexAppServerHost implements AgentHost {
       })
       if (typeof instructions !== 'string') throw new Error('Invalid native instructions')
       const watcher = id ? this.watcherProfiles.get(id) : undefined
-      return [instructions, codexQuestions, ...(watcher ? [watcher.instructions ?? WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
+      return [instructions, codexQuestions, ...(this.markdownLinks ? [MARKDOWN_LINK_INSTRUCTIONS] : []), ...(watcher ? [watcher.instructions ?? WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
     } catch {
       throw new Error('Codex settings could not be read. No new work was sent. Reconnect and try again.')
     }

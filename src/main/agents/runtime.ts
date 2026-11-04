@@ -123,6 +123,8 @@ export interface AgentRuntimeOptions {
   continueEnabled?: boolean
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
   threadStartsEnabled?: boolean
+  /** Linked Markdown files in the side panel (ADR-0120, November 3 amendment): the Owl list's answer, read once at start. Absent, models are not told to link them and a host reads none. */
+  markdownSidePanel?: boolean
   /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent, nothing is deleted. */
   clearThreadsEnabled?: boolean
   /** What clearing did, as stable event names with a count or a reason's code. */
@@ -298,10 +300,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const showEvery = (): boolean => showEveryAgentPicture()
   const captureMedia = threadMedia ? agentCaptures(threadMedia, showEvery) : {}
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
-    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
+    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}), ultracodeEffort: () => agentControl.configuration().claudeUltracodeEffort })),
-    grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia })),
+    grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory, captureMedia)),
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox, usageEnabled: options.usageEnabled === true, ...limitStops })),
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
@@ -623,7 +625,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, ...threadMoves ? { moves: threadMoves } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, markdownLinks: options.markdownSidePanel === true, ...threadMoves ? { moves: threadMoves } : {}, ...options.teams ? { teams: options.teams } : {} }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
@@ -847,6 +849,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
+    ...(options.markdownSidePanel === true ? { threadFileLinks: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     ...(threadMedia ? { threadMedia: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only

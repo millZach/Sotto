@@ -3026,6 +3026,10 @@ msgstr "Copy options"
 msgid "Copy page source"
 msgstr "Copy page source"
 
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Copy path"
+msgstr "Copy path"
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copy reply as Markdown"
 msgstr "Copy reply as Markdown"
@@ -3140,6 +3144,10 @@ msgstr "Could not copy the image. Try again."
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Could not copy the link"
 msgstr "Could not copy the link"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Could not copy the path."
+msgstr "Could not copy the path."
 
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Could not copy. Select the answer above to copy it."
@@ -4949,6 +4957,11 @@ msgstr "Let’s make something."
 msgid "Link copied"
 msgstr "Link copied"
 
+#. {file} is a path to a Markdown file.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Link: {file}"
+msgstr "Link: {file}"
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Link: {menuHost}"
 msgstr "Link: {menuHost}"
@@ -5856,6 +5869,12 @@ msgstr "Only the first entries of this folder are listed. Keep typing to narrow 
 msgid "Open"
 msgstr "Open"
 
+#. {file} is a path to a Markdown file.
+#. {file} is a path to a Markdown file.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Open {file} in the side panel"
+msgstr "Open {file} in the side panel"
+
 #. {name} is an attached image's file name.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Open {name}"
@@ -5947,6 +5966,10 @@ msgstr "Open image · Right-click to copy"
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Open in mail app"
 msgstr "Open in mail app"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Open in side panel"
+msgstr "Open in side panel"
 
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Open in Sotto browser"
@@ -6261,6 +6284,10 @@ msgstr "Paste the code"
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Paste the key"
 msgstr "Paste the key"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Path copied."
+msgstr "Path copied."
 
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
@@ -7564,6 +7591,11 @@ msgstr "Show fewer waiting threads"
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Show here"
 msgstr "Show here"
+
+#. {manager} is File Explorer, Finder or the file manager.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Show in {manager}"
+msgstr "Show in {manager}"
 
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.

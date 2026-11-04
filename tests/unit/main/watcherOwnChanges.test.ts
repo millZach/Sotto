@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { watcherOwnChanges, annotateWatcherOwnChanges, watcherReplyAsShown, watcherRepliesAsShown } from '../../../src/main/agents/watcherOwnChanges'
-import { WATCHER_PULL_REQUEST_NEWS_PROMPT, WATCHER_SYSTEM_PROMPT, watcherSystemPrompt } from '../../../src/main/agents/watcherPrompt'
+import { WATCHER_MARKDOWN_LINKS_PROMPT, WATCHER_PULL_REQUEST_NEWS_PROMPT, WATCHER_SYSTEM_PROMPT, watcherSystemPrompt } from '../../../src/main/agents/watcherPrompt'
 import { questionInstructions } from '../../../src/main/agents/questionInstructions'
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
@@ -24,6 +24,8 @@ describe('Watcher own changes', () => {
     // Only while that news runs (Restart stopped threads); without it nothing would tell Watcher a check failed.
     expect(watcherSystemPrompt(false, false, true)).toContain(WATCHER_PULL_REQUEST_NEWS_PROMPT)
     expect(watcherSystemPrompt(true, true)).not.toContain(WATCHER_PULL_REQUEST_NEWS_PROMPT)
+    expect(watcherSystemPrompt(false, false, false, false, false, true)).toContain(WATCHER_MARKDOWN_LINKS_PROMPT)
+    expect(watcherSystemPrompt(true, true, true, true, true)).not.toContain(WATCHER_MARKDOWN_LINKS_PROMPT)
   })
 
   it('has no mark for missing threads, unproved paths, shell output or a dirty checkout', () => {

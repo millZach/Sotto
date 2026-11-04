@@ -1093,7 +1093,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
-    attachAnyFile: owlFeatures['attach-any-file'],
+    attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'],
     answerImages: owlFeatures['answer-images'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     ...threadMedia ? { threadMedia } : {},
@@ -2371,9 +2371,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // path to this computer's clipboard, in the host's format; nothing on the host is opened or written.
       const copyHostPath = async <T extends { ok: true; value: { absolutePath: string } } | { ok: false }>(result: T): Promise<T> => { if (result.ok) await copyOutput(result.value.absolutePath); return result }
       const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers(), {
-        list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request),
+        list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request), previewLink: request => hostRouter.threadFileLink(request),
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
-      }, owlFeatures['reveal-linked-files'])
+      }, owlFeatures['reveal-linked-files'], owlFeatures['markdown-side-panel'])
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
       const cleanupProductEvents = registerProductEventsIpc(ipcMain, { featureUsed: tool => productEvents.featureUsed(tool), state: { canSend: productEvents.canSend, offBy: productEventsOffBy(process.env) } }, () => windows.getTrustedRenderers())
       const cleanupUsage = registerUsageIpc(ipcMain, { read: query => { productEvents.featureUsed('usage'); return hostRouter.usageRead(query) },

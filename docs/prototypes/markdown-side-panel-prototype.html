@@ -1,0 +1,356 @@
+<!doctype html>
+<!--
+  PROTOTYPE: throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: when a thread or Watcher links a Markdown file, how does pressing the link open it in a side panel?
+  (Zach, November 3, 2026.)
+
+  The panel is the real Files preview: name, size, Read only, Source, Copy path, Show in folder, close. The Threads page
+  has one place for it already, Tools > Files. Watcher's room has no Tools, so this page offers three places there:
+    A  Takes the beside pane's place. No new column. A thread that was beside waits behind the file.
+    B  A third column at the room's right edge. Too narrow a window falls back to A.
+    C  A sheet over the room's right side. Nothing behind it moves.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: Markdown files in the side panel</title>
+<style>
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265); --overlay: oklch(0.215 0.008 265);
+  --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 270); --muted: oklch(0.72 0.014 265);
+  --border: oklch(0.305 0.02 265); --hairline: oklch(0.245 0.014 265);
+  --accent: oklch(0.714403 0.104089 183.092); --accent-text: oklch(0.8 0.1 183); --accent-wash: oklch(0.32 0.05 185 / .45); --accent-ink: oklch(0.16 0.012 190);
+  --selected: oklch(0.355 0.035 188); --warning: oklch(0.82 0.14 80); --error: oklch(0.72 0.17 25); --code-bg: oklch(0.16 0.008 265); --shadow: 0 18px 60px oklch(0 0 0 / .55);
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.955 0.006 85); --overlay: oklch(0.995 0.002 85);
+  --text: oklch(0.235 0.014 75); --text-2: oklch(0.34 0.014 75); --muted: oklch(0.5 0.014 75);
+  --border: oklch(0.85 0.008 85); --hairline: oklch(0.91 0.006 85);
+  --accent: oklch(0.53 0.095 186); --accent-text: oklch(0.42 0.09 186); --accent-wash: oklch(0.92 0.03 186); --accent-ink: oklch(0.99 0.003 85);
+  --selected: oklch(0.92 0.03 186); --warning: oklch(0.5 0.12 75); --error: oklch(0.52 0.18 25); --code-bg: oklch(0.955 0.006 85); --shadow: 0 18px 50px oklch(0.2 0.02 75 / .22);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--canvas); color: var(--text); font: 14px/1.5 Figtree, "Segoe UI", system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; min-height: 100dvh; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- This page's own controls ---------- */
+.proto { flex: none; padding: 10px 14px; border-bottom: 1px solid var(--hairline); display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; background: var(--surface); }
+.proto h1 { margin: 0; font-size: 14px; font-weight: 600; flex-basis: 100%; }
+.proto h1 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.group > span { font-size: 12px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.seg button { min-height: 34px; padding: 0 11px; border: 0; background: transparent; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--text); }
+.proto .plain { min-height: 34px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; background: transparent; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.state { flex: none; padding: 8px 14px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--hairline); background: var(--surface); font-size: 13px; color: var(--text-2); min-height: 40px; }
+.state b { color: var(--text); font-weight: 600; }
+.stage { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 10px; overflow: hidden; }
+
+/* ---------- The window ---------- */
+.window { position: relative; width: 100%; max-width: var(--w, 1280px); height: 100%; min-height: 460px; max-height: var(--h, 800px); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--canvas); display: flex; }
+.pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1 1 0; background: var(--canvas); }
+.pane[data-focused] { box-shadow: inset 0 1px 0 var(--accent); }
+.divider { flex: none; width: 9px; background: linear-gradient(to right, transparent 4px, var(--hairline) 4px, var(--hairline) 5px, transparent 5px); }
+.head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px 0 14px; border-bottom: 1px solid transparent; }
+.head strong { font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.head .quiet { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.head .grow { flex: 1; }
+.needs { flex: none; margin: 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--hairline); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.needs b { color: var(--warning); font-weight: 500; }
+.transcript { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; }
+.you { margin: 0 0 14px 14px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; color: var(--text-2); }
+.who { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.who b { color: var(--text); font-weight: 500; margin-right: 6px; }
+.reply p { margin: 0 0 10px; color: var(--text-2); }
+.link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); cursor: pointer; background: none; border: 0; padding: 0; text-align: left; overflow-wrap: anywhere; }
+code.link, .reply code { font-family: Consolas, "SF Mono", ui-monospace, monospace; font-size: .92em; background: var(--code-bg); border-radius: 4px; padding: 1px 4px; }
+.notice { margin: 2px 0 10px; font-size: 13px; color: var(--muted); }
+.composer { flex: none; margin: 0 14px 12px; min-height: 58px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 14px; color: var(--muted); font-size: 13px; }
+.close-x { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+.close-x:hover { background: var(--raised); color: var(--text); }
+.close-x svg, .files-icon svg, .rail button svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- The real Files preview ---------- */
+.file-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1 1 0; background: var(--canvas); position: relative; }
+.back { flex: none; display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 16px; border-bottom: 1px solid var(--hairline); }
+.back button { background: none; border: 0; padding: 0; font-size: 12px; color: var(--muted); cursor: pointer; }
+.back button:hover { color: var(--text); }
+.fhead { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 6px 0 16px; border-bottom: 1px solid var(--hairline); }
+.ftitle { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.fname { min-width: 0; overflow: hidden; color: var(--text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.fmeta { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.factions { display: flex; align-items: center; gap: 2px; flex: none; }
+.files-toggle { min-height: 28px; padding: 0 10px; margin-right: 4px; border: 1px solid var(--hairline); border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.files-toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--accent-wash); }
+.files-icon { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.files-icon:hover { background: var(--raised); color: var(--text); }
+.fbody { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 28px; }
+.fbody h2 { margin: 0 0 8px; font-size: 19px; font-weight: 600; }
+.fbody h3 { margin: 16px 0 6px; font-size: 15px; font-weight: 600; }
+.fbody p, .fbody li { color: var(--text-2); }
+.fbody p { margin: 0 0 10px; }
+.fbody ul { margin: 0 0 10px; padding-left: 20px; }
+.fbody table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 0 0 12px; }
+.fbody th, .fbody td { border: 1px solid var(--hairline); padding: 5px 8px; text-align: left; }
+.fbody pre { margin: 0; font: 13px/1.6 Consolas, "SF Mono", ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.fbody .block { background: var(--code-bg); border: 1px solid var(--hairline); border-radius: 8px; padding: 8px 10px; margin: 0 0 12px; }
+.problem strong { display: block; font-weight: 500; margin-bottom: 6px; }
+.problem p { color: var(--muted); font-size: 13px; }
+
+/* ---------- Watcher's variants ---------- */
+.window[data-variant="C"] .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: min(46%, 560px); min-width: min(380px, 62%); border-left: 1px solid var(--border); box-shadow: var(--shadow); z-index: 3; }
+.window[data-variant="B"] .third { flex: 0 0 min(420px, 34%); border-left: 1px solid var(--hairline); }
+
+/* ---------- The Threads page ---------- */
+.sidebar { flex: 0 0 220px; border-right: 1px solid var(--hairline); padding: 12px 8px; background: var(--canvas); }
+.sidebar .row { padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--text-2); }
+.sidebar .row[data-on] { background: var(--selected); color: var(--text); }
+.sidebar .row small { display: block; color: var(--muted); font-size: 12px; }
+.tools { flex: 0 0 min(46%, 600px); min-width: 0; display: flex; border-left: 1px solid var(--hairline); background: var(--canvas); }
+.tools-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chrome { flex: none; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--hairline); }
+.chrome b { font-weight: 500; }
+.chrome span { color: var(--muted); font-size: 12px; }
+.tree { flex: 1; overflow: auto; padding: 6px; }
+.tree div { padding: 5px 10px; border-radius: 6px; font-size: 13px; color: var(--text-2); }
+.tree div[data-on] { background: var(--selected); color: var(--text); }
+.tfoot { flex: none; padding: 7px 14px; border-top: 1px solid var(--hairline); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail { flex: 0 0 56px; border-left: 1px solid var(--hairline); padding: 6px 4px; display: flex; flex-direction: column; gap: 2px; }
+.rail button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 0; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 11px; }
+.rail button[data-on] { background: var(--selected); color: var(--text); }
+.toggle-tools { background: var(--selected); }
+
+/* ---------- The right-click menu ---------- */
+.menu { position: absolute; z-index: 9; min-width: 210px; padding: 4px; background: var(--overlay); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+.menu button { display: block; width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; font-size: 13px; cursor: pointer; color: var(--text); }
+.menu button:hover, .menu button:focus-visible { background: var(--raised); }
+
+/* ---------- On a phone: the same panes, closer together, with larger controls ---------- */
+@media (max-width: 760px) {
+  body { font-size: 13px; }
+  .proto { padding: 8px 10px; gap: 6px 10px; }
+  .proto h1 small { display: block; margin: 0; }
+  .seg button, .proto .plain { min-height: 40px; padding: 0 10px; }
+  .group[data-size] { display: none; }
+  .stage { padding: 6px; }
+  .window { min-height: 62dvh; }
+  .sidebar { display: none; }
+  .composer { margin: 0 8px 8px; min-height: 44px; padding: 8px; font-size: 12px; }
+  .transcript { padding: 10px 8px; }
+  .you { margin-left: 0; padding: 8px 10px; }
+  .head { padding: 0 4px 0 8px; }
+  .needs { margin: 0 8px; }
+  .fhead { padding: 0 2px 0 8px; flex-wrap: wrap; min-height: 40px; }
+  .fmeta { display: none; }
+  .fbody { padding: 12px 10px 20px; }
+  .fbody h2 { font-size: 16px; }
+  .fbody table { font-size: 11px; }
+  .files-icon, .close-x { width: 34px; height: 34px; }
+  .tools { flex-basis: 56%; }
+  .rail { flex-basis: 44px; }
+  .rail button { font-size: 9px; }
+  .window[data-variant="C"] .sheet { width: 62%; min-width: 62%; }
+  .back { padding: 0 8px; }
+}
+@media (prefers-reduced-motion: no-preference) { .file-panel { animation: rise 140ms ease-out; } @keyframes rise { from { opacity: .4; } to { opacity: 1; } } }
+</style>
+</head>
+<body data-theme="dark">
+<section class="proto" aria-label="Prototype controls">
+  <h1>Markdown files in the side panel <small>Press a blue link. Everything is a stand-in.</small></h1>
+  <div class="group"><span>Room</span><div class="seg" id="room"></div></div>
+  <div class="group" id="variantGroup"><span>Watcher's panel</span><div class="seg" id="variant"></div></div>
+  <div class="group" id="besideGroup"><span>Thread beside</span><div class="seg" id="beside"></div></div>
+  <div class="group" data-size><span>Window</span><div class="seg" id="size"></div></div>
+  <div class="group"><div class="seg" id="theme"></div><button type="button" class="plain" id="menuBtn">Right-click on plan.md</button></div>
+</section>
+<main class="stage"><div class="window" id="win" role="application" aria-label="Sotto, stand-in"></div></main>
+<div class="state" id="state" role="status" aria-live="polite"></div>
+
+<script>
+const ICON = {
+  x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
+  folder: '<svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/><path d="M3 8v9a2 2 0 0 0 2 2h7"/><path d="M15 16h6m-3-3 3 3-3 3"/></svg>',
+  wrap: '<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-4m2-2-2 2 2 2M4 18h5"/></svg>',
+  reload: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5M20 4v4.5h-4.5"/></svg>',
+  tree: '<svg viewBox="0 0 24 24"><path d="M5 4v10a3 3 0 0 0 3 3h3M5 9h6"/><rect x="11" y="6" width="9" height="5" rx="1"/><rect x="11" y="14" width="9" height="5" rx="1"/></svg>',
+  globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
+  term: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>',
+  diff: '<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5V15a3 3 0 0 0 3 3h6M18 15.5V9a3 3 0 0 0-3-3H9"/></svg>',
+}
+const FILES = {
+  plan: { name: 'plan.md', path: '/home/zach/Talk-to-Text/docs/plans/plan.md', size: '6.4 KB', host: 'forge', where: 'inside the thread\'s folder, on forge',
+    html: `<h2>Widget capture plan</h2><p>The listening bars animate from a CSS loop, so the frame depended on where the screenshot landed.</p><h3>Steps</h3><ul><li>Pin the capture to the reduced-motion branch.</li><li>Run the design gate three times on Windows.</li><li>Keep the baselines as they are.</li></ul><table><tr><th>Step</th><th>Where</th><th>Done</th></tr><tr><td>Pin capture</td><td>forge</td><td>Yes</td></tr><tr><td>Design gate</td><td>This computer</td><td>Not yet</td></tr></table><div class="block"><pre>npm run design:verify</pre></div><p>A picture in a file stays unloaded, as in a reply. A link in the file never runs anything.</p>`,
+    source: `# Widget capture plan\n\nThe listening bars animate from a CSS loop, so the frame depended\non where the screenshot landed.\n\n## Steps\n\n- Pin the capture to the reduced-motion branch.\n- Run the design gate three times on Windows.\n- Keep the baselines as they are.\n\n| Step | Where | Done |\n|---|---|---|\n| Pin capture | forge | Yes |\n| Design gate | This computer | Not yet |\n\n\`\`\`\nnpm run design:verify\n\`\`\`` },
+  outside: { name: 'quiet-otter.md', path: '~/.claude/plans/quiet-otter.md', size: '2.1 KB', host: 'forge', where: 'outside the thread\'s folder, on forge',
+    html: `<h2>Quiet otter</h2><p>A plan the model kept in its own folder, outside the thread's working folder. Whether this opens here is one of the questions.</p><ul><li>Read only, like every file in this panel.</li><li>Only a file whose real name ends in Markdown's endings opens.</li></ul>`,
+    source: `# Quiet otter\n\nA plan the model kept in its own folder, outside the thread's working\nfolder. Whether this opens here is one of the questions.\n\n- Read only, like every file in this panel.\n- Only a file whose real name ends in Markdown's endings opens.` },
+  thread: { name: 'capture-notes.md', path: 'docs/capture-notes.md', size: '1.3 KB', host: 'forge', where: 'inside this thread\'s folder, on forge',
+    html: `<h2>Capture notes</h2><p>Pressed from the thread's own reply, so it reads that thread's folder on forge.</p><ul><li>Bars: held on their middle step.</li><li>Owl: glyphs only.</li></ul>`,
+    source: `# Capture notes\n\nPressed from the thread's own reply, so it reads that thread's folder\non forge.\n\n- Bars: held on their middle step.\n- Owl: glyphs only.` },
+  here: { name: 'release-notes.md', path: 'C:\\Users\\zache\\notes\\release-notes.md', size: '840 B', host: null, where: 'on this computer',
+    html: `<h2>Release notes</h2><p>A file on this computer, so the panel offers Show in File Explorer too.</p>`,
+    source: `# Release notes\n\nA file on this computer, so the panel offers Show in File Explorer too.` },
+  missing: { name: 'old-plan.md', path: 'docs/plans/old-plan.md', host: 'forge', missing: true },
+}
+const s = { room: 'watcher', variant: 'A', beside: false, size: '1280', theme: 'dark', file: null, source: false, tree: false, toolsOpen: false, focus: 'watcher', menu: false, note: 'Press a blue link in a reply. The picture link shows what stays as it is today.' }
+const SIZES = { 1600: [1600, 1000], 1280: [1280, 800], 820: [820, 560] }
+const say = html => { s.note = html }
+const narrow = () => window.innerWidth < 760 || s.size === '820'
+const where = () => s.room === 'threads' ? 'Tools > Files' : s.variant === 'A' || (s.variant === 'B' && narrow()) ? (s.beside ? 'the beside pane\'s place' : 'the place a beside pane takes') : s.variant === 'B' ? 'a third column' : 'a sheet over the room'
+
+function press(id) {
+  s.file = id; s.source = false; s.menu = false; s.tree = false
+  if (s.room === 'threads') s.toolsOpen = true
+  const f = FILES[id]
+  say(f.missing
+    ? `<b>${f.name}</b>: the panel opens and says the file is gone. Nothing else changes.`
+    : `<b>${f.name}</b> opened in ${where()}, read from ${f.where}.${s.beside && s.room === 'watcher' && s.variant === 'A' ? ' The thread waits behind it, with its draft and place kept.' : ''}${s.room === 'threads' ? ' The file fills Files; closing it shows the tree.' : ''}${s.room === 'watcher' && s.variant === 'B' && narrow() ? ' B needs a window at least 1200 wide, so this narrow window falls back to A. See B on a laptop.' : ''} Escape closes it.`)
+  render()
+  document.querySelector('.fhead .fname, .fbody')?.closest('.file-panel')?.querySelector('[data-close]')?.focus()
+}
+function closeFile() {
+  const had = s.file; s.file = null; s.menu = false
+  if (s.room === 'threads') { s.tree = true; say('Closed. Files shows the tree, with Tools still open. Its own close puts Tools away.') }
+  else say(s.beside ? 'Closed. The thread beside Watcher is back as it was.' : 'Closed. Watcher has the room again.')
+  render()
+  if (had) document.querySelector(`[data-open="${had}"]`)?.focus()
+}
+const linkBtn = (id, label, code) => `<button type="button" class="link" data-open="${id}" title="Open ${FILES[id].name} in the side panel">${code ? `<code>${label}</code>` : label}</button>`
+
+function filePanel(cls = '', behind = '') {
+  const f = FILES[s.file]
+  const hostNote = f.host ? ` · on ${f.host}` : ''
+  const head = f.missing
+    ? `<div class="ftitle"><span class="fname">${f.name}</span></div>`
+    : `<div class="ftitle" title="${f.path}"><span class="fname">${f.name}</span><span class="fmeta">${f.size} · Read only${hostNote}</span></div>`
+  const actions = `<div class="factions">
+      ${f.missing ? '' : `<button type="button" class="files-toggle" aria-pressed="${s.source}" data-source>Source</button>`}
+      ${!f.missing && s.source ? `<button type="button" class="files-icon" aria-label="Wrap lines" title="Wrap lines: on">${ICON.wrap}</button>` : ''}
+      <button type="button" class="files-icon" aria-label="Read ${f.name} again" title="Read again" data-reload>${ICON.reload}</button>
+      <button type="button" class="files-icon" aria-label="Copy path of ${f.name}" title="Copy path" data-copy>${ICON.copy}</button>
+      ${f.host ? '' : `<button type="button" class="files-icon" aria-label="Show in File Explorer: ${f.name}" title="Show in File Explorer" data-reveal>${ICON.folder}</button>`}
+      <button type="button" class="files-icon" aria-label="Close preview" title="Close preview" data-close>${ICON.x}</button>
+    </div>`
+  const body = f.missing
+    ? `<div class="problem"><strong>This file is not on forge, or it has moved.</strong><p>Nothing was opened. Ask the thread where it went.</p></div>`
+    : s.source ? `<pre>${f.source.replace(/</g, '&lt;')}</pre>` : f.html
+  return `<section class="file-panel ${cls}" aria-label="Preview of ${f.name}">
+    ${behind ? `<div class="back"><button type="button" data-close>‹ Back to ${behind}</button></div>` : ''}
+    <header class="fhead">${head}${actions}</header>
+    <div class="fbody">${body}</div>
+  </section>`
+}
+const watcherPane = focused => `<section class="pane" ${focused ? 'data-focused' : ''}>
+    <div class="head"><strong>Watcher</strong><span class="quiet">All threads 8</span><span class="grow"></span></div>
+    <div class="needs"><b>1 needs you</b> &nbsp;Visual gate flake, permission</div>
+    <div class="transcript">
+      <div class="you"><div class="who"><b>You</b>12:29 pm</div>Find why the visual gate flakes. Write up the plan.</div>
+      <div class="reply"><div class="who"><b>Watcher</b>12:33 pm</div>
+        <p>Visual gate flake wrote its plan: ${linkBtn('plan', 'plan.md')}. It keeps a longer note at ${linkBtn('outside', '~/.claude/plans/quiet-otter.md', true)}.</p>
+        <p>The release notes are in ${linkBtn('here', 'release-notes.md')} on this computer. The old plan was ${linkBtn('missing', 'old-plan.md')}.</p>
+        <p>The picture it took is <button type="button" class="link" data-png>capture.png</button>: not Markdown, so it does what it does today.</p>
+      </div>
+    </div>
+    <div class="composer">Ask about your threads, or say what to start or send</div>
+  </section>`
+const threadPaneInner = (showHead = true) => `${showHead ? `<div class="head"><strong>Visual gate flake</strong><span class="quiet">on forge</span><span class="grow"></span><button type="button" class="close-x" aria-label="Close Visual gate flake" title="Close" data-closebeside>${ICON.x}</button></div>` : ''}
+    <div class="transcript">
+      <div class="you"><div class="who"><b>You</b>12:32 pm</div>Find why the visual gate flakes.</div>
+      <div class="reply"><div class="who"><b>Claude</b>12:41 pm</div>
+        <p>Found the cause. The listening bars animate from a CSS loop. I wrote it up in ${linkBtn('thread', 'docs/capture-notes.md', true)} and the plan in ${linkBtn('plan', 'plan.md')}.</p>
+      </div>
+    </div>
+    <div class="composer">What would you like to do next?</div>`
+
+function renderWatcher() {
+  const v = s.variant === 'B' && narrow() ? 'A' : s.variant
+  const f = s.file
+  let html = watcherPane(!f && !s.beside)
+  if (v === 'A') {
+    if (f) html += `<div class="divider"></div>${filePanel('', s.beside ? 'Visual gate flake' : '')}`
+    else if (s.beside) html += `<div class="divider"></div><section class="pane" data-focused>${threadPaneInner()}</section>`
+  } else if (v === 'B') {
+    if (s.beside) html += `<div class="divider"></div><section class="pane">${threadPaneInner()}</section>`
+    if (f) html += filePanel('third')
+  } else {
+    if (s.beside) html += `<div class="divider"></div><section class="pane">${threadPaneInner()}</section>`
+    if (f) html += filePanel('sheet')
+  }
+  return html
+}
+function renderThreads() {
+  const f = s.file
+  const tools = s.toolsOpen ? `<aside class="tools">
+      <div class="tools-main">
+        ${f ? filePanel() : `<div class="chrome"><b>Files</b><span>Talk-to-Text</span></div>
+          <div class="tree"><div>▸ apps</div><div>▾ docs</div><div>&nbsp;&nbsp;▾ plans</div><div>&nbsp;&nbsp;&nbsp;&nbsp;plan.md</div><div>&nbsp;&nbsp;capture-notes.md</div><div>▸ src</div><div>AGENTS.md</div><div>README.md</div></div>`}
+        <div class="tfoot">Talk-to-Text · sotto/0e8ba2f6 · Worktree · on forge</div>
+      </div>
+      <div class="rail"><button type="button" tabindex="-1">${ICON.globe}Browser</button><button type="button" tabindex="-1">${ICON.term}Terminal</button><button type="button" tabindex="-1" data-on>${ICON.tree}Files</button><button type="button" tabindex="-1">${ICON.diff}Changes</button></div>
+    </aside>` : ''
+  return `<nav class="sidebar"><div class="row" data-on>Visual gate flake<small>Claude · on forge</small></div><div class="row">Footer links<small>Codex</small></div></nav>
+    <section class="pane" data-focused>${threadPaneInner(false).replace('<div class="transcript">', '<div class="head"><strong>Visual gate flake</strong><span class="quiet">Worktree · on forge</span></div><div class="transcript">')}</section>${tools}`
+}
+function seg(id, options, value, set) {
+  const box = document.getElementById(id)
+  box.innerHTML = options.map(([v, label]) => `<button type="button" aria-pressed="${String(v) === String(value)}" data-v="${v}">${label}</button>`).join('')
+  box.onclick = e => { const b = e.target.closest('button'); if (b) { set(b.dataset.v); render() } }
+}
+function render() {
+  document.body.dataset.theme = s.theme
+  seg('room', [['watcher', 'Watcher\'s room'], ['threads', 'Threads page']], s.room, v => { s.room = v; s.file = null; s.toolsOpen = false; s.menu = false; say(v === 'threads' ? 'The Threads page already has its panel: Tools. Press a link to see it open on Files.' : 'Watcher\'s room has no Tools. Press a link, then flip A, B and C.') })
+  seg('variant', [['A', 'A Beside place'], ['B', 'B Third column'], ['C', 'C Sheet']], s.variant, v => { s.variant = v; if (s.file) press(s.file) })
+  seg('beside', [['off', 'None'], ['on', 'Open']], s.beside ? 'on' : 'off', v => { s.beside = v === 'on'; say(s.beside ? 'A thread is open beside Watcher. Press a link in either reply.' : s.note) })
+  seg('size', [['1600', '1600'], ['1280', '1280'], ['820', '820 minimum']], s.size, v => { s.size = v })
+  seg('theme', [['dark', 'Dark'], ['light', 'Light']], s.theme, v => { s.theme = v })
+  document.getElementById('variantGroup').style.display = s.room === 'watcher' ? '' : 'none'
+  document.getElementById('besideGroup').style.display = s.room === 'watcher' ? '' : 'none'
+  const win = document.getElementById('win')
+  const [w, h] = SIZES[s.size]
+  win.style.setProperty('--w', `${w}px`); win.style.setProperty('--h', `${h}px`)
+  win.dataset.variant = s.variant === 'B' && narrow() ? 'A' : s.variant
+  win.innerHTML = (s.room === 'watcher' ? renderWatcher() : renderThreads()) + (s.menu ? `<div class="menu" role="menu" aria-label="plan.md" style="left:12%;top:38%">
+      <button type="button" role="menuitem" data-open="plan">Open in side panel</button>
+      <button type="button" role="menuitem" data-menu-reveal>Show in File Explorer</button>
+      <button type="button" role="menuitem" data-menu-copy>Copy path</button></div>` : '')
+  document.getElementById('state').innerHTML = s.note
+}
+document.getElementById('win').addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return
+  if (t.dataset.open) return press(t.dataset.open)
+  if ('close' in t.dataset) return closeFile()
+  if ('closebeside' in t.dataset) { s.beside = false; say('Closed the thread. Nothing stopped.'); return render() }
+  if ('source' in t.dataset) { s.source = !s.source; say(s.source ? 'Showing the file\'s Markdown as written.' : 'Showing the file rendered.'); return render() }
+  if ('reload' in t.dataset) { say('Read the file again from where it lives. A model may have changed it.'); return render() }
+  if ('copy' in t.dataset || 'menuCopy' in t.dataset) { s.menu = false; say(`Copied <b>${FILES[s.file]?.path ?? FILES.plan.path}</b>. For a file on forge this is forge's path.`); return render() }
+  if ('reveal' in t.dataset) { say('Windows shows the file selected in File Explorer. Nothing runs.'); return render() }
+  if ('menuReveal' in t.dataset) { s.menu = false; say('plan.md lives on forge, so Show in File Explorer is greyed there and says so. On this computer it does what it does today.'); return render() }
+  if ('png' in t.dataset) { say('capture.png is not Markdown: it shows in its folder as today, or says so on a paired host. <b>This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened.</b>'); return render() }
+})
+document.getElementById('win').addEventListener('contextmenu', e => {
+  const t = e.target.closest('[data-open]'); if (!t) return
+  e.preventDefault(); s.menu = true; say('The link\'s right-click menu. Shift+F10 or the menu key opens it too.'); render()
+})
+document.getElementById('menuBtn').addEventListener('click', () => { s.menu = !s.menu; say(s.menu ? 'The link\'s right-click menu. Shift+F10 or the menu key opens it too.' : s.note); render() })
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return
+  if (s.menu) { s.menu = false; return render() }
+  if (s.file) closeFile()
+})
+window.addEventListener('resize', () => { if (s.variant === 'B') render() })
+const params = new URLSearchParams(location.search)
+if (['A', 'B', 'C'].includes(params.get('variant'))) s.variant = params.get('variant')
+render()
+</script>
+</body>
+</html>

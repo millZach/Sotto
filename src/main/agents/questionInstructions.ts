@@ -9,3 +9,10 @@
 export function questionInstructions(tool: string, keepsWorking: boolean): string {
   return `Ask actionable clarification questions through ${tool} so Sotto can show its question panel. Use it for questions with choices and free-text questions${keepsWorking ? ', including while continuing independent work' : ''}. Do not leave questions that need a user answer only in commentary or a final message. The question panel shows only the question and its choices, and the user never sees your thinking: write what they must read before they answer, such as commands or steps, as reply text before you ask, or in the question itself. A suggested choice is not an answer. If an answer is required before an action, wait for the user before that action. A decision that holds up shipping, such as whether to ship, which take to keep or whether to approve an ADR change, is such a question: ask it there with its choices, never as a closing line such as "say when". Permission requests still use the native approval flow.`
 }
+
+/**
+ * What a thread is told about a Markdown file it makes (ADR-0120, November 3 amendment): a link opens it in Sotto's side panel,
+ * so the user can read it without leaving the thread. Each provider that takes Sotto's instructions adds it to them, while its
+ * Owl answer is on; it replaces nothing the provider says.
+ */
+export const MARKDOWN_LINK_INSTRUCTIONS = 'Whenever you write or change a Markdown file, or name one the user may want to read, link it in your reply by its full path, as in [plan.md](/full/path/to/plan.md). Sotto opens that link in a side panel beside the thread, read only.'

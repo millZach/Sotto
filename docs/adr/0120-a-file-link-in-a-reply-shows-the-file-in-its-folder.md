@@ -21,3 +21,21 @@ Agents often answer with a link to a file they wrote or read: an absolute path, 
 ## Consequences
 
 A reply can point at a file the user can then open themselves. A link to a file outside the thread's folder reveals where it lives, which the reply already said. Sending it to stable is flipping its `sentToStable`.
+
+## November 3 amendment: a Markdown link opens in the side panel
+
+Zach asked for it on November 3, 2026, picked A of `docs/prototypes/markdown-side-panel-prototype.html` and approved this text. Owl feature `markdown-side-panel`; while it is off, a Markdown link shows in its folder as above and main refuses the read with a message. This changes one fact above: a press on a Markdown link reads the file. The text goes only to the window and never to a model.
+
+**Show, never run.** A press on a link to a `.md`, `.markdown` or `.mdown` file, or Enter on it, opens it read only in the side panel: Tools > Files on the Threads page, the beside pane's place in Watcher's room. It is drawn by the transcript's safe Markdown renderer, so a link in it runs nothing and a picture in it stays unloaded. Every other file still shows in its folder.
+
+**Which files.** The window sends `sotto:files:preview-link` with the thread's ID and the path as the reply wrote it, under the same schema and sender check as `sotto:files:reveal-link`. A path relative to the thread's folder must stay inside it after links are followed. An absolute or `~/` path may name any Markdown file on the machine the thread runs on. The path as written and the file it really is must both end as Markdown does, so `notes.md` pointing at a key is refused. Text is read up to 512 KB and must be UTF-8. The window gets the file's text, its size and the link's own name, never where the path led.
+
+**Paired hosts.** "Not on a paired host" still holds for showing a file in its folder, and no longer for Markdown. The host reads the file under the same rules and answers `thread-file-link`, behind the `thread-file-links` feature, which it offers desktops only and only where its own Owl answer is on. A full path in Watcher's reply that lies inside another thread's folder is read from that thread's machine, the deepest folder first, since Watcher's workers may be elsewhere. Any other path in Watcher's reply is read on Watcher's own machine.
+
+**The folder view.** The panel keeps Show in File Explorer for a file on this computer. Right-clicking the link, Shift+F10 or the menu key offers Open in side panel, Show in File Explorer and Copy path. On a paired host the first of those is left out of the panel, and the menu's says why when pressed.
+
+**Models link what they make.** Claude Code, Codex and Grok Build threads are told, beside what they are told about asking the user, to link any Markdown file they write or name by its full path. Watcher is told the same in its prompt, with a worker's path as the worker gave it. The other providers take no instructions from Sotto, so inline code that names a Markdown file by a relative path, such as `docs/plan.md`, is a link too, and a model that forgets still leaves one.
+
+**In Watcher's room** the file takes the beside pane's place, with the same divider. A thread already beside Watcher waits behind it with its draft and reading position, and Back to its title, the close button or Escape brings it back. Opening a thread puts the file away.
+
+**Not here.** The iPhone and the Android client have no file links. A link inside the open file does not open another file.

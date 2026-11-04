@@ -2,23 +2,40 @@
 import { describe, expect, it, vi } from 'vitest'
 import { registerFilesIpc, type HostedThreadFiles } from '../../../src/main/files/ipc'
 import { FilesService } from '../../../src/main/files/service'
-import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK } from '../../../src/shared/files'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK } from '../../../src/shared/files'
 import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
 import { ipcRegistry } from '../../fixtures/ipcHarness'
 
-function fixture(hosted?: HostedThreadFiles, revealLinks = true) {
+function fixture(hosted?: HostedThreadFiles, revealLinks = true, previewLinks = true) {
   const registry = ipcRegistry()
   const { ipc, handlers } = registry
   const { main, widget } = registry
   const resolveBinding = vi.fn().mockReturnValue(null), copyPath = vi.fn(), reveal = vi.fn()
   const files = new FilesService({ resolveBinding, copyPath, reveal })
-  const dispose = registerFilesIpc(ipc, files, () => [main, widget], hosted, revealLinks)
+  const dispose = registerFilesIpc(ipc, files, () => [main, widget], hosted, revealLinks, previewLinks)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const invoke = async (channel: string, source = event, ...args: unknown[]) => registry.invoke(channel, args, source)
   return { handlers, main, widget, event, invoke, dispose, resolveBinding, copyPath, reveal }
 }
 const channels = [FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL]
 describe('Files IPC message file links', () => {
+  it('reads a linked Markdown file on the machine its thread runs on, and refuses while the Owl answer is off', async () => {
+    const answer = { ok: true as const, value: { name: 'plan.md', size: 1, text: 'a' } }
+    const onHost = { threadId: 'host:22222222-2222-4222-8222-222222222222:thread', path: '/home/me/plan.md' }
+    const previewLink = vi.fn(async () => answer)
+    const hosted = { list: vi.fn(), preview: vi.fn(), copyPath: vi.fn(), previewLink } as unknown as HostedThreadFiles
+    const on = fixture(hosted)
+    await expect(on.invoke(FILES_PREVIEW_LINK, on.event, onHost)).resolves.toBe(answer)
+    expect(previewLink).toHaveBeenCalledWith(onHost)
+    await expect(on.invoke(FILES_PREVIEW_LINK, on.event, { ...onHost, path: '//evil.example/share/a.md' })).resolves.toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(previewLink).toHaveBeenCalledOnce()
+    await expect(on.invoke(FILES_PREVIEW_LINK, { sender: on.widget.webContents, senderFrame: on.widget.webContents.mainFrame }, onHost)).rejects.toThrow('FILES_MAIN_WINDOW_REQUIRED')
+    on.dispose()
+    const off = fixture(hosted, true, false)
+    await expect(off.invoke(FILES_PREVIEW_LINK, off.event, onHost)).resolves.toMatchObject({ ok: false, error: { code: 'unavailable', message: 'Opening Markdown files in the side panel is not part of this version of Sotto. Nothing was opened.' } })
+    expect(previewLink).toHaveBeenCalledOnce()
+    off.dispose()
+  })
   it('answers only the main window', async () => {
     const f = fixture()
     const link = { threadId: 'thread', path: '/missing/file.pdf' }
@@ -80,6 +97,8 @@ describe('Files IPC security', () => {
     await expect(f.invoke(FILES_REVEAL, f.event, onHost)).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened.' } })
     // A path in a paired host's message names that host's file, never one on this computer.
     await expect(f.invoke(FILES_REVEAL_LINK, f.event, { threadId: onHost.threadId, path: '/Users/me/file.pdf' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    // Its Markdown files are read on that host, and a window with no way to read them there refuses.
+    await expect(f.invoke(FILES_PREVIEW_LINK, f.event, { threadId: onHost.threadId, path: '/home/me/plan.md' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
     // A paired host's thread is checked as this computer's would be before anything reaches the host.
     await expect(f.invoke(FILES_PREVIEW, f.event, { ...onHost, path: '../secret' })).resolves.toMatchObject({ ok: false, error: { code: 'invalid-request' } })
     expect(hosted.preview).toHaveBeenCalledOnce()

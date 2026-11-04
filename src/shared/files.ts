@@ -5,6 +5,7 @@ export const FILES_PREVIEW = 'sotto:files:preview'
 export const FILES_COPY_PATH = 'sotto:files:copy-path'
 export const FILES_REVEAL = 'sotto:files:reveal'
 export const FILES_REVEAL_LINK = 'sotto:files:reveal-link'
+export const FILES_PREVIEW_LINK = 'sotto:files:preview-link'
 export const FILES_MAX_ENTRIES = 1_000
 export const FILES_MAX_TEXT_BYTES = 512 * 1024
 export const FILES_MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -36,6 +37,17 @@ export type FileLinkRequest = z.infer<typeof fileLinkRequestSchema>
 // Empty on purpose: the window learns only whether the file was shown, never where a path resolved to.
 export const fileLinkSchema = z.object({}).strict()
 export type FileLink = z.infer<typeof fileLinkSchema>
+/**
+ * A Markdown file a message links to, read only for the side panel (ADR-0120, November 3 amendment). The name is the link's
+ * own: as with showing a file, the window never learns where a path led.
+ */
+export const fileLinkPreviewSchema = z.object({ name: z.string().max(4096), size: z.number().int().nonnegative().max(FILES_MAX_TEXT_BYTES), text: z.string().max(FILES_MAX_TEXT_BYTES) }).strict()
+export type FileLinkPreview = z.infer<typeof fileLinkPreviewSchema>
+/** A path as a link wrote it, without a trailing location such as `:12`, `#L12` or `#page=2`. */
+export const withoutLinkLocation = (path: string): string => path.replace(/(?:#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?|#page=\d+|:\d+(?:[:-]\d+)?)$/u, '')
+const MARKDOWN_ENDING = /\.(?:md|markdown|mdown)$/iu
+/** Whether a file's name ends as Markdown's do, with or without a link's trailing location. */
+export const isMarkdownPath = (path: string): boolean => MARKDOWN_ENDING.test(path) || MARKDOWN_ENDING.test(withoutLinkLocation(path))
 
 export const fileWorkspaceSchema = z.object({
   threadId: z.string(), projectId: z.string(), workingDirectory: z.string(), workspaceId: workspaceIdSchema,
@@ -80,4 +92,6 @@ export interface FilesBridge {
   reveal?(request: FileRequest): Promise<FilesResult<FilePath>>
   /** Shows a file a message links to in Finder or File Explorer. */
   revealLink?(request: FileLinkRequest): Promise<FilesResult<FileLink>>
+  /** Reads a Markdown file a message links to, for the side panel, on the machine the thread runs on. */
+  previewLink?(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>>
 }

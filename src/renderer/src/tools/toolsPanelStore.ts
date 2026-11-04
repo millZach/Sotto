@@ -4,6 +4,7 @@ import type { BrowserPage, BrowserTask, BrowserBridge } from '../../../shared/br
 import { BrowserStore } from './browserStore'
 import { ChangesStore } from './changesStore'
 import { FilesBrowserStore } from './filesBrowser'
+import type { LinkedFile } from './linkedFile'
 import { TerminalStore } from './terminalStore'
 import { SubagentsStore } from './subagentsStore'
 
@@ -60,6 +61,8 @@ export class ToolsPanelStore {
   private readonly listeners = new Set<() => void>()
   private focusReturnUntil = 0
   private quietOpen = false
+  private readonly linkedFiles = new Map<string, LinkedFile>()
+  private linkedRevision = 0
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -150,6 +153,22 @@ export class ToolsPanelStore {
     this.update({ open: true, surface: 'iphone', ...(pinned !== null && pinned !== threadId ? { pinnedThreadId: threadId } : {}) })
   }
 
+  /**
+   * Opens a Markdown file a thread's message linked in Tools > Files (ADR-0120, November 3 amendment). The press names this
+   * thread, so a panel pinned to another one, or following another pane, is pinned to it instead.
+   */
+  showLinkedFile(threadId: string, path: string, focused = true): void {
+    this.linkedFiles.set(threadId, { threadId, path, revision: ++this.linkedRevision })
+    const pinned = this.chrome.pinnedThreadId
+    const moves = pinned === null ? !focused : pinned !== threadId
+    // The file takes focus itself, so that the keyboard reads it, rather than the rail's tile.
+    if (!this.chrome.open) this.quietOpen = true
+    this.update({ open: true, surface: 'files', ...(moves ? { pinnedThreadId: threadId } : {}) })
+    this.notify()
+  }
+  linkedFile(threadId: string): LinkedFile | null { return this.linkedFiles.get(threadId) ?? null }
+  closeLinkedFile(threadId: string): void { if (this.linkedFiles.delete(threadId)) this.notify() }
+
   /** Closing moved focus to the toggle; a toggle mounted shortly after (the panes re-laid out) takes it if nothing else has. */
   requestToggleFocus(now = Date.now()): void { this.focusReturnUntil = now + TOGGLE_FOCUS_RETURN_MS }
   togglePendingFocus(now = Date.now()): boolean { return !this.chrome.open && now < this.focusReturnUntil }
@@ -159,8 +178,10 @@ export class ToolsPanelStore {
     const next = { ...this.chrome, ...patch }
     if ((Object.keys(patch) as (keyof ToolsPanelChrome)[]).every(key => next[key] === this.chrome[key])) return
     this.chrome = next
-    for (const listener of [...this.listeners]) listener()
+    this.notify()
   }
+
+  private notify(): void { for (const listener of [...this.listeners]) listener() }
 }
 
 /** In-session singleton: leaving the Threads page or changing focus keeps the panel and its browsing. */

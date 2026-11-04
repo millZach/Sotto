@@ -983,6 +983,10 @@ msgstr ""
 msgid "Open VSX sent more data than a theme needs, so the download was stopped."
 msgstr ""
 
+#: src/main/files/ipc.ts
+msgid "Opening Markdown files in the side panel is not part of this version of Sotto. Nothing was opened."
+msgstr ""
+
 #: src/main/teams/teams.ts
 msgid "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then try again. Nothing was linked."
 msgstr ""
@@ -2679,6 +2683,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "This link is not a file path. Nothing was opened."
 msgstr ""
 
 #: src/main/memory/profile.ts

@@ -1,4 +1,4 @@
-import type { FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
@@ -15,6 +15,8 @@ import type { WorkspaceHost } from './workspace'
 export interface HostThreadToolReads {
   threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>>
   threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>>
+  /** A Markdown file a thread's message links to, for the side panel (ADR-0120, November 3 amendment). */
+  threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>>
   gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>>
   gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>>
   subagentPage(request: SubagentPageRequest): Promise<SubagentPage>
@@ -34,6 +36,7 @@ export function threadToolReads(options: { resolveBinding(threadId: string): Fil
   return {
     threadFiles: request => files.list(request),
     threadFilePreview: request => files.preview(request),
+    threadFileLink: request => files.previewLink(request),
     gitChanges: request => git.list(request),
     gitReview: request => git.review(request),
     subagentPage: request => options.subagents.subagentPage(request),

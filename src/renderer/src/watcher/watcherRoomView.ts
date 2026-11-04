@@ -1,9 +1,15 @@
 import { browserStorage } from '../agents/splitLayout'
+import type { LinkedFile } from '../tools/linkedFile'
 
 /** Watcher only splits into columns; its width belongs to the room, not the thread opened beside it. */
 export const WATCHER_SHARE_STORAGE_KEY = 'sotto.watcher.split.columns'
 
-export interface RoomView { readonly besideId: string | null; readonly share: number }
+export interface RoomView {
+  readonly besideId: string | null
+  readonly share: number
+  /** A Markdown file a message linked, in the beside pane's place; a thread beside Watcher waits behind it (ADR-0120, November 3 amendment). */
+  readonly file: LinkedFile | null
+}
 
 /** The beside thread lasts for this window; the divider's share also survives a restart. */
 export class RoomViewStore {
@@ -20,7 +26,7 @@ export class RoomViewStore {
         const stored: unknown = text == null ? null : JSON.parse(text)
         if (typeof stored === 'number' && Number.isFinite(stored) && stored > 0 && stored < 1) share = stored
       } catch { /* Unavailable storage or an unreadable share leaves the default. */ }
-      this.view = { besideId: null, share }
+      this.view = { besideId: null, share, file: null }
     }
     return this.view
   }

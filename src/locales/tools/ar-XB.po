@@ -139,6 +139,7 @@ msgid "{more, plural, other {{name} was cancelled, and # more}}"
 msgstr ""
 
 #. {name} is a file name.
+#. {name} is a file name.
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "{name} contents"
 msgstr ""
@@ -586,6 +587,11 @@ msgstr ""
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Back"
+msgstr ""
+
+#. {backTo} is a thread's title. Closes a Markdown file to show that thread again.
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Back to {backTo}"
 msgstr ""
 
 #: src/renderer/src/tools/AgentsSurface.tsx
@@ -1063,6 +1069,10 @@ msgstr ""
 #: src/renderer/src/tools/ChangesSurface.tsx
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Could not copy the path"
+msgstr ""
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Could not copy the path."
 msgstr ""
 
 #: src/renderer/src/tools/terminalView.ts
@@ -2119,6 +2129,8 @@ msgid "Nothing to merge yet"
 msgstr ""
 
 #. {host} is the name of a paired host, as in forge.
+#. {host} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "on {host}"
 msgstr ""
@@ -2354,6 +2366,10 @@ msgstr ""
 msgid "Path copied"
 msgstr ""
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Path copied."
+msgstr ""
+
 #. Pauses a browser task.
 #. Pauses a browser task.
 #. Pauses a browser task.
@@ -2485,6 +2501,15 @@ msgstr ""
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Pull requests are not available in this window."
+msgstr ""
+
+#: src/renderer/src/tools/FilePreview.tsx
+msgid "Read {name} again"
+msgstr ""
+
+#: src/renderer/src/tools/FilePreview.tsx
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Read again"
 msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx
@@ -2914,6 +2939,10 @@ msgstr ""
 msgid "Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again."
 msgstr ""
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Sotto cannot read this file from here. Nothing was opened."
+msgstr ""
+
 #: src/renderer/src/tools/webLinks.tsx
 msgid "Sotto cannot show files from here. Nothing was opened."
 msgstr ""
@@ -2938,10 +2967,15 @@ msgstr ""
 msgid "Sotto could not confirm this. Refresh to see what GitHub has."
 msgstr ""
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Sotto could not read this file. Nothing was opened. Try again."
+msgstr ""
+
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "Sotto could not read this repository’s branches."
 msgstr ""
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 #: src/renderer/src/tools/webLinks.tsx
 msgid "Sotto could not show this file. Nothing was opened."
 msgstr ""
@@ -3340,6 +3374,10 @@ msgstr ""
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "This draft answers a question. Finish that answer before adding browser feedback."
+msgstr ""
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This file could not be read. Nothing was opened."
 msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx

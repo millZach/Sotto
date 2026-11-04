@@ -552,6 +552,7 @@ describe('desktop host routing', () => {
       threadFiles: vi.fn(async (request: FileListRequest) => ({ ok: true as const, value: { workspace, path: request.path, truncated: false,
         entries: [{ name: 'a.txt', path: request.path ? `${request.path}/a.txt` : 'a.txt', kind: 'file' as const }] } })),
       threadFilePreview: vi.fn(async (request: FileRequest) => ({ ok: true as const, value: { workspace, path: request.path, name: 'a.txt', size: 1, content: { kind: 'text' as const, text: 'a' } } })),
+      threadFileLink: vi.fn(async () => ({ ok: true as const, value: { name: 'plan.md', size: 1, text: 'a' } })),
       gitChanges: vi.fn(async () => ({ ok: true as const, value: { workspace, branch: 'main', revision: 'r1', files: [], truncated: false } })),
       gitReview: vi.fn(async () => ({ ok: true as const, value: { workspace, revision: 'r1', scope: { kind: 'working' as const }, files: [], truncated: false } })),
       subagentPage: vi.fn(async () => ({ threadId: 'thread', revision: 1, rows: [agentRow], summary: EMPTY_SUBAGENT_SUMMARY })),
@@ -563,6 +564,8 @@ describe('desktop host routing', () => {
     expect(reads.threadFiles).toHaveBeenCalledWith({ threadId: 'thread', path: '' })
     await expect(router.threadFilePreview({ threadId: key, path: 'a.txt', workspaceId })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
     expect(reads.threadFilePreview).toHaveBeenCalledWith({ threadId: 'thread', path: 'a.txt', workspaceId })
+    await expect(router.threadFileLink({ threadId: key, path: '/home/me/plan.md' })).resolves.toMatchObject({ ok: true, value: { name: 'plan.md' } })
+    expect(reads.threadFileLink).toHaveBeenCalledWith({ threadId: 'thread', path: '/home/me/plan.md' })
     await expect(router.gitChanges({ threadId: key, workspaceId })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
     await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
     expect(reads.gitReview).toHaveBeenCalledWith({ threadId: 'thread', workspaceId, scope: { kind: 'working' } })

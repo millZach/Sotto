@@ -127,6 +127,7 @@ describe('SocketHostService thread tool features (ADR-0025, October 5 amendment)
     const workspaceId = 'a'.repeat(64)
     for (const read of [
       () => client.threadFiles({ threadId: 'thread', path: '' }), () => client.threadFilePreview({ threadId: 'thread', path: 'a.txt', workspaceId }),
+      () => client.threadFileLink({ threadId: 'thread', path: '/home/me/plan.md' }),
       () => client.gitChanges({ threadId: 'thread' }), () => client.gitReview({ threadId: 'thread', workspaceId, scope: { kind: 'working' } }),
       () => client.subagentPage({ threadId: 'thread' }), () => client.subagentAssignments({ threadId: 'thread', agentId: 'agent' }),
     ]) await expect(read()).rejects.toMatchObject({ code: 'version_mismatch', message })

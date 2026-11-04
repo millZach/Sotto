@@ -139,6 +139,7 @@ msgid "{more, plural, other {{name} was cancelled, and # more}}"
 msgstr "{more, plural, other {{name} was cancelled, and # more}}"
 
 #. {name} is a file name.
+#. {name} is a file name.
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "{name} contents"
 msgstr "{name} contents"
@@ -587,6 +588,11 @@ msgstr "Babysitting #{number}"
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Back"
 msgstr "Back"
+
+#. {backTo} is a thread's title. Closes a Markdown file to show that thread again.
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Back to {backTo}"
+msgstr "Back to {backTo}"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Back to all agents"
@@ -1064,6 +1070,10 @@ msgstr "Could not copy the link. Open on GitHub and copy the address from your b
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Could not copy the path"
 msgstr "Could not copy the path"
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Could not copy the path."
+msgstr "Could not copy the path."
 
 #: src/renderer/src/tools/terminalView.ts
 msgid "Could not copy. Your selection is kept. Try Ctrl+C again."
@@ -2119,6 +2129,8 @@ msgid "Nothing to merge yet"
 msgstr "Nothing to merge yet"
 
 #. {host} is the name of a paired host, as in forge.
+#. {host} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "on {host}"
 msgstr "on {host}"
@@ -2354,6 +2366,10 @@ msgstr "Paste a pull request URL or enter 123 / #123."
 msgid "Path copied"
 msgstr "Path copied"
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Path copied."
+msgstr "Path copied."
+
 #. Pauses a browser task.
 #. Pauses a browser task.
 #. Pauses a browser task.
@@ -2486,6 +2502,15 @@ msgstr "Pull request URL or #42"
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Pull requests are not available in this window."
 msgstr "Pull requests are not available in this window."
+
+#: src/renderer/src/tools/FilePreview.tsx
+msgid "Read {name} again"
+msgstr "Read {name} again"
+
+#: src/renderer/src/tools/FilePreview.tsx
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Read again"
+msgstr "Read again"
 
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "Read only"
@@ -2914,6 +2939,10 @@ msgstr "Small"
 msgid "Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again."
 msgstr "Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again."
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Sotto cannot read this file from here. Nothing was opened."
+msgstr "Sotto cannot read this file from here. Nothing was opened."
+
 #: src/renderer/src/tools/webLinks.tsx
 msgid "Sotto cannot show files from here. Nothing was opened."
 msgstr "Sotto cannot show files from here. Nothing was opened."
@@ -2938,10 +2967,15 @@ msgstr "Sotto could not confirm this. Look for the new thread in the list before
 msgid "Sotto could not confirm this. Refresh to see what GitHub has."
 msgstr "Sotto could not confirm this. Refresh to see what GitHub has."
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Sotto could not read this file. Nothing was opened. Try again."
+msgstr "Sotto could not read this file. Nothing was opened. Try again."
+
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "Sotto could not read this repository’s branches."
 msgstr "Sotto could not read this repository’s branches."
 
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 #: src/renderer/src/tools/webLinks.tsx
 msgid "Sotto could not show this file. Nothing was opened."
 msgstr "Sotto could not show this file. Nothing was opened."
@@ -3341,6 +3375,10 @@ msgstr "This computer"
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "This draft answers a question. Finish that answer before adding browser feedback."
 msgstr "This draft answers a question. Finish that answer before adding browser feedback."
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This file could not be read. Nothing was opened."
+msgstr "This file could not be read. Nothing was opened."
 
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "This file is no longer here."

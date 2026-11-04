@@ -25,7 +25,7 @@ import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { watcherRequestLine } from './watcherRequestNote'
-import { questionInstructions } from './questionInstructions'
+import { MARKDOWN_LINK_INSTRUCTIONS, questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { GrokSubscriptionClient, sweepLeftoverSessions } from './subscriptionGrok'
@@ -188,6 +188,8 @@ function freshHistory(history?: HistoryRead): HistoryRead {
 
 export interface GrokAcpOptions {
   usageEnabled?: boolean
+  /** Linked Markdown files in the side panel (ADR-0120, November 3 amendment), the Owl answer read once at start: the thread is told to link them. */
+  markdownLinks?: boolean
   /** Restart stopped threads (ADR-0144), the Owl answer read once at start: a prompt refused at a usage limit says so on its `lastTurn`. */
   limitStops?: boolean
   executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
@@ -291,7 +293,8 @@ export class GrokAcpHost implements AgentHost {
   private sessionRules(mcpServers: readonly { readonly name: string }[]): string {
     const table = this.workerRoles?.table()
     const roles = table ? subagentRoleInstructions(table, { provider: 'grok', agents: new Set(), canDelegate: mcpServers.some(server => server.name === DELEGATE_MCP_SERVER) }) : undefined
-    return roles ? `${GROK_QUESTIONS}\n\n${roles}` : GROK_QUESTIONS
+    const questions = this.options.markdownLinks === true ? `${GROK_QUESTIONS}\n\n${MARKDOWN_LINK_INSTRUCTIONS}` : GROK_QUESTIONS
+    return roles ? `${questions}\n\n${roles}` : questions
   }
   /**
    * Sotto's own tool servers for this thread: the browser's, the host setup tools while its setup runs (ADR-0035), and

@@ -8,6 +8,8 @@ import { PullRequestOpenerContext, type PullRequestOpener } from '../agents/Bran
 import { ForkLandingContext } from '../agents/ForkFromHere'
 import { toolsPanelStore } from '../tools/toolsPanelStore'
 import { BrowserPageRouteContext, type BrowserPageRoute } from '../tools/webLinks'
+import { LinkedFilePanel } from '../tools/LinkedFilePanel'
+import { focusLinkOpener, type LinkedFile } from '../tools/linkedFile'
 import { DIVIDER_WIDTH, MIN_PANE_WIDTH, RESIZE_STEP } from '../agents/splitLayout'
 import type { ThreadRow } from '../agents/threadFacts'
 import type { ThreadDraftStore } from '../agents/threadDraftStore'
@@ -189,6 +191,28 @@ export function BesidePane({ row, state, command, store, focused, underControls,
       notice={<ThreadWorkingCopyNotice key={`working-copy-${threadId}`} thread={row.thread} project={row.project} command={command}
         onRecovered={() => document.getElementById(BESIDE_PROMPT_ID)?.focus()} />} />
   </section>}</Marked></ForkLandingContext.Provider></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
+}
+
+/**
+ * A Markdown file a message linked, in the beside pane's place (ADR-0120, November 3 amendment, Zach's pick A). Escape, its
+ * close and Back to the thread put the file away; a thread that was beside Watcher comes back with its draft and reading place.
+ */
+export function BesideLinkedFile({ file, host, waiting, onFocus }: {
+  readonly file: LinkedFile
+  readonly host: string | undefined
+  /** The title of the thread waiting behind the file. */
+  readonly waiting: string | undefined
+  readonly onFocus: () => void
+}): ReactNode {
+  const { t } = useLingui()
+  const close = useCallback((): void => {
+    roomView.set({ file: null })
+    requestAnimationFrame(() => focusLinkOpener(() => document.getElementById(BESIDE_PROMPT_ID)?.focus()))
+  }, [])
+  return <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-region="pane" data-under-controls="" role="region" aria-label={t`Markdown file`}
+    onFocusCapture={onFocus} onPointerDownCapture={onFocus}>
+    <LinkedFilePanel key={file.path} file={file} host={host} backTo={waiting} onClose={close} />
+  </section>
 }
 
 /** A fork made in the pane beside Watcher opens there in place of its source, as it does in a pane on the Threads page:

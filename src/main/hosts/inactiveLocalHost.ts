@@ -95,7 +95,7 @@ export async function inactiveLocalHost(directory: string,
     turns: { path: () => join(directory, 'turns.jsonl'), recent: async () => [] },
     hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable(), setWindowFocused: () => undefined,
       // No local thread here has Files, Changes or Agents to read.
-      threadFiles: async () => unavailable(), threadFilePreview: async () => unavailable(), gitChanges: async () => unavailable(),
+      threadFiles: async () => unavailable(), threadFilePreview: async () => unavailable(), threadFileLink: async () => unavailable(), gitChanges: async () => unavailable(),
       gitReview: async () => unavailable(), subagentPage: async () => unavailable(), subagentAssignments: async () => unavailable() },
     // With the local host off there is no thread here whose provider could write anything.
     shortTextWriter: new ShortTextWriter({ write: async () => null }),

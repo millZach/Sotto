@@ -39,7 +39,8 @@ import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedOptions, Speed
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
-import { BrowserPageRouteContext } from '../tools/webLinks'
+import { BrowserPageRouteContext, LinkedFileRouteContext, type LinkedFileRoute } from '../tools/webLinks'
+import { linkedFileThread } from '../tools/linkedFile'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { watcherTakeovers, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { joinedPlacements, joinedReceipts, joinedTakeovers, liveReceipts, placeAfterTurns, placeTakeovers, recalledConversation, recalledTakeovers } from './watcherConversationWork'
@@ -48,7 +49,7 @@ import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type 
 import { WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
 import { useMoveCards, useMoveProposals, WatcherMoveThreads } from './MoveThreads'
-import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
+import { BESIDE_PANE_ID, BesideDivider, BesideLinkedFile, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherGlance } from './WatcherGlance'
 import { WatcherMachines } from './WatcherMachines'
@@ -603,9 +604,19 @@ export function WatcherView({ now: fixedNow, update = null }: {
     opener.current = how.from ?? null
     pendingFocus.current = { threadId, atRequest: how.atRequest === true }
     setFocusedPane('beside')
-    if (roomView.get().besideId === threadId) { pendingFocus.current = null; focusBeside(how.atRequest === true); return }
-    roomView.set({ besideId: threadId })
+    if (roomView.get().besideId === threadId && roomView.get().file === null) { pendingFocus.current = null; focusBeside(how.atRequest === true); return }
+    roomView.set({ besideId: threadId, file: null })
   }, [command, app])
+
+  // The room has no Tools, so a linked Markdown file takes the beside pane's place. A link in Watcher's own reply may name a
+  // worker's file on another machine, so it is read from the thread whose folder holds it.
+  const hostNow = useRef(state?.host)
+  hostNow.current = state?.host
+  const openLinkedFile = useCallback<LinkedFileRoute>((threadId, path) => {
+    const reader = threadId === watcherId && hostNow.current ? linkedFileThread(hostNow.current, threadId, path) : threadId
+    roomView.set({ file: { threadId: reader, path, revision: (roomView.get().file?.revision ?? 0) + 1 } })
+    setFocusedPane('beside')
+  }, [watcherId])
 
   const closeBeside = useCallback((): void => {
     roomView.set({ besideId: null })
@@ -726,9 +737,11 @@ export function WatcherView({ now: fixedNow, update = null }: {
     facts.request !== undefined || facts.thread.requests.length > 0 || facts.thread.prototypeReady !== undefined)
   const showAll = useCallback((): void => { listOpener.current = null; setListOpen(true) }, [])
 
-  const beside = besideRow !== undefined && state !== null
+  const linkedFile = state === null ? null : view.file
+  const linkedThread = linkedFile === null ? undefined : state?.host.threads.find(thread => thread.id === linkedFile.threadId)
+  const beside = (besideRow !== undefined || linkedFile !== null) && state !== null
   const share = shownShare(width, view.share)
-  return <Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
+  return <LinkedFileRouteContext.Provider value={openLinkedFile}><Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
     <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
@@ -742,9 +755,10 @@ export function WatcherView({ now: fixedNow, update = null }: {
             </section>}</Marked>
             {beside ? <>
               <BesideDivider width={width} share={view.share} controls={BESIDE_PANE_ID} />
-              <BesidePane key={besideRow.thread.id} row={besideRow} state={state} command={command} store={agents.threadDrafts} focused={focusedPane === 'beside'} underControls
+              {linkedFile !== null ? <BesideLinkedFile file={linkedFile} waiting={besideRow?.thread.title} onFocus={() => setFocusedPane('beside')}
+                host={linkedThread?.remoteHost ? state?.connections?.find(item => item.hostId === linkedThread.hostId)?.name ?? linkedThread.hostLabel : undefined} /> : besideRow !== undefined ? <BesidePane key={besideRow.thread.id} row={besideRow} state={state} command={command} store={agents.threadDrafts} focused={focusedPane === 'beside'} underControls
                 error={focusedPane === 'beside' ? error : null} now={fixedNow} onFocus={() => setFocusedPane('beside')} onClose={closeBeside}
-                onOpenInThreads={() => openThread(besideRow.thread.id, { inThreads: true })} />
+                onOpenInThreads={() => openThread(besideRow.thread.id, { inThreads: true })} /> : null}
             </> : null}
           </div>
         </div>
@@ -754,5 +768,5 @@ export function WatcherView({ now: fixedNow, update = null }: {
     {/* The room has no sidebar, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
     {state !== null ? <SettleToast command={command} threads={state.host.threads} placement="corner" /> : null}
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
-  </div>}</Marked>
+  </div>}</Marked></LinkedFileRouteContext.Provider>
 }
