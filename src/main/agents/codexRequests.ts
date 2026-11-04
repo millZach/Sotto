@@ -89,11 +89,14 @@ function numberWords(field: Extract<FormField, { kind: 'number' }>): string {
   return field.maximum !== undefined ? `${what} of no more than ${field.maximum}` : what
 }
 
+/** Several choices of which none may be chosen: answered with no choice, it sends an empty list, so it asks nothing of the user. */
+const noneAllowed = (field: FormField | undefined): boolean => field?.kind === 'several' && (field.minItems ?? 0) === 0
+
 /** What a field's question says beyond its own words: a number's range, and a default, which is said and never chosen for the user. */
 function fieldHints(field: FormField): string {
   const label = (id: string): string => ('options' in field ? field.options.find(option => option.id === id)?.label : undefined) ?? id
   const fallback = field.kind === 'boolean' ? field.default === undefined ? undefined : field.default ? 'Yes' : 'No'
-    : field.kind === 'several' ? field.default?.length ? field.default.map(label).join(', ') : undefined
+    : field.kind === 'several' ? field.default === undefined ? undefined : field.default.length ? field.default.map(label).join(', ') : 'none'
       : field.kind === 'choice' ? field.default === undefined ? undefined : label(field.default)
         : field.default === undefined ? undefined : String(field.default)
   const range = field.kind === 'number' && (field.minimum !== undefined || field.maximum !== undefined) ? `${numberWords(field).replace(/^a/u, 'A')}.` : undefined
@@ -107,7 +110,7 @@ function formQuestion(id: string, value: unknown, required: boolean): NonNullabl
   const hints = field ? fieldHints(field) : ''
   return { id, question: (own.description ?? id) + (hints ? `\n${hints}` : ''), ...(own.title ? { header: own.title } : {}),
     options: field?.kind === 'boolean' ? [...YES_NO] : field?.kind === 'choice' || field?.kind === 'several' ? field.options : [],
-    multiSelect: field?.kind === 'several', allowFreeText: field?.kind === 'text' || field?.kind === 'number', required,
+    multiSelect: field?.kind === 'several', allowFreeText: field?.kind === 'text' || field?.kind === 'number', required: required && !noneAllowed(field),
     ...(!field ? { unavailableReason: UNSUPPORTED_FIELD } : {}) }
 }
 
@@ -298,7 +301,10 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
       try { content = formAnswerSchema.parse(JSON.parse(answer)) }
       catch { if (keys.length !== 1) throw new Error('Answer this form with a JSON object keyed by its fields.'); content = { [keys[0]!]: answer } }
     }
-    for (const key of form.required ?? []) if (!(key in content)) throw new Error(`Answer the required field: ${key}.`)
+    for (const key of form.required ?? []) {
+      if (!(key in content) && noneAllowed(formField(form.properties[key]))) content[key] = []
+      if (!(key in content)) throw new Error(`Answer the required field: ${key}.`)
+    }
     const typed: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(content)) {
       if (!Object.hasOwn(form.properties, key)) throw new Error('Answer only this form’s own fields.')

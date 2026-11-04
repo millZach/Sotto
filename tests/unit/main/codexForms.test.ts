@@ -63,6 +63,7 @@ describe('typed Codex form fields (#2154)', () => {
     expect(pending.request.questions!.map(question => question.question)).toEqual([
       'Proceed with the release?\nDefault: Yes.', 'mode\nDefault: Full check.', 'tags\nDefault: a, b.',
     ])
+    expect(form({ tags: { type: 'array', items: { type: 'string', enum: ['a'] }, default: [] } }).request.questions![0]!.question).toBe('tags\nDefault: none.')
     // Nothing answered is nothing sent: Codex's server applies its own default.
     expect(answerRequest(pending, '', undefined, {})).toEqual({ action: 'accept', content: {} })
   })
@@ -95,6 +96,11 @@ describe('typed Codex form fields (#2154)', () => {
     expect(() => answerRequest(untitled, '{"tags":[]}')).toThrow('Choose at least 1 option.')
     expect(() => answerRequest(untitled, '{"tags":["z"]}')).toThrow(/offered/u)
     expect(answerRequest(untitled, '{"tags":["b"]}')).toEqual({ action: 'accept', content: { tags: ['b'] } })
+    // Required, but none is a valid answer: the card may send it with nothing chosen, and that sends an empty list.
+    const none = form({ tags: { type: 'array', items: { type: 'string', enum: ['a', 'b'] } } }, ['tags'])
+    expect(none.request.questions![0]!.required).toBe(false)
+    expect(answerRequest(none, '', undefined, {})).toEqual({ action: 'accept', content: { tags: [] } })
+    expect(answerRequest(none, '{}')).toEqual({ action: 'accept', content: { tags: [] } })
     for (const items of [{ anyOf: [{ const: 'a', title: 'Alpha' }, { const: 'b', title: 'Beta' }] }, { oneOf: [{ const: 'a', title: 'Alpha' }, { const: 'b', title: 'Beta' }] }]) {
       const titled = form({ tags: { type: 'array', items } }, ['tags'])
       expect(titled.request.questions![0]).toMatchObject({ multiSelect: true, options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] })
