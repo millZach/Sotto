@@ -54,6 +54,15 @@ describe('diffing the detail of one thread', () => {
     expect(applyAgentThreadDetailDelta(held, delta)?.activities).toEqual([next])
   })
 
+  it('carries a failed change that is now known to be denied, though its status stays failed (#2159)', () => {
+    const old = record('change', { kind: 'file-change', status: 'failed', title: 'File changes' })
+    const held = base([], [old])
+    const next = { ...old, denied: true as const }
+    const delta = diffAgentThreadDetail(held, { messages: [], activities: [next] }, 5)!
+    expect(delta.activityDeltas).toEqual([{ record: next }])
+    expect(applyAgentThreadDetailDelta(held, delta)?.activities).toEqual([next])
+  })
+
   it('carries a turn on the user’s own server that is tried again or let down while its status stays the same (ADR-0124)', () => {
     const server = { name: 'Sparks', model: 'DeepSeek V4.1 Flash', host: 'spark-head:8888' }
     const old = record('turn', { kind: 'turn', title: 'Working', ownServer: server })

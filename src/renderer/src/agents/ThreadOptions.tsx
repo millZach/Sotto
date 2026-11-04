@@ -62,6 +62,24 @@ export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
     default: return undefined
   }
 }
+/**
+ * What each of Codex's four modes does, said as Codex doing it (ADR-0005, Zach's pick on November 4, 2026), in the
+ * interface language. The words are Codex 0.166.0's behaviour under `runtimePolicy` in `src/main/agents/codex.ts`:
+ * Ask for approval is `untrusted` in a read-only sandbox, where even a command that only reads asks; Allow edits is
+ * `on-request` in `workspace-write`, where commands inside the project run unasked and the network, other folders and
+ * `.git` need escalation; Auto routes those escalations to Codex's `auto_review` reviewer, a model on the thread's own
+ * model provider, which Sotto sets to OpenAI; Full access is `never` with no sandbox. Read them again when Codex or that
+ * mapping changes. A thread on another computer names it under Full access, since "this computer" is the one Sotto runs on.
+ */
+export function codexModeLine(mode: AgentRuntimeMode, computer?: string): string {
+  if (mode === 'full-access' && computer) return t({ message: `Codex runs any command and edits any file without asking, anywhere on ${computer} and online.`, comment: '{computer} is the name of the computer the thread runs on, such as forge.' })
+  switch (mode) {
+    case 'approval-required': return t`Codex asks before every command, even one that only reads, and before every edit.`
+    case 'auto-accept-edits': return t`Codex edits files and runs commands in the project without asking. It asks before going online, outside the project or committing.`
+    case 'auto': return t`As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you.`
+    case 'full-access': return t`Codex runs any command and edits any file without asking, anywhere on this computer and online.`
+  }
+}
 /** Permissions' glyph, which stands for the value in a narrow composer. */
 export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
@@ -107,9 +125,9 @@ export function effortChoices(model: AgentModel | undefined, reasoning: string, 
  * The permission modes a model offers, led by "Provider default" or an unoffered current mode as
  * unchoosable. A provider whose modes are its own (Devin) answers with those instead of Sotto's four, and
  * each carries what Sotto will still ask about under it, so a mode named for what the provider stops
- * asking cannot be read as Sotto stopping too.
+ * asking cannot be read as Sotto stopping too. `computer` names the thread's computer when it is not this one.
  */
-export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined): ChoiceOption[] {
+export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined, computer?: string): ChoiceOption[] {
   const own = model?.providerModes ?? []
   if (own.length > 0) {
     // Unchosen reads as the first mode, which is what the thread starts on, so only an unoffered one leads.
@@ -122,7 +140,8 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   const lead = runtimeMode === undefined ? [{ id: '', label: t`Provider default`, disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
-    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode) : undefined
+    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
+      : model?.providerId === 'codex' ? codexModeLine(mode, computer) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }
@@ -193,11 +212,13 @@ function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider
 /**
  * The caption beside the chips while a permission change waits: what is still in force, in the provider's name. What a
  * permission mode still lets the provider do is said as the provider doing it: the difference decides what the
- * provider does on its next tool call, so the caption names the mode in force rather than the one coming.
+ * provider does on its next tool call, so the caption names the mode in force rather than the one coming. Under Codex's
+ * Auto a reviewer model answers in the user's place (#2161), so for Codex that caption says so.
  */
-export function permissionInForceCaption(provider: string, inForce: { readonly runtimeMode?: AgentRuntimeMode | undefined; readonly providerModeName?: string | undefined }): string {
+export function permissionInForceCaption(provider: string, inForce: { readonly runtimeMode?: AgentRuntimeMode | undefined; readonly providerModeName?: string | undefined }, providerId?: string): string {
   const mode = inForce.providerModeName
   if (mode) return t({ message: `${provider} stays on ${mode} until it confirms.`, comment: '{provider} is a provider\'s name or "The provider"; {mode} is the provider\'s own name for a permission mode.' })
+  if (providerId === 'codex' && inForce.runtimeMode === 'auto') return t`Codex’s reviewer still answers what would come to you until it confirms.`
   switch (inForce.runtimeMode) {
     case 'approval-required': return t({ message: `${provider} still asks for approval until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
     case 'auto-accept-edits': return t({ message: `${provider} still makes edits without asking until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
@@ -609,7 +630,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** A speed as it runs on this model, in words: one the model does not offer runs at Standard. */
   const speedInForce = (value: string): string => speedName(speeds.some(item => item.id === value) ? value : SPEED_STANDARD, speeds)
   const efforts = effortChoices(model, reasoning, { ultracode: !watcher })
-  const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
+  const remoteComputer = thread.remoteHost ? state.connections?.find(item => item.hostId === thread.hostId)?.name ?? thread.hostLabel : undefined
+  const modes = modeChoices(model, thread.runtimeMode, thread.providerMode, remoteComputer)
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
   const provider = providerName ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })
@@ -634,7 +656,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const pendingPermission = settings.pending.permissions ?? null
   const permissionUnconfirmed = pendingPermission?.awaiting === 'unconfirmed'
   const caption = pendingPermission === null || permissionUnconfirmed ? '' : permissionInForceCaption(provider, usesProviderModes(confirmedModel)
-    ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined })
+    ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined },
+  thread.providerId ?? confirmedModel?.providerId)
   const retry = (kind: SettingKind): void => {
     // The speed control is either the bolt or the split chip's effort half.
     // The quiet pill draws the shield outside the bar, at its start, so the chip is looked for in the whole composer.

@@ -66,6 +66,7 @@ import { TeamService, type TeamEvent } from './teams/teams'
 import { TEAMS_CHANGED } from '../shared/teams'
 import { SIDE_WRITING_TIMEOUT_MS } from './agents/sideWriting'
 import { e2eTailscale } from './e2e/tailscale'
+import { e2eTeamFetch } from './e2e/teamFetch'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
 import { hostedTerminals } from './hosts/hostedTerminals'
@@ -850,7 +851,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -1083,7 +1084,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
   const teams: TeamService | undefined = owlFeatures.teams && watcherEnabled && startupSettings.localHostEnabled ? new TeamService({
     directory: userDataPath, credentials, tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
-    threads: leftOut => teamReads?.watcher?.teamThreadFacts(leftOut) ?? [], projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
+    threads: leftOut => teamReads?.watcher?.teamThreadFacts(leftOut) ?? { threads: [], beyondCap: 0 }, projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
     anchor: () => teamReads?.watcher?.teamAnchor() ?? null, keepHistory: () => agentHistoryEnabled,
     write: async prompt => {
       const modelId = teamReads?.watcher?.teamModel()
@@ -1091,10 +1092,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       return await teamReads?.host.writeShortTextOn?.({ modelId }, prompt, AbortSignal.timeout(SIDE_WRITING_TIMEOUT_MS)) ?? null
     },
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) }, hostname: () => osHostname(), log: logOperational,
+    ...e2eConfiguration ? { fetch: e2eTeamFetch(userDataPath) } : {},
   }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
-    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     toDoListEnabled, delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,

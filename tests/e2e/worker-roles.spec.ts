@@ -103,7 +103,7 @@ async function capture(launched: LaunchedSotto, name: string): Promise<void> {
   await launched.page.mouse.move(0, 0)
   await launched.page.screenshot({ path: join(evidence, `${name}.png`), animations: 'disabled' })
 }
-type ToolResult = { status: string; code?: string; message?: string; delegation?: { id: string; thread?: string; outcome: string }; role?: { work: string; named: string[]; note: string } }
+type ToolResult = { status: string; code?: string; message?: string; delegation?: { id: string; thread?: string; outcome: string }; heldToRole?: string; role?: { work: string; named: string[]; note: string } }
 const delegate = (page: Page, threadId: string, args: Record<string, unknown>): Promise<ToolResult> => page.evaluate(async ({ threadId, args }) => {
   const result = await window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: args })
   const text = result.content.find(item => item.type === 'text')
@@ -228,10 +228,54 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
         return thread && { providerId: thread.providerId, modelId: thread.modelId, reasoningEffort: thread.reasoningEffort, runtimeMode: thread.runtimeMode }
       }, parentId)
       await expect.poll(child, { timeout: 30_000 }).toEqual({ providerId: 'codex', modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: 'xhigh', runtimeMode: 'approval-required' })
-      // Words override a role for one request: a named model wins, and the result says so.
-      const named = await delegate(page, parentId, { work: 'research', title: 'Find the flake', brief: 'Find where the reconnect flake comes from.', provider: 'codex', model: 'native:codex:model:gpt-6-luna', wait_seconds: 0 })
+      // A model the user's own message does not name: the role holds, and the result says so (#1202).
+      const held = await delegate(page, parentId, { work: 'research', title: 'Find the flake', brief: 'Find where the reconnect flake comes from.', provider: 'codex', model: 'native:codex:model:gpt-6-luna', wait_seconds: 0 })
+      expect(held, JSON.stringify(held)).toMatchObject({ status: 'ok', role: { work: 'research', named: [] } })
+      expect(held.heldToRole).toContain('This call named GPT-6 Luna, but the user\'s Research role starts on')
+    })
+  } finally {
+    if (launched) await closeSotto(launched)
+    await restore()
+  }
+})
+
+test('a thread that names another model starts on its role until the user names that model (#1202)', async () => {
+  test.setTimeout(180_000)
+  const { profile, root, project, restore } = await rolesProfile()
+  let launched: LaunchedSotto | undefined
+  try {
+    await onReleaseTrack('owl', async () => {
+      launched = await launchSotto('success', profile)
+      const { page } = launched
+      const parentId = await connected(page, project)
+      await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
+      const asked = { work: 'research', brief: 'Find where the reconnect flake comes from.', provider: 'codex', model: 'native:codex:model:gpt-6-luna', wait_seconds: 0 }
+      const child = async (from: string, title: string) => page.evaluate(async ({ from, title }) => {
+        const thread = (await window.sotto!.agents!.get()).host.threads.find(item => item.delegatedBy === from && item.title === title)
+        return thread && { providerId: thread.providerId, modelId: thread.modelId }
+      }, { from, title })
+
+      // The user's own message does not name it, so the role's model starts and the result says so.
+      const held = await delegate(page, parentId, { ...asked, title: 'Held to its role' })
+      expect(held, JSON.stringify(held)).toMatchObject({ status: 'ok', role: { work: 'research', named: [] } })
+      expect(held.heldToRole).toContain('This call named GPT-6 Luna, but the user\'s Research role starts on Haiku 5.5')
+      await expect.poll(() => child(parentId, 'Held to its role'), { timeout: 30_000 }).toEqual({ providerId: 'claude', modelId: 'native:claude:model:haiku' })
+
+      // A thread whose user's own message names it starts the named model.
+      const asking = await page.evaluate(async threadId => {
+        const agents = window.sotto!.agents!
+        const source = (await agents.get()).host.threads.find(item => item.id === threadId)!
+        const thread = await agents.command({ type: 'create-thread', projectId: source.projectId, title: 'Find the flake', titleSource: 'user', modelId: source.modelId, workingCopy: 'shared', runtimeMode: 'approval-required' })
+        if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
+        const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Use GPT-6 Luna to find the flake.' })
+        if (sent.error) throw new Error(sent.error)
+        return thread.activeThreadId
+      }, parentId)
+      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.lastUserMessageId !== undefined, asking), { timeout: 30_000 }).toBe(true)
+      const named = await delegate(page, asking, { ...asked, title: 'Named by the user' })
       expect(named, JSON.stringify(named)).toMatchObject({ status: 'ok', role: { work: 'research', named: ['model'] } })
-      expect(named.role!.note).toContain('This request named its model')
+      expect(named.heldToRole).toBeUndefined()
+      await expect.poll(() => child(asking, 'Named by the user'), { timeout: 30_000 }).toEqual({ providerId: 'codex', modelId: 'native:codex:model:gpt-6-luna' })
     })
   } finally {
     if (launched) await closeSotto(launched)

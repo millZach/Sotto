@@ -28,7 +28,7 @@ This adds an indirection to [ADR-0002](0002-sotto-owned-thread-identity.md): the
 
 **Route requests into the attention queue and require explicit decisions.** Command and file approvals expose Allow/Deny and respond with `decision: 'accept'` only from an answer command with `approved: true`. Decline, skip, interruption and disconnect never approve; interruption and disconnect send decline/empty-answer responses to pending requests. Additional permission profiles are visible but can only be declined in this version; approving them produces guidance to answer in Codex. For `item/permissions/requestApproval`, the schema has no explicit decline form: an empty grant is the only refusal. The adapter sends `{ permissions: {}, scope: 'turn' }`. We never synthesize a broad permission grant or a persistent provider session grant.
 
-User-input questions retain the JSON-RPC ID while pending. Before writing an answer, the adapter removes it from pending state and remembers the in-flight ID. Repeated answers are rejected, and interruption/disconnect cannot decline an answer already in flight, even after its write deadline. Reset clears in-flight IDs. Single answers become `{ answers: { questionId: { answers: [text] } } }`. Multiple questions display numbered text and options, and accept numbered answer lines or a JSON object keyed by question ID. MCP form elicitations support validated string fields and their offered options; explicit form answers use `action: 'accept'` and structured `content`. This is delivery of the user's answer, not a permission grant. URL elicitations expose Continue and Decline in Sotto. They remain questions, including app-tool confirmations: supervision on a managed thread may answer and accept them. This is the intended behaviour as of September 30, 2026, and is a specific exception to ADR-0004’s rule that supervision follow-ups approve nothing. The owner accepted that these confirmations may be accepted without the user seeing them first. Device-verification, unsupported structured fields and extension forms require an answer in Codex; disconnect sends `action: 'decline'`. `serverRequest/resolved` removes requests answered directly in the provider.
+User-input questions retain the JSON-RPC ID while pending. Before writing an answer, the adapter removes it from pending state and remembers the in-flight ID. Repeated answers are rejected, and interruption/disconnect cannot decline an answer already in flight, even after its write deadline. Reset clears in-flight IDs. Single answers become `{ answers: { questionId: { answers: [text] } } }`. An answer given on Sotto's question card sends each chosen option's label, then any typed words as `user_note: <text>`, the marker Codex's own clients use, so typed words never read as the option they spell; a question without choices takes typed words whatever its `isOther` says (November 4, 2026, #2155 and #2157). Multiple questions display numbered text and options, and accept numbered answer lines or a JSON object keyed by question ID. MCP form elicitations support validated string fields and their offered options; explicit form answers use `action: 'accept'` and structured `content`. This is delivery of the user's answer, not a permission grant. URL elicitations expose Continue and Decline in Sotto. They remain questions, including app-tool confirmations: supervision on a managed thread may answer and accept them. This is the intended behaviour as of September 30, 2026, and is a specific exception to ADR-0004’s rule that supervision follow-ups approve nothing. The owner accepted that these confirmations may be accepted without the user seeing them first. Device-verification, unsupported structured fields and extension forms require an answer in Codex; disconnect sends `action: 'decline'`. `serverRequest/resolved` removes requests answered directly in the provider.
 
 **Timeouts preserve uncertainty.** Every client request has a deadline (15 seconds by default); mutation timeouts return `{ accepted: false, uncertain: true }`. The response callback remains registered until its response or child exit so late creation aliases and message confirmations are still applied. The adapter does not retry mutations. A snapshot after uncertain prompt delivery reads the existing provider session with `thread/read`; a confirmed message carries the outbox message ID. A repeated pending creation or message dispatch is not sent again. Late `turn/start` responses cannot change a completed turn back to running. Response validation or pipe failure also retains uncertainty instead of asserting that the provider rejected a mutation.
 
@@ -212,3 +212,45 @@ Measured on forge with 46 and 92 saved threads of 2 MB rollouts, a restart conne
 1,221 ms, read no rollout bytes against 92 to 184 MB, and spent 9 to 11 ms of main's CPU against 0.65 to 1.5 s.
 Opening a thread was unchanged at about 50 ms, and one with work done outside Sotto read only that
 (`docs/perf/2026-10-30-codex-rollout-positions.md`).
+
+## Amendment: what each permission mode says (November 4, 2026, #2161)
+
+A Codex thread's permission menu named its four modes and said nothing about them, while Cursor's (ADR-0128) and
+DeepSeek Harness's (ADR-0138) say what each lets the provider do. Codex's modes differ in more than their names suggest,
+and Auto hands the user's permission requests to a model, so the menu now says it. The adapter maps them in `runtimePolicy`, sent
+on `thread/start` and `thread/settings/update` and, for approval and reviewer, on every `turn/start`:
+
+| Mode | `approvalPolicy` | `approvalsReviewer` | `sandbox` |
+|---|---|---|---|
+| Ask for approval | `untrusted` | `user` | `read-only` |
+| Allow edits (the default when none is chosen) | `on-request` | `user` | `workspace-write` |
+| Auto | `on-request` | `auto_review` | `workspace-write` |
+| Full access | `never` | `user` | `danger-full-access` |
+
+Read in Codex 0.166.0's source: under `untrusted` every shell command asks, even one that only reads, and so does every
+patch. Under `on-request` with `workspace-write`, a command or patch inside the project runs without asking, and the
+network, other folders and the project's `.git` need an escalation, which asks; so a commit asks. `auto_review` sends
+those escalations to Codex's own reviewer, a model on the thread's provider (OpenAI, which Sotto sets), which can allow
+as well as deny and falls back to asking the user when a review fails. `never` with no sandbox asks nothing.
+
+Zach's pick, November 4, 2026: one line per mode, OpenAI named as Auto's reviewer, and Allow edits saying it asks
+before a commit:
+
+- **Ask for approval**: "Codex asks before every command, even one that only reads, and before every edit."
+- **Allow edits**: "Codex edits files and runs commands in the project without asking. It asks before going online,
+  outside the project or committing."
+- **Auto**: "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answers what would come to you."
+- **Full access**: "Codex runs any command and edits any file without asking, anywhere on this computer and online."
+
+The lines are `codexModeLine` in `ThreadOptions.tsx`, in the interface language, with a comment pinning them to Codex
+0.166.0 and the mapping above; read them again when either changes. While Auto is still in force after a press, the
+caption beside the chips says "Codex’s reviewer still answers what would come to you until it confirms." rather than
+that Codex decides what to ask. A Watcher on Codex gives the same four lines in place of Watcher's general ones, which
+said Allow edits asks before commands and Auto lets Codex decide. The iPhone gives them too, for a Codex thread and a
+Codex Watcher, with one change: its Full access line names the computer the thread runs on, since "this computer" on a
+phone would be wrong. On the desktop, a thread on a paired host names that host the same way. No line says when a change applies; the chip already cannot change while a turn runs.
+
+No Windows line. With Codex's Windows sandbox off, `workspace-write` could fall back to read-only, so a check ran the
+same day on Zach's Windows 11 PC with Codex 0.166.0: under `workspace-write` Codex wrote in the project without asking
+and printed no sandbox warning, and under `read-only` the write was denied. That PC sets `[windows] sandbox =
+"elevated"` in Codex's own config; a PC without it was not checked, and the menu claims nothing about one.

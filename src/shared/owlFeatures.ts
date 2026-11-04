@@ -73,6 +73,7 @@ export const OWL_FEATURES = [
   { id: 'to-do-list', name: 'To-do list', owlSince: '2026-11-03', owner: 'docs/adr/0188-a-to-do-list-holds-what-only-the-users-hands-can-do.md', sentToStable: false },
   { id: 'next-turn-choice', name: 'A choice for the next turn while a thread works', owlSince: '2026-11-04', owner: 'docs/adr/0190-a-thread-keeps-a-choice-for-its-next-turn.md', sentToStable: false },
   { id: 'hide-menu-bar-icon', name: 'Hide the menu bar icon', owlSince: '2026-11-03', owner: 'docs/adr/0114-the-menu-bar-owl-is-alive.md', sentToStable: false },
+  { id: 'dynamic-threads', name: 'Dynamic threads', owlSince: '2026-11-04', owner: 'docs/adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']
