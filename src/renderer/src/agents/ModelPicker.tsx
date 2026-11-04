@@ -143,7 +143,7 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * Favorites while any exist. A favorite whose provider or model has gone stays listed, unavailable, and can be unstarred.
  * Typing there searches every provider's models.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card }: {
+export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -156,6 +156,10 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   readonly openOnMount?: boolean | undefined
   /** Your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
   readonly ownServers?: OwnServersBridge | undefined
+  /** What stands at the menu's foot, given what closes the menu: Dynamic's switch (ADR-0191). */
+  readonly foot?: ((close: () => void) => ReactNode) | undefined
+  /** Drawn after the model's name on the chip: "oversees", on a Dynamic thread (ADR-0191). */
+  readonly suffix?: string | undefined
   /** Drawn after the provider's mark: the server mark of a thread on one of the user's own servers (ADR-0124). */
   readonly mark?: ReactNode | undefined
   /**
@@ -371,6 +375,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
       {mark}
       {current?.source ? <span className="model-picker__path"><span className="model-picker__source" data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name">{name}</span></span> : <span>{name}</span>}
+      {suffix ? <span className="model-picker__suffix">{suffix}</span> : null}
       <ChevronDown size={12} aria-hidden="true" />
     </button>
     {card ? <div id={card.id} className="model-picker__card" role="tooltip" data-shown={cardShown || undefined}><p className="model-picker__card-name">{spoken}</p>{card.render(cardShown)}</div> : null}
@@ -466,6 +471,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
             ? <p className="model-picker__note tt-paragraph">{[t`Every model here runs through Cursor, on your Cursor plan.`, note].filter(Boolean).join(' ')}</p>
             : <p className="model-picker__note tt-paragraph">{note}</p> : null}
       </div>
+      {foot ? <div className="model-picker__foot">{foot(() => setOpen(false))}</div> : null}
     </dialog>}
     {addingServer && ownServers ? <AddOwnServerDialog bridge={ownServers} fallbackFocus={trigger} confirm onClose={() => setAddingServer(false)} /> : null}
   </div>

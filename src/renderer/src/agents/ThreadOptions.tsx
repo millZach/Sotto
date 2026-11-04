@@ -17,6 +17,7 @@ import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { SplitChipEffort, type SpeedOption } from './SplitChipEffort'
 import { suggestedEffortIndex } from './effortSuggestion'
+import { useDynamicSwitch } from './DynamicSwitch'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
@@ -682,6 +683,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     press('fast', next, speedPatch(next, model), unpressed.fast)
     orchestrating?.(modelId, reasoning || null, state.host.models, next === SPEED_STANDARD ? null : next as AgentSpeed)
   }
+  const modelNameNow = model?.name ?? modelId
+  const dynamic = useDynamicSwitch({ thread, state, command, modelName: modelNameNow, fixed: fixed || busy })
   const effortDescription = [settings.pending.effort?.awaiting === 'unconfirmed' ? unconfirmedEffortId : '', settings.pending.fast?.awaiting === 'unconfirmed' ? unconfirmedFastId : ''].filter(Boolean).join(' ')
   const permissions = watcher
     ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
@@ -690,8 +693,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
       onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked} data-permission={quiet ? permission : undefined}>
+    {dynamic.dialog}
     <div className="thread-options thread-options--chips">
-      <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
+      <ModelPicker foot={dynamic.foot} suffix={dynamic.suffix} label={dynamic.overseeing ? t`Choose model. ${modelNameNow} oversees this thread` : undefined} models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
         pending={settings.pending.model?.awaiting === 'unconfirmed'} describedBy={unconfirmedModelId} ownServers={ownServers}
         mark={serverMark ? <ServerMark state={serverMark.state} attempt={serverMark.attempt} turnId={serverTurn?.turnId} finished={serverTurn?.status === 'completed'} /> : undefined}
@@ -715,7 +719,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
-        suggestion={suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
+        suggestion={dynamic.overseeing ? null : suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
         onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)

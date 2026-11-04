@@ -111,7 +111,7 @@ Tests: unit tests of the row's words. `tests/e2e/thread-delegation.spec.ts` gain
 - The first-use dialog, with Escape, and focus returning to the model chip.
 - A card in Settings → Threads with the list, its limit readings and the two limits, and its entries in `settingsPages.ts` for Find a setting.
 - Docs: `docs/guide.md`, `docs/agent-control.md` and README's feature list.
-- `tests/e2e/dynamic-threads.spec.ts`, on `worker-roles.spec.ts`'s pattern, over the fake clients. Light, dark and reduced motion, at 1600x1000, 1280x800 and 820x560. A note in `docs/verification/` with its screenshots in `artifacts/dynamic-threads/`.
+- `tests/e2e/dynamic-threads.spec.ts`, over the fake clients: both themes at 1600x1000, 1280x800 and 820x560, with text contrast. No motion is added. A note in `docs/verification/` with its screenshots in `artifacts/dynamic-threads/`.
 
 A new stylesheet goes on the `owned` list in `themeTokens.test.ts`. Baselines change only if a captured page does; with the switch off, none should.
 

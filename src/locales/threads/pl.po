@@ -684,6 +684,22 @@ msgstr ""
 msgid "{modelCount} · Free with OpenCode Zen"
 msgstr ""
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece, from your next message on. It does no work itself."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece. It does no work itself."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees and chooses a model for each piece. Turned off, it works as usual from your next message on."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
+msgstr ""
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{more, plural, one {and {files} more file} other {and {files} more files}}"
 msgstr ""
@@ -2492,8 +2508,16 @@ msgstr ""
 msgid "Choose model"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Choose model. {modelNameNow} oversees this thread"
+msgstr ""
+
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Choose or create a thread to review this draft."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Choose providers"
 msgstr ""
 
 #. {computerName} is the name of a saved host.
@@ -3917,6 +3941,10 @@ msgstr ""
 msgid "Drop to attach"
 msgstr ""
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Dynamic"
+msgstr ""
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
 msgstr ""
@@ -4657,6 +4685,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "It can change once this turn finishes."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -6276,6 +6308,11 @@ msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Outcome unknown"
+msgstr ""
+
+#. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "oversees"
 msgstr ""
 
 #. The form a GitHub repository name takes.
@@ -9475,6 +9512,14 @@ msgstr ""
 msgid "Turn off idle compaction in Settings"
 msgstr ""
 
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn on"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn on Dynamic for this thread?"
+msgstr ""
+
 #. A tip under a working thread. {sigil} is the character that opens the skills list.
 #: src/renderer/src/agents/tips.tsx
 msgid "Type {sigil} in the prompt to pick one of this thread’s skills."
@@ -10332,6 +10377,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You had sent your own message in that thread since this thread last read it. {nothing}"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "You only see this once. The list stays in Settings, under Threads."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
