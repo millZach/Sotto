@@ -4673,6 +4673,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
       // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089) and where it began (#1028).
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
+      ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
       ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
       ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
@@ -5308,6 +5309,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
    * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
    */
+  /** Dynamic on or off for a thread (ADR-0191), Sotto's own record, which the provider never sees. */
+  async setThreadDynamic(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    if ((thread.dynamic === true) !== dynamic) {
+      if (dynamic) this.touched(thread).dynamic = true
+      else delete this.touched(thread).dynamic
+      this.dirty = true; await this.flush(); this.publish()
+    }
+    return this.snapshot()
+  }
   async renameThread(threadId: string, title: string, source: ThreadRenameSource = 'user'): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)

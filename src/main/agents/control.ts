@@ -49,6 +49,7 @@ import { clientVersionOf, compareClientVersions, isComparableVersion } from './c
 import { compareMuseVersions } from './museClientInstall'
 import { CLIENT_CHECK_INTERVAL_MS, locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
 import { opencodeFolders } from './opencodeServer'
+import { whyNotDynamic } from '../../shared/dynamicThreads'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
@@ -1335,6 +1336,8 @@ export class AgentControl {
     watcherEnabled?: boolean
     /** The to-do list's Owl answer (ADR-0188): where it is off, a saved to-do wake-up stays whole and unsent. */
     toDoListEnabled?: boolean
+    /** Dynamic threads' Owl answer (ADR-0191): where it is off, a saved mark stays whole and nothing sets one. */
+    dynamicThreadsEnabled?: boolean
     /** The providers held to Owl on this run (ADR-0072); absent holds every one while retaining Owl's saved choices. */
     heldProviders?: HeldProviders
     /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -4129,6 +4132,23 @@ export class AgentControl {
     this.publish()
     return this.reply()
   }
+  private async setThreadDynamic(command: Extract<AgentCommand, { type: 'set-thread-dynamic' }>): Promise<AgentState> {
+    try {
+      if (this.dependencies.dynamicThreadsEnabled !== true) throw new Error('Dynamic threads are available in Sotto Owl. Nothing changed.')
+      const thread = this.thread(command.threadId)
+      if ((thread.dynamic === true) !== command.dynamic) {
+        const refused = command.dynamic ? whyNotDynamic(thread) : undefined
+        if (refused) throw new Error(refused)
+        if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing Dynamic. Nothing changed.')
+        if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
+        this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
+      }
+      this.state.error = null
+      await this.persist().catch(() => { throw new Error('Could not save that. Retry when storage is available.') })
+    } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'Could not change Dynamic for this thread.') }
+    this.publish()
+    return this.reply()
+  }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
     try {
@@ -4549,6 +4569,7 @@ export class AgentControl {
     if (command.type === 'cancel-restart') return Promise.resolve(this.cancelRestart(command))
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
+    if (command.type === 'set-thread-dynamic') return this.setThreadDynamic(command)
     // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.
     if (command.type === 'regenerate-thread-title') return this.regenerateThreadTitle(command.threadId)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
