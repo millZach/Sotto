@@ -1,8 +1,7 @@
 #!/bin/sh
 # What opening a long thread costs, and what part of it comes only once a launch (#2120, #1702). Measuring branch only.
-# One build, one runner, one iPhone 16 Pro Max, the arms taking turns from a cold launch: as it stands, the list's rows
-# lazy, and the thread opened as a row's press opens it. Then whole benchmark journeys for what a lazy list does to
-# scrolling, and journeys that say why the views above the list draw again on a row's press. Usage:
+# One build, one runner, one iPhone 16 Pro Max: photographs of the Threads list as it stands and with its rows lazy, at
+# the standard text size and a large one. Usage:
 #   sh apps/ios/Scripts/open-why.sh <report folder> <rounds> <minutes to stop starting rounds at>
 set -u
 start=$(date +%s)
@@ -82,11 +81,15 @@ while [ "$round" -le "$rounds" ]; do
     fi
     round=$((round + 1))
 done
-kind=all
-for run in 1 2 3 4; do
-    arm base "$out/whole-base-$run.json" 420
-    arm lazy "$out/whole-lazy-$run.json" 420
+kind=listlook
+for run in 1 2; do
+    arm base "$out/look-base-$run.json" 240
+    arm lazy "$out/look-lazy-$run.json" 240
 done
-kind=open
-for run in 1 2 3; do journey "$out/why-$run.json" 180 --bench-why-bodies --bench-tap-row; done
+xcrun simctl ui "$device" content_size accessibility-large
+for run in 1 2; do
+    arm base "$out/big-base-$run.json" 240
+    arm lazy "$out/big-lazy-$run.json" 240
+done
+xcrun simctl ui "$device" content_size large
 xcrun simctl terminate "$device" com.millzach.sotto.ios >/dev/null 2>&1 || true

@@ -215,6 +215,7 @@ import UIKit
         await quiet()
         if kind == "look" { return await look() }
         if kind == "open" { return await openJourney() }
+        if kind == "listlook" { return await listLook() }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
@@ -285,6 +286,37 @@ import UIKit
             view.setContentOffset(CGPoint(x: view.contentOffset.x, y: end), animated: false)
             await quiet()
         }
+        finish(nil)
+    }
+
+    /// The Threads list photographed from its top, by points scrolled, and again after a thread has been opened over it
+    /// and closed, with where the scroller stands at each.
+    private func listLook() async {
+        next("list-look")
+        func photo(_ name: String, _ view: UIScrollView) async {
+            await quiet()
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            snap(name, page: view)
+            phaseNotes["stand-" + name] = ["offset": Double(view.contentOffset.y), "height": Double(view.contentSize.height)]
+        }
+        guard let view = Self.pageScroller() else { return finish("no-page") }
+        let top = -view.adjustedContentInset.top
+        for distance in [0, 1_000, 5_000, 9_000] as [CGFloat] {
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top + distance), animated: false)
+            await photo("list-\(Int(distance))", view)
+        }
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: top + 5_000), animated: false)
+        await photo("list-5000-again", view)
+        waiting.insert("rendered-list-look")
+        openLong()
+        guard await until({ self.marks["rendered-list-look"] != nil }) else { return finish("no-thread") }
+        await quiet()
+        guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+        guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+        guard let back = Self.pageScroller() else { return finish("no-page") }
+        await photo("list-5000-back", back)
+        back.setContentOffset(CGPoint(x: back.contentOffset.x, y: top), animated: false)
+        await photo("list-0-back", back)
         finish(nil)
     }
 

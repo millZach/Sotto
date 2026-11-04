@@ -29,10 +29,9 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
-      - name: Run the arms in turn
-        # Ten rounds of three arms, two journeys an arm; no round starts after 65 minutes. Then the whole journeys.
-        timeout-minutes: 112
-        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 10 65
+      - name: Photograph the list both ways
+        timeout-minutes: 50
+        run: sh apps/ios/Scripts/open-why.sh "$RUNNER_TEMP/why" 0 0
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,5 +42,6 @@ jobs:
             ${{ runner.temp }}/why/*.md
             ${{ runner.temp }}/why/*.log
             ${{ runner.temp }}/why/*.txt
+            ${{ runner.temp }}/why/*.png
           if-no-files-found: warn
           retention-days: 30
