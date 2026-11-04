@@ -120,7 +120,7 @@ export function pendingRequest(id: string | number, method: string, value: unkno
   const files = permission && !params.command && fileSummary ? fileSummary : undefined
   const fields = readableFields({ ...(params.reason && !summary && text !== params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { network: params.networkApprovalContext } : {}) })
   return { id, method, sessionId, params, request: { id: requestKey(id), kind: mapping.kind, text, options,
-    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length, prose: true as const, ...(q.isSecret ? { secret: true as const } : {}) })) } : formQuestions ? { questions: formQuestions } : {}),
+    ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: (q.isOther ?? false) || !q.options?.length, prose: true as const, ...(q.isSecret ? { secret: true as const } : {}) })) } : formQuestions ? { questions: formQuestions } : {}),
     ...(permission ? { permissionChoices } : { skippable: true as const }), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
       ...(files ? { action: changeFilesAction(files.split('\n').length) } : {}), ...(summary ? { summary } : {}), ...(files || fields ? { details: [files, fields].filter(Boolean).join('\n') } : {}) } } }
 }
@@ -177,7 +177,13 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
   }
   const questions = pending.params.questions ?? []
   if (!questions.length) throw new Error('Codex did not provide question identifiers. Answer this request in Codex.')
-  if (questionAnswers) return { answers: Object.fromEntries(Object.entries(questionValues(pending.request, questionAnswers)).map(([id, answers]) => [id, { answers }])) }
+  // Codex's own clients send typed words as `user_note: <text>` after any chosen label, so the model and Codex never
+  // read them as the option they spell (Codex 0.166.0, tui/src/bottom_pane/request_user_input/mod.rs; issue #2157).
+  // A Codex option's id is its label, and questionValues has checked every id against the native request.
+  if (questionAnswers) return { answers: Object.fromEntries(Object.keys(questionValues(pending.request, questionAnswers)).map(id => {
+    const { optionIds, text } = questionAnswers[id]!
+    return [id, { answers: [...optionIds, ...(text?.trim() ? [`user_note: ${text.trim()}`] : [])] }]
+  })) }
   let values: Record<string, string | string[]> = {}
   if (questions.length > 1) {
     try { values = questionAnswersSchema.parse(JSON.parse(answer)) }

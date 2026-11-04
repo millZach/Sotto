@@ -20,7 +20,7 @@ Zach chose direct over a tailnet rather than a relay of Sotto's, which would add
 
 **4. The listener is tailnet-only.** Main listens on a loopback port, and Tailscale Serve carries HTTPS port 8445 to it, on the tailnet and never on Funnel, or another port when something already holds that one. It runs only while a code waits or a link exists, and Sotto takes its Serve setting off when the last link goes. Two owners on different tailnets each share their computer with the other through Tailscale's own device sharing. Shared machines can only start connections when the sharing goes both ways, and are reached by their full `*.ts.net` name. Sotto does neither of those for them and contacts no new service for it. A link that cannot listen yet, as when Sotto starts at login before Tailscale connects, asks this computer's own Tailscale every 30 seconds until it can. That reaches no one else, so decision 6 holds.
 
-**5. The list is closed, with three commands.** `POST /teams/v1` takes one strictly parsed message:
+**5. The list is closed, with three commands.** ([ADR-0189](0189-two-desks-read-a-teammates-summary-on-a-press.md) adds a fourth, `read-desk`, which a press sends.) `POST /teams/v1` takes one strictly parsed message:
 
 - `redeem-code`: a code, this computer's name, its address and a token for it. The only command with no token.
 - `ask`: one of the two asks, with the asker's words, at most 800 characters. Its answer comes back in the same response.
@@ -28,7 +28,7 @@ Zach chose direct over a tailnet rather than a relay of Sotto's, which would add
 
 Anything else is refused without being read further, including every host command, however well signed. Bodies are capped at 16 KB. There is no command that lists threads, reads history, starts, stops, sends, settles, approves or merges, so a later slice that wants one adds it here on purpose.
 
-**6. Nothing goes without a press or an ask.** There is no heartbeat, no presence, no polling of a teammate and no retried send. Only an ask, a redeemed code or **Link again** opens a connection, so the Teams tab and Settings > Hosts & phones show when each link was last used and never whether the other computer is online. This replaces the first prototype's "online" and "Watcher ready".
+**6. Nothing goes without a press or an ask.** There is no heartbeat, no presence, no polling of a teammate and no retried send. Only an ask, a redeemed code, **Link again** or **Get Drake's desk** (ADR-0189) opens a connection, so the Teams tab and Settings > Hosts & phones show when each link was last used and never whether the other computer is online. This replaces the first prototype's "online" and "Watcher ready".
 
 **7. A link lasts 30 days, and both owners renew it.** After 30 days a token is good only for `link-again`, and the receiving computer starts nothing for it. **Link again** tells the other computer this owner wants the link kept. When both have pressed within 7 days, both renew it for 30 more. Removing a link removes it here and sends nothing; the other computer finds out when its next ask is refused, and says so. This covers team links only. The wider token expiry of #1692 stays its own ADR and pull request (plan, open question 10).
 

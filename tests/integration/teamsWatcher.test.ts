@@ -11,6 +11,7 @@ import { WatcherToolServer, type WatcherTeamTools } from '../../src/main/agents/
 import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped, WATCHER_TEAMMATE_NOTE } from '../../src/main/agents/watcherRequestNote'
 import { TeamService, type TeamServiceOptions } from '../../src/main/teams/teams'
 import { TEAM_ASK_TOOL, TEAM_READ_TOOL } from '../../src/shared/teams'
+import { pullRequestKey } from '../../src/shared/gitPullRequests'
 import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -119,7 +120,7 @@ it('answers a teammate\'s ask with nothing sent to Watcher, and gives only fixed
     return team
   }
   const mine = await teamComputer('zach', { threads: () => service.teamThreadFacts(), projects: () => service.teamProjectFacts(), anchor: () => service.teamAnchor() })
-  const theirs = await teamComputer('drake', { threads: () => [], projects: () => [], anchor: () => null })
+  const theirs = await teamComputer('drake', { threads: () => ({ threads: [], beyondCap: 0 }), projects: () => [], anchor: () => null })
   onMessageGoing(() => mine.userMessageGoing())
   await say('First message')
   await endTurn(id, 'Reply')
@@ -160,7 +161,7 @@ it('makes a team summary from titles, standing and pull requests, with none of a
   native(worker.id).messages.push({ id: randomUUID(), role: 'assistant', text: 'SECRET-REPLY-WORDS', createdAt: new Date().toISOString() })
   workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  const facts = service.teamThreadFacts()
+  const facts = service.teamThreadFacts().threads
   const row = facts.find(item => item.title === 'Visible title')!
   expect(row).toMatchObject({ project: project.title, projectKey: `${f.control.hostId()} ${project.id}` })
   const text = JSON.stringify(facts)
@@ -168,6 +169,26 @@ it('makes a team summary from titles, standing and pull requests, with none of a
   expect(Object.keys(row).sort()).toEqual(['project', 'projectKey', 'pullRequests', 'stands', 'title'])
   expect(service.teamProjectFacts().map(item => item.key)).toContain(`${f.control.hostId()} ${project.id}`)
   // Left out before the cap, so what the user left out never crowds out what they share.
-  expect(service.teamThreadFacts(new Set([`${f.control.hostId()} ${project.id}`])).map(item => item.title)).not.toContain('Visible title')
+  expect(service.teamThreadFacts(new Set([`${f.control.hostId()} ${project.id}`])).threads.map(item => item.title)).not.toContain('Visible title')
   expect(service.teamModel()).toBe(model.id)
+})
+
+it('gives a pull request\'s checks only from a fresh read Sotto already has, and no time unless they passed (ADR-0189, decision 9)', async () => {
+  const { f, workspace, service, native, project, model } = await fixture()
+  const created = await f.control.commandShell({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'With a pull request', threadId: randomUUID() })
+  expect(created.error).toBeNull()
+  const worker = f.control.shell().host.threads.find(item => item.title === 'With a pull request')!
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: worker.id, draftId: randomUUID(), text: 'Open a pull request' })).error).toBeNull()
+  const url = 'https://github.com/synthetic/project/pull/7', now = new Date().toISOString()
+  native(worker.id).pullRequests = [{ number: 7, url, title: 'Seven', state: 'open', draft: false, source: 'created', linkedAt: now }, { number: 8, url: 'https://github.com/synthetic/project/pull/8', title: 'Merged', state: 'merged', draft: false, source: 'created', linkedAt: now }]
+  workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const pullRequests = () => service.teamThreadFacts().threads.find(item => item.title === 'With a pull request')!.pullRequests
+  expect(pullRequests()).toEqual([{ number: 7, title: 'Seven', state: 'open', draft: false, checks: 'unknown' }])
+  const evidence = (service as unknown as { wakes: { evidence: { put(slot: string, input: unknown): boolean } } }).wakes.evidence
+  const target = { hostId: f.control.hostId(), threadId: worker.id.split(':').at(-1)! }, common = { target, source: 'github', observedAt: now, freshness: 'fresh', availability: 'available', url, headId: 'head-7' }
+  evidence.put(`pr:${pullRequestKey(url)}:checks`, { ...common, fact: 'checks-passed', checksState: 'passed', checkCount: 3 })
+  expect(pullRequests()).toEqual([{ number: 7, title: 'Seven', state: 'open', draft: false, checks: 'passed', checksPassedAt: expect.any(String) }])
+  evidence.put(`pr:${pullRequestKey(url)}:checks`, { ...common, observedAt: new Date(Date.now() + 1_000).toISOString(), headId: 'head-8', fact: 'checks-failed', checksState: 'failed', checkCount: 3 })
+  expect(pullRequests()).toEqual([{ number: 7, title: 'Seven', state: 'open', draft: false, checks: 'failed' }])
 })

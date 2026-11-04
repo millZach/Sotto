@@ -82,7 +82,7 @@ it('preserves choices and free text in a non-blocking multi-question answer', as
   await fixture.host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: request.id, answer: '',
     questionAnswers: { layout: { optionIds: ['Sidebar'] }, reason: { optionIds: [], text: 'Keep the room clear.' } } })
   await expect.poll(() => requestResult(fixture, request.id)).toEqual({ answers: {
-    layout: { answers: ['Sidebar'] }, reason: { answers: ['Keep the room clear.'] },
+    layout: { answers: ['Sidebar'] }, reason: { answers: ['user_note: Keep the room clear.'] },
   } })
 })
 

@@ -51,12 +51,12 @@ describe('a Codex secret answer', () => {
     expect(request.questions![0]).toMatchObject({ id: 'token', secret: true })
 
     expect((await control.command({ type: 'answer', threadId, requestId: request.id, answer: '', questionAnswers: { token: { optionIds: [], text: FAKE } } })).error).toBeNull()
-    await expect.poll(async () => (await f.driver.requests()).some(row => JSON.stringify(row.result?.answers) === JSON.stringify({ token: { answers: [FAKE] } }))).toBe(true)
+    await expect.poll(async () => (await f.driver.requests()).some(row => JSON.stringify(row.result?.answers) === JSON.stringify({ token: { answers: [`user_note: ${FAKE}`] } }))).toBe(true)
 
     // Codex keeps the answer in its own session file, as the tool output the model reads.
     const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
     await writeFile(join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`), rolloutLine(1, { id: await f.realId(threadId), cwd: f.root }, 'session_meta')
-      + rolloutLine(2, { type: 'function_call_output', call_id: 'call-1', output: JSON.stringify({ answers: { token: { answers: [FAKE] } } }) }, 'response_item'))
+      + rolloutLine(2, { type: 'function_call_output', call_id: 'call-1', output: JSON.stringify({ answers: { token: { answers: [`user_note: ${FAKE}`] } } }) }, 'response_item'))
     await f.adapter.pollSessionLogs()
 
     expect(JSON.stringify(thread())).not.toContain(FAKE)

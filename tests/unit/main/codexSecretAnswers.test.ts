@@ -38,7 +38,7 @@ describe('a Codex question marked secret', () => {
 
   it('still sends the answer back to Codex in its own shape, the value only there', () => {
     const pending = pendingRequest(1, 'item/tool/requestUserInput', issuePayload, 'fixture')!
-    expect(answerRequest(pending, '', undefined, { q: { optionIds: [], text: FAKE } })).toEqual({ answers: { q: { answers: [FAKE] } } })
+    expect(answerRequest(pending, '', undefined, { q: { optionIds: [], text: FAKE } })).toEqual({ answers: { q: { answers: [`user_note: ${FAKE}`] } } })
   })
 
   it('keeps the mark through the shared request schema, which every host and client reads', () => {

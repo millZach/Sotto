@@ -25,7 +25,7 @@ it('Claude takes a skipped question as a refusal that says the user skipped it, 
 it('Codex retains question ids and only offers actual decisions', () => {
   const pending = pendingRequest(3, 'item/tool/requestUserInput', { threadId: 't', questions: [{ id: 'q1', question: 'First?', options: [{ label: 'A', description: 'Detail' }] }, { id: 'q2', question: 'Second?', options: null }] }, 't')!
   expect(pending.request.questions?.map(q => q.id)).toEqual(['q1', 'q2'])
-  expect(answerRequest(pending, '', undefined, { q1: { optionIds: ['A'] }, q2: { optionIds: [], text: 'free' } })).toEqual({ answers: { q1: { answers: ['A'] }, q2: { answers: ['free'] } } })
+  expect(answerRequest(pending, '', undefined, { q1: { optionIds: ['A'] }, q2: { optionIds: [], text: 'free' } })).toEqual({ answers: { q1: { answers: ['A'] }, q2: { answers: ['user_note: free'] } } })
   const permission = pendingRequest(4, 'item/commandExecution/requestApproval', { threadId: 't', command: 'echo ok', availableDecisions: ['acceptForSession', 'cancel'] }, 't')!
   expect(permission.request.permissionChoices?.map(choice => choice.id)).toEqual(['acceptForSession', 'cancel'])
   expect(answerRequest(permission, '', true, undefined, 'acceptForSession')).toEqual({ decision: 'acceptForSession' })
