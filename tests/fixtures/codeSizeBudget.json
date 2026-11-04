@@ -1,4 +1,5 @@
 {
-  "src/main/agents/control.ts": 351,
+  "src/main/agents/clientUpdates.ts": 29,
+  "src/main/agents/control.ts": 337,
   "src/main/agents/statePublishers.ts": 18
 }
