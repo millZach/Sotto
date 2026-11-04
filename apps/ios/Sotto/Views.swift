@@ -102,7 +102,8 @@ struct MainTabs: View {
         return HStack(spacing: 0) {
             if case .column(leading: true, width: let strip) = place { rail(shown, top: Space.s4, duo: duo).frame(width: strip) }
             if sidebar {
-                ThreadSidebar(open: openFromSidebar).equatable()
+                // Held sideways, a thread's rail has no room for New thread, which moves to the sidebar's heading.
+                ThreadSidebar(open: openFromSidebar, newThread: threadOpen).equatable()
                     // With Reduce Motion it fades in on its own, so nothing of the page beside it moves.
                     .modifier(FadeOnAppear(enabled: reduceMotion))
                     .transition(reduceMotion ? .identity : .move(edge: .leading).combined(with: .opacity))
@@ -220,19 +221,28 @@ struct MainTabs: View {
     /// The rail: on the unfolded Duo the sidebar's button, then New thread, under the clock and battery and apart from
     /// the tabs, on every tab; and the tabs in one pill at the foot, where the thumb rests (Zach's picks, October 30 and
     /// November 1, 2026). In the Duo's strip the page beside it, wash and all, shows under it and the strip reads as the
-    /// page's own (ADR-0151, amended).
+    /// page's own (ADR-0151, amended). Beside an open thread, which has no bar there, the rail carries the thread's own
+    /// pill over the tabs and, upright, its Back (Zach's picks, November 3, 2026). Held sideways the strip is 635 points
+    /// tall and the clock takes the first 124, so two whole pills fit only with New thread gone and tighter gaps.
+    /// There a delegated thread's Back takes the sidebar button's place, and a drag still moves the sidebar.
     @ViewBuilder private func rail(_ shown: Bool, top: CGFloat, duo: DuoLayout) -> some View {
         if shown {
-            VStack(spacing: Space.s3) {
-                if duo.sideways || duo == .upright { sidebarButton(upright: duo == .upright) }
-                newThread
-                Spacer(minLength: Space.s3)
+            let beside = threadOpen && (duo.sideways || duo == .upright)
+            let tight = beside && duo.sideways
+            let nestedBack = tight && model.railNested != nil
+            VStack(spacing: tight ? Space.s1 : Space.s3) {
+                if beside && (duo == .upright || nestedBack) { RailBackButton(back: popThread) }
+                if (duo.sideways || duo == .upright) && !nestedBack { sidebarButton(upright: duo == .upright) }
+                if !tight { newThread }
+                Spacer(minLength: tight ? 0 : Space.s3)
+                if beside, let ref = model.selected { ThreadRailPill(ref: ref) }
                 TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
                         style: .rail, reselect: reselect)
             }
             .padding(.top, top)
             .padding(.bottom, Space.s5)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // No lower limit on the height: with the keyboard up, a rail taller than the page would rise past the clock.
+            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             .ignoresSafeArea(.keyboard)
         } else {
             Color.clear
@@ -278,7 +288,7 @@ struct MainTabs: View {
     private func threadRail(_ duo: DuoLayout) -> Bool {
         if case .folded = duo { return threadOpen } else { return false }
     }
-    /// Back from the folded thread rail: the thread showing goes back itself, since a delegated thread opened from Agents
+    /// Back from the thread rail: the thread showing goes back itself, since a delegated thread opened from Agents
     /// sits on its page rather than on the tab's path. With no thread read yet, the tab's path goes back one.
     private func popThread() {
         if let ref = model.selected { model.railAsked = RailAsk(ref: ref, action: .back); return }
@@ -455,13 +465,7 @@ struct TabsBar: View {
         }
         .padding(rail ? .all : .horizontal, rail ? DuoRailMetrics.pillInset : Space.s2)
         .padding(.top, rail ? 0 : Space.s1)
-        .background {
-            if rail {
-                Capsule().fill(Palette.surface)
-                    .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                    .accessibilityHidden(true)
-            }
-        }
+        .background { if rail { DuoRailPillGround().accessibilityHidden(true) } }
         // The names stay at the size the system's tab bar keeps; at the accessibility sizes a long press shows the
         // large content viewer instead. Grown with the text, four names ran together on a small iPhone.
         .dynamicTypeSize(...DynamicTypeSize.large)
@@ -491,13 +495,7 @@ struct TabsBar: View {
             VStack(spacing: 3) {
                 glyph(icon, chosen: chosen)
                     .overlay(alignment: .topTrailing) {
-                        if badge > 0 {
-                            Text(verbatim: "\(badge)").font(.sotto(.caption, .semibold)).monospacedDigit()
-                                .foregroundStyle(Palette.canvas).environment(\.colorScheme, .dark)
-                                .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
-                                .background(Palette.warning, in: Capsule())
-                                .offset(x: 12, y: -6)
-                        }
+                        if badge > 0 { DuoRailBadge(count: badge) }
                     }
                 if !rail { title.font(.sotto(.caption, .medium)).lineLimit(1).minimumScaleFactor(0.8) }
             }
@@ -526,6 +524,32 @@ enum DuoRailMetrics {
     static let icon: CGFloat = 28
     static let symbol: CGFloat = 21
     static let owl: CGFloat = 23
+}
+
+/// The rounded pill behind a row of the rail's tiles: the tabs, or a thread's controls.
+struct DuoRailPillGround: View {
+    var body: some View {
+        Capsule().fill(Palette.surface).overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+}
+
+/// A count on one of the rail's tiles, overhanging its icon's corner. The warning colour means the user is needed; a
+/// count that only counts, such as a thread's agents, is quiet.
+struct DuoRailBadge: View {
+    let count: Int
+    var warning = true
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        Text(verbatim: "\(count)").font(.sotto(.caption, .semibold)).monospacedDigit()
+            .foregroundStyle(warning ? Palette.canvas : Palette.ink)
+            .environment(\.colorScheme, warning ? .dark : colorScheme)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+            .background {
+                if warning { Capsule().fill(Palette.warning) }
+                else { Capsule().fill(Palette.surface).overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1)) }
+            }
+            .offset(x: 12, y: -6)
+    }
 }
 
 // The capsule of Liquid Glass the bottom bar floats on under Glass, on iOS 26 and later. The Duo's icons have none.
@@ -593,11 +617,8 @@ private struct FadeOnAppear: ViewModifier {
 struct ThreadRoute: Hashable { let ref: ThreadRef }
 extension View {
     func threadDestination() -> some View {
-        navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref).duoThreadBar() }
+        navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref) }
     }
-    /// A thread's bar on the unfolded Duo. A delegated thread opened from Agents is `nested`: its Back goes to the thread
-    /// it came from, not the list, so it keeps that.
-    func duoThreadBar(nested: Bool = false) -> some View { modifier(DuoThreadBar(nested: nested)) }
 }
 
 // MARK: - The iPhone Duo
@@ -635,32 +656,6 @@ extension EnvironmentValues {
     var duoLayout: DuoLayout {
         get { self[DuoLayoutKey.self] }
         set { self[DuoLayoutKey.self] = newValue }
-    }
-}
-
-/// A thread's bar on the unfolded Duo (Zach's picks, October 30 and November 1, 2026). Sideways it has no Back: the rail
-/// stays beside the thread, its Threads tab goes back to the list, and the sidebar's button stands on the rail. Upright,
-/// Back is the thread's own button, since a thumb's drag right anywhere on the page brings the sidebar rather than going
-/// back. A nested thread keeps iOS's Back both ways.
-private struct DuoThreadBar: ViewModifier {
-    let nested: Bool
-    @Environment(\.duoLayout) private var duo
-    @Environment(\.dismiss) private var dismiss
-    func body(content: Content) -> some View {
-        // One subtree whatever the screen, so folding or turning the Duo never resets the thread's own state.
-        let sideways = duo.sideways, upright = duo == .upright && !nested
-        return content
-            .navigationBarBackButtonHidden((sideways && !nested) || upright)
-            .toolbar {
-                if upright {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { dismiss() } label: { Image(systemName: "chevron.backward") }
-                            .accessibilityLabel(String(localized: "Back"))
-                            .accessibilityIdentifier("duo-back")
-                    }
-                    .horizontalOnly()
-                }
-            }
     }
 }
 

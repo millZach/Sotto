@@ -25,9 +25,11 @@ struct AgentMark: View {
 
 /// Agents beside the thread's state: the count of its delegated threads and agents, with the Needs you light while a
 /// delegated thread waits on the user. At compact width, where the bar's room goes to the thread's title, and at the
-/// largest text sizes it is the mark and the count alone.
+/// largest text sizes it is the mark and the count alone. On the Duo's rail it is a tile: the mark with its count as a
+/// badge, as a tab carries one, in the warning colour only while a delegated thread waits on the user.
 struct AgentsButton: View {
     let count: AgentsCount
+    var tile = false
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -35,22 +37,31 @@ struct AgentsButton: View {
         let needs = count.needs > 0
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button(action: action) {
-            HStack(spacing: 6) {
-                AgentMark(size: 16, relativeTo: .footnote)
-                if !compact { Text("Agents").lineLimit(1) }
-                if needs { Light(tone: .warning, size: 7) }
-                Text("\(count.total)")
-                    .monospacedDigit()
-                    .foregroundStyle(needs ? Palette.warningText : Palette.muted)
+            if tile {
+                AgentMark(size: 24, relativeTo: .footnote)
+                    .frame(width: DuoRailMetrics.icon, height: DuoRailMetrics.icon)
+                    .overlay(alignment: .topTrailing) { DuoRailBadge(count: count.total, warning: needs) }
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                    .contentShape(Circle())
+            } else {
+                HStack(spacing: 6) {
+                    AgentMark(size: 16, relativeTo: .footnote)
+                    if !compact { Text("Agents").lineLimit(1) }
+                    if needs { Light(tone: .warning, size: 7) }
+                    Text("\(count.total)")
+                        .monospacedDigit()
+                        .foregroundStyle(needs ? Palette.warningText : Palette.muted)
+                }
+                .font(.sotto(.small, .semibold))
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, Space.s3)
+                .frame(minHeight: 32)
+                .background(needs ? Palette.warning.opacity(Tint.needsYou) : Palette.fillSoft, in: Capsule())
+                .overlay(Capsule().strokeBorder(needs ? Palette.warning.opacity(0.55) : Palette.hairline, lineWidth: 1))
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .font(.sotto(.small, .semibold))
-            .foregroundStyle(Palette.ink)
-            .padding(.horizontal, Space.s3)
-            .frame(minHeight: 32)
-            .background(needs ? Palette.warning.opacity(Tint.needsYou) : Palette.fillSoft, in: Capsule())
-            .overlay(Capsule().strokeBorder(needs ? Palette.warning.opacity(0.55) : Palette.hairline, lineWidth: 1))
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel("Agents")
@@ -102,7 +113,7 @@ private struct AgentsPresenter: ViewModifier {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
-            .navigationDestination(item: $pushed) { target in ThreadView(ref: target).duoThreadBar(nested: true) }
+            .navigationDestination(item: $pushed) { target in ThreadView(ref: target, nested: true) }
             // Only once the delegated thread has gone: a swipe back that is cancelled leaves it open, and the sheet shut.
             .onChange(of: pushed) { old, new in
                 covered = new != nil
