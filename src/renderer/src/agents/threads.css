@@ -99,9 +99,14 @@
    margin. It is an arrow, named for what a press does; New messages says so in words. A ring of the room keeps the words
    beside it from running into it. */
 .thread-transcript__jump { position: absolute; right: max(10px, calc((100% - 760px) / 2 - 46px)); bottom: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: 0 0 0 4px var(--tt-canvas), var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+.thread-transcript__jump:not([data-unseen]) .thread-transcript__jump-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* In Watcher's room the margin is the scene's, so it keeps its word and its place in the middle of the column (ADR-0126). */
+.watcher-pane .thread-transcript__jump { right: auto; left: 50%; min-height: 36px; padding: 0 14px; box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); font-size: var(--tt-type-body); transform: translateX(-50%); }
+.watcher-pane .thread-transcript__jump:not([data-unseen]) .thread-transcript__jump-word { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
 .thread-transcript__jump:hover { border-color: var(--threads-field-focus); }
 .thread-transcript__jump:active { filter: brightness(.96); }
 .thread-transcript__jump[data-unseen] { padding: 0 12px 0 10px; border-color: var(--threads-field-focus); }
+.watcher-pane .thread-transcript__jump[data-unseen] { padding: 0 14px; }
 /*
  * A long thread is mostly out of view. Its messages, folded work and activity skip layout and paint until the
  * reader scrolls near them, so opening a thread of hundreds of messages and scrolling it stays cheap. The
@@ -150,6 +155,15 @@
 .thread-message[data-role='user'] { --bubble-inset: max(24px, 12%); width: fit-content; min-width: min(190px, 100%); max-width: calc(100% - var(--bubble-inset)); margin-left: auto; padding: 10px 14px 12px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card); }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-bubble-text); }
 .thread-message[data-role='user'] .rich-message { --rich-text: var(--tt-bubble-text); --rich-strong: var(--tt-bubble-text); }
+/* Watcher's conversation keeps the look it had: its room is the owner's, and it runs over the night scene (ADR-0126). */
+.watcher-pane .thread-message header { margin-bottom: 8px; }
+.watcher-pane .thread-message:has(> .thread-message__copy) { margin-bottom: 28px; }
+.watcher-pane .thread-message__text { max-width: none; }
+.watcher-pane .thread-message[data-role='user'] { width: auto; min-width: 0; max-width: none; margin-left: var(--bubble-inset); padding: 14px 18px; border-radius: var(--tt-radius-card) var(--tt-radius-card) var(--tt-radius-tag) var(--tt-radius-card); }
+.watcher-pane .thread-message[data-role='user'] .thread-message__copy { bottom: 8px; left: 12px; }
+.watcher-pane .thread-message[data-role='user']:has(> .thread-message__copy) { padding-bottom: 40px; }
+.watcher-pane .thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
+.watcher-pane .thread-message[data-role='user'] .rich-message { --rich-text: var(--tt-text-2); --rich-strong: var(--tt-text); }
 /* A wake-up babysitting sent (ADR-0061): on the user's side, labelled Sotto and Wake-up, edged in the accent. */
 .thread-message[data-from='sotto'] { border-color: var(--tt-accent-border); }
 .thread-message[data-from='sotto'] .thread-message__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); }

@@ -223,6 +223,22 @@
 :root[data-reduced-motion='on'] .rich-code__copy[data-copied] svg { animation: none; }
 :root[data-reduced-motion='on'] .rich-code__copy { transition: none; }
 
+/* Watcher's conversation keeps the look it had: its room is the owner's, and it runs over the night scene (ADR-0126). */
+.watcher-pane .rich-message { --rich-strong: var(--tt-text); --rich-code-string: var(--tt-warning); --rich-code-number: var(--tt-error); --rich-code-title: var(--tt-text); --rich-measure: none; }
+.watcher-pane .rich-message.rich-message p:not(:nth-last-child(2)) { margin-bottom: 12px; }
+.watcher-pane .rich-heading { margin: 20px 0 6px; }
+.watcher-pane .rich-message > .rich-heading:first-child { margin-top: 0; }
+.watcher-pane .rich-message :is(ul, ol) { margin-bottom: 12px; padding-left: 24px; }
+.watcher-pane .rich-message li { margin: 3px 0; padding-left: 2px; }
+.watcher-pane .rich-message li > :is(ul, ol) { margin: 2px 0 4px; }
+.watcher-pane .rich-message blockquote { margin-bottom: 12px; }
+.watcher-pane .rich-message strong { color: inherit; }
+.watcher-pane .rich-message :not(pre) > code { padding: 1px 5px; border: 1px solid var(--rich-rule); background: var(--rich-block); color: var(--rich-code-text); font-size: var(--tt-type-body); }
+.watcher-pane .rich-code { margin: 14px 0; border-color: var(--rich-rule); }
+.watcher-pane .rich-code__bar { min-height: 40px; padding: 4px 4px 4px 14px; border-bottom: 1px solid var(--tt-hairline); background: var(--rich-block-bar); }
+.watcher-pane .rich-code__scroll { padding: 12px 14px 14px; }
+.watcher-pane .rich-table { margin: 14px 0; }
+
 /* ---- image viewer ---- */
 /* A message's images, large, over the thread pane they were sent in; the window when there is no pane. */
 
