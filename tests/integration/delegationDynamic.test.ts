@@ -1,6 +1,8 @@
 // @vitest-environment node
 // ADR-0191: a Dynamic thread's overseer chooses each worker's model, and `delegate` holds it to the limits in Settings: the
 // firm allowed list, the highest effort and workers at once. A worker under it may delegate, inside the same list.
+import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DelegationService } from '../../src/main/agents/delegation'
@@ -10,6 +12,7 @@ import type { UsageQuotaRead } from '../../src/shared/usageDashboard'
 import type { WorkerRoleChoices } from '../../src/shared/workerRoles'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import type { DelegatedView } from '../../src/shared/delegation'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -32,8 +35,10 @@ async function fixture(options: { enabled?: boolean; limits?: Partial<DynamicThr
     control: { historyEnabled: () => true, watcherEnabled: false, dynamicThreadsEnabled: enabled } })
   let settings: DynamicThreadSettings = { ...DEFAULT_DYNAMIC_THREADS, providers: ['claude', 'codex'], ...options.limits }
   const choices: WorkerRoleChoices = {}
-  const service = new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => true, roles: () => choices,
+  let history = true
+  const open = () => new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => history, roles: () => choices,
     ...enabled ? { dynamicThreads: () => settings, ...options.quota ? { providerLimits: options.quota } : {} } : {} })
+  let service = open()
   cleanups.push(async () => { service.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
   await f.control.start()
   for (const provider of ['claude', 'codex', 'grok'] as const) await f.control.commandShell({ type: 'connect', provider })
@@ -60,7 +65,12 @@ async function fixture(options: { enabled?: boolean; limits?: Partial<DynamicThr
     if (command?.type !== 'create-thread') throw new Error('not created')
     return { provider: binding.provider, reasoningEffort: command.reasoningEffort, runtimeMode: command.runtimeMode }
   }
-  return { ...f, workspace, service, model, overseer, named, delegate, ok, created, setLimits: (next: Partial<DynamicThreadSettings>) => { settings = { ...settings, ...next } } }
+  return { ...f, workspace, get service() { return service }, model, overseer, named, delegate, ok, created, setLimits: (next: Partial<DynamicThreadSettings>) => { settings = { ...settings, ...next } },
+    setHistory: (on: boolean) => { history = on; service.privacyChanged() },
+    restart: async () => {
+      await vi.waitFor(async () => expect(await readFile(join(f.root, 'delegations.json'), 'utf8')).toContain('"why"'))
+      service.close(); service = open(); await service.recover()
+    } }
 }
 
 it('starts what an overseer names, whatever the role says, and fills in nothing from a role', async () => {
@@ -229,6 +239,34 @@ it('lets go of what a new worker replaces: its restart at the reset, and its tur
   const other = await f.overseer()
   f.ok(await f.delegate(other, f.named('claude', { replaces: first.delegation.id })))
   expect(cancel).not.toHaveBeenCalled()
+})
+
+it('records what the overseer chose for the row, and which thread a new worker took over from', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const first = f.ok(await f.delegate(parent, f.named('codex', { effort: 'medium' })))
+  f.setLimits({ highestEffort: 'high' })
+  const moved = f.ok(await f.delegate(parent, f.named('claude', { effort: 'max', replaces: first.delegation.id, why: 'Codex stopped at its limit.' })))
+  const row = (id: string) => f.service.views(parent).made.find(view => view.id === id) as DelegatedView
+  expect(row(first.delegation.id)).toMatchObject({ chosen: { model: f.model('codex').id, effort: 'medium' } })
+  expect(row(moved.delegation.id)).toMatchObject({ chosen: { model: f.model('claude').id, effort: 'high' }, why: 'Codex stopped at its limit.',
+    effortHeld: true, replaces: first.delegation.id, replacedThread: first.delegation.thread })
+})
+
+it('keeps a reason on its row this run, and shows none from before a restart once Keep local history is off', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const first = f.ok(await f.delegate(parent, f.named('codex')))
+  const row = (id: string) => f.service.views(parent).made.find(view => view.id === id) as DelegatedView
+  const reason = row(first.delegation.id).why
+  expect(reason).toBeTruthy()
+  // Turned off in the run that made it, it stays until Sotto restarts, as a check's reply does.
+  f.setHistory(false)
+  expect(row(first.delegation.id).why).toBe(reason)
+  f.setHistory(true)
+  await f.restart()
+  expect(row(first.delegation.id).why).toBe(reason)
+  f.setHistory(false)
+  expect(row(first.delegation.id).why).toBeUndefined()
+  expect(row(first.delegation.id).chosen).toMatchObject({ model: f.model('codex').id })
 })
 
 it('leaves alone what the user has said since in the thread a new worker replaces', async () => {

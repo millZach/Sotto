@@ -196,6 +196,9 @@ export const checkReplyExcerptSchema = z.union([
 ])
 export type CheckReplyExcerpt = z.infer<typeof checkReplyExcerptSchema>
 /** A delegation main accepted: a thread was started or sent a brief, and it has one of Watcher's outcomes. */
+/** What a Dynamic thread's overseer chose for a worker (ADR-0191), as the worker started. The worker's own later changes leave it as it was. */
+export const delegationChoiceSchema = z.object({ model: id, effort: z.string().min(1).max(100).optional(), speed: z.string().min(1).max(100).optional() }).strict()
+export type DelegationChoice = z.infer<typeof delegationChoiceSchema>
 export const delegatedViewSchema = z.object({
   id: z.uuid(),
   /** The delegated thread, by the window's own ID for it. */
@@ -234,6 +237,15 @@ export const delegatedViewSchema = z.object({
    * where Work across machines is on, and only in this computer's own read; a host's read keeps its shape.
    */
   check: z.literal(true).optional(),
+  /**
+   * A Dynamic thread's worker (ADR-0191): what the overseer chose; why, in its words, which goes with Keep local history;
+   * that Highest effort held its effort; the delegation it took over, and that delegation's thread while Sotto still holds it.
+   */
+  chosen: delegationChoiceSchema.optional(),
+  why: z.string().max(DYNAMIC_WHY_MAX).optional(),
+  effortHeld: z.literal(true).optional(),
+  replaces: z.uuid().optional(),
+  replacedThread: id.optional(),
   /** An answered check's reply excerpt, or that its reply is no longer held. Nothing for any other delegation. */
   checkReply: checkReplyExcerptSchema.optional(),
 }).strict()

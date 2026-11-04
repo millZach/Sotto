@@ -17,6 +17,10 @@
 .delegated-work__kind { flex: none; color: var(--tt-text-2); font-weight: 400; }
 .delegated-work__refused { color: var(--tt-text); }
 .delegated-work__state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--tt-type-small); white-space: nowrap; }
+.delegated-work__more { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: -4px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); }
+.delegated-work__more:hover, .delegated-work__more[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.delegated-work__why { grid-column: 2 / -1; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 1.5; overflow-wrap: anywhere; }
+.delegated-work__why-word { color: var(--tt-text); font-weight: 500; }
 .delegated-work__meta, .delegated-work__line { grid-column: 2 / -1; margin: 0; font-size: var(--tt-type-caption); line-height: 1.5; }
 .delegated-work__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; color: var(--tt-text-muted); }
 .delegated-work__meta .provider-mark { color: var(--tt-text-muted); }
