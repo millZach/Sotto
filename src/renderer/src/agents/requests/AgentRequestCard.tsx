@@ -17,7 +17,7 @@ import { shownWords, type LaterWords } from '../interfaceWords'
 import { shownCount } from '../../state/interfaceNumbers'
 import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import {
-  answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
+  answerProgress, blocksSending, docksAtComposer, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, SKIP_ANSWER, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
@@ -91,7 +91,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
   const rows = messageLinks.filter(url => !linked.has(url) && !servedAsPage(url, pages))
   const permission = mode === 'permission'
   // A confirmation pops up from the composer like a question; every other permission keeps its place (issue #2149).
-  const docked = placement === 'composer' && (!permission || request.confirmation === true)
+  const docked = placement === 'composer' && docksAtComposer(request)
   // The pane wears a question open in its composer, and a request card standing in its transcript.
   useMark('question-open', docked && !collapsed)
   useMark('request', !docked)

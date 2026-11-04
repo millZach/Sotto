@@ -28,6 +28,8 @@ describe('a Codex form with nothing to fill in is a confirmation (#2149)', () =>
     expect(ask({ serverName: 'linear', message: undefined, description: 'Allow the linear MCP server to run tool "list"?' }).request.text)
       .toBe('Codex is asking before it uses linear.\nAllow the linear MCP server to run tool "list"?')
     expect(ask({ serverName: undefined }).request.text).toBe(MESSAGE)
+    // A server's name is only ever its name, whatever it is.
+    expect(ask({ serverName: 'constructor' }).request.text).toBe(`Codex is asking before it uses constructor.\n${MESSAGE}`)
   })
 
   it('takes OpenAI’s two form spellings with no schema at all', () => {

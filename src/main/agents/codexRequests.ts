@@ -60,7 +60,7 @@ function codexBrowserText(params: z.infer<typeof paramsSchema>): string | undefi
 }
 
 /** The servers whose own names would not tell the user what Codex is about to use. */
-const serverWords: Readonly<Record<string, string>> = { node_repl: 'Computer Use', codex_apps: 'an app' }
+const serverWords: ReadonlyMap<string, string> = new Map([['node_repl', 'Computer Use'], ['codex_apps', 'an app']])
 /** A sign-in Codex takes through its own browser broker: its fields never reach the form, so Allow from here would be empty. */
 const BROKER_SIGN_IN = 'Sotto can’t take a sign-in for Codex. Answer it in Codex, or skip it to decline.'
 const CHOOSE_CONFIRMATION = 'Choose Allow once or Deny.'
@@ -79,7 +79,7 @@ const brokerSignIn = (params: z.infer<typeof paramsSchema>): boolean => params._
 /** A confirmation's words: what Codex is about to use where the server says it, then Codex's own question. */
 function confirmationText(params: z.infer<typeof paramsSchema>): string {
   const said = params.message ?? params.description
-  const server = params.serverName ? serverWords[params.serverName] ?? params.serverName : undefined
+  const server = params.serverName ? serverWords.get(params.serverName) ?? params.serverName : undefined
   return [server ? `Codex is asking before it uses ${server}.` : undefined, said].filter(Boolean).join('\n') || 'Codex is asking before it goes on.'
 }
 
