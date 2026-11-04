@@ -296,7 +296,7 @@ const optionalMode: StructuredQuestion = { id: 'mode', header: 'Mode', question:
   options: [{ id: 'quick', label: 'Quick check' }, { id: 'full', label: 'Full check' }] }
 const optionalNote: StructuredQuestion = { id: 'note', question: 'Anything else?', multiSelect: false, allowFreeText: true, options: [], required: false }
 const requiredName: StructuredQuestion = { id: 'name', question: 'Project name', multiSelect: false, allowFreeText: true, options: [], required: true }
-const nativeOnly = 'This field needs the native Codex client; Sotto cannot submit this field type or its validation rules.'
+const nativeOnly = 'Sotto can’t show this kind of field. Decline it, or answer it in Codex if your Codex app can.'
 const optionalCount: StructuredQuestion = { id: 'count', question: 'How many workers?', multiSelect: false, allowFreeText: false, options: [], required: false, unavailableReason: nativeOnly }
 const requiredCode: StructuredQuestion = { id: 'code', header: 'Code', question: 'Uppercase code', multiSelect: false, allowFreeText: false, options: [], unavailableReason: nativeOnly }
 

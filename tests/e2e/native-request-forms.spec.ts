@@ -18,7 +18,7 @@ type Recorder = { answers: AgentCommand[]; release: (() => void) | null; hold: P
 declare global { var requestJourney: Recorder | undefined }
 
 const AGENT_COMMAND = 'sotto:agents:command'
-const nativeOnly = 'This field needs the native Codex client; Sotto cannot submit this field type or its validation rules.'
+const nativeOnly = 'Sotto can’t show this kind of field. Decline it, or answer it in Codex if your Codex app can.'
 
 const layoutForm: AgentRequest = {
   id: 'layout-form', kind: 'question', text: 'Settings page questions', options: [], questions: [

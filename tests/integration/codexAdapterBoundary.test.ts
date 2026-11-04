@@ -505,6 +505,22 @@ describe('Codex App Server provider adapter', () => {
     await f.host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: allowed.id, answer: '', approved: true, permissionChoice: 'accept' })
     await expect.poll(async () => (await f.driver.requests()).find(r => r.id === nativeRequestId(allowed.id))?.result).toEqual({ action: 'accept', content: {} })
   })
+  // Issue #2154: typed fields reach Codex in their own types, and a refused value sends nothing.
+  it('answers a typed Codex form with a JSON boolean, number and array', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'question', text: 'Release?', method: 'mcpServer/elicitation/request', params: { questions: [], requestedSchema: { type: 'object', required: ['proceed', 'copies'], properties: {
+      proceed: { type: 'boolean', title: 'Proceed?' }, copies: { type: 'integer', minimum: 1, maximum: 5 }, tags: { type: 'array', items: { type: 'string', enum: ['a', 'b'] } } } } } })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const request = (await f.host.snapshot()).threads[0]!.requests[0]!
+    expect(request.questions!.map(question => [question.id, question.unavailableReason])).toEqual([['proceed', undefined], ['copies', undefined], ['tags', undefined]])
+    await expect(f.host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: request.id, answer: '',
+      questionAnswers: { proceed: { optionIds: ['true'] }, copies: { optionIds: [], text: '9' } } })).rejects.toThrow('Answer with a whole number from 1 to 5.')
+    expect((await f.driver.requests()).some(r => r.id === nativeRequestId(request.id) && r.result !== undefined)).toBe(false)
+    await f.host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: request.id, answer: '',
+      questionAnswers: { proceed: { optionIds: ['true'] }, copies: { optionIds: [], text: '2' }, tags: { optionIds: ['a', 'b'] } } })
+    await expect.poll(async () => (await f.driver.requests()).find(r => r.id === nativeRequestId(request.id))?.result)
+      .toEqual({ action: 'accept', content: { proceed: true, copies: 2, tags: ['a', 'b'] } })
+  })
   it.each(['item/tool/requestUserInput', 'mcpServer/elicitation/request'])('delivers question answers for %s', async method => {
     const f = await fixture(); const { threadId } = await create(f)
     await f.action(threadId, { type: 'question', text: 'Choose color', method })

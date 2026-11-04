@@ -29,11 +29,119 @@ const requestMethods: Record<string, { kind: 'permission' | 'question'; decline:
 // a `url` mode; the three forms carry a requested schema, the link does not.
 const formModes = new Set(['form', 'openai/form', 'openaiForm'])
 const formSchema = z.object({ type: z.literal('object'), properties: z.record(z.string(), z.unknown()), required: z.array(z.string()).nullish() })
-const fieldSchema = z.object({ type: z.string(), enum: z.array(z.string()).optional(), enumNames: z.array(z.string()).nullish(),
-  oneOf: z.array(z.object({ const: z.string(), title: z.string() })).optional(), minLength: z.number().nullish(), maxLength: z.number().nullish(),
-  minimum: z.number().nullish(), maximum: z.number().nullish() }).passthrough()
-function supportedFormField(field: z.infer<typeof fieldSchema>): boolean {
-  return field.type === 'string' && Object.keys(field).every(key => ['type', 'enum', 'enumNames', 'oneOf', 'title', 'description', 'default', 'minLength', 'maxLength', 'minimum', 'maximum'].includes(key))
+// The fields Codex 0.166.0 forwards in a `form`, MCP's primitives, each closed to other keys (`McpElicitationPrimitiveSchema`):
+// a form with any other field is cancelled before it reaches Sotto. OpenAI's two spellings pass anything, so a field outside
+// these, such as an image picker, a `pattern` or an object, is one Sotto can't show (issue #2154).
+const words = { title: z.string().nullish(), description: z.string().nullish() }
+const titledOption = z.object({ const: z.string(), title: z.string() }).strict()
+const bound = z.number().nullish()
+const fieldSchema = z.union([
+  z.object({ ...words, type: z.literal('string'), enum: z.array(z.string()), enumNames: z.array(z.string()).nullish(), default: z.string().nullish() }).strict(),
+  z.object({ ...words, type: z.literal('string'), oneOf: z.array(titledOption), default: z.string().nullish() }).strict(),
+  z.object({ ...words, type: z.literal('string'), minLength: bound, maxLength: bound, format: z.enum(['email', 'uri', 'date', 'date-time']).nullish(), default: z.string().nullish() }).strict(),
+  z.object({ ...words, type: z.enum(['number', 'integer']), minimum: bound, maximum: bound, default: z.number().nullish() }).strict(),
+  z.object({ ...words, type: z.literal('boolean'), default: z.boolean().nullish() }).strict(),
+  z.object({ ...words, type: z.literal('array'), minItems: bound, maxItems: bound, default: z.array(z.string()).nullish(), items: z.union([
+    z.object({ type: z.literal('string'), enum: z.array(z.string()) }).strict(),
+    z.object({ type: z.literal('string').optional(), anyOf: z.array(titledOption) }).strict(),
+    z.object({ type: z.literal('string').optional(), oneOf: z.array(titledOption) }).strict(),
+  ]) }).strict(),
+])
+/** A field's own words, read from any field, so one Sotto can't show still says what it asks. */
+const fieldWordsSchema = z.object(words)
+type FieldOption = { id: string; label: string }
+/** One form field as Sotto answers it: words, choices, a number, Yes or No, or several choices. */
+type FormField =
+  | { kind: 'text'; minLength?: number | undefined; maxLength?: number | undefined; default?: string | undefined }
+  | { kind: 'choice'; options: FieldOption[]; default?: string | undefined }
+  | { kind: 'number'; integer: boolean; minimum?: number | undefined; maximum?: number | undefined; default?: number | undefined }
+  | { kind: 'boolean'; default?: boolean | undefined }
+  | { kind: 'several'; options: FieldOption[]; minItems?: number | undefined; maxItems?: number | undefined; default?: string[] | undefined }
+const YES_NO: readonly FieldOption[] = [{ id: 'true', label: 'Yes' }, { id: 'false', label: 'No' }]
+const UNSUPPORTED_FIELD = 'Sotto can’t show this kind of field. Decline it, or answer it in Codex if your Codex app can.'
+const given = <T>(value: T | null | undefined): T | undefined => value ?? undefined
+const titled = (options: readonly z.infer<typeof titledOption>[]): FieldOption[] => options.map(option => ({ id: option.const, label: option.title }))
+
+function formField(value: unknown): FormField | undefined {
+  const parsed = fieldSchema.safeParse(value)
+  if (!parsed.success) return
+  const field = parsed.data
+  switch (field.type) {
+    case 'boolean': return { kind: 'boolean', default: given(field.default) }
+    case 'number': case 'integer': return { kind: 'number', integer: field.type === 'integer', minimum: given(field.minimum), maximum: given(field.maximum), default: given(field.default) }
+    case 'array': {
+      const items = field.items
+      const options = 'enum' in items ? items.enum.map(id => ({ id, label: id })) : titled('anyOf' in items ? items.anyOf : items.oneOf)
+      return { kind: 'several', options, minItems: given(field.minItems), maxItems: given(field.maxItems), default: given(field.default) }
+    }
+    case 'string':
+      if ('enum' in field) return { kind: 'choice', options: field.enum.map((id, index) => ({ id, label: field.enumNames?.[index] ?? id })), default: given(field.default) }
+      if ('oneOf' in field) return { kind: 'choice', options: titled(field.oneOf), default: given(field.default) }
+      return { kind: 'text', minLength: given(field.minLength), maxLength: given(field.maxLength), default: given(field.default) }
+  }
+}
+
+/** "a whole number from 1 to 5", and so on: what a number field takes, as the card and its refusal say it. */
+function numberWords(field: Extract<FormField, { kind: 'number' }>): string {
+  const what = field.integer ? 'a whole number' : 'a number'
+  if (field.minimum !== undefined && field.maximum !== undefined) return `${what} from ${field.minimum} to ${field.maximum}`
+  if (field.minimum !== undefined) return `${what} of at least ${field.minimum}`
+  return field.maximum !== undefined ? `${what} of no more than ${field.maximum}` : what
+}
+
+/** Several choices of which none may be chosen: answered with no choice, it sends an empty list, so it asks nothing of the user. */
+const noneAllowed = (field: FormField | undefined): boolean => field?.kind === 'several' && (field.minItems ?? 0) === 0
+
+/** What a field's question says beyond its own words: a number's range, and a default, which is said and never chosen for the user. */
+function fieldHints(field: FormField): string {
+  const label = (id: string): string => ('options' in field ? field.options.find(option => option.id === id)?.label : undefined) ?? id
+  const fallback = field.kind === 'boolean' ? field.default === undefined ? undefined : field.default ? 'Yes' : 'No'
+    : field.kind === 'several' ? field.default === undefined ? undefined : field.default.length ? field.default.map(label).join(', ') : 'none'
+      : field.kind === 'choice' ? field.default === undefined ? undefined : label(field.default)
+        : field.default === undefined ? undefined : String(field.default)
+  const range = field.kind === 'number' && (field.minimum !== undefined || field.maximum !== undefined) ? `${numberWords(field).replace(/^a/u, 'A')}.` : undefined
+  return [range, fallback === undefined ? undefined : `Default: ${fallback}.`].filter(Boolean).join(' ')
+}
+
+function formQuestion(id: string, value: unknown, required: boolean): NonNullable<AgentRequest['questions']>[number] {
+  const field = formField(value)
+  const said = fieldWordsSchema.safeParse(value)
+  const own = said.success ? said.data : {}
+  const hints = field ? fieldHints(field) : ''
+  return { id, question: (own.description ?? id) + (hints ? `\n${hints}` : ''), ...(own.title ? { header: own.title } : {}),
+    options: field?.kind === 'boolean' ? [...YES_NO] : field?.kind === 'choice' || field?.kind === 'several' ? field.options : [],
+    multiSelect: field?.kind === 'several', allowFreeText: field?.kind === 'text' || field?.kind === 'number', required: required && !noneAllowed(field),
+    ...(!field ? { unavailableReason: UNSUPPORTED_FIELD } : {}) }
+}
+
+/** A field's answer in its own type, from a JSON answer or what the card sent, or a refusal in plain words. */
+function formValue(field: FormField, value: unknown): unknown {
+  if (field.kind === 'boolean') {
+    if (typeof value === 'boolean') return value
+    if (value === 'true' || value === 'false') return value === 'true'
+    throw new Error('Choose Yes or No.')
+  }
+  if (field.kind === 'number') {
+    const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value.trim()) : Number.NaN
+    if (!Number.isFinite(number) || (field.integer && !Number.isInteger(number)) || (field.minimum !== undefined && number < field.minimum)
+      || (field.maximum !== undefined && number > field.maximum)) throw new Error(`Answer with ${numberWords(field)}.`)
+    return number
+  }
+  if (field.kind === 'several') {
+    const values: unknown = typeof value === 'string' ? [value] : value
+    if (!Array.isArray(values) || values.some(item => typeof item !== 'string' || !field.options.some(option => option.id === item)) || new Set(values).size !== values.length) throw new Error('Choose an offered form option.')
+    if (field.minItems !== undefined && values.length < field.minItems) throw new Error(`Choose at least ${field.minItems} ${field.minItems === 1 ? 'option' : 'options'}.`)
+    if (field.maxItems !== undefined && values.length > field.maxItems) throw new Error(`Choose no more than ${field.maxItems} ${field.maxItems === 1 ? 'option' : 'options'}.`)
+    return values
+  }
+  if (field.kind === 'choice') {
+    if (typeof value !== 'string' || !field.options.some(option => option.id === value)) throw new Error('Choose an offered form option.')
+    return value
+  }
+  if (typeof value !== 'string') throw new Error('Answer with words.')
+  if (field.minLength !== undefined && value.length < field.minLength) throw new Error(`Answer with at least ${field.minLength} characters.`)
+  if (field.maxLength !== undefined && value.length > field.maxLength) throw new Error(`Answer with no more than ${field.maxLength} characters.`)
+  return value
 }
 const amendmentSchema = z.union([
   z.object({ acceptWithExecpolicyAmendment: z.object({ execpolicy_amendment: z.array(z.string()) }).strict() }).strict(),
@@ -115,19 +223,11 @@ export function pendingRequest(id: string | number, method: string, value: unkno
     allowFreeText: false, required: true, unavailableReason: BROKER_SIGN_IN }]
   else if (!empty && method === 'mcpServer/elicitation/request' && formModes.has(params.mode ?? '')) {
     const form = formSchema.safeParse(params.requestedSchema)
-    if (form.success) formQuestions = Object.entries(form.data.properties).map(([id, value]) => {
-      const field = fieldSchema.safeParse(value)
-      const supported = field.success && supportedFormField(field.data)
-      return { id, question: field.success && typeof field.data.description === 'string' ? field.data.description : id,
-        ...(field.success && typeof field.data.title === 'string' ? { header: field.data.title } : {}),
-        options: supported ? field.data.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.data.enum?.map((id, index) => ({ id, label: field.data.enumNames?.[index] ?? id })) ?? [] : [],
-        multiSelect: false, allowFreeText: supported && !field.data.enum && !field.data.oneOf,
-        required: form.data.required?.includes(id) ?? false,
-        ...(!supported ? { unavailableReason: 'This field needs the native Codex client; Sotto cannot submit this field type or its validation rules.' } : {}) }
-    })
+    if (form.success) formQuestions = Object.entries(form.data.properties).map(([id, value]) => formQuestion(id, value, form.data.required?.includes(id) ?? false))
+    // A one-field form's choices are the request's too, for a client that answers with one choice.
     if (form.success && Object.keys(form.data.properties).length === 1) {
-      const field = fieldSchema.safeParse(Object.values(form.data.properties)[0])
-      if (field.success) options = field.data.oneOf?.map(o => ({ id: o.const, label: o.title })) ?? field.data.enum?.map((id, i) => ({ id, label: field.data.enumNames?.[i] ?? id })) ?? []
+      const field = formField(Object.values(form.data.properties)[0])
+      options = field?.kind === 'boolean' ? [...YES_NO] : field?.kind === 'choice' ? field.options : []
     }
   }
   const decisions = params.availableDecisions ?? ['accept', 'decline']
@@ -194,24 +294,25 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
     let content: Record<string, unknown>
     if (questionAnswers) {
       const answered = questionValues(pending.request, questionAnswers)
-      content = Object.fromEntries(Object.keys(answered).map(id => [id, questionAnswers[id]!.optionIds[0] ?? questionAnswers[id]!.text]))
+      // The card sends a choice by its ID, several choices as their IDs, and anything typed as text; `formValue` types each.
+      content = Object.fromEntries(Object.keys(answered).map(id => [id, questionAnswers[id]!.optionIds.length > 1 || formField(form.properties[id])?.kind === 'several'
+        ? questionAnswers[id]!.optionIds : questionAnswers[id]!.optionIds[0] ?? questionAnswers[id]!.text]))
     } else {
       try { content = formAnswerSchema.parse(JSON.parse(answer)) }
       catch { if (keys.length !== 1) throw new Error('Answer this form with a JSON object keyed by its fields.'); content = { [keys[0]!]: answer } }
     }
-    for (const key of form.required ?? []) if (!(key in content)) throw new Error(`Answer the required field: ${key}.`)
-    for (const [key, value] of Object.entries(content)) {
-      const field = fieldSchema.parse(form.properties[key])
-      if (!supportedFormField(field)) {
-        throw new Error('Answer this structured field directly in Codex.')
-      }
-      let schema = z.string()
-      if (field.minLength != null) schema = schema.min(field.minLength)
-      if (field.maxLength != null) schema = schema.max(field.maxLength)
-      const text = schema.parse(value)
-      if (field.enum && !field.enum.includes(text) || field.oneOf && !field.oneOf.some(o => o.const === text)) throw new Error('Choose an offered form option.')
+    for (const key of form.required ?? []) {
+      if (!(key in content) && noneAllowed(formField(form.properties[key]))) content[key] = []
+      if (!(key in content)) throw new Error(`Answer the required field: ${key}.`)
     }
-    return { action: 'accept', content }
+    const typed: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(content)) {
+      if (!Object.hasOwn(form.properties, key)) throw new Error('Answer only this form’s own fields.')
+      const field = formField(form.properties[key])
+      if (!field) throw new Error(UNSUPPORTED_FIELD)
+      typed[key] = formValue(field, value)
+    }
+    return { action: 'accept', content: typed }
   }
   const questions = pending.params.questions ?? []
   if (!questions.length) throw new Error('Codex did not provide question identifiers. Answer this request in Codex.')
