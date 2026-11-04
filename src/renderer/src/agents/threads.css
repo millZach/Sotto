@@ -29,7 +29,8 @@
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
 .thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
 .thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
-.thread-workspace__branches { min-width: 0; }
+/* The branch controls give way last among what stands beside the name: the name and the crumb reach their floors first. */
+.thread-workspace__branches { flex: 0 .01 auto; min-width: 0; }
 .thread-workspace__branches:empty { display: none; }
 /* The name gives way first, so what stands beside it stays whole while there is room for it (ADR-0182). It stops at a
    floor, or at its own width if that is less, so a short name is never held open. */
@@ -39,11 +40,12 @@
 .thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A crumb holding the working copy gives way no faster than the branch controls after it (ADR-0161): its project name
-   shortens, and the working copy keeps its own width, so it is never drawn under them. */
-.thread-workspace__crumb[data-has-working-copy] { flex-shrink: 1; }
+/* A crumb holding the working copy gives way no faster than the branch controls after it (ADR-0161). Below the name's floor
+   its project name and the branch it names shorten, each with an ellipsis (ADR-0182, decision 5), and it stops at the
+   working copy's own icon, so nothing here is ever drawn over the pull request's number beside it. */
+.thread-workspace__crumb[data-has-working-copy] { flex-shrink: 1; min-width: 32px; }
 .thread-workspace__crumb[data-has-working-copy] > span:first-of-type { flex: 0 1 auto; min-width: 0; }
-.thread-workspace__crumb > .working-copy { flex: none; }
+.thread-workspace__crumb > .working-copy { flex: 0 1 auto; }
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */

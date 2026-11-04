@@ -181,7 +181,7 @@ function BranchToolbarView({ row, state, command, focused = true, onExplainedErr
     <span className="branch-toolbar__end">
       {!header || !locked ? <Separator /> : null}
       {pullRequest ? <><PullRequestBadge pullRequest={pullRequest} where={opener.where} onOpen={() => opener.open(thread.id)} /><Separator /></> : null}
-      <BranchPicker header={header} threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} copyable={branchLabelIsRef(thread)} busy={busy === 'branch'} disabled={busy !== null}
+      <BranchPicker header={header} threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} echoed={header && thread.worktree?.status === 'ready' && thread.worktree.branch === branchLabel(thread)} copyable={branchLabelIsRef(thread)} busy={busy === 'branch'} disabled={busy !== null}
         draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     </span>
@@ -343,11 +343,13 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
  * with T3's badges and pages them, offers Create new ref for a name nothing matches, and for a worktree not
  * made yet carries the Start from origin switch. Right-click on a ref copies its name.
  */
-function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyable, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin, onCheckoutPullRequest, header }: {
+function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, echoed, copyable, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin, onCheckoutPullRequest, header }: {
   readonly threadId: string
   readonly triggerRef: React.RefObject<HTMLButtonElement | null>
   readonly open: boolean; readonly onOpenChange: (open: boolean) => void
   readonly label: string; readonly busy: boolean; readonly disabled: boolean
+  /** The pane header's working copy beside it already says this same branch. */
+  readonly echoed: boolean
   /** The label is a ref's own name, which a right-click copies. */
   readonly copyable: boolean
   readonly draftWorktree: boolean; readonly startFromOrigin: boolean
@@ -460,7 +462,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) onOpenChange(false) }}>
     <button ref={triggerRef} type="button" className="branch-toolbar__branch tt-focusable" role="combobox" aria-label={t`Choose branch`} title={busy ? t`Switching…` : label} aria-haspopup="listbox" aria-expanded={open}
-      aria-controls={open ? listId : undefined} disabled={disabled} data-busy={busy || undefined} onClick={() => onOpenChange(!open)}
+      aria-controls={open ? listId : undefined} disabled={disabled} data-busy={busy || undefined} data-echoed={echoed && !busy ? true : undefined} onClick={() => onOpenChange(!open)}
       onContextMenu={event => { if (copyable) { event.preventDefault(); void onCopy(label) } }}>
       <GitBranch size={13} aria-hidden="true" /><span>{busy ? t`Switching…` : label}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
