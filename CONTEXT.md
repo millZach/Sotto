@@ -847,6 +847,8 @@ Pressing Stop, releasing F9 or pressing the dictation shortcut again while the m
 
 **Risk boundary.** An action the user says Sotto must always confirm, captured by the questionnaire and stored as `always-confirm` policy records with source `questionnaire`, never as inferred memory.
 
+**Confirmation.** A provider's request with nothing to fill in, answered **Allow once** or **Deny**, shown above the composer the way a question is rather than in the transcript (issue #2149, ADR-0005 November 4, 2026 amendment). Codex asks this way before Computer Use opens an app and before an MCP tool runs: a form whose schema has no fields. It is a permission, so it counts as one in **Needs you** and in Watcher, and only the user's explicit choice answers it; no words, and no empty answer, ever allow it. A sign-in Codex takes through its own browser broker is not one: it is answered in Codex or skipped. Distinct from a **confirmation receipt**, a host's evidence of a second step on a paired client. Avoid: "approval prompt", "empty form" for what the user sees.
+
 **Approval surface.** The place a provider client sends the requests only a person can answer. Sotto claims it at launch, per thread, in every runtime mode, and a client that does not grant it answers those requests itself: Claude Code denies them and withholds its question tool, so a thread keeps working while nothing reaches the user. Because that looks exactly like a model choosing not to ask, an adapter that finds the surface missing, or that receives a request for the user it cannot read, says so on the provider instead of staying quiet. See ADR-0043. Avoid: "permission channel", "prompt host".
 
 ## Memory evaluation

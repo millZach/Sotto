@@ -2703,6 +2703,10 @@ msgid "Codex’s reviewer still answers what would come to you until it confirms
 msgstr "Codex’s reviewer still answers what would come to you until it confirms."
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Collapse permission request"
+msgstr "Collapse permission request"
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Collapse question"
 msgstr "Collapse question"
 
@@ -7687,6 +7691,10 @@ msgstr "Show more"
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
 msgid "Show page"
 msgstr "Show page"
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Show permission request"
+msgstr "Show permission request"
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Show question"

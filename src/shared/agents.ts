@@ -401,6 +401,10 @@ export const agentRequestSchema = z.object({
      *  plain field. */
     secret: z.literal(true).optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
+  /** A **confirmation** (CONTEXT.md): a permission with nothing to fill in and nothing named to act on beyond its words, answered
+   * Allow once or Deny above the composer, the way a question is (issue #2149). The adapter adds it; a request without it,
+   * from any host that predates it, keeps the permission card's place. */
+  confirmation: z.literal(true).optional(),
   context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(),
     /** The asking model's own words for what it asks (a **command summary**, ADR-0185). Absent when it gave none; Sotto never writes one. */
     summary: text.optional(),

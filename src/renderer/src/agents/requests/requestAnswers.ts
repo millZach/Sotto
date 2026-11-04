@@ -36,6 +36,11 @@ export function requestMode(request: AgentRequest): 'structured' | 'permission' 
   return request.options.length > 0 ? 'legacy-options' : 'legacy-text'
 }
 
+/** A question, or a **confirmation**: what pops up from the top of the composer rather than standing in the transcript (issue #2149). */
+export function docksAtComposer(request: AgentRequest): boolean {
+  return request.kind === 'question' || request.confirmation === true
+}
+
 /** Questions that only take text have no Other choice to pick: their text is the answer. */
 export function textOnly(question: StructuredQuestion): boolean {
   return question.options.length === 0
@@ -129,16 +134,18 @@ export function legacyPermissionAnswer(approved: boolean): RequestAnswer {
 }
 
 /** Title and body for a permission: the native tool context when present, otherwise the request text. */
-export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly summary?: string; readonly summaryAsk?: 'waiting' | 'answered' | 'failed'; readonly target?: string; readonly cwd?: string; readonly details?: string } {
+export function permissionSummary(request: AgentRequest): { readonly title: string; readonly command?: string; readonly said?: string; readonly summary?: string; readonly summaryAsk?: 'waiting' | 'answered' | 'failed'; readonly target?: string; readonly cwd?: string; readonly details?: string } {
   const [first = '', ...rest] = request.text.split('\n')
   const context = request.context
   const restText = rest.join('\n').trim()
   const toolName = context?.toolName
   const worded = context?.command ? t({ message: 'Run a command', comment: 'The heading of a card that asks to run a command.' }) : context?.action
   const title = worded ?? (first.trim() || (toolName ? t({ message: `Use ${toolName}`, comment: 'A permission request\'s title: {toolName} is the tool the agent asks to use.' }) : t`Permission request`))
-  const command = context?.command ?? (restText && !context?.details && !context?.action ? restText : undefined)
+  // A confirmation's words after its first line are the provider's question, read as words rather than run (issue #2149).
+  const said = request.confirmation && restText ? restText : undefined
+  const command = context?.command ?? (restText && !said && !context?.details && !context?.action ? restText : undefined)
   const details = context?.details && context.details.trim() !== command?.trim() ? context.details : undefined
-  return { title, ...(command ? { command } : {}), ...(context?.summary ? { summary: context.summary } : {}), ...(context?.summaryAsk ? { summaryAsk: context.summaryAsk } : {}), ...(context?.target ? { target: context.target } : {}),
+  return { title, ...(command ? { command } : {}), ...(said ? { said } : {}), ...(context?.summary ? { summary: context.summary } : {}), ...(context?.summaryAsk ? { summaryAsk: context.summaryAsk } : {}), ...(context?.target ? { target: context.target } : {}),
     ...(context?.cwd ? { cwd: context.cwd } : {}), ...(details ? { details } : {}) }
 }
 

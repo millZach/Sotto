@@ -17,7 +17,7 @@ import { shownWords, type LaterWords } from '../interfaceWords'
 import { shownCount } from '../../state/interfaceNumbers'
 import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import {
-  answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
+  answerProgress, blocksSending, docksAtComposer, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, SKIP_ANSWER, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
@@ -47,7 +47,7 @@ export interface AgentRequestCardProps {
   readonly onWriteAnswer?: () => void
   /** A line under the choices, such as the voice phrases. */
   readonly store?: RequestAnswerStore
-  /** Thread questions sit above the composer; other hosts keep their existing placement. */
+  /** Thread questions and confirmations sit above the composer; other hosts keep their existing placement. */
   readonly placement?: 'composer' | undefined
   /** The web links in the agent's message just before a question, which the card covers once it docks. Those the card
    *  already shows as links in the request's own words are left out. */
@@ -94,7 +94,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
   const pages = request.pages ?? []
   const rows = messageLinks.filter(url => !linked.has(url) && !servedAsPage(url, pages))
   const permission = mode === 'permission'
-  const docked = placement === 'composer' && !permission
+  // A confirmation pops up from the composer like a question; every other permission keeps its place (issue #2149).
+  const docked = placement === 'composer' && docksAtComposer(request)
   // The pane wears a question open in its composer, and a request card standing in its transcript.
   useMark('question-open', docked && !collapsed)
   useMark('request', !docked)
@@ -162,8 +163,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
     }}>
     <span className="tt-visually-hidden">{plan ? t`Plan from ${ownerTitle}` : permission ? t`Permission request for ${ownerTitle}` : t`Question from ${ownerTitle}`}</span>
     {docked ? <div className="agent-request__toggle-row">
-      {collapsed ? <span id={`${baseId}-collapsed`} className="agent-request__collapsed-title">{questionCount > 1 ? plural(questionCount, { one: '# question waiting', other: '# questions waiting' }) : questions[0]?.question ?? request.text}</span> : null}
-      <button ref={toggle} type="button" className="agent-request__toggle tt-focusable" aria-label={collapsed ? t`Show question` : t`Collapse question`}
+      {collapsed ? <span id={`${baseId}-collapsed`} className="agent-request__collapsed-title">{questionCount > 1 ? plural(questionCount, { one: '# question waiting', other: '# questions waiting' }) : questions[0]?.question ?? (permission ? summary?.title : undefined) ?? request.text}</span> : null}
+      <button ref={toggle} type="button" className="agent-request__toggle tt-focusable" aria-label={permission ? collapsed ? t`Show permission request` : t`Collapse permission request` : collapsed ? t`Show question` : t`Collapse question`}
         aria-expanded={!collapsed} aria-controls={`${baseId}-body`} onClick={() => setCollapsed(value => !value)}>
         {collapsed ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
       </button>
@@ -184,6 +185,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, req
         <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
           {request.context?.toolName && !request.context.toolName.includes('/') ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         <CommandSummaryLine summary={summary.summary} ask={summary.summaryAsk} isCommand={request.context?.command !== undefined} providerId={providerId} />
+        {summary.said ? <p className="agent-request__text"><LinkedText text={summary.said} /></p> : null}
         {summary.target ? <p className="agent-request__target" dir="ltr">{summary.target}</p> : null}
         {summary.command ? <pre className="agent-request__command"><code>{summary.command}</code></pre> : null}
         {summary.details && request.context?.command ? <ul className="agent-request__also">{summary.details.split('\n').map((line, index) => <li key={index} className="tt-paragraph">{line}</li>)}</ul> : null}
