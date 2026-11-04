@@ -362,6 +362,14 @@ public struct MarkupHistory: Equatable, Sendable {
         guard next != marks else { return }
         past.append(marks); marks = next; future = []
     }
+    /// The same for a drag that began on `base`, and says whether it was kept. If the marks changed while it ran, by Undo
+    /// or Delete with a second finger, the change wins: keeping the drag would bring back what was just taken away.
+    @discardableResult
+    public mutating func replace(with next: [MarkupShape], madeFrom base: [MarkupShape]) -> Bool {
+        guard base == marks else { return false }
+        replace(with: next)
+        return true
+    }
     public mutating func undo() {
         guard let last = past.popLast() else { return }
         future.insert(marks, at: 0); marks = last

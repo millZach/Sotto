@@ -283,6 +283,8 @@ struct MarkupEditor: View {
         }
         .accessibilityAction(.escape) { dismiss() }
         .onChange(of: notice) { _, words in if let words { UIAccessibility.post(notification: .announcement, argument: words) } }
+        // Undo or Delete with a second finger stops a drag on the spot, rather than showing the drag until it lifts.
+        .onChange(of: history.marks) { _, _ in if dragging != nil { dragging = nil; shownMarks = nil } }
     }
 
     // MARK: The picture
@@ -428,12 +430,12 @@ struct MarkupEditor: View {
         defer { shownMarks = nil }
         guard let shown = shownMarks else { return }
         switch drag {
-        case .resize: history.replace(with: shown)
+        case .resize(let base, _, _): history.replace(with: shown, madeFrom: base)
         case .move(_, let base, _, let lead, _):
             let settled = layout.settle(shown, note: lead, reach: reach(unit))
+            guard history.replace(with: settled, madeFrom: base) else { return }
             let was = holderID(base.first { $0.id == lead }), now = holderID(settled.first { $0.id == lead })
             if base.first(where: { $0.id == lead })?.tool == .note, was != now { notice = noteMovedWords(now, in: settled) }
-            history.replace(with: settled)
         }
     }
     private func holderID(_ mark: MarkupShape?) -> Int? {

@@ -112,7 +112,7 @@ Zach marked up an agent's picture on the desktop and found no way to move a mark
 
 **27. Text on a mark belongs to it, and text off every mark is free.** There is no attach command. A note placed, let go or moved by the arrow keys so that the middle of its words or their start is on a box, a circle, an arrow or a pen line is on it; off every mark, it is free, and the editor says which it became. It moves with its mark, keeping the place the user gave it, rather than staying centred, so it covers only what the user let it cover. It keeps its share of a mark that is resized, turns with an arrow, stays on the picture, and goes when the mark is taken off.
 
-**28. Moves are steps of Undo, and a drag touches only what it moves.** Each drag, resize, size change or deleted mark is one step of **Undo**, and a run of arrow-key presses on one mark is one step. On the desktop a drag holds its marks outside React's state, the way a line being drawn already does, and redraws only the marks moving (`markupEditor.perf.test.tsx`). As before, nothing of the marks is kept but the copy, and no outline or handle goes onto it.
+**28. Moves are steps of Undo, and a drag touches only what it moves.** Each drag, resize, size change or deleted mark is one step of **Undo**, and a run of arrow-key presses moving one mark, or resizing it, is one step. If the marks change during a drag, by **Undo** or **Delete** say, the change wins and the drag stops, so letting go brings nothing back. On the desktop a drag holds its marks outside React's state, the way a line being drawn already does, and redraws only the marks moving (`markupEditor.perf.test.tsx`). As before, nothing of the marks is kept but the copy, and no outline or handle goes onto it.
 
 ## Consequences
 

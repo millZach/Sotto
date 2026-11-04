@@ -32,6 +32,8 @@ Sol's Standards and Spec reviews:
 
 - **A flat circle:** a circle drawn or resized to no height took every press on the picture, and every note placed. It now counts as the line it is.
 - **Undo:** a run of arrow-key presses after an Undo and another change could fold into that change, so Undo took both. A run now ends whenever anything else changes the marks.
+- **A change during a drag (Sotto Bug Bot):** Undo or Delete during a drag was overwritten at release by the marks the drag began on, so a deleted mark came back and Redo was cleared. The drag now stops when the marks change under it, on the desktop and the iPhone. `markupEditor.test.tsx` and `MarkupTests.swift` prove it; the iPhone's stop on the spot, a view change, isn't run by any test.
+- **Arrow keys and Alt with them (Sotto Bug Bot):** a move and then a resize of one mark folded into one Undo step. A run now holds to one kind.
 - **Text on an arrow:** resizing an arrow left its text behind. The text now turns and stretches with the arrow, and a resized mark's text stays on the picture.
 - **Placing and dropping:** placing asked what was under the press and dropping asked what was under the words' middle, so a long note placed near a box's edge came off at the next nudge. Both now ask the same thing. A note moved off a mark with the arrow keys is free, as one dragged off is.
 - **Alt and the arrow keys:** they leave a chord the dictation hotkey holds alone.

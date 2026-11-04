@@ -641,6 +641,70 @@ describe('the Move tool in the editor (ADR-0170, part 5)', () => {
     expect(place(shapes(picture)[0]!, 'x')).toEqual([100])
   })
 
+  it('keeps a mark deleted during a drag gone once the drag ends, and Undo brings it back where it was', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    fireEvent.pointerDown(picture, { pointerId: 1, button: 0, clientX: 200, clientY: 100, pointerType: 'mouse' })
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    fireEvent.keyDown(picture, { key: 'Delete' })
+    expect(marksList()).toEqual([])
+    // The drag stopped with the mark, so the pointer has nothing left to move or to keep.
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 500, clientY: 350, pointerType: 'mouse' })
+    expect(shapes(picture)).toHaveLength(0)
+    fireEvent.pointerUp(picture, { pointerId: 1, clientX: 500, clientY: 350, pointerType: 'mouse' })
+    expect(marksList()).toEqual([])
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(marksList()).toEqual(['Box'])
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+  })
+
+  it('stops a drag when Undo changes the marks under it, and leaves Redo to bring the change back', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Arrow' }))
+    drag(picture, [500, 100], [700, 200])
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    fireEvent.pointerDown(picture, { pointerId: 1, button: 0, clientX: 200, clientY: 100, pointerType: 'mouse' })
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    fireEvent.keyDown(picture, { key: 'z', ctrlKey: true })
+    // The arrow goes at once, and the box is back where it was.
+    expect(marksList()).toEqual(['Box'])
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+    fireEvent.pointerUp(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(marksList()).toEqual(['Box'])
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+    await userEvent.click(screen.getByRole('button', { name: 'Redo' }))
+    expect(marksList()).toEqual(['Box', 'Arrow'])
+  })
+
+  it('stops a resize when the Undo button takes the mark away, as a second finger can', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    drag(picture, [200, 100], [200, 100])
+    fireEvent.pointerDown(picture, { pointerId: 1, button: 0, clientX: 300, clientY: 200, pointerType: 'mouse' })
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(place(shapes(picture)[0]!, 'width')).toEqual([300])
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    fireEvent.pointerUp(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(marksList()).toEqual([])
+  })
+
+  it('takes a move and a resize by the keys back one at a time, and a run of either as one', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('v')
+    act(() => picture.focus())
+    await userEvent.keyboard('{Enter}{ArrowRight}{ArrowRight}')
+    await userEvent.keyboard('{Alt>}{ArrowRight}{ArrowRight}{/Alt}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([120, 220])
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([120, 200])
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([100, 200])
+    // And the other way round.
+    await userEvent.keyboard('{Alt>}{ArrowRight}{/Alt}{ArrowRight}')
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([100, 210])
+  })
+
   it('hands the copy the marks as they stand after moving, with the note\'s size and without the outline', async () => {
     const picture = await withABox()
     await userEvent.keyboard('t')

@@ -171,8 +171,8 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
   const kept = callouts?.length && showCallouts && keepCallouts ? callouts : null
   const nextId = useRef(1)
   const gesture = useRef<Gesture | null>(null)
-  /** The mark the arrow keys are moving and the marks they last made, so a run of presses with nothing between is one step of Undo. */
-  const nudged = useRef<{ readonly id: number; readonly marks: readonly MarkupShape[] } | null>(null)
+  /** The mark the arrow keys are changing, how, and the marks they last made, so a run of presses of one kind with nothing between is one step of Undo. */
+  const nudged = useRef<{ readonly id: number; readonly kind: 'move' | 'resize'; readonly marks: readonly MarkupShape[] } | null>(null)
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? ((window.sotto as { platform?: SottoPlatform } | undefined)?.platform ?? 'win32')
   const hotkey = app?.settings?.hotkey
@@ -231,10 +231,10 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
   }
   /** Puts in place what a drag or a key made of the marks, as one step of Undo. */
   const record = (next: readonly MarkupShape[]): void => { setHistory(current => ({ past: [...current.past, current.marks], marks: next, future: [] })) }
-  /** The same for the arrow keys, where a run of presses on one mark is one step. */
-  const recordNudge = (id: number, next: readonly MarkupShape[]): void => {
-    const again = nudged.current?.id === id && nudged.current.marks === history.marks
-    nudged.current = { id, marks: next }
+  /** The same for the arrow keys, where a run of presses moving or resizing one mark is one step. */
+  const recordNudge = (id: number, kind: 'move' | 'resize', next: readonly MarkupShape[]): void => {
+    const again = nudged.current?.id === id && nudged.current.kind === kind && nudged.current.marks === history.marks
+    nudged.current = { id, kind, marks: next }
     setHistory(again ? { ...history, marks: next, future: [] } : { past: [...history.past, history.marks], marks: next, future: [] })
   }
   const pickTool = (next: EditorTool): void => {
@@ -277,7 +277,16 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
     const grip = (event.pointerType === 'touch' ? 22 : 12) * onScreen()
     return markHandles(selected, sized).find(item => Math.hypot(item.x - x, item.y - y) <= grip)?.handle ?? null
   }
-  const dropGesture = (): void => { gesture.current = null; live.set(null); moved.set(null) }
+  const dropGesture = (): void => {
+    gesture.current = null; live.set(null); moved.set(null)
+    if (surface.current) delete surface.current.dataset.cursor
+  }
+  // A drag keeps what it makes of the marks it began on. If they change under it, by Undo or Delete say, the change
+  // wins and the drag stops, or letting go would bring back what was just taken away.
+  useLayoutEffect(() => {
+    const current = gesture.current
+    if (current && current.kind !== 'draw' && current.base !== history.marks) dropGesture()
+  }, [history.marks])
 
   const onPointerDown = (event: React.PointerEvent): void => {
     if (event.button !== 0 || note) return
@@ -370,14 +379,14 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
       if (!selected) return true
       if (!event.altKey) {
         const next = moveMarks(history.marks, movingWith(history.marks, selected.id), by[0], by[1], sized)
-        recordNudge(selected.id, settleMoved(next, history.marks, selected.id, 9 * unit))
+        recordNudge(selected.id, 'move', settleMoved(next, history.marks, selected.id, 9 * unit))
         return true
       }
       // The dictation hotkey keeps its chord: Alt with that arrow resizes nothing.
       if (!chordClaimed(`${event.shiftKey ? 'shift+' : ''}alt+${event.key.toLowerCase().replace('arrow', '')}`, hotkey, platform)) return true
       const corner = markHandles(selected, sized).find(item => item.handle === 'end' || item.handle === 'bottom-right')
       const resized = corner && resizeMark(history.marks, selected.id, corner.handle, Math.min(sized.width, Math.max(0, corner.x + by[0])), Math.min(sized.height, Math.max(0, corner.y + by[1])), sized)
-      if (resized) recordNudge(selected.id, resized)
+      if (resized) recordNudge(selected.id, 'resize', resized)
       return true
     }
     if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {

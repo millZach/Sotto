@@ -167,6 +167,28 @@ final class MarkupTests: XCTestCase {
         XCTAssertEqual(Markup.noteFontSize(wide, scale: 1.4), 1000.0 / 48 * 1.4, accuracy: 0.0001)
     }
 
+    func testADragKeepsItsMarksOnlyIfNothingChangedThemWhileItRan() {
+        var history = MarkupHistory()
+        for mark in scene { history.add(mark, size: wide) }
+        // Let go with the marks as the drag found them: kept, as one step of Undo.
+        var base = history.marks
+        XCTAssertTrue(history.replace(with: layout.move(base, [1, 4], dx: 10, dy: 10), madeFrom: base))
+        history.undo()
+        XCTAssertEqual(history.marks, scene)
+        // A second finger takes the shape off during the drag: it stays off, and Undo still brings it back.
+        base = history.marks
+        history.remove(1)
+        let removed = history
+        XCTAssertFalse(history.replace(with: layout.move(base, [1, 4], dx: 10, dy: 10), madeFrom: base))
+        XCTAssertEqual(history, removed)
+        // Undo during a drag stays undone, with Redo still there.
+        history.undo()
+        base = history.marks
+        history.undo()
+        XCTAssertFalse(history.replace(with: layout.move(base, [2], dx: 10, dy: 10), madeFrom: base))
+        XCTAssertTrue(history.canRedo)
+    }
+
     func testUndoStepsBackAMoveAndTakingAShapeOffTakesItsNotesWhichUndoBringsBack() {
         var history = MarkupHistory()
         for mark in scene { history.add(mark, size: wide) }
