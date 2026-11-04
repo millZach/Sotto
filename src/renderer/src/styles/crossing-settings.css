@@ -55,12 +55,17 @@
 .help-view { width: min(100%, 800px); margin: 0 auto; padding: 28px 40px 48px; }
 .help-view > h1 { margin: 0 0 24px; font-size: var(--tt-type-title); font-weight: 500; letter-spacing: -.9px; }
 .help-grid { display: flex; flex-direction: column; gap: 42px; }
-.help-topics { border: 0; padding: 0; border-radius: 0; background: none; }
-.help-topics__group { font-family: inherit; font-size: var(--tt-type-small); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--tt-text-muted); padding-bottom: 10px; }
-.help-topic { border-top: 1px solid var(--tt-hairline); }
-.help-topic summary { padding: 18px 0; }
-.help-topic summary h2 { font-size: var(--tt-type-lead); font-weight: 500; }
-.help-topic p { padding: 0 0 18px; color: var(--tt-text-2); font-size: var(--tt-type-reading); line-height: 1.65; }
+.help-topics { display: block; }
+/* Each group's topics are a card, as a group of Settings rows is (ADR-0110): the words stand clear of its edge, and its rows are divided the same way. */
+.help-topics__group { margin: 28px 0 10px; padding: 0; border: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; }
+.help-topics__group:first-child { margin-top: 0; }
+.help-topics__card { overflow: hidden; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.help-topic { border-top: 0; }
+.help-topic + .help-topic { border-top: 2px solid var(--tt-card-inset); }
+.help-topic summary { padding: 14px 20px; }
+.help-topic summary h2 { font-size: var(--tt-type-reading); font-weight: 500; }
+.help-topic p { padding: 0 20px 16px; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; }
+.help-topic p + p { margin-top: -6px; }
 .help-aside { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
 .help-aside .tt-panel { border: 0; padding: 0; background: none; }
 .help-aside .tt-panel__header { padding: 0 0 14px; }

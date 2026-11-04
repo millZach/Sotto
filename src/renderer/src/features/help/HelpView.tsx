@@ -111,15 +111,15 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
     <div ref={view} className="management-view help-view">
       <h1><Trans>Help</Trans></h1>
       <div className="help-grid">
-        <div className="tt-panel help-topics">
-          <p className="tt-instrument help-topics__group"><Trans>Getting started</Trans></p>
-          <TopicList topics={gettingStarted} />
-          {watcher ? <><p className="tt-instrument help-topics__group">Watcher</p>
-          <TopicList topics={watcherTopics} /></> : null}
-          <p className="tt-instrument help-topics__group"><Trans>Privacy</Trans></p>
-          <TopicList topics={privacy} />
-          <p className="tt-instrument help-topics__group"><Trans>Troubleshooting</Trans></p>
-          <TopicList topics={troubleshooting} />
+        <div className="help-topics">
+          <p className="help-topics__group"><Trans>Getting started</Trans></p>
+          <div className="help-topics__card"><TopicList topics={gettingStarted} /></div>
+          {watcher ? <><p className="help-topics__group">Watcher</p>
+          <div className="help-topics__card"><TopicList topics={watcherTopics} /></div></> : null}
+          <p className="help-topics__group"><Trans>Privacy</Trans></p>
+          <div className="help-topics__card"><TopicList topics={privacy} /></div>
+          <p className="help-topics__group"><Trans>Troubleshooting</Trans></p>
+          <div className="help-topics__card"><TopicList topics={troubleshooting} /></div>
         </div>
         <div className="help-aside">
           <section className="tt-panel">
