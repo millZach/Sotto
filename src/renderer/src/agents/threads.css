@@ -93,10 +93,13 @@
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: var(--tt-type-small); }
-.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+/* Jump to latest stands in the margin beside the column rather than over the words, and at the pane's edge in a pane with no
+   margin. It is an arrow, named for what a press does; New messages says so in words. A ring of the room keeps the words
+   beside it from running into it. */
+.thread-transcript__jump { position: absolute; right: max(10px, calc((100% - 760px) / 2 - 46px)); bottom: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 32px; min-height: 32px; padding: 0; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: 0 0 0 4px var(--tt-canvas), var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
 .thread-transcript__jump:hover { border-color: var(--threads-field-focus); }
 .thread-transcript__jump:active { filter: brightness(.96); }
-.thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
+.thread-transcript__jump[data-unseen] { padding: 0 12px 0 10px; border-color: var(--threads-field-focus); }
 /*
  * A long thread is mostly out of view. Its messages, folded work and activity skip layout and paint until the
  * reader scrolls near them, so opening a thread of hundreds of messages and scrolling it stays cheap. The

@@ -1185,8 +1185,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
     {/* Add to prompt over words selected in a reply (ADR-0129; Owl only). */}
     {quoting ? <ReplyQuoteButton threadId={thread.id} scroller={scroller} onAdded={onQuoted} /> : null}
-    {showJump ? <button ref={jump} type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
-      <ArrowDown size={16} aria-hidden="true" />{unseen ? t`New messages` : t`Jump to latest`}
+    {showJump ? <button ref={jump} type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} aria-label={unseen ? undefined : t`Jump to latest`} title={unseen ? undefined : t`Jump to latest`} onClick={toEnd}>
+      <ArrowDown size={16} aria-hidden="true" />{unseen ? t`New messages` : null}
     </button> : null}
   </div>
 }
