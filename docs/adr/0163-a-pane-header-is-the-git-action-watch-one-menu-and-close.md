@@ -10,6 +10,8 @@ Amended by [ADR-0182](0182-tools-and-the-terminal-drawer-return-to-a-panes-heade
 
 Amends [ADR-0027](0027-git-the-way-t3-code-does-it.md) (where the Git action sits, and Initialize Git), [ADR-0049](0049-a-thread-pane-has-its-own-terminal-drawer.md) (the drawer's button) and [ADR-0133](0133-thread-shortcuts-are-editable-on-a-keyboard-page.md) (Zoom pane's button). The Tools toggle the Tools rail plan put in the focused pane's header (`docs/plans/2026-09-22-tools-rail.md`) becomes a row of the menu.
 
+Amended by [ADR-0182](0182-tools-and-the-terminal-drawer-return-to-a-panes-header.md) on November 4, 2026: Watch drops to its owl below a 720px pane, with its name unchanged for a screen reader, so "Watch keeps its word at every pane width" in decision 5 holds only at 720px and wider.
+
 ## Context
 
 A pane's header carried up to eight controls: Watch, the Git action (Initialize Git in a folder without Git), Tools, the Terminal drawer, `···`, and in a split a drag grip, Zoom pane and close, with the arrangement switch on the focused pane of three or more. In a two-pane split at 1600x1000 the title, project and folder truncated to make room ("Streaming WAV st…", "works…", "Project f…"). Dragging the divider reflowed the header, and Terra pressed Initialize Git while aiming for the panel button.
