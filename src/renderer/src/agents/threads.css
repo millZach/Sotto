@@ -45,7 +45,7 @@
 .thread-workspace__branches:empty { display: none; }
 .thread-workspace__branches .branch-toolbar__pr { flex: none; }
 /* A branch's name reads whole while the row has the room. */
-.thread-workspace__branches .branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(260px, 72cqi); }
+.thread-workspace__branches .branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(260px, 100%); }
 .thread-workspace__crumb { display: flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: 100%; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
