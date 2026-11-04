@@ -109,9 +109,11 @@ const partial = (view: ActivityBodyView): boolean => view.state === 'loading' ||
  * arrives, so the reader keeps their place: output keeps its end in view, text and diffs their start. A diff is drawn
  * as every diff is, by DiffBlock.
  */
-export function CutCode({ view, kind, text, language, cut }: {
+export function CutCode({ view, kind, text, language, cut, path }: {
   readonly view: ActivityBodyView; readonly kind: 'output' | 'diff' | 'input'; readonly text: string; readonly language: string
   readonly cut: boolean
+  /** The changed file, when `kind` is a diff, so its lines take that file type's colours. */
+  readonly path?: string | undefined
 }): ReactNode {
   useInterfaceLanguageState()
   const said = words(kind, view.hostName)
@@ -120,7 +122,7 @@ export function CutCode({ view, kind, text, language, cut }: {
   if (waiting && !code) return <Empty view={view} said={said} />
   const after = !waiting ? null : view.state === 'failed' ? <Problem view={view} said={said} rest /> : view.state === 'disconnected' ? <Offline view={view} said={said} rest /> : null
   if (kind === 'diff') return <>
-    <DiffBlock diff={code} cut={waiting ? { line: said.line, status: view.state === 'loading' ? <span className="activity-body__status"><Dot /><span>{said.more}</span></span> : said.only } : undefined} />
+    <DiffBlock diff={code} path={path} cut={waiting ? { line: said.line, status: view.state === 'loading' ? <span className="activity-body__status"><Dot /><span>{said.more}</span></span> : said.only } : undefined} />
     {after}
   </>
   return <>

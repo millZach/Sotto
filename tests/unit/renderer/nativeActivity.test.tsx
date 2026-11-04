@@ -65,7 +65,7 @@ describe('native activity rows', () => {
     const user = userEvent.setup()
     view([claudeTask, claudeGrep, claudeBash, claudeEdit])
     expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      'Audit the tests, 2 steps, completed', 'Edited src/a.ts, completed',
+      'Audit the tests, 2 steps, completed', 'Edited src/a.ts, 1 line added, 2 lines removed, completed',
     ])
     await user.click(screen.getByRole('button', { name: 'Audit the tests, 2 steps, completed' }))
     const steps = screen.getByRole('list', { name: 'Steps in Audit the tests' })
@@ -80,8 +80,20 @@ describe('native activity rows', () => {
   it('shows an edit as a diff without its raw input', async () => {
     const user = userEvent.setup()
     view([claudeEdit])
-    await user.click(screen.getByRole('button', { name: 'Edited src/a.ts, completed' }))
+    await user.click(screen.getByRole('button', { name: 'Edited src/a.ts, 1 line added, 2 lines removed, completed' }))
     expect(screen.getByRole('group', { name: 'Diff' })).toHaveTextContent(/Removed: a.*Removed: b.*Added: c/u)
     expect(screen.queryByText(/old_string/u)).toBeNull()
+  })
+
+  it('reads an edit by its file type rather than guessing from its lines', async () => {
+    const user = userEvent.setup()
+    const edit = (path: string) => record({ id: path, kind: 'file-change', title: 'Edit', changes: [{ path, kind: 'Edit', diff: '@@ -1 +1 @@\n-const a = 1;\n+const a = 2;' }] })
+    view([edit('docs/notes.md')])
+    await user.click(screen.getByRole('button', { name: /^Edited docs\/notes\.md/u }))
+    expect(screen.getByRole('group', { name: 'Diff' }).querySelector('[data-reading]')).toHaveAttribute('data-reading', 'document')
+    cleanup()
+    view([edit('src/a.ts')])
+    await user.click(screen.getByRole('button', { name: /^Edited src\/a\.ts/u }))
+    expect(screen.getByRole('group', { name: 'Diff' }).querySelector('[data-reading]')).toHaveAttribute('data-reading', 'code')
   })
 })

@@ -17,6 +17,7 @@ import {
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
+import { DiffBlock } from '../tools/DiffBlock'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
@@ -123,6 +124,11 @@ export function LineCountMarks({ counts, spoken = true }: {
   </span>
 }
 
+/** A reported change to one file, drawn with that file type's colours. */
+function ChangeDiff({ diff, path }: { readonly diff: string; readonly path: string }): ReactNode {
+  return <DiffBlock diff={displayDiff(diff).replace(/\n$/u, '')} path={path} />
+}
+
 /**
  * What a finished turn left behind, beside its line: one file by its verb and name, several by their count, each with the lines
  * it added and removed. It stays in view while the work is folded, because the files a turn changed are what a reader comes back
@@ -159,9 +165,9 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
         <p className="thread-activity__fact">{change.verb} <code>{change.path}</code></p>
         {change.diffs.map((diff, index) => {
           const source = change.sources?.[index], view = source && views.get(source.record)
-          if (!source || !view) return <MessageContent key={index} text={fenced(displayDiff(diff), 'diff')} />
+          if (!source || !view) return <ChangeDiff key={index} diff={diff} path={change.path} />
           const whole = view.state === 'loaded' ? activityChanges(view.record)[source.index]?.diff ?? diff : diff
-          return <CutCode key={index} view={view} kind="diff" text={displayDiff(whole)} language="diff" cut />
+          return <CutCode key={index} view={view} kind="diff" text={displayDiff(whole)} language="diff" path={change.path} cut />
         })}
       </li>)}
     </ul></Fold>
@@ -304,8 +310,8 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
       {/* A single changed file is already named by its row; a tool's files are what it touched. */}
       {changes.length > 1 || record.kind !== 'file-change' ? <p className="thread-activity__fact">{changeVerb(change.kind)} <code>{change.path}</code></p> : null}
       {cut && changeDiffIsCut(sent, index)
-        ? <CutCode view={body} kind="diff" text={displayDiff(change.diff ?? '')} language="diff" cut />
-        : change.diff ? <MessageContent text={fenced(displayDiff(change.diff), 'diff')} /> : null}
+        ? <CutCode view={body} kind="diff" text={displayDiff(change.diff ?? '')} language="diff" path={change.path} cut />
+        : change.diff ? <ChangeDiff diff={change.diff} path={change.path} /> : null}
     </div>)}
     {/* A workflow's own entry stands for its run; the list is its agents. */}
     {record.agents?.some(agent => agent.kind !== 'workflow') ? <ol className="thread-activity__agents" aria-label={t`Agents`} data-connected={connected || undefined}>
