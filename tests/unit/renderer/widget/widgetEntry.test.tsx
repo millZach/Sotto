@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { WidgetEntry } from '../../../../src/renderer/src/widget/WidgetApp'
 import type { SottoWidgetBridge } from '../../../../src/shared/contracts'
 import { type WidgetSnapshot } from '../../../../src/shared/dictation'
+import type { DictationTimingMark } from '../../../../src/shared/dictationTiming'
 import { DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../../src/shared/themeBranding'
 import { commandSucceeded, setupWidgetTests, snapshot, win32Copy } from '../../../fixtures/renderer/widgetHarness'
 
@@ -42,6 +43,31 @@ describe('WidgetEntry', () => {
     }
     return { bridge, emit: (next: WidgetSnapshot) => act(() => listener?.(next)) }
   }
+
+  it('marks a committed Waiting label only for actual pending permission', () => {
+    const { bridge, emit } = liveBridge()
+    const mark = vi.fn((entry: DictationTimingMark) => {
+      if (entry.event === 'widget-permission-waiting-committed') {
+        expect(screen.getByText('Waiting for microphone')).toBeVisible()
+      }
+    })
+    render(<WidgetEntry bridge={{ ...bridge, dictationTiming: { mark } }} platform="win32" preview={null} />)
+    emit(snapshot({ status: 'requesting-permission', sessionId: 'granted' }))
+    expect(mark).not.toHaveBeenCalled()
+    emit(snapshot({ status: 'listening', sessionId: 'granted', startedAt: 0, speaking: false }))
+    expect(mark.mock.calls.some(([entry]) => entry.event === 'widget-permission-waiting-committed')).toBe(false)
+
+    emit(snapshot({ status: 'requesting-permission', sessionId: 'permission' }))
+    mark.mockClear()
+    emit(snapshot({ status: 'requesting-permission', sessionId: 'permission', permissionPending: true }))
+    expect(mark).toHaveBeenCalledOnce()
+    expect(mark).toHaveBeenCalledWith({ event: 'widget-permission-waiting-committed', atMs: expect.any(Number) })
+    emit(snapshot({ status: 'requesting-permission', sessionId: 'permission', permissionPending: true }))
+    expect(mark).toHaveBeenCalledOnce()
+    emit(snapshot({ status: 'requesting-permission', sessionId: 'permission' }))
+    expect(screen.queryByText('Waiting for microphone')).toBeNull()
+    expect(mark).toHaveBeenCalledOnce()
+  })
 
   it('repaints the mark, voice bars and surfaces live when a new palette arrives, without a new session', async () => {
     const { bridge, emit } = liveBridge()
@@ -82,7 +108,7 @@ describe('WidgetEntry', () => {
       const { bridge, emit } = liveBridge()
       render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
       const palette = widgetPaletteFor({ lightTheme: 'fern', darkTheme: 'citrine', customThemes: [] })
-      emit(snapshot({ status: 'requesting-permission', sessionId: 'scheme', theme: 'system', palette, cancellable: true }))
+      emit(snapshot({ status: 'requesting-permission', sessionId: 'scheme', permissionPending: true, theme: 'system', palette, cancellable: true }))
       const root = document.documentElement
       expect(root).toHaveAttribute('data-theme', 'light')
       expect(root.style.getPropertyValue('--theme-accent')).toBe(palette.light.accent)
@@ -446,6 +472,11 @@ describe('WidgetEntry', () => {
     expect(assertive).toBeEmptyDOMElement()
 
     emit(snapshot({ status: 'requesting-permission', sessionId: 'announce', cancellable: true }))
+    expect(polite).toHaveTextContent(/^Connecting to your microphone\.$/u)
+    expect(polite).not.toHaveTextContent('Waiting for microphone')
+    expect(container.querySelector('.widget-sliver')).toBeNull()
+
+    emit(snapshot({ status: 'requesting-permission', sessionId: 'announce', permissionPending: true, cancellable: true }))
     expect(polite).toHaveTextContent(`Waiting for microphone. ${win32Copy.widgetPermissionPromptDetail}`)
     expect(assertive).toBeEmptyDOMElement()
 

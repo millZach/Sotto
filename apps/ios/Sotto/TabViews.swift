@@ -36,6 +36,7 @@ private struct HeldList {
     let groups: FocusThreads
     let unsearched: FocusThreads
     let watch: ListWatch
+    let shelfOffers: [String: AppModel.ShelfOffer]
 }
 
 /// What the Settled shelf shows besides the threads the phone holds: how many settled threads its computers left out of
@@ -156,7 +157,7 @@ struct ThreadsView: View {
     private func hold() {
         BenchPage.holding()
         let (groups, unsearched) = lists()
-        held = HeldList(groups: groups, unsearched: unsearched, watch: model.listWatch(groups))
+        held = HeldList(groups: groups, unsearched: unsearched, watch: model.listWatch(groups), shelfOffers: model.shelfOffers(groups))
     }
 
     private func openForShare(_ destination: ShareDestination?) {
@@ -243,8 +244,9 @@ struct ThreadsView: View {
     /// November 1).
     @ViewBuilder private func list(_ groups: FocusThreads, _ shelf: Shelf) -> some View {
         if groups.isEmpty && !shows(shelf, settled: groups.settled, groups) { empty(groups) }
-        ThreadListSections(groups: groups, watch: held?.watch ?? model.listWatch(groups), held: held?.id, open: open,
-                           setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+        ThreadListSections(groups: groups, watch: held?.watch ?? model.listWatch(groups), shelfOffers: held?.shelfOffers ?? model.shelfOffers(groups), held: held?.id, open: open,
+                           setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
+                           shelve: { row, action in Task { await model.shelve(row.ref, action) } })
             .equatable()
         if shows(shelf, settled: groups.settled, groups) {
             if groups.searching {
@@ -256,9 +258,10 @@ struct ThreadsView: View {
                 let watched = model.watchedThreadIDs
                 let row = { (row: HostedThread) in
                     ThreadListRow(row: row, kind: .recent(unread: groups.isUnreadFinish(row)), watched: watched.contains(row.id), chosen: false,
-                                  canWatch: model.canChangeWatch(row.ref), identifier: "thread-",
+                                  canWatch: model.canChangeWatch(row.ref), shelf: model.shelfOffer(row), identifier: "thread-",
                                   open: { open(row.ref) },
-                                  setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+                                  setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
+                                  shelve: { action in Task { await model.shelve(row.ref, action) } })
                         .equatable()
                 }
                 ForEach(shelfRows(groups.settled, shelf, groups)) { row($0) }
@@ -647,7 +650,7 @@ private struct RequestCard: View {
         isPermission ? String(localized: "Permission", comment: "The tag on a card whose thread asks the user for a permission.")
             : String(localized: "Question", comment: "The tag on a card whose thread asks the user a question.")
     }
-    private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
+    private var ask: String { isPermission ? RequestText.permissionAsk(request, provider: Words.provider(asking.thread.providerId)) : (request.questions?.first?.question ?? request.text) }
     /// The delegated thread the request waits in, when it is not the row's own.
     private var delegated: Bool { asking.ref != row.ref }
     private var place: String {
@@ -707,6 +710,7 @@ private struct RequestCard: View {
                 .padding(.top, Space.s1)
             Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .padding(.top, Space.s3)
             if let command = request.context?.command, !command.isEmpty {
                 Text(verbatim: command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
@@ -716,6 +720,7 @@ private struct RequestCard: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
                     .padding(.top, Space.s2)
             }
+            if isPermission { CompactPermissionDetails(context: request.context) }
             if asking.thread.requests.count > 1 {
                 (asking.thread.requests.count == 2 ? Text("1 more request in this thread")
                     : Text("\(asking.thread.requests.count - 1) more requests in this thread"))
@@ -892,6 +897,13 @@ struct CardPermissionButtons: View {
 
 // MARK: - Working now
 
+/// The shelf's button for a card or row that reads the model itself.
+@MainActor @ViewBuilder private func shelfMenuButton(_ model: AppModel, _ ref: ThreadRef) -> some View {
+    if let action = model.shelfAction(ref) {
+        shelfMenuButton(action, held: model.actionHeld(ref) != nil) { Task { await model.shelve(ref, action) } }
+    }
+}
+
 /// A thread at work: a breathing accent halo, how long it has been at it, and what it is doing.
 private struct WorkingCard: View {
     @EnvironmentObject var model: AppModel
@@ -901,12 +913,15 @@ private struct WorkingCard: View {
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
         Group {
-            if model.canChangeWatch(row.ref) {
+            if model.canChangeWatch(row.ref) || model.shelfAction(row.ref) != nil {
                 link.contextMenu {
-                    let watched = model.watchedByWatcher(row.ref)
-                    Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
-                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    if model.canChangeWatch(row.ref) {
+                        let watched = model.watchedByWatcher(row.ref)
+                        Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                            Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                        }
                     }
+                    shelfMenuButton(model, row.ref)
                 }
             } else {
                 link
@@ -1013,11 +1028,14 @@ private struct ThreadRow: View {
     var body: some View {
         let _ = BenchProbe.body("ThreadRow")
         Group {
-            if model.canChangeWatch(row.ref) {
+            if model.canChangeWatch(row.ref) || model.shelfAction(row.ref) != nil {
                 link.contextMenu {
-                    Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
-                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    if model.canChangeWatch(row.ref) {
+                        Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                            Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                        }
                     }
+                    shelfMenuButton(model, row.ref)
                 }
             } else {
                 link

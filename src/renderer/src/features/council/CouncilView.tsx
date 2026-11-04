@@ -1,18 +1,19 @@
-import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
-import { PROVIDER_LABELS, type AgentModel, type AgentThread } from '../../../../shared/agents'
+import { PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentThread } from '../../../../shared/agents'
 import { COUNCIL_CHAIR, COUNCIL_KINDS, COUNCIL_LETTERS, COUNCIL_SEAT_EFFORT, DEFAULT_COUNCIL_LAYOUT, councilEffort, councilSeatsInForce, councilSeatsReady, type CouncilBridge, type CouncilCommand, type CouncilCounts, type CouncilEstimate, type CouncilKind,
   type CouncilLayout, type CouncilRoundView, type CouncilRow, type CouncilRowAction, type CouncilThreadState, type CouncilTurnStage, type CouncilView as CouncilRecord } from '../../../../shared/council'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
-import { isThreadClosed } from '../../../../shared/threadActivity'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ModelPicker } from '../../agents/ModelPicker'
+import { ProviderMark } from '../../agents/ProviderMark'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
 import { useOptionalApp } from '../../state/AppContext'
 import { ChoiceMenu } from '../usage/UsageMenu'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
+import { clearCouncilDraft, councilAskable, heldCouncilForm, holdCouncilForm, onCouncilDraft, readCouncilDraft, type CouncilDraft } from './councilDraft'
 import './council.css'
 
 /**
@@ -30,13 +31,28 @@ export function chamberCouncil(councils: readonly CouncilRecord[] | null, drafti
   return live ?? (!drafting && newest?.status === 'done' ? newest : null)
 }
 
+/** The Layout menu, on the bar of the drawer's Council tab: the same setting as Settings → Council. */
+export function CouncilLayoutMenu(): ReactNode {
+  const { t } = useLingui()
+  const app = useOptionalApp()
+  if (!app) return null
+  const layouts: { value: CouncilLayout; label: string }[] = [
+    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
+    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
+    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
+  ]
+  return <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={app.settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT} options={layouts}
+    onChoose={value => void app.actions.updateSettings({ councilLayout: value })} />
+}
+
 /**
- * The Council page (ADR-0177): the chamber (`CouncilChamber`, decision 6), then beside or under it the Ask form and each
- * Council as a text record of its stages, its threads' states and the actions their rows offer, the verdict with
- * Sotto's counts, and Send to the thread. The record is the accessible form of the deliberation. The header's Layout
- * menu changes the same setting as Settings → Council.
+ * The Council (ADR-0177), the Council tab of a thread pane's drawer: the chamber (`CouncilChamber`, decision 6), the
+ * seats across the drawer's whole width under it, and beside the chamber the Ask form and each Council as a text record
+ * of its stages, its threads' states and the actions their rows offer, the verdict with Sotto's counts, and Send to the
+ * thread. The record is the accessible form of the deliberation. `thread` is the pane's thread, where a question starts
+ * from unless the user changes it.
  */
-export function CouncilView({ bridge = window.sotto?.council }: { readonly bridge?: CouncilBridge | undefined }): ReactNode {
+export function CouncilView({ thread, bridge = window.sotto?.council }: { readonly thread?: string | undefined; readonly bridge?: CouncilBridge | undefined }): ReactNode {
   const { t } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
@@ -44,32 +60,50 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
   const settings = app?.settings
   const state = agents?.state
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
+  // What the tab held when the drawer last showed a shell or hid.
+  const [held] = useState(() => thread === undefined ? undefined : heldCouncilForm(thread))
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
-  const [panel, setPanel] = useState<CouncilPanel | null>(null)
-  const [question, setQuestion] = useState('')
+  const [panel, setPanel] = useState<CouncilPanel | null>(held?.panel ?? null)
+  // Ask the Council on a reply opens this tab with that thread and reply filled in, or fills it in when it is open.
+  const [taken, setTaken] = useState(() => ({ draft: ownDraft(thread), revision: 0 }))
+  const draft = taken.draft
+  const [question, setQuestion] = useState(draft?.question ?? held?.question ?? '')
+  const [chosenOrigin, setChosenOrigin] = useState<string | null>(draft ? null : held?.origin ?? null)
+  useEffect(() => {
+    const take = (): void => {
+      const next = ownDraft(thread)
+      if (!next) return
+      clearCouncilDraft()
+      setTaken(current => current.draft === next ? current : { draft: next, revision: current.revision + 1 })
+      setQuestion(next.question)
+      setChosenOrigin(null)
+    }
+    take()
+    return onCouncilDraft(take)
+  }, [thread])
+  useEffect(() => { if (thread !== undefined) holdCouncilForm(thread, { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
-  const layouts: { value: CouncilLayout; label: string }[] = [
-    { value: 'long-table', label: t({ message: 'Long table', comment: 'A Council chamber layout: the panelists in a row behind a table, the chair at its centre.' }) },
-    { value: 'half-circle', label: t({ message: 'Half circle', comment: 'A Council chamber layout: tiered seats round an altar, the chair at the back.' }) },
-    { value: 'round-table', label: t({ message: 'Round table', comment: 'A Council chamber layout: seen from a little above, the chair at the far side.' }) },
-  ]
   return <div className="council-view" data-layout={layout}>
-    <header className="council-head">
-      <h1>{t({ message: 'Council', comment: 'The Council page: one question put to several models, which answer, review each other and get a verdict.' })}</h1>
-      {app ? <ChoiceMenu name={t({ message: 'Layout', comment: 'The Council chamber\'s layout menu' })} value={layout} options={layouts}
-        onChoose={value => void app.actions.updateSettings({ councilLayout: value })} /> : null}
-    </header>
-    <div className="council-body">
-      <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
-      <div className="council-scroll"><div className="council-page">
-        {bridge ? <AskForm bridge={bridge} panel={seatsPanel} onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
-        {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
-        <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
-      </div></div>
-    </div>
+    <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
+    {/* The seats, under the figures they seat and as wide as the drawer, before the question in the Tab order. */}
+    {bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
+    <div className="council-scroll"><div className="council-page">
+      {/* A new draft is a new question from its thread: the form starts again from it. */}
+      {bridge ? <AskForm key={taken.revision} bridge={bridge} origin={draft?.originThread ?? chosenOrigin ?? thread} onOrigin={setChosenOrigin} panel={seatsPanel}
+        onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
+      {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
+      {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the Council again.`}</p> : null}
+      <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+    </div></div>
   </div>
+}
+
+/** The draft waiting for this tab: one asked from its thread, or any while the tab stands for no thread. */
+function ownDraft(thread: string | undefined): CouncilDraft | null {
+  const draft = readCouncilDraft()
+  return draft && (thread === undefined || draft.originThread === thread) ? draft : null
 }
 
 /**
@@ -84,29 +118,68 @@ export function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentMode
   return useMemo(() => seats, [seatsKey])
 }
 
-/** A thread the Council can start from: an ordinary thread on this computer, open, not one another thread started. */
-function askable(thread: AgentThread, localHostId: string | undefined): boolean {
-  return thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.remoteHost !== true && (thread.hostId === undefined || thread.hostId === localHostId)
-    && thread.delegatedBy === undefined && !isThreadClosed(thread)
+/**
+ * The thread a Council question comes from: the thread the user was on when they opened the Council, shown as one line.
+ * Change opens a list grouped by project, as the sidebar groups threads, that typing narrows by title or project.
+ */
+function OriginPicker({ threads, projects, chosen, onChoose }: { readonly threads: readonly AgentThread[]; readonly projects: readonly AgentProject[]
+  readonly chosen: string; readonly onChoose: (id: string) => void }): ReactNode {
+  const { t } = useLingui()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const change = useRef<HTMLButtonElement>(null)
+  const listId = useId(), labelId = useId()
+  const projectTitle = (thread: AgentThread): string => projects.find(project => project.id === thread.projectId)?.title ?? ''
+  const thread = threads.find(item => item.id === chosen)
+  const close = (): void => { setOpen(false); setQuery(''); change.current?.focus() }
+  const words = query.trim().toLocaleLowerCase()
+  const hits = threads.filter(item => !words || `${item.title} ${projectTitle(item)}`.toLocaleLowerCase().includes(words))
+  const groups = [...new Set(hits.map(item => item.projectId))]
+  const choose = (id: string): void => { onChoose(id); close() }
+  return <div className="council-field council-field--from">
+    <span id={labelId}>{t({ message: 'From', comment: 'The thread a Council question comes from' })}</span>
+    <div className="council-origin">
+      {thread ? <><ProviderMark provider={thread.providerId} name={thread.title} size={14} />
+        <span className="council-origin__title">{thread.title}</span>
+        <span className="council-origin__project">{projectTitle(thread)}</span></>
+        : <span className="council-origin__title">{t`No open thread on this computer`}</span>}
+      {threads.length > 1 ? <button ref={change} type="button" className="council-origin__change tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
+        onClick={() => open ? close() : setOpen(true)}>{open ? t({ message: 'Done', comment: 'Closes the list of threads a Council question can come from' }) : t({ message: 'Change', comment: 'Opens the list of threads a Council question can come from' })}</button> : null}
+    </div>
+    {open && threads.length > 1 ? <div id={listId} className="council-origin__list" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
+      <input className="tt-input tt-focusable council-origin__search" autoFocus value={query} aria-label={t`Find a thread`} placeholder={t`Find a thread`}
+        onChange={event => setQuery(event.currentTarget.value)}
+        onKeyDown={event => { if (event.key === 'Enter' && hits[0]) { event.preventDefault(); choose(hits[0].id) } }} />
+      <div className="council-origin__rows">
+        {hits.length === 0 ? <p className="council-origin__empty tt-paragraph">{t`No thread matches.`}</p> : groups.map(group => { const items = hits.filter(item => item.projectId === group), title = projectTitle(items[0]!); return <div key={group} role="group" aria-label={title || undefined}>
+          {title ? <p className="council-origin__group">{title}</p> : null}
+          {items.map(item => <button key={item.id} type="button" className="council-origin__row tt-focusable"
+            aria-current={item.id === chosen || undefined} onClick={() => choose(item.id)}>
+            <ProviderMark provider={item.providerId} name={item.title} size={14} /><span className="council-origin__title">{item.title}</span></button>)}
+        </div> })}
+      </div>
+    </div> : null}
+  </div>
 }
 
-function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly panel: CouncilPanel
+function AskForm({ bridge, origin: offeredOrigin, onOrigin, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly origin: string | undefined
+  readonly onOrigin: (origin: string) => void; readonly panel: CouncilPanel
   readonly onPanel: (panel: CouncilPanel | null) => void; readonly question: string; readonly onQuestion: (question: string) => void }): ReactNode {
   const { t, i18n } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const state = agents?.state
   const settings = app?.settings
-  const questionId = useId(), originId = useId(), estimateId = useId()
+  const questionId = useId(), estimateId = useId()
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   const local = state?.connections?.find(connection => connection.kind === 'local')?.hostId
-  const threads = useMemo(() => (state?.host.threads ?? []).filter(thread => askable(thread, local))
+  const threads = useMemo(() => (state?.host.threads ?? []).filter(thread => councilAskable(thread, local))
     .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '')), [state, local])
-  const [origin, setOrigin] = useState<string>('')
+  const [origin, setOrigin] = useState<string>(offeredOrigin ?? '')
   const [estimate, setEstimate] = useState<CouncilEstimate | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const shownOrigin = origin || (threads.some(thread => thread.id === state?.activeThreadId) ? state!.activeThreadId! : threads[0]?.id ?? '')
+  const shownOrigin = threads.some(thread => thread.id === origin) ? origin : (threads.some(thread => thread.id === state?.activeThreadId) ? state!.activeThreadId! : threads[0]?.id ?? '')
   useEffect(() => {
     setEstimate(null)
     if (!shownOrigin) return
@@ -114,7 +187,7 @@ function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQue
     void bridge.estimate({ originThread: shownOrigin }).then(read => { if (live) setEstimate(read) }, () => undefined)
     return () => { live = false }
   }, [bridge, shownOrigin])
-  if (!state || !settings) return <p className="council-notice tt-paragraph">{t`Preparing the Council…`}</p>
+  if (!state || !settings) return <p className="council-notice tt-paragraph" role={agents?.error ? 'alert' : 'status'}>{agents?.error ?? t`Preparing the Council…`}</p>
   const seats = councilSeatsInForce(seatsPanel.panelists, seatsPanel.chair, catalog)
   const ready = councilSeatsReady(seats)
   const providers = [...new Set([...seats.panelists, seats.chair].flatMap(seat => seat?.provider ? [PROVIDER_LABELS[seat.provider]] : []))]
@@ -143,19 +216,12 @@ function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQue
   }
   return <section className="council-ask" aria-labelledby={questionId}>
     <h2 id={questionId} className="tt-visually-hidden">{t`Ask the Council`}</h2>
-    <div className="council-ask__row">
-      <label className="council-field" htmlFor={originId}><span>{t({ message: 'Thread', comment: 'The thread a Council question comes from' })}</span>
-        <select id={originId} className="tt-input tt-focusable" value={shownOrigin} onChange={event => setOrigin(event.currentTarget.value)} disabled={threads.length === 0}>
-          {threads.length === 0 ? <option value="">{t`No open thread on this computer`}</option> : threads.map(thread => <option key={thread.id} value={thread.id}>{thread.title}</option>)}
-        </select>
-      </label>
-    </div>
+    <OriginPicker threads={threads} projects={state.host.projects} chosen={shownOrigin} onChoose={id => { setOrigin(id); onOrigin(id) }} />
     <label className="council-field"><span>{t({ message: 'Question', comment: 'The question put to the Council' })}</span>
-      <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={3} aria-describedby={estimateId}
+      <textarea className="tt-input tt-focusable council-ask__question" value={question} rows={2} aria-describedby={estimateId}
         onChange={event => setQuestion(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void ask() } }} />
     </label>
-    <CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} />
     <p id={estimateId} className="council-ask__estimate tt-paragraph">
       {reads && providers.length ? parts > 1
         ? t`Starts ${threadCount} threads. ${providerList} each read the thread’s conversation, ${messages} messages and about ${words} words, in ${parts} parts before the question. A stage waits up to ${minutes} minutes for a thread.`
@@ -199,7 +265,8 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
   const open = council.status !== 'settled'
   const running = council.status === 'working' || council.status === 'waiting'
   const seatNames = council.seats.map(seat => `${words.seat(seat.seat)}: ${seat.modelName}${seat.provider ? ` (${PROVIDER_LABELS[seat.provider]})` : ''}`).join(' · ')
-  const branch = council.snapshot.branch, commit = council.snapshot.commit.slice(0, 8), untracked = council.snapshot.untracked, parts = council.history.parts
+  const snapshot = council.snapshot, parts = council.history.parts
+  const branch = snapshot?.branch, commit = snapshot?.commit.slice(0, 8), untracked = snapshot?.untracked ?? 0
   return <article className="council-entry" aria-labelledby={headingId} data-status={council.status}>
     <header className="council-entry__head">
       <div className="council-entry__title">
@@ -213,7 +280,8 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
     </header>
     <p className="council-entry__seats tt-paragraph">{seatNames}</p>
     <p className="council-entry__meta tt-paragraph">
-      {council.snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : !council.snapshot.dirty ? t`Working in a snapshot of ${branch} at ${commit}.`
+      {!snapshot ? t`Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite.`
+        : snapshot.removed ? t`Its snapshot of ${branch} has been removed.` : !snapshot.dirty ? t`Working in a snapshot of ${branch} at ${commit}.`
         : untracked > 0 ? t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes and ${untracked} untracked files.`
         : t`Working in a snapshot of ${branch} at ${commit}, with its uncommitted changes.`}
       {council.history.parts > 1 ? ` ${t`The conversation is too long for one prompt, so each thread reads all of it in ${parts} parts first.`}` : ''}
@@ -242,8 +310,8 @@ function RoundRecord({ council, round, run }: { readonly council: CouncilRecord;
 
 /**
  * The framing as the record shows it: the kind, the criteria by source, and whether the panelists research outside the
- * snapshot. Once framing is in and before the verdict, the user can change the kind or the research, and every panelist
- * answers again (ADR-0177 decision 4).
+ * snapshot, or the thread's folder when it has none. Once framing is in and before the verdict, the user can change the
+ * kind or the research, and every panelist answers again (ADR-0177 decision 4).
  */
 function Framing({ framing, council, round, run }: { readonly framing: NonNullable<CouncilRoundView['framing']>; readonly council: CouncilRecord; readonly round: CouncilRoundView
   readonly run: (command: CouncilCommand) => Promise<void> }): ReactNode {
@@ -254,9 +322,14 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
   const names: Record<CouncilKind, string> = { decision: t`a decision`, fact: t`a fact to check`, review: t`a review`, ideas: t`ideas` }
   const kinds = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(framing.kinds.map(kind => names[kind]))
   const reason = framing.research.reason
-  const research = framing.research.needed
-    ? reason ? t`The panelists research outside the snapshot with their own tools: ${reason}` : t`The panelists research outside the snapshot with their own tools.`
-    : t`No outside research: the panelists work from the snapshot and the conversation.`
+  // Without a snapshot, outside Git, the panelists work in the thread's own folder.
+  const research = council.snapshot
+    ? framing.research.needed
+      ? reason ? t`The panelists research outside the snapshot with their own tools: ${reason}` : t`The panelists research outside the snapshot with their own tools.`
+      : t`No outside research: the panelists work from the snapshot and the conversation.`
+    : framing.research.needed
+      ? reason ? t`The panelists research outside the thread's folder with their own tools: ${reason}` : t`The panelists research outside the thread's folder with their own tools.`
+      : t`No outside research: the panelists work from the thread's folder and the conversation.`
   return <div className="council-framing">
     <p className="tt-paragraph">{framing.fallback ? t`The chair’s framing could not be read, so the panel answers the question alone, as ${kinds}.` : t`Framed as ${kinds}.`}</p>
     {framing.criteria.length ? <ul>{framing.criteria.map(criterion => <li key={criterion.id}>{criterion.id} <span className="council-muted">({criterion.source === 'question' ? t`from the question`
@@ -277,7 +350,7 @@ function Framing({ framing, council, round, run }: { readonly framing: NonNullab
         </select>
       </label>
       <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'reframe', council: council.id, research: !framing.research.needed })}>
-        {framing.research.needed ? t`Answer without outside research` : t`Research outside the snapshot`}</button>
+        {framing.research.needed ? t`Answer without outside research` : council.snapshot ? t`Research outside the snapshot` : t`Research outside the thread's folder`}</button>
       <CriteriaEditor key={framing.criteria.map(criterion => criterion.text).join('\n')} criteria={framing.criteria.map(criterion => criterion.text)}
         onChange={criteria => void run({ type: 'reframe', council: council.id, criteria })} />
       <p className="council-muted tt-paragraph">{t`Changing the kind, the research or the criteria asks every panelist to answer again.`}</p>

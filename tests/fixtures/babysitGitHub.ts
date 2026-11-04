@@ -19,7 +19,7 @@ export interface ScriptedRemark {
   /** Written by an app's bot account, which GitHub names as a `Bot`; its words are what `body` holds. */
   bot?: boolean; body?: string
 }
-export interface ScriptedReview extends ScriptedRemark { state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING'; inline?: number }
+export interface ScriptedReview extends ScriptedRemark { state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING'; inline?: number; commit?: string | null }
 export interface ScriptedPull {
   number: number; owner?: string; name?: string; title?: string
   state?: 'OPEN' | 'CLOSED' | 'MERGED'; mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'; head?: string; base?: string
@@ -30,6 +30,8 @@ export interface ScriptedPull {
   rulesUnreadable?: boolean
   /** The head has more checks than one read returns, so the list read is the first page. */
   moreChecks?: boolean
+  /** GitHub refuses Watcher's review connection, independently of readable checks. */
+  refuseReviews?: boolean
   /**
    * GitHub refuses the head's checks in the detail read, the way a partial refusal does: the whole rollup nulled, the
    * check list nulled, or one check nulled, each with an error naming where. gh then fails with that answer on its output.
@@ -52,15 +54,16 @@ export function graphqlVariables(args: readonly string[]): Record<string, string
   return variables
 }
 
-export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string; now?: () => number } = {}) {
+export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string; now?: () => number; remaining?: () => number } = {}) {
   const questions: GhQuestion[] = []
   /** Set to make gh fail the next questions with this error; cleared by setting null. */
   let failure: Error | null = null
   /** The same for the words of bot remarks alone. */
   let wordsFailure: Error | null = null
+  let reviewsFailure: Error | null = null
   const find = (owner: string, name: string, number: number): ScriptedPull | undefined =>
     pulls.find(pull => (pull.owner ?? 'o') === owner && (pull.name ?? 'r') === name && pull.number === number)
-  const rateLimit = () => ({ limit: 5000, remaining: 4000, resetAt: new Date((options.now?.() ?? Date.now()) + 3_600_000).toISOString() })
+  const rateLimit = () => ({ limit: 5000, remaining: options.remaining?.() ?? 4000, resetAt: new Date((options.now?.() ?? Date.now()) + 3_600_000).toISOString() })
   const countsBy = (checks: readonly ScriptedCheck[]) => {
     const counts = new Map<string, number>()
     for (const check of checks) counts.set(check.state, (counts.get(check.state) ?? 0) + 1)
@@ -90,8 +93,16 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
   /** Where GitHub says it refused the checks: the rollup, the list, or a part of the first check that cannot be empty. */
   const checksErrorPath = (refused: NonNullable<ScriptedPull['refuseChecks']>) =>
     refused === 'rollup' ? ROLLUP_PATH : refused === 'list' ? [...ROLLUP_PATH, 'contexts', 'nodes'] : [...ROLLUP_PATH, 'contexts', 'nodes', 0, 'checkSuite', 'workflowRun']
-  const detailOf = (pull: ScriptedPull, checks: boolean, remarks: boolean) => ({
+  const detailOf = (pull: ScriptedPull, checks: boolean, remarks: boolean, bugBotReviews: boolean) => ({
     headRefOid: pull.head ?? 'head-1',
+    ...bugBotReviews ? { bugBotReviews: pull.refuseReviews ? null : {
+      pageInfo: { hasPreviousPage: (pull.reviews?.length ?? 0) > 100 },
+      nodes: (pull.reviews ?? []).slice(-100).map(review => ({ body: review.body ?? '', state: review.state,
+        submittedAt: review.state === 'PENDING' ? null : review.publishedAt ?? review.at,
+        url: review.url ?? `https://github.com/o/r/pull/${pull.number}#${review.id}`,
+        commit: review.commit === null ? null : { oid: review.commit ?? pull.head ?? 'head-1' },
+        author: review.author === null ? null : { login: review.author } })),
+    } } : {},
     ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: rollupOf(pull) } }] } } : {},
     ...checks ? { baseRef: pull.rulesUnreadable ? null : { rules: { nodes: pull.requiredChecks
       ? [{ type: 'REQUIRED_STATUS_CHECKS', parameters: { requiredStatusChecks: pull.requiredChecks.map(context => ({ context })) } }] : [] } } } : {},
@@ -108,6 +119,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     const kind = query.includes('BabysitFingerprint') ? 'fingerprint' : query.includes('BabysitRemarkWords') ? 'words' : 'detail'
     questions.push({ kind, variables, query })
     if (failure) throw failure
+    if (variables['bugBotReviews'] === 'true' && reviewsFailure) throw reviewsFailure
     if (kind === 'words' && wordsFailure) throw wordsFailure
     if (kind === 'words') {
       const remarks = pulls.flatMap(pull => [...pull.comments ?? [], ...pull.reviews ?? [], ...(pull.threads ?? []).flatMap(thread => thread.comments)])
@@ -135,7 +147,9 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     const pull = find(owner, name, Number(variables['number']))
     const checks = variables['checks'] === 'true'
     const errors = pull?.refuseChecks && checks ? [{ type: 'FORBIDDEN', path: checksErrorPath(pull.refuseChecks), message: 'Resource not accessible by integration' }] : []
-    const body = JSON.stringify({ data: { rateLimit: rateLimit(), repository: { pullRequest: pull ? detailOf(pull, checks, variables['remarks'] === 'true') : null } }, ...errors.length ? { errors } : {} })
+    const bugBotReviews = variables['bugBotReviews'] === 'true'
+    if (pull?.refuseReviews && bugBotReviews) errors.push({ type: 'FORBIDDEN', path: ['repository', 'pullRequest', 'bugBotReviews'], message: 'Resource not accessible by integration' })
+    const body = JSON.stringify({ data: { rateLimit: rateLimit(), repository: { pullRequest: pull ? detailOf(pull, checks, variables['remarks'] === 'true', bugBotReviews) : null } }, ...errors.length ? { errors } : {} })
     if (errors.length) throw Object.assign(new Error('gh: Resource not accessible by integration'), { stdout: body })
     return body
   }
@@ -143,6 +157,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     run, questions,
     fail(error: Error | null) { failure = error },
     failWords(error: Error | null) { wordsFailure = error },
+    failReviews(error: Error | null) { reviewsFailure = error },
     count(kind: GhQuestion['kind']) { return questions.filter(question => question.kind === kind).length },
     reset() { questions.length = 0 },
   }

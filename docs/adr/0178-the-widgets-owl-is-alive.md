@@ -15,7 +15,8 @@ Drake asked for polish rounds on the dictation widget. By the third, the capsule
 - **Waiting** (listening with no voice heard, or asking for the microphone): it breathes, blinks twice a cycle with the second blink doubled, and glances left and right. Its eyes are faintly lit.
 - **Hearing you**: its ears go up, its eyes light and it nods with the voice.
 - **Transcribing**: its head tilts 8 degrees about its middle, so it stays in its place, and its eyes look up, as if thinking, their light pulsing slowly.
-- **Pasted or copied**: it hops, and its eyes close into happy arches.
+- **Copied**: it hops, and its eyes close into happy arches.
+- **Pasted**: it returns to Ready as soon as delivery finishes.
 - **Error**: its head droops 7 degrees, its eyes look down and dim, and sad lids, higher at the inner end, come down over them.
 
 **The smooth owl, lively.** The prototype also offered a pixel owl, drawn at 1x and shown pixel-doubled as the menu bar owl is, and a subtle version of every movement at about half the size. Drake picked the smooth vector owl, which matches the capsule's smooth shapes and type, at the lively size.
@@ -25,6 +26,8 @@ Drake asked for polish rounds on the dictation widget. By the third, the capsule
 **Reduced motion holds it still.** With reduced motion, from the system or Sotto's own setting, the owl does not breathe, blink, glance, nod, tilt or hop. Its expressions stay, because they change without moving: lit eyes while it hears you, happy eyes when the text lands, sad eyes on an error.
 
 **An Owl feature.** Main gives the widget's renderer `--sotto-living-owl` only while `living-widget-owl` is on, and the widget bridge then carries `livingOwl`. Stable shows the same tile-less owl, still. It goes to stable when Zach sets its `sentToStable`.
+
+**November 3 amendment: no pause after automatic paste.** Drake's dictation latency request removes the success-display hold after a paste. Delivery still publishes its success before returning to Ready, but does not wait for the owl's hop. The configured success-message duration applies to Copied, where the user still needs to paste. Errors keep their recovery controls.
 
 ## Consequences
 

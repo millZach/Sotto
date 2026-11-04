@@ -10,7 +10,11 @@ import { AUDIO_CAPTURE_PROCESSOR_NAME } from '../../../../src/renderer/src/audio
 
 describe('audio capture worklet', () => {
   type Processor = {
-    port: { postMessage: ReturnType<typeof vi.fn> }
+    port: {
+      postMessage: ReturnType<typeof vi.fn>
+      close: ReturnType<typeof vi.fn>
+      onmessage: ((event: { data: unknown }) => void) | null
+    }
     process(inputs: readonly (readonly Float32Array[])[]): boolean
   }
   type ProcessorConstructor = new () => Processor
@@ -25,7 +29,11 @@ describe('audio capture worklet', () => {
     let RegisteredProcessor: ProcessorConstructor | undefined
 
     class FakeAudioWorkletProcessor {
-      readonly port = { postMessage }
+      readonly port = {
+        postMessage,
+        close: vi.fn(),
+        onmessage: null as ((event: { data: unknown }) => void) | null,
+      }
     }
 
     runInNewContext(source, {
@@ -91,5 +99,17 @@ describe('audio capture worklet', () => {
       ]),
     ).toBe(true)
     expect(postMessage.mock.calls[1]?.[0]).toStrictEqual(new Float32Array([0.4, -0.3]))
+  })
+
+  it('ends the processor and releases its port before a shared context is reused', () => {
+    const { postMessage, processor } = loadProcessor()
+    expect(processor.process([[new Float32Array([0.5])]])).toBe(true)
+
+    processor.port.onmessage?.({ data: 'stop' })
+
+    expect(processor.port.close).toHaveBeenCalledOnce()
+    expect(processor.port.onmessage).toBeNull()
+    expect(processor.process([[new Float32Array([1])]])).toBe(false)
+    expect(postMessage).toHaveBeenCalledOnce()
   })
 })

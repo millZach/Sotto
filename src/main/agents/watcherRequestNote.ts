@@ -7,9 +7,14 @@ import type { WatcherRequest } from '../../shared/watcher'
  * provider's own context channel for that turn (`watcherRequestNote` on a send), never in the user's text, and names no
  * projects: Watcher calls list_projects when it needs one.
  */
-export function watcherRequestNote(requestId: string, hostId: string, compacted = false): string {
-  return `Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads changes made for this message.${compacted ? ` ${WATCHER_COMPACTED_NOTE}` : ''}`
+export function watcherRequestNote(requestId: string, hostId: string, compacted = false, teammate = false): string {
+  return `Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads changes made for this message.${compacted ? ` ${WATCHER_COMPACTED_NOTE}` : ''}${teammate ? ` ${WATCHER_TEAMMATE_NOTE}` : ''}`
 }
+/**
+ * What the note adds when a teammate's message waits to be read (ADR-0187, decision 4). Fixed words that carry none of
+ * theirs, and taken off a Grok Build or steer line as exactly as the rest.
+ */
+export const WATCHER_TEAMMATE_NOTE = 'A teammate\'s message is on the user\'s screen. Read it with read_teammate_messages if it bears on this message.'
 /**
  * What a Watcher turn's note adds after its conversation was compacted, or in a new Watcher conversation, until Watcher
  * reads its state back (#1189). Fixed
@@ -39,8 +44,8 @@ const PROJECT = '[^\\s,\\[\\]]+'
  * note or footer the user typed themselves, stays.
  */
 export function watcherTextAsTyped(text: string, request: WatcherMessageRequest): string {
-  for (const compacted of [false, true]) {
-    const line = watcherRequestLine(watcherRequestNote(request.requestId, request.hostId, compacted))
+  for (const compacted of [false, true]) for (const teammate of [false, true]) {
+    const line = watcherRequestLine(watcherRequestNote(request.requestId, request.hostId, compacted, teammate))
     if (text.endsWith(line)) return text.slice(0, -line.length)
     if (text === line.slice(2)) return ''
   }

@@ -973,7 +973,7 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
         } else {
             content
                 // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
-                .background(theme.tinted(.canvas, with: .ink, scheme == .dark ? 0.08 : 0.055), in: shape)
+                .background { shape.fill(theme.tinted(.canvas, with: .ink, scheme == .dark ? 0.08 : 0.055)) }
                 .softShadow(shape, color: Color.black.opacity(scheme == .dark ? 0.4 : 0.14), radius: 9, y: 4)
         }
     }
@@ -999,6 +999,33 @@ enum ComposerMetrics {
     /// Between the row's buttons: wide enough that each keeps all 44 points of its press area, so a press between Stop
     /// and Send neither stops a turn meant to be queued nor queues a reply meant to stop it.
     static let gap: CGFloat = 44 - button
+    /// The small reply box (ADR-0184): where the words start in its row, past the +, and the room they leave for the mic
+    /// and for Send or Stop. It never shows Stop and Send side by side: both together mean something is written.
+    static let smallWordsLeading: CGFloat = rowInset + button + gap + 2
+    static let smallWordsTrailing: CGFloat = rowInset + button * 2 + gap * 2
+    /// The seconds it takes to go small or come back, as the desktop's slim composer (ADR-0125).
+    static let smallMotion = 0.2
+}
+
+/// The reply box's shape: its corners, with its top edge brought down by `top` while the box is small. Its top is the
+/// only part that moves, and it animates.
+struct ComposerShape: InsettableShape {
+    var top: CGFloat = 0
+    var inset: CGFloat = 0
+    var animatableData: CGFloat {
+        get { top }
+        set { top = newValue }
+    }
+    func path(in rect: CGRect) -> Path {
+        let box = CGRect(x: rect.minX, y: rect.minY + min(top, rect.height), width: rect.width, height: max(0, rect.height - top))
+            .insetBy(dx: inset, dy: inset)
+        return RoundedRectangle(cornerRadius: max(0, ComposerMetrics.radius - inset), style: .continuous).path(in: box)
+    }
+    func inset(by amount: CGFloat) -> ComposerShape {
+        var shape = self
+        shape.inset += amount
+        return shape
+    }
 }
 
 extension View {
@@ -1023,10 +1050,20 @@ extension View {
             .padding(.bottom, -spare)
     }
     /// The light round the reply box, whose corners are `radius`, at the top effort; see `EffortTraceLight`. Nothing is
-    /// drawn while `lit` is false.
-    func effortTrace(_ lit: Bool, radius: CGFloat) -> some View {
-        background { if lit { EffortTraceLight(radius: radius, halo: true) } }
-            .overlay { if lit { EffortTraceLight(radius: radius, halo: false) } }
+    /// drawn while `lit` is false. `top` follows the small box's top edge down, with the lap unchanged: the light turns on
+    /// a square stretched to whatever shape it is given, so it keeps its nine seconds round the small box too.
+    func effortTrace(_ lit: Bool, radius: CGFloat, top: CGFloat = 0) -> some View {
+        background { if lit { EffortTraceLight(radius: radius, halo: true).padding(.top, top) } }
+            .overlay { if lit { EffortTraceLight(radius: radius, halo: false).padding(.top, top) } }
+    }
+    /// A press on the conversation puts the keyboard away when `empty` says the reply box holds nothing (ADR-0184). A press
+    /// that means something else, on a link or a button, goes there instead, since a parent's tap yields to its children.
+    /// Reads nothing until pressed, so it adds no work to the page.
+    func tapPutsAwayKeyboard(when empty: @escaping () -> Bool) -> some View {
+        contentShape(Rectangle()).onTapGesture {
+            guard empty() else { return }
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
     }
     /// A round button drawn smaller than 44 points that still takes a press across 44, without taking more room.
     func pressArea(drawn size: CGFloat) -> some View {
@@ -1216,8 +1253,12 @@ struct CardSurface: ViewModifier {
 enum DebugFlags {
     #if DEBUG
     static let still = ProcessInfo.processInfo.arguments.contains("--ui-still")
+    /// The journeys that read the settings pill over and over keep the reply box full (`--ui-reply-box-stays-full`), so
+    /// they stay about the pill. `testTheReplyBoxGoesSmall...` and its Watcher twin read the small box itself.
+    static let replyBoxStaysFull = ProcessInfo.processInfo.arguments.contains("--ui-reply-box-stays-full")
     #else
     static let still = false
+    static let replyBoxStaysFull = false
     #endif
 }
 

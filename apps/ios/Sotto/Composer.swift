@@ -10,8 +10,16 @@ import SottoCore
 /// a row inside it, the + and the settings pill on the left, the mic and Send on the right. It has no edge in any state
 /// and floats over the conversation (#1946) on `ComposerSurface`. At the accessibility text sizes the pill takes a line of
 /// its own above the buttons.
+///
+/// While `small`, the **small reply box** (ADR-0184): one row of the +, the prompt text, the mic and Send or Stop. It is
+/// the same views with nothing laid out again: the card keeps its full room, so neither the dock's height nor the
+/// conversation above it changes (the dock's top is what scrolls and redraws the page), and the words are offset into the
+/// row while the card's top edge comes down. The caret, the words' focus and the sheets the pill opens all stay.
 struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trailing: View>: View {
-    /// Puts the caret in the words, for a press beside them or in the gap under them.
+    let small: Bool
+    /// The light round the card at the top effort (`effortTrace`), on whichever shape the card has.
+    let lit: Bool
+    /// Puts the caret in the words, for a press beside them, in the gap under them or on the small box.
     let focus: () -> Void
     let attachments: Attachments
     let words: Words
@@ -19,9 +27,21 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
     let pill: Pill
     let trailing: Trailing
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.layoutDirection) private var direction
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The words' own height, which sets how far the top edge and the words travel.
+    @State private var wordsHeight: CGFloat = 22
+    /// One line of words at any height it takes: a field held to one line lays out a little shorter (19.3 points to 20),
+    /// which would move the dock, and the conversation over it, every time the box changes shape.
+    @ScaledMetric(relativeTo: .body) private var oneLine: CGFloat = 20
+    /// The shape on screen, which follows `small` on its own animation. The keyboard starts or ends with the change to
+    /// `small`, and in the recordings the words and the top edge jumped or kept the keyboard's curve instead of this one.
+    @State private var shownSmall: Bool?
 
-    init(focus: @escaping () -> Void, @ViewBuilder attachments: () -> Attachments, @ViewBuilder words: () -> Words,
+    init(small: Bool, lit: Bool, focus: @escaping () -> Void, @ViewBuilder attachments: () -> Attachments, @ViewBuilder words: () -> Words,
          @ViewBuilder plus: () -> Plus, @ViewBuilder pill: () -> Pill, @ViewBuilder trailing: () -> Trailing) {
+        self.small = small
+        self.lit = lit
         self.focus = focus
         self.attachments = attachments()
         self.words = words()
@@ -31,10 +51,19 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
     }
 
     var body: some View {
+        let shaped = shownSmall ?? small
+        // From the words' place at the card's top to the row beside the +.
+        let slide = ComposerMetrics.smallWordsLeading - ComposerMetrics.wordsInset
+        let drop = wordsHeight / 2 + ComposerMetrics.wordsGap + ComposerMetrics.rowInset + ComposerMetrics.button / 2
+        // Everything over the row: the top edge comes down by this while small, and the foot stays where it stood.
+        let lowered = ComposerMetrics.wordsTop + wordsHeight + ComposerMetrics.wordsGap
         VStack(alignment: .leading, spacing: 0) {
             attachments
             words
-                .padding(.horizontal, ComposerMetrics.wordsInset)
+                .frame(minHeight: oneLine, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
+                .padding(.leading, ComposerMetrics.wordsInset)
+                .padding(.trailing, shaped ? ComposerMetrics.smallWordsTrailing + slide : ComposerMetrics.wordsInset)
                 .padding(.top, ComposerMetrics.wordsTop)
                 .padding(.bottom, ComposerMetrics.wordsGap)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,25 +72,55 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
                 // nearest control, the model pill, as a press near a small target does (Duo captures, November 1, 2026).
                 .background {
                     // The clear area is offered the margin too and takes it, so its press area reaches the buttons' top.
-                    Color.clear.contentShape(Rectangle())
-                        .onTapGesture(perform: focus)
-                        .padding(.bottom, -ComposerMetrics.rowInset)
-                        .accessibilityHidden(true)
+                    // Not while small: the room over the small box is the conversation's.
+                    if !small {
+                        Color.clear.contentShape(Rectangle())
+                            .onTapGesture(perform: focus)
+                            .padding(.bottom, -ComposerMetrics.rowInset)
+                            .accessibilityHidden(true)
+                    }
                 }
+                // An offset doesn't follow the writing direction as padding does.
+                .offset(x: !shaped ? 0 : direction == .rightToLeft ? -slide : slide, y: shaped ? drop : 0)
             Group {
                 if typeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: ComposerMetrics.gap) {
-                        pill
+                        steppedAwayPill
                         HStack(spacing: ComposerMetrics.gap) { plus; Spacer(minLength: 0); trailing }
                     }
                 } else {
-                    HStack(spacing: ComposerMetrics.gap) { plus; pill; Spacer(minLength: 0); trailing }
+                    HStack(spacing: ComposerMetrics.gap) { plus; steppedAwayPill; Spacer(minLength: 0); trailing }
                 }
             }
             .padding(ComposerMetrics.rowInset)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .composerSurface(in: RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous))
+        .background {
+            // A press on the small box beside the words types there. Only on the box: the room it left above stays the
+            // conversation's.
+            if small {
+                Color.clear.contentShape(ComposerShape(top: lowered))
+                    .onTapGesture(perform: focus)
+                    .accessibilityHidden(true)
+            }
+        }
+        .composerSurface(in: ComposerShape(top: shaped ? lowered : 0))
+        .effortTrace(lit, radius: ComposerMetrics.radius, top: shaped ? lowered : 0)
+        .onChange(of: small) { _, nowSmall in
+            // Going small, the words set off once the pill has mostly gone, so they never cross it.
+            let move = Animation.easeInOut(duration: ComposerMetrics.smallMotion)
+            withAnimation(reduceMotion ? nil : nowSmall ? move.delay(0.06) : move) { shownSmall = nowSmall }
+        }
+    }
+
+    /// The pill keeps its place in the row, so its sheet stays up and nothing beside it moves. It leaves before the words
+    /// reach it, and comes back after they have gone.
+    private var steppedAwayPill: some View {
+        pill
+            .opacity(small ? 0 : 1)
+            .allowsHitTesting(!small)
+            .accessibilityHidden(small)
+            .animation(reduceMotion ? nil : small ? .easeOut(duration: 0.1) : .easeIn(duration: 0.12).delay(0.08), value: small)
     }
 }
 

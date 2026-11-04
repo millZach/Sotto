@@ -1,3 +1,4 @@
+import { markDictationTiming } from '../../shared/dictationTiming'
 import type { TranscriptPolishAsrContext, TranscriptPolishResult } from '../../shared/contracts'
 import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
 import { isOpenRouterPreset } from '../../shared/openRouterModel'
@@ -286,6 +287,7 @@ export class TranscriptPolishService {
     if (budget <= 0) return { text: null, reason: 'skipped' }
 
     try {
+      markDictationTiming('cleanup-request-started')
       const response = await this.fetchFn(OPENROUTER_URL, {
         method: 'POST',
         headers: {
@@ -310,8 +312,13 @@ export class TranscriptPolishService {
         }),
         signal: AbortSignal.timeout(budget),
       })
-      if (!response.ok) return { text: null, reason: `http-${response.status}` }
-      const choice = readCleanupChoice(await response.json())
+      if (!response.ok) {
+        markDictationTiming('cleanup-request-returned')
+        return { text: null, reason: `http-${response.status}` }
+      }
+      const body = await response.json()
+      markDictationTiming('cleanup-request-returned')
+      const choice = readCleanupChoice(body)
       if (choice?.finished === false) return { text: null, reason: 'unfinished' }
       const content = choice?.content ?? null
       if (content === null) return { text: null, reason: 'empty' }
@@ -321,6 +328,7 @@ export class TranscriptPolishService {
       }
       return { text: content, reason: 'ok' }
     } catch (error) {
+      markDictationTiming('cleanup-request-returned')
       const timedOut = error instanceof Error &&
         (error.name === 'TimeoutError' || error.name === 'AbortError')
       return { text: null, reason: timedOut ? 'timeout' : 'network' }

@@ -191,6 +191,21 @@ describe('deleting settled threads (ADR-0140)', () => {
     expect((await git(f.project, ['rev-parse', '--verify', `refs/heads/${built.branch}`])).trim()).toMatch(/^[0-9a-f]{40}$/u)
   })
 
+  it('clears a worktree whose ignored files are only dependencies and build output its repository marks', async () => {
+    const f = await fixture()
+    const built = await f.checkout()
+    await writeFile(join(built.path!, '.gitignore'), 'node_modules/\n*.log\nout/\n')
+    await writeFile(join(built.path!, '.gitattributes'), '/out sotto-build-output\n')
+    await git(built.path!, ['add', '.'])
+    await git(built.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Mark build output'])
+    await mkdir(join(built.path!, 'out'), { recursive: true }); await writeFile(join(built.path!, 'out', 'index.js'), 'built')
+    f.adapter.state.threads[1]!.worktree = await f.worktrees.inspect(built)
+    const host = await f.open()
+    expect((await host.previewThreadDeletion('session-docs', true)).kept).toBeNull()
+    expect((await host.deleteThreads(['session-docs'], automatic)).deleted).toEqual(['session-docs'])
+    expect(await exists(built.path!)).toBe(false)
+  })
+
   it('clears a thread on a detached HEAD whose commit a branch has, and keeps one on a commit no branch has', async () => {
     const f = await fixture()
     const built = await f.checkout(); await git(built.path!, ['checkout', '--detach'])

@@ -55,8 +55,12 @@ test('keeps a turned-away dictation and delivers it when the widget pill is pres
     await widget.screenshot({ path: resolve(evidenceRoot, 'widget-kept-again.png'), animations: 'disabled' })
 
     await widget.locator('.widget-capsule').click({ position: { x: 60, y: 20 } })
-    await expect(widget.locator('.widget-shell[data-status="success"]')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('heading', { level: 1, name: /^(Pasted( into .+)?|Copied)\.$/ })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot()), { timeout: 15_000 }).toMatchObject({
+      clipboardText: E2E_TRANSCRIPT,
+      pasteAttempts: 1,
+    })
+    await expect(widget.locator('.widget-shell')).toHaveAttribute('data-status', 'idle')
+    await expect(page.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
     await expect(page.getByRole('region', { name: 'Today' })).toContainText(E2E_TRANSCRIPT)
     await page.screenshot({ path: resolve(evidenceRoot, 'dictate-recovered.png') })
   })

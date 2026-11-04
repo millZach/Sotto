@@ -133,6 +133,11 @@ interface Peer { productEvents?: { answer: ProductEventPermission | null } | und
    * revision, so the push after it does not list every record again.
    */
   replyThreadRecords?: boolean
+  /**
+   * Whether its hello accepted `command-changed-thread-records` beside `changed-thread-records`: a command's answer carries
+   * only the thread records that changed since what `threadRecords` last made its base, and moves nothing.
+   */
+  commandThreadRecords?: boolean
   /** Whether its hello accepted `provider-mode-lists`: a catalog it is sent lists each provider's modes once, not on every model. */
   providerModeLists?: boolean
   /**
@@ -692,6 +697,16 @@ export async function startSocketServer(options: SocketServerOptions) {
   /** `wire` naming the revision its records are held under, when they were seeded. */
   const withSeededRecords = (wire: WireShell, seed: ThreadRecordsSeed | undefined): WireShell =>
     seed ? { ...wire, state: { ...wire.state, threadRecordsRevision: seed.revision } } : wire
+  /**
+   * A command's answer as it goes to `peer`: to a client that accepted `command-changed-thread-records`, its list empty and
+   * beside it the records that changed since the last push or seeded answer written to this connection. Made just before
+   * the answer is written, so it is measured from what the client holds at that place in the socket, and nothing moves:
+   * the next push carries the same changes, as a reply to the window's does (#1897).
+   */
+  const withChangedRecords = (peer: Peer, state: HostWireShell): HostWireShell => {
+    if (!peer.commandThreadRecords || !peer.threadRecords) return state
+    return { ...state, host: { ...state.host, threads: [] }, threadRecords: peer.threadRecords.peek(state.host.threads) }
+  }
   /**
    * A shell's state as it is written, and the digests that say whether it repeats the last one pushed. Watcher's page on a
    * phone's shell says when it was read (`observedAt`), a new time on every read, so with it no phone's shell ever
@@ -1372,6 +1387,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.threadRecords = (request.accepts?.includes('changed-thread-records') ?? false) && offers(peer, 'changed-thread-records') ? new ThreadRecordsBroadcast() : undefined
         // The records this answer lists whole become the base the first push is measured from (ADR-0028, November 1 amendment).
         peer.replyThreadRecords = peer.threadRecords !== undefined && (request.accepts?.includes('reply-thread-records') ?? false) && offers(peer, 'reply-thread-records')
+        // A command's answer carries only the records that changed, measured from what those pushes and answers left held.
+        peer.commandThreadRecords = peer.threadRecords !== undefined && (request.accepts?.includes('command-changed-thread-records') ?? false) && offers(peer, 'command-changed-thread-records')
         peer.providerModeLists = (request.accepts?.includes('provider-mode-lists') ?? false) && offers(peer, 'provider-mode-lists')
         peer.settledOnRequest = (request.accepts?.includes('settled-threads-on-request') ?? false) && offers(peer, 'settled-threads-on-request')
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
@@ -1826,7 +1843,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           peer.catalogSent = null; carried = withSeededRecords(wireShell(peer, hello.shell), seeded = seedRecords(peer, hello.shell)); result = { ...hello, shell: carried.state }
         } else if (request.op === 'shell') {
           carried = withSeededRecords(wireShell(peer, result as HostClientShell), seeded = seedRecords(peer, result as HostClientShell)); result = carried.state
-        } else if (request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = carried.state }
+        } else if (request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = withChangedRecords(peer, carried.state) }
         response = { v: 1, id: request.id, ok: true, result }
       }
       catch (error) {

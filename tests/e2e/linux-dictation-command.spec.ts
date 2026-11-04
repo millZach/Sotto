@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
+import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { closeSotto, firstRunForwardButton, launchSotto, openPage, reachFirstRunStep, skipThreadsTour } from './support/sottoLaunch'
 
@@ -81,11 +82,19 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await command('start')
     await expect(room).toHaveAttribute('data-status', 'listening')
     await command('stop')
-    await expect(room).toHaveAttribute('data-status', 'success')
+    await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+      clipboardText: E2E_TRANSCRIPT,
+      pasteAttempts: 1,
+    })
+    await expect(room).toHaveAttribute('data-status', 'idle')
     await command('toggle')
     await expect(room).toHaveAttribute('data-status', 'listening')
     await command('toggle')
-    await expect(room).toHaveAttribute('data-status', 'success')
+    await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+      clipboardText: E2E_TRANSCRIPT,
+      pasteAttempts: 2,
+    })
+    await expect(room).toHaveAttribute('data-status', 'idle')
     await command('start')
     await expect(room).toHaveAttribute('data-status', 'listening')
     await command('cancel')

@@ -7,6 +7,9 @@ import type { AgentAttachmentHandle, AgentAttachmentStageRequest } from '../../.
 import type { ActivityGroup } from '../../../src/renderer/src/agents/threadActivityView'
 import { handleOf } from '../../fixtures/stagedImages'
 
+const app = vi.hoisted(() => ({ current: null as unknown }))
+vi.mock('../../../src/renderer/src/state/AppContext', async original => ({ ...await original<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: () => app.current }))
+
 const owl = { inlineMedia: true }
 vi.mock('../../../src/renderer/src/state/owlFeature', () => ({ useOwlFeature: (id: string) => id === 'inline-media' && owl.inlineMedia }))
 vi.mock('../../../src/renderer/src/agents/markup', async original => {
@@ -17,7 +20,7 @@ vi.mock('../../../src/renderer/src/agents/markup', async original => {
 import { ThreadMediaTiles } from '../../../src/renderer/src/agents/ThreadMediaTiles'
 import { ReplyAttachContext, type ReplyAttach, type ReplyAttachSlot } from '../../../src/renderer/src/agents/replyAttach'
 import { ScreenshotInput } from '../../../src/renderer/src/agents/ScreenshotInput'
-import { madeMark, markedCopy, markedName, arrowGeometry, noteWords } from '../../../src/renderer/src/agents/markup'
+import { madeMark, markAt, markBounds, markedCopy, markedName, markUnder, moveMarks, movingWith, nextNoteScale, NOTE_SCALES, arrowGeometry, noteEdge, resizeMark, settleNote, type MarkupShape, type NoteShape } from '../../../src/renderer/src/agents/markup'
 import { contrastRatio } from '../../../src/shared/themes/color'
 
 const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
@@ -274,16 +277,15 @@ describe('marks', () => {
     expect(madeMark({ id: 1, ink: 'red', tool: 'box', x0: 0, y0: 0, x1: 5, y1: 5 }, size)).toBe(false)
     expect(madeMark({ id: 1, ink: 'red', tool: 'box', x0: 0, y0: 0, x1: 20, y1: 0 }, size)).toBe(true)
     expect(madeMark({ id: 1, ink: 'red', tool: 'pen', points: [[0, 0, 0.5], [1, 1, 0.5]], pressure: false }, size)).toBe(false)
-    expect(madeMark({ id: 1, ink: 'red', tool: 'note', x0: 0, y0: 0, text: '  ' }, size)).toBe(false)
+    expect(madeMark({ id: 1, ink: 'red', tool: 'note', x0: 0, y0: 0, text: '  ', scale: 1, on: null }, size)).toBe(false)
   })
-  it('sets a note\'s words at 4.5:1 on its ink at least, in the theme\'s colours where they reach it', () => {
-    const canvas = { r: 250, g: 248, b: 245 }, text = { r: 40, g: 38, b: 36 }
-    // On a dark ink the theme's canvas reads well, and is the colour the words take.
-    expect(noteWords({ r: 30, g: 30, b: 60 }, canvas, text)).toBe(canvas)
-    // A red at full strength between a light canvas and a mid-grey text: neither reaches 4.5:1, so black or white does.
-    const red = { r: 222, g: 64, b: 64 }, grey = { r: 90, g: 90, b: 90 }
-    expect(Math.max(contrastRatio(red, canvas), contrastRatio(red, grey))).toBeLessThan(4.5)
-    expect(contrastRatio(red, noteWords(red, canvas, grey))).toBeGreaterThanOrEqual(4.5)
+  it('edges a note\'s words in black or white, at 4.5:1 on any ink', () => {
+    expect(noteEdge({ r: 240, g: 240, b: 240 })).toEqual({ r: 0, g: 0, b: 0 })
+    expect(noteEdge({ r: 20, g: 20, b: 40 })).toEqual({ r: 255, g: 255, b: 255 })
+    // Reds and greys between the two, where the theme's own colours fell short.
+    for (const ink of [{ r: 222, g: 64, b: 64 }, { r: 128, g: 128, b: 128 }, { r: 119, g: 119, b: 119 }, { r: 240, g: 180, b: 40 }]) {
+      expect(contrastRatio(ink, noteEdge(ink))).toBeGreaterThanOrEqual(4.5)
+    }
   })
   it('puts an arrow\'s head at its end, pointing along it', () => {
     const { head, shaft } = arrowGeometry({ id: 1, ink: 'red', tool: 'arrow', x0: 0, y0: 0, x1: 100, y1: 0 }, { width: 200, height: 100 })
@@ -291,5 +293,428 @@ describe('marks', () => {
     expect(shaft[0]).toBeLessThan(100)
     expect(head[1]![0]).toBeLessThan(100)
     expect(head[1]![1]).toBeCloseTo(-head[2]![1])
+  })
+})
+
+describe('moving marks (ADR-0170, part 5)', () => {
+  const size = { width: 1000, height: 500 }
+  const box: MarkupShape = { id: 1, ink: 'red', tool: 'box', x0: 100, y0: 100, x1: 400, y1: 300 }
+  const arrow: MarkupShape = { id: 2, ink: 'red', tool: 'arrow', x0: 500, y0: 50, x1: 700, y1: 250 }
+  const pen: MarkupShape = { id: 3, ink: 'amber', tool: 'pen', pressure: false, points: [[600, 400, 0.5], [650, 420, 0.5], [700, 410, 0.5]] }
+  const onBox: NoteShape = { id: 4, ink: 'red', tool: 'note', x0: 150, y0: 200, text: 'On the box', scale: 1, on: 1 }
+  const free: NoteShape = { id: 5, ink: 'plain', tool: 'note', x0: 800, y0: 50, text: 'Free', scale: 1, on: null }
+  const marks = [box, arrow, pen, onBox, free]
+
+  it('picks up a note\'s words first, then a line, then the smallest shape around the place', () => {
+    expect(markAt(marks, 160, 200, 9, size)?.id).toBe(4)
+    expect(markAt(marks, 600, 150, 9, size)?.id).toBe(2)
+    expect(markAt(marks, 650, 421, 9, size)?.id).toBe(3)
+    expect(markAt(marks, 300, 150, 9, size)?.id).toBe(1)
+    expect(markAt(marks, 900, 450, 9, size)).toBeNull()
+    const inner: MarkupShape = { id: 6, ink: 'red', tool: 'ellipse', x0: 200, y0: 120, x1: 380, y1: 180 }
+    expect(markAt([...marks, inner], 290, 150, 9, size)?.id).toBe(6)
+  })
+
+  it('moves a shape with the notes on it, keeps a note alone, and leaves the other marks the same objects', () => {
+    expect([...movingWith(marks, 1)]).toEqual([1, 4])
+    expect([...movingWith(marks, 4)]).toEqual([4])
+    const after = moveMarks(marks, movingWith(marks, 1), 50, 20, size)
+    expect(after[0]).toMatchObject({ x0: 150, y0: 120, x1: 450, y1: 320 })
+    expect(after[3]).toMatchObject({ x0: 200, y0: 220, on: 1 })
+    expect(after[1]).toBe(arrow)
+    expect(after[2]).toBe(pen)
+    expect(after[4]).toBe(free)
+  })
+
+  it('stops a move at the picture\'s edge, for the shape and the note on it together', () => {
+    const after = moveMarks(marks, movingWith(marks, 1), -5000, -5000, size)
+    expect(after[0]).toMatchObject({ x0: 0, y0: 0, x1: 300, y1: 200 })
+    expect(after[3]).toMatchObject({ x0: 50, y0: 100 })
+    const low = moveMarks(marks, movingWith(marks, 3), 0, 5000, size)[2] as Extract<MarkupShape, { tool: 'pen' }>
+    expect(Math.max(...low.points.map(point => point[1]))).toBe(500)
+  })
+
+  it('moves every point of a pen line, with its pressure', () => {
+    const after = moveMarks(marks, new Set([3]), 10, -10, size)[2] as Extract<MarkupShape, { tool: 'pen' }>
+    expect(after.points[1]).toEqual([660, 410, 0.5])
+  })
+
+  it('attaches a note let go on a mark and frees one let go off every mark', () => {
+    const dropped = moveMarks(marks, new Set([5]), -600, 150, size)
+    expect((settleNote(dropped, 5, 9, size).find(mark => mark.id === 5) as NoteShape).on).toBe(1)
+    const away = moveMarks(marks, new Set([4]), 0, 250, size)
+    expect((settleNote(away, 4, 9, size).find(mark => mark.id === 4) as NoteShape).on).toBeNull()
+    // Staying on the same mark changes nothing, and a note is never on another note.
+    expect(settleNote(marks, 4, 9, size)).toBe(marks)
+    expect(markUnder([free], 810, 50, 9, size)).toBeNull()
+  })
+
+  it('resizes by a corner or an arrow\'s end, taking the notes on it along, and refuses to lose the mark', () => {
+    const wider = resizeMark(marks, 1, 'bottom-right', 700, 300, size)!
+    expect(wider[0]).toMatchObject({ x0: 100, y0: 100, x1: 700, y1: 300 })
+    // The note on it keeps its share of the box: a sixth of the way across before, a sixth of the wider box after.
+    expect((wider[3] as NoteShape).x0).toBeCloseTo(200)
+    expect(resizeMark(marks, 2, 'end', 900, 450, size)![1]).toMatchObject({ x0: 500, y0: 50, x1: 900, y1: 450 })
+    const pens = resizeMark(marks, 3, 'bottom-right', 800, 420, size)![2]!
+    expect(markBounds(pens, size)).toMatchObject({ x: 600, y: 400, width: 200, height: 20 })
+    expect(resizeMark(marks, 1, 'bottom-right', 101, 101, size)).toBeNull()
+    expect(resizeMark(marks, 4, 'bottom-right', 700, 300, size)).toBeNull()
+  })
+
+  it('turns a note with an arrow it sits on, and keeps a resized mark\'s notes on the picture', () => {
+    const along: MarkupShape = { id: 1, ink: 'red', tool: 'arrow', x0: 100, y0: 100, x1: 300, y1: 100 }
+    const words: NoteShape = { id: 2, ink: 'red', tool: 'note', x0: 200, y0: 100, text: 'Mid', scale: 1, on: 1 }
+    const turned = resizeMark([along, words], 1, 'end', 100, 300, size)!
+    expect((turned[1] as NoteShape).x0).toBeCloseTo(100)
+    expect((turned[1] as NoteShape).y0).toBeCloseTo(200)
+    const long: NoteShape = { id: 4, ink: 'red', tool: 'note', x0: 380, y0: 200, text: 'A note too long to fit', scale: 2.6, on: 1 }
+    const wider = resizeMark([box, long], 1, 'bottom-right', 990, 490, size)!
+    const words2 = markBounds(wider[1]!, size)
+    expect(words2.x + words2.width).toBeLessThanOrEqual(size.width)
+  })
+
+  it('treats a circle drawn or resized flat as the line it is', () => {
+    const flat: MarkupShape = { id: 1, ink: 'red', tool: 'ellipse', x0: 100, y0: 100, x1: 300, y1: 100 }
+    expect(markAt([flat], 800, 400, 9, size)).toBeNull()
+    expect(markUnder([flat], 800, 400, 9, size)).toBeNull()
+    expect(markAt([flat], 200, 104, 9, size)?.id).toBe(1)
+  })
+
+  it('keeps a long note on the mark it was placed on, whichever part of it is over the mark', () => {
+    const long: NoteShape = { id: 2, ink: 'red', tool: 'note', x0: 380, y0: 200, text: 'A note long enough to run past the box', scale: 1, on: null }
+    expect((settleNote([box, long], 2, 9, size)[1] as NoteShape).on).toBe(1)
+    const moved = moveMarks([box, { ...long, on: 1 }], new Set([2]), 3, 0, size)
+    expect((settleNote(moved, 2, 9, size)[1] as NoteShape).on).toBe(1)
+  })
+
+  it('steps text through its sizes and stays at either end', () => {
+    expect(nextNoteScale(1, 1)).toBe(1.4)
+    expect(nextNoteScale(1, -1)).toBe(0.7)
+    expect(nextNoteScale(NOTE_SCALES[0]!, -1)).toBe(NOTE_SCALES[0])
+    expect(nextNoteScale(NOTE_SCALES.at(-1)!, 1)).toBe(NOTE_SCALES.at(-1))
+  })
+})
+
+describe('the Move tool in the editor (ADR-0170, part 5)', () => {
+  const real = globalThis.IntersectionObserver
+  const threadMedia = vi.fn(async (request: { size: string }) => ({ dataUrl: request.size === 'tile' ? TILE : WHOLE }))
+  beforeAll(() => { globalThis.IntersectionObserver = NearObserver as unknown as typeof IntersectionObserver })
+  beforeEach(() => { vi.stubGlobal('sotto', { agents: { threadMedia } }) })
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.mocked(markedCopy).mockClear() })
+  afterAll(() => { globalThis.IntersectionObserver = real })
+
+  /** The editor with a box from 100,100 to 300,200. */
+  async function withABox(): Promise<HTMLElement> {
+    await openViewer(reply())
+    await userEvent.click(screen.getByRole('button', { name: 'Mark up' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Box' }))
+    const picture = surface()
+    drag(picture, [100, 100], [300, 200])
+    return picture
+  }
+  const shapes = (picture: HTMLElement) => [...picture.querySelectorAll<SVGElement>('[data-markup-shape]')]
+  const place = (shape: SVGElement, ...names: string[]) => names.map(name => Number(shape.getAttribute(name)))
+  async function addNote(picture: HTMLElement, at: readonly [number, number], words: string): Promise<void> {
+    drag(picture, at, at)
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Note' }), `${words}{Enter}`)
+  }
+
+  it('leaves a drawing tool drawing, so a stroke across a mark stays a stroke', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Arrow' }))
+    drag(picture, [100, 150], [400, 400])
+    expect(marksList()).toEqual(['Box', 'Arrow'])
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+  })
+
+  it('drags a mark with Move, and Undo and Redo step through the move', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('v')
+    expect(screen.getByRole('button', { name: 'Move' })).toHaveAttribute('aria-pressed', 'true')
+    drag(picture, [200, 100], [300, 250])
+    expect(place(shapes(picture)[0]!, 'x', 'y', 'width', 'height')).toEqual([200, 250, 200, 100])
+    expect(marksList()).toEqual(['Box'])
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+    await userEvent.click(screen.getByRole('button', { name: 'Redo' }))
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([200, 250])
+  })
+
+  it('selects with a press and draws nothing, and a press on the empty picture lets go', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    drag(picture, [150, 150], [150, 150])
+    expect(picture.querySelector('.markup-editor__selected')).toBeTruthy()
+    expect(picture.querySelectorAll('.markup-editor__handle')).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'Select Box' })).toHaveAttribute('aria-pressed', 'true')
+    // A press and no move is not a step of Undo.
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(marksList()).toEqual([])
+    await userEvent.click(screen.getByRole('button', { name: 'Redo' }))
+    drag(picture, [700, 400], [700, 400])
+    expect(picture.querySelector('.markup-editor__selected')).toBeNull()
+    expect(marksList()).toEqual(['Box'])
+  })
+
+  it('resizes a selected mark by its handle', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    drag(picture, [150, 100], [150, 100])
+    drag(picture, [300, 200], [500, 400])
+    expect(place(shapes(picture)[0]!, 'x', 'y', 'width', 'height')).toEqual([100, 100, 400, 300])
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(place(shapes(picture)[0]!, 'width')).toEqual([200])
+  })
+
+  it('writes a note on a shape, which goes with it, and frees it when dragged off', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('t')
+    await addNote(picture, [150, 150], 'Too low')
+    expect(marksList()).toEqual(['Box', 'Note on the box: Too low'])
+    await userEvent.keyboard('v')
+    drag(picture, [200, 100], [300, 200])
+    expect(place(shapes(picture)[1]!, 'x')).toEqual([250])
+    // Dragged off, it is free, and says so.
+    drag(picture, [260, 250], [800, 450])
+    expect(marksList()).toEqual(['Box', 'Note: Too low'])
+    expect(screen.getByRole('status')).toHaveTextContent('The note is free now. It stays where you put it.')
+    drag(picture, [300, 100], [300, 20])
+    expect(place(shapes(picture)[1]!, 'x')).not.toEqual([250])
+    expect(marksList()).toEqual(['Box', 'Note: Too low'])
+  })
+
+  it('attaches a free note let go on a shape', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('t')
+    await addNote(picture, [700, 400], 'Here')
+    expect(marksList()).toEqual(['Box', 'Note: Here'])
+    await userEvent.keyboard('v')
+    drag(picture, [705, 400], [155, 150])
+    expect(marksList()).toEqual(['Box', 'Note on the box: Here'])
+    expect(screen.getByRole('status')).toHaveTextContent('The note now moves with the box.')
+  })
+
+  it('takes a note off with its shape, and Undo brings both back', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('t')
+    await addNote(picture, [150, 150], 'Too low')
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Box' }))
+    expect(marksList()).toEqual([])
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(marksList()).toEqual(['Box', 'Note on the box: Too low'])
+  })
+
+  it('draws the words alone, in the ink, with an edge and no label behind them', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('t')
+    await addNote(picture, [600, 300], 'No label')
+    const words = picture.querySelector('text')!
+    expect(words.closest('g')).toBeNull()
+    expect(picture.querySelectorAll('rect')).toHaveLength(1)
+    expect(words.getAttribute('paint-order')).toBe('stroke')
+    expect(words.getAttribute('stroke')).toMatch(/^rgb\(/u)
+  })
+
+  it('sizes the selected text and the next note, and keeps A− and A+ off until there is text to size', async () => {
+    const picture = await withABox()
+    const larger = screen.getByRole('button', { name: 'Make the text larger' }), smaller = screen.getByRole('button', { name: 'Make the text smaller' })
+    expect(larger).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.keyboard('t')
+    expect(larger).toHaveAttribute('aria-disabled', 'false')
+    await userEvent.click(larger)
+    await addNote(picture, [600, 300], 'Big')
+    const font = () => picture.querySelector('text')!.style.font
+    expect(font()).toContain(`${1000 / 48 * 1.4}px`)
+    await userEvent.keyboard('v')
+    drag(picture, [605, 300], [605, 300])
+    await userEvent.click(smaller)
+    await userEvent.click(smaller)
+    expect(font()).toContain(`${1000 / 48 * 0.7}px`)
+    expect(smaller).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(smaller)
+    expect(font()).toContain(`${1000 / 48 * 0.7}px`)
+    // Each step is a step of Undo.
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(font()).toContain(`${1000 / 48 * 1}px`)
+    act(() => picture.focus())
+    drag(picture, [605, 300], [605, 300])
+    await userEvent.keyboard('=')
+    expect(font()).toContain(`${1000 / 48 * 1.4}px`)
+    await userEvent.keyboard('-')
+    expect(font()).toContain(`${1000 / 48 * 1}px`)
+  })
+
+  it('works from the keyboard: Enter steps through the marks, the arrow keys move and resize, Delete takes it off, Escape lets go', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Arrow' }))
+    drag(picture, [500, 100], [700, 200])
+    await userEvent.keyboard('v')
+    act(() => picture.focus())
+    // No cross with Move, since nothing is drawn at one.
+    expect(picture.querySelector('.markup-editor__cross')).toBeNull()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByRole('status')).toHaveTextContent('Selected Box.')
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}{ArrowDown}')
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([120, 110])
+    // A run of presses is one step of Undo.
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+    await userEvent.keyboard('{Control>}{Shift>}z{/Shift}{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([120, 110])
+    await userEvent.keyboard('{Alt>}{ArrowRight}{/Alt}')
+    expect(place(shapes(picture)[0]!, 'width')).toEqual([210])
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByRole('status')).toHaveTextContent('Selected Arrow.')
+    await userEvent.keyboard('{Delete}')
+    expect(marksList()).toEqual(['Box'])
+    expect(document.activeElement).toBe(picture)
+    // Escape lets the selection go first, and only then cancels.
+    await userEvent.keyboard('{Enter}')
+    expect(picture.querySelector('.markup-editor__selected')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    expect(picture.querySelector('.markup-editor__selected')).toBeNull()
+    expect(screen.getByRole('application')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('application')).toBeNull()
+  })
+
+  it('frees a note moved off its shape with the arrow keys, so taking the shape off leaves it', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('t')
+    await addNote(picture, [150, 150], 'Too low')
+    await userEvent.click(screen.getByRole('button', { name: /^Select Note on the box/u }))
+    await userEvent.keyboard('{Shift>}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{/Shift}')
+    expect(marksList()).toEqual(['Box', 'Note: Too low'])
+    expect(screen.getByRole('status')).toHaveTextContent('The note is free now.')
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Box' }))
+    expect(marksList()).toEqual(['Note: Too low'])
+  })
+
+  it('never folds a move into whatever was done after an Undo', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('v')
+    await userEvent.click(screen.getByRole('button', { name: 'Select Box' }))
+    await userEvent.keyboard('{ArrowRight}')
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    await userEvent.keyboard('t')
+    await addNote(picture, [700, 400], 'Here')
+    await userEvent.click(screen.getByRole('button', { name: 'Select Box' }))
+    await userEvent.keyboard('{ArrowRight}')
+    await userEvent.keyboard('{Control>}z{/Control}')
+    // Undo took back only the move; the note is still there.
+    expect(marksList()).toEqual(['Box', 'Note: Here'])
+    expect(place(shapes(picture)[0]!, 'x')).toEqual([100])
+  })
+
+  it('leaves Alt and an arrow key to the dictation hotkey when it holds them', async () => {
+    app.current = { platform: 'win32', settings: { hotkey: 'Alt+Right' } }
+    try {
+      const picture = await withABox()
+      await userEvent.click(screen.getByRole('button', { name: 'Select Box' }))
+      await userEvent.keyboard('{Alt>}{ArrowRight}{/Alt}')
+      expect(place(shapes(picture)[0]!, 'width')).toEqual([200])
+      // Only that chord is the hotkey's: the other direction still resizes.
+      await userEvent.keyboard('{Alt>}{ArrowLeft}{/Alt}')
+      expect(place(shapes(picture)[0]!, 'width')).toEqual([190])
+    } finally { app.current = null }
+  })
+
+  it('selects from the list of marks, with the focus on the picture for the arrow keys', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Select Box' }))
+    expect(screen.getByRole('button', { name: 'Move' })).toHaveAttribute('aria-pressed', 'true')
+    expect(document.activeElement).toBe(picture)
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(place(shapes(picture)[0]!, 'x')).toEqual([90])
+  })
+
+  it('stops a drag at Escape and keeps the mark where it was', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    fireEvent.pointerDown(picture, { pointerId: 1, button: 0, clientX: 200, clientY: 100, pointerType: 'mouse' })
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(place(shapes(picture)[0]!, 'x')).toEqual([300])
+    fireEvent.keyDown(picture, { key: 'Escape' })
+    expect(place(shapes(picture)[0]!, 'x')).toEqual([100])
+    expect(screen.getByRole('application')).toBeTruthy()
+    fireEvent.pointerUp(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(place(shapes(picture)[0]!, 'x')).toEqual([100])
+  })
+
+  it('keeps a mark deleted during a drag gone once the drag ends, and Undo brings it back where it was', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    fireEvent.pointerDown(picture, { pointerId: 1, button: 0, clientX: 200, clientY: 100, pointerType: 'mouse' })
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    fireEvent.keyDown(picture, { key: 'Delete' })
+    expect(marksList()).toEqual([])
+    // The drag stopped with the mark, so the pointer has nothing left to move or to keep.
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 500, clientY: 350, pointerType: 'mouse' })
+    expect(shapes(picture)).toHaveLength(0)
+    fireEvent.pointerUp(picture, { pointerId: 1, clientX: 500, clientY: 350, pointerType: 'mouse' })
+    expect(marksList()).toEqual([])
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(marksList()).toEqual(['Box'])
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+  })
+
+  it('stops a drag when Undo changes the marks under it, and leaves Redo to bring the change back', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Arrow' }))
+    drag(picture, [500, 100], [700, 200])
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    fireEvent.pointerDown(picture, { pointerId: 1, button: 0, clientX: 200, clientY: 100, pointerType: 'mouse' })
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    fireEvent.keyDown(picture, { key: 'z', ctrlKey: true })
+    // The arrow goes at once, and the box is back where it was.
+    expect(marksList()).toEqual(['Box'])
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+    fireEvent.pointerUp(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(marksList()).toEqual(['Box'])
+    expect(place(shapes(picture)[0]!, 'x', 'y')).toEqual([100, 100])
+    await userEvent.click(screen.getByRole('button', { name: 'Redo' }))
+    expect(marksList()).toEqual(['Box', 'Arrow'])
+  })
+
+  it('stops a resize when the Undo button takes the mark away, as a second finger can', async () => {
+    const picture = await withABox()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    drag(picture, [200, 100], [200, 100])
+    fireEvent.pointerDown(picture, { pointerId: 1, button: 0, clientX: 300, clientY: 200, pointerType: 'mouse' })
+    fireEvent.pointerMove(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(place(shapes(picture)[0]!, 'width')).toEqual([300])
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    fireEvent.pointerUp(picture, { pointerId: 1, clientX: 400, clientY: 300, pointerType: 'mouse' })
+    expect(marksList()).toEqual([])
+  })
+
+  it('takes a move and a resize by the keys back one at a time, and a run of either as one', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('v')
+    act(() => picture.focus())
+    await userEvent.keyboard('{Enter}{ArrowRight}{ArrowRight}')
+    await userEvent.keyboard('{Alt>}{ArrowRight}{ArrowRight}{/Alt}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([120, 220])
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([120, 200])
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([100, 200])
+    // And the other way round.
+    await userEvent.keyboard('{Alt>}{ArrowRight}{/Alt}{ArrowRight}')
+    await userEvent.keyboard('{Control>}z{/Control}')
+    expect(place(shapes(picture)[0]!, 'x', 'width')).toEqual([100, 210])
+  })
+
+  it('hands the copy the marks as they stand after moving, with the note\'s size and without the outline', async () => {
+    const picture = await withABox()
+    await userEvent.keyboard('t')
+    await addNote(picture, [150, 150], 'Too low')
+    await userEvent.keyboard('v')
+    drag(picture, [200, 100], [300, 200])
+    await userEvent.click(screen.getByRole('button', { name: 'Add to reply' }))
+    await waitFor(() => expect(vi.mocked(markedCopy)).toHaveBeenCalled())
+    const marks = vi.mocked(markedCopy).mock.calls[0]![2]
+    expect(marks[0]).toMatchObject({ tool: 'box', x0: 200, y0: 200, x1: 400, y1: 300 })
+    expect(marks[1]).toMatchObject({ tool: 'note', x0: 250, y0: 250, text: 'Too low', scale: 1, on: marks[0]!.id })
   })
 })

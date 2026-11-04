@@ -11,7 +11,7 @@ export interface MicrophoneAccessAdapter {
 }
 
 export interface MicrophoneAccessGate {
-  ensure(): Promise<boolean>
+  ensure(onWaiting?: (waiting: boolean) => void): Promise<boolean>
   /** Synchronous OS read for Chromium's permission check, which must not pre-grant. */
   isGranted(): boolean
 }
@@ -20,6 +20,7 @@ export function createMicrophoneAccessGate(
   adapter: MicrophoneAccessAdapter,
 ): MicrophoneAccessGate {
   let prompt: Promise<boolean> | null = null
+  let pending = false
 
   // The OS shows its consent dialog at most once per install, so the first
   // request owns the answer: concurrent callers share it, and a later caller
@@ -27,7 +28,9 @@ export function createMicrophoneAccessGate(
   const requestOnce = (): Promise<boolean> => {
     if (prompt === null) {
       try {
-        prompt = adapter.request().catch(() => false)
+        const requested = adapter.request()
+        pending = true
+        prompt = requested.catch(() => false).finally(() => { pending = false })
       } catch {
         prompt = Promise.resolve(false)
       }
@@ -45,7 +48,7 @@ export function createMicrophoneAccessGate(
         return false
       }
     },
-    ensure: async (): Promise<boolean> => {
+    ensure: async (onWaiting): Promise<boolean> => {
       let status: MediaAccessStatus
       try {
         status = adapter.status()
@@ -59,8 +62,16 @@ export function createMicrophoneAccessGate(
         case 'denied':
         case 'restricted':
           return false
-        case 'not-determined':
-          return await requestOnce()
+        case 'not-determined': {
+          const requested = requestOnce()
+          if (!pending) return await requested
+          onWaiting?.(true)
+          try {
+            return await requested
+          } finally {
+            onWaiting?.(false)
+          }
+        }
         default:
           // Fail open: Chromium still gates the capture itself, so an
           // unreadable OS status must not be the thing that blocks dictation.

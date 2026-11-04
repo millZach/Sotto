@@ -110,7 +110,11 @@ msgid "{0}, asked again"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgid "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "{about}, {system}. No account with Sotto. Product events are on until you turn them off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -127,6 +131,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{all} tokens in all"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{answers} of {cap} today, on your own provider account."
 msgstr ""
 
 #: src/renderer/src/watcher/checkQueueWords.ts
@@ -538,6 +546,10 @@ msgstr ""
 msgid "{name} limits read just now"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{name} pressed Link again. Press it too to keep the link."
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{name} reports when this resets, not how much is used."
 msgstr ""
@@ -587,6 +599,30 @@ msgstr ""
 msgid "{name}: use not reported, the {noun} resets {resetsLong}"
 msgstr ""
 
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s computer did not answer. Nothing is waiting to send. Ask again when it is on."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s computer has answered as many asks as it takes today. Nothing was run. Ask again tomorrow."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s computer has taken a lot of asks in the last few minutes. Nothing was run. Ask again in ten minutes."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s computer is still answering another ask. Nothing was run. Ask again in a minute."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s computer no longer has this link. Nothing was asked. Make a new code on the Teams tab to link again."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s computer turned this ask down. Nothing was run."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "{name}'s history appears after its host update."
@@ -610,6 +646,18 @@ msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s Watcher"
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s Watcher asked about merge priority."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "{name}'s Watcher asked what you are working on."
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -670,6 +718,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "{ready} of {total} ready. Settings › Providers manages them later."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "{refused} turned down."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -948,8 +1000,16 @@ msgstr ""
 msgid "A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready."
 msgstr ""
 
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "A teammate's message. It changes nothing here. Your Watcher reads it with your next message."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "A thread"
+msgstr ""
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "A thread begins its first turn. It shows which providers and ways of starting get used."
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -969,6 +1029,10 @@ msgstr ""
 #. Whose a check is: a thread delegated it.
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A thread’s"
+msgstr ""
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "A turn ends. It shows reliability, speed and token use by provider and model."
 msgstr ""
 
 #. Heading over the running version and what Sotto sends where
@@ -1169,6 +1233,10 @@ msgstr ""
 msgid "answering the fairness check"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Answers"
+msgstr ""
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
 msgstr ""
@@ -1217,6 +1285,10 @@ msgstr ""
 msgid "Asking {machine}"
 msgstr ""
 
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "Asking {name}'s computer…"
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Asking the Council…"
 msgstr ""
@@ -1260,7 +1332,7 @@ msgid "Attach to a thread"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer."
+msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -1368,6 +1440,7 @@ msgid "Cancel"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
+#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Cancel code"
 msgstr ""
 
@@ -1399,6 +1472,8 @@ msgstr ""
 msgid "Chair"
 msgstr ""
 
+#. Opens the list of threads a Council question can come from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Change"
 msgstr ""
@@ -1413,6 +1488,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Change the criteria"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Change these on the Teams tab in Watcher's room."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
@@ -1612,6 +1691,7 @@ msgid "Clear usage…"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Close"
@@ -1825,6 +1905,7 @@ msgstr ""
 #. A transcript copy button, after it copied
 #: src/renderer/src/features/dictate/Journal.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
+#: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1835,6 +1916,10 @@ msgstr ""
 #. Copies a transcript
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Copy"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Copy code"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -1881,6 +1966,10 @@ msgstr ""
 msgid "Could not install update"
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Could not load this thread’s messages. Open it in Sotto or reopen the popup to try again."
+msgstr ""
+
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Could not reach OpenRouter."
 msgstr ""
@@ -1915,13 +2004,6 @@ msgstr ""
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Could not stop"
-msgstr ""
-
-#. The Council page: one question put to several models, which answer, review each other and get a verdict.
-#. The room switch: the Council page, one question put to several models (ADR-0177).
-#: src/renderer/src/components/AppShell.tsx
-#: src/renderer/src/features/council/CouncilView.tsx
-msgid "Council"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
@@ -2122,6 +2204,7 @@ msgid "done"
 msgstr ""
 
 #. An Omarchy setup piece that is set up
+#. Closes the list of threads a Council question can come from
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
@@ -2183,6 +2266,10 @@ msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "Each bar is one second of the last minute; taller means main was blocked longer."
+msgstr ""
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
@@ -2250,6 +2337,10 @@ msgstr ""
 msgid "Esc stops it"
 msgstr ""
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Every product event"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Every step after this one can be skipped and finished later in Settings."
 msgstr ""
@@ -2302,12 +2393,20 @@ msgstr ""
 msgid "Favourites: {liked}."
 msgstr ""
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Files Watcher changed"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Filter threads"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Find a thread"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -2384,6 +2483,8 @@ msgstr ""
 msgid "French"
 msgstr ""
 
+#. The thread a Council question comes from
+#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "From"
 msgstr ""
@@ -2452,6 +2553,15 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "Go to the question from {title} in this conversation"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Got a code from your teammate?"
+msgstr ""
+
+#. On the product events notice: keeps them on and closes the notice.
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Got it"
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -2760,6 +2870,10 @@ msgstr ""
 msgid "It last worked {0} and is between turns."
 msgstr ""
 
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys."
+msgstr ""
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions."
 msgstr ""
@@ -2838,6 +2952,10 @@ msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Keep history"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Keep it"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -2931,8 +3049,21 @@ msgstr ""
 msgid "Last used"
 msgstr ""
 
+#. placeholder {0}: whenOf(link.lastUsedAt, Date.now())
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "last used {0}"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Last used {used}."
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Last. Sotto asks before it restarts."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Lasts until {until}."
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -2941,6 +3072,10 @@ msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "Later: fold this card. The update control keeps the download."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Latest"
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -2993,6 +3128,10 @@ msgstr ""
 msgid "Let phones connect"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Let your Watcher and a teammate's talk, direct over your tailnet"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
 msgstr ""
@@ -3012,6 +3151,22 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Lines"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Link"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Link again"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Link with {name}"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Link with a teammate"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilChamber.tsx
@@ -3101,6 +3256,10 @@ msgstr ""
 
 #: src/renderer/src/features/performance/PerformanceSettings.tsx
 msgid "Main was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Make a code"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/LookStep.tsx
@@ -3428,6 +3587,10 @@ msgstr ""
 msgid "Next"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "No answer came."
+msgstr ""
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "No app noted yet. Sotto notes the app it pastes into."
 msgstr ""
@@ -3509,8 +3672,16 @@ msgstr ""
 msgid "No outside research: the panelists work from the snapshot and the conversation."
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No outside research: the panelists work from the thread's folder and the conversation."
+msgstr ""
+
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "No preference"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "No projects yet."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageCharts.tsx
@@ -3554,7 +3725,7 @@ msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans 
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "No Sotto account, no telemetry"
+msgid "No Sotto account. Product events are on until you turn them off in Settings"
 msgstr ""
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
@@ -3592,6 +3763,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "No thread matches “{typed}”."
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "No thread matches."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageCharts.tsx
@@ -3867,6 +4042,14 @@ msgstr ""
 msgid "On {where}: <0>{left}%</0> left, {windowName} · {age}"
 msgstr ""
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Once per start, for each account signed in. It links one person’s computers."
+msgstr ""
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Once per start. It counts active installs by version and system."
+msgstr ""
+
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "One line at the end of ~/.config/hypr/bindings.lua, after a backup copy."
 msgstr ""
@@ -3991,6 +4174,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Opened in your browser"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Opening Teams…"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -4145,6 +4332,10 @@ msgstr ""
 msgid "Paste test"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Paste their code"
+msgstr ""
+
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Pasted into {deliveredApp}."
 msgstr ""
@@ -4293,6 +4484,10 @@ msgstr ""
 msgid "Privacy"
 msgstr ""
 
+#: src/renderer/src/App.tsx
+msgid "Product events are off. Sotto sends nothing."
+msgstr ""
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Project: {scope}"
 msgstr ""
@@ -4416,6 +4611,14 @@ msgstr ""
 msgid "Quiet"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Ran out on {until}."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Ran out on {until}. {name} cannot ask until you both press Link again."
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ranked first: {ranked}."
 msgstr ""
@@ -4460,6 +4663,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "Read again"
+msgstr ""
+
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "Read every field on the docs page"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
@@ -4526,6 +4733,10 @@ msgstr ""
 #: src/renderer/src/features/council/CouncilChamber.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Reading the conversation"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Reading the Councils…"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilChamber.tsx
@@ -4676,6 +4887,18 @@ msgstr ""
 msgid "Remove all"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Remove link"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Remove the link with {name}"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Remove the link with {name}? Nothing is sent to them. Their next ask will say the link is gone."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Remove the usage figures saved on {clearingList}?"
 msgstr ""
@@ -4712,6 +4935,10 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Research outside the snapshot"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Research outside the thread's folder"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
@@ -4902,12 +5129,20 @@ msgstr ""
 msgid "Second kind"
 msgstr ""
 
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "See every event"
+msgstr ""
+
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Send"
 msgstr ""
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Send (Return)"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Send this to your teammate. It works once, until {expires}."
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -5267,6 +5502,10 @@ msgstr ""
 msgid "Sotto could not connect it."
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Sotto could not do that. Nothing changed. Try again."
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Sotto could not do that. Nothing was changed. Try again."
 msgstr ""
@@ -5344,7 +5583,7 @@ msgid "Sotto could not read phone access. Nothing was changed. You can turn it o
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
-msgid "Sotto could not read the Councils. Nothing was changed. Open the page again."
+msgid "Sotto could not read the Councils. Nothing was changed. Open the Council again."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
@@ -5367,12 +5606,20 @@ msgstr ""
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
 msgstr ""
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read the threads. Reopen the popup and try again."
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
 msgstr ""
 
 #: src/renderer/src/watcher/watcherRoom.tsx
 msgid "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Sotto could not read Watcher’s room. Reopen the popup and try again."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ComputersStep.tsx
@@ -5483,6 +5730,10 @@ msgstr ""
 msgid "Sotto never updates itself on Linux. New versions come through pacman."
 msgstr ""
 
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Sotto now sends product events"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Sotto opens the microphone only while you dictate or run this test."
 msgstr ""
@@ -5493,6 +5744,10 @@ msgstr ""
 
 #: src/renderer/src/App.tsx
 msgid "Sotto restored default settings after a local settings file could not be read. The original file was preserved."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Sotto says nothing to a teammate's computer until one of you asks, so this page never says who is online."
 msgstr ""
 
 #: src/renderer/src/App.tsx
@@ -5948,6 +6203,15 @@ msgstr ""
 msgid "Talking to Watcher. Switch to the thread"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Team links"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Teams"
+msgstr ""
+
 #: src/renderer/src/features/performance/PerformanceSettings.tsx
 msgid "Tell me when main freezes"
 msgstr ""
@@ -6152,6 +6416,14 @@ msgstr ""
 msgid "The panelists research outside the snapshot with their own tools."
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools: {reason}"
+msgstr ""
+
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "The panelists research outside the thread's folder with their own tools."
+msgstr ""
+
 #: src/renderer/src/features/council/CouncilSeats.tsx
 msgid "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
 msgstr ""
@@ -6217,6 +6489,10 @@ msgstr ""
 msgid "The window {host} last read ended on {day}. Read again for the new one."
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Their computer must be able to reach yours on a tailnet, and yours theirs. On separate tailnets, share your computers with each other in Tailscale first."
+msgstr ""
+
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "Theme"
 msgstr ""
@@ -6256,6 +6532,7 @@ msgstr ""
 #: src/renderer/src/features/usage/UsageView.tsx
 #: src/renderer/src/watcher/machineWords.ts
 #: src/renderer/src/watcher/MoveThreads.tsx
+#: src/renderer/src/watcher/TeamsPage.tsx
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "This computer"
@@ -6287,6 +6564,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "This link has run out on {name}'s computer. Press Link again on the Teams tab."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -6321,8 +6602,6 @@ msgstr ""
 msgid "This work wasn't matched to a model."
 msgstr ""
 
-#. The thread a Council question comes from
-#: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr ""
@@ -6365,6 +6644,10 @@ msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "to do"
+msgstr ""
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
 msgstr ""
 
 #: src/renderer/src/features/dictate/journalFacts.ts
@@ -6537,6 +6820,15 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Trying again…"
+msgstr ""
+
+#. On the product events notice: turns them off.
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Turn off"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Turn on Serve"
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -6805,6 +7097,10 @@ msgstr ""
 msgid "Waiting for {0}"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Waiting for {name} to press Link again."
+msgstr ""
+
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Waiting for {names}"
 msgstr ""
@@ -6815,6 +7111,10 @@ msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "waiting for its threads"
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Waiting for the answer."
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -6957,6 +7257,10 @@ msgid "Watcher’s permissions"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
+msgid "Watcher's room"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Watcher’s room"
 msgstr ""
 
@@ -7014,8 +7318,16 @@ msgstr ""
 msgid "What Watcher did"
 msgstr ""
 
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "What you share"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "What you were writing moved here."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "When a teammate asks, your computer tells them each thread's title, project and where it stands, and its open pull requests. Never its messages, code or file names. Thread titles come from your words, so untick any project they should not see."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
@@ -7107,6 +7419,10 @@ msgstr ""
 msgid "Working in a snapshot of {branch} at {commit}."
 msgstr ""
 
+#: src/renderer/src/features/council/CouncilView.tsx
+msgid "Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite."
+msgstr ""
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Working preferences"
@@ -7149,6 +7465,11 @@ msgstr ""
 msgid "Yesterday"
 msgstr ""
 
+#. placeholder {0}: linkNames.join(', ')
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "You and {0}, direct over your tailnet"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You answered {title} in your own words."
 msgstr ""
@@ -7159,6 +7480,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "You answered {title}."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "You asked {name} about merge priority."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "You asked {name} what they are working on."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ProjectStep.tsx
@@ -7205,6 +7534,10 @@ msgstr ""
 msgid "You skipped {title}’s question."
 msgstr ""
 
+#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
+msgid "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."
+msgstr ""
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You told Sotto"
 msgstr ""
@@ -7219,6 +7552,10 @@ msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
+msgstr ""
+
+#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
+msgid "Your answer could not be saved, and nothing was sent. Try again."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -7245,6 +7582,22 @@ msgstr ""
 msgid "Your completed text is below. Copy it again, or select and copy it yourself."
 msgstr ""
 
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "Your computer answered with a plain list:"
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "Your computer answered:"
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "Your computer is answering from your thread list."
+msgstr ""
+
+#: src/renderer/src/watcher/TeammateMessages.tsx
+msgid "Your computer turned this down and ran nothing."
+msgstr ""
+
 #: src/renderer/src/features/onboarding/ComputersStep.tsx
 msgid "Your computers"
 msgstr ""
@@ -7263,6 +7616,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Your last message was not confirmed."
+msgstr ""
+
+#: src/renderer/src/watcher/TeamsPage.tsx
+msgid "Your name, as your teammate sees it"
 msgstr ""
 
 #: src/renderer/src/features/dictate/JournalStats.tsx

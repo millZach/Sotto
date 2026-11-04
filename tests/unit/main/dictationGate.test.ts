@@ -30,6 +30,7 @@ function listener(): KeyListener & { watched: () => readonly string[]; chords: (
     }),
     record: vi.fn(), request: vi.fn(), running: () => watched.length > 0, ready: () => true,
     permission: () => 'granted', dispose: vi.fn(),
+    paste: vi.fn(async () => 'not-sent' as const),
     watched: () => watched,
     chords: () => chords,
   } as KeyListener & { watched: () => readonly string[]; chords: () => readonly string[] }

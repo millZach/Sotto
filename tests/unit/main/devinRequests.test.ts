@@ -10,7 +10,7 @@ describe('Devin native requests', () => {
   it('joins permission scope to the exact earlier tool and exposes only once decisions', () => {
     const pending = devinPending(2, 'session/request_permission', permission, 'thread', tool)!
     expect(pending.request.text).toBe('Write marker')
-    expect(pending.request.context?.details).toBe(JSON.stringify(tool.rawInput))
+    expect(pending.request.context).toMatchObject({ action: 'Write a file', target: '/project/marker', details: 'marker' })
     expect(pending.actionDetails).toBe(JSON.stringify(tool.rawInput))
     expect(pending.request.permissionChoices?.map(choice => choice.id)).toEqual(['once', 'deny'])
     expect(devinAnswer(pending, '', true, undefined, 'once')).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
@@ -48,7 +48,8 @@ describe('Devin native requests', () => {
 it('shows the complete verified existing-file replacement before one-time approval', () => {
   const input = { file_path: '/project/existing.txt', old_string: 'Before', new_string: 'After' }
   const pending = devinPending(4, 'session/request_permission', permission, 'thread', { toolCallId: 'tool', title: 'Replace text', rawInput: input })!
-  expect(pending.request.context?.details).toBe(JSON.stringify(input))
+  expect(pending.request.context).toMatchObject({ action: 'Edit a file', target: '/project/existing.txt', details: '- Before\n+ After' })
+  expect(pending.actionDetails).toBe(JSON.stringify(input))
   expect(devinAnswer(pending, '', true, undefined, 'once')).toEqual({ outcome: { outcome: 'selected', optionId: 'once' } })
   expect(() => devinPending(4, 'session/request_permission', permission, 'thread', {
     toolCallId: 'tool', rawInput: { file_path: '/project/existing.txt', old_string: 'Before' },
@@ -64,7 +65,8 @@ it('presents command permission scope once while retaining exact internal action
   const detailedInput = { command: 'git status', cwd: '/project', background: false }
   const detailed = devinPending(6, 'session/request_permission', permission, 'thread', { toolCallId: 'tool', title: 'Inspect project', rawInput: detailedInput })!
   expect(detailed.request.text).toBe('Inspect project')
-  expect(detailed.request.context).toEqual({ toolCallId: 'tool', details: JSON.stringify(detailedInput) })
+  // Nothing is left out: the command, its folder and its other setting all show, none of them as JSON.
+  expect(detailed.request.context).toEqual({ toolCallId: 'tool', command: 'git status', cwd: '/project', details: 'background: false' })
   expect(detailed.actionDetails).toBe(JSON.stringify(detailedInput))
 })
 

@@ -9,8 +9,9 @@ import { defaultModel, fitEffort, type WorkerRoleDefault } from './workerRoles'
 
 /**
  * The Council (ADR-0177, an Owl feature): one question from a thread put to two to five **panelists** and a **chair**,
- * each an ordinary Sotto thread on its own provider, working in a snapshot of the thread's folder. These are the shapes
- * both processes share: the four settings, the seats Sotto fills when the user chose none, and the window's bridge.
+ * each an ordinary Sotto thread on its own provider, working in a snapshot of the thread's folder, or in the folder itself
+ * when it is not a Git repository. These are the shapes both processes share: the four settings, the seats Sotto fills
+ * when the user chose none, and the window's bridge.
  */
 export const COUNCIL_PANELISTS_MIN = 2
 export const COUNCIL_PANELISTS_MAX = 5
@@ -365,8 +366,11 @@ export const councilViewSchema = z.object({
   status: z.enum(['working', 'waiting', 'done', 'stopped', 'settled']),
   /** Why it stopped when Sotto stopped it: its words were lost to a restart with Keep local history off. */
   stoppedBecause: z.enum(['user', 'words-lost', 'snapshot']).optional(),
-  /** Where the Council works: the branch and commit, and whether the snapshot carried uncommitted changes and how many untracked files. */
-  snapshot: z.object({ commit: z.string().max(64), branch: z.string().max(512), untracked: count, dirty: z.boolean(), removed: z.boolean() }).strict(),
+  /**
+   * Where the Council works: the branch and commit, and whether the snapshot carried uncommitted changes and how many
+   * untracked files. Absent when the thread's folder is not a Git repository, so the Council works in that folder itself.
+   */
+  snapshot: z.object({ commit: z.string().max(64), branch: z.string().max(512), untracked: count, dirty: z.boolean(), removed: z.boolean() }).strict().optional(),
   /** How each thread read the whole conversation: in its first prompt, or in parts before it when it was too long for one. */
   history: z.object({ messages: count, words: count, parts: count }).strict(),
   seats: z.array(councilSeatViewSchema).max(COUNCIL_PANELISTS_MAX + 1),

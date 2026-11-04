@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
 import { browserRequestText, TOOLS_STILL_DECIDES } from './browserRequests'
+import { changeFilesAction, modelSummary, readableFields } from './requestInput'
 import { BROWSER_MCP_SERVER } from './browserAgentServer'
 
 const option = z.object({ label: z.string(), description: z.string().optional() })
@@ -55,6 +56,13 @@ function codexBrowserText(params: z.infer<typeof paramsSchema>): string | undefi
     + '\n' + TOOLS_STILL_DECIDES
 }
 
+/** What a remembered rule would cover, in words. */
+function amendmentWords(amendment: z.infer<typeof amendmentSchema>): string {
+  if ('acceptWithExecpolicyAmendment' in amendment) return `Commands that start with ${amendment.acceptWithExecpolicyAmendment.execpolicy_amendment.join(' ')}`
+  const { action, host } = amendment.applyNetworkPolicyAmendment.network_policy_amendment
+  return `Network requests to ${host} are ${action === 'deny' ? 'refused' : 'allowed'}`
+}
+
 export function pendingRequest(id: string | number, method: string, value: unknown, sessionId: string, fileSummary?: string): CodexPendingRequest | undefined {
   const mapping = requestMethods[method]
   if (!mapping) return
@@ -103,14 +111,18 @@ export function pendingRequest(id: string | number, method: string, value: unkno
     const amendment = amendmentSchema.safeParse(value)
     if (amendment.success) {
       const denying = 'applyNetworkPolicyAmendment' in amendment.data && amendment.data.applyNetworkPolicyAmendment.network_policy_amendment.action === 'deny'
-      return [{ id: `native-decision:${index}`, label: denying ? 'Deny and remember this network rule' : 'Allow and remember this rule', kind: denying ? 'deny' : 'allow-always', description: JSON.stringify(amendment.data) }]
+      return [{ id: `native-decision:${index}`, label: denying ? 'Deny and remember this network rule' : 'Allow and remember this rule', kind: denying ? 'deny' : 'allow-always', description: amendmentWords(amendment.data) }]
     }
     return [] // Unknown native payloads cannot become guessed grants.
   })
+  // Codex's reason is the only words it sends for a request, so on a permission that names something else it is the summary.
+  const summary = permission && (params.command || fileSummary || params.grantRoot) ? modelSummary(params.reason, params.command ?? undefined) : undefined
+  const files = permission && !params.command && fileSummary ? fileSummary : undefined
+  const fields = readableFields({ ...(params.reason && !summary && text !== params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { network: params.networkApprovalContext } : {}) })
   return { id, method, sessionId, params, request: { id: requestKey(id), kind: mapping.kind, text, options,
     ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length, prose: true as const })) } : formQuestions ? { questions: formQuestions } : {}),
     ...(permission ? { permissionChoices } : { skippable: true as const }), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
-      details: JSON.stringify({ ...(params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { networkApprovalContext: params.networkApprovalContext } : {}), ...(fileSummary ? { files: fileSummary } : {}) }).slice(0, 100000) } } }
+      ...(files ? { action: changeFilesAction(files.split('\n').length) } : {}), ...(summary ? { summary } : {}), ...(files || fields ? { details: [files, fields].filter(Boolean).join('\n') } : {}) } } }
 }
 
 export function declineRequest(method: string): unknown {

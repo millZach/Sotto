@@ -37,23 +37,24 @@ describe.runIf(hasSwiftc)('macOS key listener helper', () => {
     expect(spawnSync(binary, ['--selftest'], { stdio: 'inherit' }).status).toBe(0)
   }, 180_000)
 
-  it('reports permission first and exits 0 when stdin closes', async () => {
+  it('reports permission then its paste capability and exits 0 when stdin closes', async () => {
     const helper = startHelper()
-    await helper.waitFor((seen) => seen.length > 0, 5_000)
+    await helper.waitFor((seen) => seen.length >= 2, 5_000)
     expect(helper.lines[0]).toMatch(/^permission (granted|denied)$/)
+    expect(helper.lines[1]).toBe('capability paste-v1')
     helper.child.stdin.end()
     expect(await helper.exited).toBe(0)
   })
 
   it.runIf(live)('reports a posted key while recording', async () => {
     const helper = startHelper(['--accept-synthetic'])
-    await helper.waitFor((seen) => seen.length > 0, 5_000)
+    await helper.waitFor((seen) => seen.length >= 2, 5_000)
     expect(helper.lines[0]).toBe('permission granted')
     helper.child.stdin.write('record on\n')
     await new Promise((wait) => setTimeout(wait, 200))
     execFileSync('osascript', ['-e', 'tell application "System Events" to key code 0'])
     await helper.waitFor((seen) => seen.includes('up A'), 5_000)
-    expect(helper.lines.slice(1)).toEqual(['down A', 'up A'])
+    expect(helper.lines.slice(2)).toEqual(['down A', 'up A'])
     helper.child.stdin.end()
     expect(await helper.exited).toBe(0)
   })

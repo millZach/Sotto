@@ -1,0 +1,14 @@
+{
+  "pasteDelayMs": 50,
+  "trialsPerApp": 10,
+  "results": [
+    {
+      "app": "Code",
+      "expected": 10,
+      "firstClause": 10,
+      "lastClause": 10,
+      "chars": 530,
+      "passed": true
+    }
+  ]
+}

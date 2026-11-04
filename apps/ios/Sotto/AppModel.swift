@@ -67,13 +67,13 @@ extension AppModel {
         refs.formUnion(pending.map { ThreadRef(hostID: $0.hostID, threadID: $0.threadID).id })
         return refs
     }
-    /// The Threads tab's badge: the requests Needs you shows, and the Recent threads that finished while nothing showed
-    /// them and have not been opened on either device (ADR-0046). A delegated thread counts only through the row that
-    /// stands for it (ADR-0081).
+    /// The Threads tab's badge: the threads this page's Needs you lists, so it agrees with that heading and a thread with
+    /// two requests counts once (ADR-0046, amended). A Recent thread that finished unseen keeps its dot and bold title
+    /// without adding to it. A delegated thread counts only through the row that stands for it (ADR-0081).
     var threadsBadge: Int {
         if let kept = listed.badge, kept.opened == selected { return kept.count }
         let groups = focusThreads(opened: selected)
-        let count = groups.requestCount + groups.unreadFinishedCount
+        let count = groups.questions.count
         listed.badge = (opened: selected, count: count)
         return count
     }
@@ -753,7 +753,7 @@ extension AppModel {
         watchNoticeDismissal?.cancel()
         watchNoticeDismissal = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !Self.watchNoticeStays else { return }
             self?.dismissWatchNotice(notice.id)
         }
     }
@@ -1243,7 +1243,7 @@ struct HeldDetail {
     let detail: ThreadDetail
 }
 
-/// What a press on the folded Duo's thread rail asks of the thread showing. It lives with the model, which
+/// What a press on the Duo's thread rail asks of the thread showing. It lives with the model, which
 /// holds it, so the model's tests compile without the views.
 struct RailAsk: Equatable {
     enum Action: Equatable { case back, agents }
@@ -1291,7 +1291,10 @@ struct RailAsk: Equatable {
     /// The computer being removed, while its pairing is revoked.
     @Published private(set) var removing: String?
     /// What just happened on the tabs. A problem stays until the user dismisses it; a confirmation passes (`confirm`).
-    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel() } }
+    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel(); shelfUndo = nil } }
+    /// The Settle or Restore the computer just confirmed, offered back as Undo beside its words until they go (#1859).
+    @Published private(set) var shelfUndo: ShelfUndo?
+    struct ShelfUndo: Equatable { let ref: ThreadRef; let action: ShelfAction }
     /// Set while `feedback` only says a thing worked, so it leaves by itself and with the page; new for each confirmation.
     @Published private(set) var passing: UUID?
     private var passingShown: UUID?
@@ -1337,11 +1340,15 @@ struct RailAsk: Equatable {
     /// so a revision sets it only when it holds something, and an unchanged nil publishes nothing.
     @Published private(set) var detailProblem: String?
     #if DEBUG && os(iOS)
+    /// The journey that reads what a Watch press said holds it up (`--ui-watch-notice-stays`): a look at the page can take
+    /// longer on a loaded simulator than the eight seconds it lasts.
+    private static let watchNoticeStays = ProcessInfo.processInfo.arguments.contains("--ui-watch-notice-stays")
     /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
     /// app did before the draft and detail stores, and before a computer's unchanged state was left unpublished.
     private static let publishesEverything = ProcessInfo.processInfo.arguments.contains("--ui-publish-everything")
     #else
     private static let publishesEverything = false
+    private static let watchNoticeStays = false
     #endif
     /// Called after a store publishes a change. Only the comparison publishes it on the model too.
     private func publishOnModelIfComparing() {
@@ -1414,9 +1421,11 @@ struct RailAsk: Equatable {
     @Published var show = ComputerFilter.all
     /// A thread whose alert was tapped, for the tabs to open. They set it back to nil once it is open.
     @Published var alertOpened: ThreadRef?
-    /// A press on the folded Duo's thread rail, for the thread showing to act on: its page owns Back and its Agents sheet,
-    /// and a delegated thread opened from Agents is pushed by that page, not by the tabs. Set back to nil once taken.
+    /// A press on the Duo's thread rail, for the thread showing to act on: its page owns Back and its Agents sheet, and a
+    /// delegated thread opened from Agents is pushed by that page, not by the tabs. Set back to nil once taken.
     @Published var railAsked: RailAsk?
+    /// The delegated thread showing over the thread it came from, if one is: the unfolded rail then carries its Back.
+    @Published var railNested: ThreadRef?
     /// What the Threads list is searched for now, read once when the Duo unfolds from it. Not published: nothing draws it.
     var listQuery = ""
 
@@ -1559,6 +1568,8 @@ struct RailAsk: Equatable {
         var caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
         var answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
         if settingThreads { caps["configureThread"] = true; answeringCaps["configureThread"] = true }
+        // The small reply box's journey: this computer can stop a running turn, so the box offers Stop (ADR-0184).
+        if arguments.contains("--ui-can-stop") { caps["interrupt"] = true; answeringCaps["interrupt"] = true }
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
@@ -1595,16 +1606,23 @@ struct RailAsk: Equatable {
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
             if id == "iphone" && settingThreads { row["modelId"] = "fixture-model"; row["runtimeMode"] = "approval-required" }
             if id == "shortcuts" && settingThreads {
-                row["modelId"] = "fixture-model"; row["reasoningEffort"] = "high"; row["runtimeMode"] = "approval-required"
+                // `--ui-top-effort` puts it at its model's top level, where the reply box's trace lights.
+                row["modelId"] = "fixture-model"; row["reasoningEffort"] = arguments.contains("--ui-top-effort") ? "xhigh" : "high"; row["runtimeMode"] = "approval-required"
             }
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
             if id == "settings" || id == "notes" { row["settledAt"] = date }
+            // Settled by the user rather than by age, so its long press offers Restore.
+            if id == "notes" { row["workspaceSettledAt"] = date }
             threads[host, default: []].append(row)
             fixtureDetails[host + "/" + id] = decode(ThreadDetail.self, ["threadId": id, "revision": 1,
                 "messages": [["id": "prompt", "role": "user", "text": title + ". Keep the changes focused."],
                     ["id": "reply", "role": "assistant", "text": "I have the context and am checking the details. The next update will summarize the changes and anything that needs your attention."]],
                 "activities": [["id": "read", "sequence": 1, "kind": "command", "status": "completed", "title": "Read project notes"]]])
+            // A new thread with nothing in it yet, whose reply box stays full.
+            if id == "shortcuts" && arguments.contains("--ui-empty-thread") {
+                fixtureDetails[host + "/" + id] = decode(ThreadDetail.self, ["threadId": id, "revision": 1, "messages": [[String: Any]](), "activities": [[String: Any]]()])
+            }
         }
         if watching {
             // Watcher's two workers on the laptop: one it started, which asks which account to use, and one it sent a note.
@@ -2455,6 +2473,12 @@ struct RailAsk: Equatable {
             && !photos.contains(where: \.preparing) && (photos.isEmpty || photoSupport(ref) == .available)
             && !files.contains(where: \.reading) && (files.isEmpty || fileSupport(ref) == .available)
     }
+    /// Whether a thread's reply box holds something to send: words, photos or files.
+    func replyHoldsAnything(_ ref: ThreadRef) -> Bool { boxHoldsAnything(.thread(ref), draftKey: ref.id) }
+    func watcherBoxHoldsAnything(_ hostID: String) -> Bool { boxHoldsAnything(.watcher(hostID: hostID), draftKey: watcherDraftKey(hostID)) }
+    private func boxHoldsAnything(_ box: PhotoBox, draftKey: String) -> Bool {
+        !(drafts[draftKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !photos(box).isEmpty || !files(box).isEmpty
+    }
     func photos(_ ref: ThreadRef) -> [DraftPhoto] { photos(.thread(ref)) }
     func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }
     func files(_ ref: ThreadRef) -> [DraftFile] { files(.thread(ref)) }
@@ -2528,12 +2552,32 @@ struct RailAsk: Equatable {
     /// settled on its own. One settled with its project, or one its provider closed, offers neither.
     func shelfAction(_ ref: ThreadRef) -> ShelfAction? {
         guard let thread = self.thread(ref) else { return nil }
-        let project = live[ref.hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
+        return shelfAction(thread, hostID: ref.hostID)
+    }
+    private func shelfAction(_ thread: ThreadSummary, hostID: String) -> ShelfAction? {
+        let project = live[hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
         if project?.workspaceSettledAt?.isEmpty == false { return nil }
         if thread.workspaceSettledAt?.isEmpty == false { return .restore }
         return ThreadGroups.isSettled(thread, project: project) ? nil : .settle
     }
     enum ShelfAction { case settle, restore }
+    /// What a list row's long press offers for the shelf, read from the row's own thread so a whole list doesn't search the
+    /// threads once per row, and whether its computer can take it now.
+    func shelfOffer(_ row: HostedThread) -> ShelfOffer? {
+        shelfAction(row.thread, hostID: row.ref.hostID).map { ShelfOffer(action: $0, held: actionHeld(row.ref) != nil) }
+    }
+    struct ShelfOffer: Equatable { let action: ShelfAction; let held: Bool }
+    /// The Undo the banner offers: the thread must still stand where the press put it. One moved on another device, or
+    /// held back from a new connection and not read here, has nothing to take back.
+    var shelfUndoOffered: ShelfUndo? { shelfUndo.flatMap { shelfAction($0.ref) == $0.action ? $0 : nil } }
+    /// Undo beside a confirmed Settle or Restore: the other one, as a press of its own. Settling is reversible, so it acts
+    /// at once and offers this rather than asking first. A press its computer can't take yet says why instead.
+    func undoShelf() async {
+        guard let undo = shelfUndoOffered else { shelfUndo = nil; return }
+        if let held = actionHeld(undo.ref) { feedback = held; return }
+        feedback = nil
+        await shelve(undo.ref, undo.action)
+    }
     func canAnswer(_ request: AgentRequest, in ref: ThreadRef) -> Bool {
         guard canAct(on: ref), mayAnswer(ref.hostID), request.supported else { return false }
         let allowed = capabilities(for: ref)
@@ -3874,6 +3918,7 @@ struct RailAsk: Equatable {
             if feedback == nil || feedbackOperations.contains(item.id) {
                 feedback = item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
                     : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf")
+                shelfUndo = ShelfUndo(ref: ThreadRef(hostID: item.hostID, threadID: item.threadID), action: item.kind == "settle" ? .restore : .settle)
             }
             return
         }

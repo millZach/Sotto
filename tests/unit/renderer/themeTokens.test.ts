@@ -272,6 +272,7 @@ describe('main-window theme tokens', () => {
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
       'src/renderer/src/styles/seeThrough.css',
+      'src/renderer/src/features/productEvents/productEvents.css',
       'src/renderer/src/features/omarchy/omarchySetup.css',
       'src/renderer/src/features/onboarding/onboarding.css',
       'src/renderer/src/features/onboarding/threadsTour.css',
@@ -319,6 +320,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/nextPrompt.css',
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
+      'src/renderer/src/watcher/teams.css',
       'src/renderer/src/watcher/nightScene.css',
       'src/renderer/src/components/clickEffect.css',
       'src/renderer/src/watcher/checkQueue.css',

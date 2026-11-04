@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 
+import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { assertDictateState, assertFocusPresentation, captureFullSurface, capturePage, captureSection, startSettingsAtHeading } from './support/designCapture'
 import { openJournalRow, openPage } from './support/sottoLaunch'
@@ -85,8 +86,10 @@ test.describe('authoritative design-review captures', () => {
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-listening.png', { category: 'dictate', state: 'listening' })
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
-      await assertDictateState(page, 'success', /^pasted into sotto\.$/i)
-      await capturePage(page, 'dictate-pasted.png', { category: 'dictate', state: 'success-pasted' })
+      await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+        clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1,
+      })
+      await assertDictateState(page, 'idle', /ready when you are/i)
     })
 
     await withSotto({ onboardingComplete: true, scenario: 'design-processing' }, async ({ page }) => {

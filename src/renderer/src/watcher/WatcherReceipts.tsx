@@ -1,3 +1,5 @@
+import type { TeammateMessage } from '../../../shared/teams'
+import { TeammateMessages } from './TeammateMessages'
 import React, { createContext, useContext, useId, useMemo, type ReactNode } from 'react'
 import { CheckCheck, Laptop, Play, Send, Server, Square, type LucideIcon } from 'lucide-react'
 import { i18n, type MessageDescriptor } from '@lingui/core'
@@ -53,6 +55,8 @@ export interface WatcherConversation {
   readonly moves?: ReadonlyMap<string, readonly ThreadMoveCard[]> | undefined
   /** Watcher's proposals from the user's words (#1178 part 3), after the turn that made each: only while Work across machines is on. */
   readonly proposals?: ReadonlyMap<string, readonly ThreadMoveProposal[]> | undefined
+  /** A teammate's messages (ADR-0187), under the message each came after: only while Teams is on. */
+  readonly teammates?: ReadonlyMap<string, readonly TeammateMessage[]> | undefined
   /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
   readonly placements?: ByOperation<WorkerPlacementReceipt> | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
@@ -176,12 +180,14 @@ export function WatcherAfterMessage({ message }: { readonly message: AgentMessag
   const asks = conversation.asks?.get(message.id)
   const moves = conversation.moves?.get(message.id)
   const proposals = conversation.proposals?.get(message.id)
-  if (operations === undefined && lines === undefined && asks === undefined && moves === undefined && proposals === undefined) return null
+  const teammates = conversation.teammates?.get(message.id)
+  if (operations === undefined && lines === undefined && asks === undefined && moves === undefined && proposals === undefined && teammates === undefined) return null
   return <>
     {operations?.length ? <WatcherReceipts operations={operations} conversation={conversation} /> : null}
     {asks?.length ? <WatcherAsks asks={asks} describe={conversation.describe} press={conversation.press} /> : null}
     {lines?.map(line => <TakeoverLine key={`${line.target.hostId}:${line.target.threadId}:${line.at}`} line={line} conversation={conversation} />)}
     {proposals?.length ? <WatcherMoveProposals proposals={proposals} threads={conversation} /> : null}
     {moves?.length ? <WatcherMoveCards cards={moves} threads={conversation} /> : null}
+    {teammates?.length ? <TeammateMessages messages={teammates} /> : null}
   </>
 }

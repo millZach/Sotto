@@ -26,7 +26,7 @@ afterEach(async () => {
  * Counts per pass for `size` delegated threads, each with one accepted brief whose turn has finished, and as many still
  * working, shared out among `parents` delegating threads.
  */
-async function counts(size: number, parents = 1) {
+async function counts(size: number, parents = 1, restart?: 'gone' | 'brief-only') {
   const root = await mkdtemp(join(tmpdir(), 'sotto-delegation-counts-')); roots.push(root)
   const at = '2026-10-15T00:00:00.000Z'
   const parentIds = Array.from({ length: parents }, (_, index) => index ? `parent-${index}` : 'parent')
@@ -35,11 +35,11 @@ async function counts(size: number, parents = 1) {
   for (let index = 0; index < size * 2; index++) {
     const parent = parentIds[Math.floor(index / 2) % parents]!
     const threadId = `delegated-${index}`, messageId = randomUUID(), finished = index % 2 === 0
-    threads.push({ id: threadId, projectId: 'project', providerId: 'codex', title: 'Delegated', modelId: 'model', delegatedBy: parent,
-      status: finished ? 'idle' : 'running', lastUserMessageId: messageId, requests: [],
-      lastTurn: { id: messageId, status: finished ? 'completed' : 'running' },
+    if (restart !== 'gone') threads.push({ id: threadId, projectId: 'project', providerId: 'codex', title: 'Delegated', modelId: 'model', delegatedBy: parent,
+      status: restart || finished ? 'idle' : 'running', lastUserMessageId: messageId, requests: [],
+      ...!restart ? { lastTurn: { id: messageId, status: finished ? 'completed' as const : 'running' as const } } : {},
       messages: [{ id: messageId, role: 'user', text: 'Synthetic brief', createdAt: at },
-        ...finished ? [{ id: randomUUID(), role: 'assistant' as const, text: 'Synthetic reply', createdAt: at }] : []] })
+        ...!restart && finished ? [{ id: randomUUID(), role: 'assistant' as const, text: 'Synthetic reply', createdAt: at }] : []] })
     delegations.push({ id: randomUUID(), delegatingThreadId: parent, delegatedThreadId: threadId, action: 'start', work: 'code-review', rootUserMessageId: 'root',
       inputDigest: 'a'.repeat(64), draftId: randomUUID(), messageId, expectedLastUserMessageId: null, deliveryState: 'accepted', outcome: 'working', told: 'working',
       charged: true, createdAt: at, updatedAt: at })
@@ -66,13 +66,13 @@ async function counts(size: number, parents = 1) {
   const live = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined },
     historyEnabled: () => true })
   await live.recover()
-  // Recovery tells each delegating thread once that what was open is now unknown; that news has gone before the measure.
+  // Recovery's unknown or proven outcome news has gone before the measure.
   const quiet = live as unknown as { untold: Map<string, unknown>; telling: Set<string> }
   await vi.waitFor(() => expect(quiet.untold.size + quiet.telling.size).toBe(0))
   // The window listens for changed delegations, as main's IPC does while delegation is on.
   live.onViewsChanged(threadIds => { if (measuring) { tally.changes++; tally.changed += threadIds.length } })
-  // Recovery leaves every brief from before a restart unknown; these are this run's, open for the pass to follow.
-  ;(live as unknown as { records: unknown[] }).records = structuredClone(delegations)
+  // Ordinary count cases follow this run's open briefs; restart cases retain recovery's unknowns.
+  if (!restart) (live as unknown as { records: unknown[] }).records = structuredClone(delegations)
   const measure = async (read: () => void) => {
     for (const name of Object.keys(tally) as (keyof typeof tally)[]) tally[name] = 0
     measuring = true
@@ -83,13 +83,21 @@ async function counts(size: number, parents = 1) {
   const observe = await measure(() => hooks!.observe(snapshot))
   // The pass did reach the finished turns: each finished brief now reads answered.
   const answered = (live as unknown as { records: { outcome?: string }[] }).records.filter(record => record.outcome === 'answered').length
-  expect(answered).toBe(size)
-  const observed = await measure(() => { expect(hooks!.observedThreadIds()).toHaveLength(size) })
+  expect(answered).toBe(restart ? 0 : size)
+  const observed = await measure(() => { expect(hooks!.observedThreadIds()).toHaveLength(restart ? 0 : size) })
   // The window reading every delegating thread's cards reads its own record, never the snapshot.
   const views = await measure(() => { for (const parent of parentIds) expect(live.views(parent).made).toHaveLength(size * 2 / parents) })
   live.close()
   return { observe, observed, views }
 }
+
+it.each(['gone', 'brief-only'] as const)('stops observing restart unknowns with %s history after one connected attempt', async history => {
+  const result = await counts(24, 1, history)
+  const idle = { threadLists: 0, snapshots: 0, pendingWork: 0, wakeUps: 0, items: 0, changes: 0, changed: 0 }
+  expect(result.observe).toEqual(idle)
+  expect(result.observed).toEqual(idle)
+  expect(result.views).toEqual(idle)
+})
 
 it('reads the snapshot\'s threads once per pass and asks nothing per delegated thread, whatever the size', async () => {
   const small = await counts(2), large = await counts(24)

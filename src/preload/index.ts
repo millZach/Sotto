@@ -1,8 +1,10 @@
+import { DICTATION_TIMING, DICTATION_TIMING_ARGUMENT, type DictationTimingBridge } from '../shared/dictationTiming'
 import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type HostsState } from '../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD, type HostDeviceList, type TailscaleConnectOutcome, type TailscaleSummary } from '../shared/hostDevices'
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
+import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, teamsCommandSchema, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
@@ -49,6 +51,7 @@ import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationOpeningSchema, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
+import { PRODUCT_EVENT_STATE, PRODUCT_EVENT_TOOL_OPENED, type ProductEventsBridge, type ProductEventsState } from '../shared/productEvents'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -122,6 +125,7 @@ import {
   SPEECH_MODEL_STATUS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
+  MICROPHONE_ACCESS_WAITING,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -144,6 +148,7 @@ import {
 } from '../shared/channels'
 import {
   dictationCommandSchema,
+  microphoneAccessWaitingSchema,
   openRouterKeyCheckSchema,
   openRouterModelListSchema,
   cloudSpeechModelListSchema,
@@ -428,6 +433,7 @@ export function createSottoBridge(
   councilEnabled = false,
   /** The popup's shortcut row and its Open in Sotto (ADR-0181): only while the `popup` Owl feature is on. */
   popupEnabled = false,
+  dictationTiming = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -467,6 +473,8 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    ...(dictationTiming ? { dictationTiming: createDictationTimingBridge(renderer) } : {}),
+    productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) }, state: () => renderer.invoke(PRODUCT_EVENT_STATE) as Promise<ProductEventsState | null> }),
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
       refresh: query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),
@@ -605,6 +613,7 @@ export function createSottoBridge(
         return renderer.invoke(HOSTS_OPENCODE_SIGN_IN, parsed).then(answer => parseHostOpenCodeAnswer(action, answer))
       } } : {}) }),
     phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
+    teams: Object.freeze<TeamsBridge>({ get: () => renderer.invoke(TEAMS_GET) as Promise<TeamsState>, command: command => renderer.invoke(TEAMS_COMMAND, teamsCommandSchema.parse(command)) as Promise<TeamsCommandResult>, subscribe: listener => subscribe(renderer, TEAMS_CHANGED, trustedState<TeamsState>('links'), listener) }),
     localApps: Object.freeze<import('../shared/localApps').LocalAppsBridge>({ get: () => renderer.invoke(LOCAL_APPS_GET) as Promise<LocalAppsState>, onChanged: listener => subscribe(renderer, LOCAL_APPS_CHANGED, trustedState<LocalAppsState>('phase'), listener) }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),
@@ -707,7 +716,18 @@ export function createSottoBridge(
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
     listOpenRouterModels: () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
     listCloudSpeechModels: () => invokeParsed(renderer, OPENROUTER_LIST_SPEECH_MODELS, cloudSpeechModelListSchema),
-    ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema),
+    ensureMicrophoneAccess: async (onWaiting) => {
+      if (onWaiting === undefined) return invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema)
+      const requestId = crypto.randomUUID()
+      const unsubscribe = subscribe(renderer, MICROPHONE_ACCESS_WAITING, microphoneAccessWaitingSchema, update => {
+        if (update.requestId === requestId) onWaiting(update.waiting)
+      })
+      try {
+        return await invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema, requestId)
+      } finally {
+        unsubscribe()
+      }
+    },
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
     checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
@@ -745,6 +765,10 @@ function createInterfaceLanguageBridge(renderer: IpcRendererAdapter, startup: In
   })
 }
 
+function createDictationTimingBridge(renderer: IpcRendererAdapter): DictationTimingBridge {
+  return Object.freeze<DictationTimingBridge>({ mark: mark => { void renderer.invoke(DICTATION_TIMING, mark).catch(() => undefined) } })
+}
+
 export function createSottoWidgetBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
@@ -752,6 +776,7 @@ export function createSottoWidgetBridge(
   interfaceLanguage: InterfaceLanguageState | null = null,
   /** The living owl (ADR-0178): only while its Owl feature is on. */
   livingOwl = false,
+  dictationTiming = false,
 ): SottoWidgetBridge {
   const onWidgetState = createBufferedSubscription(
     renderer,
@@ -769,6 +794,7 @@ export function createSottoWidgetBridge(
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(livingOwl ? { livingOwl: true as const } : {}),
+    ...(dictationTiming ? { dictationTiming: createDictationTimingBridge(renderer) } : {}),
 
     onWidgetState,
     onWidgetVisibilityChange,
@@ -872,7 +898,7 @@ export function exposeRendererBridge(
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
-      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT)))
+      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {
@@ -882,7 +908,7 @@ export function exposeRendererBridge(
   if (rendererRole === 'widget') {
     context.exposeInMainWorld(
       'sottoWidget',
-      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(LIVING_OWL_RENDERER_ARGUMENT)),
+      createSottoWidgetBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(LIVING_OWL_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT)),
     )
     return true
   }

@@ -102,7 +102,8 @@ struct MainTabs: View {
         return HStack(spacing: 0) {
             if case .column(leading: true, width: let strip) = place { rail(shown, top: Space.s4, duo: duo).frame(width: strip) }
             if sidebar {
-                ThreadSidebar(open: openFromSidebar).equatable()
+                // Held sideways, a thread's rail has no room for New thread, which moves to the sidebar's heading.
+                ThreadSidebar(open: openFromSidebar, newThread: threadOpen).equatable()
                     // With Reduce Motion it fades in on its own, so nothing of the page beside it moves.
                     .modifier(FadeOnAppear(enabled: reduceMotion))
                     .transition(reduceMotion ? .identity : .move(edge: .leading).combined(with: .opacity))
@@ -220,19 +221,28 @@ struct MainTabs: View {
     /// The rail: on the unfolded Duo the sidebar's button, then New thread, under the clock and battery and apart from
     /// the tabs, on every tab; and the tabs in one pill at the foot, where the thumb rests (Zach's picks, October 30 and
     /// November 1, 2026). In the Duo's strip the page beside it, wash and all, shows under it and the strip reads as the
-    /// page's own (ADR-0151, amended).
+    /// page's own (ADR-0151, amended). Beside an open thread, which has no bar there, the rail carries the thread's own
+    /// pill over the tabs and, upright, its Back (Zach's picks, November 3, 2026). Held sideways the strip is 635 points
+    /// tall and the clock takes the first 124, so two whole pills fit only with New thread gone and tighter gaps.
+    /// There a delegated thread's Back takes the sidebar button's place, and a drag still moves the sidebar.
     @ViewBuilder private func rail(_ shown: Bool, top: CGFloat, duo: DuoLayout) -> some View {
         if shown {
-            VStack(spacing: Space.s3) {
-                if duo.sideways || duo == .upright { sidebarButton(upright: duo == .upright) }
-                newThread
-                Spacer(minLength: Space.s3)
+            let beside = threadOpen && (duo.sideways || duo == .upright)
+            let tight = beside && duo.sideways
+            let nestedBack = tight && model.railNested != nil
+            VStack(spacing: tight ? Space.s1 : Space.s3) {
+                if beside && (duo == .upright || nestedBack) { RailBackButton(back: popThread) }
+                if (duo.sideways || duo == .upright) && !nestedBack { sidebarButton(upright: duo == .upright) }
+                if !tight { newThread }
+                Spacer(minLength: tight ? 0 : Space.s3)
+                if beside, let ref = model.selected { ThreadRailPill(ref: ref) }
                 TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
                         style: .rail, reselect: reselect)
             }
             .padding(.top, top)
             .padding(.bottom, Space.s5)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // No lower limit on the height: with the keyboard up, a rail taller than the page would rise past the clock.
+            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             .ignoresSafeArea(.keyboard)
         } else {
             Color.clear
@@ -278,7 +288,7 @@ struct MainTabs: View {
     private func threadRail(_ duo: DuoLayout) -> Bool {
         if case .folded = duo { return threadOpen } else { return false }
     }
-    /// Back from the folded thread rail: the thread showing goes back itself, since a delegated thread opened from Agents
+    /// Back from the thread rail: the thread showing goes back itself, since a delegated thread opened from Agents
     /// sits on its page rather than on the tab's path. With no thread read yet, the tab's path goes back one.
     private func popThread() {
         if let ref = model.selected { model.railAsked = RailAsk(ref: ref, action: .back); return }
@@ -455,13 +465,7 @@ struct TabsBar: View {
         }
         .padding(rail ? .all : .horizontal, rail ? DuoRailMetrics.pillInset : Space.s2)
         .padding(.top, rail ? 0 : Space.s1)
-        .background {
-            if rail {
-                Capsule().fill(Palette.surface)
-                    .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                    .accessibilityHidden(true)
-            }
-        }
+        .background { if rail { DuoRailPillGround().accessibilityHidden(true) } }
         // The names stay at the size the system's tab bar keeps; at the accessibility sizes a long press shows the
         // large content viewer instead. Grown with the text, four names ran together on a small iPhone.
         .dynamicTypeSize(...DynamicTypeSize.large)
@@ -491,13 +495,7 @@ struct TabsBar: View {
             VStack(spacing: 3) {
                 glyph(icon, chosen: chosen)
                     .overlay(alignment: .topTrailing) {
-                        if badge > 0 {
-                            Text(verbatim: "\(badge)").font(.sotto(.caption, .semibold)).monospacedDigit()
-                                .foregroundStyle(Palette.canvas).environment(\.colorScheme, .dark)
-                                .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
-                                .background(Palette.warning, in: Capsule())
-                                .offset(x: 12, y: -6)
-                        }
+                        if badge > 0 { DuoRailBadge(count: badge) }
                     }
                 if !rail { title.font(.sotto(.caption, .medium)).lineLimit(1).minimumScaleFactor(0.8) }
             }
@@ -526,6 +524,32 @@ enum DuoRailMetrics {
     static let icon: CGFloat = 28
     static let symbol: CGFloat = 21
     static let owl: CGFloat = 23
+}
+
+/// The rounded pill behind a row of the rail's tiles: the tabs, or a thread's controls.
+struct DuoRailPillGround: View {
+    var body: some View {
+        Capsule().fill(Palette.surface).overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+}
+
+/// A count on one of the rail's tiles, overhanging its icon's corner. The warning colour means the user is needed; a
+/// count that only counts, such as a thread's agents, is quiet.
+struct DuoRailBadge: View {
+    let count: Int
+    var warning = true
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        Text(verbatim: "\(count)").font(.sotto(.caption, .semibold)).monospacedDigit()
+            .foregroundStyle(warning ? Palette.canvas : Palette.ink)
+            .environment(\.colorScheme, warning ? .dark : colorScheme)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+            .background {
+                if warning { Capsule().fill(Palette.warning) }
+                else { Capsule().fill(Palette.surface).overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1)) }
+            }
+            .offset(x: 12, y: -6)
+    }
 }
 
 // The capsule of Liquid Glass the bottom bar floats on under Glass, on iOS 26 and later. The Duo's icons have none.
@@ -593,11 +617,8 @@ private struct FadeOnAppear: ViewModifier {
 struct ThreadRoute: Hashable { let ref: ThreadRef }
 extension View {
     func threadDestination() -> some View {
-        navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref).duoThreadBar() }
+        navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref) }
     }
-    /// A thread's bar on the unfolded Duo. A delegated thread opened from Agents is `nested`: its Back goes to the thread
-    /// it came from, not the list, so it keeps that.
-    func duoThreadBar(nested: Bool = false) -> some View { modifier(DuoThreadBar(nested: nested)) }
 }
 
 // MARK: - The iPhone Duo
@@ -638,32 +659,6 @@ extension EnvironmentValues {
     }
 }
 
-/// A thread's bar on the unfolded Duo (Zach's picks, October 30 and November 1, 2026). Sideways it has no Back: the rail
-/// stays beside the thread, its Threads tab goes back to the list, and the sidebar's button stands on the rail. Upright,
-/// Back is the thread's own button, since a thumb's drag right anywhere on the page brings the sidebar rather than going
-/// back. A nested thread keeps iOS's Back both ways.
-private struct DuoThreadBar: ViewModifier {
-    let nested: Bool
-    @Environment(\.duoLayout) private var duo
-    @Environment(\.dismiss) private var dismiss
-    func body(content: Content) -> some View {
-        // One subtree whatever the screen, so folding or turning the Duo never resets the thread's own state.
-        let sideways = duo.sideways, upright = duo == .upright && !nested
-        return content
-            .navigationBarBackButtonHidden((sideways && !nested) || upright)
-            .toolbar {
-                if upright {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { dismiss() } label: { Image(systemName: "chevron.backward") }
-                            .accessibilityLabel(String(localized: "Back"))
-                            .accessibilityIdentifier("duo-back")
-                    }
-                    .horizontalOnly()
-                }
-            }
-    }
-}
-
 /// The threads beside an open thread on the unfolded Duo, as on the desktop (Zach's picks, October 30, 2026): the
 /// thread list, the open thread on the chip the chosen tab wears. A press opens another thread in place of the one
 /// showing. The settled shelf stays on the Threads page.
@@ -691,8 +686,9 @@ struct ThreadSidebar: View, Equatable {
                 .frame(minHeight: 44)
                 .padding(.horizontal, Space.s2)
                 .padding(.top, Space.s3)
-                ThreadListSections(groups: groups, watch: model.listWatch(groups), chosen: model.selected, identifier: "sidebar-thread-", open: open,
-                                   setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+                ThreadListSections(groups: groups, watch: model.listWatch(groups), shelfOffers: model.shelfOffers(groups), chosen: model.selected, identifier: "sidebar-thread-", open: open,
+                                   setWatched: { row, on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
+                                   shelve: { row, action in Task { await model.shelve(row.ref, action) } })
                     .equatable()
             }
             .padding(.horizontal, Space.s2)
@@ -719,6 +715,8 @@ struct ThreadListSections: View, Equatable {
     /// What it reads from Watcher for its rows. Its caller reads it from the model, so the list watches nothing itself and
     /// draws again only when what it shows has changed, not with every update to any thread.
     let watch: ListWatch
+    /// What its rows' long presses offer for the shelf, by row ID, read by its caller for the same reason.
+    let shelfOffers: [String: AppModel.ShelfOffer]
     /// The thread showing beside the list, on the accent's soft chip.
     var chosen: ThreadRef? = nil
     /// Each row's identifier starts with this: `thread-` on the Threads page, `sidebar-thread-` beside a thread.
@@ -728,6 +726,8 @@ struct ThreadListSections: View, Equatable {
     let open: (ThreadRef) -> Void
     /// Watch or Stop watching, pressed on a row.
     let setWatched: (HostedThread, Bool) -> Void
+    /// Settle or Restore, pressed on a row.
+    let shelve: (HostedThread, AppModel.ShelfAction) -> Void
     var body: some View {
         let _ = BenchProbe.body("ThreadListSections")
         VStack(alignment: .leading, spacing: 0) {
@@ -749,18 +749,19 @@ struct ThreadListSections: View, Equatable {
         // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
         let marked = chosen.map { groups.rowID(for: $0) == row.id } ?? false
         return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: marked,
-                             canWatch: watch.changeable.contains(row.id), identifier: identifier,
+                             canWatch: watch.changeable.contains(row.id), shelf: shelfOffers[row.id], identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
-                             setWatched: { on in setWatched(row, on) })
+                             setWatched: { on in setWatched(row, on) },
+                             shelve: { action in shelve(row, action) })
             .equatable()
     }
     /// It draws from these alone: the rows' threads, which section each is in, who asks and what they wait on, what
-    /// Watcher can do with each, the chosen one and its identifiers. It watches no model, so `drawn` must name everything
+    /// Watcher and the shelf offer for each, the chosen one and its identifiers. It watches no model, so `drawn` must name everything
     /// a row shows, or a row keeps old words. The closures never change what it draws. A list held from one moment is
     /// the same list, so two of the same hold are equal without reading their rows.
     static func == (lhs: ThreadListSections, rhs: ThreadListSections) -> Bool {
         if let held = lhs.held, held == rhs.held { return true }
-        return lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && drawn(lhs.groups) == drawn(rhs.groups)
+        return lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && lhs.shelfOffers == rhs.shelfOffers && drawn(lhs.groups) == drawn(rhs.groups)
     }
     private static func drawn(_ groups: FocusThreads) -> [String] {
         func rows(_ section: String, _ rows: [HostedThread]) -> [String] {
@@ -785,6 +786,18 @@ struct ThreadListSections: View, Equatable {
     }
 }
 
+/// Settle or Restore in a row's long-press menu, as in a thread's •••. It acts at once, and the banner that confirms it
+/// offers Undo (#1859).
+@MainActor func shelfMenuButton(_ action: AppModel.ShelfAction, held: Bool, press: @escaping () -> Void) -> some View {
+    Button(action: press) {
+        Label(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+              : String(localized: "Restore", comment: "Restore a settled thread to open work."),
+              systemImage: action == .settle ? "archivebox" : "tray.and.arrow.up")
+    }
+    .disabled(held)
+    .accessibilityIdentifier(action == .settle ? "row-settle" : "row-restore")
+}
+
 /// What the thread list reads from Watcher for its rows (ADR-0073): the threads it watches, and the rows whose Watch or
 /// Stop watching can be pressed now, by row ID.
 struct ListWatch: Equatable {
@@ -796,6 +809,13 @@ extension AppModel {
     func listWatch(_ groups: FocusThreads) -> ListWatch {
         let rows = groups.questions + groups.working + groups.recent
         return ListWatch(watched: watchedThreadIDs, changeable: Set(rows.filter { canChangeWatch($0.ref) }.map(\.id)))
+    }
+    /// What these groups' Working now and Recent rows offer for the shelf, by row ID. A Needs you row offers neither, as
+    /// its card never did: settling leaves its question waiting, and the row where it stands.
+    func shelfOffers(_ groups: FocusThreads) -> [String: ShelfOffer] {
+        var offers: [String: ShelfOffer] = [:]
+        for row in groups.working + groups.recent { offers[row.id] = shelfOffer(row) }
+        return offers
     }
 }
 
@@ -830,14 +850,18 @@ struct ThreadListRow: View, Equatable {
     let watched: Bool
     let chosen: Bool
     let canWatch: Bool
+    /// Settle or Restore in its long-press menu. A Needs you row offers neither, as its card never did: settling leaves
+    /// its question waiting, and the row where it stands.
+    let shelf: AppModel.ShelfOffer?
     let identifier: String
     let open: () -> Void
     let setWatched: (Bool) -> Void
+    let shelve: (AppModel.ShelfAction) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
     /// What the row draws: the thread's title, state, place and times, its section, light and chip.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
         lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
-            && lhs.canWatch == rhs.canWatch && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
+            && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
     }
@@ -888,11 +912,14 @@ struct ThreadListRow: View, Equatable {
     }
     var body: some View {
         let _ = BenchProbe.body("ThreadListRow")
-        if canWatch {
+        if canWatch || shelf != nil {
             button.contextMenu {
-                Button { setWatched(!watched) } label: {
-                    Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                if canWatch {
+                    Button { setWatched(!watched) } label: {
+                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    }
                 }
+                if let shelf { shelfMenuButton(shelf.action, held: shelf.held) { shelve(shelf.action) } }
             }
         } else {
             button
@@ -1161,6 +1188,13 @@ struct FeedbackBanner: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, Space.s3)
                         .paragraphDirection()
+                    if let undo = model.shelfUndoOffered {
+                        Button("Undo") { Task { await model.undoShelf() } }
+                            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                            .disabled(model.actionHeld(undo.ref) != nil)
+                            .padding(.top, Space.s2)
+                            .accessibilityIdentifier("feedback-undo")
+                    }
                     Button { model.feedback = nil } label: {
                         Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
                             .frame(width: 44, height: 44).contentShape(Rectangle())

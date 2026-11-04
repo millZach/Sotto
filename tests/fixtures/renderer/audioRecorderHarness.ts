@@ -16,7 +16,10 @@ export class FakeNode implements AudioNodeAdapter {
 }
 
 export class FakeWorkletNode extends FakeNode implements AudioWorkletNodeAdapter {
-  readonly port = { onmessage: null as ((event: { data: unknown }) => void) | null }
+  readonly port = {
+    onmessage: null as ((event: { data: unknown }) => void) | null,
+    postMessage: vi.fn(),
+  }
 }
 
 export class FakeContext implements AudioContextAdapter {
@@ -24,12 +27,25 @@ export class FakeContext implements AudioContextAdapter {
   readonly destination = new FakeNode()
   readonly source = new FakeNode()
   readonly gain = Object.assign(new FakeNode(), { gain: { value: 1 } })
-  readonly audioWorklet = { addModule: vi.fn(async () => undefined) }
+  readonly audioWorklet = { addModule: vi.fn(async (): Promise<void> => undefined) }
+  readonly stateListeners = new Set<() => void>()
   state: 'suspended' | 'running' | 'closed' = 'running'
-  readonly resume = vi.fn(async () => { this.state = 'running' })
+  readonly resume = vi.fn(async () => { this.setState('running') })
+  readonly suspend = vi.fn(async () => { this.setState('suspended') })
+  readonly addEventListener = vi.fn((_type: 'statechange', listener: () => void) => {
+    this.stateListeners.add(listener)
+  })
+  readonly removeEventListener = vi.fn((_type: 'statechange', listener: () => void) => {
+    this.stateListeners.delete(listener)
+  })
   readonly createMediaStreamSource = vi.fn(() => this.source)
   readonly createGain = vi.fn(() => this.gain)
   readonly close = vi.fn(async () => undefined)
+
+  setState(state: 'suspended' | 'running' | 'closed'): void {
+    this.state = state
+    for (const listener of [...this.stateListeners]) listener()
+  }
 }
 
 export { deferred } from '../deferred'
@@ -59,11 +75,16 @@ export function createHarness(overrides: Partial<AudioRecorderDependencies> = {}
     }),
   }
   const getUserMedia = vi.fn(async () => stream)
+  const deviceListeners = new Set<() => void>()
   let timer: (() => void) | undefined
   const dependencies: AudioRecorderDependencies = {
     audioWorkletModuleUrl:
       'file:///C:/Program%20Files/Sotto/resources/app.asar/out/renderer/audio-capture-worklet.js',
-    mediaDevices: { getUserMedia },
+    mediaDevices: {
+      getUserMedia,
+      addEventListener: vi.fn((_type: 'devicechange', listener: () => void) => { deviceListeners.add(listener) }),
+      removeEventListener: vi.fn((_type: 'devicechange', listener: () => void) => { deviceListeners.delete(listener) }),
+    },
     createAudioContext: vi.fn(() => context),
     createAudioWorkletNode: vi.fn(() => worklet),
     setTimer: vi.fn((callback) => {
@@ -76,6 +97,8 @@ export function createHarness(overrides: Partial<AudioRecorderDependencies> = {}
   return {
     context,
     dependencies,
+    deviceListeners,
+    changeDevice: () => { for (const listener of [...deviceListeners]) listener() },
     endTrack: () => {
       for (const listener of [...trackListeners]) listener()
     },

@@ -943,6 +943,11 @@ msgstr ""
 msgid "{provider} changed this question. {delivery}"
 msgstr ""
 
+#. {provider} is the coding agent’s name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} couldn’t give a summary of this command."
+msgstr ""
+
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{provider} couldn’t list skills for this folder."
 msgstr ""
@@ -983,6 +988,11 @@ msgstr ""
 msgid "{provider} forked {agent} from {source} into this thread, {time}. It carried the agent’s whole conversation, including its task, which {provider} keeps encrypted, so Sotto can’t show it here. The agent’s row in {sourceName} is unchanged.{open}"
 msgstr ""
 
+#. {provider} is the coding agent’s name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} gave no summary of this command."
+msgstr ""
+
 #. {provider} is a provider's name; {chosen} and {fit} are permission modes.
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 msgid "{provider} has no \"{chosen}\", so its threads start on \"{fit}\"."
@@ -1017,6 +1027,11 @@ msgstr ""
 #. {provider} is the name of the provider, such as Codex.
 #: src/renderer/src/agents/FailedTurnNotice.tsx
 msgid "{provider} reported an error on this thread."
+msgstr ""
+
+#. Over the words a coding agent wrote about what it asks to do. {provider} is its name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{provider} says"
 msgstr ""
 
 #. {provider} is a provider's name or "The provider"; {mode} is the provider's own name for a permission mode.
@@ -1935,6 +1950,14 @@ msgstr ""
 msgid "Ask for approval"
 msgstr ""
 
+#: src/renderer/src/agents/CouncilPress.tsx
+msgid "Ask the Council"
+msgstr ""
+
+#: src/renderer/src/agents/CouncilPress.tsx
+msgid "Ask the Council about this reply"
+msgstr ""
+
 #. A tip under Watcher's working line.
 #: src/renderer/src/agents/tips.tsx
 msgid "Ask Watcher to start a thread for a job. It follows the thread and tells you when it needs you."
@@ -1951,6 +1974,11 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Asked for {asked}. This computer couldn't start it there, so nothing was started."
+msgstr ""
+
+#. Shown while Sotto waits for a summary of a command. The user can answer without waiting.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Asking {inSentence} for a summary…"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -3795,13 +3823,17 @@ msgstr ""
 msgid "Draft not saved. <0>Save again</0>"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Drag a mark to move it, or a handle to resize it. On the picture, Enter steps through the marks, the arrow keys move the selected one, and Alt with them resizes it. Delete takes it off, minus and equals size text, and Escape lets go."
+msgstr ""
+
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit"
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
-msgid "Drag to draw. Press where a note goes, then type. A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Escape cancels."
+msgid "Drag to draw. Press where a note goes, then type. V, A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Minus and equals size a note. Escape cancels."
 msgstr ""
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
@@ -4991,6 +5023,22 @@ msgstr ""
 msgid "Make merge commit"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text larger"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text larger (=)"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text smaller"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Make the text smaller (-)"
+msgstr ""
+
 #. A back control in the model menu that returns to the list of the companies that made Cursor’s models.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Makers"
@@ -5175,6 +5223,10 @@ msgstr ""
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Morning. What’s first?"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Move"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
@@ -5644,6 +5696,30 @@ msgstr ""
 msgid "Note"
 msgstr ""
 
+#. A note the user wrote on an arrow drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the arrow: {0}"
+msgstr ""
+
+#. A note the user wrote on a box drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the box: {0}"
+msgstr ""
+
+#. A note the user wrote on a circle drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the circle: {0}"
+msgstr ""
+
+#. A note the user wrote on a pen line drawn on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note on the pen line: {0}"
+msgstr ""
+
 #. A note the user wrote on a picture, with its words.
 #. placeholder {0}: mark.text
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -5673,6 +5749,10 @@ msgstr ""
 
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "Nothing to bring back."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Nothing to select yet. Draw on the picture first."
 msgstr ""
 
 #: src/renderer/src/agents/attachmentWords.ts
@@ -7051,6 +7131,11 @@ msgstr ""
 msgid "Run"
 msgstr ""
 
+#. The heading of a card that asks to run a command.
+#: src/renderer/src/agents/requests/requestAnswers.ts
+msgid "Run a command"
+msgstr ""
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Run again"
 msgstr ""
@@ -7240,6 +7325,11 @@ msgstr ""
 msgid "Select"
 msgstr ""
 
+#. {words} names a mark, such as "Arrow" or "Note: the button".
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Select {words}"
+msgstr ""
+
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Select a thread to read its messages and continue working."
 msgstr ""
@@ -7251,6 +7341,11 @@ msgstr ""
 #. A tip under a working thread. {keys} is a keyboard shortcut.
 #: src/renderer/src/agents/tips.tsx
 msgid "Select words in a reply and press {keys} to quote them in your prompt."
+msgstr ""
+
+#. {words} names a mark on a picture, such as "Arrow" or "Note: the button".
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Selected {words}."
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -7682,6 +7777,11 @@ msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Sotto application"
+msgstr ""
+
+#. Over a summary of a command that Sotto asked the coding agent’s provider for. {inSentence} is its name.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Sotto asked {inSentence} what this does"
 msgstr ""
 
 #. {folder} is a folder's name or "this folder"; {place} is "this computer" or a saved host's name.
@@ -8317,6 +8417,10 @@ msgstr ""
 msgid "tapped the screen"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Text size"
+msgstr ""
+
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "That is all of its reply."
 msgstr ""
@@ -8368,6 +8472,16 @@ msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "The address could not be copied. Select it and copy it yourself."
+msgstr ""
+
+#. Stands in for the coding agent’s name in mid-sentence, as in “Asking the agent for a summary”.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "the agent"
+msgstr ""
+
+#. Stands in for the coding agent’s name when it is not known, as in “The agent says”.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "The agent"
 msgstr ""
 
 #. {title} is an agent's title.
@@ -8561,6 +8675,26 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "The Muse guide could not be opened. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note is free now. It stays where you put it."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the arrow."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the box."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the circle."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The note now moves with the pen line."
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx

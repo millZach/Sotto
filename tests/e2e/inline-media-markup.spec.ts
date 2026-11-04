@@ -97,3 +97,142 @@ test('a picture marked up goes into the reply as a copy, and the picture in the 
     await capture(page, 'markup-added-1280-light')
   })
 })
+
+test('marks move, text sizes and belongs to a shape, and the copy is what the editor showed', async () => {
+  test.setTimeout(240_000)
+  await withShownPictureThread('sotto-e2e-inline-markup-move-', async ({ launched, page, pane, threadId: sottoThreadId }) => {
+    await page.evaluate(async request => window.sottoE2E!.mediaTool!(request),
+      { threadId: sottoThreadId, arguments: { paths: ['test-results/checkout.png'], title: 'The checkout page' } })
+    const tile = pane.getByRole('button', { name: 'Open picture 1 of 1, from The checkout page' })
+    await expect(tile.locator('img')).toHaveJSProperty('complete', true, { timeout: 30_000 })
+    await tile.click()
+    const viewer = pane.getByRole('dialog')
+    await expect(viewer.locator('img.rich-diagram-viewer__image')).toHaveJSProperty('complete', true, { timeout: 30_000 })
+    await viewer.getByRole('button', { name: 'Mark up' }).click()
+    const surface = viewer.getByRole('application', { name: 'Picture to mark up: Picture 1' })
+    await expect(surface).toBeVisible()
+    const marks = viewer.locator('.markup-editor__mark-name')
+    const press = async (x: number, y: number): Promise<void> => { const box = (await surface.boundingBox())!; await page.mouse.click(box.x + box.width * x, box.y + box.height * y) }
+
+    // A box, and a note written on it, sized up. Its words sit in the ink with no label behind them.
+    await page.keyboard.press('b')
+    await drag(page, surface, [0.2, 0.2], [0.5, 0.4])
+    await page.keyboard.press('t')
+    await viewer.getByRole('button', { name: 'Make the text larger' }).click()
+    await press(0.25, 0.3)
+    await viewer.getByRole('textbox', { name: 'Note' }).fill('This total is wrong')
+    await page.keyboard.press('Enter')
+    await expect(marks).toHaveText(['Box', 'Note on the box: This total is wrong'])
+    // Another note, free, and an arrow drawn straight across the box: a drawing tool only draws.
+    await press(0.6, 0.1)
+    await viewer.getByRole('textbox', { name: 'Note' }).fill('Free words')
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('a')
+    await drag(page, surface, [0.3, 0.2], [0.65, 0.5])
+    await expect(marks).toHaveText(['Box', 'Note on the box: This total is wrong', 'Note: Free words', 'Arrow'])
+    await capture(page, 'markup-move-note-1280-dark')
+    // At this size the bar's controls all fit on one line.
+    const rows = await viewer.locator('.markup-editor__bar button').evaluateAll(buttons => new Set(buttons.filter(button => button.getClientRects().length).map(button => Math.round(button.getBoundingClientRect().top + button.getBoundingClientRect().height / 2))).size)
+    expect(rows).toBe(1)
+
+    // Move takes the box and its note together.
+    await page.keyboard.press('v')
+    await expect(viewer.getByRole('button', { name: 'Move', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    const positions = (): Promise<number[][]> => surface.locator('[data-markup-shape]').evaluateAll(shapes => shapes.map(shape => [Number(shape.getAttribute('x')), Number(shape.getAttribute('y'))]))
+    const before = await positions()
+    await drag(page, surface, [0.2, 0.3], [0.1, 0.6])
+    const after = await positions()
+    expect(after[0]![1]! - before[0]![1]!).toBeGreaterThan(100)
+    expect(after[1]![1]! - before[1]![1]!).toBeCloseTo(after[0]![1]! - before[0]![1]!, 3)
+    expect(after[2]).toEqual(before[2])
+    await capture(page, 'markup-move-selected-1280-dark')
+    await viewer.getByRole('button', { name: 'Undo' }).click()
+    expect(await positions()).toEqual(before)
+    await viewer.getByRole('button', { name: 'Redo' }).click()
+    expect(await positions()).toEqual(after)
+
+    // A handle resizes it. Dragged off, the note is free.
+    const corner = await surface.locator('.markup-editor__handle').evaluateAll(handles => handles.map(handle => [Number(handle.getAttribute('cx')), Number(handle.getAttribute('cy'))]))
+    await drag(page, surface, [corner[3]![0]! / 1920, corner[3]![1]! / 1203], [(corner[3]![0]! + 200) / 1920, (corner[3]![1]! + 100) / 1203])
+    const resized = await positions()
+    expect(resized[0]![0]).toBeCloseTo(after[0]![0]!, 3)
+    const text = surface.locator('text').first()
+    const words = (await text.boundingBox())!, box = (await surface.boundingBox())!
+    await drag(page, surface, [(words.x + words.width / 2 - box.x) / box.width, (words.y + words.height / 2 - box.y) / box.height], [0.72, 0.85])
+    await expect(marks.nth(1)).toHaveText('Note: This total is wrong')
+    await expect(viewer.getByRole('status')).toHaveText('The note is free now. It stays where you put it.')
+
+    // Nothing of the editor's outline is on the copy. Hold the copy against the editor, with the same picture under both.
+    await page.keyboard.press('Escape')
+    await expect(surface.locator('.markup-editor__selected')).toHaveCount(0)
+    await expect(viewer.locator('.markup-editor__cross')).toHaveCount(0)
+    await page.mouse.move(0, 0)
+    const shot = (await surface.screenshot()).toString('base64')
+    await capture(page, 'markup-move-free-1280-dark')
+    await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'light' }) })
+    await capture(page, 'markup-move-free-1280-light')
+    await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
+    await resizeWindow(launched, 820, 560)
+    await expect(surface).toBeVisible()
+    expect(await viewer.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    await capture(page, 'markup-move-820-dark')
+    await resizeWindow(launched, 1280, 800)
+    await page.evaluate(() => {
+      const original = HTMLCanvasElement.prototype.toBlob
+      HTMLCanvasElement.prototype.toBlob = function (this: HTMLCanvasElement, ...args: Parameters<HTMLCanvasElement['toBlob']>) {
+        ;(window as unknown as { markedPng: string }).markedPng = this.toDataURL('image/png')
+        return original.apply(this, args)
+      }
+    })
+    const place = await surface.locator('text').first().evaluate(element => { const b = (element as SVGGraphicsElement).getBBox(); return { x: b.x, y: b.y, width: b.width, height: b.height, ink: getComputedStyle(element).fill } })
+    await viewer.getByRole('button', { name: 'Add to reply' }).click()
+    await expect(pane.getByRole('img', { name: 'Picture 1 marked up.png' })).toBeVisible({ timeout: 30_000 })
+    const compared = await page.evaluate(async ({ shot, place }) => {
+      const load = async (source: string): Promise<HTMLImageElement> => { const image = new Image(); image.src = source; await image.decode(); return image }
+      const screen = await load(`data:image/png;base64,${shot}`), copy = await load((window as unknown as { markedPng: string }).markedPng)
+      const draw = (image: HTMLImageElement): Uint8ClampedArray => {
+        const canvas = document.createElement('canvas')
+        canvas.width = screen.naturalWidth; canvas.height = screen.naturalHeight
+        const context = canvas.getContext('2d')!
+        context.imageSmoothingQuality = 'high'
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        return context.getImageData(0, 0, canvas.width, canvas.height).data
+      }
+      const a = draw(screen), b = draw(copy)
+      const swatch = document.createElement('canvas').getContext('2d')!
+      swatch.fillStyle = place.ink
+      swatch.fillRect(0, 0, 1, 1)
+      const ink = swatch.getImageData(0, 0, 1, 1).data
+      const inked = (data: Uint8ClampedArray, at: number, within: number): boolean => Math.abs(data[at]! - ink[0]!) + Math.abs(data[at + 1]! - ink[1]!) + Math.abs(data[at + 2]! - ink[2]!) < within
+      // Every pixel of ink on one has ink beside it on the other, so each mark is where the editor showed it, the same size.
+      const width = screen.naturalWidth, height = screen.naturalHeight
+      const matched = (from: Uint8ClampedArray, to: Uint8ClampedArray): number => {
+        let total = 0, met = 0
+        for (let y = 2; y < height - 2; y++) for (let x = 2; x < width - 2; x++) {
+          if (!inked(from, (y * width + x) * 4, 45)) continue
+          total += 1
+          let near = false
+          for (let dy = -2; dy <= 2 && !near; dy++) for (let dx = -2; dx <= 2 && !near; dx++) near = inked(to, ((y + dy) * width + x + dx) * 4, 150)
+          if (near) met += 1
+        }
+        return total ? met / total : 0
+      }
+      // Behind the words the copy shows the picture: a label would have filled all of this rectangle with one colour.
+      const full = document.createElement('canvas')
+      full.width = copy.naturalWidth; full.height = copy.naturalHeight
+      const context = full.getContext('2d')!
+      context.drawImage(copy, 0, 0)
+      const area = context.getImageData(Math.round(place.x), Math.round(place.y), Math.round(place.width), Math.round(place.height)).data
+      let covered = 0
+      for (let index = 0; index < area.length; index += 4) if (inked(area, index, 60)) covered += 1
+      return { width: copy.naturalWidth, height: copy.naturalHeight, screenInkMatched: matched(a, b), copyInkMatched: matched(b, a), inkShare: covered / (area.length / 4) }
+    }, { shot, place })
+    console.info(`markup move copy: ${JSON.stringify(compared)}`)
+    expect([compared.width, compared.height]).toEqual([1920, 1203])
+    expect(compared.screenInkMatched).toBeGreaterThan(0.97)
+    expect(compared.copyInkMatched).toBeGreaterThan(0.97)
+    expect(compared.inkShare).toBeGreaterThan(0.03)
+    expect(compared.inkShare).toBeLessThan(0.6)
+    await capture(page, 'markup-move-added-1280-dark')
+  })
+})

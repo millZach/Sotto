@@ -40,10 +40,12 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
   return {
     createRecorder(options: AudioRecorderOptions) {
       return {
-        async start(): Promise<void> {
+        async start(onReady: () => void): Promise<void> {
           if (scenario === 'design-permission') {
+            options.onPermissionWaiting?.(true)
             await new Promise<never>(() => undefined)
           }
+          onReady()
           options.onLevel?.(0.58)
         },
         async stop(): Promise<AudioRecordingResult | null> { return recording(scenario) },

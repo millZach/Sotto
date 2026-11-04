@@ -1,21 +1,32 @@
-/* The Council (ADR-0177): the chamber (decision 6), and beside or under it the Ask form and each Council's record as
-   quiet text on a card, the deliberation's accessible form. Every colour is a theme role, and sizes and corners are
-   steps of the scale. */
-.council-view { display: flex; flex: 1; flex-direction: column; width: 100%; min-width: 0; min-height: 0; container: council-room / inline-size; }
-.council-head { display: flex; flex: none; align-items: center; gap: 12px; min-height: 40px; padding: 4px 24px 8px 32px; }
-.council-head h1 { flex: 1; min-width: 0; margin: 0; color: var(--tt-text); font-size: var(--tt-type-title); font-weight: 500; }
-/* The long table sits over the record, as wide as the room; the half circle and the round table beside it, until the
-   room is too narrow for both, as at the 820 by 560 minimum. */
-.council-body { display: grid; flex: 1; grid-template-rows: minmax(200px, 54%) minmax(0, 1fr); min-height: 0; }
-.council-view:is([data-layout='half-circle'], [data-layout='round-table']) .council-body { grid-template-columns: minmax(0, 1fr) minmax(340px, 400px); grid-template-rows: minmax(0, 1fr); }
-@container council-room (max-width: 900px) {
-  .council-view:is([data-layout='half-circle'], [data-layout='round-table']) .council-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(200px, 54%) minmax(0, 1fr); }
+/* The Council (ADR-0177), the Council tab of a thread pane's drawer, on the drawer's own background: the chamber (decision
+   6) with the Ask form and each Council's record beside it as quiet text on cards, the deliberation's accessible form,
+   and the seats across the drawer's whole width under both. A drawer too narrow or too short for that shows one column
+   that scrolls: the figures, half the drawer at most, then the seats, the form and the record. Every colour is a theme role, and sizes and
+   corners are steps of the scale. */
+.council-view { display: grid; flex: 1; grid-template: "chamber ask" minmax(0, 1fr) "seats seats" auto / minmax(0, 1fr) minmax(360px, 45%); width: 100%; min-width: 0; min-height: 0; }
+.council-view > .council-chamber { grid-area: chamber; }
+.council-scroll { grid-area: ask; min-width: 0; min-height: 0; overflow-y: auto; border-left: 1px solid var(--tt-hairline); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.council-page { display: grid; gap: 14px; padding: 12px 14px 16px; container-type: inline-size; }
+.council-seats-bar { grid-area: seats; min-width: 0; padding: 10px 14px 12px; border-top: 1px solid var(--tt-hairline); }
+@container drawer-tab (max-width: 760px) or (max-height: 300px) {
+  .council-view { grid-template: "chamber" clamp(120px, 50cqh, 240px) "seats" auto "ask" auto / minmax(0, 1fr); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+  .council-scroll { min-height: auto; overflow: visible; border-top: 1px solid var(--tt-hairline); border-left: 0; }
 }
-.council-scroll { min-width: 0; min-height: 0; overflow-y: auto; border-top: 1px solid var(--tt-hairline); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-@container council-room (min-width: 901px) {
-  .council-view:is([data-layout='half-circle'], [data-layout='round-table']) .council-scroll { border-top: 0; border-left: 1px solid var(--tt-hairline); }
+
+/* The seats as one bar: how many panelists, then a cell for each seat, its name over its model and effort, as many to a
+   row as fit. Settings → Council keeps its own rows. */
+.council-seats-bar .council-seats { grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px 16px; }
+.council-seats-bar .council-seats__count { display: grid; justify-items: start; gap: 5px; }
+/* The shared control names its own grid area, which would open a column of its own here. */
+.council-seats-bar .council-seats__count > .segmented-control { grid-area: auto; justify-self: start; }
+.council-seats-bar .council-seats__list { grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 8px 12px; }
+.council-seats-bar .council-seat { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 6px; }
+.council-seats-bar .council-seat__name { grid-column: 1 / -1; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.council-seats-bar .council-seat__none--wide { grid-column: 1 / -1; }
+.council-seats-bar .council-seats__note { grid-column: 1 / -1; }
+@container drawer-tab (max-width: 520px) {
+  .council-seats-bar .council-seats { grid-template-columns: minmax(0, 1fr); }
 }
-.council-page { display: grid; gap: 18px; max-width: 980px; margin: 0 auto; padding: 16px 32px 96px; container-type: inline-size; }
 
 /* The chamber: a canvas of glyphs in the theme's inks, read from the probe, with a button over each figure. */
 .council-chamber { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
@@ -27,11 +38,29 @@
 .council-chamber__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
   color: var(--tt-text); background-color: var(--tt-accent-text); font-family: var(--tt-font-mono); }
 
-.council-ask { display: grid; gap: 12px; padding: 16px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
+.council-ask { display: grid; gap: 10px; padding: 12px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
 .council-field { display: grid; gap: 5px; min-width: 0; }
 .council-field > span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .council-field > :is(select, textarea) { width: 100%; min-width: 0; }
-.council-ask__question { min-height: 72px; resize: vertical; }
+/* From sits on the line of the thread it names, to leave the drawer's height to the question. */
+.council-field--from { grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px; }
+.council-field--from > .council-origin__list { grid-column: 1 / -1; }
+/* The thread a question comes from: one line, the field's height; Change opens the list under it. */
+.council-origin { display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; padding: 0 4px 0 11px; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); }
+.council-origin .provider-mark, .council-origin__row .provider-mark { flex: none; color: var(--tt-text-muted); }
+.council-origin__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.council-origin__project { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.council-origin__change { flex: none; padding: 4px 8px; border: 0; border-radius: var(--tt-radius-row); background: none; color: var(--tt-accent-text); font: inherit; font-size: var(--tt-type-small); }
+.council-origin__change:hover { background: var(--tt-hover); }
+.council-origin__list { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); }
+.council-origin__search { width: 100%; min-width: 0; }
+.council-origin__rows { max-height: 260px; overflow-y: auto; scrollbar-color: var(--tt-scrollbar) transparent; }
+.council-origin__group { margin: 8px 6px 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.council-origin__row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 6px; border: 0; border-radius: var(--tt-radius-row); background: none; color: var(--tt-text); font: inherit; text-align: left; }
+.council-origin__row:hover { background: var(--tt-hover); }
+.council-origin__row[aria-current] { background: var(--tt-hover-strong); }
+.council-origin__empty { margin: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.council-ask__question { min-height: 56px; resize: vertical; }
 .council-ask__estimate { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .council-ask__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .council-notice { margin: 0; color: var(--tt-warning-text); font-size: var(--tt-type-small); line-height: 1.5; }

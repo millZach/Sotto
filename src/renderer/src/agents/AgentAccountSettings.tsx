@@ -78,7 +78,7 @@ export function AgentSetupFields(): ReactNode {
   const agents = useOptionalAgents()
   const state = agents?.state
   const command = agents?.command
-  if (!state || !command) return <p className="tt-paragraph">{t`Preparing agent configuration…`}</p>
+  if (!state || !command) return <p className="tt-paragraph" role={agents?.error ? 'alert' : 'status'}>{agents?.error ?? t`Preparing agent configuration…`}</p>
   const configuration = state.configuration
   // No answer is not a refusal: the change may have reached the host, so the row says it could not confirm it.
   const save = async (patch: Partial<AgentConfiguration>, hostId?: string): Promise<FolderSave> => {

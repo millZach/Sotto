@@ -36,6 +36,7 @@ const customSettings = {
   effortColor: 'aurora',
   menuBarOwlBody: 'ink',
   menuBarOwlEyes: 'amber',
+  showMenuBarIcon: false,
   watcherScene: 'harbour',
   creature: 'claude',
   showCreature: false,
@@ -104,6 +105,7 @@ const customSettings = {
   llmMode: 'nitro',
   llmOwnModel: { server: 'own-sparks', model: 'deepseek-v4.1-flash' },
   threadTitles: false,
+  commandSummaries: true,
   nextPromptSuggestions: false,
   threadTips: false,
   threadWorkingCopyDefault: 'independent',
@@ -482,6 +484,7 @@ describe('settings', () => {
       effortColor: 'ember',
       menuBarOwlBody: 'slate',
       menuBarOwlEyes: 'teal',
+      showMenuBarIcon: true,
       watcherScene: 'night-wood',
       creature: 'sotto',
       showCreature: true,
@@ -529,6 +532,7 @@ describe('settings', () => {
       llmMode: 'default',
       llmOwnModel: null,
       threadTitles: true,
+      commandSummaries: true,
       nextPromptSuggestions: true,
       threadTips: true,
       threadWorkingCopyDefault: 'shared',
@@ -720,8 +724,8 @@ describe('settings', () => {
     },
   )
 
-  it.each([30, 60, 120, 300] as const)(
-    'accepts the supported %i-second recording limit',
+  it.each([30, 60, 120, 180, 300, 600, 900, 1800, null] as const)(
+    'accepts the supported %s-second recording limit',
     (maxRecordingSeconds) => {
       expect(parseSettings({ maxRecordingSeconds }).maxRecordingSeconds).toBe(maxRecordingSeconds)
     },

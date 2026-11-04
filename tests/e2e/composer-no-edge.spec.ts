@@ -144,6 +144,13 @@ test.describe('The composer has no edge', () => {
         await expect.poll(() => composerEdges(page, pane), { message: `thread ${appearance} at the highest effort` }).toEqual([])
         // The trace is light outside the card, not an edge on it: shown and turning at the top, the card still edgeless.
         await expect.poll(() => trace(page, pane), { message: `thread ${appearance} trace at the highest effort` }).toEqual({ shown: true, turning: ['effort-trace-turn', 'effort-trace-turn'] })
+        // The halo spills past the pane's floor as paint alone: the pane gains no room to scroll, so nothing lifts its header
+        // under the window's top edge (it rose 10px in a full-screen Watcher).
+        expect(await page.evaluate(pane => {
+          const node = document.querySelector<HTMLElement>(pane)!
+          node.scrollTop = 50
+          return { room: node.scrollHeight - node.clientHeight, lifted: node.scrollTop }
+        }, pane), `thread ${appearance} pane at the highest effort`).toEqual({ room: 0, lifted: 0 })
         // Main said the shown window can be seen, so a visible page carries no hidden mark to pause the lap.
         expect(await page.evaluate(() => document.visibilityState !== 'visible' || !document.documentElement.hasAttribute('data-window-hidden'))).toBe(true)
         await captureCard(page, pane, `thread-highest-${appearance}`)

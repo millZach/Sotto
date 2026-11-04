@@ -1,7 +1,9 @@
+import { markDictationTiming } from '../../../shared/dictationTiming'
 import { MAX_TRANSCRIPTION_SAMPLES, TRANSCRIPTION_SAMPLE_RATE } from '../../../shared/audio'
 import { calculateRms, resampleMono } from './audioMath'
 import { ensureMicrophoneAccess } from './ensureMicrophoneAccess'
 import { microphoneConstraints, type MicrophoneConstraints } from './microphoneConstraints'
+import type { PreparedAudioCapture, PreparedCaptureContext } from './preparedAudioCapture'
 export type { MicrophoneConstraints } from './microphoneConstraints'
 
 export const AUDIO_CAPTURE_PROCESSOR_NAME = 'sotto-audio-capture'
@@ -54,7 +56,10 @@ export interface GainNodeAdapter extends AudioNodeAdapter {
 }
 
 export interface AudioWorkletNodeAdapter extends AudioNodeAdapter {
-  port: { onmessage: ((event: { data: unknown }) => void) | null }
+  port: {
+    onmessage: ((event: { data: unknown }) => void) | null
+    postMessage(message: 'stop'): void
+  }
 }
 
 export interface MediaStreamTrackAdapter {
@@ -75,6 +80,9 @@ export interface AudioContextAdapter {
   readonly audioWorklet: { addModule(url: string): Promise<void> }
   readonly state?: 'suspended' | 'running' | 'closed'
   resume?(): Promise<void>
+  suspend(): Promise<void>
+  addEventListener?(type: 'statechange', listener: () => void): void
+  removeEventListener?(type: 'statechange', listener: () => void): void
   createMediaStreamSource(stream: MediaStreamAdapter): AudioNodeAdapter
   createGain(): GainNodeAdapter
   close(): Promise<void>
@@ -86,7 +94,10 @@ export interface AudioRecorderDependencies {
     getUserMedia(
       constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
     ): Promise<MediaStreamAdapter>
+    addEventListener?(type: 'devicechange', listener: () => void): void
+    removeEventListener?(type: 'devicechange', listener: () => void): void
   }
+  ensureMicrophoneAccess?(onWaiting?: (waiting: boolean) => void): Promise<boolean>
   createAudioContext(): AudioContextAdapter
   createAudioWorkletNode(
     context: AudioContextAdapter,
@@ -108,6 +119,8 @@ export interface AudioRecordingResult {
 }
 
 export interface AudioRecorderOptions {
+  /** Only the OS access gate reports a permission request, never an elapsed timer. */
+  onPermissionWaiting?: (waiting: boolean) => void
   selectedDeviceId?: string
   maxRecordingSeconds?: number
   onLevel?: (level: number) => void
@@ -142,6 +155,7 @@ interface RecordingSession {
   resolveStartOnTermination?: boolean
   stream?: MediaStreamAdapter
   context?: AudioContextAdapter
+  preparedContext?: PreparedCaptureContext
   source?: AudioNodeAdapter
   worklet?: AudioWorkletNodeAdapter
   gain?: GainNodeAdapter
@@ -155,14 +169,10 @@ interface RecordingSession {
   captureTracks?: MediaStreamTrackAdapter[]
 }
 
-function defaultDependencies(): AudioRecorderDependencies {
+export function createAudioRecorderDependencies(): AudioRecorderDependencies {
   const browser = globalThis as unknown as {
     navigator: {
-      mediaDevices: {
-        getUserMedia(
-          constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
-        ): Promise<MediaStreamAdapter>
-      }
+      mediaDevices: AudioRecorderDependencies['mediaDevices']
     }
     document: { readonly baseURI: string }
     AudioContext: new () => AudioContextAdapter
@@ -176,15 +186,11 @@ function defaultDependencies(): AudioRecorderDependencies {
   return {
     audioWorkletModuleUrl: new URL('audio-capture-worklet.js', browser.document.baseURI).href,
     mediaDevices: {
-      getUserMedia: async (constraints) => {
-        if (!await ensureMicrophoneAccess()) {
-          const error = new Error('Microphone access is blocked.')
-          error.name = 'NotAllowedError'
-          throw error
-        }
-        return await browser.navigator.mediaDevices.getUserMedia(constraints)
-      },
+      addEventListener: (type, listener) => browser.navigator.mediaDevices?.addEventListener?.(type, listener),
+      removeEventListener: (type, listener) => browser.navigator.mediaDevices?.removeEventListener?.(type, listener),
+      getUserMedia: (constraints) => browser.navigator.mediaDevices.getUserMedia(constraints),
     },
+    ensureMicrophoneAccess,
     createAudioContext: () => new browser.AudioContext(),
     createAudioWorkletNode: (context, processorName) =>
       new browser.AudioWorkletNode(context, processorName),
@@ -205,8 +211,9 @@ export class AudioRecorder {
   constructor(
     private readonly options: AudioRecorderOptions = {},
     dependencies?: AudioRecorderDependencies,
+    private readonly preparedCapture?: PreparedAudioCapture,
   ) {
-    this.dependencies = dependencies ?? defaultDependencies()
+    this.dependencies = dependencies ?? createAudioRecorderDependencies()
     const duration = options.maxRecordingSeconds
     if (duration !== undefined && (!Number.isFinite(duration) || duration <= 0)) {
       throw new AudioRecorderError(
@@ -216,7 +223,8 @@ export class AudioRecorder {
     }
   }
 
-  async start(): Promise<void> {
+  /** Calls onReady once capture is connected, resumed and ready to stop. */
+  async start(onReady?: () => void): Promise<void> {
     if (this.session !== null) {
       throw new AudioRecorderError('ALREADY_RECORDING', 'Microphone capture is already active.')
     }
@@ -236,14 +244,30 @@ export class AudioRecorder {
     this.lastError = null
 
     try {
+      markDictationTiming('recorder-started')
       // The audio graph is built BEFORE the microphone opens: every await
       // after the stream goes live discards real speech (worklet compilation
       // alone can cost seconds on a cold start, silently dropping the
       // speaker's first words). None of this setup needs the stream.
-      session.context = this.dependencies.createAudioContext()
+      // These marks measure this press's acquisition, never the earlier
+      // preparation's timestamps. A prepared module has no load left to wait for.
+      markDictationTiming('audio-context-started')
+      if (this.preparedCapture !== undefined) {
+        session.preparedContext = this.preparedCapture.claim(() => this.handleDeviceUnavailable(session))
+        session.context = session.preparedContext.context
+        await session.preparedContext.suspended
+        this.assertSessionLive(session)
+      } else {
+        session.context = this.dependencies.createAudioContext()
+      }
       // A context opened before the permission dialog can be left suspended once that dialog closes.
       if (session.context.state === 'suspended') await session.context.resume?.()
-      await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
+      this.assertSessionLive(session)
+      markDictationTiming('audio-context-ready')
+      markDictationTiming('worklet-load-started')
+      await (session.preparedContext?.registered ??
+        session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl))
+      markDictationTiming('worklet-loaded')
       this.assertSessionLive(session)
 
       session.worklet = this.dependencies.createAudioWorkletNode(
@@ -257,24 +281,43 @@ export class AudioRecorder {
       session.worklet.port.onmessage = (event) => this.receiveChunk(session, event.data)
 
       const selected = this.options.selectedDeviceId
+      markDictationTiming('microphone-request-started')
+      if (this.dependencies.ensureMicrophoneAccess !== undefined) {
+        const granted = await this.dependencies.ensureMicrophoneAccess(waiting => {
+          if (!session.terminated && this.session === session) this.options.onPermissionWaiting?.(waiting)
+        })
+        this.assertSessionLive(session)
+        if (!granted) {
+          const error = new Error('Microphone access is blocked.')
+          error.name = 'NotAllowedError'
+          throw error
+        }
+      }
       try {
         session.stream = await this.dependencies.mediaDevices.getUserMedia(microphoneConstraints(selected))
       } catch (error: unknown) {
         if (!isConstraintError(error)) throw error
+        this.assertSessionLive(session)
         session.stream = await this.dependencies.mediaDevices.getUserMedia(
           selected ? { audio: { deviceId: { exact: selected } } } : { audio: true },
         )
       }
+      markDictationTiming('microphone-resolved')
       this.assertSessionLive(session)
-      if (session.context.state === 'suspended') await session.context.resume?.()
-      this.assertSessionLive(session)
+      const resumed = session.context.state === 'suspended' ? session.context.resume?.() : undefined
+      // Observe failure even if a synchronous graph operation throws before the await below.
+      void resumed?.catch(() => undefined)
       this.monitorTrackEnd(session)
 
-      // Synchronous connects only from here: capture is live the moment the
-      // microphone is.
+      // Connect immediately, including after a permission dialog, but only
+      // announce readiness once any pending context resume has completed.
+      markDictationTiming('source-connect-started')
       session.source = session.context.createMediaStreamSource(session.stream)
       session.source.connect(session.worklet)
+      markDictationTiming('source-connected')
 
+      if (resumed !== undefined) await resumed
+      this.assertSessionLive(session)
       if (this.options.maxRecordingSeconds !== undefined) {
         session.timer = this.dependencies.setTimer(() => {
           void this.finishAtDurationLimit(session).catch((error: unknown) => {
@@ -289,6 +332,7 @@ export class AudioRecorder {
         }, this.options.maxRecordingSeconds * 1_000)
       }
       session.starting = false
+      onReady?.()
     } catch (error: unknown) {
       const resolveCancelledStart = session.resolveStartOnTermination === true
       session.starting = false
@@ -327,7 +371,8 @@ export class AudioRecorder {
   }
 
   private assertSessionLive(session: RecordingSession): void {
-    if (session.terminated || this.session !== session) throw new Error('session terminated')
+    if (session.terminated || this.session !== session || session.context?.state === 'closed' ||
+      session.preparedContext?.retired) throw new Error('session terminated')
   }
 
   private receiveChunk(session: RecordingSession, data: unknown): void {
@@ -336,6 +381,7 @@ export class AudioRecorder {
     const levelsOnly = this.options.levelsOnly === true
     const chunk = levelsOnly ? data : new Float32Array(data)
     if (!levelsOnly) {
+      if (session.totalFrames === 0) markDictationTiming('first-audio-chunk')
       const rms = calculateRms(chunk)
       session.chunks.push(chunk)
       session.sourceFrames += chunk.length
@@ -521,6 +567,9 @@ export class AudioRecorder {
     if (worklet !== undefined) {
       this.safely(() => {
         worklet.port.onmessage = null
+        // Disconnection alone leaves a processor returning true alive when
+        // the shared context resumes. Its stop handler also closes the port.
+        worklet.port.postMessage('stop')
       })
       this.safely(() => worklet.disconnect())
     }
@@ -548,9 +597,12 @@ export class AudioRecorder {
 
     const context = session.context
     delete session.context
+    const preparedContext = session.preparedContext
+    delete session.preparedContext
     if (context !== undefined) {
       try {
-        await context.close()
+        if (preparedContext !== undefined) await this.preparedCapture?.release(preparedContext)
+        else await context.close()
       } catch {
         // Cleanup failures never replace the primary recorder result or finite app error.
       }

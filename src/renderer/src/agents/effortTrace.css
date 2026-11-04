@@ -9,8 +9,12 @@
    a square that turns; a static scale stretches the square to the card's shape, so the light keeps an even pace along
    the long edges. Static masks keep the head to a 1.5px band on the card's edge, and the halo, cut to the card plus
    8px and blurred, to a band outside the card, so it falls on the room and never on the words. */
-/* The halo and its glow round concentrically with the composer's corner, out past it by their reach. */
-.effort-trace { display: none; --effort-trace-corner: var(--tt-radius-card); position: absolute; inset: -1px; z-index: 2; border-radius: var(--effort-trace-corner); pointer-events: none; }
+/* The halo and its glow round concentrically with the composer's corner, out past it by their reach. The halo's box
+   reaches 30px past the card, 10px past the pane's floor under a floating composer, and the pane scrolls: counted as
+   room to scroll, it let a wheel past the conversation's end or a line brought into view lift the whole pane, header
+   and all, 10px under the window's top edge. Layout containment keeps the spill as paint alone, so the pane gains no
+   room to scroll from it. */
+.effort-trace { display: none; --effort-trace-corner: var(--tt-radius-card); position: absolute; inset: -1px; z-index: 2; border-radius: var(--effort-trace-corner); pointer-events: none; contain: layout; }
 /* Placed automatically, so the card's padding box holds it rather than the grid area every other child spans. */
 .thread-prompt > .effort-trace { grid-area: auto; }
 /* Zach's composer rounds at the overlay step (quietComposer.css), so the trace rounds with it. */

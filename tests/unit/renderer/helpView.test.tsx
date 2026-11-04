@@ -98,4 +98,30 @@ describe('HelpView', () => {
     render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="win32" openTopic={{ topic: 'help-watcher', key: 1 }} />)
     expect(screen.queryByRole('heading', { name: 'How Watcher works' })).toBeNull()
   })
+
+  describe('About on product events', () => {
+    const about = () => document.querySelector('.help-about')
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('says they are on while the switch is', () => {
+      withWatcher(false)
+      render(<HelpView shortcut="F9" platform="linux" />)
+      expect(about()).toHaveTextContent('Product events are on until you turn them off.')
+    })
+
+    it('says they are off once the switch is', () => {
+      withWatcher(false)
+      render(<HelpView shortcut="F9" platform="linux" productEventsEnabled={false} />)
+      expect(about()).toHaveTextContent('Product events are off.')
+      expect(about()).not.toHaveTextContent('on until')
+    })
+
+    it('says they are off when the environment turned them off, whatever the switch says', async () => {
+      withWatcher(false)
+      vi.stubGlobal('sotto', { productEvents: { toolOpened: vi.fn(), state: vi.fn(async () => ({ canSend: false, offBy: 'DO_NOT_TRACK' })) } })
+      render(<HelpView shortcut="F9" platform="linux" />)
+      await screen.findByText(/Product events are off\./)
+      expect(about()).not.toHaveTextContent('on until')
+    })
+  })
 })

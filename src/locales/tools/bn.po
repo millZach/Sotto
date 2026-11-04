@@ -1149,6 +1149,13 @@ msgstr ""
 msgid "Could not unlink the pull request."
 msgstr ""
 
+#. The drawer's tab that shows the Council under a thread, before its shells' tabs (ADR-0177).
+#. The pane header button that shows the Council in the drawer under the thread (ADR-0177).
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Council"
+msgstr ""
+
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Create PR"
 msgstr ""
@@ -1280,6 +1287,10 @@ msgstr ""
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
 msgid "Drag to resize · Double-click to reset to a third"
+msgstr ""
+
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
+msgid "Drag to resize · Double-click to reset to half"
 msgstr ""
 
 #. An element of a web page, chosen to give feedback on.
@@ -1551,6 +1562,11 @@ msgstr ""
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Hide"
+msgstr ""
+
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Hide Council"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
@@ -2627,6 +2643,10 @@ msgid "Reopening..."
 msgstr ""
 
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
+msgid "Resize Council"
+msgstr ""
+
+#: src/renderer/src/tools/PaneTerminalDrawer.tsx
 msgid "Resize terminal"
 msgstr ""
 
@@ -2791,6 +2811,10 @@ msgstr ""
 #. A browser page size in CSS pixels, such as Show at 1280 x 800.
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Show at {width} x {height}"
+msgstr ""
+
+#: src/renderer/src/tools/PaneTerminalToggle.tsx
+msgid "Show Council"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
@@ -3074,6 +3098,7 @@ msgid "Terminal could not list its sessions."
 msgstr ""
 
 #: src/renderer/src/tools/PaneTerminalToggle.tsx
+#: src/renderer/src/tools/TerminalSurface.tsx
 msgid "Terminal drawer"
 msgstr ""
 

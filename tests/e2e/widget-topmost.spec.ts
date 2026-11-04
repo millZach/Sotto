@@ -10,7 +10,7 @@ import { join } from 'node:path'
 
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
-import type { SottoE2EBridge } from '../../src/shared/e2e'
+import { E2E_TRANSCRIPT, type SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, finishFirstRunSetupFrom, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
 
 test.skip(process.platform !== 'win32', 'WS_EX_TOPMOST probe is Windows-only')
@@ -132,9 +132,11 @@ test('idle widget returns after auto-paste and stays WS_EX_TOPMOST', async () =>
       await assertWidgetNativeTopmost(launched.app, `dictation reveal ${cycle}`)
 
       await triggerShortcut(launched.page)
-      await expect(launched.page.getByText(/^Pasted( into .+)?\.$/)).toBeVisible({
+      await expect.poll(() => launched.page.evaluate(() => window.sottoE2E!.snapshot()), {
         timeout: 15_000,
-      })
+      }).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: cycle + 1 })
+      await expect(launched.page.getByRole('heading', { name: 'Ready when you are.', exact: true })).toBeVisible()
+      await expect(idleWidget.locator('.widget-shell')).toHaveAttribute('data-status', 'idle')
       await expect.poll(async () => {
         const state = await widgetTopmostState(launched.app)
         return state?.visible === true

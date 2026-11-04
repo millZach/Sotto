@@ -71,6 +71,7 @@ import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../sha
 import { FailuresSeen } from './failuresSeen'
 import { BRING_BACK_UNSUPPORTED } from '../../shared/bringChangesBack'
 import { RequestWaits } from './requestWaits'
+import { CommandSummaries, type CommandSummaryWrite } from './commandSummaries'
 import { FinishedUnread, settledIn } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
@@ -87,6 +88,7 @@ import { attachedFileRelativePath, attachedFilesNote, saveAttachedFiles } from '
 import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
+import { ThreadProductEvents, type ProductEventRecorder } from '../productEvents/threadEvents'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
 import { WATCHER_RECORD_FILE } from './watcherRecordFile'
 import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
@@ -562,6 +564,7 @@ export class AgentControl {
   private restartHooks: RestartResumeHooks | undefined
   /** Restarting threads a usage limit stopped (ADR-0144): given before start, only while that Owl feature is on. */
   private limitRestart: LimitRestart | undefined
+  private threadProductEvents: ThreadProductEvents | undefined
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
@@ -1225,6 +1228,7 @@ export class AgentControl {
   private readonly failuresSeen: FailuresSeen
   /** When each pending request started waiting, stamped as it is first shown (ADR-0135). */
   private readonly requestWaits: RequestWaits
+  private readonly commandSummaries: CommandSummaries | undefined
   /** The sends whose reply's first output the coordinator is watching for, to time it. */
   private readonly firstOutputs = new FirstOutputWatches()
   /**
@@ -1337,6 +1341,8 @@ export class AgentControl {
     restartStoppedThreads?: boolean
     /** Numeric-only Owl history. It never gates or retries a provider send. */
     usage?: UsagePromptRecorder
+    /** Where `thread.started` and `turn.completed` go (ADR-0179). Absent, nothing watches for them. */
+    productEvents?: ProductEventRecorder
     observeActiveThread?: boolean
     turns?: TurnRecorder
     authority?: Authority
@@ -1347,6 +1353,8 @@ export class AgentControl {
      * that writes nothing and every failure resolve to. Absent here means no thread is ever named by Sotto.
      */
     writeThreadTitle?: (threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>
+    /** Asks a thread's own provider for a command summary when the model sent none (ADR-0185). */
+    writeCommandSummary?: CommandSummaryWrite
     /**
      * The first-message title for a thread's first message: its opening words, given the moment it is sent so
      * the thread is not "New thread" while its first turn runs. `null` (generation off) leaves the stand-in;
@@ -1395,6 +1403,7 @@ export class AgentControl {
     /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
     nextPrompts?: NextPromptHooks
   }) {
+    if (dependencies.productEvents) this.threadProductEvents = new ThreadProductEvents({ recorder: dependencies.productEvents, startedBy: thread => this.productEventStartedBy(thread) })
     this.held = heldProvidersOption(dependencies)
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.watcherArchive = dependencies.watcherEnabled === true ? new WatcherArchive(dependencies.directory, () => dependencies.historyEnabled?.() !== false) : undefined
@@ -1408,6 +1417,12 @@ export class AgentControl {
     this.prototypeReady.onEvicted = id => { this.reshow.add(id); this.evictions?.push(id) }
     this.failuresSeen.onMoved = id => { this.marksMoved.add(id) }
     this.requestWaits.onMoved = id => { this.marksMoved.add(id) }
+    this.commandSummaries = dependencies.writeCommandSummary ? new CommandSummaries(dependencies.writeCommandSummary) : undefined
+    if (this.commandSummaries) {
+      this.commandSummaries.onMoved = id => { this.marksMoved.add(id) }
+      // Taken like a new snapshot, so the stored thread carries the outcome and every client is told.
+      this.commandSummaries.onChanged = () => { if (!this.disposed) this.acceptSnapshot(this.state.host) }
+    }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -1595,7 +1610,7 @@ export class AgentControl {
   private subscribeHost(): void {
     const host = this.dependencies.host
     if (!host.subscribeActivityChanges || this.acceptsWhole) {
-      this.unsubscribe = subscribeActivitySnapshots(host, snapshot => this.acceptSnapshot(snapshot))
+      this.unsubscribe = subscribeActivitySnapshots(host, snapshot => { this.threadProductEvents?.trackAll(snapshot.threads); this.acceptSnapshot(snapshot) })
       return
     }
     const map = new ThreadMap({ verify: false })
@@ -1663,6 +1678,7 @@ export class AgentControl {
       snapshot = startHandoversShown(snapshot, gone && incoming ? id => this.threadAvailable(id) ? incoming.get(id) : undefined : undefined)
     }
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
+    if (this.commandSummaries) snapshot = this.commandSummaries.decorate(snapshot, gone)
     // Each request is stamped with when its wait began as it is first shown (ADR-0135), Sotto's own included.
     return this.requestWaits.decorate(snapshot, gone)
   }
@@ -3486,7 +3502,8 @@ export class AgentControl {
   }
   hasQueuedDelegationNews(threadId: string, delegationIds: ReadonlySet<string>): boolean {
     return this.followupStore.peek().items.some(item => item.threadId === threadId
-      && item.news?.some(news => isDelegationNews(news) && news.items.some(part => delegationIds.has(part.delegationId))))
+      && item.news?.some(news => isDelegationNews(news) && (news.swarmId !== undefined && delegationIds.has(news.swarmId)
+        || news.items.some(part => delegationIds.has(part.delegationId)))))
   }
 
   resumeDelegationNews(): void { this.pumpFollowups() }
@@ -6516,6 +6533,8 @@ export class AgentControl {
     const applied = map.apply(changes)
     if (applied === 'resync') { this.incomingSubscription?.resync(); return }
     if (applied === 'stale') return
+    // From the change itself, whichever way it is taken in below, so this walks no list of threads (ADR-0179).
+    if (this.threadProductEvents) { if (changes.whole) this.threadProductEvents.trackAll(map.threads()); else this.threadProductEvents.track(changes.upserts, changes.removals) }
     if (changes.whole || changes.rest !== undefined || this.state.host !== this.hostFromChanges || this.state.host.threads !== this.hostListFromChanges
       || before !== undefined && (changes.removals.length > 0 || before.some((provider, at) => provider === null || provider !== changes.upserts[at]!.providerId))) {
       this.acceptSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot, true)
@@ -6702,6 +6721,15 @@ export class AgentControl {
    * What taking a host snapshot in does once the snapshot is shown, whole or by a change. `changed` names, for a change,
    * the threads it showed again and the threads that went: only those are tracked, every other being as it was.
    */
+  /** Who started a thread, as `thread.started` and `turn.completed` say it. Read just after an update, never during one. */
+  private productEventStartedBy(thread: AgentThread): 'user' | 'watcher' | 'delegation' | 'council' | 'swarm' {
+    if (isWatcherKind(thread)) return 'watcher'
+    if (this.swarmView?.(thread.id)) return 'swarm'
+    if (this.councilHooks?.madeThread(thread.id)) return 'council'
+    if (thread.delegatedBy !== undefined) return 'delegation'
+    const hostId = this.hostId()
+    return hostId && this.watcherHooks?.startedByWatcher?.(hostId, thread.id) ? 'watcher' : 'user'
+  }
   private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: HostThreadsChange & { readonly gone: ReadonlySet<string> }): void {
     this.observeWatcher(snapshot, changed)
     if (!this.disposed) this.delegationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
@@ -6883,6 +6911,7 @@ export class AgentControl {
   }
   dispose(): void {
     this.disposed = true
+    this.commandSummaries?.close()
     // No snapshot is accepted from here on, so no first output can be seen: the records waiting for one are written now.
     this.firstOutputs.closeAll()
     // A held broadcast dies with the control: its listeners are going away, and a run that

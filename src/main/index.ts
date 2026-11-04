@@ -1,3 +1,5 @@
+import { createDictationTiming } from './performance/dictationTiming'
+import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
 import { mediaThumbnailMaker } from './agents/mediaThumbnail'
 import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
@@ -11,7 +13,8 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
-import { createProductEvents, productEventsPermission } from './productEvents/productEvents'
+import { createProductEvents, productEventsOffBy, productEventsPermission } from './productEvents/productEvents'
+import { registerProductEventsIpc } from './productEvents/ipc'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
@@ -55,6 +58,10 @@ import { LocalApps, type LocalAppsEvent } from './phones/localApps'
 import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
+import { registerTeamsIpc } from './teams/ipc'
+import { TeamService, type TeamEvent } from './teams/teams'
+import { TEAMS_CHANGED } from '../shared/teams'
+import { SIDE_WRITING_TIMEOUT_MS } from './agents/sideWriting'
 import { e2eTailscale } from './e2e/tailscale'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
@@ -108,7 +115,7 @@ import {
 } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
-import { homedir, release as osRelease } from 'node:os'
+import { homedir, hostname as osHostname, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
 import {
@@ -129,7 +136,8 @@ import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { createDictationShortcutRouter, type DictationShortcutEvent } from './hotkeys/dictationShortcutRouter'
 import { holdCanStart } from './hotkeys/chordMatcher'
-import { createKeyListener } from './hotkeys/keyListener'
+import { createKeyListener, type KeyListener } from './hotkeys/keyListener'
+import { createKeyListenerPasteAdapter } from './hotkeys/keyListenerPaste'
 import { createDictationShortcutLifecycle, interruptOnLockAndSleep } from './hotkeys/dictationShortcutLifecycle'
 import { spawnKeyListenerHelper } from './hotkeys/keyListenerHelpers'
 import { parseDictationEdge } from './hotkeys/dictationCommand'
@@ -199,7 +207,7 @@ import {
   createTrayResource,
   NativeTrayCreationError,
 } from './tray/trayIcon'
-import { menuBarOwlWanted, startMenuBarOwl, type MenuBarOwl } from './tray/menuBarOwl'
+import { menuBarIconShown, menuBarOwlWanted, startMenuBarOwl, type MenuBarOwl } from './tray/menuBarOwl'
 import { electronOwlEnvironment } from './tray/menuBarOwlElectron'
 import {
   parseDevelopmentRendererSources,
@@ -357,6 +365,7 @@ const profile = platformProfile(platform)
 const platformDefaults = defaultSettings(profile.defaultHotkey, profile.defaultHoldShortcuts)
 
 type NativeDiagnostic =
+  | TeamEvent
   | OpenRouterModelsEvent
   | OpenRouterSpeechModelsEvent
   | RecoveryNoticeLogEvent
@@ -402,6 +411,7 @@ type NativeDiagnostic =
   | 'dock-icon-failed'
   | 'owl-frames-unavailable'
   | 'owl-failed'
+  | 'menu-bar-icon-show-failed'
   | 'desktop-notification-failed'
   | MainCheckoutEvent
   | DesktopDefaultsEvent
@@ -755,6 +765,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Dock and Finder launch with the system PATH. Provider CLIs live in the user's login PATH.
   await installGuiPath()
   const userDataPath = app.getPath('userData')
+  const dictationTiming = process.env.SOTTO_DICTATION_TIMING === '1' || process.argv.includes('--dictation-timing')
+    ? createDictationTiming(userDataPath) : undefined
   const memoryStore = openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
   const memoryProfile = memoryStore === undefined ? undefined : new MemoryProfile(memoryStore)
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
@@ -918,8 +930,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
   const releaseTrack = getReleaseTrack(appRunningVersion)
-  // Product events (ADR-0179): nothing is sent, and no ID is made, unless a build or the environment names an endpoint and the notice was answered.
-  const productEvents = createProductEvents({ dataDirectory: userDataPath, holdWhileWaiting: false, version: appRunningVersion, channel: releaseTrack, surface: 'desktop', log: event => console.warn(event) })
+  // Product events (ADR-0179): nothing is sent, and no ID is made, until the notice was answered. A build that is not packaged has no endpoint unless its environment names one.
+  const productEvents = createProductEvents({ released: app.isPackaged, dataDirectory: userDataPath, holdWhileWaiting: false, version: appRunningVersion, channel: releaseTrack, surface: 'desktop', log: event => console.warn(event) })
   productEvents.setPermission(productEventsPermission(workingCopySettings))
   app.on('will-quit', () => productEvents.stop())
   // What this build calls itself in words: the main window's title and the tray's tooltip, "Sotto Owl" on that track.
@@ -947,7 +959,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
-      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
+      const featureArguments = [...(dictationTiming && (mainRenderer || widgetRenderer) ? [DICTATION_TIMING_ARGUMENT] : []), ...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
         ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
@@ -1061,8 +1073,23 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
   const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
   const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
+  // Teams (ADR-0186): an Owl feature on a desktop with a Watcher. An ask reaches only these reads and one side call with no
+  // tools, and nothing here can send to a thread, answer a card or change a permission (ADR-0187).
+  let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
+  const teams: TeamService | undefined = owlFeatures.teams && watcherEnabled && startupSettings.localHostEnabled ? new TeamService({
+    directory: userDataPath, credentials, tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
+    threads: leftOut => teamReads?.watcher?.teamThreadFacts(leftOut) ?? [], projects: () => teamReads?.watcher?.teamProjectFacts() ?? [],
+    anchor: () => teamReads?.watcher?.teamAnchor() ?? null, keepHistory: () => agentHistoryEnabled,
+    write: async prompt => {
+      const modelId = teamReads?.watcher?.teamModel()
+      if (!modelId) return null
+      return await teamReads?.host.writeShortTextOn?.({ modelId }, prompt, AbortSignal.timeout(SIDE_WRITING_TIMEOUT_MS)) ?? null
+    },
+    openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) }, hostname: () => osHostname(), log: logOperational,
+  }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    ...teams ? { teams } : {},
+    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
@@ -1224,7 +1251,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
     // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
     ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
@@ -1365,7 +1392,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-  const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
+  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,
@@ -1377,6 +1404,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Apps on this computer reach the same threads on a loopback listener of their own, with no pairing code (ADR-0180).
   const localApps = localAppsEnabled ? new LocalApps({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined, settings: () => workingCopySettings, policy: authority, log: logOperational }) : undefined
+  if (teams) { teamReads = { watcher: localRuntime.watcher, host: localRuntime.agentHost }; quitHandles.teams = teams; void teams.start().catch(() => logOperational('teams-start-failed')) }
   if (localApps) { quitHandles.localApps = localApps; void localApps.start().catch(() => logOperational('local-apps-failed')) }
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => requestDraftOwnerState(owner, agentControl, hostRouter), async (target, decisionId) => {
     if (target.kind !== 'thread') throw new Error(t`Standalone chats are no longer available.`)
@@ -1422,6 +1450,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   windowHangs?.start()
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
+    teams?.privacyChanged()
     const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
@@ -1502,6 +1531,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
     : null
   const pasteCommands = createPasteCommands(platform)
+  // Assigned only by the existing shortcut lifecycle; paste never starts a listener.
+  let pasteKeyListener: KeyListener | null = null
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
     ? createWarmPasteAdapter({
         spawnHelper: (invocation) =>
@@ -1523,13 +1554,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? warmPaste
       ?? (platform === 'darwin'
         // osascript's stderr says which permission refused the paste; it is read, never logged.
-        ? createOsascriptPasteAdapter({
+        ? createKeyListenerPasteAdapter(() => pasteKeyListener, createOsascriptPasteAdapter({
             spawn: (executable, args, options) => spawn(executable, [...args], { ...options, stdio: [...options.stdio] }),
             onDenied: denial => recoveryNotices.publish({
               code: denial === 'automation' ? 'AUTOMATION_PERMISSION_REQUIRED' : 'ACCESSIBILITY_PERMISSION_REQUIRED',
             }),
             log: logOperational,
-          })
+          }))
         : platform === 'linux'
           ? createHyprlandPasteAdapter(undefined, undefined, undefined, () => linuxClipboard!.copyToPrimary())
           : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
@@ -1822,8 +1853,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
 
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
-  const dispatchDictation = (command: DictationCommand): void => {
+  let dictationTimingStartPending = false
+  const dispatchDictation = (command: DictationCommand, receivedAt?: number): void => {
     if (!dictationActive) return
+    if (dictationTiming) {
+      // A second press can arrive before the renderer publishes REQUESTED.
+      const status = dictationTimingStartPending ? 'requesting-permission' : widgetState.status
+      if ((command.type === 'start' || command.type === 'toggle') && !['listening', 'requesting-permission', 'processing'].includes(status)) {
+        dictationTimingStartPending = true
+        dictationTiming.begin(receivedAt)
+      } else if (command.type === 'stop' || (command.type === 'toggle' && ['listening', 'requesting-permission'].includes(status))) {
+        dictationTiming.mark({ event: 'stop-pressed', atMs: receivedAt ?? dictationTimingNow() })
+      }
+    }
+    markDictationTiming('dictation-command-sent')
     void messageDelivery.sendToMain(DICTATION_COMMAND, command).then((delivered) => {
       if (!delivered) {
         logOperational('native-main-send-failed')
@@ -1834,8 +1877,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     if (!dictationActive) return
     void windows.showWidget().catch(() => logOperational('native-widget-show-failed'))
   }
-  const toggleDictation = (): void => {
-    dispatchDictation({ type: 'toggle' })
+  const toggleDictation = (receivedAt?: number): void => {
+    dispatchDictation({ type: 'toggle' }, receivedAt)
     showWidget()
   }
 
@@ -1847,9 +1890,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const hotkeys = new HotkeyManager(
     dictationGate.shortcuts,
     () => {
+      const receivedAt = dictationTiming ? dictationTimingNow() : undefined
       // A hold in progress no longer owns the session the primary shortcut toggled.
       dictationShortcuts?.pressToggled()
-      toggleDictation()
+      toggleDictation(receivedAt)
     },
     () => {
     hotkeys.cancelListening()
@@ -1871,17 +1915,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
     ? createDictationShortcutRouter({
         shortcuts: dictationGate.shortcuts,
-        createListener: handlers => dictationGate.listener(createKeyListener({
-          platform,
-          // The Windows helper can take long to start cold.
-          readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
-          // An E2E run never spawns the helper, so it never asks for Input Monitoring.
-          spawnHelper: e2eConfiguration === null
-            ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
-            : () => null,
-          log: event => logOperational(event as DictationShortcutEvent),
-          ...handlers,
-        })),
+        createListener: handlers => {
+          const listener = dictationGate.listener(createKeyListener({
+            platform,
+            // The Windows helper can take long to start cold.
+            readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
+            // An E2E run never spawns the helper, so it never asks for Input Monitoring.
+            spawnHelper: e2eConfiguration === null
+              ? () => spawnKeyListenerHelper(platform, { resourcesPath: process.resourcesPath, appPath: app.getAppPath(), packaged: app.isPackaged, log: event => logOperational(event as DictationShortcutEvent) })
+              : () => null,
+            log: event => logOperational(event as DictationShortcutEvent),
+            ...handlers,
+          }))
+          pasteKeyListener = listener
+          return listener
+        },
         canStart: () => holdCanStart(widgetState),
         isFocused: mainWindowFocused,
         dispatch: dispatchDictation,
@@ -1936,7 +1984,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   BrowserWindow.getAllWindows().forEach(watchMainWindowFocus)
   app.on('browser-window-created', (_event, window) => watchMainWindowFocus(window))
 
-  const nativeTray = e2eConfiguration === null
+  const makeNativeTray = async () => e2eConfiguration === null
     ? await createTrayResource({
         source: profile.trayIcon,
         executablePath: process.execPath,
@@ -1958,16 +2006,36 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     : { setContextMenu: () => undefined, destroy: () => undefined }
   // The menu bar owl (ADR-0114): on a Mac in an Owl build the tray's picture is swapped on a schedule. When its frames cannot
   // be read the one-tint template stays and the user loses only the animation.
-  const menuBarOwl: MenuBarOwl | null = menuBarOwlWanted(platform, owlFeatures, e2eConfiguration !== null) && 'setImage' in nativeTray
-    ? startMenuBarOwl(nativeTray, startupSettings, electronOwlEnvironment({ nativeImage, systemPreferences, powerMonitor }, resourceRoot, event => { if (event === 'owl-frames-unavailable' || event === 'owl-failed') logOperational(event) }))
-    : null
+  const startOwl = (tray: Awaited<ReturnType<typeof makeNativeTray>>, settings: AppSettings): MenuBarOwl | null =>
+    menuBarOwlWanted(platform, owlFeatures, e2eConfiguration !== null) && 'setImage' in tray
+      ? startMenuBarOwl(tray, settings, electronOwlEnvironment({ nativeImage, systemPreferences, powerMonitor }, resourceRoot, event => { if (event === 'owl-frames-unavailable' || event === 'owl-failed') logOperational(event) }))
+      : null
+  // A Mac's user may take the icon out of the menu bar (ADR-0114); the Dock icon still opens the window.
+  let nativeTray = menuBarIconShown(platform, owlFeatures, startupSettings) ? await makeNativeTray() : null
+  let menuBarOwl = nativeTray === null ? null : startOwl(nativeTray, startupSettings)
   try {
+  const showMenuBarIcon = async (settings: AppSettings): Promise<void> => {
+    if (!menuBarIconShown(platform, owlFeatures, settings)) {
+      menuBarOwl?.dispose()
+      nativeTray?.destroy()
+      menuBarOwl = null
+      nativeTray = null
+      return
+    }
+    if (nativeTray !== null) return
+    const made = await makeNativeTray().catch(() => { logOperational('menu-bar-icon-show-failed'); return null })
+    // A second press while the tray was being made has the last word.
+    if (made === null || nativeTray !== null || !menuBarIconShown(platform, owlFeatures, workingCopySettings)) { made?.destroy(); return }
+    nativeTray = made
+    menuBarOwl = startOwl(made, workingCopySettings)
+    trayController.update(currentTrayState)
+  }
   const trayAdapter: TrayAdapter = {
     setMenu(items): void {
-      nativeTray.setContextMenu(Menu.buildFromTemplate(items.map(toMenuTemplate)))
+      nativeTray?.setContextMenu(Menu.buildFromTemplate(items.map(toMenuTemplate)))
     },
     destroy(): void {
-      nativeTray.destroy()
+      nativeTray?.destroy()
     },
   }
   // Linux's keys are Hyprland bindings the Omarchy setup writes; it is built with the IPC, after this coordinator.
@@ -1995,10 +2063,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       syncHotkeyStandby()
       const productEventAnswer = productEventsPermission(settings)
       productEvents.setPermission(productEventAnswer)
-      if (productEventAnswer !== productEventsPermission(previous)) hostRouter.tellProductEventAnswer()
+      if (productEventAnswer !== productEventsPermission(previous)) {
+        hostRouter.tellProductEventAnswer()
+        // Nothing was kept before this answer, so the start this run began with is said now, under the ID it has now.
+        if (productEventAnswer === 'on') productEvents.record('app.started', { pairedHosts: desktopHosts.get().hosts.length })
+      }
       // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
-      menuBarOwl?.applySettings(settings)
+      if (menuBarIconShown(platform, owlFeatures, settings) === (nativeTray !== null)) menuBarOwl?.applySettings(settings)
+      else await showMenuBarIcon(settings)
       popup?.settingsChanged(settings)
       // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
       if (await applyInterfaceLanguage(settings)) {
@@ -2151,6 +2224,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     syncEscape: (state) => {
       widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
+      // Starting from a terminal state publishes RESET/idle before REQUESTED.
+      if (state.status !== 'idle') dictationTimingStartPending = false
       return syncEscapeForWidgetSnapshot(hotkeys, state)
     },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
@@ -2230,7 +2305,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Off, nothing in Sotto may open the microphone: every ask answers no without asking the user (ADR-0107).
   const microphoneAccessWhileOn = microphoneAccess === null ? null : {
     ...microphoneAccess,
-    ensure: () => dictationActive ? microphoneAccess.ensure() : Promise.resolve(false),
+    ensure: (onWaiting?: (waiting: boolean) => void) => dictationActive ? microphoneAccess.ensure(onWaiting) : Promise.resolve(false),
     isGranted: () => dictationActive && microphoneAccess.isGranted(),
   }
   if (platform === 'linux') {
@@ -2300,7 +2375,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
       }, owlFeatures['reveal-linked-files'])
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
-      const cleanupUsage = registerUsageIpc(ipcMain, { read: query => hostRouter.usageRead(query),
+      const cleanupProductEvents = registerProductEventsIpc(ipcMain, { featureUsed: tool => productEvents.featureUsed(tool), state: { canSend: productEvents.canSend, offBy: productEventsOffBy(process.env) } }, () => windows.getTrustedRenderers())
+      const cleanupUsage = registerUsageIpc(ipcMain, { read: query => { productEvents.featureUsed('usage'); return hostRouter.usageRead(query) },
         refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
       // The delegating thread's cards read delegation's own record (#1029); stable built no service, so nothing is registered.
       // A thread on another machine is read on that machine where Work across machines is on (#1310); stable reads none.
@@ -2356,7 +2432,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: copyOutput, reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
-      browserService = new BrowserService({ files,
+      browserService = new BrowserService({ featureUsed: feature => productEvents.featureUsed(feature), files,
         getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
@@ -2365,7 +2441,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         pointAtSomething: owlFeatures['quiet-browser'],
       })
       cloudIphoneService = new CloudIphoneService({
-        files, credentials,
+        featureUsed: feature => productEvents.featureUsed(feature), files, credentials,
         settings: () => ({ monthlyMinutes: workingCopySettings.cloudIphoneMonthlyMinutes, idleMinutes: workingCopySettings.cloudIphoneIdleMinutes }),
         ledger: cloudIphoneLedger,
         threadTitle: threadId => agentControl.get().host.threads.find(thread => thread.id === threadId)?.title ?? threadId,
@@ -2384,7 +2460,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         worktreeCleanup.start()
       }
       const cleanupTools = registerToolsIpc(ipcMain, {
-        terminal: terminalService,
+        featureUsed: feature => productEvents.featureUsed(feature), terminal: terminalService,
         onTerminalFocus: focused => {
           const main = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())?.webContents
           if (main) { if (focused) terminalFocus.add(main); else terminalFocus.delete(main) }
@@ -2441,6 +2517,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale, { opencode: !heldProviders.has('opencode') })
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
+      const cleanupTeams = teams ? registerTeamsIpc(ipcMain, teams, () => windows.getTrustedRenderers(), state => windows.sendToMain(TEAMS_CHANGED, state)) : undefined
       const cleanupLocalApps = localApps ? registerLocalAppsIpc(ipcMain, localApps, () => windows.getTrustedRenderers(), state => windows.sendToMain(LOCAL_APPS_CHANGED, state)) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
@@ -2528,6 +2605,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           return await shell.openPath(real) === '' ? opened({ ok: true }) : { ok: false, reason: 'unavailable' }
         },
         ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
+        ...(dictationTiming ? { dictationTiming } : {}),
         dictation: {
           request(command): void {
             dispatchDictation(command)
@@ -2590,12 +2668,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupAgents()
         cleanupHosts()
         cleanupPhones()
+        cleanupTeams?.()
         cleanupLocalApps?.()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
         cleanupSubagents()
         cleanupUsage()
+        cleanupProductEvents()
         cleanupDelegations()
         cleanupCheckQueues()
         cleanupContinue()
@@ -2714,7 +2794,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   } catch {
     try {
       menuBarOwl?.dispose()
-      nativeTray.destroy()
+      nativeTray?.destroy()
     } catch {
       // Startup will report one finite failure even if native tray cleanup also fails.
     }

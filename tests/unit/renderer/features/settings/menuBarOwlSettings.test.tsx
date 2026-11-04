@@ -9,14 +9,15 @@ import { AppearanceSettings } from '../../../../../src/renderer/src/features/set
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../../src/shared/settings'
 import type { SottoPlatform } from '../../../../../src/shared/platform'
 
-const owl = vi.hoisted(() => ({ on: false }))
+const owl = vi.hoisted(() => ({ on: false, hideIcon: false }))
 vi.mock('../../../../../src/renderer/src/state/owlFeature', () => ({
-  useOwlFeature: (id: string) => id === 'menu-bar-owl' && owl.on,
+  useOwlFeature: (id: string) => (id === 'menu-bar-owl' && owl.on) || (id === 'hide-menu-bar-icon' && owl.hideIcon),
 }))
 
 afterEach(() => {
   cleanup()
   owl.on = false
+  owl.hideIcon = false
 })
 
 function setup({ platform = 'darwin', on = true, settings = {} }: { platform?: SottoPlatform; on?: boolean; settings?: Partial<AppSettings> } = {}) {
@@ -60,5 +61,20 @@ describe('MenuBarOwlSettings', () => {
     expect(onSave).toHaveBeenLastCalledWith({ menuBarOwlBody: 'light' }, saying('Owl body saved.'))
     await user.click(screen.getByRole('button', { name: "Use Ice blue as the owl's eye color" }))
     expect(onSave).toHaveBeenLastCalledWith({ menuBarOwlEyes: 'ice' }, saying('Owl eyes saved.'))
+  })
+
+  it('has no menu bar switch until its Owl feature is on', () => {
+    setup()
+    expect(screen.queryByRole('switch', { name: 'Show in menu bar' })).not.toBeInTheDocument()
+  })
+
+  it('hides the icon and its colours with the switch, and shows them again', async () => {
+    owl.hideIcon = true
+    const { onSave, user } = setup({ settings: { showMenuBarIcon: false } })
+    const toggle = screen.getByRole('switch', { name: 'Show in menu bar' })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    expect(screen.queryByRole('group', { name: 'Body' })).not.toBeInTheDocument()
+    await user.click(toggle)
+    expect(onSave).toHaveBeenLastCalledWith({ showMenuBarIcon: true }, saying('Menu bar icon shown.'))
   })
 })

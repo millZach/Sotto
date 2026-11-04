@@ -7,10 +7,13 @@ import SottoCore
 /// title once the big one has scrolled off). The big title, where the thread runs and its branch chips scroll away with
 /// the conversation, and the agent's steps sit between the messages in time order, each run folded into one line that
 /// opens in place. A waiting question or permission opens as a sheet; dismissed, the reply box offers it again.
-/// Everything here goes to the thread's own computer.
+/// Everything here goes to the thread's own computer. The iPhone Duo has neither the bar nor the big title: the thread's
+/// controls stand on its rail, and its name and chips behind ••• (Zach's picks, November 3, 2026).
 struct ThreadView: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
+    /// A delegated thread opened from Agents, on the page of the thread that delegated it: Back goes to that thread.
+    var nested = false
     @State private var open: AgentRequest?
     @State private var setAside: Set<String> = []
     /// The request the sheet was opened for, set aside when the sheet closes without an answer.
@@ -26,9 +29,11 @@ struct ThreadView: View {
     @Environment(\.duoLayout) private var duo
     @Environment(\.dismiss) private var dismiss
     private var thread: ThreadSummary? { model.thread(ref) }
-    /// The folded Duo's cover screen, where the thread has no bar: its controls stand in the strip (`FoldedThreadRail`)
-    /// and its title only in the page (Zach, TestFlight build 45, reversing #1724).
+    /// The folded Duo's cover screen, where the rail's thread controls take the tabs' place (`FoldedThreadRail`).
     private var folded: Bool { if case .folded = duo { return true } else { return false } }
+    /// The iPhone Duo, folded or unfolded, where a thread has no bar (ADR-0151, November 3 amendment): its controls stand
+    /// on the rail. Every other iPhone keeps its bar.
+    private var barless: Bool { duo != .none }
 
     var body: some View {
         let _ = BenchProbe.body("ThreadView")
@@ -37,6 +42,8 @@ struct ThreadView: View {
             open = request
         }
         .pageGround()
+        // With no bar over it, the page's own ground keeps its words from the clock and battery.
+        .overlay(alignment: .top) { if barless { StatusBarFade() } }
         .navigationTitle(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -56,9 +63,10 @@ struct ThreadView: View {
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
-        .toolbar(folded ? .hidden : .automatic, for: .navigationBar)
-        // With no bar, iOS's own swipe back is kept, so a swipe in from the left edge goes back to the list.
-        .background { InteractivePop(enabled: folded).frame(width: 0, height: 0).accessibilityHidden(true) }
+        .toolbar(barless ? .hidden : .automatic, for: .navigationBar)
+        // With no bar, iOS's own swipe back is kept where nothing else takes the drag: on the cover screen, and for a
+        // delegated thread, which goes back to its thread. Unfolded, a drag on any other thread moves the sidebar.
+        .background { InteractivePop(enabled: folded || (barless && nested)).frame(width: 0, height: 0).accessibilityHidden(true) }
         .toolbar(.hidden, for: .tabBar)
         .coversTabs()
         .onChange(of: model.railAsked) { _, asked in
@@ -73,7 +81,11 @@ struct ThreadView: View {
         // size and its place.
         .ignoresSafeArea(open != nil ? SafeAreaRegions.keyboard : [], edges: .bottom)
         .task(id: ref) { await model.select(ref); offer() }
-        .onDisappear { Task { if model.selected == ref { await model.select(nil) } } }
+        .onAppear { if nested { model.railNested = ref } }
+        .onDisappear {
+            if nested, model.railNested == ref { model.railNested = nil }
+            Task { if model.selected == ref { await model.select(nil) } }
+        }
         .onChange(of: thread?.requests.map(\.id)) { _, _ in offer() }
         .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
             RequestSheet(ref: ref, request: request).requestSheetDetents()
@@ -106,41 +118,68 @@ struct ThreadView: View {
     }
 }
 
-/// A thread's controls in the folded Duo's strip, in place of its bar (Zach's pick A on the build 45 prototype): Back
-/// where New thread stands on the other pages, under the clock and battery, then the thread's state, Agents, Watch and
-/// its actions, centred in the height under it. The tabs come back with the list, and a swipe in from the left edge goes
-/// back too.
+/// A thread's controls in the folded Duo's strip, in place of the tabs (ADR-0151, amended): Back where New thread stands
+/// on the other pages, under the clock and battery, and low down the thread's pill where the tabs' pill stands. The tabs
+/// come back with the list, and a swipe in from the left edge goes back too.
 struct FoldedThreadRail: View, Equatable {
-    @EnvironmentObject var model: AppModel
     /// The thread showing, once its page has read it.
     let ref: ThreadRef?
     let clear: CGFloat
     let back: () -> Void
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: back) { Image(systemName: "chevron.backward") }
-                .buttonStyle(GlassCircleStyle())
-                .accessibilityLabel(String(localized: "Back"))
-                .accessibilityIdentifier("duo-rail-back")
-                .padding(.top, clear)
-            VStack(spacing: Space.s3) {
-                if let ref {
-                    let thread = model.thread(ref)
-                    ThreadStatePill(state: thread.map { ThreadState($0) } ?? .done, since: Words.date(thread?.summary?.runningTurnStartedAt),
-                                    reachable: model.status(ref.hostID) != .unreachable, vertical: true)
-                    if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { model.railAsked = RailAsk(ref: ref, action: .agents) } }
-                    if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
-                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
-                }
-            }
-            .frame(maxHeight: .infinity)
+            RailBackButton(back: back)
+            Spacer(minLength: Space.s3)
+            if let ref { ThreadRailPill(ref: ref) }
         }
+        .padding(.top, clear)
+        .padding(.bottom, Space.s5)
+        // No lower limit on the height: with the keyboard up, a rail taller than the page would rise past the clock.
+        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .ignoresSafeArea(.keyboard)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("duo-thread-rail")
     }
-    /// It draws from the model it watches, the thread and its place under the clock; Back never changes what it draws.
+    /// It draws the thread and its place under the clock; Back never changes what it draws.
     static func == (lhs: FoldedThreadRail, rhs: FoldedThreadRail) -> Bool { lhs.ref == rhs.ref && lhs.clear == rhs.clear }
+}
+
+/// Back on the Duo's rail, the same round button as New thread. The thread showing goes back itself (`popThread`).
+struct RailBackButton: View {
+    let back: () -> Void
+    var body: some View {
+        Button(action: back) { Image(systemName: "chevron.backward") }
+            .buttonStyle(GlassCircleStyle())
+            .accessibilityLabel(String(localized: "Back"))
+            .accessibilityIdentifier("duo-rail-back")
+    }
+}
+
+/// A thread's state, Agents, Watch and ••• in one pill on the Duo's rail, the same pill and tiles as the tabs (Zach's pick
+/// A, November 3, 2026). Folded it stands in the tabs' place; unfolded it stands over them, and its state says how long
+/// the thread has been at it.
+struct ThreadRailPill: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    var body: some View {
+        let thread = model.thread(ref)
+        VStack(spacing: DuoRailMetrics.tileGap) {
+            Group {
+                ThreadStatePill(state: thread.map { ThreadState($0) } ?? .done, since: Words.date(thread?.summary?.runningTurnStartedAt),
+                                reachable: model.status(ref.hostID) != .unreachable, vertical: true)
+                if let agents = model.agentsCount(ref) { AgentsButton(count: agents, tile: true) { model.railAsked = RailAsk(ref: ref, action: .agents) } }
+                if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title, tile: true) }
+            }
+            // As the tabs' names do, they stay at this size; a tile has no room to grow. ••• is left out, since its icon
+            // doesn't grow and the pull request's sheet it opens takes the user's own text size.
+            .dynamicTypeSize(...DynamicTypeSize.large)
+            ThreadMenu(ref: ref, onRail: true)
+        }
+        .padding(DuoRailMetrics.pillInset)
+        .background { DuoRailPillGround().accessibilityHidden(true) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("duo-thread-pill")
+    }
 }
 
 /// Keeps iOS's swipe back on a page whose navigation bar is hidden, which otherwise loses it, while `enabled`. It answers
@@ -191,20 +230,20 @@ struct ThreadStatePill: View {
     let state: ThreadState
     let since: Date?
     let reachable: Bool
-    /// Stacked, the light over the word, for the folded Duo's strip.
+    /// Stacked in one tile of the Duo's rail: the light, the word and, unfolded, how long it has been at it.
     var vertical = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
         Group {
             if vertical {
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     light
-                    Text(word).lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+                    // One word stays on one line, shrinking rather than breaking, in every language.
+                    Text(word).lineLimit(word.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                    if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since).lineLimit(1).minimumScaleFactor(0.6) }
                 }
-                .padding(.vertical, 7)
-                .frame(width: 66)
+                .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
                 .foregroundStyle(foreground)
-                .background(background, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             } else {
                 HStack(spacing: 6) {
                     light
@@ -264,6 +303,8 @@ struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
+    /// Drawn as a tile of the Duo's rail: the owl alone, on the accent's soft tile while Watcher watches.
+    var tile = false
     @State private var presses = 0
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -272,18 +313,28 @@ struct WatchToggle: View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
-            HStack(spacing: 6) {
-                if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
-                if !compact { Text("Watch").lineLimit(1) }
+            if tile {
+                Group {
+                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: DuoRailMetrics.owl).accessibilityHidden(true) }
+                }
+                .foregroundStyle(watched ? Palette.accentText : Palette.muted)
+                .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                .background { if watched { Circle().fill(Palette.accent.opacity(Tint.accentPill)) } }
+                .contentShape(Circle())
+            } else {
+                HStack(spacing: 6) {
+                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
+                    if !compact { Text("Watch").lineLimit(1) }
+                }
+                .font(.sotto(.small, .semibold))
+                .foregroundStyle(watched ? Palette.accentText : Palette.ink)
+                .padding(.horizontal, compact ? 0 : Space.s3)
+                .frame(minWidth: 32, minHeight: 32)
+                .background(watched ? Palette.accent.opacity(Tint.accentPill) : Palette.fillSoft, in: Capsule())
+                .overlay(Capsule().strokeBorder(watched ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .font(.sotto(.small, .semibold))
-            .foregroundStyle(watched ? Palette.accentText : Palette.ink)
-            .padding(.horizontal, compact ? 0 : Space.s3)
-            .frame(minWidth: 32, minHeight: 32)
-            .background(watched ? Palette.accent.opacity(Tint.accentPill) : Palette.fillSoft, in: Capsule())
-            .overlay(Capsule().strokeBorder(watched ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: watched)
@@ -300,46 +351,119 @@ struct WatchToggle: View {
 
 /// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it, and Settle
 /// or Restore, as on the desktop. A press asks the thread's computer; one that can't go now says why under its name.
-/// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner.
+/// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner. On the Duo's rail,
+/// where a thread has no bar or big title, it also holds what they said: the thread's name, where it runs, its branch and
+/// changes, and its pull request, which opens as the chip does elsewhere (Zach's pick, November 3, 2026).
 struct ThreadMenu: View {
     @EnvironmentObject var model: AppModel
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
+    /// On the Duo's rail: a tile, with the thread's name and chips at the top of the menu.
+    var onRail = false
     @State private var acted = 0
+    @State private var showingPullRequest = false
     var body: some View {
+        let chips = GitChips(model.thread(ref)?.worktree)
         Menu {
-            if model.compactionOffered(ref) {
-                let held = model.compactionHeld(ref)
-                Button { acted += 1; Task { await model.compact(ref) } } label: {
-                    Text("Compact context")
-                    Text(held ?? String(localized: "Summarize earlier messages to free room"))
-                }
-                .disabled(held != nil)
-            }
-            if let action = model.shelfAction(ref) {
-                let held = model.actionHeld(ref)
-                Button { acted += 1; Task { await model.shelve(ref, action) } } label: {
-                    Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
-                         : String(localized: "Restore", comment: "Restore a settled thread to open work."))
-                    if let held { Text(held) }
-                }
-                .disabled(held != nil)
-                .accessibilityIdentifier(action == .settle ? "thread-settle" : "thread-restore")
-            }
+            if onRail { railItems(chips) } else { actions }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Palette.ink)
-                .frame(width: 32, height: 32)
-                .background(Palette.fillSoft, in: Circle())
-                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            if onRail {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: DuoRailMetrics.symbol, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                    .contentShape(Circle())
+            } else {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 32, height: 32)
+                    .background(Palette.fillSoft, in: Circle())
+                    .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
         }
+        // Opened from the foot of the rail, iOS would turn the list over and put the name under the actions.
+        .menuOrder(onRail ? .fixed : .automatic)
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
         .sensoryFeedback(.impact(weight: .medium), trigger: acted)
+        .sheet(isPresented: $showingPullRequest) {
+            if let url = chips.pullRequestURL, let number = chips.pullRequest?.number {
+                PullRequestSheet(ref: ref, url: url, number: number)
+            }
+        }
+    }
+
+    /// What the thread can do: compact its context, and settle or restore it.
+    @ViewBuilder private var actions: some View {
+        if model.compactionOffered(ref) {
+            let held = model.compactionHeld(ref)
+            Button { acted += 1; Task { await model.compact(ref) } } label: {
+                Text("Compact context")
+                Text(held ?? String(localized: "Summarize earlier messages to free room"))
+            }
+            .disabled(held != nil)
+        }
+        if let action = model.shelfAction(ref) {
+            let held = model.actionHeld(ref)
+            Button { acted += 1; Task { await model.shelve(ref, action) } } label: {
+                Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+                     : String(localized: "Restore", comment: "Restore a settled thread to open work."))
+                if let held { Text(held) }
+            }
+            .disabled(held != nil)
+            .accessibilityIdentifier(action == .settle ? "thread-settle" : "thread-restore")
+        }
+    }
+
+    /// On the rail: the name, where it runs and its branch and changes head the menu as its section's heading, because iOS
+    /// dims a row that can't be pressed too far to read, and this is the only place they show. Under them the pull request,
+    /// where this computer offers its sheet (where it doesn't, it reads with the rest, as its chip does), and the actions.
+    @ViewBuilder private func railItems(_ chips: GitChips) -> some View {
+        let thread = model.thread(ref)
+        let opens = model.offersPullRequestSheet(ref.hostID) && chips.pullRequestURL != nil
+        let name = thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet")
+        let about = facts(chips, thread: thread, pullRequestOpens: opens)
+        if !opens && !model.compactionOffered(ref) && model.shelfAction(ref) == nil {
+            // A heading needs rows under it, so with nothing to do the name and the facts are the row.
+            Button {} label: {
+                Text(name)
+                Text(verbatim: about)
+            }
+            .disabled(true)
+        } else {
+            Section {
+                if opens, let pullRequest = chips.pullRequest, let url = chips.pullRequestURL {
+                    let checks = model.lastPullRequest(ref, url: url).map { PullRequests.rollup($0.checks) }
+                    Button { showingPullRequest = true } label: {
+                        Label(caption(pullRequest), systemImage: "arrow.triangle.pull")
+                        if let checks { Text(verbatim: checks) }
+                    }
+                    .accessibilityLabel(GitChipRow.spokenPullRequest(pullRequest, rollup: checks))
+                    .accessibilityIdentifier("thread-menu-pull-request")
+                }
+                actions
+            } header: {
+                Text(verbatim: name + "\n" + about)
+            }
+        }
+    }
+
+    /// Where the thread runs on one line, then what the chips say on the next.
+    private func facts(_ chips: GitChips, thread: ThreadSummary?, pullRequestOpens: Bool) -> String {
+        let place = model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
+        var git: [String] = []
+        if let branch = chips.branch { git.append(branch) }
+        if let changes = chips.changes { git.append("+\(changes.insertions) −\(changes.deletions)") }
+        if !pullRequestOpens, let pullRequest = chips.pullRequest { git.append(caption(pullRequest)) }
+        return git.isEmpty ? place : place + "\n" + git.joined(separator: " · ")
+    }
+
+    private func caption(_ pullRequest: GitChips.PullRequest) -> String {
+        String(localized: "#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
     }
 }
 
@@ -515,6 +639,7 @@ private struct Conversation: View {
     @State private var openRuns: Set<String> = []
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     private static let end = "thread-end"
     private static let pageSpace = "thread-page"
     #if DEBUG
@@ -533,6 +658,7 @@ private struct Conversation: View {
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
+                    .tapPutsAwayKeyboard { [model, ref] in !model.replyHoldsAnything(ref) }
                     .benchEnvironment("EnvironmentUnderThread")
             }
             .defaultScrollAnchor(.bottom)
@@ -553,7 +679,10 @@ private struct Conversation: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
-                ReplyDock(ref: ref, openRequest: openRequest)
+                // Only a new empty thread keeps the box full. One still opening goes by whether it has had a message.
+                ReplyDock(ref: ref, goesSmall: !rows.isEmpty || !pending.isEmpty || detail?.earlierAvailable == true
+                            || model.thread(ref)?.status == "running" || (detail == nil && model.thread(ref)?.summary?.lastMessageAt != nil),
+                          openRequest: openRequest)
                     .equatable()
                     .readingWidth()
                     .background(dockReader(proxy))
@@ -580,10 +709,20 @@ private struct Conversation: View {
         let thread = model.thread(ref)
         let state = thread.map { ThreadState($0) } ?? .done
         return VStack(alignment: .leading, spacing: 0) {
-            ThreadHero(ref: ref, thread: thread, watched: model.watchedByWatcher(ref), pullRequest: pullRequestChip(thread),
-                       topMoved: { top in follow.heroTop = top; refreshBar() },
-                       titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
-                .equatable()
+            if duo == .none {
+                ThreadHero(ref: ref, thread: thread, watched: model.watchedByWatcher(ref), pullRequest: pullRequestChip(thread),
+                           topMoved: { top in follow.heroTop = top; refreshBar() },
+                           titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
+                    .equatable()
+            } else {
+                // The Duo draws no title (`ThreadMenu` holds it), but VoiceOver still reads the page's name first.
+                Color.clear
+                    .frame(height: Space.s3)
+                    .accessibilityElement()
+                    .accessibilityLabel(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("thread-title")
+            }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
         }
@@ -977,7 +1116,7 @@ private struct GitChipRow: View {
     }
 
     /// The pull request chip as VoiceOver reads it, with the checks' roll-up once its sheet has read them.
-    private static func spokenPullRequest(_ pullRequest: GitChips.PullRequest, rollup: String?) -> String {
+    static func spokenPullRequest(_ pullRequest: GitChips.PullRequest, rollup: String?) -> String {
         let number: String = String(pullRequest.number)
         let state: String = pullRequest.stateWord
         guard let rollup else {
@@ -2291,12 +2430,15 @@ private struct ReplyDock: View, Equatable {
     /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
+    /// Whether the thread has content or is running, so the box goes small while nothing is being written (ADR-0184).
+    let goesSmall: Bool
     let openRequest: (AgentRequest) -> Void
     /// Drawn again for what it watches itself, not for each new revision of the conversation above it; a request it
     /// offers opens the same way every time.
-    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref }
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.goesSmall == b.goesSmall }
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var sent = 0
     @State private var stopped = 0
     /// Watched for which box listens, which changes only as dictation starts and stops.
@@ -2375,15 +2517,21 @@ private struct ReplyDock: View, Equatable {
         let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
         let settings = model.threadSettings(ref)
         let listening = dictation.key == ref.id
+        // Small unless the user is writing here, or the settings have something to say over the box. The accessibility
+        // text sizes stay full: one row can't hold the prompt at those sizes.
+        let small = goesSmall && !DebugFlags.replyBoxStaysFull && !typeSize.isAccessibilitySize && !focused && !written && !listening
+            && !model.preparingSends.contains(ref.id) && settings?.caption == nil && settings?.notices.isEmpty != false
         // As in Claude's iPhone app (Zach's pick A, November 1, 2026): photos and files wait inside the card above the
         // words, and the row under them holds the +, the thread's settings as one pill (ADR-0166), the mic and Send.
         // What the settings still wait on sits above the card.
         return VStack(alignment: .leading, spacing: Space.s2) {
             if let settings { ThreadSettingsLines(ref: ref, panel: settings) }
-            ComposerCard(focus: { focused = true }) {
+            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
+            // (ADR-0019).
+            ComposerCard(small: small, lit: settings?.atTopEffort == true, focus: { focused = true }) {
                 DraftAttachments(box: .thread(ref))
             } words: {
-                words(placeholder)
+                words(placeholder, small: small)
             } plus: {
                 if listening { ListeningLine() } else { AttachPhotosButton(box: .thread(ref)) }
             } pill: {
@@ -2391,20 +2539,17 @@ private struct ReplyDock: View, Equatable {
             } trailing: {
                 trailingButtons()
             }
-            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
-            // (ADR-0019).
-            .effortTrace(settings?.atTopEffort == true, radius: ComposerMetrics.radius)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
     }
 
-    private func words(_ placeholder: String) -> some View {
+    private func words(_ placeholder: String, small: Bool) -> some View {
         TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
             .font(.sotto(.body))
             .foregroundStyle(Palette.ink)
-            .lineLimit(1...6)
+            .lineLimit(small ? 1...1 : 1...6)
             .focused($focused)
             // Words added from a reply put the caret after them, here (ADR-0129).
             .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
@@ -2417,10 +2562,7 @@ private struct ReplyDock: View, Equatable {
     }
 
     /// Whether the box holds something to send: words, photos or files.
-    private var written: Bool {
-        !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
-            || !model.files(ref).isEmpty
-    }
+    private var written: Bool { model.replyHoldsAnything(ref) }
 
     /// The mic, then Send, which is always there: the accent once the box holds something, dim while it's empty. While
     /// the turn can be stopped, Stop takes Send's place until something is written; then Stop and Send sit side by side,
@@ -2848,7 +2990,6 @@ struct RequestSheet: View {
         let permission = current.kind == "permission"
         let count = current.questions?.count ?? 0
         let from = Self.from(count: count, provider: provider, threadTitle: threadTitle)
-        let ask: (headline: String?, rest: String?)? = permission ? Self.permissionAsk(current) : nil
         // Who asks and where is one quiet line over the request, and VoiceOver reads the request first (#1855).
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
@@ -2858,7 +2999,7 @@ struct RequestSheet: View {
             .accessibilityElement(children: .combine)
             // Several questions have no headline: each carries its own, and the text a provider built from them would only
             // repeat them.
-            if let headline = title(current, provider, ask: ask) {
+            if let headline = title(current, provider) {
                 Text(headline)
                     .font(.sotto(.title, .semibold))
                     .headingTracking(-0.4)
@@ -2887,18 +3028,15 @@ struct RequestSheet: View {
                 LinkRows(pages: pages, links: links) { opening = $0 }.padding(.top, Space.s4)
             }
         }
-        if let context = current.context {
+        if permission {
+            permissionBody(current, provider: provider)
+        } else if let context = current.context {
             if let command = context.command { PermissionCommand(command: command).padding(.top, Space.s5) }
             if let cwd = context.cwd { runsIn(cwd) }
             if let details = context.details {
                 Text(details).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
             }
-        }
-        // The rest of a permission's words, where its first line is the headline and it names no command of its own.
-        if let rest = ask?.rest, current.context?.command == nil {
-            Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
         }
         if !current.supported {
             note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
@@ -2920,6 +3058,46 @@ struct RequestSheet: View {
         }
     }
 
+    /// What a permission asks: a command under the model's summary of it, or what another request does, on what, with
+    /// every other field in readable lines. The summary is the model's own words, so it is marked as theirs (ADR-0185).
+    @ViewBuilder private func permissionBody(_ current: AgentRequest, provider: String) -> some View {
+        let context = current.context
+        if let command = context?.command {
+            if let context, let summary = context.summary {
+                ModelSummary(heading: RequestText.summaryHeading(context, provider: provider), summary: summary).padding(.top, Space.s3)
+            } else if let context {
+                Text(RequestText.noSummary(context, provider: provider)).font(.sotto(.body)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.top, Space.s3)
+            }
+            PermissionCommand(command: command).padding(.top, Space.s4)
+            ForEach(Array((context?.details ?? "").split(separator: "\n").enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Light(tone: .warning)
+                    Text(verbatim: String(line)).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .padding(.top, Space.s3)
+            }
+            if let cwd = context?.cwd { runsIn(cwd) }
+        } else {
+            if let context, let summary = context.summary {
+                ModelSummary(heading: RequestText.summaryHeading(context, provider: provider), summary: summary).padding(.top, Space.s3)
+            }
+            // The rest of its words, where its first line is the headline.
+            if let rest = RequestText.permissionLead(current).rest {
+                Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+            }
+            if let target = context?.target {
+                Text(verbatim: target).font(.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s1)
+            }
+            if let details = context?.details { PermissionDetails(details: details).padding(.top, Space.s3) }
+            if let cwd = context?.cwd { runsIn(cwd) }
+        }
+    }
+
     /// Who asks, and in which thread, over the headline: "Claude Code · Choose the release target", the same on a
     /// permission and a question (#1855). Several questions have no headline, so the line counts them first.
     private static func from(count: Int, provider: String, threadTitle: String) -> String {
@@ -2929,23 +3107,11 @@ struct RequestSheet: View {
         return "\(questions) · \(place)"
     }
 
-    /// A permission as the desktop's card reads it (`permissionSummary` in `requestAnswers.ts`): its first line is what it
-    /// asks, and the rest of its words follow. A first line that only repeats the command it would run asks nothing of
-    /// its own, as Codex's does.
-    private static func permissionAsk(_ request: AgentRequest) -> (headline: String?, rest: String?) {
-        let lines = request.text.split(separator: "\n", omittingEmptySubsequences: false)
-        let first = lines.first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-        let rest = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        let command = (request.context?.command ?? "").split(separator: "\n").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-        let headline: String? = first.isEmpty || first == command ? nil : first
-        return (headline, rest.isEmpty ? nil : rest)
-    }
-
     /// The sheet's headline: what a permission asks, a lone question, or a request's own words when it has no
     /// structured questions. Nil for several questions.
-    private func title(_ request: AgentRequest, _ provider: String, ask: (headline: String?, rest: String?)?) -> String? {
+    private func title(_ request: AgentRequest, _ provider: String) -> String? {
         if request.kind == "permission" {
-            if let headline = ask?.headline { return headline }
+            if let headline = RequestText.permissionLead(request).headline { return headline }
             return request.context?.command != nil
                 ? String(localized: "\(provider) wants to run a command", comment: "%@ is the agent's name")
                 : String(localized: "\(provider) is asking permission", comment: "%@ is the agent's name")
@@ -3317,6 +3483,56 @@ private struct OptionLabel: View {
         .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
+    }
+}
+
+/// What a short permission card, which can answer, shows beyond its words: a setting beside a command, or the opening of a
+/// request's change and fields. **Details** opens the whole of it.
+struct CompactPermissionDetails: View {
+    let context: RequestContext?
+    var body: some View {
+        if let details = context?.details, !details.isEmpty {
+            if context?.command != nil {
+                Text(verbatim: details).font(.sotto(.small)).foregroundStyle(Palette.ink).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, Space.s2)
+            } else {
+                Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(4)
+                    .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                    .padding(.top, Space.s2)
+            }
+        }
+    }
+}
+
+/// A summary, under whose words it is: never a headline, since Sotto checked none of them.
+private struct ModelSummary: View {
+    let heading: String
+    let summary: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(heading).font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text(verbatim: summary).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The rest of what a permission that is not a command asks: its change and every other field, on the code surface.
+private struct PermissionDetails: View {
+    let details: String
+    var body: some View {
+        Text(verbatim: details).font(.mono).foregroundStyle(Palette.codeInk).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s3)
+            .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
 

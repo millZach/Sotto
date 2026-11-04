@@ -135,3 +135,7 @@ Each surface is checked at 1600×1000, 1280×800 and 820×560, in light and dark
 - On Linux, Serve needs the SSH account to be Tailscale's operator. Until it is, the desktop stays on SSH and the row says why, with `sudo tailscale set --operator=$USER` for the owner to run there. Sotto never runs it.
 - Real TLS and MagicDNS cannot run in CI. The tests stand a loopback proxy in front of the host's tailnet listener, and only a check on a real host, recorded in `docs/verification/`, proves the certificate path.
 - `docs/host-protocol.md` changes with the host side: the tailnet listener carries desktops, hello reports `tailnetAddress`, `startedBy` and a desktop's phone access, and features are per client.
+
+## Amendment: a team link is not a paired client (November 3, 2026)
+
+[ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) admits another owner's computer by a code on a listener of its own. Its token never opens a host session, and this record's client kinds do not cover it.

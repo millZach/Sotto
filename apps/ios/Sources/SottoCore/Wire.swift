@@ -159,13 +159,14 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// Thread settings changes the provider never gave a result for, which the computer keeps (ADR-0166). Read item by item.
     public var unconfirmedSettings: ThreadList<UnconfirmedSetting>? = nil
     /// The thread records a shell push carried beside a state whose own list is empty, from a host that sends this
-    /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
-    /// which puts the whole list back (`ThreadRecordsCache`).
+    /// connection only the ones that changed (`changed-thread-records`), or that a command's answer carried inside it
+    /// (`command-changed-thread-records`). Always nil once a shell leaves `HostConnection`, which puts the whole list back
+    /// (`ThreadRecordsCache`).
     public var threadRecords: ChangedThreadRecords? = nil
     /// How many settled threads the computer's list leaves out, from a host that sends this phone only threads that are
     /// not settled (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
     public let settledHeldBack: Int?
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, settledHeldBack }
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, threadRecords, settledHeldBack }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -181,6 +182,7 @@ public struct Shell: Decodable, Equatable, Sendable {
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
         unconfirmedSettings = c.tolerant(ThreadList<UnconfirmedSetting>.self, .unconfirmedSettings)
+        threadRecords = try c.decodeIfPresent(ChangedThreadRecords.self, forKey: .threadRecords)
         settledHeldBack = try c.decodeIfPresent(Int.self, forKey: .settledHeldBack)
     }
     public func validate(hostID: String) throws {
@@ -513,7 +515,16 @@ public struct Question: Decodable, Equatable, Identifiable, Sendable {
     public let multiSelect: Bool; public let allowFreeText: Bool; public let required: Bool?; public let unavailableReason: String?
 }
 public struct PermissionChoice: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let kind: String; public let description: String? }
-public struct RequestContext: Decodable, Equatable, Sendable { public let toolName: String?; public let command: String?; public let cwd: String?; public let details: String? }
+public struct RequestContext: Decodable, Equatable, Sendable {
+    public let toolName: String?; public let command: String?; public let cwd: String?; public let details: String?
+    /// The asking model's own words for what it asks (ADR-0185). Sotto writes none, and a computer from before it sends none.
+    public let summary: String?
+    /// Set when Sotto asked the thread's own provider for the summary: `waiting`, `answered` or `failed`. Absent when the
+    /// summary is the model's own or none was asked for, and from a computer that predates it.
+    public let summaryAsk: String?
+    /// What a request that is not a command does, and the path or address it acts on.
+    public let action: String?; public let target: String?
+}
 
 public enum Wire {
     public static let maximumFrameBytes = 16 * 1024 * 1024

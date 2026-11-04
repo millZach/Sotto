@@ -60,7 +60,8 @@ export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
  * T3 Code offers. `afterDays` counts idle days since the thread's last activity; `null` is never.
  * `unchanged` means the folder's commits are all in the repository's default branch already;
  * `merged` means GitHub reports the branch's pull request merged; `onSettle` reclaims when the
- * thread is settled. Each applies only to a clean folder with nothing in it but installed dependencies.
+ * thread is settled. Each applies only to a clean folder whose ignored files are installed dependencies and build
+ * output the repository marks or a tool tags as a cache.
  */
 export type LlmMode = 'default' | 'nitro' | 'floor'
 export const LLM_MODES = ['default', 'nitro', 'floor'] as const satisfies readonly LlmMode[]
@@ -128,7 +129,8 @@ export const SETTINGS_VERSION = 1 as const
  */
 export const STORED_CREDENTIAL_PLACEHOLDER = 'Saved in your operating system credential store'
 
-type MaxRecordingSeconds = 30 | 60 | 120 | 300
+/** How long one dictation may run, in seconds, or null for no limit. */
+export type MaxRecordingSeconds = 30 | 60 | 120 | 180 | 300 | 600 | 900 | 1800 | null
 
 export interface AppSettings {
   version: typeof SETTINGS_VERSION
@@ -147,6 +149,8 @@ export interface AppSettings {
   menuBarOwlBody: MenuBarOwlBody
   /** The colour its eyes glow. */
   menuBarOwlEyes: MenuBarOwlEyes
+  /** Off takes Sotto's icon out of a Mac's menu bar, where the `hide-menu-bar-icon` Owl feature is on; kept whole elsewhere. */
+  showMenuBarIcon: boolean
   /** The place Watcher's night scene is set in (ADR-0149); kept whole where Watcher is off. */
   watcherScene: WatcherScene
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
@@ -395,6 +399,8 @@ export interface AppSettings {
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
    */
   threadTitles: boolean
+  /** Ask a thread's own provider for a command summary when the model sent none (ADR-0185). */
+  commandSummaries: boolean
   /**
    * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side
    * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
@@ -480,6 +486,7 @@ const fieldSchemas = {
   effortColor: z.enum(EFFORT_COLORS),
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
+  showMenuBarIcon: z.boolean(),
   watcherScene: z.enum(WATCHER_SCENES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
@@ -519,7 +526,7 @@ const fieldSchemas = {
   popupShortcut: z.string().min(1).max(64).nullable(),
   threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
-  maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
+  maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(180), z.literal(300), z.literal(600), z.literal(900), z.literal(1800)]).nullable(),
   soundCues: z.boolean(),
   typingSpeedWpm: z.number().int().min(TYPING_SPEED_MIN_WPM).max(TYPING_SPEED_MAX_WPM),
   speechModel: z.string().min(1).max(128).nullable(),
@@ -555,6 +562,7 @@ const fieldSchemas = {
   llmMode: z.enum(LLM_MODES),
   llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
+  commandSummaries: z.boolean(),
   nextPromptSuggestions: z.boolean(),
   threadTips: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
@@ -607,6 +615,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   effortColor: 'ember',
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
+  showMenuBarIcon: true,
   watcherScene: DEFAULT_WATCHER_SCENE,
   creature: 'sotto',
   showCreature: true,
@@ -679,6 +688,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
+  commandSummaries: true,
   nextPromptSuggestions: true,
   threadTips: true,
   threadWorkingCopyDefault: 'shared',
@@ -802,6 +812,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     effortColor: parseField(persisted, 'effortColor', defaults),
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
+    showMenuBarIcon: parseField(persisted, 'showMenuBarIcon', defaults),
     watcherScene: parseField(persisted, 'watcherScene', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
@@ -877,6 +888,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMode: parseField(persisted, 'llmMode', defaults),
     llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    commandSummaries: parseField(persisted, 'commandSummaries', defaults),
     nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadTips: parseField(persisted, 'threadTips', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),

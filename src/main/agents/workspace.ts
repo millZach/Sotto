@@ -565,6 +565,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.creationOf(threadId)?.phase }
   async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    const before = this.thread(threadId)
+    // refreshThread answers from the cache while creation is pending or its provider is disconnected.
+    const live = before.nativeSessionStarted !== false && (this.creationOf(threadId)?.phase ?? 'started') === 'started'
+      && isThreadProviderConnected(this.state.snapshot, before) && before.clientConnected !== false
     await this.refreshThread(threadId)
     const thread = this.thread(threadId)
     this.applyEvents()
@@ -572,7 +576,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.settled(threadId)
     if (this.storeUnavailable || thread.historyStatus === 'error' || thread.historyStatus === 'loading') return undefined
     const epoch = this.threadStore.readMessageEpoch(threadId)
-    return { historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit),
+    return { availability: live && isThreadProviderConnected(this.state.snapshot, thread) && thread.clientConnected !== false ? 'available' as const : 'unavailable' as const,
+      historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit),
       activities: this.threadStore.readActivities(threadId, { keep: false }).slice(-100).map(({ id, kind, status, title, startedAt, completedAt }) => ({
         id, kind, status, title: title.slice(0, 2_000), ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}) })) }
   }
@@ -2184,8 +2189,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Why the thread's own worktree keeps the thread, read from the folder (ADR-0140 decision 3), with the facts read. A
    * folder another thread or a terminal uses, one with uncommitted changes, one with a link out of it and one on a
    * detached HEAD whose commit no branch or remote branch has are always kept, and for Delete thread… any detached HEAD,
-   * since its question has no words for one yet. Ignored files besides dependencies and nested work keep it only for a
-   * rule or Clear now (`automatic`), since Delete thread… lists them for the user to tick.
+   * since its question has no words for one yet. Ignored files besides dependencies and regenerable build output, and
+   * nested work, keep it only for a rule or Clear now (`automatic`), since Delete thread… lists them for the user to tick.
    */
   private async worktreeDeletionHold(thread: AgentThread, worktree: AgentWorktree, automatic: boolean): Promise<{ reason: ThreadClearKeptReason | null; facts?: WorktreeReclaimPreview }> {
     if (!await this.ownsCheckoutAlone(thread.id) || this.worktreeInUse(thread.id)) return { reason: 'worktree-in-use' }
@@ -2197,7 +2202,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (facts.dirty) return { reason: 'uncommitted', facts }
     // A rule or Clear now takes a detached HEAD's folder only when a branch or remote branch has its commit (ADR-0041).
     if (facts.outsideLink || (!facts.branch && !(automatic && await this.worktrees.keptDetachedCommit(facts.path).catch(() => undefined)))) return { reason: 'worktree-error', facts }
-    if (automatic && (facts.ignored.length || facts.repositories.length)) return { reason: 'worktree-files', facts }
+    // A rule or Clear now takes ignored dependencies and build output a build makes again, and nothing else ignored.
+    if (automatic && (facts.repositories.length || (await this.worktrees.ruleKeptIgnored(facts.path, facts.ignored)).length)) return { reason: 'worktree-files', facts }
     return { reason: null, facts }
   }
   /**

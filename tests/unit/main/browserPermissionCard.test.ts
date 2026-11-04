@@ -51,11 +51,12 @@ describe('the browser permission card says what a press does', () => {
   })
 
   it('leaves a tool from another server with the name it came with', () => {
-    const text = ask('mcp__other__do_something', { any: 'thing' })!.request.text
-    expect(text).toContain('mcp__other__do_something')
+    const { request } = ask('mcp__other__do_something', { any: 'thing' })!
+    expect(request.text).toBe('Use do_something from other')
+    expect(request.context?.toolName).toBe('mcp__other__do_something')
   })
 
-  it('still carries the raw arguments for the detail view', () => {
+  it('still carries every argument for the detail view', () => {
     const pending = ask(`mcp__${BROWSER_MCP_SERVER}__browser_open`, { url: 'http://localhost:5173/' })!
     expect(pending.request.context?.details).toContain('http://localhost:5173/')
   })

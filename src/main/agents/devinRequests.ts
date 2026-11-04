@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
+import { commandCard, otherRequestCard, readableFields } from './requestInput'
 
 const objectSchema = z.record(z.string(), z.unknown())
 
@@ -101,7 +102,8 @@ export function devinPending(wireId: string | number, method: string, value: unk
     return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, actionDetails: details, scope: devinActionScope(toolCall, sottoTools), request: {
       id, kind: 'permission', text, options: [],
       permissionChoices: choices.map(option => ({ id: option.optionId, label: option.kind === 'allow_once' ? 'Allow once' : 'Deny', kind: option.kind === 'allow_once' ? 'allow-once' : 'deny' })),
-      context: { toolCallId: permission.toolCall.toolCallId, ...(command && Object.keys(input).length === 1 ? { command } : { details }) },
+      // The whole input stays in `actionDetails` for the answer's check; the card shows it in readable lines, nothing left out.
+      context: { toolCallId: permission.toolCall.toolCallId, ...(command ? commandCard(command, input).context : file ? otherRequestCard(input).context : { details: readableFields(input) }) },
     } }
   }
   if (method === 'elicitation/create') {

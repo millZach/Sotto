@@ -28,6 +28,7 @@ export function useDesktopHostFixture() {
   let hostTailscale: ReturnType<typeof standInTailscale>
 
   let hostTailscaleRunning = false
+  const featuresUsed: string[] = []
 
   let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 
@@ -187,7 +188,7 @@ export function useDesktopHostFixture() {
 
   /** `versions` stands in for the running Sotto's host version and the one its waiting update brings (ADR-0077). */
   function newManager(retainedDrafts?: RetainedDraftStore, versions: { clientVersion?: string; waitingClientVersion?: () => string | undefined } = {}): DesktopHosts {
-    return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, ...(retainedDrafts ? { retainedDrafts } : {}), ...versions, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
+    return new DesktopHosts({ featureUsed: feature => { featuresUsed.push(feature) }, directory: join(root, 'desktop'), credentials, router, ...(retainedDrafts ? { retainedDrafts } : {}), ...versions, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
       openExternal: async url => { opened.push(url) }, resolveTailnet: address => tailnetAt(address) })
   }
 
@@ -268,6 +269,7 @@ export function useDesktopHostFixture() {
     set hostTailscale(value: typeof hostTailscale) { hostTailscale = value },
     get hostTailscaleRunning() { return hostTailscaleRunning },
     set hostTailscaleRunning(value: typeof hostTailscaleRunning) { hostTailscaleRunning = value },
+    featuresUsed,
     launchers,
     liveSocket,
     get manager() { return manager },

@@ -6,7 +6,8 @@
  *   - opening the editor: it reads nothing more, since it draws the picture the viewer already holds;
  *   - drawing a pen line of 200 moves over a picture that already holds 20 marks: each move redraws only the line being
  *     drawn, never the marks already made, and the line is drawn as a finished mark once, when the pen lifts;
- *   - the same with three callouts an agent placed on the picture (part 6), drawn and listed in the viewer and the editor.
+ *   - the same with three callouts an agent placed on the picture (part 6), drawn and listed in the viewer and the editor;
+ *   - dragging a mark over the same picture with Move: each step redraws only the mark being moved.
  *
  * The milliseconds print every run, for the before and after numbers docs/plans/inline-media.md asks of every pull
  * request; they are asserted only under SOTTO_PERF_ASSERT=1. Making the marked copy needs a canvas, which jsdom lacks;
@@ -135,6 +136,20 @@ async function drawing(threadMedia: ReturnType<typeof vi.fn>, shown: ActivityGro
   expect(result.markRedraws).toBe(1)
   expect(kept).toBe(true)
   expect(surface.querySelectorAll('[data-markup-shape]')).toHaveLength(21)
+  // Move: the pointer passing over the marks, then the first arrow dragged 200 steps. No other mark is drawn again.
+  fireEvent.click(screen.getByRole('button', { name: /^Move/u }))
+  const hovered = performance.now()
+  for (let index = 0; index < 200; index++) fireEvent.pointerMove(surface, { pointerId: 2, clientX: 1000 + index, clientY: 900, pointerType: 'mouse' })
+  const hoverMs = performance.now() - hovered
+  markup.markRedraws.count = 0
+  const moving = performance.now()
+  fireEvent.pointerDown(surface, { pointerId: 1, clientX: 40, clientY: 40, pointerType: 'mouse', button: 0 })
+  for (let index = 1; index <= 200; index++) fireEvent.pointerMove(surface, { pointerId: 1, clientX: 40 + index * 2, clientY: 40 + index, pointerType: 'mouse' })
+  fireEvent.pointerUp(surface, { pointerId: 1, clientX: 440, clientY: 240, pointerType: 'mouse' })
+  const moveMs = performance.now() - moving
+  // Move one is the arrow itself, once a step; the press and the settling draw nothing more than the last step did.
+  expect(markup.markRedraws.count).toBeLessThanOrEqual(201)
+  Object.assign(result, { moveSteps: 200, moveRedraws: markup.markRedraws.count, perMoveStepMs: round(moveMs / 200, 3), perHoverMs: round(hoverMs / 200, 3) })
   cleanup()
   return result
 }

@@ -328,6 +328,11 @@ msgstr ""
 msgid "{minutes, plural, other {The code lasts # minutes.}}"
 msgstr ""
 
+#. A recording limit in minutes, such as 5 min.
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
+msgid "{minutes} min"
+msgstr ""
+
 #. A model and its reasoning effort, as a list of defaults shows them
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{modelName}, {level}"
@@ -746,18 +751,8 @@ msgstr ""
 msgid "<0>Tailscale is off on this computer.</0> Connect to see the machines on your tailnet."
 msgstr ""
 
-#. One minute, a recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "1 min"
-msgstr ""
-
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "100 entries"
-msgstr ""
-
-#. Two minutes, a recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "2 min"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -765,13 +760,8 @@ msgid "25 entries"
 msgstr ""
 
 #. Thirty seconds, the shortest recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 msgid "30 s"
-msgstr ""
-
-#. Five minutes, the longest recording limit.
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "5 min"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -1138,7 +1128,7 @@ msgctxt "theme editor"
 msgid "Appearance"
 msgstr ""
 
-#. A Settings page, named in its rail and its heading: startup, history, updates and reset. Other messages name it as "Settings > Application".
+#. A Settings page, named in its rail and its heading: startup, history, product events, updates and reset. Other messages name it as "Settings > Application".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Application"
@@ -1717,6 +1707,10 @@ msgstr ""
 msgid "Cloud iPhone minutes used this month"
 msgstr ""
 
+#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
+msgid "Cloud iPhone status could not be read. Reopen Settings and try again."
+msgstr ""
+
 #. {spoken} is a sign-in code read one character at a time.
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Code {spoken}"
@@ -1900,6 +1894,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Copied"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Copied message duration saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
@@ -2565,6 +2563,11 @@ msgstr ""
 msgid "From your SSH configuration"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Generated command summaries"
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Generated commit messages"
@@ -2743,7 +2746,7 @@ msgid "How long a stage waits for a thread before its row offers Retry, Use anot
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "How long the success message stays up, in milliseconds (500 to 5000)."
+msgid "How long Copied stays up, in milliseconds (500 to 5000)."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3152,6 +3155,10 @@ msgstr ""
 msgid "load unknown"
 msgstr ""
 
+#: src/renderer/src/features/settings/LocalAppsSettings.tsx
+msgid "Local app access could not be read. Reopen Settings and try again."
+msgstr ""
+
 #. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
 #: src/renderer/src/features/settings/CouncilSettings.tsx
 msgid "Long table"
@@ -3187,16 +3194,20 @@ msgstr ""
 msgid "Max"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Maximum recording time"
-msgstr ""
-
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "may slow down"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "memory unknown"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon hidden."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Menu bar icon shown."
 msgstr ""
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
@@ -3458,6 +3469,11 @@ msgstr ""
 msgid "No connected provider can do this work."
 msgstr ""
 
+#. The last stop of the recording limit slider: a dictation runs until you stop it.
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
+msgid "No limit"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "No matches."
 msgstr ""
@@ -3505,6 +3521,10 @@ msgstr ""
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "No shortcut"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "No speech models were returned."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -3650,6 +3670,14 @@ msgstr ""
 msgid "Off"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Off on this computer because DO_NOT_TRACK is set."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Off on this computer because SOTTO_TELEMETRY_ENABLED is set to false."
+msgstr ""
+
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Off on this computer. Connect to reach your other machines."
 msgstr ""
@@ -3660,6 +3688,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Off, one theme paints light and dark."
+msgstr ""
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Off, open Sotto from the Dock."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -4185,6 +4217,11 @@ msgstr ""
 msgid "Proactive panels"
 msgstr ""
 
+#. A group on Settings > Application. A product event is one fact about how Sotto is used, sent to its developers.
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Product events"
+msgstr ""
+
 #. The project whose default is being chosen
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Project"
@@ -4271,6 +4308,14 @@ msgstr ""
 msgid "Reaching {name}…"
 msgstr ""
 
+#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
+msgid "Reading Cloud iPhone status…"
+msgstr ""
+
+#: src/renderer/src/features/settings/HostsSettings.tsx
+msgid "Reading hosts…"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Reading OpenRouter’s speech models…"
 msgstr ""
@@ -4304,8 +4349,8 @@ msgstr ""
 msgid "Reconnecting…"
 msgstr ""
 
+#: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Recording limit"
 msgstr ""
 
@@ -4676,6 +4721,10 @@ msgstr ""
 msgid "Searching themes…"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "See every event"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Select an element · Esc to cancel"
 msgstr ""
@@ -4689,8 +4738,17 @@ msgstr ""
 msgid "Send a test notification"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Send product events"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Send the prompt"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProductEventsSettings.tsx
+msgid "Sends Sotto’s developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts. Events carry a random ID for this install and hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person. It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys. Off stops this computer and its hosts, and drops anything waiting to go."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4851,6 +4909,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
 msgid "Show hidden tips again"
+msgstr ""
+
+#: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
+msgid "Show in menu bar"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -5460,7 +5522,7 @@ msgid "Startup setting saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Startup, history, updates & reset"
+msgid "Startup, history, product events, updates & reset"
 msgstr ""
 
 #. A group of theme colors in the theme editor
@@ -5565,10 +5627,6 @@ msgstr ""
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Subtle surface"
-msgstr ""
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Success duration saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -6683,10 +6741,6 @@ msgstr ""
 msgid "Used in {month}"
 msgstr ""
 
-#: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "Used in this month"
-msgstr ""
-
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Used when {system} turns dark."
 msgstr ""
@@ -6961,6 +7015,10 @@ msgstr ""
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "When a thread needs you"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a thread's model asks to run a command and sends no summary, Sotto asks that thread's own provider what the command does. It uses your subscription, and only that provider sees the command."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx

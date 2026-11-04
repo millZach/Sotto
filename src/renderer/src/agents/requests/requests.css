@@ -6,6 +6,13 @@
 .agent-request__text { margin: 0; font-size: var(--tt-type-lead); line-height: 1.55; color: var(--tt-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-request__command, .agent-request__details { margin: 0; max-height: 220px; overflow: auto; padding: 8px 10px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-md); background: var(--tt-code-bg); color: var(--tt-code-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-request__details { color: var(--tt-text-2); }
+.agent-request__summary { margin: 0; font-size: var(--tt-type-body); line-height: 1.45; overflow-wrap: anywhere; }
+.agent-request__summary[data-none] { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.agent-request__summary-who { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.agent-request__target { margin: -4px 0 0; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.agent-request__also { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: var(--tt-type-small); line-height: 1.45; color: var(--tt-text-2); overflow-wrap: anywhere; }
+.agent-request__also li { position: relative; padding-left: 14px; }
+.agent-request__also li::before { content: ""; position: absolute; left: 1px; top: .55em; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-warning-text); }
 .agent-request__cwd { margin: -4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .agent-request__cwd code { font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); color: var(--tt-text-2); }
 .agent-request__actions { display: flex; flex-wrap: wrap; gap: 8px; }

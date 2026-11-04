@@ -8,7 +8,7 @@ import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
-import { PaneTerminalOnHost, PaneTerminalToggle } from '../tools/PaneTerminalToggle'
+import { PaneCouncilToggle, PaneTerminalOnHost, PaneTerminalToggle } from '../tools/PaneTerminalToggle'
 import { ToolsToggle } from '../tools/ToolsToggle'
 import type { PaneChrome, PaneClose } from './ThreadPanes'
 import { GitActionButton, type GitActionHandle } from './GitActionButton'
@@ -189,7 +189,7 @@ function ThreadRequests({ row, below, state, command, onAnswer, kind }: {
     const asking = owner.thread
     const own = owner === row
     const open = (): void => openDelegatedThread(command, asking.id, asking.delegatedBy ?? thread.id)
-    const card = <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={asking.id} ownerTitle={asking.title} request={request}
+    const card = <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={asking.id} ownerTitle={asking.title} request={request} providerId={owner.providerId}
       blocked={threadRequestBlocked(owner, state)}
       messageLinks={kind === 'question' ? messageLinks(asking.messages) : []}
       draftOwner={threadRequestOwner(owner, state)}
@@ -483,13 +483,15 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         <span className="thread-workspace__branches" ref={setBranchSlot} />
       </div>
       {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows or takes focus: the Git action (once
-          the host has read a repository's status), Watch, Tools, the Terminal drawer, the ··· menu and, in a split, close
-          (ADR-0163, ADR-0182). */}
+          the host has read a repository's status), Watch, the Council (Owl only), Tools, the Terminal drawer, the ··· menu
+          and, in a split, close (ADR-0163, ADR-0182, ADR-0177). */}
       <div className="thread-workspace__actions">
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
         {thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
+        {/* The Council, in this pane's drawer, for a thread on this computer (ADR-0177; Owl only). */}
+        {terminal && !thread.remoteHost ? <PaneCouncilToggle threadId={thread.id} /> : null}
         {tools ? <ToolsToggle threadId={thread.id} focused={focused} state={state} /> : null}
         {terminal ? <PaneTerminalToggle threadId={thread.id} /> : tools && thread.remoteHost ? <PaneTerminalOnHost host={threadMachineName(state, thread)} /> : null}
         {actions}
@@ -505,7 +507,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
-    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
+    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused} onPairedHost={remote}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
       onReadingBack={slimOn ? readBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} below={below} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}

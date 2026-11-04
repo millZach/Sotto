@@ -7,13 +7,24 @@ export const paneTerminalStore = new TerminalStore('drawer')
 export const PANE_TERMINAL_STORAGE_KEY = 'sotto.paneTerminal'
 const MAX_ENTRIES = 64
 
+/** What a pane's drawer shows: its shells, or the Council (ADR-0177; Owl only), each a tab on the drawer's bar. */
+export type PaneDrawerView = 'terminal' | 'council'
+
 export interface PaneTerminalState {
   readonly open: boolean
   /** A drawer height in pixels, or null for the default: one third of the pane, recomputed as it resizes. */
   readonly height: number | null
+  readonly view: PaneDrawerView
+  /** The drawer's height while it shows the Council, or null for the default: half the pane. */
+  readonly councilHeight: number | null
 }
 
-const DEFAULT_STATE: PaneTerminalState = { open: false, height: null }
+const DEFAULT_STATE: PaneTerminalState = { open: false, height: null, view: 'terminal', councilHeight: null }
+
+/** The view a drawer shows: the one it holds, but its shells while the Council is off. */
+export function shownView(state: PaneTerminalState, council: boolean): PaneDrawerView {
+  return council ? state.view : 'terminal'
+}
 
 interface StorageLike {
   getItem(key: string): string | null
@@ -32,10 +43,10 @@ function parseStoredStates(raw: string | null): Map<string, PaneTerminalState> {
     if (!parsed || typeof parsed !== 'object') return states
     for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof id !== 'string' || !id) continue
-      const record = value as { open?: unknown; height?: unknown } | null
+      const record = value as { open?: unknown; height?: unknown; view?: unknown; councilHeight?: unknown } | null
       const open = typeof record?.open === 'boolean' ? record.open : false
-      const height = typeof record?.height === 'number' && Number.isFinite(record.height) ? record.height : null
-      states.set(id, { open, height })
+      const pixels = (held: unknown): number | null => typeof held === 'number' && Number.isFinite(held) ? held : null
+      states.set(id, { open, height: pixels(record?.height), view: record?.view === 'council' ? 'council' : 'terminal', councilHeight: pixels(record?.councilHeight) })
     }
   } catch { /* A bad record falls back to the default; nothing here is worth losing the window over. */ }
   return states
@@ -69,9 +80,21 @@ export class PaneTerminalChromeStore {
   get(threadId: string): PaneTerminalState { return this.load().get(threadId) ?? DEFAULT_STATE }
 
   setOpen(threadId: string, open: boolean): void { this.update(threadId, { open }) }
-  setHeight(threadId: string, height: number): void { this.update(threadId, { height }) }
-  /** Resets to the default height (one third of the pane), which then tracks the pane's size until dragged again. */
-  resetHeight(threadId: string): void { this.update(threadId, { height: null }) }
+  /** Opens the drawer on one of its views. */
+  show(threadId: string, view: PaneDrawerView): void { this.update(threadId, { open: true, view }) }
+  /**
+   * A header button's press, or Ctrl+J's for the terminal: hides the drawer while it shows this view, and otherwise
+   * shows this view. `council` says whether the Council is on, since without it the drawer shows only its shells.
+   */
+  toggle(threadId: string, view: PaneDrawerView, council: boolean): void {
+    const state = this.get(threadId)
+    if (state.open && shownView(state, council) === view) this.setOpen(threadId, false)
+    else this.show(threadId, view)
+  }
+  /** Each view keeps its own height. */
+  setHeight(threadId: string, height: number, view: PaneDrawerView = 'terminal'): void { this.update(threadId, view === 'council' ? { councilHeight: height } : { height }) }
+  /** Resets a view to its default height (a third of the pane, half for the Council), which then tracks the pane's size until dragged again. */
+  resetHeight(threadId: string, view: PaneDrawerView = 'terminal'): void { this.update(threadId, view === 'council' ? { councilHeight: null } : { height: null }) }
 
   /** Asks the next mount of this thread's drawer to focus its terminal once ready; consumed at most once. */
   requestFocus(threadId: string): void { this.focusRequests.add(threadId) }
@@ -85,7 +108,7 @@ export class PaneTerminalChromeStore {
     const states = this.load()
     const current = states.get(threadId) ?? DEFAULT_STATE
     const next = { ...current, ...patch }
-    if (next.open === current.open && next.height === current.height) return
+    if (next.open === current.open && next.height === current.height && next.view === current.view && next.councilHeight === current.councilHeight) return
     // Re-inserting moves this thread to the end, so trimming drops the longest-untouched entries first.
     states.delete(threadId)
     states.set(threadId, next)

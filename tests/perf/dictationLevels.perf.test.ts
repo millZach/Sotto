@@ -12,6 +12,8 @@
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/dictationLevels.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
 import { afterEach, expect, it, vi } from 'vitest'
+import { AudioRecorder } from '../../src/renderer/src/audio/audioRecorder'
+import { createHarness as createAudioHarness } from '../fixtures/renderer/audioRecorderHarness'
 import { widgetSnapshotSchema } from '../../src/shared/contracts'
 import { createHarness, recorderOptions, snapshots } from '../fixtures/renderer/dictationControllerHarness'
 import { PERF_BENCH, round } from '../fixtures/perfBench'
@@ -81,4 +83,53 @@ it('publishes a snapshot when the speaking gate moves, not for every microphone 
   // The guard: 909 levels publish 19 snapshots, one for each phrase's gate opening or closing, with a tenth more room.
   expect(published.length).toBeLessThanOrEqual(21)
   expect(harness.publishLevel).toHaveBeenCalled()
+})
+
+// A deterministic capture path, not a hardware latency measurement. Samples only
+// reach the worklet once the real recorder has connected its source.
+it('keeps first speech scripted 150 ms after the hotkey through to the output transcript', async () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(0)
+  const audio = createAudioHarness({}, 16_000)
+  audio.context.audioWorklet.addModule.mockImplementation(() => new Promise(resolve => { setTimeout(resolve, 40) }))
+  audio.getUserMedia.mockImplementation(() => new Promise(resolve => { setTimeout(() => resolve(audio.stream), 70) }))
+  const firstSpeech = new Float32Array(960)
+  const firstWord = 'Ready'
+  const harness = createHarness({
+    now: Date.now,
+    clockTimers: true,
+    transcribe: async ({ audio }) => ({
+      text: firstSpeech.every((sample, index) => audio[index] === sample) ? `${firstWord} to dictate` : 'to dictate',
+      language: 'en',
+    }),
+  })
+  harness.createRecorder.mockImplementation(options => new AudioRecorder(options, audio.dependencies))
+  const connected = () => audio.context.source.connect.mock.calls.length > 0
+  for (let block = 0; block < 3; block++) {
+    const samples = new Float32Array(320).fill((block + 1) / 8)
+    firstSpeech.set(samples, block * samples.length)
+    setTimeout(() => { if (connected()) audio.worklet.port.onmessage?.({ data: samples }) }, 150 + block * 20)
+  }
+  const start = harness.controller.start()
+  await vi.advanceTimersByTimeAsync(149)
+  expect(connected()).toBe(true)
+  expect(harness.controller.getState()).toMatchObject({ status: 'listening', startedAt: 110 })
+  await vi.advanceTimersByTimeAsync(51)
+  await start
+  await harness.controller.stop()
+  expect(harness.transcriber.transcribe).toHaveBeenCalledOnce()
+  expect(harness.transcriber.transcribe.mock.calls[0]![0].audio).toEqual(firstSpeech)
+  expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: `${firstWord} to dictate` }))
+  expect(harness.publishedStates.slice(-2)).toEqual([
+    { status: 'success', sessionId: 'session', text: `${firstWord} to dictate`, output: 'pasted' },
+    { status: 'idle' },
+  ])
+  expect(snapshots(harness).slice(-2)).toMatchObject([
+    { status: 'success', output: 'pasted' },
+    { status: 'idle', cancellable: false },
+  ])
+  expect(harness.controller.getState()).toEqual({ status: 'idle' })
+  expect(audio.track.stop).toHaveBeenCalledOnce()
+  expect(audio.context.source.disconnect).toHaveBeenCalledOnce()
+  expect(audio.worklet.port.onmessage).toBeNull()
 })

@@ -48,6 +48,17 @@ function openModels(provider: string): HTMLElement {
 }
 
 describe('independent provider settings', () => {
+  it.each([ProvidersSettings, AgentSetupFields])('replaces preparation with the agent read failure', Component => {
+    const context = agentContextFixture(null, vi.fn(async () => null))
+    vi.mocked(useOptionalAgents).mockReturnValue(context)
+    const { rerender } = render(<Component />)
+    expect(screen.getByRole('status')).toHaveTextContent(/Loading|Preparing/u)
+    vi.mocked(useOptionalAgents).mockReturnValue({ ...context, error: 'Agent controls are unavailable. Reopen Sotto to reconnect.' })
+    rerender(<Component />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Agent controls are unavailable. Reopen Sotto to reconnect.')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
   it('shows and acts on this computer’s clients while another host is selected for new work', async () => {
     const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
     const base = fixture()

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SocketFrames } from '../../src/host/socketFrames'
 import type { AgentChangedThreadRecords, AgentState, AgentThread } from '../../src/shared/agents'
+import { createThreadReassembly } from '../../src/shared/threadReassembly'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -121,6 +122,91 @@ describe('records an answer lists whole (reply-thread-records)', () => {
       await client.call('read', { op: 'shell' })
       expect((client.messages.find(message => message.id === 'read') as { result: object }).result).not.toHaveProperty('threadRecordsRevision')
     }
+  })
+})
+
+describe('a command\'s answer (command-changed-thread-records)', () => {
+  const accepts = ['changed-thread-records', 'reply-thread-records', 'command-changed-thread-records']
+  interface Answer { host: { threads: AgentThread[] }; threadRecords?: AgentChangedThreadRecords; threadRecordsRevision?: number }
+  type Peer = Awaited<ReturnType<typeof peer>>
+  /** A command that changes no thread record: it only says which project this client has selected. */
+  const answer = async (client: Peer, id: string): Promise<Answer> => {
+    await client.call(id, { op: 'command', command: { type: 'select-project', projectId: client.hello.host.threads[0]!.projectId } })
+    return (client.messages.find(message => message.id === id) as unknown as { result: Answer }).result
+  }
+
+  it('carries no record when none changed, and an empty list beside what it is measured from', async () => {
+    const client = await peer(accepts)
+    const revision = (client.hello as unknown as { threadRecordsRevision: number }).threadRecordsRevision
+    const answered = await answer(client, 'first')
+    expect(answered.host.threads).toEqual([])
+    // Hello's records, or the push that may have followed them before this answer.
+    const at = client.messages.findIndex(message => message.id === 'first')
+    const last = client.messages.slice(0, at).filter(message => message.event === 'shell').at(-1) as unknown as ShellPush | undefined
+    expect(answered.threadRecords).toMatchObject({ base: last?.threads!.revision ?? revision, changed: [] })
+    expect(answered.threadRecords).not.toHaveProperty('removed')
+    expect(answered.threadRecords).not.toHaveProperty('order')
+    expect(answered).not.toHaveProperty('threadRecordsRevision')
+  })
+
+  it('moves nothing, so the next push is measured from the same records and carries what the answer carried', async () => {
+    const client = await peer(accepts)
+    // The first change after a quiet moment is pushed at once and the next waits its turn, so the answer usually carries
+    // that one. A push that goes first leaves it nothing to carry, and all of this still holds.
+    change(); change()
+    const answered = await answer(client, 'carrying')
+    const at = client.messages.findIndex(message => message.id === 'carrying')
+    const last = client.messages.slice(0, at).filter(message => message.event === 'shell').at(-1) as unknown as ShellPush | undefined
+    expect(answered.threadRecords!.base).toBe(last?.threads!.revision ?? (client.hello as unknown as { threadRecordsRevision: number }).threadRecordsRevision)
+    // A change of its own makes sure one more push goes, whatever the answer carried.
+    change()
+    const next = () => client.messages.slice(at).find(message => message.event === 'shell') as unknown as ShellPush | undefined
+    await expect.poll(next).toBeDefined()
+    expect(next()!.threads!.base).toBe(answered.threadRecords!.base)
+    expect(next()!.threads!.changed.map(thread => thread.id)).toEqual(expect.arrayContaining(answered.threadRecords!.changed.map(thread => thread.id)))
+  })
+
+  it('puts back, in socket order, the list a shell read gives at the same moment', async () => {
+    const client = await peer(accepts)
+    const held = createThreadReassembly()
+    expect(held({ revision: (client.hello as unknown as { threadRecordsRevision: number }).threadRecordsRevision, base: null, changed: client.hello.host.threads })).toBeDefined()
+    await client.pushed(change())
+    await client.pushed(change())
+    const workId = change()
+    await answer(client, 'answer')
+    await client.call('read', { op: 'shell' })
+    let shown: AgentThread[] | undefined
+    for (const message of client.messages) {
+      const push = message as unknown as ShellPush
+      if (message.event === 'shell') expect(held(push.threads)).toBeDefined()
+      if (message.id === 'answer') shown = held.peek((message as unknown as { result: Answer }).result.threadRecords)
+      if (message.id === 'read') {
+        const whole = (message as unknown as { result: Answer }).result.host.threads
+        expect(shown).toEqual(whole)
+        expect(shown!.some(thread => carriesWork(thread, workId))).toBe(true)
+      }
+    }
+    expect(shown).toBeDefined()
+  })
+
+  it('lists every record to a client that accepted it without changed records, and to one that did not accept it', async () => {
+    for (const asked of [['changed-thread-records', 'reply-thread-records'], ['command-changed-thread-records'], []]) {
+      const client = await peer(asked)
+      const answered = await answer(client, 'whole')
+      expect(answered).not.toHaveProperty('threadRecords')
+      expect(answered.host.threads).toHaveLength(client.hello.host.threads.length)
+      expect(answered.host.threads.length).toBeGreaterThan(1)
+    }
+  })
+
+  it('is measured from the last push written, or lists every record when none has gone', async () => {
+    // Without `reply-thread-records` hello's records are not held, so what the answer is measured from is a push, if one has gone.
+    const client = await peer(['changed-thread-records', 'command-changed-thread-records'])
+    const answered = await answer(client, 'measured')
+    const at = client.messages.findIndex(message => message.id === 'measured')
+    const last = client.messages.slice(0, at).filter(message => message.event === 'shell').at(-1) as unknown as ShellPush | undefined
+    expect(answered.threadRecords!.base).toBe(last?.threads!.revision ?? null)
+    expect(answered.threadRecords!.changed.length).toBe(last ? 0 : client.hello.host.threads.length)
   })
 })
 
