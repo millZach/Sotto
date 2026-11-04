@@ -37,7 +37,7 @@
    drawn as "s…" and nothing is drawn over its neighbour: first the workspace, then the project, then the branch, then the
    pull request's number. An open list is shown whatever the room, so the chords that open one keep working. The box is
    empty row too, so its bare stretch still moves the window; in a split, the crumb's words stay the pane's handle. */
-.thread-workspace__head .thread-workspace__title > .thread-workspace__where { position: relative; z-index: 30; display: flex; flex: 1 1 0; align-items: center; gap: 4px; align-self: stretch; min-width: 0; overflow-x: clip; container: pane-where / inline-size; -webkit-app-region: drag; }
+.thread-workspace__head .thread-workspace__title > .thread-workspace__where { position: relative; z-index: 30; display: flex; flex: 1 1 0; align-items: center; gap: 4px; align-self: stretch; min-width: 0; padding-inline: 2px; overflow-x: clip; container: pane-where / inline-size; -webkit-app-region: drag; }
 .thread-workspace__head .thread-workspace__title > .thread-workspace__where:has([aria-expanded='true']) { overflow-x: visible; }
 .thread-workspace__head .thread-workspace__title > .thread-workspace__where:has(.thread-workspace__tag) { min-width: min(148px, 40cqi); }
 .thread-workspace__head .thread-workspace__crumb { -webkit-app-region: no-drag; }
@@ -45,7 +45,7 @@
 .thread-workspace__branches:empty { display: none; }
 .thread-workspace__branches .branch-toolbar__pr { flex: none; }
 /* A branch's name reads whole while the row has the room. */
-.thread-workspace__branches .branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(260px, 56cqi); }
+.thread-workspace__branches .branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(260px, 72cqi); }
 .thread-workspace__crumb { display: flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: 100%; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
