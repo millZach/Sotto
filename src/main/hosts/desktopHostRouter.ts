@@ -41,6 +41,7 @@ import type { HostThreadFolders } from './hostedTerminals'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
+import { toDoForWindow, type MachineToDos, type ToDoRequest } from '../../shared/toDos'
 import { RemoteDelegationReads } from './remoteDelegations'
 import { HostConnectionError, HostRequestUnanswered, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
@@ -50,7 +51,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'toDos' | 'subscribeToDos' | 'toDoRequest' | 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -342,6 +343,7 @@ export class DesktopHostRouter {
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly checkListeners = new Set<() => void>()
+  private readonly toDoListeners = new Set<() => void>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   /** What each remote host's suggestions were told to the window as, by window key, so a connection that goes lets them go. */
   private readonly toldNextPrompts = new Map<string, Map<string, string>>()
@@ -619,6 +621,9 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeDelegationViews) off.push(connection.service.subscribeDelegationViews(change => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.delegations.heard(connection.hostId, change)
     }))
+    if (connection.kind === 'remote' && connection.service.subscribeToDos) off.push(connection.service.subscribeToDos(() => {
+      if (this.hosts.get(connection.hostId)?.connection === connection) this.toDosChanged()
+    }))
     if (connection.kind === 'remote' && connection.service.subscribeCheckQueue) off.push(connection.service.subscribeCheckQueue(() => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.checksChanged()
     }))
@@ -645,6 +650,7 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
     // The host pushed its check queue after the hello, before this connection was taken, so the queue it holds is told now.
     if (connection.kind === 'remote' && connection.service.checkQueue?.() !== undefined) this.checksChanged()
+    if (connection.kind === 'remote' && connection.service.toDos?.() !== undefined) this.toDosChanged()
     // So are the next prompts it pushed (ADR-0173).
     if (connection.kind === 'remote') this.retellNextPrompts(connection)
   }
@@ -680,7 +686,7 @@ export class DesktopHostRouter {
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
     // In place of the old connection's queue, the one this connection's hello brought, or none.
-    if (connection.kind === 'remote') this.checksChanged()
+    if (connection.kind === 'remote') { this.checksChanged(); this.toDosChanged() }
     // And in place of its next prompts, the ones this connection holds: what only the old one held is let go.
     if (connection.kind === 'remote') this.retellNextPrompts(connection)
   }
@@ -706,6 +712,7 @@ export class DesktopHostRouter {
     this.emit()
     this.delegations.removed(hostId)
     this.checksChanged()
+    this.toDosChanged()
     this.letGoNextPrompts(hostId)
   }
   /**
@@ -724,6 +731,30 @@ export class DesktopHostRouter {
         ...check.by !== undefined ? { by: hostEntityKey(hostId, check.by) } : {} })) })
     }
     return machines
+  }
+  /** Each connected host's to-do list (ADR-0188), by the window's keys for its threads. */
+  hostToDos(): MachineToDos[] {
+    const machines: MachineToDos[] = []
+    for (const [hostId, { connection }] of this.hosts) {
+      if (connection.kind !== 'remote') continue
+      const items = connection.service.toDos?.()
+      if (items === undefined) continue
+      machines.push({ hostId, thisComputer: false, items: items.map(item => toDoForWindow(hostId, item)) })
+    }
+    return machines
+  }
+  subscribeToDos(listener: () => void): () => void {
+    this.toDoListeners.add(listener)
+    return () => { this.toDoListeners.delete(listener) }
+  }
+  private toDosChanged(): void {
+    for (const listener of [...this.toDoListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
+  }
+  /** A press on a connected host's list. A host that has gone refuses it, and its item stays. */
+  async toDoRequest(hostId: string, request: ToDoRequest): Promise<void> {
+    const service = this.hosts.get(hostId)?.connection.service
+    if (!service?.toDoRequest) throw new Error(t`That computer is not connected. Your to-do is still on its list.`)
+    await service.toDoRequest(request)
   }
   /** Hears a connected host's check queue change, or a host with one leave. Returns the way to stop. */
   subscribeCheckQueues(listener: () => void): () => void {

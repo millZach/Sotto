@@ -29,6 +29,9 @@ import { registerCouncilIpc } from './council/councilIpc'
 import { CouncilService } from './council/councilService'
 import { BranchBundles } from './agents/branchBundles'
 import { registerCheckQueueIpc } from './agents/checkQueueIpc'
+import { registerToDoIpc } from './agents/toDoIpc'
+import { ToDoToolServer } from './agents/toDoTools'
+import { TO_DOS_RENDERER_ARGUMENT } from '../shared/toDos'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { moveTargetsOf } from './agents/threadMoves'
 import { registerThreadMoveIpc } from './agents/threadMovesIpc'
@@ -812,6 +815,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // thread may list (#1032); this computer's live load and work placed but not started, and list_machines showing them
   // (#1311). Stable reads no setting for it, offers none of it, samples nothing and asks no host for its projects' origins.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
+  const toDoListEnabled = owlFeatures['to-do-list']
   // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
   const nextPromptEnabled = owlFeatures['next-prompt']
   // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
@@ -969,6 +973,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(popupEnabled ? [POPUP_RENDERER_ARGUMENT] : []),
         ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
+        ...(toDoListEnabled ? [TO_DOS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
@@ -1090,7 +1095,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
+    toDoListEnabled, delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'],
@@ -1251,7 +1256,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, toDoListEnabled,
     // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
     ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
@@ -1323,7 +1328,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
   }) : undefined
   if (tellTools) quitHandles.tellWatcherTools = tellTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : [])])
+  // Lets a thread on this computer put what only the user's hands can do on their to-do list (ADR-0188).
+  const localToDos = 'toDos' in localRuntime ? localRuntime.toDos : undefined
+  const toDoTools = localToDos ? new ToDoToolServer(localToDos, { admits: threadId => agentHost.admitsTellWatcher(threadId) }) : undefined
+  if (toDoTools) quitHandles.toDoTools = toDoTools
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []), ...(toDoTools ? [toDoTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
@@ -1451,14 +1460,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
-    const [chats, answers, remoteDrafts] = await Promise.allSettled([
+    const [toDos, chats, answers, remoteDrafts] = await Promise.allSettled([
+      Promise.resolve().then(() => localToDos?.privacyChanged()),
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
       Promise.resolve().then(() => retainedDrafts.privacyChanged()),
     ])
+    if (toDos.status === 'rejected') recoveryNotices.publish({ code: 'TO_DO_HISTORY_NOT_CLEARED' })
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
     if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
+    if (toDos.status === 'rejected') throw toDos.reason
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
     if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
@@ -2388,6 +2400,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // and each host's is still read.
       const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
         () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
+      const cleanupToDos = registerToDoIpc(ipcMain, toDoListEnabled, 'toDos' in localRuntime ? localRuntime.toDos : undefined,
+        () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
       // The Council (ADR-0177): only where its Owl feature is on and this computer runs threads, so stable registers nothing.
       const cleanupCouncil = registerCouncilIpc(ipcMain, councilService, () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) })
@@ -2678,6 +2692,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupProductEvents()
         cleanupDelegations()
         cleanupCheckQueues()
+        cleanupToDos()
         cleanupContinue()
         cleanupCouncil()
         cleanupThreadMoves()

@@ -24,7 +24,7 @@ import {
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isAnyRestartNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isLimitRestartNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isAnyRestartNews, isToDoNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isLimitRestartNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { samePlainValue, withoutHiddenWakeUps } from './hiddenWakeUpDisplay'
@@ -1332,6 +1332,8 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Release gate only; the saved Watcher record is retained on either track. */
     watcherEnabled?: boolean
+    /** The to-do list's Owl answer (ADR-0188): where it is off, a saved to-do wake-up stays whole and unsent. */
+    toDoListEnabled?: boolean
     /** The providers held to Owl on this run (ADR-0072); absent holds every one while retaining Owl's saved choices. */
     heldProviders?: HeldProviders
     /** Muse's answer alone, from before the held set; `heldProviders` wins. */
@@ -3515,6 +3517,11 @@ export class AgentControl {
    * that is gone, settled or archived takes nothing, and the rejection leaves the news untold. A resume note is read
    * for first, and a thread that read finds working again takes nothing either (ADR-0076).
    */
+  /** Whether a thread is here, open and not settled, so it can take a wake-up at all. */
+  takesWakeUps(threadId: string): boolean {
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    return thread !== undefined && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
   async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
     if (this.dependencies.babysittingRetired === true && isPullRequestNews(news)) throw new Error(BABYSITTING_RETIRED)
@@ -3537,7 +3544,9 @@ export class AgentControl {
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
     // While delegation is off, a delegation's waiting news is kept apart, so it holds back none of this (ADR-0081).
-    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, this.delegationHooks ? undefined : isDelegationNews)
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed,
+      // A to-do's news always waits apart: it may hold the user's words, which go nowhere near the disk with Keep local history off (ADR-0188).
+      held => isToDoNews(held) ? 'to-do' : !this.delegationHooks && isDelegationNews(held) ? 'delegation' : 'other')
     if (this.syncFollowups()) this.publish()
     this.pumpFollowups()
   }
@@ -4050,7 +4059,8 @@ export class AgentControl {
         // A limit restart's note goes only while the feature and its setting are on (ADR-0144).
         : isLimitRestartNews(news) ? this.limitRestart?.due() !== true
         // A delegation's news is never outdated: while delegation is off the pump holds it, unsent and whole (ADR-0081).
-        : isDelegationNews(news) ? false
+        // Nor is a checked-off to-do's: the user did the work, whenever the thread comes to hear of it (ADR-0188).
+        : isDelegationNews(news) || isToDoNews(news) ? false
           : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
   }
   /**
@@ -4073,11 +4083,11 @@ export class AgentControl {
         // A delegation's news asks nothing: it is never outdated, so it adds no ask to the batch (ADR-0081).
         due: news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true
           : isLimitRestartNews(news) ? this.limitRestart?.due() === true
-          : isDelegationNews(news) ? true : !guard || guard.due(threadId, news),
+          : isDelegationNews(news) || isToDoNews(news) ? true : !guard || guard.due(threadId, news),
         word: kept => queuedWakeUpText(kept, { tool: guard?.tool(threadId) ?? false }),
         transform: news => {
           // A resume note and a delegation's news are no pull request's: babysitting has nothing to say of them (ADR-0076, ADR-0081).
-          if (isAnyRestartNews(news) || isDelegationNews(news)) return news
+          if (isAnyRestartNews(news) || isDelegationNews(news) || isToDoNews(news)) return news
           if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
           const events = news.events.filter(due)
           return events.length ? { ...news, events } : undefined
@@ -4816,6 +4826,8 @@ export class AgentControl {
       const recovering = recoveringThreads.has(threadId)
       const held = (item: Readonly<QueuedFollowup>): boolean => recovering && isWaitingWakeUp(item) && !isDelegationOnlyWakeUp(item)
         || !this.delegationHooks && (item.news ?? []).some(isDelegationNews)
+        // A checked-off to-do's news stays whole and unsent where the feature is off, as on a stable run after an Owl one (ADR-0072).
+        || this.dependencies.toDoListEnabled !== true && (item.news ?? []).some(isToDoNews)
       if (items.some(item => item.threadId === threadId && isWaitingWakeUp(item)
         && item.news?.some(isDelegationNews) && item.news.some(news => !isDelegationNews(news)))) {
         this.pumping.add(threadId)
@@ -4995,7 +5007,8 @@ export class AgentControl {
           // News freshness and stopped participation both reach the native writer without changing origin.
           // A delegation's hidden news asks again at the native writer too, after the thread's preparation: a settle or an
           // archive that landed meanwhile sends it nowhere (ADR-0081, October 19, 2026).
-          const writeGuard = item.news?.some(isWatcherNews) || hiddenNews ? () => { validate(); queueGuard?.() } : queueGuard
+          // So does a checked-off to-do's, which a settled thread does not take (ADR-0188).
+          const writeGuard = item.news?.some(isWatcherNews) || item.news?.some(isToDoNews) || hiddenNews ? () => { validate(); queueGuard?.() } : queueGuard
           const phoneOrigin: WatcherCommandOrigin | undefined = item.phoneOrigin && phoneGuard
             ? { phoneOrigin: item.phoneOrigin, guard: () => { phoneGuard(); queueGuard?.() } } : undefined
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
