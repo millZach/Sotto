@@ -14,6 +14,8 @@ Run 41880135669 on the small iPhone gave the first pictures: [the loud count](..
 - `tests/integration/socketToDos.test.ts` proves the host's side from part one.
 - `apps/ios/Scripts/check-strings.mjs`: all 23 new strings in all 30 languages. They're my translations, and no native speaker has read them.
 
+Run 41895334740 (job 126803529190) took `testToDoListStandsInEveryPageAndAChecksOffWithUndo` to its end on the small iPhone at `b07d80783`: the count, unrolling, the steps, a check-off, Undo, "It didn't work" and its Cancel, rolling up to the quiet count, and the icon in Settings and in a thread's bar. Its pictures showed two things no assertion reads. In a thread's bar the system's pill cut the count in half, and the roll hung 12 points under the paper with the page showing between. The next commit moves both; only a later run's pictures can show them right.
+
 ## What was not proved
 
 - The Duo. CI's iPhones skip the Duo journeys, so the rail's tile, folded and sideways, and the swap with the sidebar button have compiled at most. Upright can only be proved by hand, as `2026-11-03-iphone-duo-thread-rail.md` says.

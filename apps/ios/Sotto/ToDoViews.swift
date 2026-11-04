@@ -23,8 +23,9 @@ struct ToDoIcon: View {
                 .contentShape(Rectangle())
             }
             .modifier(CircleIfNotBar(inBar: inBar))
-            // Outside the button, since a button's own shape may clip what it draws.
-            .overlay(alignment: .topTrailing) { badge.offset(x: inBar ? 0 : 3, y: inBar ? 0 : -3).allowsHitTesting(false) }
+            // Outside the button, since a button's own shape may clip what it draws. In a thread's bar the system's pill clips
+            // what stands above it, so the count sits down on the circle's shoulder, inside the pill.
+            .overlay(alignment: .topTrailing) { badge.offset(x: inBar ? -6 : 3, y: inBar ? 8 : -3).allowsHitTesting(false) }
             .accessibilityLabel(label)
             .accessibilityHint(toDos.open ? String(localized: "Roll up the list") : String(localized: "Unroll the list"))
             .accessibilityIdentifier("to-do-icon")
@@ -69,7 +70,7 @@ struct ToDoScroll: View {
                     .padding(.horizontal, Space.s2)
                     .padding(.top, top)
                     .padding(.bottom, Space.s5)
-                    .transition(reduceMotion ? AnyTransition.opacity : .modifier(active: RollReveal(progress: 0), identity: RollReveal(progress: 1)))
+                    .transition(reduceMotion ? AnyTransition.opacity : .modifier(active: RollReveal(progress: 0, foot: Space.s5), identity: RollReveal(progress: 1, foot: Space.s5)))
             }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .timingCurve(0.32, 0.72, 0.28, 1, duration: toDos.open ? 0.72 : 0.4), value: toDos.open)
@@ -80,6 +81,8 @@ struct ToDoScroll: View {
 /// Unrolls what it holds from its top edge, with the roll at the edge of what shows.
 private struct RollReveal: ViewModifier, Animatable {
     var progress: CGFloat
+    /// The room left under the paper, which is outside what the roll travels: it stays on the paper's bottom edge.
+    let foot: CGFloat
     var animatableData: CGFloat { get { progress } set { progress = newValue } }
     func body(content: Content) -> some View {
         content
@@ -91,7 +94,7 @@ private struct RollReveal: ViewModifier, Animatable {
                     Capsule().fill(Palette.overlay)
                         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                         .frame(height: 24 - 8 * progress)
-                        .offset(y: max(0, place.size.height * progress - 8))
+                        .offset(y: max(0, (place.size.height - foot) * progress - 8))
                 }
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
