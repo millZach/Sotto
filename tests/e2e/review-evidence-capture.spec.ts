@@ -410,6 +410,10 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await line.click()
     await focusedPane(page).getByRole('button', { name: /^Plan the split, 3 of 7 done/u }).click()
     await expect(focusedPane(page).getByRole('list', { name: 'Plan, 3 of 7 done' })).toBeVisible()
+    // The press scrolls the reader off the end, so the composer slims; it is not done moving when its animations are.
+    const composer = focusedPane(page).locator('form.thread-prompt')
+    let lastTop = Number.NaN
+    await expect.poll(async () => { const top = (await composer.boundingBox())?.y ?? Number.NaN, still = top === lastTop; lastTop = top; return still }, { intervals: [500] }).toBe(true)
     await capture.shoot('steps-expanded', 'The same turn unfolded: the newest six steps, with the plan among them pressed open, three done, one running and three to come.')
     await capture.shoot('steps-expanded', 'The same turn unfolded at a narrower window.', '', { modes: ['dark'], size: [1280, 800] })
     await capture.shoot('steps-expanded', 'The same turn unfolded at the minimum window.', '', { modes: ['dark'], size: [820, 560] })
