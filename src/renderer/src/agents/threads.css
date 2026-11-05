@@ -283,14 +283,9 @@
   --thread-foot-end: calc(var(--thread-prompt-foot, 20px) + var(--tt-radius-card));
   clip-path: polygon(0 0, 100% 0, 100% 100%, calc(100% - 16px) 100%, calc(100% - 16px) calc(100% - var(--thread-foot-end)), 0 calc(100% - var(--thread-foot-end)));
 }
-/* Glass's card can be seen through, so there the words end at its top edge, slim or full, where a solid card would hide
-   them: they still reach the card at full ink and go under it, and the card shows only the room behind it. */
-:root[data-glass] .thread-pane:not(.watcher-pane, [data-greeting], [data-questions]) > .thread-transcript > .thread-transcript__viewport {
-  --thread-foot-end: var(--thread-compose-shown, var(--thread-compose-height, 0px));
-  transition: clip-path 160ms ease-out;
-}
-@media (prefers-reduced-motion: reduce) { :root[data-glass] .thread-pane > .thread-transcript > .thread-transcript__viewport { transition: none; } }
-:root[data-glass][data-reduced-motion='on'] .thread-pane > .thread-transcript > .thread-transcript__viewport { transition: none; }
+/* Glass's card can be seen through, and on Glass the words run on under it and show through it, slim or full, as they
+   always have: a clip there would end them at the card's top, which ADR-0125 rules out. */
+:root[data-glass] .thread-pane:not(.watcher-pane, [data-greeting], [data-questions]) > .thread-transcript > .thread-transcript__viewport { clip-path: none; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: calc(var(--thread-compose-cover) + var(--thread-jump-band)); }
 .thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap)); }
 /* A waiting question keeps 26px of conversation under its rounded corners (#1815), without clipping those words.
