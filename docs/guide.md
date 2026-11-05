@@ -1267,7 +1267,7 @@ In Sotto Owl, a Claude Code or Codex thread on this computer can be **Dynamic**:
 
 The overseer plans, briefs its workers, reads what they return and answers you. It does no work itself. If it changes files anyway, its reply says so, with the files and its reason. It carries no authority: the permission in the composer is the most a worker may do, and you answer every worker's questions and permissions as you do any thread's.
 
-Each worker is a delegated thread. Its row under **Worked for** names the model and effort the overseer chose, with a line in the overseer's words on why. Its **···** opens the thread or stops the worker. To overrule a choice, name a model in your message, stop the worker, or open its thread and type there.
+Each worker is a delegated thread. Its row under **Worked for** names the model and effort the overseer chose, with a line in the overseer's words on why. Its **···** opens the thread, stops the worker, or gives its piece to another model: **Give it to another model…** lists the ready models your list in Settings allows. The one you choose starts on the same brief, told that you moved it and where any work so far is, and the old worker stops. Its row reads "You: You chose this." To overrule a choice otherwise, name a model in your message, stop the worker, or open its thread and type there.
 
 **Settings → Threads** holds the limits every Dynamic thread works inside:
 

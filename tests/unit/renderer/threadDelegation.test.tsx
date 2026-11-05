@@ -408,6 +408,41 @@ describe('delegated work in the delegating thread', () => {
       expect(within(shown).queryByRole('button', { name: /^Actions for / })).toBeNull()
     })
 
+    it('gives the worker to another model from its menu: the models it may go to, then the move, and a move it could not make said on the row', async () => {
+      owl(true, false, true)
+      const give = vi.fn(async (): Promise<string | null> => 'Grok Build is off the list Dynamic threads may use. Tick it in Settings, under Threads, to give it work. Nothing was started.')
+      const giveChoices = vi.fn(() => [{ id: 'native:claude:model:opus', name: 'Opus 5.5', provider: 'claude' as const }])
+      const threads = [thread(CHILD, 'Review the gate fix'), thread(OLD, 'First review')]
+      const shown = view(worker)
+      render(<DelegationWorldProvider world={{ ...world(vi.fn(), threads), chosenWords: chosen => chosen.model, give, giveChoices }}><ul><DelegatedWorkRow view={shown} /></ul></DelegationWorldProvider>)
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Review the gate fix' }))
+      expect(giveChoices).toHaveBeenCalledWith(worker.chosen.model)
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Give it to another model…' }))
+      const models = await screen.findByRole('menu', { name: 'Give Review the gate fix to' })
+      await waitFor(() => expect(within(models).getByRole('menuitem', { name: 'Opus 5.5' })).toHaveFocus())
+      fireEvent.click(within(models).getByRole('menuitem', { name: 'Opus 5.5' }))
+      expect(give).toHaveBeenCalledWith(shown.id, 'native:claude:model:opus')
+      expect(await screen.findByRole('alert')).toHaveTextContent('Grok Build is off the list')
+      expect(screen.queryByRole('menu')).toBeNull()
+    })
+
+    it('offers no move where no other model is on the list, and says why', () => {
+      owl(true, false, true)
+      render(<DelegationWorldProvider world={{ ...world(vi.fn(), [thread(CHILD, 'Review the gate fix')]), chosenWords: chosen => chosen.model, give: vi.fn(), giveChoices: () => [] }}><ul><DelegatedWorkRow view={view(worker)} /></ul></DelegationWorldProvider>)
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Review the gate fix' }))
+      const item = screen.getByRole('menuitem', { name: /Give it to another model…/u })
+      expect(item).toBeDisabled()
+      expect(item).toHaveAttribute('title', 'No other ready model is on the list in Settings.')
+    })
+
+    it('says You chose this on a worker the user gave the piece to', () => {
+      owl(true, false, true)
+      row(view({ ...worker, byUser: true, why: 'The user gave this piece to Opus 5.5.' }))
+      const shown = screen.getByRole('listitem')
+      expect(shown).toHaveTextContent('You: You chose this.')
+      expect(shown).not.toHaveTextContent('Why:')
+    })
+
     it('counts workers by provider on the Worked for line only where the Owl feature is on', () => {
       const threads: Record<string, Pick<AgentThread, 'providerId' | 'requests'>> = { a: { providerId: 'codex', requests: [] }, b: { providerId: 'claude', requests: [] } }
       const of = (shown: DelegatedView | RefusedView) => shown.thread === undefined ? undefined : threads[shown.thread]

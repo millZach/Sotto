@@ -6,6 +6,12 @@ import { providerIdSchema, type AgentThread, type ProviderId } from './agents'
  * piece of work, inside the limits saved here. An Owl feature, `dynamic-threads`. This is the one reader every part asks.
  */
 
+/**
+ * Main adds it to the main window's arguments only while the `dynamic-threads` Owl feature is on here: the window's bridges
+ * for its record and for Give it to another model… exist only then.
+ */
+export const DYNAMIC_THREADS_RENDERER_ARGUMENT = '--sotto-dynamic-threads'
+
 /** The providers an overseer runs on for now, whose standing instructions are checked (ADR-0191 decision 13). */
 export const DYNAMIC_OVERSEERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['claude', 'codex'])
 export const DYNAMIC_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const

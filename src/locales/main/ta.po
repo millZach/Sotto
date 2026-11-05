@@ -246,6 +246,10 @@ msgstr ""
 msgid "{problem} Sotto restored your files. Fix the error, then try again."
 msgstr ""
 
+#: src/main/agents/delegationIpc.ts
+msgid "{provider} is off the list Dynamic threads may use. Tick it in Settings, under Threads, to give it work. Nothing was started."
+msgstr ""
+
 #: src/main/hosts/hostBootStart.ts
 msgid "{sentence} Nothing was changed on {name}."
 msgstr ""
@@ -337,6 +341,10 @@ msgstr ""
 
 #: src/main/council/councilService.ts
 msgid "A Council starts from an ordinary thread, not Watcher. Nothing was started."
+msgstr ""
+
+#: src/main/agents/delegationIpc.ts
+msgid "A Dynamic thread runs on this computer only, so nothing was started."
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -479,6 +487,10 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "An Omarchy palette was installed by hand. Sotto leaves it alone."
+msgstr ""
+
+#: src/main/agents/delegationIpc.ts
+msgid "another model"
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -1367,6 +1379,10 @@ msgstr ""
 msgid "Sotto could not start recording. Nothing was kept. Try Record a minute again."
 msgstr ""
 
+#: src/main/agents/delegationIpc.ts
+msgid "Sotto couldn't start a worker on {model}. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
+msgstr ""
+
 #: src/main/hosts/hostUpdate.ts
 msgid "Sotto did not restart while it was updating a host. Nothing was lost. Restart again once that update has finished."
 msgstr ""
@@ -1450,6 +1466,10 @@ msgstr ""
 
 #: src/main/agents/visualPageStore.ts
 msgid "Sotto no longer has this page, so it is not shown."
+msgstr ""
+
+#: src/main/agents/delegationIpc.ts
+msgid "Sotto no longer holds what this worker was asked, so it can't hand it on. Ask the overseer in a message to give the piece to {model}. Nothing was started."
 msgstr ""
 
 #: src/main/council/climbService.ts
@@ -1665,6 +1685,10 @@ msgstr ""
 msgid "That model is not ready: its provider is not connected. Choose another. Nothing was changed."
 msgstr ""
 
+#: src/main/agents/delegationIpc.ts
+msgid "That model isn't ready now. Choose another, or check its provider in Settings, under Providers. Nothing was started."
+msgstr ""
+
 #: src/main/council/climbService.ts
 msgid "That round has no kept evidence to export."
 msgstr ""
@@ -1685,8 +1709,20 @@ msgstr ""
 msgid "That thread is not on this computer."
 msgstr ""
 
+#: src/main/agents/delegationIpc.ts
+msgid "That thread isn't Dynamic now, so its workers aren't moved from here. Turn Dynamic on at the foot of its model menu to move them. Nothing was started."
+msgstr ""
+
 #: src/main/council/councilService.ts
 msgid "That thread's folder is not a Git repository and is not its project's folder, so the Council cannot work in it. Nothing was started."
+msgstr ""
+
+#: src/main/agents/delegationIpc.ts
+msgid "That worker is already on {model}. Nothing was started."
+msgstr ""
+
+#: src/main/agents/delegationIpc.ts
+msgid "That worker isn't one an overseer chose a model for, so it can't be given to another. Nothing was started."
 msgstr ""
 
 #: src/main/notifications/desktopNotifier.ts
@@ -2939,6 +2975,10 @@ msgstr ""
 msgid "This path is unavailable or changed. Refresh Files and try again."
 msgstr ""
 
+#: src/main/agents/delegationIpc.ts
+msgid "This piece was already given to another model. Move it from the newer worker's row instead. Nothing was started."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "This provider does not expose matching native conversation rollback."
 msgstr ""
@@ -3033,6 +3073,10 @@ msgstr ""
 
 #: src/main/tools/checkpoints.ts
 msgid "This turn changed Git history or staging. Review and restore it with Git."
+msgstr ""
+
+#: src/main/agents/delegationIpc.ts
+msgid "This worker's brief is too long to hand on with a note about the move. Ask the overseer in a message to give the piece to {model}. Nothing was started."
 msgstr ""
 
 #: src/main/tools/checkpointCapture.ts

@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { preloadElectron } from '../../fixtures/preloadElectron'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { exposeRendererBridge } from '../../../src/preload'
-import { DYNAMIC_RECORD_CLEAR, DYNAMIC_RECORD_READ, DYNAMIC_RECORD_RENDERER_ARGUMENT, type DynamicRecordBridge } from '../../../src/shared/dynamicRecord'
+import { DYNAMIC_RECORD_CLEAR, DYNAMIC_RECORD_READ, type DynamicRecordBridge } from '../../../src/shared/dynamicRecord'
+import { DYNAMIC_THREADS_RENDERER_ARGUMENT as DYNAMIC_RECORD_RENDERER_ARGUMENT } from '../../../src/shared/dynamicThreads'
+import { DELEGATION_GIVE, DELEGATION_RENDERER_ARGUMENT, type DelegationsBridge } from '../../../src/shared/delegation'
 
 const exposed = (arguments_: string[]): Record<string, unknown> => {
   const exposeInMainWorld = vi.fn()
@@ -30,5 +32,18 @@ describe('its record\'s bridge', () => {
     // Words main should never send are refused.
     ipc.invoke.mockResolvedValue({ models: [{ provider: 'codex', model: 'm', name: 'Sol', pieces: 1, finished: 1, moved: 0, tokens: 3, brief: 'private' }] })
     await expect(bridge.read()).rejects.toThrow()
+  })
+
+  it('offers Give it to another model… on the delegations bridge only with the feature on', async () => {
+    expect((exposed(['--sotto-renderer-role=main', DELEGATION_RENDERER_ARGUMENT]).delegations as DelegationsBridge).give).toBeUndefined()
+    const ipc = preloadElectron().ipcRenderer
+    const exposeInMainWorld = vi.fn()
+    exposeRendererBridge({ exposeInMainWorld }, ipc, ['--sotto-renderer-role=main', DELEGATION_RENDERER_ARGUMENT, DYNAMIC_RECORD_RENDERER_ARGUMENT])
+    const give = (exposeInMainWorld.mock.calls[0]?.[1] as { delegations: DelegationsBridge }).delegations.give!
+    const request = { threadId: 'parent', delegation: crypto.randomUUID(), model: 'native:claude:model:opus' }
+    ipc.invoke.mockResolvedValue({ status: 'refused', message: 'Nothing was started.' })
+    expect(await give(request)).toEqual({ status: 'refused', message: 'Nothing was started.' })
+    expect(ipc.invoke).toHaveBeenLastCalledWith(DELEGATION_GIVE, request)
+    expect(() => give({ ...request, delegation: 'not-an-id' })).toThrow()
   })
 })

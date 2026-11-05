@@ -216,6 +216,49 @@ test('its record in Settings counts an overseer\'s piece on the model it chose, 
   }
 })
 
+test('a worker row\'s ··· gives its piece to another model the user chooses, on its brief, and the new row says You chose this', async () => {
+  test.setTimeout(180_000)
+  const { profile, root, project, restore } = await fixture()
+  let launched: LaunchedSotto | undefined
+  try {
+    await onReleaseTrack('owl', async () => {
+      launched = await launchSotto('success', profile)
+      const { page } = launched
+      const id = await newThread(page, project)
+      await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4 } }))
+      expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
+      expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
+      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.status !== 'running', id), { timeout: 30_000 }).toBe(true)
+      await page.evaluate(threadId => window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: { work: 'code-review', brief: 'Review the reconnect fix in src/net.ts.', wait_seconds: 0,
+        provider: 'codex', model: 'native:codex:model:gpt-6.1-sol', effort: 'high', permission: 'approval-required', why: 'Another maker\'s read.' } }), id)
+      await page.reload()
+      await openThreads(page)
+      await page.getByRole('button', { name: 'Reconnect fix', exact: true }).first().click({ position: { x: 16, y: 12 } })
+      const sol = page.locator('.delegated-work__row', { hasText: 'GPT-6.1 Sol' }).first()
+      const worked = page.getByRole('button', { name: /Worked for/u }).first()
+      await expect(sol.or(worked)).toBeVisible({ timeout: 15_000 })
+      if (!await sol.isVisible()) await worked.click()
+      await sol.getByRole('button', { name: /^Actions for / }).click()
+      await page.getByRole('menuitem', { name: 'Give it to another model…' }).click()
+      const models = page.getByRole('menu', { name: /^Give .+ to$/u })
+      await expect(models.getByRole('menuitem', { name: 'Opus 5.5' })).toBeFocused()
+      await expect(models.getByRole('menuitem', { name: 'GPT-6.1 Sol' })).toHaveCount(0)
+      await page.keyboard.press('Enter')
+      // A new row on Opus, the user's own choice, taking over from the old one.
+      const moved = page.locator('.delegated-work__row', { hasText: 'You chose this.' })
+      await expect(moved).toBeVisible({ timeout: 15_000 })
+      await expect(moved).toContainText('You: You chose this.')
+      await expect(moved).toContainText('It took over from')
+      // The new worker on Claude Code was sent the old brief, with the line that the user moved it.
+      await expect.poll(async () => JSON.stringify(await fakeClaudeRecords(join(root, 'claude'))), { timeout: 30_000 })
+        .toMatch(/Review the reconnect fix in src\/net\.ts\.[\s\S]*The user moved this piece to you from GPT-6\.1 Sol/u)
+    })
+  } finally {
+    if (launched) await closeSotto(launched)
+    await restore()
+  }
+})
+
 test('an overseer starts the model it names inside the list, with its reason, and is refused one off it', async () => {
   test.setTimeout(120_000)
   const { profile, project, restore } = await fixture()

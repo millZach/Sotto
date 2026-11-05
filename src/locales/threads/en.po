@@ -4463,6 +4463,14 @@ msgstr "Git refused."
 msgid "Git said:"
 msgstr "Git said:"
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Give {threadTitle} to"
+msgstr "Give {threadTitle} to"
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Give it to another model…"
+msgstr "Give it to another model…"
+
 #: src/renderer/src/agents/VisualStepper.tsx
 msgid "Go to step {stepNumber}"
 msgstr "Go to step {stepNumber}"
@@ -5667,6 +5675,10 @@ msgstr "No model source matches “{typed}”."
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "No models were returned. Refresh this provider to check again."
 msgstr "No models were returned. Refresh this provider to check again."
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "No other ready model is on the list in Settings."
+msgstr "No other ready model is on the list in Settings."
 
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "No preview for this file type"
@@ -8139,6 +8151,10 @@ msgstr "Sotto could not tell how it stood when it last read it."
 msgid "Sotto couldn’t load skills."
 msgstr "Sotto couldn’t load skills."
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Sotto couldn't reach the new worker's start. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
+msgstr "Sotto couldn't reach the new worker's start. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
+
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
 msgstr "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
@@ -10421,6 +10437,10 @@ msgstr "Wrote {subject}"
 msgid "You"
 msgstr "You"
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "You chose this."
+msgstr "You chose this."
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You had sent your own message in that thread since this thread last read it. {nothing}"
 msgstr "You had sent your own message in that thread since this thread last read it. {nothing}"
@@ -10458,6 +10478,11 @@ msgstr "You were working in it, so Sotto did not send this brief."
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You were working in that thread, so it takes no brief until your turn there ends. {nothing}"
 msgstr "You were working in that thread, so it takes no brief until your turn there ends. {nothing}"
+
+#. Before the line saying the user, not the overseer, gave this piece to this model.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "You:"
+msgstr "You:"
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Your answer"

@@ -39,7 +39,7 @@ import { nextPromptWatcherFacts } from './agents/nextPromptProject'
 import { nextPromptWatcherRequest, parseNextPrompt } from './llm/nextPrompt'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
-import { DYNAMIC_RECORD_RENDERER_ARGUMENT } from '../shared/dynamicRecord'
+import { DYNAMIC_THREADS_RENDERER_ARGUMENT } from '../shared/dynamicThreads'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import { COUNCIL_RENDERER_ARGUMENT } from '../shared/council'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
@@ -968,8 +968,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
-        // Settings' read of a Dynamic thread overseer's record (ADR-0191 decision 9), only while its Owl feature is on.
-        ...(owlFeatures['dynamic-threads'] ? [DYNAMIC_RECORD_RENDERER_ARGUMENT] : []),
+        // A Dynamic thread overseer's record and Give it to another model… (ADR-0191), only while its Owl feature is on.
+        ...(owlFeatures['dynamic-threads'] ? [DYNAMIC_THREADS_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
@@ -2390,7 +2390,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // A thread on another machine is read on that machine where Work across machines is on (#1310); stable reads none.
       // A check's reply is read on a press only where checks are offered, with Watcher and Work across machines on (#1312).
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
-        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled)
+        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled, owlFeatures['dynamic-threads'])
       // Settings' read of its record and Clear its record (ADR-0191 decision 9); stable registers nothing.
       // With this computer's host off, what it saved is opened here, so it can still be read and cleared.
       const dynamicRecord = 'dynamicRecord' in localRuntime && localRuntime.dynamicRecord ? localRuntime.dynamicRecord : owlFeatures['dynamic-threads'] ? new DynamicRecord(userDataPath) : undefined

@@ -42,6 +42,10 @@ export interface DelegationNewsDetail {
   readonly replyUnavailable?: string
   /** What happened to a brief that was never sent, which replaces the outcome's own words. */
   readonly notSent?: string
+  /** The user gave this delegation's piece to another model from its row (ADR-0191): the delegation that took it, and its model. */
+  readonly movedTo?: { readonly delegationId: string; readonly model: string }
+  /** This delegation is the one the user started from an older worker's row, in place of `replaces` (ADR-0191). */
+  readonly userMoved?: { readonly replaces: string }
   /** A released background outcome's newest reply (#1263): the delegated thread's own words, whole, cut as the news is worded. */
   readonly lastReply?: string
   /** A released background outcome whose thread has run another turn since its own, and is idle again. */
@@ -58,7 +62,7 @@ function lastReplyStart(text: string): string {
   return ` Its last reply ${cut ? 'begins' : 'is'}, in the delegated thread's own words, not Sotto's or the user's: ${JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))}${cut ? ' (cut; read the delegated thread for the rest)' : ''}.`
 }
 
-const head = (item: DelegationNews['items'][number]): string =>
+const headLine = (item: DelegationNews['items'][number]): string =>
   `- Delegation ${item.delegationId} to thread ${item.threadId}${item.turnMessageId ? ` (turn ${item.turnMessageId})` : ''}`
 const tooLong = `answered. Its reply is too long to include with the rest of this news. Call ${READ_DELEGATION_TOOL} with this delegation for it.`
 
@@ -77,12 +81,18 @@ function replyBlock(item: DelegationNews['items'][number], reply: NonNullable<De
 export function delegationNewsText(news: DelegationNews, details?: ReadonlyMap<string, DelegationNewsDetail>, maxChars = AGENT_TEXT_MAX, swarmNote?: string): string {
   const says = (item: DelegationNews['items'][number]): string => {
     const detail = details?.get(item.delegationId)
+    if (detail?.movedTo) return `was stopped: the user gave this piece to ${detail.movedTo.model}, as delegation ${detail.movedTo.delegationId}. Do not start it again; that delegation's outcome reaches you as news.`
     if (detail?.notSent) return `was not sent. ${detail.notSent}`
     if (detail?.limitStop) return `stopped at ${detail.limitStop.provider}'s usage limit${detail.limitStop.resetsAt ? `, which resets at ${detail.limitStop.resetsAt}` : ''}. Its partial work stays in the folder. Give the piece to another model and name this delegation in replaces.`
     if (detail?.synthesisFailed) return `synthesis ${detail.synthesisFailed === 'stopped' ? 'was stopped' : 'failed'}; its result is missing. Read the swarm receipt before retrying or settling it. This is not a completed synthesis.`
     if (item.outcome === 'answered' && detail?.replyUnavailable) return `answered. ${detail.replyUnavailable}`
     if (item.outcome === 'background' && item.heldMinutes !== undefined) return `${heldWords(item.heldMinutes, detail?.laterTurn === true)}${detail?.lastReply?.trim() ? lastReplyStart(detail.lastReply) : ''}`
     return SAYS[item.outcome]
+  }
+  // A delegation the user started from an older worker's row says so before what became of it.
+  const head = (item: DelegationNews['items'][number]): string => {
+    const moved = details?.get(item.delegationId)?.userMoved
+    return moved ? `${headLine(item)}, which the user started from the row of delegation ${moved.replaces} in place of it,` : headLine(item)
   }
   const lines = news.items.map(item => `${head(item)} ${says(item)}`)
   const swarm = swarmNote ?? (news.swarmId

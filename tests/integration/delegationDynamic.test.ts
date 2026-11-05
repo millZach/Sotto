@@ -269,6 +269,62 @@ it('counts each of an overseer\'s pieces on its record, finished with the tokens
   expect(f.record!.line(sol.id)!.pieces).toBe(4)
 })
 
+it('gives a worker\'s piece to the model the user chose on its row, on the brief it was sent, as the overseer\'s own move would', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const sol = f.model('codex'), opus = f.model('claude')
+  const first = f.ok(await f.delegate(parent, f.named('codex', { brief: 'Fix the reconnect flake in src/net.ts.' })))
+  await vi.waitFor(() => expect(f.service.brief(first.delegation.thread)).toBe('Fix the reconnect flake in src/net.ts.'))
+  expect(await f.service.giveTo(parent, first.delegation.id, opus.id)).toEqual({ status: 'ok' })
+  const moved = f.service.views(parent).made.find(view => view.outcome !== 'refused' && view.replaces === first.delegation.id) as DelegatedView
+  expect(moved).toMatchObject({ byUser: true, chosen: { model: opus.id }, replaces: first.delegation.id, replacedThread: first.delegation.thread })
+  expect(moved.why).toBe(`The user gave this piece to ${opus.name}.`)
+  expect(f.created(moved.thread)).toMatchObject({ provider: 'claude' })
+  // Its brief is the old worker's, with a line that the user moved it and where its work is.
+  await vi.waitFor(() => expect(f.service.brief(moved.thread)).toContain('Fix the reconnect flake in src/net.ts.'))
+  expect(f.service.brief(moved.thread)).toContain(`The user moved this piece to you from ${sol.name}, whose worker was stopped. Any work it did is already in this folder`)
+  // Its record: the old piece moved on its model's line, the new one a piece of the other's.
+  expect(f.record!.line(sol.id)).toMatchObject({ pieces: 1, moved: 1 })
+  expect(f.record!.line(opus.id)).toMatchObject({ pieces: 1, moved: 0 })
+  // The overseer did not make the move, so both delegations are news to it.
+  const views = f.service.views(parent).made as DelegatedView[]
+  expect(views.find(view => view.id === first.delegation.id)?.told).toBe(false)
+  expect(views.find(view => view.id === moved.id)?.told).toBe(false)
+  // A piece already given on is moved from its newer worker's row.
+  expect(await f.service.giveTo(parent, first.delegation.id, f.model('codex').id)).toMatchObject({ status: 'refused', reason: 'already-moved' })
+})
+
+it('replaces the newest brief to a worker when the user moves it, so the turn that may still run is the one let go', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const first = f.ok(await f.delegate(parent, f.named('codex', { brief: 'Review the reconnect fix.' })))
+  await f.answer(first.delegation.thread, { input: 100, output: 10 })
+  await vi.waitFor(() => expect(f.service.views(parent).made.find(view => view.id === first.delegation.id)?.outcome).toBe('answered'))
+  await f.service.read(parent, { delegation: first.delegation.id })
+  const followUp = f.ok(await f.delegate(parent, { work: 'code-review', thread: first.delegation.thread, brief: 'Now check the tests too.', wait_seconds: 0 }))
+  await vi.waitFor(() => expect(f.service.brief(first.delegation.thread)).toBe('Now check the tests too.'))
+  expect(await f.service.giveTo(parent, first.delegation.id, f.model('claude').id)).toEqual({ status: 'ok' })
+  const moved = f.service.views(parent).made.find(view => view.outcome !== 'refused' && view.byUser === true) as DelegatedView
+  expect(moved.replaces).toBe(followUp.delegation.id)
+  await vi.waitFor(() => expect(f.service.brief(moved.thread)).toContain('Now check the tests too.'))
+})
+
+it('says in plain words why a worker cannot be given to a model, and starts nothing', async () => {
+  const f = await fixture({ limits: { providers: ['claude', 'codex'] } }), parent = await f.overseer()
+  const first = f.ok(await f.delegate(parent, f.named('codex')))
+  const before = f.service.views(parent).made.length
+  expect(await f.service.giveTo(parent, first.delegation.id, f.model('codex').id)).toMatchObject({ status: 'refused', reason: 'same-model' })
+  expect(await f.service.giveTo(parent, first.delegation.id, f.model('grok').id)).toMatchObject({ status: 'refused', reason: 'not-allowed', provider: 'grok' })
+  expect(await f.service.giveTo(parent, first.delegation.id, 'no-such-model')).toMatchObject({ status: 'refused', reason: 'not-ready' })
+  expect(await f.service.giveTo(await f.overseer(), first.delegation.id, f.model('claude').id)).toMatchObject({ status: 'refused', reason: 'not-overseen' })
+  // Turned off at rest: its workers are no longer the overseer's to move from here.
+  const binding = f.workspace.registry.byThread(parent)!
+  f.workspace.adapters.claude.state.threads.find(item => item.id === binding.sessionId)!.status = 'idle'
+  f.workspace.adapters.claude.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'claude' })
+  expect((await f.control.commandShell({ type: 'set-thread-dynamic', threadId: parent, dynamic: false })).error).toBeNull()
+  expect(await f.service.giveTo(parent, first.delegation.id, f.model('claude').id)).toMatchObject({ status: 'refused', reason: 'not-dynamic' })
+  expect(f.service.views(parent).made).toHaveLength(before)
+})
+
 it('lets go of what a new worker replaces: its restart at the reset, and its turn if that restart has already gone', async () => {
   const f = await fixture(), parent = await f.overseer()
   const cancel = vi.fn(() => true)

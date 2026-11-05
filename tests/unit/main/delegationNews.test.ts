@@ -63,3 +63,12 @@ it('says a delegated thread stopped at a limit, and how to give its piece to ano
   expect(text).toContain('stopped at Codex\'s usage limit, which resets at 2026-11-04T15:40:00.000Z.')
   expect(text).toContain('Give the piece to another model and name this delegation in replaces.')
 })
+
+it('tells an overseer when the user gave a worker\'s piece to another model, on both delegations', () => {
+  const old = randomUUID(), moved = randomUUID()
+  const news: DelegationNews = { source: 'delegation', items: [{ delegationId: old, threadId: 'old-worker', outcome: 'stopped' }, { delegationId: moved, threadId: 'new-worker', outcome: 'failed' }] }
+  const details = new Map<string, DelegationNewsDetail>([[old, { movedTo: { delegationId: moved, model: 'Opus 5.5' } }], [moved, { userMoved: { replaces: old } }]])
+  const text = delegationNewsText(news, details)
+  expect(text).toContain(`- Delegation ${old} to thread old-worker was stopped: the user gave this piece to Opus 5.5, as delegation ${moved}. Do not start it again; that delegation's outcome reaches you as news.`)
+  expect(text).toContain(`- Delegation ${moved} to thread new-worker, which the user started from the row of delegation ${old} in place of it,`)
+})
