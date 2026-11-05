@@ -415,7 +415,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
-  { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-scrubber-woken', 'reading-scrubber-glass', 'reading-scrubber-glass-woken', 'reading-scrubber-clay', 'reading-scrubber-clay-woken', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
+  { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-sent-pause', 'reading-scrubber', 'reading-scrubber-woken', 'reading-scrubber-glass', 'reading-scrubber-glass-woken', 'reading-scrubber-clay', 'reading-scrubber-clay-woken', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
     await scrollTranscript(page, 'middle')
@@ -438,6 +438,15 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await reply.evaluate(element => element.scrollIntoView({ block: 'center' }))
     await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, with its name and time beside it.')
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    // The owner came back after a pause to start the second pass, so that message is headed by You and its time again.
+    const back = transcript(page).locator('.thread-message[data-role="user"]:not([data-named])').filter({ hasText: 'permissionLedger' }).filter({ hasText: 'again' }).first()
+    await back.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    const pauseShows = 'A message the user sent 45 minutes after the reply before it, headed by You and its time, among messages whose time waits beside Copy.'
+    await capture.shoot('reading-sent-pause', pauseShows)
+    await resizeContentWindowFor(capture.launched, 820, 560)
+    await back.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    await capture.shoot('reading-sent-pause', pauseShows, '', { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
     const lane = pane.locator('.message-scrubber')
     if (await lane.count()) {
       // At rest only the ticks around the messages on screen show; the pointer anywhere in the lane shows them all

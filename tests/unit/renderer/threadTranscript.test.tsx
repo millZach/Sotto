@@ -72,9 +72,38 @@ describe('message copy control', () => {
     ]
     render(<MessageList messages={turns} provider="Codex" running={false} placement={placeActivities(turns, turns, [])} context={{ ...context, running: false }} />)
     const articles = [...document.querySelectorAll<HTMLElement>('.thread-message')]
-    expect(articles.map(article => article.dataset.named ?? 'yes')).toEqual(['yes', 'yes', 'yes', 'no'])
+    expect(articles.map(article => article.dataset.named ?? 'yes')).toEqual(['yes', 'yes', 'no', 'no'])
     // The quiet reply still says who wrote it and when, in its header, ahead of its words.
     expect(articles[3]!.querySelector('header')).toHaveTextContent(`Codex${clockLabel(Date.parse(at))}`)
+  })
+
+  it('heads the user\'s first message with You and the time, and a later one only after a pause', () => {
+    const minute = (n: number): string => new Date(Date.parse(at) + n * 60_000).toISOString()
+    const turns: AgentMessage[] = [
+      { id: 'u1', role: 'user', text: 'One?', createdAt: minute(0) },
+      { id: 'r1', role: 'assistant', text: 'First.', createdAt: minute(2) },
+      { id: 'u2', role: 'user', text: 'Two?', createdAt: minute(5) },
+      { id: 'r2', role: 'assistant', text: 'Second.', createdAt: minute(7) },
+      { id: 'u3', role: 'user', text: 'Back from lunch. Three?', createdAt: minute(52) },
+      { id: 'r3', role: 'assistant', text: 'Third.', createdAt: minute(54) },
+    ]
+    render(<MessageList messages={turns} provider="Codex" running={false} placement={placeActivities(turns, turns, [])} context={{ ...context, running: false }} />)
+    const sent = [...document.querySelectorAll<HTMLElement>('.thread-message[data-role="user"]')]
+    expect(sent.map(article => article.dataset.named ?? 'yes')).toEqual(['yes', 'no', 'yes'])
+    // The quiet one still says who sent it and when, ahead of its words.
+    expect(sent[1]!.querySelector('header')).toHaveTextContent(`You${clockLabel(Date.parse(minute(5)))}`)
+    expect(sent[1]!.querySelector('header')!.compareDocumentPosition(sent[1]!.querySelector('.rich-message')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('keeps every header in Watcher\'s conversation', () => {
+    const turns: AgentMessage[] = [
+      { id: 'u1', role: 'user', text: 'One?', createdAt: at },
+      { id: 'r1', role: 'assistant', text: 'First.', createdAt: at },
+      { id: 'u2', role: 'user', text: 'Two?', createdAt: at },
+      { id: 'r2', role: 'assistant', text: 'Second.', createdAt: at },
+    ]
+    render(<MessageList messages={turns} provider="Codex" speaker="watcher" running={false} placement={placeActivities(turns, turns, [])} context={{ ...context, running: false }} />)
+    expect([...document.querySelectorAll<HTMLElement>('.thread-message')].map(article => article.dataset.named ?? 'yes')).toEqual(['yes', 'yes', 'yes', 'yes'])
   })
 
   it('copies the source Markdown on press and confirms for a moment', async () => {
