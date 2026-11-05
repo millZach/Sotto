@@ -141,11 +141,10 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 /* One line, cut at its end, with the light still crossing its letters: a step's name can be a long command. */
 .thread-activity-live__word { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* What the line's words are for comes first, and what is running for it sits beside them, smaller and still: the command a
-   described step runs, or the step a plan's item is on. The step leads with its row's mark from the opened steps, so the
-   two read as what the work is for and the step doing it, not as one sentence, and a command is set apart from the prose
-   in the code face. The words keep their room and the step takes what is left, never less than a few letters. The
-   provider's own sentence is cut between words, never inside one; a command, which has no words to keep, is cut at its
-   end. On a line too narrow for both the step goes, since the opened steps name it. */
+   described step runs, or the step a reasoning summary led to. The step leads with its row's mark from the opened steps,
+   so the two read as what the work is for and the step doing it, not as one sentence, and a command is set apart from the
+   prose in the code face. The words keep their room and the step takes what is left, never less than a few letters, and a
+   command is cut at its end. On a line too narrow for both the step goes, since the opened steps name it. */
 .thread-activity-live:has(.thread-activity-live__now) { container-type: inline-size; }
 .thread-activity-live__now { display: grid; grid-template-columns: minmax(0, max-content) minmax(10ch, 1fr); align-items: center; column-gap: 14px; min-width: 0; }
 .thread-activity-live__now:has(.thread-activity-live__detail:empty) { grid-template-columns: minmax(0, max-content); }
@@ -153,7 +152,6 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 .thread-activity-live__mark { flex: none; }
 .thread-activity-live__detail { flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: var(--tt-type-small); text-overflow: ellipsis; white-space: nowrap; }
 .thread-activity-live__detail[data-code] { font-family: var(--tt-font-mono); }
-.thread-activity-live__detail[data-prose] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; white-space: normal; overflow-wrap: normal; }
 .thread-activity-live__step:has(> .thread-activity-live__detail:empty) { display: none; }
 @container (max-width: 560px) {
   .thread-activity-live__now { grid-template-columns: minmax(0, max-content); }
@@ -167,6 +165,15 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
   .thread-activity-live__step { display: none; }
 }
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
+/* When the provider sent a plan, its items stand above the working line while the turn runs (Zach's pick, C of the
+   working-view prototype, ADR-0134's November 5 amendment "the plan stays in view"): the opened plan's own checklist, a
+   size smaller, one line an item, with its tick, its accent dot and its ring. At the minimum window it is the same list;
+   each item is cut at its end there, and the opened plan reads it whole. */
+.thread-activity__steps.thread-activity-live__plan { flex-basis: 100%; min-width: 0; gap: 3px; margin: 0 0 4px; font-size: var(--tt-type-small); }
+.thread-activity-live__plan .thread-activity__step-text { overflow: hidden; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-activity-live__plan .thread-activity__step-text { transition: color 220ms ease; }
+}
 .thread-activity-live__steps > .thread-activity { margin: 0; }
 
 @media (prefers-reduced-motion: no-preference) {

@@ -51,7 +51,10 @@ describe('a plan a provider reported', () => {
     const row = within(transcript).getByRole('button', { name: /^Plan, 1 of 3 done/u })
     expect(row).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(row)
-    const steps = within(transcript).getByRole('list', { name: 'Plan, 1 of 3 done' })
+    // The checklist above the working line comes first; the opened plan is the same list, under its row.
+    const [above, steps] = within(transcript).getAllByRole('list', { name: 'Plan, 1 of 3 done' }) as [HTMLElement, HTMLElement]
+    expect(above).toHaveClass('thread-activity-live__plan')
+    expect(steps).not.toHaveClass('thread-activity-live__plan')
     expect([...steps.querySelectorAll('li')].map(step => [step.dataset.status, step.textContent])).toEqual([
       ['completed', 'Read the failing testDone'], ['running', 'Fix the adapterIn progress'], ['pending', 'Run the suiteTo do'],
     ])

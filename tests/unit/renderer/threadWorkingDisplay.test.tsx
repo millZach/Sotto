@@ -221,24 +221,50 @@ describe('what the working line says the work is for', () => {
     expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
   })
 
-  it('leads with the plan’s step in progress, in the words Claude gives it while it runs, and keeps the command for the description', () => {
+  it('keeps the plan in view above the line as its checklist, and leaves the plan’s item off the line', () => {
     const { words, detail, line } = shown(plan([
       { text: 'Read the code', status: 'completed' }, { text: 'Trace the request', status: 'running', active: 'Tracing the request' }, { text: 'Write it up', status: 'pending' },
     ]), described())
-    expect(words).toBe('Tracing the request')
-    expect(detail.textContent).toBe('Read the request policy')
-    expect(detail).not.toHaveAttribute('data-code')
-    // Claude's own sentence is cut only between words.
-    expect(detail).toHaveAttribute('data-prose')
-    expect(line).toHaveAccessibleDescription(/^Tracing the request, Read the request policy, Running .*cat src\/policy\.ts/u)
+    // The line says what the running step is for, with its command beside it; the checklist says what the turn is on.
+    expect(words).toBe('Read the request policy')
+    expect(unmarked(detail.textContent)).toBe('cat src/policy.ts')
+    expect(detail).toHaveAttribute('data-code')
+    expect(line).toHaveAccessibleDescription(/^Read the request policy, Running .*cat src\/policy\.ts/u)
+    const row = within(screen.getByRole('log', { name: 'Thread transcript' })).getByTestId('thread-activity-live')
+    const checklist = within(row).getByRole('list', { name: 'Plan, 1 of 3 done' })
+    expect(checklist).toHaveClass('thread-activity-live__plan')
+    // Above the line, outside the button, as written rather than in the words for running, with the opened plan's marks.
+    expect(checklist.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(line).not.toContainElement(checklist)
+    expect([...checklist.querySelectorAll('li')].map(item => [item.dataset.status, item.textContent])).toEqual([
+      ['completed', 'Read the codeDone'], ['running', 'Trace the requestIn progress'], ['pending', 'Write it upTo do'],
+    ])
+    expect(checklist.querySelectorAll('.thread-activity__step-done')).toHaveLength(1)
+    expect(line).toHaveAttribute('aria-expanded', 'false')
     cleanup()
-    // A plan step with no words of its own for running reads as written, beside the command itself in the code face.
+    // Codex's plan reads the same; an undescribed command names itself on the line.
     const codex = shown(plan([{ text: 'Trace the request', status: 'running' }]), activity({ id: 'rg', status: 'running', command: 'rg -n policy src' }))
-    expect(codex.words).toBe('Trace the request')
-    expect(unmarked(codex.detail.textContent)).toBe('rg -n policy src')
-    expect(codex.detail).toHaveAttribute('data-code')
-    expect(codex.detail).not.toHaveAttribute('data-prose')
-    expect(codex.line).toHaveAccessibleDescription(/^Trace the request, Running .*rg -n policy src/u)
+    expect(codex.words).toBe('Running rg -n policy src')
+    expect(codex.detail.textContent).toBe('')
+    expect(within(screen.getByTestId('thread-activity-live')).getByRole('list', { name: 'Plan, 0 of 1 done' })).toBeVisible()
+  })
+
+  it('keeps the one line when no plan was sent, and shows the newest plan when the provider sent it again', () => {
+    shown(described())
+    expect(within(screen.getByTestId('thread-activity-live')).queryByRole('list')).toBeNull()
+    cleanup()
+    shown(plan([{ text: 'Old', status: 'running' }]), activity({ id: 'again', kind: 'plan', status: 'running', title: 'Plan', steps: [{ text: 'Old', status: 'completed' }, { text: 'New', status: 'running' }] }), described())
+    const lists = within(screen.getByTestId('thread-activity-live')).getAllByRole('list')
+    expect(lists).toHaveLength(1)
+    expect(lists[0]).toHaveAccessibleName('Plan, 1 of 2 done')
+  })
+
+  it('keeps the checklist above the line while the turn waits on the user', () => {
+    const request = { id: 'p', kind: 'permission' as const, text: 'Run npm run bench?', options: [] }
+    mount(stateWith({ status: 'running', requests: [request], activities: [...waiting(), plan([{ text: 'Bench it', status: 'running' }])] }))
+    const row = screen.getByTestId('thread-activity-live')
+    expect(word(row)).toHaveTextContent('Waiting for your permission')
+    expect(within(row).getByRole('list', { name: 'Plan, 0 of 1 done' })).toBeVisible()
   })
 
   it('takes a reasoning summary’s heading for the work it led to, and never for work after something finished', () => {

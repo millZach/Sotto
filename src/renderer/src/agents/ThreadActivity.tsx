@@ -1,4 +1,4 @@
-import React, { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { createContext, memo, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   ArrowDownUp, Bot, Brain, Camera, Check, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MessageSquareText, MousePointerClick,
   MoveHorizontal, Play, Pointer, Scaling, Shrink, Smartphone, Square, SquareTerminal, Wrench, type LucideIcon,
@@ -12,7 +12,7 @@ import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
+  isTurnRecord, liveTurnId, nestActivities, newestPlan, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
   activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
@@ -197,6 +197,9 @@ const FADE_MS = 220
 /** How long what is on the line holds it, so a quick run of steps reads rather than flickers, and a short gap between two steps never shows. */
 const HOLD_MS = 1500
 
+/** Reduced motion, from Sotto's own setting or the system's. */
+const stillMotion = (): boolean => document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+
 function writeWorking(node: HTMLElement, words: string, detail: HTMLElement | null, now: WorkingNow | null): void {
   node.textContent = words
   // The light crossing the words draws a lit copy of them, which reads the words from here.
@@ -205,10 +208,8 @@ function writeWorking(node: HTMLElement, words: string, detail: HTMLElement | nu
   if (detail) {
     detail.textContent = now?.detail ?? ''
     detail.toggleAttribute('data-code', now?.code === true)
-    detail.toggleAttribute('data-prose', now?.prose === true)
   }
-  const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
-  if (!still) for (const part of [node, detail?.parentElement]) part?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+  if (!stillMotion()) for (const part of [node, detail?.parentElement]) part?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
 }
 
 /** The step beside the words carries its row's mark from the opened steps, so it reads as the step and not as more of the sentence. */
@@ -229,7 +230,7 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
   const ref = useRef<HTMLSpanElement>(null)
   const detailRef = useRef<HTMLSpanElement>(null)
   // The first words only: from here the effects write them, so a redraw of the line never undoes it.
-  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true, prose: now?.prose === true }))
+  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true }))
   // The step's mark is the one part React draws, and only when the step on the line changes.
   const [step, setStep] = useState(now?.step)
   const key = workingKey(now)
@@ -271,7 +272,7 @@ function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
     <span ref={ref} className="thread-activity-live__word" data-word={first.words} aria-hidden="true">{first.words}</span>
     <span className="thread-activity-live__step" aria-hidden="true">
       <Mark className="thread-activity-live__mark" size={13} strokeWidth={1.8} aria-hidden="true" />
-      <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined} data-prose={first.prose || undefined}>{first.detail}</span>
+      <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined}>{first.detail}</span>
     </span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
   </span>
@@ -294,19 +295,36 @@ const STEP_LABELS: Record<string, MessageDescriptor> = {
   pending: msg({ message: 'To do', comment: 'A plan step\'s state.' }),
 }
 
-/** The plan as the provider last reported it. Sotto shows its state; only the provider can change it. */
-function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
+/**
+ * The plan as the provider last reported it. Sotto shows its state; only the provider can change it. Above a running turn's
+ * working line it stands as the same checklist a size smaller (`live`), and an item whose state moves on fades into its new
+ * mark, as the line's own words do.
+ */
+const PlanSteps = memo(function PlanSteps({ record, live = false }: { readonly record: AgentActivity; readonly live?: boolean }): ReactNode {
   const { t } = useLingui()
   const steps = record.steps ?? []
   const done = steps.filter(step => step.status === 'completed').length, total = steps.length
-  return <ol className="thread-activity__steps" aria-label={t`Plan, ${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`}>
+  const list = useRef<HTMLOListElement>(null)
+  const seen = useRef<readonly string[] | null>(null)
+  const statuses = steps.map(step => step.status).join('\n')
+  useLayoutEffect(() => {
+    if (!live) return
+    const before = seen.current, now = statuses.split('\n')
+    seen.current = now
+    if (before === null || stillMotion()) return
+    list.current?.querySelectorAll(':scope > li').forEach((item, index) => {
+      if (before[index] !== undefined && before[index] !== now[index]) item.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+    })
+  }, [live, statuses])
+  return <ol ref={list} className={live ? 'thread-activity__steps thread-activity-live__plan' : 'thread-activity__steps'}
+    aria-label={t`Plan, ${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`}>
     {steps.map((step, index) => <li key={`${index}:${step.text}`} data-status={step.status}>
       {step.status === 'completed' ? <Check className="thread-activity__step-done" size={13} strokeWidth={2.2} aria-hidden="true" /> : <span className="thread-activity__step-mark" aria-hidden="true" />}
       <span className="thread-activity__step-text">{step.text}</span>
       <span className="tt-visually-hidden">{Object.hasOwn(STEP_LABELS, step.status) ? t(STEP_LABELS[step.status]!) : step.status}</span>
     </li>)}
   </ol>
-}
+})
 
 function ActivityDetails({ record: sent, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
   // A remote row whose host kept its long bodies back reads the record whole now that it is open (ADR-0025, October 18
@@ -602,6 +620,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // Read again only when the turn's steps, its newest reply or what it waits on change, not for each word of a reply
   // streaming in, or when the interface language does, since the words are in it.
   const now = useMemo(() => workingNow(steps, replyId, waitingOn), [steps, replyId, waitingOn, i18n.locale])
+  // When the provider sent a plan, its checklist stands above the line while the turn runs (ADR-0134, November 5 amendment,
+  // "the plan stays in view"). Its record is still one of the steps under the line.
+  const plan = useMemo(() => newestPlan(steps), [steps])
+  const checklist = plan ? <PlanSteps record={plan} live /> : null
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
@@ -638,6 +660,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   </>
   // Until the turn has a step there is nothing to open, so the line is only its words.
   if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
+    {checklist}
     <div className="thread-activity-live__line">{words}</div>
   </div>
   const taken = disclosure.label
@@ -645,6 +668,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
     : t({ message: `Last seen working, ${taken} so far`, comment: '{taken} is how many steps the turn had taken, such as 3 steps.' })
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
     onKeyDown={disclosure.onKeyDown}>
+    {checklist}
     <button type="button" className="thread-activity-live__line tt-focusable" aria-expanded={open} aria-controls={open ? stepsId : undefined} aria-label={name}
       aria-description={connected ? now?.spoken : undefined} onClick={disclosure.onToggle}>
       {words}

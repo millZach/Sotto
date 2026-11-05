@@ -403,8 +403,6 @@ export interface WorkingNow {
   readonly detail: string
   /** The detail is a command, set in the code face. */
   readonly code: boolean
-  /** The detail is the provider's own sentence, cut only between words. */
-  readonly prose: boolean
   /** What kind of step the detail names, so it carries the same mark as its row in the opened steps; a reply being written is `reply`. */
   readonly step?: AgentActivity['kind'] | 'reply'
   /** All of it as one sentence for assistive tech, with the command even when the line leaves it to the opened steps. */
@@ -416,12 +414,6 @@ function stepDescription(record: AgentActivity): string {
   if (record.kind !== 'command') return ''
   const described = activityInput(record)?.description
   return typeof described === 'string' ? oneLine(described) : ''
-}
-
-/** The plan's step in progress, in the words its provider gives a running step (Claude's activeForm) or as written. */
-function planNow(steps: readonly AgentActivity[]): string {
-  const step = newestPlan(steps)?.steps?.find(item => item.status === 'running')
-  return step ? oneLine(step.active ?? step.text) : ''
 }
 
 /** A reasoning summary's own heading, the bold first line Codex starts each one with. Nothing else in it is read. */
@@ -448,8 +440,9 @@ function reasoningNow(steps: readonly AgentActivity[]): string {
  * written, with what it is for when the provider said so. Null when neither is known, which is what thinking and a gap
  * between steps are, since a provider reports its tool calls and not the thinking between them; the Spaceballs words carry
  * that wait (ADR-0134, November 4 amendment). A plan's record stays running for the whole turn, so it never counts as the
- * step; its step in progress says what the step is for. What the work is for comes first from the plan's step in progress,
- * then from a command's own description, then from the reasoning summary that led to it. While a request waits on the
+ * step, and the line never repeats the plan's item, since the plan's checklist stands above the line (ADR-0134, November 5
+ * amendment, "the plan stays in view"). What the work is for comes from a command's own description, then from the
+ * reasoning summary that led to it. While a request waits on the
  * user, a permission outranking a question as everywhere else, the line says that instead. Reads without copying.
  */
 export function workingNow(steps: readonly AgentActivity[], replyId?: string, waitingOn?: AgentRequest['kind']): WorkingNow | null {
@@ -458,29 +451,23 @@ export function workingNow(steps: readonly AgentActivity[], replyId?: string, wa
     const waiting = waitingOn === 'permission'
       ? t({ message: 'Waiting for your permission', comment: 'The working line while a permission request waits on the user, above its card.' })
       : t({ message: 'Waiting for your answer', comment: 'The working line while a question waits on the user, above its card.' })
-    return { words: waiting, detail: '', code: false, prose: false, spoken: waiting }
+    return { words: waiting, detail: '', code: false, spoken: waiting }
   }
   const running = steps.findLast(record => record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
   const replying = running === undefined && replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)
   if (running === undefined && !replying) return null
   const doing = running ? runningWords(running) : t({ message: 'Writing a reply', comment: 'The working line while the agent writes its reply.' })
   const described = running ? stepDescription(running) : ''
-  const planned = planNow(steps)
-  const purpose = planned || described || (running ? reasoningNow(steps) : '')
-  if (!purpose) return { words: doing, detail: '', code: false, prose: false, spoken: doing }
+  const purpose = described || (running ? reasoningNow(steps) : '')
+  if (!purpose) return { words: doing, detail: '', code: false, spoken: doing }
   const step = running?.kind ?? 'reply'
   // A command sits beside the words as itself, in the code face: its mark already says it runs.
   const command = running?.kind === 'command' && running.command ? isolated(innerCommand(running.command)) : ''
-  if (purpose === described && !planned) {
-    // A described command leads with its description, and the command itself sits beside it.
-    return { words: described, detail: command || doing, code: command !== '', prose: false, step, spoken: [described, doing].join(', ') }
-  }
-  const detail = described || command || doing
-  return { words: purpose, detail, code: !described && command !== '', prose: described !== '', step, spoken: [purpose, described, doing].filter(Boolean).join(', ') }
+  return { words: purpose, detail: command || doing, code: command !== '', step, spoken: [purpose, doing].join(', ') }
 }
 
-/** The plan as it stands: the newest plan record of a turn that has steps. */
-const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)
+/** The plan as it stands: the newest plan record of a turn that has steps, which the working line's checklist shows. */
+export const newestPlan = (steps: readonly AgentActivity[]): AgentActivity | undefined => steps.findLast(record => record.kind === 'plan' && record.steps?.length)
 
 /** How far a plan has got, "3 of 7 done", when the turn has a plan to measure by; empty when it has none. */
 export function planProgress(steps: readonly AgentActivity[]): string {
