@@ -125,36 +125,29 @@
 .thread-nav__rail-rename .thread-nav__rename { width: 100%; box-sizing: border-box; }
 .pane-menu__list.thread-snooze { display: flex; align-items: center; gap: 8px; width: 320px; max-width: calc(100vw - 16px); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; scroll-padding-block: 7px; }
-/* Where the list is cut by what stands above or below it (Needs you and the search over it, the foot under it), it passes
-   under a band of the sidebar that ends in a hairline, so a cut row reads as one scrolled away and never as one drawn half.
-   Each band is a sticky strip with its own place in the flow, so at the list's ends it is only space: the hairline shows
-   only while there is more of the list that way. It spans the sidebar's width, as the foot's own rule does. */
+.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; scroll-padding-block: 44px 7px; }
+/* Where the list is cut by the foot under it, it passes under a band of the sidebar that ends in a hairline, so a cut row
+   reads as one scrolled away and never as one drawn half. The band is a sticky strip with its own place in the flow, so at
+   the list's end it is only space: the hairline shows only while there is more of the list that way. It spans the sidebar's
+   width, as the foot's own rule does. The band at the top is the same space under Needs you and the search, with no rule of
+   its own: a folder's head draws the edge there. */
 .thread-nav[data-mode] .thread-nav__scroll { container-type: scroll-state; }
 .thread-nav[data-mode] .thread-nav__scroll::before, .thread-nav[data-mode] .thread-nav__scroll::after { content: ''; position: sticky; z-index: 2; display: block; margin-inline: -4px; border: 0 solid transparent; background: var(--threads-sidebar); pointer-events: none; }
-.thread-nav[data-mode] .thread-nav__scroll::before { top: 0; height: 6px; border-bottom-width: 1px; }
+.thread-nav[data-mode] .thread-nav__scroll::before { top: 0; height: 6px; }
 .thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 6px; border-top-width: 1px; }
-@container scroll-state(scrollable: top) { .thread-nav[data-mode] .thread-nav__scroll::before { border-bottom-color: var(--tt-hairline); } }
 @container scroll-state(scrollable: bottom) { .thread-nav[data-mode] .thread-nav__scroll::after { border-top-color: var(--tt-hairline); } }
-/* A row is never drawn cut through its words at either edge. As a row slides under the band it fades out whole, gone by the
-   time a fifth of it is under, and one coming up from the foot fades in only once most of it is in view. So whatever the
-   scroll, the list under Needs you starts at a whole row with a little of the sidebar above it, and ends at one above the
-   foot. Only how a row is drawn follows the scroll: nothing moves, nothing snaps, and a scroll the app or the user sets
-   stays exactly where it was set, so a held gap (ADR-0167) holds. The faded part takes no presses, and a row the keyboard
-   reaches is scrolled into view by the list's own scroll padding and is never faded. The timeline's edges are the bands', and
-   a row cut only through its own padding stays whole, so a row fades only while the cut would reach its words. */
-@supports (animation-timeline: view()) {
-  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-nav__row, .thread-folder__head, .thread-nav__settled) {
-    animation: thread-nav-edge linear both; animation-timeline: view(block 7px); animation-range: cover;
-  }
-  /* What holds the keyboard's focus is never faded, wherever the scroll has it. */
-  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-nav__row:has(:focus-visible), .thread-folder__head:has(:focus-visible), .thread-nav__settled:focus-visible) { animation: none; }
-}
-@keyframes thread-nav-edge {
-  entry 0%, entry 80% { opacity: 0; pointer-events: none; }
-  entry 88%, exit 12% { opacity: 1; pointer-events: auto; }
-  exit 20%, exit 100% { opacity: 0; pointer-events: none; }
-}
+/* A scrolled list keeps the name of the project its rows belong to: each open folder's head stays under the band while its
+   rows pass beneath it, and once stuck it ends in the hairline, so the list under Needs you always starts at a named folder
+   and a row cut there reads as one scrolled under its project's name, as a sidebar's sections do, never as empty space or a
+   row drawn half. A head sticks only inside its own folder, so the next one pushes it on, and a closed folder's head scrolls
+   as a row does. Nothing moves, fades or snaps: a scroll the app or the user sets stays where it was set, so a held gap
+   (ADR-0167) holds, and the list's scroll padding keeps a row the keyboard reaches clear of the stuck head. Its sidebar
+   reaches up to the band, and its hover keeps the sidebar under the wash, so no row shows through either. */
+.thread-nav[data-mode] .thread-folder__head { position: sticky; top: 6px; z-index: 1; background-color: var(--threads-sidebar); box-shadow: 0 -6px 0 var(--threads-sidebar); container-type: scroll-state; }
+.thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) { background: linear-gradient(var(--threads-hover), var(--threads-hover)), var(--threads-sidebar); }
+.thread-nav[data-mode] .thread-folder__toggle::after { content: ''; position: absolute; top: 100%; right: -4px; left: -4px; height: 1px; background: transparent; pointer-events: none; }
+@container scroll-state(stuck: top) { .thread-nav[data-mode] .thread-folder__toggle::after { background: var(--tt-hairline); } }
+
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; font-variant-numeric: tabular-nums; }
 /* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */
@@ -373,9 +366,14 @@
 .thread-nav__rail-list::after { bottom: 0; }
 /* Under the sidebar standing over the thread the bands stay under it too, rather than striking through Needs you. */
 .thread-nav[data-over] .thread-nav__rail-list::before, .thread-nav[data-over] .thread-nav__rail-list::after { z-index: 0; }
-/* A tile the band would cut through its letters fades out whole, as a row of the list does, unless the keys are on it. */
+/* A tile the band would cut through its letters fades out whole, unless the keys are on it. */
 @supports (animation-timeline: view()) {
   .thread-nav__rail-list .thread-nav__rail-thread:not(:focus-visible) { animation: thread-nav-edge linear both; animation-timeline: view(block 5px); animation-range: cover; }
+}
+@keyframes thread-nav-edge {
+  entry 0%, entry 80% { opacity: 0; pointer-events: none; }
+  entry 88%, exit 12% { opacity: 1; pointer-events: auto; }
+  exit 20%, exit 100% { opacity: 0; pointer-events: none; }
 }
 .thread-nav__rail-list nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
 .thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); color: var(--tt-text); background: transparent; font: inherit; font-size: var(--tt-type-body); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
