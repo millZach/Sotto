@@ -117,6 +117,18 @@
   .thread-workspace__head h2 { font-size: var(--tt-type-body); letter-spacing: -.1px; }
   .thread-workspace__actions > .watch-toggle { margin-right: 2px; }
 }
+/* In a narrow pane, beside Tools or in a split, the buttons can leave the name a few words. Rather than cut it there, a
+   name the row cannot hold on one line takes the row's two lines, so "Thread store on a worker" and "Repository review"
+   read whole where they read "Thread stor..." and "Reposit...". A name that fits stays on one line, and only a name too
+   long for both is cut, at the end of the second. Lines break between words only, so a word too long for the room is cut
+   with an ellipsis as the name was. In the narrowest panes the two lines are a step smaller. The buttons
+   keep their size and their place. */
+@container thread-pane (width < 720px) {
+  .thread-workspace__head h2:not(:has(input)) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.2; white-space: normal; }
+}
+@container thread-pane (width < 480px) {
+  .thread-workspace__head h2:not(:has(input)) { font-size: var(--tt-type-small); line-height: 1.25; }
+}
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
 .pane-menu { position: relative; display: flex; }
