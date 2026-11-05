@@ -184,6 +184,7 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
   --changes-added: color-mix(in srgb, var(--tt-success) 5%, transparent); --changes-removed: color-mix(in srgb, var(--tt-error) 5%, transparent);
   --changes-word-added: color-mix(in srgb, var(--tt-success) 8%, transparent); --changes-word-removed: color-mix(in srgb, var(--tt-error) 8%, transparent);
   --changes-word-ink-added: color-mix(in oklab, var(--tt-success) 62%, var(--tt-text)); --changes-word-ink-removed: color-mix(in oklab, var(--tt-error-text) 62%, var(--tt-text));
+  --changes-word-picked-added: color-mix(in srgb, var(--tt-success) 6%, transparent); --changes-word-picked-removed: color-mix(in srgb, var(--tt-error) 6%, transparent);
   --changes-edge-added: color-mix(in srgb, var(--tt-success) 60%, transparent); --changes-edge-removed: color-mix(in srgb, var(--tt-error) 60%, transparent);
 }
 /* A whole file added or removed has nothing to compare, and a solid wash over all of it is only tiring: the edge says it. */
@@ -195,8 +196,11 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-word { border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 [data-kind='add'] .changes-word { background: var(--changes-word-added); color: var(--changes-word-ink-added); }
 [data-kind='remove'] .changes-word { background: var(--changes-word-removed); color: var(--changes-word-ink-removed); }
-/* On a picked line the accent's wash sits over both, and the role's ink would sink below 4.5:1 there: the body ink holds. */
+/* On a picked line the accent's wash sits under the words' own, and the role's ink would sink below 4.5:1 there: the body
+   ink holds, over a lighter wash so the words still read at 4.5:1 in every theme. */
 :is(.changes-line[aria-selected='true'], .changes-split__row[aria-selected='true']) .changes-word { color: var(--tt-text); }
+:is(.changes-line[aria-selected='true'][data-kind='add'], .changes-split__row[aria-selected='true'] > [data-kind='add']) .changes-word { background: var(--changes-word-picked-added); }
+:is(.changes-line[aria-selected='true'][data-kind='remove'], .changes-split__row[aria-selected='true'] > [data-kind='remove']) .changes-word { background: var(--changes-word-picked-removed); }
 /* A hunk's head is a quiet divider, one line at any width: where the part starts, then the section around it. */
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
