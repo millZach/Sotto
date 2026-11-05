@@ -300,8 +300,8 @@ Now `RootView` and `MainTabs` read the model without watching it, and a small vi
 (`ModelWatch`, `MainTabsInputs`) and runs them only when it changes, in the same update. The page stops watching while it
 is held and catches up as it lets go, and its equality keeps the tabs from drawing it again.
 
-The second change is the warm-up. A second after launch, at a moment the list isn't scrolling, a short made-up thread is
-read from wire bytes and laid out hidden for 300 ms, so the first thread opened doesn't pay for the page's first use.
+The second change is the warm-up. A second after launch, in a turn of the run loop that isn't following a scroll, a short
+made-up thread is read from wire bytes and laid out hidden for 300 ms, so the first thread opened doesn't pay for the page's first use.
 
 [Run 41981480704](https://github.com/millZach/Sotto/actions/runs/41981480704), on a slower runner than the first, with
 each round's journey set against the reference's in the same round:

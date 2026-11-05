@@ -3613,7 +3613,8 @@ struct SheetBackdrop: View {
 /// The thread page's first use, paid once a second after launch rather than by the first thread opened: a short made-up
 /// thread, read from wire bytes, laid out hidden for a moment and let go. The page's view types, its text views, its date
 /// reader and its decoder are then ready. Opening a long thread took about a fifth less time with it, for about 0.6 s of
-/// work after launch (#1702). It waits for a moment the list isn't scrolling, so it never takes a scroll's frame.
+/// work after launch (#1702). It lays out in a turn of the run loop that isn't following a finger or a glide, so a scroll
+/// already under way keeps its frames.
 struct ThreadPageWarmUp: View {
     @MainActor private static var done = false
     @State private var detail: ThreadDetail?
@@ -3627,19 +3628,20 @@ struct ThreadPageWarmUp: View {
                 guard !Task.isCancelled else { return }
                 let data = await Task.detached(priority: .utility) { BenchWire.longDetailFrame(turns: 3, now: Date()) }.value
                 guard case .detail(_, let value)? = try? await Wire.readFrame(data), !Task.isCancelled else { return }
-                Self.done = true
-                await Self.notScrolling()
-                detail = value
+                // The rows go in during a turn of the main run loop in its default mode, which it leaves while a finger
+                // drags or a list glides, so they are laid out in that turn rather than in a scroll's.
+                await withCheckedContinuation { (laid: CheckedContinuation<Void, Never>) in
+                    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) {
+                        MainActor.assumeIsolated { detail = value }
+                        laid.resume()
+                    }
+                    CFRunLoopWakeUp(CFRunLoopGetMain())
+                }
                 try? await Task.sleep(nanoseconds: 300_000_000)
+                // Cancelled while it waited, the page went out of sight and the rows may never have been laid out.
+                if !Task.isCancelled { Self.done = true }
                 detail = nil
             }
-    }
-    /// The main run loop's next turn in its default mode, which it leaves while a finger drags or a list glides.
-    private static func notScrolling() async {
-        await withCheckedContinuation { (resumed: CheckedContinuation<Void, Never>) in
-            CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) { resumed.resume() }
-            CFRunLoopWakeUp(CFRunLoopGetMain())
-        }
     }
 }
 
