@@ -25,7 +25,7 @@
 }
 
 /* The room's own layers, which paint the canvas over the page on a solid window. */
-:root[data-glass] :is(.app-shell, .thread-workspace__compose > .thread-pane__meta) {
+:root[data-glass] :is(.app-shell, .thread-workspace__actions, .thread-workspace__compose > .thread-pane__meta) {
   background: transparent;
 }
 
