@@ -61,7 +61,7 @@ The survey ran at 9bb05ed3f, so the points below were checked again at `origin/m
 
 **D. Permission and question cards.** Request kinds are question and permission. The renderer's `waitingFor` is `approval | question | null`, and a permission outranks a question (`src/renderer/src/agents/threadFacts.ts:195-200`). Draft status is `accepted | unconfirmed | draft | missing` (`src/shared/requestDrafts.ts`, survey). Authority lives in policy records (`src/main/memory/policies.ts`, ADR-0004). *Model value:* high, for one invariant: no answer is sent without a user action. A model can check every path that sends an answer. I did not search for open bugs in these cards.
 
-**E. Remote host connect and reconnect.** The desktop's `HostStatus.phase` is `disconnected | connecting | connected | error` (`src/shared/hosts.ts:58`), with a `reconnecting` flag and a setup step. Backoff is `RECONNECT_DELAYS_MS = [3s, 4s, 8s, 16s]`, then every 16 seconds until the user stops it (`src/main/hosts/desktopHosts.ts:155`). The SSH launcher is `connecting | starting | forwarding | ready | disconnected` (`src/main/hosts/sshLauncher.ts:26`). Links are `tailnet | ssh` (`src/shared/hostConnection.ts:6`). The phones have no state machine for reconnect. The iPhone's reconnect is a timeout of 5 seconds (`apps/ios/Sotto/HostConnection.swift:14`) and a function, not a table. *Model value:* medium. The desktop phase is already a closed set with one main writer file, so a typed table covers it.
+**E. Remote host connect and reconnect.** The desktop's `HostStatus` has `phase: disconnected | connecting | connected | error` (`src/shared/hosts.ts:58`, the interface at `:56`), with a `reconnecting` flag and a setup step. Backoff is `RECONNECT_DELAYS_MS = [3s, 4s, 8s, 16s]`, then every 16 seconds until the user stops it (`src/main/hosts/desktopHosts.ts:155`). The SSH launcher is `connecting | starting | forwarding | ready | disconnected` (`src/main/hosts/sshLauncher.ts:26`). Links are `tailnet | ssh` (`src/shared/hostConnection.ts:6`). The phones have no state machine for reconnect. The iPhone's reconnect is a timeout of 5 seconds (`apps/ios/Sotto/HostConnection.swift:14`) and a function, not a table. *Model value:* medium. The desktop phase is already a closed set with one main writer file, so a typed table covers it.
 
 ### One finding that a shared state table would catch
 
@@ -80,12 +80,12 @@ Estimates are mine, not measured. Java and TLC have not been installed here, so 
 | Order | Flow | Why this order | Estimate |
 | --- | --- | --- | --- |
 | 1 | C. Delegations, swarm members | Open race bugs; pure outcome to check against | Pilot about 1 agent-day, 1–2 PRs |
-| 2 | B. Watcher settle | Most merged fixes sit on settle ordering; two writers | 1–2 agent-days, 2 PRs |
-| 3 | D. Permission cards | One strong invariant (ADR-0004) | 1–2 agent-days, 2 PRs, slow to review |
+| 2 | B. Watcher settle | Many merged fixes sit on settle ordering; two writers | 1–2 agent-days, 2 PRs |
+| 3 | D. Permission cards | One strong invariant (ADR-0004) | 1–2 agent-days, 2 PRs |
 | 4 | F. Host reconnect | Small closed set, one writer file | About 1 agent-day, 1 PR |
 | 5 | A. Thread turn | Nine writers; do after C and B | 3 or more agent-days, several PRs |
 
-The whole list is about 4–6 agent-days and 6–10 PRs, plus whatever fixes the models find. The fixes will cost more than the models.
+The whole list is about 4–6 agent-days and 6–10 PRs, plus whatever fixes the models find. The fixes are likely to cost more than the models.
 
 **The pilot, step by step.** It stays out of the repo until a model proves useful.
 1. On forge, outside the repo, install TLC and Java through the skill's runner. The Java download size is not measured.
@@ -106,7 +106,7 @@ The whole list is about 4–6 agent-days and 6–10 PRs, plus whatever fixes the
 
 **XState.** [Version 5.33.3](https://www.npmjs.com/package/xstate) is MIT, was last modified November 2, 2026, is 2.3 MB unpacked, and lists no dependencies on npm. It fits Sotto's TypeScript code on the desktop and in the host. Four things count against it.
 - **Bundling.** The host build bundles every package except `zod` and `node-pty` (`scripts/build-host.mjs:57`). So XState as a devDependency would ship in the host. AGENTS.md allows devDependencies and says a new runtime dependency is an ADR. Whether bundled code counts as runtime is Zach's call.
-- **Copy budget.** Main's update path must not copy state (AGENTS.md; `tests/perf/streamingCopyBudget.perf.test.ts`; `tests/unit/main/copySites.test.ts`). A snapshot-based library creates new objects on each transition. Whether that breaks the budget is untested here.
+- **Copy budget.** Main's update path must not copy state (AGENTS.md; `tests/perf/streamingCopyBudget.perf.test.ts`; `tests/unit/main/copySites.test.ts`). A library that returns a new state object on each transition adds allocations to that path. The budget test counts fresh objects, so whether the library breaks it is untested here.
 - **Other platforms.** The iPhone client is Swift and the Android client is Kotlin. XState runs in neither, so each would need its own port.
 - **Fit with existing code.** Sotto already derives states in pure functions: `outcomeOf` (`src/main/agents/delegation.ts:1982`), `watcherTurnOutcome` (`src/main/agents/watcherOutcomes.ts:56`), `isThreadTurnRunning` (`src/shared/threadActivity.ts:49`). A library would be a second way to do the same thing.
 
@@ -114,9 +114,9 @@ The whole list is about 4–6 agent-days and 6–10 PRs, plus whatever fixes the
 
 ## Risks
 
-- **Model drift.** The model describes code that changed in 1,611 commits between the survey's commit and `origin/main`. A model written today needs a refresh at each change to its flow. The skill says so itself.
-- **The model proves the model, not the code.** The skill says to treat a clean model as no evidence until the code is replayed against it.
-- **State explosion.** The skill's chart budget is 500 states. Delegation trees and swarms may exceed small constants, so the pilot must keep the number of delegations to two or three.
+- **Model drift.** A model describes code, and main moved 1,611 commits between the survey's commit and `origin/main`. A model of a flow needs a refresh whenever that flow's code changes.
+- **A passing model proves the model, not the code.** The skill's hand-off rule is to replay each bug path against the real code, and to treat the model as wrong until a bug is shown not to occur.
+- **State explosion.** The skill's chart budget is 500 states. Delegation trees and swarms may exceed small constants, so the pilot should model two or three delegations.
 - **Copy budget.** A table or a library on main's update path must read state without copying it.
 - **Windows.** The skill is POSIX-shaped (`/bin/sh`, process groups). A Windows check comes before anyone depends on it there.
 - **Java and TLC on a shared box.** Run one job at a time on forge.
@@ -125,7 +125,7 @@ The whole list is about 4–6 agent-days and 6–10 PRs, plus whatever fixes the
 ## Noticed, not traced
 
 - **The phone rows.** The finding above is from reading the code and was not run on a device.
-- **Main opens the memory store whatever the memory setting says.** The setting `memoryEnabled` defaults to off (`src/shared/settings.ts:749`), and the renderer reads it to hide memory (`src/renderer/src/App.tsx:179`). Main opens `memory.sqlite`, builds `PolicyStore` and registers the memory IPC at `src/main/index.ts:774-777` without reading the setting. ADR-0013 says the first beta ships without memory, and AGENTS.md says main reads the gate once at start. Whether opening the store is a memory read, or only the authority store that ADR-0004 describes (`docs/adr/0004-authority-in-policy-records.md`), is a question for Zach. I did not trace further.
+- **Main opens the memory store whatever the memory setting says.** The setting `memoryEnabled` defaults to off (`src/shared/settings.ts:749`), and the renderer reads it to hide memory (`src/renderer/src/App.tsx:179`). Main opens `memory.sqlite` and builds `PolicyStore` at `src/main/index.ts:774-777`, and registers the memory IPC at `:2522`, without reading the setting. ADR-0013 says the first beta ships without memory, and AGENTS.md says main reads the gate once at start. Whether opening the store is a memory read, or only the authority store that ADR-0004 describes (`docs/adr/0004-authority-in-policy-records.md`), is a question for Zach. I did not trace further.
 
 ## Recommendation
 
