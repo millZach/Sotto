@@ -6,7 +6,7 @@ import { Plural, Trans, useLingui } from '@lingui/react/macro'
 import { USAGE_TOKEN_FIELDS, type UsageModelAggregate, type UsageProviderId } from '../../../../shared/usageDashboard'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { roomKeyTarget } from '../../components/AppShell'
-import { Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
+import { Dash, FEW_DAYS, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
 import { PerDay, useChartChoice } from './UsagePerDay'
 import type { UsagePage } from './usagePage'
 import { useOwlFeature } from '../../state/owlFeature'
@@ -88,7 +88,10 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       viz: limits.length === 0 ? undefined : <span className="usage-mini-rings">{limits.map(item => <Ring key={item.providerId} size={14} parts={[{ left: item.primary.tightest?.left, width: 2.5, inset: 0 }]} stale={item.primary.stale} />)}</span>,
       low: lowest !== undefined && lowest.primary.tightest!.left! <= LOW_LEFT,
     },
-    prompts: { value: fmtInt(prompts), text: fmtInt(prompts), note: page.rangeLabel, viz: series === null ? undefined : <Spark values={series.map(row => row.prompts)} /> },
+    // A line over a range with work on only a few days is flat with a hook at one end and says nothing the figure does not;
+    // the Per day chart labels those days instead.
+    prompts: { value: fmtInt(prompts), text: fmtInt(prompts), note: page.rangeLabel,
+      viz: series === null || series.filter(row => row.prompts > 0).length <= FEW_DAYS ? undefined : <Spark values={series.map(row => row.prompts)} /> },
     tokens: { value: fieldTokens(totals.tokens.total), text: fieldTokens(totals.tokens.total), note: totals.tokens.total.value === undefined ? t`No tokens in this range` : t`input + output` },
     where: tokenTotal > 0
       ? { value: <>{sottoShare}<span className="usage-index__unit"><Trans>in Sotto</Trans></span></>, text: t`${sottoShare} in Sotto`,

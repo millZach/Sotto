@@ -102,6 +102,16 @@ describe('Usage page', () => {
     const chart = screen.getByRole('group', { name: /^Prompts per day/u })
     expect([...chart.querySelectorAll('.usage-chart__label')].map(label => label.textContent).length).toBeGreaterThan(0)
   })
+  it('draws a line of prompts per day in the index only when more than a few days have work', async () => {
+    await open()
+    expect(measure(/^Prompts /u).querySelector('.usage-spark')).toBeNull()
+    cleanup()
+    const host = localHost()
+    const days = ['2026-10-02', '2026-10-04', '2026-10-06', '2026-10-08', '2026-10-09', '2026-10-11', '2026-10-13']
+    host.activity = { ...host.activity!, daily: days.map((day, at) => ({ ...activityRow(5 + at, 0, 0, tokens(1_000_000, 10_000, 800_000, 10_000)), day })) }
+    await open(dashboard(host))
+    expect(measure(/^Prompts /u).querySelector('.usage-spark')).not.toBeNull()
+  })
   it('moves through the index with the arrow keys and opens each stage', async () => {
     const { user } = await open()
     measure(/^Prompts /u).focus()

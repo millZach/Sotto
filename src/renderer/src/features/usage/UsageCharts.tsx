@@ -64,8 +64,8 @@ function niceMax(value: number): number {
 
 export interface DayValue { readonly day: string; readonly prompts: number; readonly input: number; readonly output: number; readonly tokensKnown: boolean; readonly tokensPartial: boolean }
 
-/** At most this many days with work, and the chart labels each one's bar. */
-const FEW_DAYS = 6
+/** At most this many days with work, and the chart labels each one's bar, while the index draws no line for them. */
+export const FEW_DAYS = 6
 
 /** A day's position across the plot, as a percentage of its width. */
 const across = (index: number, count: number): string => `${((index + 0.5) / count * 100).toFixed(3)}%`
