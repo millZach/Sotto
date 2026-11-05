@@ -2967,6 +2967,7 @@ msgstr ""
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
+#: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copied"
 msgstr ""
@@ -3032,6 +3033,11 @@ msgstr ""
 msgid "Copy code, once the rest arrives"
 msgstr ""
 
+#. Copies the command an opened step ran.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Copy command"
+msgstr ""
+
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Copy commands"
 msgstr ""
@@ -3048,6 +3054,7 @@ msgstr ""
 
 #: src/renderer/src/agents/diagrams/DiagramFrame.tsx
 #: src/renderer/src/agents/MessageContent.tsx
+#: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Copy failed"
 msgstr ""
@@ -9758,6 +9765,11 @@ msgstr ""
 #. One part of a list of what a turn did, starting lowercase.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "updated the plan"
+msgstr ""
+
+#. A running turn's plan among its opened steps; the plan itself stands above the working line.
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "Updated the plan"
 msgstr ""
 
 #. A provider's client is being updated.
