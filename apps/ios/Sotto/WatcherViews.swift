@@ -565,6 +565,9 @@ private struct WatcherConversationPane: View {
                     // `WatcherReaderPlace.endGap` above the box, so the working line and the follow-ups show whole.
                     Color.clear.frame(height: 0).id(Self.end).accessibilityHidden(true)
                         .background(reader { follow.end = $0.maxY })
+                    #if DEBUG
+                    if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
+                    #endif
                 }
                 // The top margin is the hero's own (`WatcherHero`).
                 .padding(.horizontal, Space.s4)
@@ -607,7 +610,7 @@ private struct WatcherConversationPane: View {
                     resumeFollowing()
                 }, stopAll: stopAll)
                 // It floats as a thread's reply box does, with the conversation running on under it.
-                .readingWidth().background(dockReader(proxy, words: hasWords))
+                .readingWidth().background(dockReader(proxy, words: hasWords)).sendWatchDock()
             }
             // New words, the user's own or Watcher's, and Watcher starting or ending a turn or the user's follow-ups coming
             // and going under them, are scrolled into view above the box, for a reader who sees the newest words or the
@@ -1579,7 +1582,7 @@ private struct WatcherDock: View {
         let label = waitingOnCard ? String(localized: "Queue") : queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
         // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
         return Button {
-            sent += 1; willSend(); focused = false
+            SendWatch.press(); sent += 1; willSend(); focused = false
             dictation.cancel(model.watcherDraftKey(hostID))
             Task { await model.sendToWatcher(hostID) }
         } label: {

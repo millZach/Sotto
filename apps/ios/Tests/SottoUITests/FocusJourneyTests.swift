@@ -2662,3 +2662,116 @@ private extension XCUIElement {
         return false
     }
 }
+
+// MARK: - A send keeps the reader at the end
+
+/// What the send journeys write: a line, and words that wrap to three.
+private let sendOneLine = "Please check the wiring notes again."
+private let sendThreeLines = "Please check the wiring notes again, then say which of the panels still needs a second look before the release goes out this week."
+
+extension FocusJourneyTests {
+
+    /// What a send does to a reader at the end of the conversation (Zach, November 4, 2026: "the thread jumps up then back
+    /// down after the send"). The app reads the page's scroll view and the top of its box each frame, as drawn (`SendWatch`),
+    /// from before the press until after the answer has arrived; no element would show it, as a look at the page takes
+    /// longer than the jump lasts. At no frame may the words already on the page move down toward the box: new words push
+    /// them up, and the box going down with the keyboard takes them down with it, but never more than that. Once the answer
+    /// is in, the page's end sits where it sat over the box before the press.
+    private func sendKeepsTheEnd(_ name: String, _ arguments: [String], open: () -> Void, box boxID: String, send sendID: String,
+                                 words: String?, file: StaticString = #filePath, line: UInt = #line) {
+        let report = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("send-watch-\(UUID().uuidString).json")
+        app.launchEnvironment["SOTTO_SEND_WATCH_FILE"] = report.path
+        launch(arguments, opensOnThreads: !arguments.contains("--ui-watcher"))
+        open()
+        let box = byID(boxID)
+        XCTAssertTrue(box.waitForExistence(timeout: 30), "The box is there", file: file, line: line)
+        if let words {
+            box.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 30), "The box opens the keyboard", file: file, line: line)
+            box.typeText(words)
+        }
+        // Everything the opening and the typing moved has settled.
+        Thread.sleep(forTimeInterval: 2.5)
+        let send = app.buttons[sendID]
+        XCTAssertTrue(send.waitForExistence(timeout: 10) && send.isEnabled, "Send is ready", file: file, line: line)
+        send.tap()
+        let written = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: report.path) }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [written], timeout: 60), .completed, "The page's report must be written", file: file, line: line)
+        guard let data = try? Data(contentsOf: report),
+              let whole = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let press = whole["press"] as? Double, let rows = whole["rows"] as? [[Double]], !rows.isEmpty else {
+            return XCTFail("The page's report must be readable", file: file, line: line)
+        }
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "send-watch-" + name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        try? FileManager.default.removeItem(at: report)
+
+        // Where the page's words are drawn against the top of the box: the scroll view's top, less how far it has scrolled,
+        // less the box's top. It grows as the words move down toward the box.
+        func wordsTop(_ row: [Double]) -> Double { row[7] - row[2] - row[8] }
+        // How far the page's end is drawn below the top of the box.
+        func endBelowBox(_ row: [Double]) -> Double { row[7] - row[2] + row[3] - row[8] }
+        guard let before = rows.last(where: { $0[0] < press }) else { return XCTFail("The report must hold frames from before the press", file: file, line: line) }
+        let after = rows.filter { $0[0] >= press }
+        guard let last = after.last else { return XCTFail("The report must hold frames from after the press", file: file, line: line) }
+        var highest = wordsTop(before), back = 0.0, backAt = 0.0, framesBack = 0
+        for row in after {
+            highest = min(highest, wordsTop(row))
+            let moved = wordsTop(row) - highest
+            if moved > 1 { framesBack += 1 }
+            if moved > back { back = moved; backAt = row[0] - press }
+        }
+        let endMoved = endBelowBox(last) - endBelowBox(before)
+        print(String(format: "[send watch] %@: frames %d, words back toward the box %.1f at %.0f ms over %d frames, end %.1f then %.1f, height %.0f to %.0f",
+                     name, after.count, back, backAt * 1000, framesBack, endBelowBox(before), endBelowBox(last), before[3], last[3]))
+        // Every frame where anything moved, and what the page was told, in time order, for the run's log.
+        let marks = (whole["marks"] as? [[String: Any]] ?? []).compactMap { mark -> (Double, String)? in
+            guard let at = mark["t"] as? Double, let words = mark["name"] as? String else { return nil }
+            return (at - press, words)
+        }
+        var lines: [(Double, String)] = marks.map { ($0.0, "  * " + $0.1) }
+        var previous: [Double]?
+        for row in after {
+            defer { previous = row }
+            if let previous, zip(previous[1...], row[1...]).allSatisfy({ abs($0 - $1) < 0.25 }) { continue }
+            lines.append((row[0] - press, String(format: "offset %.1f drawn %.1f height %.1f view %.1f inset %.1f box %.1f words %.1f end %.1f",
+                                                 row[1], row[2], row[3], row[4], row[5], row[8], wordsTop(row), endBelowBox(row))))
+        }
+        for entry in lines.sorted(by: { $0.0 < $1.0 }).prefix(200) {
+            print(String(format: "[send watch] %@ %6.0f ms %@", name, entry.0 * 1000, entry.1))
+        }
+        XCTAssertLessThanOrEqual(back, 1, String(format: "The words on the page must not move down toward the box during a send: they went %.1f points back, %.0f ms after the press, over %d frames", back, backAt * 1000, framesBack), file: file, line: line)
+        XCTAssertEqual(endMoved, 0, accuracy: 2, String(format: "The page's end must come back to where it sat over the box: %.1f points then, %.1f now", endBelowBox(before), endBelowBox(last)), file: file, line: line)
+    }
+
+    private func sendArguments(_ order: String, draft: Bool = false, extra: [String] = []) -> [String] {
+        Self.fixture + ["--ui-send-order", order, "--ui-can-stop", "--ui-still"] + (draft ? ["--ui-send-draft", sendOneLine] : []) + extra
+    }
+    private func openRow(_ id: String) -> () -> Void {
+        { [self] in
+            let thread = row(id)
+            reveal(thread)
+            thread.tap()
+        }
+    }
+    private func openWatcherPage() -> () -> Void { { [self] in openWatcher() } }
+    private func threadSend(_ name: String, _ id: String, order: String = "message-first", words: String? = sendOneLine, draft: Bool = false, extra: [String] = []) {
+        sendKeepsTheEnd(name, sendArguments(order, draft: draft, extra: extra), open: openRow(id), box: "thread-reply", send: "thread-send", words: words)
+    }
+    private func watcherSend(_ name: String, idle: Bool = false, words: String? = sendOneLine, draft: Bool = false) {
+        let page = ["--ui-watcher", "--ui-watcher-box", "--ui-watcher-can-answer", "--ui-watcher-nothing-waits"] + (idle ? ["--ui-send-watcher-idle"] : [])
+        sendKeepsTheEnd(name, sendArguments("message-first", draft: draft, extra: page), open: openWatcherPage(), box: "watcher-reply", send: "watcher-send", words: words)
+    }
+
+    func testSendMediumThreadMessageFirst() { threadSend("medium-message-first", "iphone") }
+    func testSendMediumThreadConfirmFirst() { threadSend("medium-confirm-first", "iphone", order: "confirm-first") }
+    func testSendMediumThreadTogether() { threadSend("medium-together", "iphone", order: "together") }
+    func testSendMediumThreadThreeLines() { threadSend("medium-three-lines", "iphone", words: sendThreeLines) }
+    func testSendMediumThreadNoKeyboard() { threadSend("medium-no-keyboard", "iphone", words: nil, draft: true) }
+    func testSendLongThread() { threadSend("long", "drives", extra: ["--ui-long-thread"]) }
+    func testSendWatcherIdle() { watcherSend("watcher-idle", idle: true) }
+    func testSendWatcherWorking() { watcherSend("watcher-working") }
+    func testSendWatcherNoKeyboard() { watcherSend("watcher-no-keyboard", idle: true, words: nil, draft: true) }
+}

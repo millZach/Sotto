@@ -1574,6 +1574,9 @@ struct RailAsk: Equatable {
         if settingThreads { caps["configureThread"] = true; answeringCaps["configureThread"] = true }
         // The small reply box's journey: this computer can stop a running turn, so the box offers Stop (ADR-0184).
         if arguments.contains("--ui-can-stop") { caps["interrupt"] = true; answeringCaps["interrupt"] = true }
+        // The send journeys: a reply goes as from a computer that takes it (`deliverFixtureReply`).
+        let sendJourney = arguments.contains("--ui-send-order")
+        if sendJourney { caps["submit"] = true; answeringCaps["submit"] = true }
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
@@ -1608,6 +1611,8 @@ struct RailAsk: Equatable {
                 if asking { row["requests"] = [Self.fixtureQuestion] }
             }
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
+            // The send journeys send from a thread at rest, whose turn starts with the send.
+            if sendJourney && id == "iphone" { row["status"] = "idle"; row["summary"] = ["lastMessageAt": date] }
             if id == "iphone" && settingThreads { row["modelId"] = "fixture-model"; row["runtimeMode"] = "approval-required" }
             if id == "shortcuts" && settingThreads {
                 // `--ui-top-effort` puts it at its model's top level, where the reply box's trace lights.
@@ -1740,12 +1745,22 @@ struct RailAsk: Equatable {
             }
             // With --ui-watcher-nothing-waits, no card waits on the user, so the page ends on Watcher's working line.
             if arguments.contains("--ui-watcher-nothing-waits") { page["needsYou"] = [[String: Any]]() }
+            // The send journeys' Watcher can be at rest, starting a turn with the send.
+            if arguments.contains("--ui-send-watcher-idle") {
+                page["working"] = false
+                if var current = page["current"] as? [String: Any] { current["status"] = "idle"; page["current"] = current }
+            }
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
             if keepsWriting { keepFixtureWatcherWriting(on: laptop, then: waiting) }
             if arguments.contains("--ui-watcher-two-cards") { answerFixtureNotesWhenAsked(on: laptop) }
         }
         storageReady = true
+        // Words already in the box with no keyboard up, as the mic leaves them.
+        if let at = arguments.firstIndex(of: "--ui-send-draft"), arguments.indices.contains(at + 1) {
+            for id in rows.map(\.0) { drafts[laptop + "/" + id] = arguments[at + 1] }
+            drafts[watcherDraftKey(laptop)] = arguments[at + 1]
+        }
         if arguments.contains("--bench-threads") { startBench(laptop: laptop, arguments: arguments) }
         if arguments.contains("--ui-streaming") {
             // In the pictures journeys the long thread's last reply grows instead of the working thread's update.
@@ -1754,6 +1769,54 @@ struct RailAsk: Equatable {
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = String(localized: "Recovered the saved computer list.") + " " + Self.pairingWarning(1) }
+    }
+    /// A reply going as from a computer: it is on its way for a moment, then the thread's update holds it and the computer's
+    /// list confirms it, in the order `--ui-send-order` names (`message-first`, `confirm-first` or `together`), as the two
+    /// are separate pushes. The thread works, and a moment later a step and the answer arrive and it rests.
+    private func deliverFixtureReply(_ text: String, operation: PendingOperation) async {
+        let arguments = ProcessInfo.processInfo.arguments
+        let order = arguments.firstIndex(of: "--ui-send-order").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "message-first"
+        let ref = ThreadRef(hostID: operation.hostID, threadID: operation.threadID)
+        dispatchingOperations[operation.id] = .some(nil)
+        SendWatch.mark("marker-kept")
+        func stamp() -> String { ISO8601DateFormatter().string(from: Date()) }
+        func apply(messages: [[String: Any]] = [], activities: [[String: Any]] = []) {
+            guard selected == ref, let detail = openDetail else { return }
+            let delta: [String: Any] = ["threadId": ref.threadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
+                                        "messageDeltas": messages.map { ["message": $0] }, "activityDeltas": activities.map { ["record": $0] }]
+            guard let change = try? JSONDecoder().decode(ThreadDetailDelta.self, from: JSONSerialization.data(withJSONObject: delta)),
+                  let next = detail.applying(change) else { return }
+            openDetail = next; detailVersion += 1
+        }
+        func setStatus(_ status: String) {
+            guard var root = fixtureShells[ref.hostID], var host = root["host"] as? [String: Any], var threads = host["threads"] as? [[String: Any]],
+                  let index = threads.firstIndex(where: { ($0["id"] as? String) == ref.threadID }) else { return }
+            threads[index]["status"] = status
+            host["threads"] = threads; root["host"] = host
+            guard let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: root)) else { return }
+            fixtureShells[ref.hostID] = root
+            update(ref.hostID) { $0.shell = shell }
+        }
+        func joined() { SendWatch.mark("message-joined"); apply(messages: [["id": "sent-" + operation.id, "role": "user", "text": text, "createdAt": stamp()]]) }
+        func confirmed() {
+            SendWatch.mark("confirmed")
+            dispatchingOperations[operation.id] = nil
+            try? forgetMarker(operation.id)
+            setStatus("running")
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        switch order {
+        case "confirm-first": confirmed(); try? await Task.sleep(nanoseconds: 150_000_000); joined()
+        case "together": joined(); confirmed()
+        default: joined(); try? await Task.sleep(nanoseconds: 150_000_000); confirmed()
+        }
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        SendWatch.mark("step")
+        apply(activities: [["id": "sent-step-" + operation.id, "sequence": 900_000, "kind": "command", "status": "completed", "title": "Read project notes", "startedAt": stamp()]])
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        SendWatch.mark("answer")
+        apply(messages: [["id": "answer-" + operation.id, "role": "assistant", "text": "Done. The notes say nothing has changed since the last pass, so there is nothing more to do here.", "createdAt": stamp()]])
+        setStatus("idle")
     }
     /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
     /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
@@ -2245,12 +2308,18 @@ struct RailAsk: Equatable {
     /// Watcher takes the words, then a moment later answers and sends Babysit #845 release notes a note.
     private func sendToFixtureWatcher(_ text: String, on hostID: String) async {
         let stamp = ISO8601DateFormatter()
+        // The send journeys: the words are on their way a moment, and Watcher works until it answers.
+        let journey = ProcessInfo.processInfo.arguments.contains("--ui-send-order")
+        if journey { SendWatch.mark("sending"); try? await Task.sleep(nanoseconds: 300_000_000); SendWatch.mark("message-joined") }
         // The first message spends the handover offer, carried or not, and a Watcher that has said something can be replaced.
         changeFixtureWatcher(on: hostID) { $0["handoverOffered"] = false; $0["newWatcher"] = "available" }
         appendFixtureWatcherMessage(["id": "phone-" + UUID().uuidString, "role": "user", "text": text, "createdAt": stamp.string(from: Date())], on: hostID)
+        if journey { changeFixtureWatcher(on: hostID) { $0["working"] = true } }
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            try? await Task.sleep(nanoseconds: journey ? 1_500_000_000 : 700_000_000)
+            if journey { SendWatch.mark("answer") }
             self?.answerFixtureWatcher(on: hostID)
+            if journey, ProcessInfo.processInfo.arguments.contains("--ui-send-watcher-idle") { self?.changeFixtureWatcher(on: hostID) { $0["working"] = false } }
         }
     }
     private func answerFixtureWatcher(on hostID: String) {
@@ -3188,6 +3257,9 @@ struct RailAsk: Equatable {
             if !images.isEmpty { submittedPhotos[operation.id] = photos(ref); photosSent?(photos(ref), ref); draftPhotos[ref.id] = nil }
             if !stagedFiles.isEmpty { submittedFiles[operation.id] = files(ref); draftFiles[ref.id] = nil }
             photoNotices[ref.id] = nil
+            #if DEBUG && os(iOS)
+            if isUIFixture { await deliverFixtureReply(text, operation: operation); return }
+            #endif
             await dispatch(command, operation: operation)
         } catch { feedback = error.localizedDescription }
     }
@@ -3754,10 +3826,18 @@ struct RailAsk: Equatable {
     }
     private func remember(_ operation: PendingOperation) throws {
         guard pending.count < 100 else { throw ClientError.rejected(String(localized: "Check the unconfirmed actions before sending more.")) }
-        let next = pending + [operation]; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
+        let next = pending + [operation]
+        #if DEBUG && os(iOS)
+        if isUIFixture { pending = next; return }
+        #endif
+        try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
     }
     private func forgetMarker(_ id: String) throws {
-        let next = pending.filter { $0.id != id }; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
+        let next = pending.filter { $0.id != id }
+        #if DEBUG && os(iOS)
+        if isUIFixture { pending = next; submitted.removeValue(forKey: id); return }
+        #endif
+        try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
         submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id); submittedFiles.removeValue(forKey: id)
     }
     @discardableResult private func dispatch(_ command: JSONValue, operation: PendingOperation) async -> Shell? {

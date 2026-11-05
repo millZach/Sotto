@@ -677,3 +677,124 @@ private struct PageWindowProbe: UIViewRepresentable {
     }
 }
 #endif
+
+// MARK: - What a send does to the page
+
+#if DEBUG && os(iOS)
+/// Reads the conversation's scroll view each frame around a send, for the send journeys: only with `SOTTO_SEND_WATCH_FILE`
+/// naming its report. It keeps the seconds before the press and the seconds after it, then writes them all at once, so
+/// nothing it does lands during the send. The page draws as it would without it.
+@MainActor final class SendWatch {
+    static let shared: SendWatch? = {
+        guard let path = ProcessInfo.processInfo.environment["SOTTO_SEND_WATCH_FILE"], !path.isEmpty else { return nil }
+        return SendWatch(report: URL(fileURLWithPath: path))
+    }()
+    nonisolated static var isOn: Bool { ProcessInfo.processInfo.environment["SOTTO_SEND_WATCH_FILE"]?.isEmpty == false }
+    static func press() { shared?.pressed() }
+    static func mark(_ name: @autoclosure () -> String) { shared?.note(name()) }
+    private static let before: CFTimeInterval = 4, after: CFTimeInterval = 7
+
+    private let report: URL
+    private weak var scroller: UIScrollView?
+    private weak var dock: UIView?
+    private var link: CADisplayLink?
+    private var rows: [[Double]] = []
+    private var marks: [[String: Any]] = []
+    private var press: CFTimeInterval?
+
+    private init(report: URL) { self.report = report }
+
+    func attach(_ view: UIScrollView) {
+        scroller = view
+        guard link == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+    func attachDock(_ view: UIView) { dock = view }
+    private func pressed() {
+        guard press == nil else { return }
+        press = CACurrentMediaTime()
+        note("press")
+    }
+    private func note(_ name: String) {
+        guard press != nil else { return }
+        marks.append(["t": CACurrentMediaTime(), "name": name])
+    }
+    /// Time, the offset as set and as drawn, the content's height, the view's height, the room the box and keyboard take,
+    /// whether a finger holds the page, and where the scroll view and the top of the box are drawn on the screen.
+    @objc private func tick() {
+        let now = CACurrentMediaTime()
+        if let view = scroller, let dock {
+            let drawn = view.layer.presentation()?.bounds.origin.y ?? view.contentOffset.y
+            rows.append([now, view.contentOffset.y, drawn, view.contentSize.height, view.bounds.height, view.adjustedContentInset.bottom,
+                         view.isTracking ? 1 : 0, Self.drawnTop(view), Self.drawnTop(dock)])
+        }
+        if let press {
+            if now - press > Self.after { finish() }
+        } else if let first = rows.first, now - first[0] > Self.before * 2 {
+            rows.removeAll { now - $0[0] > Self.before }
+        }
+    }
+    /// Where a view's top is drawn on the screen this frame, mid-animation included: each layer as drawn, less how far
+    /// the layer it sits in has scrolled.
+    private static func drawnTop(_ view: UIView) -> Double {
+        var y = 0.0
+        var layer: CALayer? = view.layer
+        while let current = layer {
+            y += Double((current.presentation() ?? current).frame.minY)
+            if let parent = current.superlayer { y -= Double((parent.presentation() ?? parent).bounds.minY) }
+            layer = current.superlayer
+        }
+        return y
+    }
+    private func finish() {
+        link?.invalidate(); link = nil
+        let whole: [String: Any] = ["press": press ?? 0, "marks": marks, "rows": rows]
+        let data = (try? JSONSerialization.data(withJSONObject: whole)) ?? Data()
+        let target = report.appendingPathExtension("part")
+        try? data.write(to: target)
+        try? FileManager.default.moveItem(at: target, to: report)
+    }
+}
+/// Hands `SendWatch` the scroll view it sits in.
+struct SendWatchAnchor: UIViewRepresentable {
+    final class Anchor: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            var view: UIView? = superview
+            while let next = view {
+                if let scroller = next as? UIScrollView { SendWatch.shared?.attach(scroller); return }
+                view = next.superview
+            }
+        }
+    }
+    func makeUIView(context: Context) -> Anchor { Anchor() }
+    func updateUIView(_ view: Anchor, context: Context) {}
+}
+/// Hands `SendWatch` the top of the box it sits behind.
+private struct SendWatchDock: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        SendWatch.shared?.attachDock(view)
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {}
+}
+extension View {
+    /// Marks the top of a reply box for `SendWatch`, when a journey reads it.
+    @ViewBuilder func sendWatchDock() -> some View {
+        if SendWatch.isOn { background(SendWatchDock()) } else { self }
+    }
+}
+#else
+enum SendWatch {
+    static func press() {}
+    static func mark(_ name: @autoclosure () -> String) {}
+}
+extension View {
+    func sendWatchDock() -> some View { self }
+}
+#endif

@@ -686,6 +686,7 @@ private struct Conversation: View {
                     .equatable()
                     .readingWidth()
                     .background(dockReader(proxy))
+                    .sendWatchDock()
             }
             .onChange(of: tail) { _, _ in
                 if follow.atBottom { toBottom(proxy) }
@@ -725,6 +726,9 @@ private struct Conversation: View {
             }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
+            #if DEBUG
+            if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
+            #endif
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
         .padding(.horizontal, Space.s4)
@@ -2597,7 +2601,7 @@ private struct ReplyDock: View, Equatable {
         let preparing = model.preparingSends.contains(ref.id)
         let canSend = model.canSendReply(ref)
         let queues = model.queuesReply(ref)
-        return Button { sent += 1; dictation.cancel(ref.id); Task { await model.send(ref) } } label: {
+        return Button { SendWatch.press(); sent += 1; dictation.cancel(ref.id); Task { await model.send(ref) } } label: {
             Group {
                 if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
                 else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 15, weight: .bold)) }
