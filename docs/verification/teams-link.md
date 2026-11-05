@@ -80,13 +80,41 @@ Quitting both at the same moment took 8446 off Serve and left 8445, pointing at 
 - [x] Nothing overflows at the minimum.
 - [x] Focus lands on Back, Escape closes the desks, and focus returns to Open two desks. The journey found that disabling Get while it read dropped focus and Escape with it, so it now stays focusable and ignores a second press.
 
+## Checking both ways, setup in steps and the plain room
+
+November 5, 2026, built from the pull request for [ADR-0193](../adr/0193-a-team-link-checks-both-ways-and-open-desks-keep-up.md), after Zach and Drake's first real link. Zach could read Drake's desk and Drake could not reach Zach's laptop. From forge, both Teams listeners answered on 8445, and `tailscale status` showed Drake's MacBook on Drake's own tailnet, shared into Zach's one way.
+
+**`tests/integration/teams.test.ts`**, two real listeners on loopback with Tailscale stood in:
+
+- [x] The computer that pastes the code checks right after linking. Three requests go: the code, a check that reaches back, and the check back. No thread is read, no side call runs and no teammate's message is made.
+- [x] Drake's computer shared one way: Zach's card says Drake's computer can't reach this one and that Drake is on another tailnet, and Drake's says it can't reach Zach's. Once the stand-in shares it back, one **Check again** says both ways on both computers.
+- [x] A computer that is off: the check says this computer couldn't reach it, with one request and nothing kept to send.
+- [x] More than 10 checks from one link in 10 minutes are turned down, and a check with no token is `not-linked`.
+- [x] A teammate's Sotto with no `check` on its list: the card says it is too old to check, and that asks and desks still work.
+- [x] Setup reads this computer's own Tailscale, lists other people's computers and which are on another tailnet, and sends nothing.
+
+**`tests/e2e/teams.spec.ts`**, in dark and light, with reduced motion, at 1600x1000, 1280x800 and 820x560:
+
+- [x] A one-way link says what to share, naming this computer, and offers **Open Tailscale's Machines** (`tab-one-way-dark-1280x800.png`). With the check answered, **Check again** says **Works both ways** (`tab-linked-light-1280x800.png`).
+- [x] With no link, the tab is setup's six steps. Tailscale is on, the teammate's computer is listed as shared from another tailnet, and sharing this one back is still to do (`tab-setup-dark-1280x800.png`, `tab-setup-light-820x560.png`).
+- [x] The tab and the desks lie on the room in Watcher's column, with the scene beside them and no rules round anything (`desks-read-dark-1280x800.png`, `desks-read-light-820x560.png`).
+- [x] Opening the desks reads Drake's desk once. With no answer, it says so and that nothing waits to send (`desks-not-read-dark-1280x800.png`).
+- [x] Going to Watcher and back finds the desks open as they were, and a read under two minutes old is not read again. **Update now** reads at once.
+- [x] A teammate's three reads two minutes apart are one line under **Latest**, and the fold lists all three.
+- [x] Nothing overflows at the minimum, and Escape closes the desks with focus back on **Open two desks**.
+
+The scene does not know the Teams tab's words, and keeps its last frame while the tab shows, so the column has a feathered glow of the canvas under it. The journey resizes the window before the room opens, so the scene is drawn at the size it is captured.
+
+Not run: a real check between two computers. It goes through the same send and listener as `read-desk`, which the forge run above proved over real Serve, but the real proof is Zach's and Drake's link once Zach's laptop is shared with Drake. Two-minute reads were not timed in a real run; the journey proves the read on opening and none on coming back within two minutes.
+
 ## Not proved
 
 - **A real `tailscale down` on the laptop.** A small stand-in for the `tailscale` command, seen only by the scratch copy, reported Stopped and refused Serve, and passed everything else to the real command. A real one would cut the laptop off its paired host and every tailnet page, and SSH from forge over the local network is refused, so a failed `tailscale up` could not have been put right from forge. It needs someone at the laptop. The real output of a stopped Tailscale on Windows, and anything Serve does while it is stopped, were not seen.
 - **Reading the answer with the next message, on Windows.** The laptop's Watcher got "What did that say?" and finished its turn, but its reply was not read. It is proved on forge only, above.
 - **The installed apps.** The run above used the published build beside them, not an update of them.
 - **A Mac.** Nothing here ran on one.
-- **Two desks on Windows, a Mac or two tailnets.** The desks ran on forge only. They use the same link, listener and credential store as the laptop run, but `read-desk` itself has not crossed between two computers.
+- **Two desks on Windows, a Mac or two tailnets.** The desks ran on forge only. They use the same link, listener and credential store as the laptop run, but `read-desk` itself has not crossed between two computers. On November 5 Zach reported reading Drake's desk across two tailnets, the first real `read-desk` between two computers. Drake's read of Zach's failed, because the sharing went one way.
+- **A real link check.** `check` has run between listeners on loopback only. Zach's and Drake's link is its proof, once Zach's laptop is shared with Drake.
 - **A merge order from two real desks with real pull requests and checks.**
 - **Two tailnets.** Drake's computer is not on Zach's tailnet, and only Tailscale's documentation says that device sharing carries Serve between them (`tailscale.com/kb/1084/sharing`, `kb/1312/serve`). A shared machine cannot start connections unless the sharing goes both ways, and the guide says to share each way. The first real link between Zach and Drake is the proof.
 - **A provider other than Claude Code** answering on two computers. Codex and Grok Build's side calls are ADR-0026's, tested in their own suites; Devin cannot be Watcher.
