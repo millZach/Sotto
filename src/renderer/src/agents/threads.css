@@ -105,11 +105,10 @@
   .pane-action__word { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
 }
 /* In a narrow pane every pixel beside the buttons is the name's and then the pull request number's, so the row tightens and
-   the name takes the sidebar row's size. The buttons stay in their order and stay 26 by 30 to press. */
+   the name takes the sidebar row's size. The buttons keep their size and their place against the pane's right edge, so
+   nothing moves under a pointer as a pane is resized (ADR-0163, decision 5). */
 @container thread-pane (width < 720px) {
   .thread-workspace__head { gap: 2px; }
-  .thread-workspace__actions > .pane-action, .thread-workspace__actions > .pane-menu > .pane-action { width: 26px; }
-  .thread-workspace__actions .git-action .git-action__more > .pane-action { width: 20px; }
   .thread-workspace__title { gap: 6px; }
   .thread-workspace__head h2 { font-size: var(--tt-type-body); letter-spacing: -.1px; }
 }
