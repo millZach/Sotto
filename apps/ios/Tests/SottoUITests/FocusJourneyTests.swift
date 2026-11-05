@@ -648,7 +648,8 @@ import UIKit
             var slid = 0.0, worst = 0.0, above = 0.0, held = 0
             for (a, b) in zip(frames, frames.dropFirst()) where a[5] >= 0 && b[5] >= 0 {
                 above += b[5] - a[5]
-                // From a dragging frame to the next, the lift's included and a coast after it not, as no finger moves it.
+                // From a frame with the finger on the glass to the next, the lift's included and a coast after it not, as
+                // no finger moves it. A lift late in a busy frame can leave the page coasting 130 points (#2211).
                 guard a[1] == 1, b[1] != 2 else { continue }
                 let slide = (b[5] - a[5]) - (b[2] - a[2]) - (b[4] - a[4])
                 slid += slide; worst = max(worst, abs(slide)); held += 1

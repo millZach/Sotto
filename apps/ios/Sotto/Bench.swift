@@ -288,7 +288,7 @@ import UIKit
         var drags: [[String: Double]] = []
         /// With `--bench-row-frames`, each drag frame by frame, from the finger's first frame to half a second after it
         /// lifted: `[seconds, state, offset, height, finger y in the window, top of the row under the finger in the page]`,
-        /// the state 1 while the finger drags, 2 while the page coasts after it and 0 once it rests. A row's top moves in
+        /// the state 1 while the finger is on the glass, 2 while the page coasts after it and 0 once it rests. A row's top moves in
         /// the page only when something above it changes height, and the row stays under the finger while its top less
         /// the offset moves as the finger does.
         var dragFrames: [[[Double]]] = []
@@ -324,7 +324,8 @@ import UIKit
                 liftedAt = now
             }
             if let anchor, !dragFrames.isEmpty {
-                let state: Double = view.isDragging ? 1 : view.isDecelerating ? 2 : 0
+                // `isTracking`, not `isDragging`: the scroll view stays dragging through the coast after a lift (#2211).
+                let state: Double = view.isTracking ? 1 : view.isDecelerating || view.isDragging ? 2 : 0
                 dragFrames[dragFrames.count - 1].append([now, state, Double(offset), Double(height),
                                                          Double(view.panGestureRecognizer.location(in: nil).y),
                                                          Double(RowFrames.now[anchor]?.minY ?? -1)])
