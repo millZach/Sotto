@@ -1,7 +1,7 @@
 .screenshot-input { min-width: 0; border-radius: inherit; }
 .screenshot-previews { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-top: 12px; }
 .screenshot-previews figure { position: relative; margin: 0; }
-.screenshot-previews__picture { position: relative; display: block; overflow: hidden; border-radius: var(--tt-radius-row); box-shadow: 0 0 0 1px var(--tt-field-border), 0 2px 6px var(--tt-shadow-color); }
+.screenshot-previews__picture { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; cursor: zoom-in; position: relative; display: block; overflow: hidden; border-radius: var(--tt-radius-row); box-shadow: 0 0 0 1px var(--tt-field-border), 0 2px 6px var(--tt-shadow-color); }
 .screenshot-previews img, .screenshot-previews__placeholder { display: block; width: 100%; height: 72px; object-fit: cover; }
 .screenshot-previews__placeholder { background: var(--tt-hover-strong); }
 /* A scaled-down image's sizes (ADR-0030), on the picture's corner. The joined sizes break it into two lines at most. */
@@ -15,21 +15,21 @@
 .screenshot-deck figure:nth-child(n + 4) { opacity: 0; }
 .screenshot-deck__count { position: absolute; right: -6px; bottom: -6px; z-index: 2; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-accent); color: var(--tt-on-accent); font-size: var(--tt-type-micro); font-weight: 600; line-height: 20px; text-align: center; transition: opacity 180ms ease-out; }
 .screenshot-deck .screenshot-previews__resized { opacity: 0; transition: opacity 180ms ease-out; }
-.screenshot-deck button { opacity: 0; transition: opacity 180ms ease-out, background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.screenshot-deck .screenshot-previews__remove { opacity: 0; transition: opacity 180ms ease-out, background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .screenshot-deck:is(:hover, :focus-within) figure { transform: none; opacity: 1; }
-.screenshot-deck:is(:hover, :focus-within) .screenshot-previews__resized, .screenshot-deck:is(:hover, :focus-within) button { opacity: 1; }
+.screenshot-deck:is(:hover, :focus-within) .screenshot-previews__resized, .screenshot-deck:is(:hover, :focus-within) .screenshot-previews__remove { opacity: 1; }
 .screenshot-deck:is(:hover, :focus-within) .screenshot-deck__count { opacity: 0; }
 @media (prefers-reduced-motion: reduce) {
-  .screenshot-deck figure, .screenshot-deck__count, .screenshot-deck .screenshot-previews__resized, .screenshot-deck button { transition: none; }
+  .screenshot-deck figure, .screenshot-deck__count, .screenshot-deck .screenshot-previews__resized, .screenshot-deck .screenshot-previews__remove { transition: none; }
 }
-:root[data-reduced-motion='on'] :is(.screenshot-deck figure, .screenshot-deck__count, .screenshot-deck .screenshot-previews__resized, .screenshot-deck button) { transition: none; }
+:root[data-reduced-motion='on'] :is(.screenshot-deck figure, .screenshot-deck__count, .screenshot-deck .screenshot-previews__resized, .screenshot-deck .screenshot-previews__remove) { transition: none; }
 /* Point at something's picture (ADR-0154) is a tile of its own, wide enough to read the element's name and the comment under it. */
 .screenshot-previews figure[data-pointed] { width: 168px; padding: 4px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-row); background: var(--tt-field); }
 .screenshot-previews figure[data-pointed] .screenshot-previews__picture { border-radius: var(--tt-radius-tag); box-shadow: none; }
 .screenshot-previews figcaption { min-width: 0; margin-top: 5px; color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
 .screenshot-previews figcaption > span, .screenshot-previews__note { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .screenshot-previews__note { margin-top: 2px; color: var(--tt-text-2); }
-.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-tag); background: var(--tt-hover-strong); color: var(--tt-text); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.screenshot-previews__remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-tag); background: var(--tt-hover-strong); color: var(--tt-text); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 /* Attached files that are not images (ADR-0131): one-line pills under the image tiles, the name cut in the middle. */
 .attached-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
 .screenshot-previews + .attached-files { margin-top: 10px; }

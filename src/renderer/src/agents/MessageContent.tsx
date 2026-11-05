@@ -592,7 +592,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
 
 /** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */
 const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || i18n._(msg({ message: 'Attachment', comment: 'An attachment with no name.' }))
-const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
+export const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
   [anyFile ? fileTypeLabel(attachment.mimeType, attachmentName(attachment)) : attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
 
 /**
