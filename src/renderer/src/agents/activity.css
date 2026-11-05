@@ -153,6 +153,13 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
   .thread-activity-live__now { grid-template-columns: minmax(0, max-content); }
   .thread-activity-live__detail { display: none; }
 }
+/* Below a 1000px window, where the sidebar stands as the rail, the line keeps only what the work is for (ADR-0134,
+   November 5 amendment): the rail gives the thread nearly the width a wide window's column has, so the line alone
+   cannot tell the minimum window apart. */
+@media (max-width: 999.98px) {
+  .thread-activity-live__now { grid-template-columns: minmax(0, max-content); }
+  .thread-activity-live__detail { display: none; }
+}
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
 .thread-activity-live__steps > .thread-activity { margin: 0; }
 
