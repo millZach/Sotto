@@ -7,11 +7,11 @@
 .pr-surface :is(svg[data-state='closed'], svg[data-state='draft'], svg[data-state='none']) { color: var(--tt-text-muted); }
 
 .pr-surface__top { gap: 6px; }
-.pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; container: pr-lead / inline-size; }
+.pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
 .pr-surface__lead > svg { flex: none; }
-/* One line while that shows most of a title, whole in its tooltip. Two lines only where one would cut it at its first few words. */
-.pr-surface__name { display: -webkit-box; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-@container pr-lead (width >= 240px) { .pr-surface__name { display: block; text-overflow: ellipsis; white-space: nowrap; } }
+/* The title is what names the pull request, so it takes a second line before it is cut, at every width; a short one
+   stays on one. Past two lines it is cut, whole in its tooltip. */
+.pr-surface__name { display: -webkit-box; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; overflow-wrap: anywhere; text-wrap: pretty; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .pr-surface__name:focus { outline: none; }
 .pr-surface__name:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-tag); }
 .pr-surface__number { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
