@@ -858,7 +858,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   // Below a 1000 pixel window the rail stands and Expand opens the whole sidebar over the thread (ADR-0110, November 5,
   // 2026); and a waiting thread's row reads In Needs you, lighting its entry under the pointer (ADR-0135, the same day).
-  { name: 'sidebar-narrow', covers: ['sidebar-rail-narrow', 'sidebar-over', 'sidebar-over-clay', 'needs-you-peer', 'needs-you-peer-entry'], run: async capture => {
+  { name: 'sidebar-narrow', covers: ['sidebar-rail-narrow', 'sidebar-rail-focus', 'sidebar-over', 'sidebar-over-clay', 'needs-you-peer', 'needs-you-peer-entry'], run: async capture => {
     const { page } = capture
     // A waiting thread on screen, so the list centres on its folder, where another waiting thread's row stands.
     await openThread(page, 'Visual gate flake')
@@ -891,6 +891,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
     }
     await open()
+    // A tile the keys reach is named beside the rail, as the pointer's tooltip names it.
+    const railFocus = async (): Promise<void> => {
+      await page.keyboard.press('Tab')
+      await sidebar.locator('.thread-nav__rail-thread[data-rail-thread]').nth(1).focus()
+      await expect(page.locator('.focus-name')).toBeVisible()
+    }
+    await capture.shoot('sidebar-rail-focus', 'The keyboard on a rail tile at the minimum window, its thread named beside the rail.', '', { modes: ['dark', 'light'], size: [820, 560], before: railFocus })
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await capture.shoot('sidebar-over', 'Expand pressed at the minimum window: the whole sidebar over the thread, the thread dimmed and unmoved behind it.', '', { size: [820, 560], before: open })
     await resizeContentWindowFor(capture.launched, 999, 700)
     await capture.shoot('sidebar-over', 'The same just under the 1000 pixel line.', '', { modes: ['dark'], size: [999, 700], before: open })

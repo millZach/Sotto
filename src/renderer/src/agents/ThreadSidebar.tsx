@@ -33,6 +33,7 @@ import { SwarmAngles, swarmAnglesByLead } from './SwarmAngles'
 import type { PaneMenuItem } from './PaneMenu'
 import { RowMenu, rowMenuPlace, rowMenuPressed, type RowMenuPlace } from './RowMenu'
 import { menuKeys, threadKeyDown, threadOffers, useThreadMenu } from './threadMenu'
+import { useRailFocusName } from './RailFocusName'
 import { RailTile } from './RailTile'
 import { ROVING_GROUP, ROVING_KEY, ROVING_TOGGLE, ROW_ACTIONS, useRovingList } from './rovingList'
 import { useSettleGaps, type HeldGap } from './settleGap'
@@ -614,6 +615,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const threadList = useRef<HTMLDivElement>(null)
   const listKeys = useRovingList(threadList, { tree: true })
   const railKeys = useRovingList(railNav, { tree: false })
+  // A rail tile reached from the keys says its name beside the rail, as the pointer's tooltip does.
+  const railName = useRailFocusName()
   // The held gap (ADR-0167): a row settled by a pointer over the list keeps its place empty until the pointer leaves.
   const { gaps, hold, drop } = useSettleGaps(threadList)
   const settleFromList = useCallback<ListSettle>(async (thread, project, row) => {
@@ -841,9 +844,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       <RestartBands threads={restartThreads ?? threads} command={command} onOpen={onOpen} />
       {queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
     </>}
-    collapsedContent={<nav ref={railNav} aria-label={t`Threads`} data-region-entry="1" onKeyDown={railKeys.onKeyDown} onFocus={railKeys.onFocus}>{owlRail ?? railRows.map(row => <RailTile key={row.thread.id} {...railTileFacts(row)} watched={watchedIds.has(row.thread.id)} pressOpens className="thread-nav__rail-thread tt-focusable" {...{ [ROVING_KEY]: `rail:${row.thread.id}` }} aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    collapsedContent={<nav ref={railNav} aria-label={t`Threads`} data-region-entry="1" onKeyDown={event => { railName.onKeyDown(event); railKeys.onKeyDown(event) }} onFocus={event => { railKeys.onFocus(event); railName.onFocus(event) }} onBlur={railName.onBlur}>{owlRail ?? railRows.map(row => <RailTile key={row.thread.id} {...railTileFacts(row)} watched={watchedIds.has(row.thread.id)} pressOpens className="thread-nav__rail-thread tt-focusable" {...{ [ROVING_KEY]: `rail:${row.thread.id}` }} aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row, { restart: restartOn })} />
-    </RailTile>)}</nav>}>
+    </RailTile>)}{railName.name}</nav>}>
       {/* The thread list: its folders, rows and the Settled shelf are one Tab stop, walked with the arrow keys, and the
           first place F6 lands in the sidebar (ADR-0164). */}
       <div ref={threadList} className="thread-nav__list" data-region-entry="1" onKeyDown={listKeys.onKeyDown} onFocus={listKeys.onFocus}>

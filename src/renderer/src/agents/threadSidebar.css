@@ -348,7 +348,19 @@
 .thread-nav[data-resizing] { user-select: none; }
 .thread-nav__rail { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding-top: 12px; }
 .thread-nav--mac .thread-nav__rail { padding-top: 44px; }
-.thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: thin; }
+/* The rail is 52px, so a scrollbar in it pushed the tiles off its centre and cut the trays' edges. It scrolls with no bar,
+   and says there is more as the thread list does: a short band of the sidebar ending in a hairline at the edge there is
+   more beyond, and only space at the list's own ends. */
+.thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; container-type: scroll-state; }
+.thread-nav__rail-list::before, .thread-nav__rail-list::after { content: ''; position: sticky; z-index: 2; display: block; height: 4px; border: 0 solid transparent; background: var(--threads-sidebar); pointer-events: none; }
+.thread-nav__rail-list::before { top: 0; border-bottom-width: 1px; }
+.thread-nav__rail-list::after { bottom: 0; border-top-width: 1px; }
+@container scroll-state(scrollable: top) { .thread-nav__rail-list::before { border-bottom-color: var(--tt-hairline); } }
+@container scroll-state(scrollable: bottom) { .thread-nav__rail-list::after { border-top-color: var(--tt-hairline); } }
+/* A tile the band would cut through its letters fades out whole, as a row of the list does, unless the keys are on it. */
+@supports (animation-timeline: view()) {
+  .thread-nav__rail-list .thread-nav__rail-thread:not(:focus-visible) { animation: thread-nav-edge linear both; animation-timeline: view(block 5px); animation-range: cover; }
+}
 .thread-nav__rail-list nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
 .thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); color: var(--tt-text); background: transparent; font: inherit; font-size: var(--tt-type-body); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
@@ -356,13 +368,20 @@
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
 .thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: var(--tt-radius-mark); background: var(--threads-sidebar); }
+/* A symbol the keys reach is named as the pointer's tooltip names it (RailFocusName.tsx): a rail tile beside the rail, its
+   title over what it is doing, and a pane header's symbol under it. */
+.focus-name { position: fixed; z-index: 80; display: grid; gap: 1px; max-width: 280px; padding: 6px 10px 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.35; pointer-events: none; transform: translateY(-50%); }
+.focus-name[data-side='below'] { padding-block: 5px 6px; transform: translateX(-50%); }
+.focus-name > strong { overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .focus-name { animation: focus-name-arrive 100ms ease-out; } }
+@keyframes focus-name-arrive { from { opacity: 0; } }
 /* Owl's rail (ADR-0146): Watcher's tile under Expand, the threads it watches under it, smaller tiles for resting threads. */
 .thread-nav__rail-mark { font-size: var(--tt-type-caption); font-weight: 600; }
 .thread-nav__rail-watcher { display: grid; place-items: center; background: var(--tt-surface-elevated); }
 .thread-nav__rail-group { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .thread-nav__rail-group + .thread-nav__rail-group { margin-top: 4px; }
 /* A part of two or more tiles sits in a tray: a faint wash and an edge in its own group colour (Drake's pick r3,
-   October 28, 2026). Sized to the tiles, it gives way to the rail's scrollbar rather than clip. */
+   October 28, 2026). Sized to the tiles, centred on the rail. */
 .thread-nav__rail-tray { width: 44px; max-width: 100%; padding: 8px 0; border-radius: var(--tt-radius-card); background: color-mix(in srgb, var(--rail-group) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rail-group) 22%, transparent); }
 .thread-nav__rail-tray[data-hue='1'] { --rail-group: var(--tt-rail-group-1); }
 .thread-nav__rail-tray[data-hue='2'] { --rail-group: var(--tt-rail-group-2); }
