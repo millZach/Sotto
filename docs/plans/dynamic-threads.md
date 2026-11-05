@@ -127,6 +127,8 @@ Before Zach decides on stable, and before the later parts. About five real tasks
 
 Proposed bar, for Zach to change: it goes on if it uses no more limit than roles on the larger tasks and he overrules fewer than one pick in five. Otherwise the result says which half failed. Five tasks is small, so the note reports them one by one and never as an average that claims more than it can show.
 
+**Result, November 5, 2026** ([the note](../verification/2026-11-05-dynamic-threads-comparison.md)). Zach overruled none of the 10 picks, so that half passed. Dynamic used more tokens than roles on both larger tasks, #678 and #683, so the limit half failed. Zach chose to go on to Part 8 anyway. Dynamic stays an Owl feature.
+
 ## Part 8: Later
 
 In the order the comparison points to:

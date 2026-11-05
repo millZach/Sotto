@@ -1,0 +1,604 @@
+{
+ "note": "docs/verification/2026-11-05-dynamic-threads-comparison.md",
+ "runs": [
+  {
+   "run": "690-dynamic",
+   "issue": 690,
+   "size": "small",
+   "side": "dynamic",
+   "start": "518619f9f",
+   "minutes": 4.3,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "building",
+     "model": "native:codex:model:gpt-6.1-terra",
+     "effort": "medium",
+     "why": "A one-string fix with catalog regeneration; Terra is plenty and Codex has the most room.",
+     "outcome": "answered"
+    },
+    {
+     "work": "code-review",
+     "model": "native:claude:model:sonnet",
+     "effort": "medium",
+     "why": "A different model from the Codex builder gives an independent read; Sonnet suits a small diff.",
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 5850,
+     "freshInput": 53420,
+     "cachedInput": 404810
+    },
+    "claude:claude-sonnet-5-5": {
+     "output": 2235,
+     "freshInput": 46266,
+     "cachedInput": 112597
+    },
+    "codex:gpt-6.1-terra": {
+     "output": 3557,
+     "freshInput": 43842,
+     "cachedInput": 1013632
+    }
+   },
+   "tokens": {
+    "output": 11642,
+    "freshInput": 143528,
+    "cachedInput": 1531039
+   },
+   "weekUsedBefore": {
+    "codex": 20,
+    "claude": 76
+   },
+   "weekUsedAfter": {
+    "codex": 20,
+    "claude": 77
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/unit/renderer/branchToolbar.test.tsx"
+    ],
+    "tests": true,
+    "testSummary": "Tests  45 passed (45)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "690-roles",
+   "issue": 690,
+   "size": "small",
+   "side": "roles",
+   "start": "518619f9f",
+   "minutes": 3.0,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "code-review",
+     "model": "from the code-review role card: gpt-6.1-sol",
+     "effort": "xhigh",
+     "why": null,
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 3684,
+     "freshInput": 50249,
+     "cachedInput": 325440
+    },
+    "codex:gpt-6.1-sol": {
+     "output": 6610,
+     "freshInput": 151691,
+     "cachedInput": 1126528
+    }
+   },
+   "tokens": {
+    "output": 10294,
+    "freshInput": 201940,
+    "cachedInput": 1451968
+   },
+   "weekUsedBefore": {
+    "codex": 20,
+    "claude": 79
+   },
+   "weekUsedAfter": {
+    "codex": 21,
+    "claude": 79
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/unit/renderer/branchToolbar.test.tsx"
+    ],
+    "tests": true,
+    "testSummary": "Tests  45 passed (45)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "2133-dynamic",
+   "issue": 2133,
+   "size": "medium",
+   "side": "dynamic",
+   "start": "518619f9f",
+   "minutes": 7.0,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "building",
+     "model": "native:codex:model:gpt-6.1-terra",
+     "effort": "high",
+     "why": "Terra suits a small, well-specified fix, and Codex has the most limit left.",
+     "outcome": "answered"
+    },
+    {
+     "work": "code-review",
+     "model": "native:claude:model:sonnet",
+     "effort": "high",
+     "why": "A different provider from the builder gives an independent read of a small diff.",
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 7691,
+     "freshInput": 58323,
+     "cachedInput": 437963
+    },
+    "claude:claude-sonnet-5-5": {
+     "output": 10646,
+     "freshInput": 56406,
+     "cachedInput": 352316
+    },
+    "codex:gpt-6.1-terra": {
+     "output": 6000,
+     "freshInput": 58788,
+     "cachedInput": 1755136
+    }
+   },
+   "tokens": {
+    "output": 24337,
+    "freshInput": 173517,
+    "cachedInput": 2545415
+   },
+   "weekUsedBefore": {
+    "codex": 21,
+    "claude": 81
+   },
+   "weekUsedAfter": {
+    "codex": 21,
+    "claude": 81
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/unit/main/commandSummaries.test.ts"
+    ],
+    "tests": true,
+    "testSummary": "Tests  22 passed (22)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "2133-roles",
+   "issue": 2133,
+   "size": "medium",
+   "side": "roles",
+   "start": "518619f9f",
+   "minutes": 7.3,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "code-review",
+     "model": "from the code-review role card: gpt-6.1-sol",
+     "effort": "xhigh",
+     "why": null,
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 11219,
+     "freshInput": 65648,
+     "cachedInput": 519527
+    },
+    "codex:gpt-6.1-sol": {
+     "output": 17861,
+     "freshInput": 209762,
+     "cachedInput": 2199168
+    }
+   },
+   "tokens": {
+    "output": 29080,
+    "freshInput": 275410,
+    "cachedInput": 2718695
+   },
+   "weekUsedBefore": {
+    "codex": 21,
+    "claude": 79
+   },
+   "weekUsedAfter": {
+    "codex": 21,
+    "claude": 81
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/unit/main/commandSummaries.test.ts"
+    ],
+    "tests": true,
+    "testSummary": "Tests  25 passed (25)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "1586-dynamic",
+   "issue": 1586,
+   "size": "medium",
+   "side": "dynamic",
+   "start": "518619f9f",
+   "minutes": 9.0,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "building",
+     "model": "native:codex:model:gpt-6.1-terra",
+     "effort": "high",
+     "why": "A small fix with a subtle test; Terra is capable and Codex has the most limit left.",
+     "outcome": "answered"
+    },
+    {
+     "work": "code-review",
+     "model": "native:claude:model:sonnet",
+     "effort": "high",
+     "why": "Review needs a different model from the builder; Sonnet is enough for a small diff and costs little limit.",
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 7209,
+     "freshInput": 61464,
+     "cachedInput": 374768
+    },
+    "claude:claude-sonnet-5-5": {
+     "output": 6917,
+     "freshInput": 65969,
+     "cachedInput": 524135
+    },
+    "codex:gpt-6.1-terra": {
+     "output": 5658,
+     "freshInput": 72409,
+     "cachedInput": 2037504
+    }
+   },
+   "tokens": {
+    "output": 19784,
+    "freshInput": 199842,
+    "cachedInput": 2936407
+   },
+   "weekUsedBefore": {
+    "codex": 21,
+    "claude": 82
+   },
+   "weekUsedAfter": {
+    "codex": 21,
+    "claude": 84
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/unit/main/watcherKeptLookups.test.ts"
+    ],
+    "tests": true,
+    "testSummary": "Tests  4 passed (4)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "1586-roles",
+   "issue": 1586,
+   "size": "medium",
+   "side": "roles",
+   "start": "518619f9f",
+   "minutes": 5.7,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "code-review",
+     "model": "from the code-review role card: gpt-6.1-sol",
+     "effort": "xhigh",
+     "why": null,
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 13409,
+     "freshInput": 80258,
+     "cachedInput": 731389
+    },
+    "codex:gpt-6.1-sol": {
+     "output": 10861,
+     "freshInput": 179443,
+     "cachedInput": 1315200
+    }
+   },
+   "tokens": {
+    "output": 24270,
+    "freshInput": 259701,
+    "cachedInput": 2046589
+   },
+   "weekUsedBefore": {
+    "codex": 21,
+    "claude": 84
+   },
+   "weekUsedAfter": {
+    "codex": 21,
+    "claude": 85
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/unit/main/watcherKeptLookups.test.ts"
+    ],
+    "tests": true,
+    "testSummary": "Tests  6 passed (6)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "678-dynamic",
+   "issue": 678,
+   "size": "larger",
+   "side": "dynamic",
+   "start": "518619f9f",
+   "minutes": 31.0,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "building",
+     "model": "native:codex:model:gpt-6.1-sol",
+     "effort": "high",
+     "why": "Sol at high suits a fix crossing main, preload and renderer; Codex has the most limit left.",
+     "outcome": "answered"
+    },
+    {
+     "work": "code-review",
+     "model": "native:claude:model:opus",
+     "effort": "high",
+     "why": "A different provider from the Sol builder gives an independent read; review is short enough for Claude's remaining limit.",
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 50750,
+     "freshInput": 243711,
+     "cachedInput": 2125620
+    },
+    "codex:gpt-6.1-sol": {
+     "output": 53542,
+     "freshInput": 206071,
+     "cachedInput": 9662976
+    }
+   },
+   "tokens": {
+    "output": 104292,
+    "freshInput": 449782,
+    "cachedInput": 11788596
+   },
+   "weekUsedBefore": {
+    "codex": 21,
+    "claude": 86
+   },
+   "weekUsedAfter": {
+    "codex": 21,
+    "claude": 89
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/integration/preloadBridge.test.ts",
+     "tests/integration/socketClientIsolation.test.ts",
+     "tests/integration/socketHostCompatibility.test.ts",
+     "tests/integration/socketHostFeatures.test.ts",
+     "tests/integration/workspaceGitActionsRepository.test.ts",
+     "tests/unit/host/remoteCommands.test.ts",
+     "tests/unit/main/agentGitStatusRefreshIpc.test.ts",
+     "tests/unit/main/desktopHostRouter.test.ts",
+     "tests/unit/main/inactiveLocalHost.test.ts",
+     "tests/unit/main/workspaceGitRefresh.test.ts",
+     "tests/unit/preload/workspace.test.ts",
+     "tests/unit/renderer/gitActionButton.test.tsx",
+     "tests/unit/renderer/threadPaneMenu.test.tsx"
+    ],
+    "tests": true,
+    "testSummary": "Tests  298 passed (298)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "678-roles",
+   "issue": 678,
+   "size": "larger",
+   "side": "roles",
+   "start": "518619f9f",
+   "minutes": 11.7,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "code-review",
+     "model": "from the code-review role card: gpt-6.1-sol",
+     "effort": "xhigh",
+     "why": null,
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 34121,
+     "freshInput": 142435,
+     "cachedInput": 1855138
+    },
+    "codex:gpt-6.1-sol": {
+     "output": 22895,
+     "freshInput": 357021,
+     "cachedInput": 6112256
+    }
+   },
+   "tokens": {
+    "output": 57016,
+    "freshInput": 499456,
+    "cachedInput": 7967394
+   },
+   "weekUsedBefore": {
+    "codex": 21,
+    "claude": 85
+   },
+   "weekUsedAfter": {
+    "codex": 21,
+    "claude": 86
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/integration/socketHostFeatures.test.ts",
+     "tests/integration/socketThreadDetail.test.ts",
+     "tests/integration/workspaceSendGit.test.ts",
+     "tests/unit/host/remoteCommands.test.ts",
+     "tests/unit/main/socketHostFeatures.test.ts",
+     "tests/unit/renderer/bringChangesBack.test.tsx",
+     "tests/unit/renderer/gitActionButton.test.tsx"
+    ],
+    "tests": true,
+    "testSummary": "Tests  167 passed (167)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "683-dynamic",
+   "issue": 683,
+   "size": "larger",
+   "side": "dynamic",
+   "start": "518619f9f",
+   "minutes": 27.4,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "building",
+     "model": "native:claude:model:opus",
+     "effort": "high",
+     "why": "Opus 5.5 at high: careful state-machine fix across control.ts and workspace.ts with a new test; Claude has most room left.",
+     "outcome": "answered"
+    },
+    {
+     "work": "code-review",
+     "model": "native:codex:model:gpt-6.1-sol",
+     "effort": "high",
+     "why": "GPT-6.1-Sol: a different model family from the Opus builder, for an independent read.",
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 98478,
+     "freshInput": 255529,
+     "cachedInput": 17512221
+    },
+    "codex:gpt-6.1-sol": {
+     "output": 14778,
+     "freshInput": 427880,
+     "cachedInput": 5006464
+    }
+   },
+   "tokens": {
+    "output": 113256,
+    "freshInput": 683409,
+    "cachedInput": 22518685
+   },
+   "weekUsedBefore": {
+    "codex": 22,
+    "claude": 10
+   },
+   "weekUsedAfter": {
+    "codex": 23,
+    "claude": 11
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/integration/workspaceHistoryRetry.test.ts"
+    ],
+    "tests": true,
+    "testSummary": "Tests  19 passed (19)"
+   },
+   "permissionRequests": 0
+  },
+  {
+   "run": "683-roles",
+   "issue": 683,
+   "size": "larger",
+   "side": "roles",
+   "start": "518619f9f",
+   "minutes": 23.0,
+   "ended": "finished",
+   "picks": [
+    {
+     "work": "code-review",
+     "model": "from the code-review role card: gpt-6.1-sol",
+     "effort": "xhigh",
+     "why": null,
+     "outcome": "answered"
+    }
+   ],
+   "tokensByModel": {
+    "claude:claude-opus-5-5": {
+     "output": 54298,
+     "freshInput": 142692,
+     "cachedInput": 7570909
+    },
+    "codex:gpt-6.1-sol": {
+     "output": 32488,
+     "freshInput": 468077,
+     "cachedInput": 10444800
+    }
+   },
+   "tokens": {
+    "output": 86786,
+    "freshInput": 610769,
+    "cachedInput": 18015709
+   },
+   "weekUsedBefore": {
+    "codex": 22,
+    "claude": 10
+   },
+   "weekUsedAfter": {
+    "codex": 22,
+    "claude": 10
+   },
+   "checks": {
+    "typecheck": true,
+    "lint": true,
+    "changedTests": [
+     "tests/integration/workspaceHistoryRetry.test.ts",
+     "tests/unit/main/watcherState.test.ts"
+    ],
+    "tests": true,
+    "testSummary": "Tests  35 passed (35)"
+   },
+   "permissionRequests": 0
+  }
+ ]
+}
