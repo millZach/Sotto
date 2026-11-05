@@ -2842,6 +2842,9 @@ extension FocusJourneyTests {
             guard let at = mark["t"] as? Double, let words = mark["name"] as? String else { return nil }
             return (at - press, words)
         }
+        let happened = Set(marks.map(\.1))
+        XCTAssertTrue(happened.contains("message-joined") && happened.contains("answer"),
+                      "The send must finish while the page is watched: its words join the page and the answer comes", file: file, line: line)
         var lines: [(Double, String)] = marks.map { ($0.0, "  * " + $0.1) }
         var previous: [Double]?
         for row in after {

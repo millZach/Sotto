@@ -1167,13 +1167,16 @@ struct DraftFile: Identifiable {
     }
 }
 
-/// What a thread's page showed when a reply was sent to it: its user messages, and how many replies from this iPhone were
-/// still to join it. The reply has joined once more of the user's messages than that are new since.
+/// What a thread's page showed when a reply was sent to it: its user messages, its last message, and how many replies from
+/// this iPhone were still to join it. The reply has joined once more of the user's messages than that are new since, after
+/// that last message, so earlier messages loaded meanwhile don't count.
 struct ReplySentFrom {
     let before: Set<String>
+    let last: String?
     let ahead: Int
     func joined(_ messages: [Message]) -> Bool {
-        messages.lazy.filter { $0.role == "user" && !before.contains($0.id) }.count > ahead
+        let since = last.flatMap { last in messages.lastIndex { $0.id == last } }.map { messages[($0 + 1)...] } ?? messages[...]
+        return since.lazy.filter { $0.role == "user" && !before.contains($0.id) }.count > ahead
     }
 }
 
@@ -4226,15 +4229,28 @@ struct RailAsk: Equatable {
         if item.kind == "reply", let from, !from.joined(messages) {
             next[item.id] = ArrivingReply(item: item, text: submitted[item.id], photos: submittedPhotos[item.id] ?? [],
                                           files: submittedFiles[item.id] ?? [], from: from, at: now)
+            // A quiet page may not redraw again; let the row go when its time is up.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(Self.arrivingLimit * 1_000_000_000))
+                self?.forgetArriving(item.id)
+            }
         }
-        if Set(next.keys) != Set(arriving.keys) { arriving = next }
+        // The marker goes first: were both kept, the page would draw two rows of one ID.
         try forgetMarker(item.id)
+        if Set(next.keys) != Set(arriving.keys) { arriving = next }
     }
+    private func forgetArriving(_ id: String) { if arriving[id] != nil { arriving[id] = nil } }
     /// The user's messages the thread's page shows now, and how many of this iPhone's replies are ahead of one sent now.
-    private func replySentFrom(_ ref: ThreadRef) -> ReplySentFrom {
-        let messages = shown(for: ref)?.messages ?? []
-        let ahead = arriving.values.filter { $0.item.hostID == ref.hostID && $0.item.threadID == ref.threadID && !$0.from.joined(messages) }.count
-        return ReplySentFrom(before: Set(messages.lazy.filter { $0.role == "user" }.map(\.id)), ahead: ahead)
+    /// Nothing while the page hasn't loaded its messages, as every message it loads would look new: the row then goes
+    /// when the computer confirms the reply, as before.
+    private func replySentFrom(_ ref: ThreadRef) -> ReplySentFrom? {
+        guard let messages = shown(for: ref)?.messages else { return nil }
+        let now = Date()
+        let ahead = arriving.values.filter {
+            $0.item.hostID == ref.hostID && $0.item.threadID == ref.threadID && now.timeIntervalSince($0.at) < Self.arrivingLimit
+                && !$0.from.joined(messages)
+        }.count
+        return ReplySentFrom(before: Set(messages.lazy.filter { $0.role == "user" }.map(\.id)), last: messages.last?.id, ahead: ahead)
     }
     private func rejectOperation(_ operation: PendingOperation) throws {
         if let text = submitted[operation.id], operation.kind == "reply" || operation.kind == "queue" {
