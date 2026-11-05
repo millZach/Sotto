@@ -326,8 +326,12 @@
 /* A row whose need the Needs you card says keeps the middle weight: the card is where that need is said (ADR-0135). */
 .thread-nav__row--details[data-in-queue] .thread-nav__title { font-weight: 500; }
 .thread-nav__row--details[data-in-queue] .thread-nav__standing { font-weight: 450; }
-/* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take a step more ink. */
-:root[data-theme='light'] .thread-nav__row--details { --tt-text-muted: color-mix(in oklab, var(--tt-text-muted) 45%, var(--tt-text-2)); }
+/* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take the secondary
+   ink (about 9.7:1), still well under the names in the text's own. It names that ink outright: the property defined from
+   itself here was a cycle, which only reached the secondary ink by falling back to the row's colour. A folder's count
+   takes the frame's day ink (threads.css). */
+:root[data-theme='light'] .thread-nav__row--details { --tt-text-muted: var(--tt-text-2); }
+:root[data-theme='light'] .thread-nav .thread-folder__count { color: var(--threads-day-muted); }
 /* By day the amber that says a thread waits on you is a step deeper and a step heavier in the sidebar, in the rows and in
    Needs you alike, so it holds on a warm light surface (about 6:1 where it measured 4.8:1) and still reads as amber. */
 :root[data-theme='light'] .thread-nav { --threads-warning-text: color-mix(in oklab, var(--tt-warning-text, var(--tt-warning)) 84%, var(--tt-text)); }

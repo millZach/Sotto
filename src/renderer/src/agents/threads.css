@@ -15,6 +15,9 @@
   --threads-attention: var(--tt-attention, var(--tt-warning, #f0b45c));
   --threads-warning-text: var(--tt-warning-text, var(--tt-warning, #f0b45c));
 }
+/* By day the frame's small muted words (a folder's count, the project and branch beside a pane's name) are thin strokes on
+   a warm surface, so they take a step more ink, halfway to the secondary text: about 8:1 where they measured 7. */
+:root[data-theme='light'] :is(.threads-view, .thread-nav) { --threads-day-muted: color-mix(in oklab, var(--tt-text-muted) 50%, var(--tt-text-2)); }
 .threads-view { flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); overflow: hidden; }
 
 /* Workspace */
@@ -44,6 +47,7 @@
    pull request's number. An open list is shown whatever the room, so the chords that open one keep working. The box is
    empty row too, so its bare stretch still moves the window; in a split, the crumb's words stay the pane's handle. Its small
    padding keeps a control's focus ring clear of the clipped edge. */
+:root[data-theme='light'] .threads-view .thread-workspace__head .thread-workspace__where { --tt-text-muted: var(--threads-day-muted); }
 .thread-workspace__head .thread-workspace__title > .thread-workspace__where { position: relative; display: flex; flex: 1 1 0; align-items: center; gap: 4px; align-self: stretch; min-width: 0; padding-inline: 2px; overflow-x: clip; container: pane-where / inline-size; -webkit-app-region: drag; }
 /* Only an open list rises over its neighbours; at rest the box stays in the header's layer, so Tools expanded over the
    thread covers it whole rather than showing the project and branch through its own header. */
