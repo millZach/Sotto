@@ -1,6 +1,6 @@
 import React, { createContext, memo, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
-  ArrowDownUp, Bot, Brain, Camera, Check, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MessageSquareText, MousePointerClick,
+  ArrowDownUp, Bot, Brain, Camera, Check, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Copy, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MessageSquareText, MousePointerClick,
   MoveHorizontal, Play, Pointer, Scaling, Shrink, Smartphone, Square, SquareTerminal, Wrench, type LucideIcon,
 } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
@@ -18,6 +18,7 @@ import {
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
 import { DiffBlock } from '../tools/DiffBlock'
+import { useTransientFlag, writeClipboard } from './richActions'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
@@ -326,6 +327,20 @@ const PlanSteps = memo(function PlanSteps({ record, live = false }: { readonly r
   </ol>
 })
 
+/** The open row says a one-line command whole, and this copies it, since a row's words cannot be selected. */
+function CopyCommand({ command }: { readonly command: string }): ReactNode {
+  const { t } = useLingui()
+  const [outcome, show] = useTransientFlag<'copied' | 'failed'>()
+  const copy = (): void => { void writeClipboard(command).then(() => show('copied'), () => show('failed')) }
+  return <span className="thread-activity__copy-command">
+    <button type="button" className="thread-activity__copy tt-focusable" data-copied={outcome === 'copied' || undefined} onClick={copy}>
+      {outcome === 'copied' ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+      <span>{t({ message: 'Copy command', comment: 'Copies the command an opened step ran.' })}</span>
+    </button>
+    <span className="thread-activity__copy-status" role="status" aria-live="polite">{outcome === null ? null : outcome === 'copied' ? t`Copied` : t`Copy failed`}</span>
+  </span>
+}
+
 function ActivityDetails({ record: sent, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
   // A remote row whose host kept its long bodies back reads the record whole now that it is open (ADR-0025, October 18
   // amendment), and draws the part it was sent until then. Every other row draws exactly as it always has.
@@ -336,7 +351,8 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const { t } = useLingui()
   const body = useActivityBody(sent, needed)
   const record = body.record, cut = body.state === 'whole' ? undefined : sent.cut
-  const notes = [timingNote(record, provider), record.truncated ? t`Some details were not kept.` : ''].filter(Boolean)
+  // Where the row's time came from stands beside that time in the open row; here only what else was lost.
+  const notes = [record.truncated ? t`Some details were not kept.` : ''].filter(Boolean)
   const cwd = record.cwd
   // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
   const parsed = activityInput(record) !== null
@@ -344,16 +360,25 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const json = parsed && record.kind !== 'command'
   // Cut input matters only where the row shows it: a command shows its description and an edit its diff instead.
   const cutText = cut !== undefined && textShown
+  // The open row reads a one-line command whole, so it is said there once; a script of several lines keeps its block.
+  const script = record.command !== undefined && record.command.trim().includes('\n')
+  const ran = record.command && !script ? record.command : ''
+  const said = cutText ? record.kind === 'reasoning' || !json
+    ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
+    : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
+    : text ? record.kind === 'reasoning'
+      ? <MessageContent text={text} />
+      : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null
+  // What ran comes first, with what it was for, then where it ran, then what came back: each said once.
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
-    {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
-    {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
-    {cutText ? record.kind === 'reasoning' || !json
-      ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
-      : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
-      : text ? record.kind === 'reasoning'
-        ? <MessageContent text={text} />
-        : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null}
+    {record.command ? said : null}
+    {script ? <MessageContent text={fenced(record.command!, 'command')} /> : null}
+    {cwd || ran ? <p className="thread-activity__fact thread-activity__where tt-paragraph">
+      {cwd ? <span><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></span> : null}
+      {ran ? <CopyCommand command={ran} /> : null}
+    </p> : null}
+    {record.command ? null : said}
     {activityChanges(record).map((change, index, changes) => <div className="thread-activity__change" key={`${change.path}:${index}`}>
       {/* A single changed file is already named by its row; a tool's files are what it touched. */}
       {changes.length > 1 || record.kind !== 'file-change' ? <p className="thread-activity__fact">{changeVerb(change.kind)} <code>{change.path}</code></p> : null}
@@ -411,6 +436,10 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running'
   const lines = activityLineCounts(record)
+  // Where the time came from qualifies the time, so an open row says it beside it, once, rather than at the foot of its body.
+  const timing = open ? timingNote(record, provider) : ''
+  const timingId = useId()
+  const quiet = quietUnknown && record.status === 'unknown'
   const spoken = [spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = label.subject
@@ -424,8 +453,10 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
       {/* An open edit's diff says its count at the head of what it opens, right under this row. */}
       <LineCountMarks counts={open && record.kind === 'file-change' ? null : lines} spoken={false} />
       {running ? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" /> : null}
-      {quietUnknown && record.status === 'unknown' ? null : status}
+      {quiet ? null : status}
       {running && connected && record.startedAt ? <> <Elapsed startedAt={record.startedAt} /></> : null}
+      {timing && status && !quiet ? <span className="thread-activity__timing-gap" aria-hidden="true">·</span> : null}
+      {timing ? <span id={timingId} className="thread-activity__timing">{timing}</span> : null}
     </span>
     {expandable ? <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /> : null}
   </>
@@ -433,6 +464,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
     onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     {expandable
       ? <button type="button" className="thread-activity__toggle tt-focusable" aria-expanded={open} aria-controls={open ? detailId : undefined} aria-label={spoken}
+        aria-describedby={timing ? timingId : undefined}
         onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>{body}</button>
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
     <Fold open={open}><div id={detailId} className="thread-activity__open">

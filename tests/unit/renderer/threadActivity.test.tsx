@@ -143,16 +143,36 @@ describe('settled activity in the transcript', () => {
     await user.keyboard(' ')
     expect(row).toHaveAttribute('aria-expanded', 'true')
     const details = document.getElementById(row.getAttribute('aria-controls')!)!
-    expect(within(details).getByLabelText('command code block')).toHaveTextContent('npm test -- --run')
+    // What ran is said once, by the open row; its body adds where it ran and what came back.
+    expect(row).toHaveTextContent('npm test -- --run')
+    expect(within(details).queryByLabelText('command code block')).toBeNull()
+    expect(details).not.toHaveTextContent('npm test')
     expect(within(details).getByLabelText('output code block')).toHaveTextContent('PASS 12 tests')
     expect(details).toHaveTextContent('In D:\\work')
-    expect(details).toHaveTextContent('Reported by Codex')
-    // The duration is stated once, in the row.
+    // The duration is stated once, in the row, and where it came from stands beside it.
     expect(details).not.toHaveTextContent('4.2s')
-    expect(within(details).getAllByRole('button', { name: /^Copy/ })).toHaveLength(2)
+    expect(details).not.toHaveTextContent('Reported by Codex')
+    expect(row).toHaveTextContent(/4\.2s.*Reported by Codex/u)
+    expect(row).toHaveAccessibleDescription('Reported by Codex')
+    expect(within(details).getAllByRole('button', { name: /^Copy/ }).map(button => button.textContent || button.getAttribute('aria-label'))).toEqual(['Copy command', 'Copy output code'])
 
     await user.click(within(transcript).getByRole('button', { name: 'Edited src/voice.ts, 1 line added, 1 line removed, completed' }))
     expect(within(transcript).getByRole('group', { name: 'Diff' })).toHaveTextContent(/Removed: old.*Added: new/u)
+  })
+
+  it('keeps the block for a script of several lines, which the row can only name by its first', async () => {
+    const user = userEvent.setup()
+    const { transcript } = mount(stateWith({ activities: [
+      lifecycle({ status: 'completed', durationMs: 9_000 }),
+      activity({ id: 'script', command: 'cd app\nnpm ci', output: 'added 12 packages', durationMs: 900 }),
+    ] }))
+    const work = within(transcript).getByRole('button', { name: /^Worked for/u })
+    if (work.getAttribute('aria-expanded') !== 'true') await user.click(work)
+    const row = within(transcript).getByRole('button', { name: /^cd app npm ci/u })
+    await user.click(row)
+    const details = document.getElementById(row.getAttribute('aria-controls')!)!
+    expect(within(details).getByLabelText('command code block')).toHaveTextContent('cd app npm ci')
+    expect(within(details).queryByRole('button', { name: 'Copy command' })).toBeNull()
   })
 
   it('folds what Escape is inside, one level at a time, with focus on the button that opened it', async () => {
@@ -351,7 +371,8 @@ describe('honest detail', () => {
 
     const unknown = within(transcript).getByRole('button', { name: 'git status, Outcome unknown' })
     await user.click(unknown)
-    expect(document.getElementById(unknown.getAttribute('aria-controls')!)).toHaveTextContent('Time not recorded · Some details were not kept.')
+    expect(document.getElementById(unknown.getAttribute('aria-controls')!)).toHaveTextContent('Some details were not kept.')
+    expect(unknown).toHaveAccessibleDescription('Time not recorded')
   })
 
   it('restores activity with earlier history only when that page is shown', () => {

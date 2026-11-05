@@ -97,9 +97,10 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await expect(search).toHaveAttribute('aria-expanded', 'true')
     expect(Math.abs(await summary.evaluate(element => element.getBoundingClientRect().top) - top)).toBeLessThanOrEqual(1)
     const details = page.locator(`#${await search.getAttribute('aria-controls')}`.replaceAll(':', '\\:'))
-    await expect(details.getByLabel('command code block')).toContainText('rg -n "patchLength" src/main/audio')
+    // What ran is said once, by the open row; the body adds where it ran and what came back.
+    await expect(details.getByLabel('command code block')).toHaveCount(0)
     await expect(details.getByLabel('output code block')).toContainText('wavStream.ts:24')
-    await expect(details).toContainText('Reported by Codex')
+    await expect(search).toContainText('Reported by Codex')
     await details.getByRole('button', { name: 'Copy output code' }).click()
     await expect.poll(() => app.evaluate(() => (globalThis as unknown as { activityFixture: { copied: string[] } }).activityFixture.copied.at(-1))).toContain('wavStream.ts:46')
     for (const mode of ['dark', 'light'] as const) {
@@ -206,7 +207,8 @@ test('restored history reads as unknown and trimmed, never as success', async ()
     await log.getByRole('button', { name: /^Outcome unknown/ }).click()
     const read = log.getByRole('button', { name: 'Get-Content -Path src/main/audio/wavStream.ts -TotalCount 80, Outcome unknown' })
     await read.click()
-    await expect(page.locator(`#${await read.getAttribute('aria-controls')}`.replaceAll(':', '\\:'))).toContainText('Time not recorded · Some details were not kept.')
+    await expect(page.locator(`#${await read.getAttribute('aria-controls')}`.replaceAll(':', '\\:'))).toContainText('Some details were not kept.')
+    await expect(read).toContainText('Time not recorded')
     await expect(log.locator('.thread-activity__meta[data-status="completed"]')).toHaveCount(0)
     // The heading states the unknown outcome once; rows keep it in their accessible names only.
     await expect(log.locator('.thread-activity__meta').filter({ hasText: 'Outcome unknown' })).toHaveCount(0)

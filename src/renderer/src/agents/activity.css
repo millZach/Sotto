@@ -85,6 +85,13 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__meta[data-status='failed'] { color: var(--tt-error); }
 .thread-activity__row[data-status='failed'] .thread-activity__icon { color: var(--tt-error); }
 .thread-activity__clock { font-variant-numeric: tabular-nums; }
+/* An open row says its whole name, a command included, so its body never repeats it. Its marks stay on the first line. */
+.thread-activity__row[data-open] > .thread-activity__toggle { align-items: start; }
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__label { padding-block: 3px; white-space: normal; overflow-wrap: anywhere; }
+.thread-activity__row[data-open] > .thread-activity__toggle > :is(.thread-activity__icon, .thread-activity__chevron) { margin-top: 5px; }
+.thread-activity__row[data-open] > .thread-activity__toggle > .thread-activity__meta { min-height: 25px; }
+/* Where the time came from, beside the time, in the quiet ink whatever the row's outcome. */
+.thread-activity__timing, .thread-activity__timing-gap { color: var(--tt-text-muted); }
 
 .thread-activity__pulse { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
 .thread-activity__pulse:not([data-connected]) { background: var(--tt-text-muted); }
@@ -102,6 +109,16 @@ button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hove
 .thread-activity__details .rich-message .rich-message__feedback { margin-top: 4px; }
 .thread-activity__fact { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; overflow-wrap: anywhere; }
 .thread-activity__fact code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
+/* Where a command ran, and the way to copy the command the row above says. */
+.thread-activity__where { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; }
+.thread-activity__copy-command { display: inline-flex; align-items: center; gap: 8px; }
+.thread-activity__copy {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 24px; margin: 0 -6px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-mark);
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); transition: background-color 120ms ease, color 120ms ease;
+}
+.thread-activity__copy:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-activity__copy:active { background: var(--tt-hover-strong); color: var(--tt-text-2); }
+.thread-activity__copy-status:empty { display: none; }
 .thread-activity__text { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thread-activity__error { margin: 0; color: var(--tt-error); font-size: var(--tt-type-body); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thread-activity__error--turn { margin: 2px 0 4px; }
