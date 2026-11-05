@@ -951,6 +951,56 @@ describe('the drill-in under the merge checklist', () => {
     expect(description.querySelector('.pr-surface__fold-preview')).toBeNull()
     expect(screen.getByRole('button', { name: 'Checks 1 passed 1 skipped' })).toHaveAttribute('aria-expanded', 'false')
   })
+  it('shows the first of what the closed folds hold under their heads, most needed first, only while the body has room for it', async () => {
+    // A body as tall as `room`, holding 400 pixels, 60 more for each peek and 10 for each file a peek lists, so a count of peeks either fits or scrolls.
+    let room = 0
+    const holds = (body: HTMLElement): number => 400 + 60 * body.querySelectorAll('.pr-surface__peek, .pr-surface__fold-preview[data-whole]').length
+      + 10 * body.querySelectorAll('.pr-surface__peek[data-of="files"] .pr-surface__peek-row').length
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? room : 0 })
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('pr-surface__body') ? holds(this) : 0 })
+    const files = [{ path: 'src/a.ts', additions: 1, deletions: 1 }, { path: 'src/deep/b.ts', additions: 11, deletions: 2 }, { path: 'c.ts', additions: 3, deletions: 0 }, { path: 'd.ts', additions: 1, deletions: 0 }]
+    const read = detail({ body: 'The greeting now says hello. It used to say nothing at all.\nIt waits for a name.\n\n- And a list.', files, changedFiles: 4,
+      checks: [check('CI / build', 'failure'), check('CI / lint', 'pending'), check('test', 'success')] })
+    const peeks = (): string[] => [...document.querySelectorAll('.pr-surface__peek')].map(peek => peek.textContent ?? '')
+    const description = (): string => screen.getByRole('button', { name: 'Description' }).querySelector('.pr-surface__fold-preview')?.textContent ?? ''
+    // Not laid out: no room, so the heads say only what they always did.
+    const first = mount({ detail: read })
+    await opened()
+    expect(peeks()).toEqual([])
+    expect(description()).toBe('The greeting now says hello.')
+    first.unmount()
+    // Room for two: the checks that still stand, then the description's whole first paragraph; the files wait.
+    room = 530
+    mount({ detail: read })
+    await opened()
+    expect(peeks()).toHaveLength(1)
+    expect(peeks()[0]).toContain('CI /buildFailed')
+    expect(peeks()[0]).toContain('CI /lintQueued')
+    expect(peeks()[0]).not.toContain('test')
+    expect(description()).toBe('The greeting now says hello. It used to say nothing at all. It waits for a name.')
+    // The heads' names stay what a press opens, and a peek is only for the eye.
+    expect(screen.getByRole('button', { name: 'Checks 1 failed 1 running 1 passed' })).toHaveAttribute('aria-expanded', 'false')
+    expect(document.querySelector('.pr-surface__peek')).toHaveAttribute('aria-hidden', 'true')
+    // An open fold holds the count, so the heads above it do not move; its own peek gives way to what it holds.
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    expect(peeks()).toEqual([])
+    expect(description()).toBe('The greeting now says hello. It used to say nothing at all. It waits for a name.')
+    fireEvent.click(screen.getByRole('button', { name: /^Checks/u }))
+    cleanup()
+    // Room for three: the three most changed files too, the most changed first.
+    room = 610
+    mount({ detail: read })
+    await opened()
+    expect(peeks()).toHaveLength(2)
+    expect(peeks()[1]).toMatch(/^src\/deep\/b\.ts.*c\.ts.*src\/a\.ts/u)
+    expect(peeks()[1]).not.toContain('d.ts')
+    cleanup()
+    // Room to spare after every peek: more of the files.
+    room = 1000
+    mount({ detail: read })
+    await opened()
+    expect(peeks()[1]).toContain('d.ts')
+  })
   it('works out what the closed folds and the open list say', () => {
     expect(checksSummary([check('a', 'failure'), check('b', 'cancelled'), check('c', 'pending'), check('d', 'action-required'), check('e', 'success'), check('f', 'neutral')])).toEqual([
       { tone: 'failed', words: '2 failed' }, { tone: 'waiting', words: '1 need approval' }, { tone: 'waiting', words: '1 running' }, { tone: 'settled', words: '1 passed' }, { tone: 'settled', words: '1 skipped' }])
@@ -961,6 +1011,10 @@ describe('the drill-in under the merge checklist', () => {
     expect(descriptionPreview('The thread store now writes on a worker thread. Main reads it and hands the worker every write.')).toBe('The thread store now writes on a worker thread.')
     expect(descriptionPreview('Fix v2. The store keeps its order. Then it stops.')).toBe('Fix v2. The store keeps its order.')
     expect(descriptionPreview('Reads the file at src/main/index.ts on start and writes nothing')).toBe('Reads the file at src/main/index.ts on start and writes nothing')
+    // Its whole first paragraph, for a panel with room: up to a blank line, a heading, a fence or the list's next item.
+    expect(descriptionPreview('## What\n\nThe store writes on a worker now. Main reads it\nin order.\n\nA second paragraph.', true)).toBe('The store writes on a worker now. Main reads it in order.')
+    expect(descriptionPreview('- [x] The first item, which **says** it all.\n- The second item.', true)).toBe('The first item, which says it all.')
+    expect(descriptionPreview('Before the fence it ends here.\n```\ncode\n```', true)).toBe('Before the fence it ends here.')
     expect(listReviewWord('approved')).toBe('Approved')
     expect(listReviewWord('changes_requested')).toBe('Changes requested')
     expect(listReviewWord('review_required')).toBeNull()

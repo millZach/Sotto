@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   AlarmClock, AlarmClockOff, ArrowLeft, Ban, Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, ExternalLink, GitMerge,
   GitPullRequest, GitPullRequestDraft, Link2, RotateCw, Unlink, type LucideIcon,
@@ -20,9 +20,9 @@ import { useRestartStopped } from '../agents/RestartStopped'
 import { shownCount } from '../state/interfaceNumbers'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import { OpenPullRequests } from './OpenPullRequests'
-import { PullRequestChecks, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
+import { PEEK_MORE_FILES, PEEK_ROWS, PullRequestChecks, PullRequestChecksPeek, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestFilesPeek, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checksInOrder, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergeEffect, mergeLabel, mergeReady,
   mergeWaitsFor, resolveMergeMethod, stateLabel, type ConfirmedAction, type LineFix, type LineTone,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
@@ -97,6 +97,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
   const generation = useRef(0)
   const surface = useRef<HTMLDivElement>(null)
   const body = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
   const top = useRef<HTMLHeadingElement>(null)
   const hintId = useId()
   const branchUrl = branchPullRequestUrl(thread) ?? null
@@ -196,6 +197,13 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
   const linked = <LinkedFold thread={thread} open={linksOpen} onToggle={() => setLinksOpen(value => !value)} onShow={show} onLink={command ? () => setLinking(true) : null} />
   const openList = <OpenPullRequests threadId={thread.id} shownUrl={detail?.url ?? null} open={openListOpen} onToggle={() => setOpenListOpen(value => !value)} onShow={show} />
   const refresh = <button type="button" className="files-icon tt-focusable" aria-label={t`Refresh pull request`} title={t`Refresh pull request`} data-busy={loading || undefined} onClick={() => { setNotice(null); void load() }}><RotateCw size={15} aria-hidden="true" /></button>
+
+  // What the closed folds can show under their heads where the panel has room, most needed first: the checks that still
+  // stand, the description's whole first paragraph, the most changed files, and more of them.
+  const peeks = useMemo(() => detail ? peeksOf(detail) : NO_PEEKS, [detail])
+  const anyOpen = descriptionOpen || checksOpen || filesOpen || linksOpen || openListOpen
+  const peeksShown = usePeeksThatFit(body, content, peeks.length, anyOpen, detail)
+  const peeking = (peek: Peek): boolean => { const at = peeks.indexOf(peek); return at > -1 && at < peeksShown }
 
   if (!detail) {
     return <div ref={surface} className="pr-surface" aria-busy={loading || busy !== null}>
@@ -334,7 +342,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
       </div>
     </div>
     {noticeLine(stopRefused !== null)}
-    <div ref={body} className="pr-surface__body">
+    <div ref={body} className="pr-surface__body"><div ref={content} className="pr-surface__content">
       {/* The title is the pull request's name, so it leads the surface whole, under the line the window's own buttons share. */}
       <h2 ref={top} tabIndex={-1} className="pr-surface__title"><span className="tt-visually-hidden">#{detail.number}</span>{' '}<bdi>{detail.title}</bdi></h2>
       {/* A pull request that has ended says so first: the checklist is only what it was by then. */}
@@ -359,20 +367,22 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
       {open || !known ? mergeDock : null}
       {/* The folds share one box, so the surface ends where they do, however little or much is open. */}
       <div className="pr-surface__folds">
-        <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} preview={descriptionPreview(detail.body)} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
+        <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} preview={descriptionPreview(detail.body, peeking('description'))} whole={peeking('description')} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
           <PullRequestDescription detail={detail} />
         </Fold>
-        {detail.checks.length ? <Fold label={t({ message: 'Checks', comment: 'A pull request\'s checks, listed in a fold.' })} aside={<PullRequestChecksSummary checks={detail.checks} />} open={checksOpen} onToggle={() => setChecksOpen(value => !value)}>
+        {detail.checks.length ? <Fold label={t({ message: 'Checks', comment: 'A pull request\'s checks, listed in a fold.' })} aside={<PullRequestChecksSummary checks={detail.checks} />}
+          peek={peeking('checks') ? <PullRequestChecksPeek checks={detail.checks} /> : undefined} open={checksOpen} onToggle={() => setChecksOpen(value => !value)}>
           <PullRequestChecks url={detail.url} checks={detail.checks} />
         </Fold> : null}
         {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
-          aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
+          aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} /> : undefined}
+          peek={peeking('files') && detail.files ? <PullRequestFilesPeek files={detail.files} rows={peeking('more-files') ? PEEK_MORE_FILES : undefined} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
           <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
         </Fold> : null}
         {linked}
         {openList}
       </div>
-    </div>
+    </div></div>
     {linkDialog}
     {confirmation && confirming ? <ConfirmationDialog title={confirmation.title} description={confirmation.description} confirmLabel={confirmation.confirm} cancelLabel={t`Cancel`} danger={confirmation.danger}
       fallbackFocusRef={top} onCancel={() => setConfirming(null)}
@@ -443,18 +453,78 @@ function NoPullRequest({ thread, busy, command, onCreate, onLink }: {
   </div>
 }
 
+type Peek = 'checks' | 'description' | 'files' | 'more-files'
+const NO_PEEKS: readonly Peek[] = []
+/** The peeks this pull request has something for, most needed first. */
+function peeksOf(detail: GitPullRequestDetail): readonly Peek[] {
+  const peeks: Peek[] = []
+  if (checksInOrder(detail.checks).standing.length) peeks.push('checks')
+  // Only where the paragraph says more than the sentence the head already shows.
+  if (descriptionPreview(detail.body, true) !== descriptionPreview(detail.body)) peeks.push('description')
+  if (detail.files?.length) peeks.push('files')
+  // Last, where there is room to spare once every other peek shows: more of the files, the record of what it changes.
+  if ((detail.files?.length ?? 0) > PEEK_ROWS) peeks.push('more-files')
+  return peeks
+}
+
+/**
+ * How many of the closed folds' peeks the body has room for, up to `most`: as many as leave it without a scroll, tried
+ * before the frame is drawn, so a peek never shows only to go. A count found too tall is not tried again until the body
+ * is taller or what it holds changes (`changed`, or the content growing or shrinking by itself). While a fold is open
+ * (`held`) the count holds, so opening one never moves the heads above it. A body not laid out has no room.
+ */
+function usePeeksThatFit(body: RefObject<HTMLDivElement | null>, content: RefObject<HTMLDivElement | null>, most: number, held: boolean, changed: unknown): number {
+  const [shown, setShown] = useState(0)
+  const [resized, setResized] = useState(0)
+  /** For each count found too tall, the body's height then. */
+  const tooTall = useRef(new Map<number, number>())
+  /** The content's height once the count last settled, so its own change can be told from a peek's. */
+  const settled = useRef(-1)
+  const seen = useRef(changed)
+  useLayoutEffect(() => {
+    const element = body.current, inner = content.current
+    if (!element || !inner || held) return
+    if (seen.current !== changed) { seen.current = changed; tooTall.current.clear() }
+    const room = element.clientHeight
+    if (room <= 0) return
+    if (shown > most) { setShown(most); return }
+    if (element.scrollHeight > room + 1) {
+      if (shown > 0) { tooTall.current.set(shown, room); setShown(shown - 1); return }
+    } else if (shown < most && (tooTall.current.get(shown + 1) ?? -1) < room) { setShown(shown + 1); return }
+    settled.current = inner.offsetHeight
+  }, [body, content, most, held, changed, shown, resized])
+  useEffect(() => {
+    const element = body.current, inner = content.current
+    if (!element || !inner || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      // Content that grew or shrank by itself (a line settled, a notice came) may leave room a peek could not have had.
+      if (inner.offsetHeight !== settled.current) tooTall.current.clear()
+      setResized(value => value + 1)
+    })
+    observer.observe(element)
+    observer.observe(inner)
+    return () => observer.disconnect()
+  }, [body, content, changed])
+  return Math.min(shown, most)
+}
+
 /**
  * A part of the surface that folds away: the description, the checks, the files, the linked pull requests. Its head
- * says what a closed fold holds. `preview` is only for the eye: the head's name stays what a press opens.
+ * says what a closed fold holds. `preview` and `peek` are only for the eye: the head's name stays what a press opens.
+ * `whole`: the preview is the description's whole first paragraph rather than its first sentence.
  */
-function Fold({ label, count, aside, preview, open, onToggle, children }: { readonly label: string; readonly count?: number | undefined; readonly aside?: ReactNode; readonly preview?: string; readonly open: boolean; readonly onToggle: () => void; readonly children: ReactNode }): ReactNode {
+function Fold({ label, count, aside, preview, whole, peek, open, onToggle, children }: {
+  readonly label: string; readonly count?: number | undefined; readonly aside?: ReactNode; readonly preview?: string; readonly whole?: boolean
+  readonly peek?: ReactNode; readonly open: boolean; readonly onToggle: () => void; readonly children: ReactNode
+}): ReactNode {
   const id = useId()
   const Chevron = open ? ChevronDown : ChevronRight
   return <div className="pr-surface__fold">
     <button type="button" className="pr-surface__fold-head tt-focusable" aria-expanded={open} aria-controls={open ? id : undefined} onClick={onToggle}>
       <Chevron size={15} aria-hidden="true" />{label}{count !== undefined ? <>{' '}<span className="pr-surface__quiet">{shownCount(count)}</span></> : null}
-      {preview && !open ? <bdi className="pr-surface__fold-preview" aria-hidden="true">{preview}</bdi> : null}
+      {preview && !open ? <bdi className="pr-surface__fold-preview" data-whole={whole || undefined} aria-hidden="true">{preview}</bdi> : null}
       {aside ? <>{' '}<span className="pr-surface__fold-aside">{aside}</span></> : null}
+      {peek && !open ? peek : null}
     </button>
     {open ? <div id={id} className="pr-surface__fold-body">{children}</div> : null}
   </div>

@@ -147,6 +147,24 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__fold-aside { flex: none; margin-left: auto; font-weight: 400; }
 /* What a closed Description holds: its first lines, under its name, in at most two lines. */
 .pr-surface__fold-preview { display: -webkit-box; flex: 1 0 100%; min-width: 0; padding-left: 23px; overflow: hidden; color: var(--tt-text-muted); font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* Where the panel has room, it is its whole first paragraph, in up to four. */
+.pr-surface__fold-preview[data-whole] { -webkit-line-clamp: 4; }
+/* Where the panel has room, a closed fold's head also shows the first few of what it holds: the checks that still stand,
+   the most changed files. Quieter than the list it opens to, and one press with the head, which opens that list. */
+.pr-surface__peek { display: grid; flex: 1 0 100%; gap: 3px; min-width: 0; margin-top: 6px; padding-left: 23px; font-size: var(--tt-type-caption); font-weight: 400; line-height: 1.4; }
+.pr-surface__peek-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-width: 0; color: var(--tt-text-2); }
+.pr-surface__peek[data-of='checks'] .pr-surface__peek-row { grid-template-columns: 13px minmax(0, 1fr) auto 7ch; column-gap: 8px; }
+.pr-surface__peek-row > svg { color: var(--tt-text-muted); }
+.pr-surface__peek-row > svg:is([data-status='failure'], [data-status='cancelled']) { color: var(--tt-error-text); }
+.pr-surface__peek-row > svg:is([data-status='pending'], [data-status='action-required']) { color: var(--tt-warning-text); }
+.pr-surface__peek-name { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; }
+.pr-surface__peek-folder { flex: 0 1 auto; min-width: 2ch; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
+.pr-surface__peek-folder[data-group] { margin-right: .3em; }
+.pr-surface__peek-name > bdi:last-child { flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pr-surface__peek-word { color: var(--tt-text-muted); white-space: nowrap; }
+.pr-surface__peek-row:is([data-status='failure'], [data-status='cancelled']) .pr-surface__peek-word { color: var(--tt-error-text); }
+.pr-surface__peek-time { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.pr-surface__peek .pr-surface__counts { display: inline-grid; grid-template-columns: repeat(2, minmax(6ch, max-content)); text-align: right; }
 .pr-surface__checks-summary { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 10px; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .pr-surface__checks-summary [data-tone='failed'] { color: var(--tt-error-text); }
 .pr-surface__checks-summary [data-tone='waiting'] { color: var(--tt-warning-text); }

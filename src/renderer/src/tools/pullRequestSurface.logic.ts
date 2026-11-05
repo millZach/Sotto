@@ -293,20 +293,27 @@ export function listMatches(item: Pick<GitPullRequestListItem, 'number' | 'title
 const FIRST_SENTENCE = /^(.{16,}?[.!?])\s+(?=[\p{Lu}\p{Lt}\p{N}"'“‘([])/u
 /**
  * The first sentence of a description's prose, without its Markdown, for the head of its closed fold: a whole sentence,
- * so a narrow panel shows the pull request's own words ended rather than cut. Empty when it has none.
+ * so a narrow panel shows the pull request's own words ended rather than cut. `whole` gives its whole first paragraph
+ * instead, for a panel with room to spare. Empty when it has none.
  */
-export function descriptionPreview(body: string): string {
+export function descriptionPreview(body: string, whole = false): string {
   let fenced = false
+  const paragraph: string[] = []
   // A description's first screen is all a preview needs, however long the rest runs.
   for (const raw of body.slice(0, 4_000).replace(/<!--[\s\S]*?(?:-->|$)/gu, '').split('\n')) {
     const line = raw.trim()
-    if (/^(?:```|~~~)/u.test(line)) { fenced = !fenced; continue }
-    if (fenced || /^(?:#{1,6}\s|<|\||[-=*_]{3,}$)/u.test(line)) continue
+    if (/^(?:```|~~~)/u.test(line)) { if (paragraph.length) break; fenced = !fenced; continue }
+    const skipped = fenced || /^(?:#{1,6}\s|<|\||[-=*_]{3,}$)/u.test(line)
+    // The paragraph ends at a blank line, a heading or a list's next item.
+    if (paragraph.length && (!line || skipped || /^(?:[-*+]|\d+[.)])\s/u.test(line))) break
+    if (skipped) continue
     const text = line.replace(/^(?:>\s*)+/u, '').replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/u, '').replace(/!\[[^\]]*\]\([^)]*\)/gu, '')
       .replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1').replace(/`|\*\*|__/gu, '').trim()
-    if (text) return FIRST_SENTENCE.exec(text)?.[1] ?? text
+    if (!text) continue
+    if (!whole) return FIRST_SENTENCE.exec(text)?.[1] ?? text
+    paragraph.push(text)
   }
-  return ''
+  return paragraph.join(' ')
 }
 /** What a row of the open pull requests says of its review, where GitHub has an answer worth reading at a glance. */
 export function listReviewWord(decision: GitPullRequestListItem['reviewDecision']): string | null {

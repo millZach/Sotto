@@ -30,6 +30,40 @@ export function PullRequestChecksSummary({ checks }: { readonly checks: readonly
   return <span className="pr-surface__checks-summary">{checksSummary(checks).map(part => <React.Fragment key={part.words}><span data-tone={part.tone}>{part.words}</span>{' '}</React.Fragment>)}</span>
 }
 
+/** How many rows a closed fold's peek shows: enough to name what matters, few enough to stay a glance. */
+export const PEEK_ROWS = 3
+/** How many files a peek shows in a panel with room for more after every other peek. */
+export const PEEK_MORE_FILES = 8
+
+/**
+ * The checks that still stand (failed, waiting on an approval, running), the first few, under the head of their closed
+ * fold where the panel has room: for the eye only, since the head's press opens the whole list, where each opens.
+ */
+export function PullRequestChecksPeek({ checks }: { readonly checks: readonly GitPullRequestCheck[] }): ReactNode {
+  const { standing } = checksInOrder(checks)
+  return <span className="pr-surface__peek" data-of="checks" aria-hidden="true">{standing.slice(0, PEEK_ROWS).map((check, index) => {
+    const Icon = CHECK_ICONS[check.status]
+    const { group, own } = checkNameParts(check.name)
+    return <span key={`${check.name}\n${index}`} className="pr-surface__peek-row" data-status={check.status}>
+      <Icon size={13} data-status={check.status} />
+      <span className="pr-surface__peek-name">{group ? <span className="pr-surface__peek-folder" data-group="">{group} /</span> : null}<bdi>{own}</bdi></span>
+      <span className="pr-surface__peek-word">{checkWord(check)}</span>
+      <span className="pr-surface__peek-time">{checkTime(check)}</span>
+    </span>
+  })}</span>
+}
+/** The most changed files, the first few (`rows`), under the head of their closed fold where the panel has room; for the eye only. */
+export function PullRequestFilesPeek({ files, rows = PEEK_ROWS }: { readonly files: readonly GitPullRequestFile[]; readonly rows?: number | undefined }): ReactNode {
+  const most = useMemo(() => filesByWeight(files).slice(0, rows), [files, rows])
+  return <span className="pr-surface__peek" data-of="files" aria-hidden="true">{most.map(file => {
+    const { folder, name } = pathParts(file.path)
+    return <span key={file.path} className="pr-surface__peek-row">
+      <span className="pr-surface__peek-name"><bdi className="pr-surface__peek-folder">{folder}</bdi><bdi className="pr-surface__peek-file">{name}</bdi></span>
+      <LineCounts additions={file.additions} deletions={file.deletions} />
+    </span>
+  })}</span>
+}
+
 /**
  * Every check, inside its fold below Merge, each named, with its state and how long it took, and a press that opens it
  * where GitHub says it lives. What stands comes first; what settled folds away behind one press while anything still
