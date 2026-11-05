@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway): Teams, set up and restyled</title>
+<style>
+  /* Throwaway. Sample data only. Colours are Sotto's Dark and Light themes; font is the app's Figtree. Nothing here sends anything. */
+  @font-face { font-family: "Figtree"; src: url("fonts/figtree-latin.woff2") format("woff2"); font-weight: 300 900; font-display: swap; }
+  :root { --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265); --raised-2: oklch(0.215 0.008 265); --hover: oklch(0.24 0.01 265); --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 265); --muted: oklch(0.72 0.014 265); --accent: oklch(0.714403 0.104089 183.092); --accent-text: oklch(0.78 0.1 183); --accent-fg: oklch(0.16 0.012 190); --accent-surface: oklch(0.3 0.05 185); --warning: oklch(0.772406 0.172798 65.367); --warning-surface: oklch(0.26 0.05 65); --error: oklch(0.72 0.17 23); --ok: oklch(0.76 0.13 160); --scene: .34; }
+  :root[data-look="light"] { --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.945 0.007 85); --raised-2: oklch(0.925 0.008 85); --hover: oklch(0.9 0.01 85); --text: oklch(0.235 0.014 75); --text-2: oklch(0.33 0.014 75); --muted: oklch(0.5 0.014 75); --accent: oklch(0.53 0.095 186); --accent-text: oklch(0.45 0.09 186); --accent-fg: oklch(0.99 0.003 85); --accent-surface: oklch(0.88 0.04 186); --warning: oklch(0.5 0.12 65); --warning-surface: oklch(0.93 0.05 80); --error: oklch(0.509494 0.208583 28.513); --ok: oklch(0.48 0.11 160); --scene: .3; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: #000; color: var(--text); }
+  body { font: 15px/1.45 "Figtree", ui-sans-serif, system-ui, sans-serif; display: grid; place-items: center; overflow: hidden; }
+  button, input { font: inherit; color: inherit; }
+  .frame { position: relative; width: 1280px; height: 800px; max-width: 100vw; max-height: calc(100vh - 56px); background: var(--canvas); overflow: hidden; border-radius: 10px; }
+  .frame[data-size="820"] { width: 820px; height: 560px; }
+  .frame[data-size="1600"] { width: 1600px; height: 1000px; }
+  .scene { position: absolute; inset: 0; margin: 0; overflow: hidden; color: var(--muted); opacity: var(--scene); font: 11px/1.05 ui-monospace, Menlo, Consolas, monospace; white-space: pre; pointer-events: none; }
+  .app { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
+  .strip { display: flex; align-items: center; gap: 14px; padding: 10px 16px; min-height: 50px; flex: none; }
+  .tile { width: 26px; height: 26px; border-radius: 7px; background: var(--accent-surface); display: grid; place-items: center; font: 600 9px/1 ui-monospace, Menlo, Consolas, monospace; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--raised); }
+  .seg button { background: transparent; border: 0; border-radius: 7px; padding: 3px 10px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .seg button[aria-selected="true"] { background: var(--hover); color: var(--text); }
+  .grow { flex: 1; min-width: 0; }
+  .chip { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .stage { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 70px; scrollbar-gutter: stable both-edges; }
+  .col { width: min(740px, 100%); margin: 0 auto; display: grid; gap: 22px; }
+  .wide { width: min(1120px, 100%); margin: 0 auto; display: grid; gap: 14px; }
+  h1 { margin: 6px 0 0; font-size: 22px; font-weight: 650; }
+  .lede { margin: 2px 0 0; color: var(--text-2); }
+  .sec { display: grid; gap: 8px; }
+  .sec__h { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 600; }
+  .sec__h svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+  .sec__p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .muted { color: var(--muted); font-size: 13.5px; }
+  .small { font-size: 13px; }
+  .card { background: var(--raised); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+  /* Variant B: no cards. Words lie on the room as Watcher's conversation does; rows are separated by space, not lines. */
+  [data-v="B"] .card { background: transparent; padding: 4px 0; border-radius: 0; }
+  [data-v="B"] .card.keep { background: var(--raised); padding: 14px 16px; border-radius: 12px; }
+  [data-v="B"] .sec__h svg { display: none; }
+  [data-v="B"] .sec__h { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+  .btn { background: var(--raised-2); border: 0; border-radius: 9px; padding: 6px 12px; min-height: 32px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+  .btn:hover { background: var(--hover); }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+  .btn.ghost { background: transparent; color: var(--text-2); }
+  .btn.ghost:hover { background: var(--hover); }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--accent-surface); display: grid; place-items: center; font-weight: 650; flex: none; }
+  .who { display: grid; min-width: 0; flex: 1; }
+  .who b { font-weight: 600; }
+  .note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--warning-surface); color: var(--text); font-size: 14px; }
+  .note b { color: var(--warning); font-weight: 600; }
+  .note.ok { background: transparent; padding: 0; color: var(--text-2); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; margin-top: 7px; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warning); } .dot.idle { background: var(--muted); } .dot.work { background: var(--accent); } .dot.fail { background: var(--error); }
+  /* The setup checklist, in the shape of Hosts & phones' steps. */
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .step { display: grid; grid-template-columns: 26px 1fr; gap: 4px 10px; padding: 10px 0; }
+  .step + .step { padding-top: 12px; }
+  .mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--raised-2); color: var(--muted); }
+  .mark.done { background: var(--accent-surface); color: var(--accent-text); }
+  .mark.warn { background: var(--warning-surface); color: var(--warning); }
+  .step__t { font-weight: 600; align-self: center; }
+  .step__b { grid-column: 2; display: grid; gap: 8px; color: var(--text-2); font-size: 14px; }
+  .step__b p { margin: 0; }
+  .how { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 14px; display: grid; gap: 2px; }
+  kbd, .ui { font: inherit; font-weight: 600; color: var(--text); }
+  .field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  .input { background: var(--canvas); border: 0; border-radius: 9px; padding: 7px 10px; min-height: 34px; color: var(--text); box-shadow: inset 0 0 0 1px var(--raised-2); }
+  .code { font: 600 14px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 9px 12px; border-radius: 9px; background: var(--canvas); overflow-wrap: anywhere; }
+  .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 14px; }
+  .facts dt { color: var(--muted); } .facts dd { margin: 0; }
+  .proj { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 14px; }
+  .proj input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .proj .muted { margin-left: auto; }
+  .latest { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 14px; }
+  .latest li { display: grid; grid-template-columns: 68px 1fr; gap: 10px; }
+  .latest time { color: var(--muted); }
+  details > summary { cursor: pointer; color: var(--text-2); font-size: 14px; width: fit-content; }
+  /* Two desks. Each is its own surface on the room; the scene shows around and between them. No hairlines. */
+  .dhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .dhead h2 { margin: 0; font-size: 16px; font-weight: 650; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .live .dot { margin: 0; }
+  .order { display: grid; gap: 6px; }
+  .order ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .order li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: baseline; padding: 5px 8px; border-radius: 8px; font-size: 14px; }
+  .order li:nth-child(odd) { background: color-mix(in oklch, var(--raised-2) 55%, transparent); }
+  [data-v="B"] .order li:nth-child(odd) { background: color-mix(in oklch, var(--raised) 70%, transparent); }
+  .order .n { color: var(--accent-text); font-weight: 700; }
+  .order .st { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .order .st.pass { color: var(--ok); } .order .st.fail { color: var(--error); }
+  .desks { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .desk { display: grid; gap: 2px; }
+  .desk h3 { margin: 0 0 6px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .proj-h { font-size: 12px; color: var(--muted); font-weight: 600; margin: 10px 0 2px; letter-spacing: .02em; }
+  .th { display: grid; gap: 1px; padding: 6px 8px; margin: 0 -8px; border-radius: 8px; }
+  .th:hover { background: var(--hover); }
+  .th__t { overflow-wrap: anywhere; }
+  .stands { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  .stands .dot { margin: 0; width: 7px; height: 7px; }
+  .pr { font-size: 13px; color: var(--text-2); }
+  .frame[data-size="820"] .desks { grid-template-columns: 1fr; }
+  .frame[data-desks="col"] .desks { grid-template-columns: 1fr 1fr; }
+  .frame[data-size="820"][data-desks="col"] .desks { grid-template-columns: 1fr; }
+  /* Prototype bar, not part of the design. */
+  .bar { position: fixed; z-index: 5; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: max-content; max-width: calc(100vw - 16px); background: oklch(0.2 0.03 300); color: #fff; border-radius: 12px; padding: 7px 12px; font-size: 12.5px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+  .bar b { color: oklch(0.85 0.1 300); }
+  .bar label { display: inline-flex; gap: 5px; align-items: center; }
+  .bar select { font: inherit; background: oklch(0.3 0.03 300); color: #fff; border: 1px solid oklch(0.45 0.03 300); border-radius: 6px; padding: 2px 5px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="frame" id="frame" data-v="A" data-size="1280" data-desks="wide">
+  <pre class="scene" id="scene" aria-hidden="true"></pre>
+  <div class="app">
+    <header class="strip">
+      <div class="brand"><span class="tile" aria-hidden="true">o,o</span><span>Watcher</span></div>
+      <div class="seg" role="tablist" aria-label="Watcher's room"><button role="tab" aria-selected="false" data-go="watcher">Watcher</button><button role="tab" aria-selected="true" data-go="teams">Teams</button></div>
+      <span class="chip">All threads 9</span><div class="grow"></div>
+    </header>
+    <main class="stage" id="stage"></main>
+  </div>
+</div>
+<div class="bar" id="bar">
+  <b>PROTOTYPE</b>
+  <label>Look <select data-k="v"><option value="A">A · Settings cards</option><option value="B">B · Plain room</option></select></label>
+  <label>Screen <select data-k="screen">
+    <option value="setup">1 · First setup</option>
+    <option value="cantreach">2 · Linked, Drake can't reach you</option>
+    <option value="teams">3 · Linked, works both ways</option>
+    <option value="desks">4 · Two desks</option>
+  </select></label>
+  <label>Desks <select data-k="desks"><option value="wide">Wide, scene between</option><option value="col">In Watcher's column</option></select></label>
+  <label>Window <select data-k="size"><option>1280</option><option>1600</option><option>820</option></select></label>
+  <label>Theme <select data-k="look"><option value="dark">Dark</option><option value="light">Light</option></select></label>
+</div>
+<script>
+const S = { v: 'A', screen: 'setup', desks: 'wide', size: '1280', look: 'dark', made: false }
+const icon = {
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.8"/><path d="M17.5 14.6c2.2.4 3.6 2 4 5.4"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
+}
+const sec = (ic, h, p, body) => `<section class="sec"><h2 class="sec__h">${icon[ic]}${h}</h2>${p ? `<p class="sec__p">${p}</p>` : ''}${body}</section>`
+const step = (n, state, title, body) => `<li class="step"><span class="mark ${state}">${state === 'done' ? '✓' : state === 'warn' ? '!' : n}</span><span class="step__t">${title}</span><div class="step__b">${body}</div></li>`
+
+function setup() {
+  return `<div class="col">
+  <div><h1>Link with a teammate</h1><p class="lede">Your Watcher and a teammate's can ask each other what you're working on, and you can open your desks side by side. Both of you need Sotto Owl and Tailscale. It takes about five minutes, and each of you does the same steps.</p></div>
+  ${sec('list', 'Steps', '', `<div class="card"><ol class="steps">
+    ${step(1, 'done', 'Tailscale is on', `<p>This computer is <span class="ui">laptop-russh2j5</span> on your tailnet, millZach.</p>`)}
+    ${step(2, 'done', 'Tailscale Serve is allowed', `<p>Sotto answers your teammate on port 8445, on your tailnet only. If your tailnet has Serve turned off, this step says so and offers <span class="ui">Turn on Serve in Tailscale</span>.</p>`)}
+    ${step(3, 'done', "Your teammate's computer is on your tailnet", `<p>Sotto sees <span class="ui">Drake's MacBook Pro</span>, shared with you from Drake's tailnet.</p>
+      <details><summary>How your teammate shares it</summary><ol class="how"><li>They open Tailscale's admin console and go to <span class="ui">Machines</span>.</li><li>They press <span class="ui">•••</span> beside their computer, then <span class="ui">Share…</span>, and send you the link.</li><li>You open the link and accept. It shows up here.</li></ol></details>`)}
+    ${step(4, '', 'Share this computer with your teammate', `<p>Sharing goes one way. Seeing Drake's computer doesn't let Drake reach yours, so share yours back.</p>
+      <ol class="how"><li>Press <span class="ui">Open Tailscale's Machines</span>.</li><li>Press <span class="ui">•••</span> beside <span class="ui">laptop-russh2j5</span>, then <span class="ui">Share…</span>.</li><li>Send Drake the link. Drake opens it and accepts.</li></ol>
+      <div class="row"><button class="btn">Open Tailscale's Machines</button><span class="muted">Already on the same tailnet? Skip this; step 6 checks it.</span></div>`)}
+    ${step(5, S.made ? 'done' : '', 'Link with a code', S.made ? `<p>Linked with <span class="ui">Drake</span>.</p>` : `<p>One of you makes a code and sends it however you like. The other pastes it. One code links both ways, works once, and lasts 30 minutes.</p>
+      <div class="row" style="align-items:flex-end"><label class="field" style="flex:1;min-width:200px">Your name, as your teammate sees it<input class="input" value="Zach"></label><button class="btn" data-make>Make a code</button></div>
+      <div class="row" style="align-items:flex-end"><label class="field" style="flex:1;min-width:200px">Got a code from your teammate?<input class="input" placeholder="Paste it here"></label><button class="btn primary" data-link>Link</button></div>`)}
+    ${step(6, '', 'Check it works both ways', `<p>Right after linking, each computer reaches the other once. Nothing about your threads crosses. This step shows what came back.</p>`)}
+  </ol></div>`)}
+  </div>`
+}
+
+function teamCard(state) {
+  const warn = state === 'cantreach'
+  return `<div class="card keep">
+    <div class="row"><span class="avatar">D</span><span class="who"><b>Drake</b><span class="muted">Drake's MacBook Pro · last used 1:24 AM</span></span>
+      <button class="btn primary" data-go="desks">Open two desks</button><button class="btn ghost">Remove link</button></div>
+    ${warn ? `<div class="note"><span class="dot warn"></span><span><b>Drake's computer can't reach this one.</b> You can read Drake's desk, but Drake can't read yours or ask your Watcher. Share this computer with Drake in Tailscale: <span class="ui">Machines</span>, <span class="ui">•••</span> beside laptop-russh2j5, <span class="ui">Share…</span>. Then press <span class="ui">Check again</span>.<br><span style="display:inline-flex;gap:8px;margin-top:8px"><button class="btn">Open Tailscale's Machines</button><button class="btn">Check again</button></span></span></div>`
+      : `<div class="note ok"><span class="dot ok"></span><span>Works both ways. Checked 2 minutes ago.</span></div>`}
+    <dl class="facts"><dt>Link</dt><dd>Lasts until December 5.</dd><dt>Answers</dt><dd>3 of 20 today, on your own provider account.</dd></dl>
+  </div>`
+}
+
+function teams() {
+  return `<div class="col">
+  ${sec('people', 'Teammates', '', `${teamCard(S.screen)}
+    <details><summary>Link another teammate</summary><div class="card" style="margin-top:8px"><p class="muted" style="margin:0">Same steps as the first time. <a href="#" data-go="setup" style="color:var(--accent-text)">Show the steps</a></p></div></details>`)}
+  ${sec('eye', 'What you share', 'When Drake asks or reads your desk, your computer sends each thread\'s title, project, where it stands, and its open pull requests. Never its messages, code or file names. Untick a project to leave it out.', `<div class="card">
+    <label class="proj"><input type="checkbox" checked> Sotto <span class="muted">This computer</span></label>
+    <label class="proj"><input type="checkbox" checked> sotto-site <span class="muted">This computer</span></label>
+    <label class="proj"><input type="checkbox"> client-work <span class="muted">forge</span></label></div>`)}
+  ${sec('clock', 'Latest', '', `<div class="card"><ul class="latest">
+    <li><time>1:31 AM</time><span><b>Drake read your desk.</b> <span class="muted">3 more reads while their desks were open, last at 1:37 AM.</span></span></li>
+    <li><time>1:24 AM</time><span><b>Drake's Watcher asked what you are working on.</b> <span class="muted">Here is what's on my list for Sotto. There's one thread, Windows team link check…</span></span></li>
+    <li><time>1:23 AM</time><span><b>You asked Drake what they are working on.</b> <span class="muted">Forge side: iPhone on the unfolded Duo. Idle, no pull requests open.</span></span></li>
+  </ul></div>`)}
+  </div>`
+}
+
+const mine = [['Sotto', [['Visual gate flake', 'warn', 'Waiting on you', ['#2170 Hold the gate on a flaky capture · checks running']], ['Release notes 1.4', 'idle', 'Idle', []]]], ['sotto-site', [['Footer links', 'work', 'Working', ['#41 Footer links · checks passed']]]]]
+const his = [['Sotto', [['iPhone on the unfolded Duo', 'work', 'Working', ['#2158 One rail pill on the Duo · checks passed', '#2164 Pair an Android phone · checks not read']], ['Android pairing', 'idle', 'Idle', ['#2161 Pair an Android phone by code · draft']]]], ['Client work', [['Nightly import', 'fail', 'Last turn failed', ['#88 Retry the import · checks failed']]]]]
+const deskHtml = d => d.map(([p, ts]) => `<div class="proj-h">${p}</div>` + ts.map(([t, k, s, prs]) => `<div class="th"><span class="th__t">${t}</span><span class="stands"><span class="dot ${k}"></span>${s}</span>${prs.map(x => `<span class="pr">${x}</span>`).join('')}</div>`).join('')).join('')
+
+function desks() {
+  const cls = S.desks === 'col' ? 'col' : 'wide'
+  return `<div class="${cls}" style="gap:14px">
+    <div class="dhead"><button class="btn ghost" data-go="teams">← Teams</button><h2>You and Drake</h2><span class="grow"></span>
+      <span class="live"><span class="dot ok"></span>Drake's desk updated 40 s ago · every 2 minutes while open</span><button class="btn">Update now</button></div>
+    <div class="card order"><div class="row" style="gap:8px"><b style="font-size:14px">Merge order</b><span class="muted">Advice from both desks: checks passed first, oldest pass first. It merges nothing.</span></div>
+      <ol><li><span class="n">1</span><span>#2158 One rail pill on the Duo <span class="muted">· Drake</span></span><span class="st pass">checks passed</span></li>
+      <li><span class="n">2</span><span>#41 Footer links <span class="muted">· you</span></span><span class="st pass">checks passed</span></li>
+      <li><span class="n">3</span><span>#2170 Hold the gate on a flaky capture <span class="muted">· you</span></span><span class="st">checks running</span></li>
+      <li><span class="n">4</span><span>#2164 Pair an Android phone <span class="muted">· Drake</span></span><span class="st">checks not read</span></li>
+      <li><span class="n">5</span><span>#88 Retry the import <span class="muted">· Drake</span></span><span class="st fail">checks failed</span></li>
+      <li><span class="n">6</span><span>#2161 Pair an Android phone by code <span class="muted">· Drake</span></span><span class="st">draft</span></li></ol></div>
+    <div class="desks">
+      <section class="card desk"><h3>Yours <span class="muted">Now</span></h3>${deskHtml(mine)}</section>
+      <section class="card desk"><h3>Drake's <span class="muted">40 s ago</span></h3>${deskHtml(his)}<p class="muted" style="margin:8px 0 0">2 more threads didn't fit.</p></section>
+    </div>
+    <p class="muted" style="margin:0;text-align:center">Leave and come back: the desks stay open where you left them. Drake's Teams tab folds these reads into one line.</p>
+  </div>`
+}
+
+function render() {
+  const f = document.getElementById('frame')
+  f.dataset.v = S.v; f.dataset.size = S.size; f.dataset.desks = S.desks
+  document.documentElement.dataset.look = S.look
+  for (const el of document.querySelectorAll('#bar select')) el.value = S[el.dataset.k]
+  const view = S.screen === 'setup' ? setup() : S.screen === 'desks' ? desks() : teams()
+  document.getElementById('stage').innerHTML = view
+  drawScene()
+}
+document.getElementById('bar').addEventListener('change', e => { const k = e.target.dataset.k; if (k) { S[k] = e.target.value; render() } })
+document.getElementById('frame').addEventListener('click', e => {
+  const go = e.target.closest('[data-go]'); if (go && go.dataset.go !== 'watcher') { e.preventDefault(); S.screen = go.dataset.go === 'teams' ? 'teams' : go.dataset.go; render(); return }
+  if (e.target.closest('[data-make]')) { e.target.closest('.step__b').insertAdjacentHTML('beforeend', '<div class="code">SOTTO-TEAM laptop-russh2j5.tail5728ca.ts.net:8445 K7QF-29XM-WD4P</div><span class="muted">Send this to Drake. It works once, for 30 minutes.</span>'); return }
+  if (e.target.closest('[data-link]')) { S.made = true; render() }
+})
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.screen === 'desks') { S.screen = 'teams'; render() } })
+
+// A stand-in for Watcher's night scene: sky above, hills below, trees and owls only in the margins beside the column.
+function drawScene() {
+  const f = document.getElementById('frame'), W = f.clientWidth, H = f.clientHeight, cw = 6.6, ch = 11.55
+  const cols = Math.ceil(W / cw), rows = Math.ceil(H / ch)
+  const colW = S.screen === 'desks' && S.desks === 'wide' ? Math.min(1120, W - 32) : Math.min(740, W - 32)
+  const c0 = Math.floor((W - colW) / 2 / cw) - 1, c1 = Math.ceil((W + colW) / 2 / cw) + 1
+  let seed = 9137; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+  const g = Array.from({ length: rows }, () => Array(cols).fill(' '))
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const x = rnd(); if (r < rows * .45 && x < .006) g[r][c] = x < .002 ? '*' : '.' }
+  for (let c = 0; c < cols; c++) { const h = Math.round(rows * .82 + Math.sin(c / 17) * 3 + Math.sin(c / 7) * 1.4); for (let r = h; r < rows; r++) { const inCol = c > c0 && c < c1; g[r][c] = inCol ? (rnd() < .25 ? '.' : ' ') : '.:-=+*#%'[Math.min(7, Math.floor((r - h) / 1.6 + rnd() * 2))] } }
+  const tree = (cx, base) => { for (let r = 0; r < 26; r++) { const w = Math.round((r / 26) * 13) + 1; for (let d = -w; d <= w; d++) { const c = cx + d, rr = base - 30 + r; if (c >= 0 && c < cols && rr >= 0 && rr < rows && (c <= c0 || c >= c1) && rnd() < .7) g[rr][c] = '%#*+=-:'[Math.floor(rnd() * 7)] } } for (let r = 0; r < 5; r++) { const rr = base - 4 + r; if (rr < rows && cx < cols) g[rr][cx] = '#' } }
+  const lw = c0, rw = cols - c1
+  if (lw > 18) tree(Math.floor(lw / 2), Math.round(rows * .8))
+  if (rw > 18) tree(c1 + Math.floor(rw / 2), Math.round(rows * .8))
+  const owl = (c, r) => { const a = ['{o,o}', '/)__)', ' " " ']; a.forEach((s, i) => [...s].forEach((ch2, j) => { if (r + i < rows && c + j < cols && (c + j <= c0 || c + j >= c1)) g[r + i][c + j] = ch2 })) }
+  if (rw > 12) owl(c1 + 3, Math.round(rows * .55))
+  if (lw > 12) owl(Math.max(1, c0 - 8), Math.round(rows * .6))
+  for (let c = cols - 12; c < cols - 4; c++) for (let r = 3; r < 7; r++) if (c >= c1 && Math.hypot((c - (cols - 8)) / 2, r - 5) < 2.2) g[r][c] = '@'
+  document.getElementById('scene').textContent = g.map(r => r.join('')).join('\n')
+}
+window.addEventListener('resize', drawScene)
+render()
+</script>
+</body>
+</html>
