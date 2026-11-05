@@ -105,8 +105,8 @@ describe('Changes as T3’s diff', () => {
     expect(within(panel()).getByRole('combobox', { name: 'Diff scope' })).toHaveValue('working')
     // Header counts are the sum of every file's; a binary file counts nothing.
     expect(panel().querySelector('.changes-summary .changes-counts--chrome')).toHaveTextContent('+2 −1')
-    // The same totals wait at the head of the view bar, which CSS shows in a panel too narrow for them on the chrome.
-    expect(panel().querySelector('.changes-bar .changes-counts--bar')).toHaveTextContent('+2 −1')
+    // They are said once: the view bar under them does not repeat them, even in a narrow panel.
+    expect(panel().querySelector('.changes-bar .changes-counts')).toBeNull()
     expect([...panel().querySelectorAll('.changes-file')].map(item => item.getAttribute('data-file-path'))).toEqual(['docs/new.md', 'logo.png', 'src/app.ts'])
     expect(within(block('src/app.ts')).getByRole('img', { name: 'Modified' })).toHaveTextContent('M')
     expect(within(block('logo.png')).getByText('Binary file: no text diff.')).toBeInTheDocument()

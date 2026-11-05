@@ -25,15 +25,17 @@
 .changes-counts { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* What the totals leave out, beside them. It is the first thing to go when the line has no room: their tooltip still says it. */
 .changes-whitespace { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
-.changes-bar__totals { display: none; flex: none; align-items: center; gap: 6px; }
-/* Beside the window's controls a narrow panel's line of chrome holds the scope and its actions only; the totals
-   move to the view bar, which has the room. */
+/* A narrow panel gives its height to the lines. The totals stay beside the scope, where the line of chrome has room for
+   them, and the whitespace note goes to their tooltip. The bar under it is one row: the base, whose button says in
+   full what is compared, then the way through the files with All files as its icon, and View at the far end. */
 @container tools-body (max-width: 479px) {
-  .changes-counts--chrome, .changes-whitespace--chrome { display: none; }
-  .changes-bar__totals { display: flex; margin-left: auto; }
-  /* Two rows here: what is compared and its totals, then the way through the files with View at the far end. */
-  .changes-bar__view { width: 100%; margin-left: 0; }
-  .changes-view { margin-left: auto; }
+  .changes-whitespace--chrome { display: none; }
+  .changes-bar { gap: 2px; padding-left: 6px; }
+  .changes-bar .changes-base { flex: 0 1 auto; }
+  .changes-bar .changes-base__against { display: none; }
+  .changes-bar .changes-base__trigger { max-width: 100%; }
+  .changes-jump__all-text { display: none; }
+  .changes-jump__all { padding: 0 6px; }
 }
 .changes-counts__add { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
 .changes-counts__remove { color: var(--tt-error-text); }
@@ -266,6 +268,14 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-line__text[data-shape='list'] { padding-left: 1.2em; text-indent: -1.2em; }
 .changes-line__text[data-shape='fence'], .changes-line__text[data-shape='table'] { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .diff-md-mark { color: var(--tt-text-muted); font-weight: 400; }
+/* In a narrow panel the lines keep what room there is for words: a document reads a step smaller, its gutter and the
+   file's head grow tighter, so a paragraph wraps at about fifty characters rather than forty. */
+@container tools-body (max-width: 479px) {
+  .changes-diff__rows[data-reading='document'] { font-size: var(--tt-type-small); line-height: calc(var(--tt-type-small) * 1.55); }
+  .changes-diff__rows[data-reading='document'] .changes-line { column-gap: 4px; padding-right: 10px; }
+  .changes-diff__rows .changes-line__number:first-child { padding-left: 4px; }
+  .changes-file__head { min-height: 32px; }
+}
 
 /* The transcript's box around one change: its counts and Copy, then the same lines as Changes. Nothing scrolls sideways. */
 .changes-block { margin: 10px 0; overflow: hidden; border: 1px solid var(--tt-code-border, var(--tt-border-faint)); border-radius: var(--tt-radius-md); background: var(--tt-code-bg); color: var(--tt-code-text); font-size: var(--tt-type-small); }

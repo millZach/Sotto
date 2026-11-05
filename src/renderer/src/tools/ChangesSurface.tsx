@@ -129,7 +129,6 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
       {changes.scope.kind === 'branch'
         ? <ChangesBasePicker key={threadId} threadId={threadId} selected={changes.scope.base} resolved={review?.branch} refs={refs} onPick={base => setScope({ kind: 'branch', base })} />
         : <span className="changes-bar__fact">{changes.scope.kind === 'working' ? t`Against HEAD` : review?.turn ? turnWhen(review.turn.checkpoint.createdAt) : ''}</span>}
-      {files.length > 0 ? <span className="changes-bar__totals"><Totals {...totals} place="bar" hidesWhitespace={view.ignoreWhitespace} againstGitHub={changes.scope.kind === 'branch'} />{view.ignoreWhitespace ? <WhitespaceNote place="bar" /> : null}</span> : null}
       <div className="changes-bar__view" role="group" aria-label={t`Diff view`}>
         <span ref={setJumpSlot} className="changes-bar__jump" />
         <button type="button" className="changes-bar__word tt-focusable" disabled={files.length === 0}
@@ -159,7 +158,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
  * the window's own controls, so CSS shows the copy at the head of the view bar instead. Only one is ever displayed.
  */
 function Totals({ additions, deletions, place, hidesWhitespace, againstGitHub }: {
-  readonly additions: number; readonly deletions: number; readonly place: 'chrome' | 'bar'; readonly hidesWhitespace: boolean
+  readonly additions: number; readonly deletions: number; readonly place: 'chrome'; readonly hidesWhitespace: boolean
   /** A branch's totals are the ones a reader holds up against its pull request. */
   readonly againstGitHub: boolean
 }): ReactNode {
@@ -175,7 +174,7 @@ function Totals({ additions, deletions, place, hidesWhitespace, againstGitHub }:
 }
 
 /** Says beside the totals what they leave out: the words the view's own row turns on, in sight when that menu is shut. */
-function WhitespaceNote({ place }: { readonly place: 'chrome' | 'bar' }): ReactNode {
+function WhitespaceNote({ place }: { readonly place: 'chrome' }): ReactNode {
   const { t } = useLingui()
   // The totals' own words already say it to a screen reader.
   return <span className={`changes-whitespace changes-whitespace--${place}`} aria-hidden="true">{t({ message: 'whitespace hidden', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on.' })}</span>
@@ -263,8 +262,9 @@ function FileJump({ files, current, onShow, allFiles }: {
   const previous = files[index - 1], next = files[index + 1]
   const place = (index + 1).toLocaleString(), total = files.length.toLocaleString()
   return <>
-    {allFiles ? <button ref={allFiles.button} type="button" className="changes-bar__word changes-jump__all tt-focusable" aria-expanded={allFiles.open} title={t`Show every file in this comparison`} onClick={allFiles.onPress}>
-      <ListTree size={15} aria-hidden="true" />{t({ message: 'All files', comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel.' })}</button> : null}
+    {allFiles ? <button ref={allFiles.button} type="button" className="changes-bar__word changes-jump__all tt-focusable" aria-expanded={allFiles.open} title={t`Show every file in this comparison`} onClick={allFiles.onPress}
+      aria-label={t({ message: 'All files', comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel.' })}>
+      <ListTree size={15} aria-hidden="true" /><span className="changes-jump__all-text" aria-hidden="true">{t({ message: 'All files', comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel.' })}</span></button> : null}
     <span className="changes-jump__place">{t({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' })}</span>
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!previous} aria-label={t`Previous file`} title={previous ? t({ message: `Previous file: ${previous.path}`, comment: '{previous.path} is a file\'s path.' }) : t`Previous file`} onClick={() => { if (previous) onShow(previous.path) }}><ChevronUp size={15} aria-hidden="true" /></button>
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!next} aria-label={t`Next file`} title={next ? t({ message: `Next file: ${next.path}`, comment: '{next.path} is a file\'s path.' }) : t`Next file`} onClick={() => { if (next) onShow(next.path) }}><ChevronDown size={15} aria-hidden="true" /></button>

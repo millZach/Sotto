@@ -169,9 +169,11 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
       const tree = panel.getByRole('listbox', { name: 'Files in this comparison' })
       await expect(tree.getByRole('option')).toHaveCount(3)
       const blockAtTop = (path: string) => panel.evaluate((element, path) => {
-        const box = element.querySelector('.changes-files')!.getBoundingClientRect()
+        const list = element.querySelector('.changes-files')!, box = list.getBoundingClientRect()
         const block = element.querySelector(`.changes-file[data-file-path="${path}"]`)!.getBoundingClientRect()
-        return Math.abs(block.top - box.top) <= 2 || box.bottom - block.bottom < 2
+        // A list that holds every file without scrolling has nowhere to move it; the block need only be in view.
+        const still = list.scrollHeight <= list.clientHeight + 1 && block.top >= box.top - 1 && block.bottom <= box.bottom + 1
+        return Math.abs(block.top - box.top) <= 2 || box.bottom - block.bottom < 2 || still
       }, path)
       await expect(tree.locator('[tabindex="0"]')).toBeFocused()
       await page.keyboard.press('End')
