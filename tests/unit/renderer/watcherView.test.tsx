@@ -15,8 +15,11 @@ import { SidebarChromeProvider, SidebarFoot } from '../../../src/renderer/src/ag
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { withoutRoomWatcher } from '../../../src/renderer/src/agents/watcherVisibility'
+import { describeThread } from '../../../src/renderer/src/agents/threadFacts'
+import { watcherOverview } from '../../../src/shared/watcherOverview'
 import { WatcherRoomProvider, threadForTarget } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
+import { WatcherGlance } from '../../../src/renderer/src/watcher/WatcherGlance'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import type { UpdateControlProps } from '../../../src/renderer/src/features/updates/UpdateControl'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
@@ -563,14 +566,50 @@ describe("Watcher's room", () => {
     expect(within(pane).getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
   })
 
-  it('names each thread that needs the user and why, under the header', async () => {
+  it('opens the needs-you list from its count, names each reason, and Escape returns to the count', async () => {
     renderRoom(stateWithWatcher(), roomState())
     await paneReady()
-    const line = screen.getByRole('heading', { level: 2, name: '2 need you' }).closest('section')!
+    const trigger = screen.getByRole('button', { name: 'Show 2 threads that need you' })
+    expect(screen.queryByRole('dialog', { name: 'Threads that need you' })).toBeNull()
+    fireEvent.click(trigger)
+    const line = screen.getByRole('dialog', { name: 'Threads that need you' })
+    expect(within(line).getAllByRole('button')[0]).toHaveFocus()
     expect(within(line).getAllByRole('button').map(button => button.getAttribute('aria-label')))
       .toEqual(['Open Visual gate flake to answer its permission', 'Open Streaming WAV stall at its failed turn'])
     expect(line).toHaveTextContent('permission')
     expect(line).toHaveTextContent('last turn failed')
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Threads that need you' })).toBeNull()
+    expect(trigger).toHaveFocus()
+    fireEvent.click(trigger)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('dialog', { name: 'Threads that need you' })).toBeNull()
+  })
+
+  it('keeps returning requests collapsed after the list empties and returns focus when a row disappears', () => {
+    const state = stateWithWatcher()
+    const entries = watcherOverview(state, NOW).filter(row => row.group === 'Needs you')
+      .map(overview => ({ overview, facts: describeThread(state, overview.thread, NOW) }))
+    const onOpen = vi.fn(), onShowAll = vi.fn()
+    const tree = (waiting: typeof entries) => <WatcherGlance entries={waiting} onOpen={onOpen} onShowAll={onShowAll} allThreadsOpen={false} />
+    const view = render(tree(entries))
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 threads that need you' }))
+    expect(screen.getByRole('dialog', { name: 'Threads that need you' })).toBeInTheDocument()
+    // A provider update clears the requests without a pointer or focus event.
+    view.rerender(tree([]))
+    view.rerender(tree(entries.slice(0, 1)))
+    expect(screen.queryByRole('dialog', { name: 'Threads that need you' })).toBeNull()
+    const count = screen.getByRole('button', { name: 'Show 1 thread that needs you' })
+    expect(count).toHaveAttribute('aria-expanded', 'false')
+
+    view.rerender(tree(entries))
+    fireEvent.click(count)
+    const row = within(screen.getByRole('dialog', { name: 'Threads that need you' })).getAllByRole('button')[0]!
+    expect(row).toHaveFocus()
+    view.rerender(tree(entries.slice(1)))
+    expect(row).not.toBeInTheDocument()
+    expect(count).toHaveFocus()
+    expect(count).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('names a thread whose prototype waits for review in the needs-you line, and the Overview opens its first page (ADR-0108)', async () => {
@@ -584,7 +623,8 @@ describe("Watcher's room", () => {
     try {
       renderRoom(state, roomState())
       await paneReady()
-      const line = screen.getByRole('heading', { level: 2, name: '3 need you' }).closest('section')!
+      fireEvent.click(screen.getByRole('button', { name: 'Show 3 threads that need you' }))
+      const line = screen.getByRole('dialog', { name: 'Threads that need you' })
       const name = within(line).getByRole('button', { name: 'Open Grok voice previews to review its prototype' })
       expect(name.closest('li')).toHaveTextContent('prototype to review')
       fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
@@ -606,7 +646,8 @@ describe("Watcher's room", () => {
       status: 'idle', messages: [], requests: [{ id: `asks-${index}-question`, kind: 'question', text: 'Which branch?', options: [] }] })
     renderRoom(state, roomState())
     await paneReady()
-    const line = screen.getByRole('heading', { level: 2, name: '7 need you' }).closest('section')!
+    fireEvent.click(screen.getByRole('button', { name: 'Show 7 threads that need you' }))
+    const line = screen.getByRole('dialog', { name: 'Threads that need you' })
     expect(within(line).getAllByRole('button')).toHaveLength(6)
     const more = within(line).getByRole('button', { name: '2 more need you. Show all threads' })
     more.focus()
@@ -683,6 +724,8 @@ describe("Watcher's room", () => {
   it('opens a thread beside Watcher at what it waits on, reads it while it shows, and Escape closes it back to its opener', async () => {
     const { command } = renderRoom(stateWithWatcher(), roomState())
     await paneReady()
+    const trigger = screen.getByRole('button', { name: 'Show 2 threads that need you' })
+    fireEvent.click(trigger)
     const name = screen.getByRole('button', { name: 'Open Visual gate flake to answer its permission' })
     name.focus()
     fireEvent.click(name)
@@ -697,7 +740,7 @@ describe("Watcher's room", () => {
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
     fireEvent.keyDown(beside.querySelector('.agent-request[data-kind="permission"]')!, { key: 'Escape' })
     expect(screen.queryByRole('region', { name: 'Visual gate flake' })).toBeNull()
-    await waitFor(() => expect(name).toHaveFocus())
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 
   it('stops reading a beside thread when its pane closes before Watcher exists, so main does not count it as seen', async () => {
@@ -842,6 +885,7 @@ describe("Watcher's room", () => {
     ]
     renderRoom(state, roomState())
     await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 threads that need you' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
     const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
     const failed = within(beside).getByRole('button', { name: 'Failed after 2m 04s · 1 step' })
@@ -867,6 +911,7 @@ describe("Watcher's room", () => {
       // Closing hands focus back on the next turn of the event loop; let it land before the next press.
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
       // Opened at its failed turn, it shows the end, where that turn ended, with the transcript focused.
+      fireEvent.click(screen.getByRole('button', { name: 'Show 2 threads that need you' }))
       fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
       await screen.findByRole('region', { name: 'Streaming WAV stall' })
       await waitFor(() => expect(transcript()).toHaveFocus())
@@ -882,6 +927,7 @@ describe("Watcher's room", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('threads'))
     expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'footer-links' })
     expect(screen.queryByRole('region', { name: 'Footer links' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 threads that need you' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
     const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
     fireEvent.click(within(beside).getByRole('button', { name: 'Open Streaming WAV stall in Threads' }))

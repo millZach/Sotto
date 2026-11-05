@@ -717,8 +717,10 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} update={update} tabs={tabs} />
-    <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
-    {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
+    {needs.length > 0 || crossMachine ? <div className="watcher-status">
+      {needs.length > 0 ? <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
+      {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
+    </div> : null}
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status tt-paragraph' : 'watcher-room__status tt-paragraph'} role={alert ? 'alert' : 'status'}>{text}</p></>

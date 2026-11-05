@@ -878,6 +878,10 @@ msgstr ""
 msgid "{waiting, plural, one {# needs you} other {# need you}}"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "{waiting, plural, one {Show # thread that needs you} other {Show # threads that need you}}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "{waitingCount, plural, =1 {One is waiting on {hosts} to confirm.} other {# are waiting on {hosts} to confirm.}}"
 msgstr ""
@@ -2961,6 +2965,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Hide the handover"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Hide threads that need you"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
@@ -7212,6 +7220,10 @@ msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Threads keep working while clients update."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Threads that need you"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx

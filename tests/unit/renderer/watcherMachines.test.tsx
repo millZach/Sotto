@@ -124,9 +124,9 @@ describe('The machines line in Watcher’s room', () => {
     expect(readMachines).toHaveBeenCalledTimes(1)
     expect(wide().getByRole('button', { name: 'This computer, 2 working. Show this computer’s load and what runs there.' })).toHaveAttribute('aria-expanded', 'false')
     expect(wide().getByRole('button', { name: 'forge, 1 working, busy. Show forge’s load and what runs there.' })).toBeInTheDocument()
-    expect(document.querySelector('.watcher-machines__wide')).toHaveTextContent('This computer 2 working·forge 1 working, busy')
+    expect(document.querySelector('.watcher-machines__wide')).toHaveTextContent('This computer 2 workingforge 1 working, busy')
     // The narrow line keeps only the machine with a problem, and counts the rest.
-    expect(document.querySelector('.watcher-machines__narrow')).toHaveTextContent('forge 1 working, busy·1 more')
+    expect(document.querySelector('.watcher-machines__narrow')).toHaveTextContent('forge 1 working, busy1 more')
     expect(narrow().getByRole('button', { name: '1 more machine. Show every machine' })).toBeInTheDocument()
   })
 
@@ -286,7 +286,7 @@ describe('The machines line in Watcher’s room', () => {
     // The last read, from before forge connected, says it was not connected and knows nothing of studio.
     show([local(), forge({ connected: false, factsState: 'not-connected', facts: null, load: null, memoryState: 'unknown', cpuState: 'unknown' })], [], {}, { hosts: hosts.bridge })
     await act(async () => undefined)
-    expect(document.querySelector('.watcher-machines__wide')).toHaveTextContent('This computer 0 working·forge 0 working·studio not connected')
+    expect(document.querySelector('.watcher-machines__wide')).toHaveTextContent('This computer 0 workingforge 0 workingstudio not connected')
   })
 
   it('shows This computer alone, with its count, where the bridge offers no machines read', () => {

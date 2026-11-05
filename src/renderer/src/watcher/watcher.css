@@ -104,7 +104,7 @@
   background: radial-gradient(130px 70px at calc(26px + var(--owl-sky-inset)) 22px, var(--tt-owl-glow), transparent 72%), var(--tt-owl-room-night);
   mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); mask-composite: intersect; }
 .watcher-room__stars { position: absolute; top: 0; left: 0; width: calc(320px + var(--owl-sky-inset)); max-width: 100%; height: 92px; overflow: hidden; }
-.watcher-pane > :is(.watcher-head, .watcher-glance) { position: relative; }
+.watcher-pane > :is(.watcher-head, .watcher-status) { position: relative; }
 
 /* ---------- Watcher's header ---------- */
 .watcher-head { padding-left: 14px; }
@@ -247,54 +247,59 @@
 .watcher-context__aside { display: block; color: var(--tt-text-muted); }
 .watcher-context__none { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 
-/* ---------- The needs-you line ---------- */
-/* One quiet line under the header, on the conversation's own column, gone when nothing waits. */
-.watcher-glance { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 4px 18px; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 3px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-small); }
-.watcher-glance__lead { margin: 0; color: var(--watcher-needs-ink); font-size: var(--tt-type-small); font-weight: 600; white-space: nowrap; }
-.watcher-glance__names { display: contents; }
-.watcher-glance__names > li { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
-.watcher-glance .watcher-row__ring { align-self: center; width: 8px; height: 8px; }
-.watcher-glance__name { display: inline-flex; min-width: 0; max-width: 260px; padding: 0; line-height: inherit; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text); font: inherit; font-weight: 500; white-space: nowrap;
-  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-text) 30%, transparent); text-underline-offset: 3px; }
-.watcher-glance__name:hover { text-decoration-color: currentColor; }
-.watcher-glance__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.watcher-glance__why { white-space: nowrap; }
-@media (max-width: 980px) {
-  .watcher-glance { margin: 0 18px; }
-  .watcher-glance__why { display: none; }
+/* ---------- The needs-you and machines strip ---------- */
+/* Drake's pick B, November 5, 2026: one quiet strip. The needs-you count opens the requests; machine activity sits
+   beside it where it fits. No permanent underlines or rule. The strip shares the conversation's column. */
+.watcher-status { position: relative; z-index: 6; display: flex; flex: none; flex-wrap: wrap; align-items: baseline; gap: 6px 28px;
+  margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 6px 0 12px; }
+.watcher-glance { flex: none; color: var(--tt-text); font-size: var(--tt-type-small); }
+.watcher-glance__lead { display: inline-flex; align-items: center; gap: 9px; margin: 0; padding: 4px 0; border: 0; border-radius: var(--tt-radius-mark);
+  background: transparent; color: var(--watcher-needs-ink); font: inherit; font-weight: 600; line-height: 24px; white-space: nowrap; }
+.watcher-glance__lead:hover { color: var(--tt-text); }
+.watcher-glance__chevron { width: 6px; height: 6px; margin: 0 3px 4px 2px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.watcher-glance__lead[aria-expanded='true'] .watcher-glance__chevron { margin-bottom: 0; transform: rotate(225deg); }
+.watcher-glance__panel { position: absolute; top: 100%; left: 0; z-index: 10; width: min(520px, 100%); max-height: min(340px, calc(100vh - 180px)); overflow-y: auto;
+  padding: 12px 20px; border-radius: var(--tt-radius-inset); background: var(--tt-card); box-shadow: var(--tt-shadow-overlay);
+  scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.watcher-glance__names { margin: 0; padding: 0; list-style: none; }
+.watcher-glance__name { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: calc(100% + 16px); min-height: 32px;
+  margin: 0 -8px; padding: 3px 8px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; line-height: 22px; text-align: left; }
+.watcher-glance__name:hover, .watcher-glance__name:focus-visible { background: var(--tt-hover); }
+.watcher-glance .watcher-row__ring { width: 8px; height: 8px; }
+.watcher-glance__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.watcher-glance__why { color: var(--tt-text-2); font-size: var(--tt-type-caption); white-space: nowrap; }
+.watcher-glance__more { padding: 4px 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); line-height: 24px; }
+.watcher-glance__more:hover { text-decoration: underline; text-underline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .watcher-glance__panel { animation: watcher-glance-open 120ms ease-out; }
+  :root:not([data-reduced-motion='on']) .watcher-glance__chevron { transition: transform 120ms ease; }
 }
+@keyframes watcher-glance-open { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
 
-/* ---------- The machines line (#1032) ---------- */
-/* Zach's pick D "Names": one plain line under the header, set as the needs-you line is, always there while Work across
-   machines is on. Each name is an underlined text button; a problem only adds words after its machine's count, in the
-   needs-you line's warning ink. Names and counts never change colour, and nothing is a pill, chip or meter (ADR-0110).
-   A narrow room wraps between machines, never inside one, and below 600px keeps only the machines with a problem. */
-.watcher-glance:has(+ .watcher-machines) { padding-bottom: 2px; box-shadow: none; }
-.watcher-glance + .watcher-machines { padding-top: 0; }
-.watcher-machines { position: relative; z-index: 6; flex: none; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 3px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline);
-  color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
-/* A machine's name and count stay together on one line. A long saved name gives way to an ellipsis, short enough to
-   leave its count room on the line (the button's name and title keep it whole); a problem's words may wrap, between
-   words. Lines break between machines, at the separators, before anywhere else. */
-.watcher-machines__machine { white-space: nowrap; }
-.watcher-machines__sep { padding: 0 7px; }
-.watcher-machines__name, .watcher-machines__more { display: inline; max-width: 260px; padding: 0; line-height: inherit; vertical-align: baseline; border: 0; border-radius: var(--tt-radius-mark); background: transparent;
-  color: var(--tt-text); font: inherit; font-weight: 500; white-space: nowrap; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-text) 30%, transparent);
-  text-underline-offset: 3px; }
-.watcher-machines__more { color: var(--tt-text-2); }
-.watcher-machines__name { display: inline-flex; max-width: min(260px, calc(100% - 12em)); vertical-align: top; }
-.watcher-machines__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.watcher-machines__words { white-space: normal; }
-.watcher-machines__name:hover, .watcher-machines__name[aria-expanded='true'], .watcher-machines__more:hover { text-decoration-color: currentColor; }
-.watcher-machines__words { color: var(--watcher-needs-ink); }
+/* Every machine retains its dialog and data-host anchor. Only a problem takes warning ink (ADR-0110). */
+.watcher-machines { position: relative; flex: 1 1 240px; min-width: 0; margin-left: auto; color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 24px; }
+.watcher-machines__wide, .watcher-machines__narrow { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 4px 16px; }
+.watcher-machines__machine { display: inline-flex; align-items: baseline; min-width: 0; max-width: 100%; white-space: nowrap; text-align: left; }
+.watcher-machines__name, .watcher-machines__more { display: inline; padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text-2); font: inherit; line-height: inherit; vertical-align: baseline; }
+.watcher-machines__name { display: inline-flex; min-width: 0; max-width: 230px; margin-right: 4px; }
+.watcher-machines__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watcher-machines__name:hover, .watcher-machines__name[aria-expanded='true'], .watcher-machines__more:hover { color: var(--tt-text); text-decoration: underline; text-underline-offset: 3px; }
+/* Keep a warned machine's name readable while its longer problem words wrap beside the count. */
+.watcher-machines__machine:has(.watcher-machines__words) .watcher-machines__name { flex-shrink: 0; }
+.watcher-machines__count { flex: none; }
+.watcher-machines__words { flex: 0 1 auto; min-width: 0; color: var(--watcher-needs-ink); white-space: normal; overflow-wrap: anywhere; }
 .watcher-machines__narrow { display: none; }
+.watcher-status > .watcher-move-suggestion { flex-basis: 100%; margin: 0; }
 @container thread-pane (width < 600px) {
+  .watcher-machines { flex-basis: 100%; }
+  .watcher-machines__machine:has(.watcher-machines__words) .watcher-machines__name { max-width: min(230px, 30%); }
+  .watcher-machines__wide, .watcher-machines__narrow { justify-content: flex-start; }
   .watcher-machines:not([data-all]) .watcher-machines__wide { display: none; }
-  .watcher-machines:not([data-all]) .watcher-machines__narrow { display: inline; }
+  .watcher-machines:not([data-all]) .watcher-machines__narrow { display: flex; }
 }
-@media (max-width: 980px) { .watcher-machines { margin: 0 18px; } }
-/* In a short window the line's height comes out of the handover's words, so the composer keeps its room. */
-@media (max-height: 620px) { .watcher-pane:has(> .watcher-machines) .watcher-handover__text { max-height: min(200px, 21vh); } }
+@media (max-width: 980px) { .watcher-status { margin: 0 18px; } }
+/* The strip may wrap in a short room; the handover then gives the composer its space. */
+@media (max-height: 620px) { .watcher-pane:has(> .watcher-status) .watcher-handover__text { max-height: min(200px, 21vh); } }
 
 /* A machine's panel: under its name, over the conversation, as the All threads list sits over the room. */
 .watcher-machine-panel { position: absolute; z-index: 30; display: flex; flex-direction: column; width: min(340px, 100%); padding: 14px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated);

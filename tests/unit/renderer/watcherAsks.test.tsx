@@ -299,6 +299,7 @@ describe('the needs-you line', () => {
     const id = `ask-${sequence}`
     renderRoom(roomState([place(id)]), agentState([question(id)]))
     const card = await askCard('Question from Footer links')
+    fireEvent.click(await screen.findByRole('button', { name: /^Show \d+ threads? that needs? you$/ }))
     const name = await screen.findByRole('button', { name: 'Go to the question from Footer links in this conversation' })
     fireEvent.click(name)
     expect(card).toHaveFocus()
@@ -309,6 +310,7 @@ describe('the needs-you line', () => {
     const id = `ask-${sequence}`
     renderRoom(roomState([]), agentState([question(id)]))
     await paneReady()
+    fireEvent.click(await screen.findByRole('button', { name: /^Show \d+ threads? that needs? you$/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Open Footer links to answer its question' }))
     await waitFor(() => expect(roomView.get().besideId).toBe('footer-links'))
   })

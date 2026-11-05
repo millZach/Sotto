@@ -1,4 +1,4 @@
-import React, { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Laptop, Server, X } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
@@ -192,8 +192,8 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
 }
 
 /**
- * The machines line under Watcher's header (#1032, Zach's pick D "Names" on October 23, 2026), always shown while Work
- * across machines is on: "This computer 2 working · forge 3 working". Each name is a text button that opens that
+ * The machines line beside the needs-you count (Drake's pick B, November 5, 2026), always shown while Work
+ * across machines is on: "This computer 2 working" and "forge 3 working". Each name is a text button that opens that
  * machine's panel; a problem adds words after the count in the needs-you line's warning ink. A narrow room drops the
  * "starting" counts and names only the machines with a problem, then counts the rest, which a press shows.
  */
@@ -259,7 +259,7 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
     // The count and the problem's words are one list in the reader's language, the words drawn in the warning ink.
     const whole = listWords([count, ...entry.problems.map(problemWords)])
     const words = entry.problems.length === 0 ? '' : count && whole.startsWith(count) ? whole.slice(count.length) : ` ${whole}`
-    return <span className="watcher-machines__machine" data-host={entry.thisComputer ? THIS_COMPUTER : entry.hostId}>
+    return <span key={keyOf(entry)} className="watcher-machines__machine" data-host={entry.thisComputer ? THIS_COMPUTER : entry.hostId}>
       <button type="button" className="watcher-machines__name tt-focusable" aria-haspopup="dialog" aria-expanded={open === keyOf(entry)}
         aria-label={machineLabel(entry, withStarting, waiting)} title={lineText(entry, withStarting, waiting)} onClick={event => toggle(keyOf(entry), event.currentTarget)}>
         <span>{machineName(entry)}</span></button>
@@ -267,18 +267,15 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
       {words ? <span className="watcher-machines__words" aria-hidden="true">{words}</span> : null}
     </span>
   }
-  const run = (list: readonly MachineEntry[], withStarting: boolean): ReactNode => list.map((entry, index) => <Fragment key={keyOf(entry)}>
-    {index > 0 ? <><span className="watcher-machines__sep" aria-hidden="true">·</span><wbr /></> : null}{name(entry, withStarting)}
-  </Fragment>)
+  const run = (list: readonly MachineEntry[], withStarting: boolean): ReactNode => list.map(entry => name(entry, withStarting))
   const opened = entries.find(entry => keyOf(entry) === open) ?? null
   const changeDefault = app === null ? null : (): void => { setOpen(null); app.actions.navigate('settings', 'settings-new-workers') }
   return <><div ref={line} className="watcher-machines" role="group" aria-labelledby={label} data-all={all || undefined}>
     <span id={label} className="tt-visually-hidden">{t`Machines and what works on each`}</span>
     <span className="watcher-machines__wide">{run(entries, true)}</span>
     <span className="watcher-machines__narrow">{run(short.shown, false)}
-      {short.more > 0 && short.shown.length > 0 ? <><span className="watcher-machines__sep" aria-hidden="true">·</span><wbr />
-        <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all} aria-label={moreLabel(short.more)}
-          onClick={() => setAll(true)}>{moreWords(short.more)}</button></> : null}
+      {short.more > 0 && short.shown.length > 0 ? <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all} aria-label={moreLabel(short.more)}
+          onClick={() => setAll(true)}>{moreWords(short.more)}</button> : null}
       {short.more > 0 && short.shown.length === 0 ? <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all}
         aria-label={calmLabel(entries, allWaiting)} onClick={() => setAll(true)}>{calmWords(entries, allWaiting)}</button> : null}
     </span>
