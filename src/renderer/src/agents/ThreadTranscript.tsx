@@ -505,13 +505,11 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const steps = records.filter(isStep)
   // Watcher's conversation keeps its own line and rows.
   const sayOnce = speaker !== 'watcher'
-  // A fold of nothing but commands counts them in what they did, "Ran 3 commands", so the line says the count once.
-  const counted = sayOnce && steps.every(step => step.kind === 'command')
   // A fold that holds one group and no replies has no need of that group's line: it would say what the Worked for line says.
   const bare = sayOnce && !work.length && folded(groups).length === 1
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={counted ? 0 : steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>

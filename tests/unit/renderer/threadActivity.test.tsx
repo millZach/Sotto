@@ -125,8 +125,8 @@ describe('settled activity in the transcript', () => {
     expect([...transcript.querySelectorAll('.thread-message')].map(message => message.textContent)).toEqual([
       expect.stringContaining('Check the parser.'), expect.stringContaining('The parser is fine.'),
     ])
-    fireEvent.click(within(transcript).getByRole('button', { name: 'Worked for 1m 05s · Ran 1 command' }))
-    const work = within(transcript).getByRole('region', { name: 'Worked for 1m 05s · Ran 1 command' })
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Worked for 1m 05s · 1 step · Ran 1 command' }))
+    const work = within(transcript).getByRole('region', { name: 'Worked for 1m 05s · 1 step · Ran 1 command' })
     expect(work).toHaveTextContent('Looking at the parser first.')
     expect(within(work).getByRole('button', { name: 'Ran 1 command' })).toBeVisible()
   })
@@ -289,7 +289,7 @@ describe('the running turn', () => {
     })
     expect(within(transcript).queryByTestId('thread-activity-live')).not.toBeInTheDocument()
     // The steps were left open, so the finished turn's fold starts open.
-    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s · Ran 9 commands' })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s · 9 steps · Ran 9 commands' })).toHaveAttribute('aria-expanded', 'true')
   })
 })
 
