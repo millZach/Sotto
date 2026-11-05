@@ -30,6 +30,12 @@
 @media (min-resolution: 2dppx) { .threads-view .thread-pane { --threads-pane-edge: inset 0 .5px 0 color-mix(in oklab, var(--tt-accent) 50%, transparent); } }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] { box-shadow: var(--threads-pane-edge); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) .thread-workspace__head h2 { color: var(--tt-text-2); }
+/* The other panes keep every control in its place and step back with their titles: the Git action loses its outline and
+   its words and Watch take the muted ink, so the window has one outlined control, the focused pane's, and two panes side
+   by side read as one row of presses and one quieter row. Nothing moves or goes: the pointer over that header, or the
+   focus inside it, gives the row its full ink, and a thread Watcher watches stays lit. */
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action, .git-action__more) { border-color: transparent; }
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) > .thread-workspace__head:not(:hover, :focus-within) :is(.git-action__quick, .watch-toggle:not([aria-pressed='true'])) { color: var(--tt-text-muted); }
 
 .threads-view .thread-panes__divider { position: absolute; z-index: 2; touch-action: none; }
 .threads-view .thread-panes__divider[data-axis='columns'] { cursor: col-resize; }
