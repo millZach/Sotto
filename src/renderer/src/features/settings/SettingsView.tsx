@@ -74,7 +74,6 @@ import { RecordingLimitSetting } from './RecordingLimitSetting'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { ClearThreadsSettings } from './ClearThreadsSettings'
-import { ThreadTipsSetting } from './ThreadTipsSetting'
 import { DynamicThreadsSettings } from './DynamicThreadsSettings'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
 import { CouncilSettings } from './CouncilSettings'
@@ -287,7 +286,6 @@ export function SettingsView({
   // Restart stopped threads (ADR-0144; Owl only) stands where Resume threads after a restart was, and reads its own setting.
   const restartStopped = useOwlFeature(RESTART_STOPPED_FEATURE)
   const nextPromptOn = useOwlFeature('next-prompt')
-  const threadTipsOn = useOwlFeature('thread-tips')
   const updateAll = useOwlFeature('update-all')
   const [clearFailure, setClearFailure] = useState<LaterWords | null>(null)
   const [resetFailure, setResetFailure] = useState<LaterWords | null>(null)
@@ -500,7 +498,7 @@ export function SettingsView({
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
   const dynamicThreadsOn = useOwlFeature('dynamic-threads')
-  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'local-apps': localAppsOn }
+  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'local-apps': localAppsOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -777,8 +775,6 @@ export function SettingsView({
                   {/* ADR-0132, ADR-0173: an Owl feature; the switch is read for every ask, and told to connected hosts. */}
                   {nextPromptOn ? <Toggle setting="next-prompt" label={t`Suggest a next prompt`} checked={settings.nextPromptSuggestions} onCheckedChange={checked => void save({ nextPromptSuggestions: checked })}
                     description={t`When a turn ends, or you open a new thread, the thread's own model suggests what to ask next. For a new thread it reads the project's recent work and your latest thread titles there. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one.`} /> : null}
-                  {/* ADR-0159: an Owl feature; the working line reads the switch. */}
-                  {threadTipsOn ? <ThreadTipsSetting checked={settings.threadTips} onSave={save} /> : null}
                   {/* ADR-0144: an Owl feature, read when Sotto next starts; in Resume threads after a restart's place. */}
                   {restartStopped ? <Toggle setting="restart-stopped-threads" label={t`Restart stopped threads`} checked={settings.restartStoppedThreads} onCheckedChange={checked => void save({ restartStoppedThreads: checked })}
                     description={settings.restartStoppedThreads

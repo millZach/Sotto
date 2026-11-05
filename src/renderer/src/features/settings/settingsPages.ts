@@ -66,7 +66,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dynamic-threads' | 'inline-media' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'thread-tips' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
+export type SettingGate = 'dynamic-threads' | 'inline-media' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -155,7 +155,6 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'command-summaries', label: msg`Generated command summaries`, section: 'settings-agents', words: 'permission approve explain' },
     { id: 'next-prompt', label: msg`Suggest a next prompt`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
     { id: 'dynamic-threads', label: msg`Dynamic threads`, section: 'settings-agents', words: 'overseer overseeing choose model limit providers allowed list effort workers', gate: 'dynamic-threads' },
-    { id: 'thread-tips', label: msg`Show tips`, section: 'settings-agents', words: 'tips hints shortcuts skills hidden again', gate: 'thread-tips' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
     { id: 'restart-stopped-threads', label: msg`Restart stopped threads`, section: 'settings-agents', words: 'usage limit resets resume continue carry on after a restart', gate: 'restart-stopped-threads' },
     { id: 'web-links', label: msg`Web links in threads`, section: 'settings-browser', words: 'open links browser' },

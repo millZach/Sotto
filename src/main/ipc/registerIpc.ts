@@ -165,7 +165,6 @@ const settingKeys = [
   'threadTitles',
   'commandSummaries',
   'nextPromptSuggestions',
-  'threadTips',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
   'worktreeCleanup',

@@ -118,8 +118,6 @@ async function openThread(page: Page, title: string): Promise<void> {
   const row = page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).first()
   await row.click({ position: { x: 16, y: 12 } })
   await expect(focusedPane(page).getByRole('heading', { name: title, exact: true })).toBeVisible()
-  // A running turn's tip is chosen from a list its skills join once they are read, so they are read before the next thread opens.
-  await page.waitForTimeout(600)
 }
 
 /** Puts a transcript's scroll where a state names it, and holds until the transcript stops moving it. */
@@ -170,7 +168,7 @@ async function seedThreads(launched: LaunchedSotto, repository: EvidenceReposito
     await page.waitForTimeout(500)
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.filter(thread => thread.finishedUnread === true).length)).toBe(0)
   }).toPass({ timeout: 60_000 })
-  // A clean renderer, as after a restart: what it chose while the threads were being told (each one's greeting and tip) is forgotten.
+  // A clean renderer, as after a restart: what it chose while the threads were being told (each one's greeting) is forgotten.
   await page.reload()
   await page.waitForLoadState('domcontentloaded')
   await openThreads(page)

@@ -108,7 +108,6 @@ const customSettings = {
   threadTitles: false,
   commandSummaries: true,
   nextPromptSuggestions: false,
-  threadTips: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
@@ -217,15 +216,18 @@ describe('settings', () => {
     expect(parseSettings({}).nextPromptSuggestions).toBe(true)
     expect(parseSettings({ nextPromptSuggestions: false }).nextPromptSuggestions).toBe(false)
     expect(parseSettings({ nextPromptSuggestions: 'no' }).nextPromptSuggestions).toBe(true)
-    expect(parseSettings({}).threadTips).toBe(true)
-    expect(parseSettings({ threadTips: false }).threadTips).toBe(false)
-    expect(parseSettings({ threadTips: 'no' }).threadTips).toBe(true)
   })
   it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
     expect(parsed).toEqual(DEFAULT_SETTINGS)
     expect('watcherInFlightLimit' in parsed).toBe(false)
     expect('watcherInFlightLimit' in settingsSchema.shape).toBe(false)
+  })
+  it('reads a saved Show tips as nothing, since Sotto no longer has tips (ADR-0193)', () => {
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, threadTips: false })
+    expect(parsed).toEqual(DEFAULT_SETTINGS)
+    expect('threadTips' in parsed).toBe(false)
+    expect('threadTips' in settingsSchema.shape).toBe(false)
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -536,7 +538,6 @@ describe('settings', () => {
       threadTitles: true,
       commandSummaries: true,
       nextPromptSuggestions: true,
-      threadTips: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },

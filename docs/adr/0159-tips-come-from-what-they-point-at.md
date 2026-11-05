@@ -2,6 +2,8 @@
 
 ## Status
 
+Superseded November 5, 2026, by [ADR-0193](0193-tips-are-removed.md). Zach, answering a prototype card about where a thread's tip should sit: "Remove tips, not a useful feature." Tips, their setting and their weekly check are gone from Sotto. What follows records the decision as it was.
+
 Accepted October 28, 2026. The owner asked for tips like the one Claude Code shows under its spinner: about Sotto, and about the commands, skills and tools of the thread's provider, Claude Code and Codex first, Sotto's own tips for every other provider (#1767). They show while a thread works and on Watcher's page while Watcher works, are on by default with a switch in Settings, and a tip the user hid or used does not come back. From `docs/prototypes/thread-tips-prototype.html` (tag `prototype/thread-tips`) the owner picked B, a row under the working words, with a lightbulb in place of the word "Tip"; one tip per turn; and a Show hidden tips again button beside the switch. An Owl feature, `thread-tips` (ADR-0072). **Number provisional until merge** (docs/agents/domain.md).
 
 ## Context

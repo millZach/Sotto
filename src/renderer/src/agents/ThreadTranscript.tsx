@@ -50,7 +50,6 @@ import { ContinuedFromNote, ContinuedInNotes } from './ContinueThread'
 import { ContinueLinksContext, continuedInByTurn, useContinueEnabled, type ContinueLinks } from './continuations'
 import { StartHandoverCard, ThreadStartContext, ThreadStartNote, threadStartView, useThreadStartView, useThreadStarts } from './ThreadStart'
 import { ReplyQuoteButton } from './ReplyQuoteButton'
-import { useTipLine } from './tips'
 import { ForkCard, ForkContext, ForkPress, useForkOptions, type ForkOptions } from './ForkFromHere'
 import { CouncilPress } from './CouncilPress'
 import { CouncilAskContext, councilAskable, openCouncilDraft, quotedReply, useCouncilAsk } from '../features/council/councilDraft'
@@ -773,8 +772,6 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const thread = row.thread
   const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads')) ? resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId : undefined
   const quoting = useOwlFeature('reply-quote')
-  // A tip under the working words (ADR-0159; Owl only).
-  const tipLine = useTipLine({ row, state, store, watcher, onFocusPrompt: onQuoted })
   const sentSkills = useSentSkills(row, state, command)
   const streamText = useResponseStreaming() !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
@@ -1200,7 +1197,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         {/* Its opened steps read cut bodies whole from their host, as the rows above do. */}
         <ActivityBodyContext.Provider value={bodyHost}>
-          <LiveActivity thread={thread} connected={row.connected} provider={row.provider} onDisclosure={onDisclosure} sendingSince={sendingSince} tip={tipLine} />
+          <LiveActivity thread={thread} connected={row.connected} provider={row.provider} onDisclosure={onDisclosure} sendingSince={sendingSince} />
         </ActivityBodyContext.Provider>
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}

@@ -409,8 +409,6 @@ export interface AppSettings {
    * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
    */
   nextPromptSuggestions: boolean
-  /** One tip under a working thread's working line and Watcher's (ADR-0159; Owl only). */
-  threadTips: boolean
   /**
    * Send product events (ADR-0179): on by default, and nothing goes until the notice has been answered. Off sends nothing
    * more, drops what is waiting and deletes the install ID.
@@ -568,7 +566,6 @@ const fieldSchemas = {
   threadTitles: z.boolean(),
   commandSummaries: z.boolean(),
   nextPromptSuggestions: z.boolean(),
-  threadTips: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   worktreeCleanup: worktreeCleanupRulesSchema,
@@ -695,7 +692,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   threadTitles: true,
   commandSummaries: true,
   nextPromptSuggestions: true,
-  threadTips: true,
   threadWorkingCopyDefault: 'shared',
   projectThreadWorkingCopyDefaults: {},
   // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
@@ -896,7 +892,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     threadTitles: parseField(persisted, 'threadTitles', defaults),
     commandSummaries: parseField(persisted, 'commandSummaries', defaults),
     nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
-    threadTips: parseField(persisted, 'threadTips', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
