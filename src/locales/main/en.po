@@ -1000,10 +1000,6 @@ msgstr "Open VSX sent a search response Sotto could not read."
 msgid "Open VSX sent more data than a theme needs, so the download was stopped."
 msgstr "Open VSX sent more data than a theme needs, so the download was stopped."
 
-#: src/main/agents/toDoIpc.ts
-msgid "Open your to-do list in the main Sotto window."
-msgstr "Open your to-do list in the main Sotto window."
-
 #: src/main/files/ipc.ts
 msgid "Opening Markdown files in the side panel is not part of this version of Sotto. Nothing was opened."
 msgstr "Opening Markdown files in the side panel is not part of this version of Sotto. Nothing was opened."
@@ -1542,11 +1538,6 @@ msgstr "That code came from this computer. Send it to your teammate instead. Not
 #: src/main/hosts/desktopHostRouter.ts
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 msgstr "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
-
-#: src/main/agents/toDoIpc.ts
-#: src/main/hosts/desktopHostRouter.ts
-msgid "That computer is not connected. Your to-do is still on its list."
-msgstr "That computer is not connected. Your to-do is still on its list."
 
 #: src/main/council/councilService.ts
 msgid "That Council is no longer here."

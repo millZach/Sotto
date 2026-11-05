@@ -28,7 +28,7 @@ it('writes one profile per allowance and asks about everything the allowance doe
   const edits = await read('edits')
   const everything = await read('everything')
   // Sotto's own tools run without Devin's question on every profile (version 3); every other MCP tool still asks.
-  const sotto = ['mcp__sotto_browser__*', 'mcp__sotto_visual__*', 'mcp__sotto_media__*', 'mcp__sotto_pull_requests__*', 'mcp__sotto_delegate__*', 'mcp__sotto_watcher__*', 'mcp__sotto_to_do__*']
+  const sotto = ['mcp__sotto_browser__*', 'mcp__sotto_visual__*', 'mcp__sotto_media__*', 'mcp__sotto_pull_requests__*', 'mcp__sotto_delegate__*', 'mcp__sotto_watcher__*']
   expect(nothing.permissions.allow).toEqual(sotto)
   expect(nothing.permissions.ask).toEqual(['edit', 'write', 'Write(**)', 'Write(/**)', 'exec', 'Fetch(*)', 'mcp__*'])
   expect(edits.permissions.allow).toEqual(['edit', 'write', 'Write(**)', 'Write(/**)', ...sotto])
@@ -37,7 +37,7 @@ it('writes one profile per allowance and asks about everything the allowance doe
   expect(everything.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec', 'Fetch(*)']))
   // Each allowance gets a file of its own, and the asking one keeps the name a profile had before allowances.
   expect((await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).path).toBe(devinPolicyPath(userData, 'nothing'))
-  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v4\.json$/u)
+  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v5\.json$/u)
   expect(new Set([devinPolicyPath(userData, 'nothing'), devinPolicyPath(userData, 'edits'), devinPolicyPath(userData, 'everything')]).size).toBe(3)
 })
 

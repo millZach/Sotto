@@ -102,34 +102,13 @@ export class PrototypeReady {
   onEvicted: ((threadId: string, by: string) => void) | undefined
 
   /**
-   * Told when any thread's mark came, went or changed, for what lists them (the to-do list, ADR-0188). It runs on the update
-   * path, so it must only note the change. Unset, as on stable, the marks are not even kept here.
-   */
-  onMarksChanged: (() => void) | undefined
-  private readonly marks = new Map<string, PrototypeReadyMark>()
-  /** Each marked thread's mark, while something listens. */
-  currentMarks(): ReadonlyMap<string, PrototypeReadyMark> { return this.marks }
-  noteMark(threadId: string, mark: PrototypeReadyMark | undefined): void {
-    const before = this.marks.get(threadId)
-    if (!mark) {
-      if (before && this.marks.delete(threadId)) this.onMarksChanged?.()
-      return
-    }
-    if (before && before.source === mark.source && samePages(before.pages, mark.pages)) return
-    this.marks.set(threadId, mark)
-    this.onMarksChanged?.()
-  }
-
-  /**
    * The records as they are now, and a way back to them, for a check that shows every thread again and must leave the
    * records as it found them (the coordinator's verifying mode, #925).
    */
   checkpoint(): () => void {
     const cleared = [...this.cleared], asked = [...this.asked]
     const kept = [...this.kept].map(([threadId, item]) => [threadId, { ...item, ...(item.scan ? { scan: { ...item.scan } } : {}) }] as const)
-    const marks = [...this.marks]
     return () => {
-      this.marks.clear(); for (const [threadId, mark] of marks) this.marks.set(threadId, mark)
       this.cleared.clear(); for (const [key, item] of cleared) this.cleared.set(key, item)
       this.asked.clear(); for (const [threadId, reply] of asked) this.asked.set(threadId, reply)
       this.kept.clear(); for (const [threadId, item] of kept) this.kept.set(threadId, item)
@@ -216,12 +195,11 @@ export class PrototypeReady {
       if (next !== thread) (threads ??= [...snapshot.threads])[index] = next
     }
     if (gone) this.letGo(gone)
-    else if (this.asked.size || this.marks.size) {
+    else if (this.asked.size) {
       // One set of the threads present, so the cleanup grows with the threads rather than with threads times questions.
       const present = new Set<string>()
       for (const thread of snapshot.threads) present.add(thread.id)
       for (const id of this.asked.keys()) if (!present.has(id)) this.asked.delete(id)
-      for (const id of this.marks.keys()) if (!present.has(id)) this.noteMark(id, undefined)
     }
     return threads ? { ...snapshot, threads } : snapshot
   }
@@ -235,7 +213,7 @@ export class PrototypeReady {
   }
 
   /** Lets go of the question a thread that went was asked, as a snapshot without it does. */
-  letGo(gone: Iterable<string>): void { for (const id of gone) { this.asked.delete(id); this.noteMark(id, undefined) } }
+  letGo(gone: Iterable<string>): void { for (const id of gone) this.asked.delete(id) }
 
   private markable(thread: AgentThread, settled: (thread: AgentThread) => boolean): boolean {
     return thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && !settled(thread)
@@ -334,7 +312,6 @@ export class PrototypeReady {
 
   /** The thread as clients read it: with `prototypeReady` while it is marked, without it otherwise. */
   private publish(thread: AgentThread, mark: PrototypeReadyMark | undefined): AgentThread {
-    if (this.onMarksChanged) this.noteMark(thread.id, mark)
     const current = thread.prototypeReady
     if (!mark) {
       if (current === undefined) return thread
