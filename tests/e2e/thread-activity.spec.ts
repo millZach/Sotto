@@ -56,7 +56,8 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await expect(log.locator('.thread-activity')).toHaveCount(0)
     await expect(log.locator('.thread-message').last()).toContainText('Fixed. The length marker is patched after every chunk')
     await expect(work).toHaveCSS('font-size', '13px')
-    await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '15px')
+    // A thread's messages are on the lead step (ADR-0169, November 5 amendment), a size up from the work line's.
+    await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '16px')
     expect(await overflow(page)).toBeLessThanOrEqual(0)
 
     for (const mode of ['dark', 'light'] as const) {
