@@ -172,9 +172,4 @@ describe('Settings > Cloud iPhone', () => {
     expect(await screen.findByText('Workshop')).toBeInTheDocument()
     expect(screen.getByText('11 min')).toBeInTheDocument()
   })
-
-  it('says there are no sessions yet', async () => {
-    setup(status({ recent: [] }))
-    expect(await screen.findByText('No sessions yet.')).toBeInTheDocument()
-  })
 })

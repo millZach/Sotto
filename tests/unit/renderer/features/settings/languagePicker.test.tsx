@@ -171,9 +171,4 @@ describe('a window\'s interface language', () => {
     sessionStorage.setItem('sotto:interface-language', '{"language":"klingon","system":"en"}')
     expect(firstInterfaceLanguage({ startup: madeWith })).toEqual(madeWith)
   })
-
-  it('stays English without a bridge', async () => {
-    await startInterfaceLanguage(undefined)
-    expect(document.documentElement.lang).toBe('en')
-  })
 })

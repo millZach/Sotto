@@ -754,8 +754,9 @@ import UIKit
         paste.tap()
     }
 
-    /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
-    /// title block and Git chips scroll away with it; messages read as Markdown blocks.
+    /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens, and dragging it
+    /// down into the keyboard puts the keyboard away; the title block and Git chips scroll away with it; messages read as
+    /// Markdown blocks.
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
         launch(Self.fixture)
         let thread = row("iphone")
@@ -781,6 +782,18 @@ import UIKit
         capture("thread-glow-keyboard")
         let opening = text("Review the frosted window branch")
         XCTAssertFalse(opening.exists && opening.isHittable, "The page stays away from the thread's first message")
+        // Put the keyboard away before reading on. With it up, every reading of the squeezed page took seconds, and the
+        // Markdown, table and title checks below took 2 to 7 minutes of a run on CI (November 4, 2026).
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        for _ in 0..<3 where keyboard.exists {
+            let middle = (threadTop + reply.frame.minY) / 2
+            origin.withOffset(CGVector(dx: 8, dy: middle - window.frame.minY))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: 8, dy: window.frame.height - 24)),
+                       withVelocity: .default, thenHoldForDuration: 0)
+            if keyboard.waitForNonExistence(timeout: 5) { break }
+        }
+        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation down into the keyboard puts it away")
 
         // The review reads as blocks: headings, separate list items, a code block, and no Markdown marks left over. The
         // whole message is one row of the conversation, so once its heading is on screen every block of it exists.
@@ -826,7 +839,10 @@ import UIKit
 
     /// At the largest text sizes a thread stays inside the screen. On a small iPhone the Git chips wrap onto another line
     /// rather than widen the page, which cut the first letters off every line of the thread (#1848).
-    func testAThreadStaysInsideTheScreenAtTheLargestTextSizes() {
+    func testAThreadStaysInsideTheScreenAtTheLargestTextSizes() throws {
+        // The narrow phone is where #1848 cut words off; the large phone, which runs at the accessibility sizes, has the
+        // room. The small phone's job checks it (November 4, 2026).
+        try XCTSkipIf(UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory, "The small phone checks this")
         launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         let thread = row("iphone")
         reveal(thread)
@@ -2705,7 +2721,10 @@ import UIKit
 
     /// At the accessibility text sizes New thread's title takes its own line, clear of its buttons, and Settings' New
     /// thread defaults put each value under its name rather than cut it in the middle (#1857).
-    func testSheetHeadersAndDefaultsStackAtTheLargestTextSizes() {
+    func testSheetHeadersAndDefaultsStackAtTheLargestTextSizes() throws {
+        // The narrow phone is where #1857 cut words off; the large phone, which runs at the accessibility sizes, has the
+        // room. The small phone's job checks it (November 4, 2026).
+        try XCTSkipIf(UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory, "The small phone checks this")
         launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         app.buttons["new-thread"].tap()
         let cancel = app.buttons["Cancel"]

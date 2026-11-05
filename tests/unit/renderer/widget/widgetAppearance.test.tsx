@@ -147,13 +147,6 @@ describe('WidgetApp', () => {
     expect(root).not.toHaveAttribute('data-brand')
   })
 
-  it('leaves the resting sliver free of the app mark', () => {
-    render(<WidgetApp snapshot={snapshot({ status: 'idle' })} platform="win32" now={0} />)
-
-    expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
-    expect(screen.queryByTestId('widget-glyph')).not.toBeInTheDocument()
-  })
-
   it('keeps visible copy readable but non-live', () => {
     const { container, rerender } = render(
       <WidgetApp

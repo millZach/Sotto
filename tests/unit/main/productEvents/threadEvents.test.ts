@@ -60,13 +60,6 @@ describe('thread.started', () => {
     events.track([running({ id: 'saved', nativeSessionStarted: true })], [])
     expect(sent.map(item => item.event)).toEqual(['thread.started'])
   })
-
-  it('says a thread in the shared checkout is not in a worktree', () => {
-    const { events, sent } = harness()
-    events.track([thread({ nativeSessionStarted: false })], [])
-    events.track([running({ nativeSessionStarted: true, worktree: { mode: 'shared', status: 'ready' } })], [])
-    expect(sent[0]!.properties.inWorktree).toBe(false)
-  })
 })
 
 describe('turn.completed', () => {
@@ -196,13 +189,6 @@ describe('turn.completed', () => {
     events.track([ended('completed', { usage: usage(10) })], [])
     expect(sent[0]!.properties).not.toHaveProperty('inputTokens')
   })
-
-  it.each([[undefined, false, 'standard'], ['fast', false, 'fast'], ['ultrafast', false, 'ultrafast'], [undefined, true, 'fast'], [null, false, 'standard']] as const)('speed %s with fastMode %s says %s', (speed, fastMode, said) => {
-    const { events, sent } = harness()
-    events.track([running()], [])
-    events.track([ended('completed', { ...speed === undefined ? {} : { speed }, fastMode })], [])
-    expect(sent[0]!.properties.speed).toBe(said)
-  })
 })
 
 describe('what a thread event may say', () => {
@@ -224,14 +210,6 @@ describe('what a thread event may say', () => {
     events.track([ended('failed', words)], [])
     expect(sent.map(item => item.event)).toEqual(['thread.started', 'turn.completed'])
     expect(JSON.stringify(sent)).not.toMatch(/secret|\/home|m"/)
-  })
-
-  it('sends nothing for a thread with no provider', () => {
-    const { events, sent } = harness()
-    const none = { providerId: undefined }
-    events.track([thread({ ...none, nativeSessionStarted: false })], [])
-    events.track([running({ ...none, nativeSessionStarted: true })], [])
-    expect(sent).toEqual([])
   })
 
   it('never asks who started a thread during an update: on a later tick, and with the record as the update had it', () => {

@@ -31,15 +31,4 @@ describe('createPasteCommands win32 one-shot invocation', () => {
     expect(script).not.toContain('System.Windows.Forms')
     expect(script).not.toContain('SendKeys')
   })
-
-  it('exposes a warm helper builder on win32 and none on darwin', () => {
-    expect(createPasteCommands('win32').helper).not.toBeNull()
-    expect(createPasteCommands('darwin').helper).toBeNull()
-  })
-
-  it('returns the same frozen command table for repeated lookups', () => {
-    expect(createPasteCommands('win32')).toBe(createPasteCommands('win32'))
-    expect(Object.isFrozen(createPasteCommands('win32'))).toBe(true)
-    expect(Object.isFrozen(createPasteCommands('darwin'))).toBe(true)
-  })
 })

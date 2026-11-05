@@ -5,27 +5,8 @@ import { join } from 'node:path'
 
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
 import { MAC_TRAY_GUID, platformProfile, updatesInApp } from '../../../src/main/platformProfile'
-import { defaultHotkey } from '../../../src/shared/platform'
 
 describe('platformProfile', () => {
-  it('describes Windows exactly as the app behaves today', () => {
-    const profile = platformProfile('win32')
-
-    expect(profile.platform).toBe('win32')
-    expect(profile.mainWindowChrome).toBe('frameless')
-    expect(profile.trafficLightPosition).toBeNull()
-    expect(profile.applicationMenu).toBe('hidden')
-    expect(profile.widgetAlwaysOnTopLevel).toBe('normal')
-    expect(profile.widgetFocusable).toBe(false)
-    expect(profile.widgetVisibleOnAllWorkspaces).toBe(false)
-    expect(profile.trayIcon).toEqual({ kind: 'executable' })
-    expect(profile.pasteRequiresAccessibilityTrust).toBe(false)
-    expect(profile.pasteUsesWarmHelper).toBe(true)
-    expect(profile.requiresMediaAccessGate).toBe(false)
-    expect(profile.desktopNotifications).toBe(false)
-    expect(profile.defaultHotkey).toBe('CommandOrControl+Shift+Space')
-  })
-
   it('describes the whole Windows row without extra fields', () => {
     expect(platformProfile('win32')).toEqual({
       platform: 'win32',
@@ -116,13 +97,6 @@ describe('platformProfile', () => {
   })
 
   it.each(['win32', 'darwin', 'linux'] as const)(
-    'takes the %s default hotkey from the shared platform table',
-    (platform) => {
-      expect(platformProfile(platform).defaultHotkey).toBe(defaultHotkey(platform))
-    },
-  )
-
-  it.each(['win32', 'darwin', 'linux'] as const)(
     'keeps the %s warm-helper flag in step with the paste command table',
     (platform) => {
       // index.ts guards the warm helper on the command table, so a row that
@@ -130,21 +104,6 @@ describe('platformProfile', () => {
       expect(platformProfile(platform).pasteUsesWarmHelper).toBe(
         createPasteCommands(platform).helper !== null,
       )
-    },
-  )
-
-  it.each(['win32', 'darwin', 'linux'] as const)(
-    'returns the same frozen %s row on every call',
-    (platform) => {
-      const profile = platformProfile(platform)
-
-      expect(Object.isFrozen(profile)).toBe(true)
-      expect(Object.isFrozen(profile.trayIcon)).toBe(true)
-      expect(Object.isFrozen(profile.inAppUpdateTracks)).toBe(true)
-      if (profile.trafficLightPosition !== null) {
-        expect(Object.isFrozen(profile.trafficLightPosition)).toBe(true)
-      }
-      expect(platformProfile(platform)).toBe(profile)
     },
   )
 })

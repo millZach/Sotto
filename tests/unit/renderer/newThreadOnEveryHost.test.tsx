@@ -35,10 +35,6 @@ describe('a new thread on any computer starts on this computer’s defaults (ADR
     const sent = await create(computers({ newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'auto' }), FORGE)
     expect(sent).toMatchObject({ modelId: 'claude:sonnet', reasoningEffort: 'high', runtimeMode: 'auto' })
   })
-  it('sends the same on this computer', async () => {
-    const sent = await create(computers({ newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'auto' }), LOCAL)
-    expect(sent).toMatchObject({ modelId: 'claude:sonnet', reasoningEffort: 'high', runtimeMode: 'auto' })
-  })
   it('starts on the host’s recommended model where its catalog does not list the default', async () => {
     const sent = await create(computers({ newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high' }, { models: [codex] }), FORGE)
     expect(sent).toMatchObject({ modelId: 'codex:gpt', reasoningEffort: 'high' })

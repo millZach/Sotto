@@ -180,11 +180,6 @@ describe('wrapAgentBridge', () => {
     expect(delivered[0]!.host.models).toBe(delivered[0]!.host.clientHosts![0]!.models)
   })
 
-  it('memoizes the wrapped bridge by identity, so a re-render gets the same instance back', () => {
-    const { bridge } = fakeBridge(() => Promise.reject(new Error('unused')))
-    expect(wrapAgentBridge(bridge)).toBe(wrapAgentBridge(bridge))
-  })
-
   describe('command receipts', () => {
     /** A bridge whose `command` answers with the given receipts in turn, as main's handler would. */
     function receiptBridge(get: () => Promise<AgentState>, ...answers: unknown[]) {

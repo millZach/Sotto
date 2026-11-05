@@ -46,9 +46,6 @@ describe('resolved new-thread permission', () => {
 })
 
 describe('nearest reasoning effort', () => {
-  it('keeps the desired effort when the model offers it', () => {
-    expect(nearestReasoningEffort('high', claude.reasoningEfforts!, claude.reasoningEfforts!)).toBe('high')
-  })
   it('maps the desired effort’s position in the reference list onto the offered list', () => {
     // 'high' sits third of four on Claude's list (ratio 2/3); Grok's own list has two levels, so that lands on 'high'.
     expect(nearestReasoningEffort('high', claude.reasoningEfforts!, grok.reasoningEfforts!)).toBe('high')

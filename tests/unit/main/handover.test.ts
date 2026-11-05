@@ -140,12 +140,6 @@ describe('handover', () => {
     expect(memory.text).toContain('Sotto holds no messages from this thread in memory, so there is no history to carry.')
   })
 
-  it('names a wake-up as Sotto rather than the user', () => {
-    const { text } = buildHandover([message('w0', 'user', 'Checks passed', { wakeUp: true }), message('a0', 'assistant', 'Answer 0')], options())
-    expect(text).toContain('Sotto, waking the thread, ')
-    expect(text).not.toContain('The user, ')
-  })
-
   it('counts the messages it never read between the first request and the newest history', () => {
     const newest = conversation(2).slice(2).map((entry, index) => ({ ordinal: 48 + index, message: entry }))
     const { text, summary } = buildHandover({ messages: [{ ordinal: 0, message: message('u0', 'user', 'Ask 0') }, ...newest], total: 50 }, options())

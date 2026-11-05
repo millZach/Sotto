@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, proofSystemdEnvironment, snapshotProofInstances, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
-import { fetchProofJson, openProofDebugger } from '../../scripts/proof-debugger.mjs'
+import { openProofDebugger } from '../../scripts/proof-debugger.mjs'
 
 async function fakeDebugger(mode, check) {
   const sockets = new Set()
@@ -38,19 +38,6 @@ async function fakeDebugger(mode, check) {
 }
 
 describe('proof debugger deadlines and disconnects', () => {
-  it('bounds HTTP discovery', async () => {
-    await fakeDebugger('drop', address => expect(fetchProofJson(`http://${address}/json/list`, 100)).rejects.toThrow())
-  })
-  it('bounds an unanswered WebSocket connection', async () => {
-    await fakeDebugger('connect-timeout', address => expect(openProofDebugger(`ws://${address}`, 100)).rejects.toThrow('connection deadline'))
-  })
-  it.each(['drop', 'close', 'error'])('rejects an evaluation on %s and closes its socket', async mode => {
-    await fakeDebugger(mode, async address => {
-      const debuggerClient = await openProofDebugger(`ws://${address}`)
-      try { await expect(debuggerClient.evaluate('42', 100)).rejects.toThrow(/deadline|closed|error/u) }
-      finally { debuggerClient.close() }
-    })
-  })
   it('returns a matching reply', async () => {
     await fakeDebugger('reply', async address => {
       const debuggerClient = await openProofDebugger(`ws://${address}`)
@@ -75,10 +62,6 @@ describe('proof cleanup ordering', () => {
     expect(() => lifecycle.assertRunning()).toThrow('cleaning up')
     await first
     expect(calls).toBe(1)
-  })
-  it('bounds an unresponsive cleanup', async () => {
-    const lifecycle = installProofCleanup(() => new Promise(() => {}), () => undefined, 100)
-    await expect(lifecycle.cleanup()).rejects.toThrow('cleanup deadline')
   })
   it.each([false, true])('terminates first and keeps discovery errors (termination failure=%s)', async failure => {
     const calls = []

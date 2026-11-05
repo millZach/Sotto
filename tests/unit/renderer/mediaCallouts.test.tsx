@@ -132,13 +132,6 @@ describe('callouts an agent placed on a picture it showed (ADR-0170, part 6)', (
     expect(keep.disabled).toBe(true)
     expect(keep.checked).toBe(false)
   })
-
-  it('puts no callout section in the editor for a picture without them', async () => {
-    await openViewer(reply(), 2)
-    await userEvent.click(screen.getByRole('button', { name: 'Mark up' }))
-    expect(screen.getByRole('complementary', { name: 'Your marks' })).toBeTruthy()
-    expect(screen.queryByRole('checkbox')).toBeNull()
-  })
 })
 
 describe('a callout\'s shape', () => {

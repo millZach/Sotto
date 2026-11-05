@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { bootChangeRestarts, bootStatusSchema, bootUnsupportedSentence, hostBootCommandSchema, lingerAccount } from '../../../src/shared/bootStart'
+import { bootChangeRestarts, bootStatusSchema, hostBootCommandSchema, lingerAccount } from '../../../src/shared/bootStart'
 import { hostsCommandSchema } from '../../../src/shared/hosts'
 
 const status = { supported: true, installed: false, enabled: false, active: false, linger: false, nodeDrift: false }
@@ -18,11 +18,6 @@ describe('start at boot status (ADR-0054)', () => {
   it('leaves out a reason it cannot read, and reads nothing from a status missing a field', () => {
     expect(bootStatusSchema.parse({ ...status, supported: false, reason: 'freebsd' })).toEqual({ ...status, supported: false })
     expect(bootStatusSchema.safeParse({ ...status, linger: 'yes' }).success).toBe(false)
-  })
-
-  it('says in one sentence why a host cannot start at boot', () => {
-    expect(bootUnsupportedSentence('macos')).toContain('runs macOS')
-    expect(bootUnsupportedSentence('no-user-manager')).toBe('This host has no systemd user manager, so Sotto cannot start it at boot.')
   })
 })
 

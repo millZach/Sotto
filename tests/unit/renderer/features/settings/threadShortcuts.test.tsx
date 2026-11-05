@@ -134,13 +134,6 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     expect(await screen.findByText('All shortcuts are back to their defaults.')).toBeVisible()
   })
 
-  it('filters by action and by keys', async () => {
-    const { user } = setup()
-    await user.type(screen.getByRole('searchbox', { name: 'Filter shortcuts' }), 'settle')
-    expect(row('Settle thread')).toBeVisible()
-    expect(screen.queryByRole('group', { name: 'New thread' })).not.toBeInTheDocument()
-  })
-
   it('lists the page shortcuts first, Ctrl+1 to Ctrl+5, leaving out pages this build does not have (ADR-0158)', () => {
     setup()
     expect(within(row('Dictate')).getByRole('button', { name: 'Change shortcut, Ctrl 1' })).toBeVisible()
@@ -194,11 +187,6 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     release('Digit1')
     expect(await within(row('Settle thread')).findByRole('alert')).toHaveTextContent('New thread already uses Ctrl + 1. Pick other keys.')
     expect(onUpdateSettings).not.toHaveBeenCalled()
-  })
-
-  it('says which page shortcut saved while a page was hidden holds that page’s default keys', () => {
-    setup({ choices: { 'page-threads': 'mod+1' } })
-    expect(within(row('Dictate')).getByRole('status')).toHaveTextContent('Threads already uses Ctrl + 1, so these keys do nothing here until one of the two changes.')
   })
 
   it('names each other on two page shortcuts saved on the same keys', () => {

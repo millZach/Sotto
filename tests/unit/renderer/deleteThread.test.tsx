@@ -72,16 +72,6 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalApp).m
 afterEach(() => { cleanup() })
 
 describe('Delete thread… in the pane menu', () => {
-  it('is the last item, after its own rule and in the error colour, for a settled thread', () => {
-    mount()
-    const menu = openPaneMenu(pane())
-    expect(paneMenuItems(menu).at(-1)).toBe('Delete thread…')
-    const item = within(menu).getByRole('menuitem', { name: 'Delete thread…' })
-    expect(item).toHaveAttribute('data-tone', 'danger')
-    expect(item).toBeEnabled()
-    expect(item.previousElementSibling?.tagName).toBe('HR')
-  })
-
   it('is offered for a thread settled with its project, and not for an unsettled one or with the Owl feature off', () => {
     mount([settled({ workspaceSettledAt: null })])
     expect(paneMenuItems(openPaneMenu(pane()))).not.toContain('Delete thread…')

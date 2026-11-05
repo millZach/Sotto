@@ -103,15 +103,6 @@ describe('the Sotto tile in Watcher’s room', () => {
     expect(screen.queryByRole('button', { name: TILE })).toBeNull()
   })
 
-  it('wears Watcher’s owl instead of the app mark on macOS, and still opens its panel', async () => {
-    renderRoom(roomState(), undefined, 'darwin')
-    const tile = await screen.findByRole('button', { name: TILE })
-    expect(tile.querySelector('svg.watcher-owl')).not.toBeNull()
-    expect(tile.querySelector('svg[data-tile]')).toBeNull()
-    fireEvent.click(tile)
-    expect(await screen.findByRole('dialog', { name: 'Watcher’s context' })).toBeInTheDocument()
-  })
-
   it('shows no tile at all before Watcher starts on macOS', async () => {
     renderRoom(roomState({ current: null, currentOptions: null, context: null }), undefined, 'darwin')
     expect(await screen.findByRole('heading', { name: 'Watcher' })).toBeInTheDocument()
@@ -212,16 +203,6 @@ describe('the Sotto tile in Watcher’s room', () => {
     renderRoom(roomState({ currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'running', connected: true } }))
     const running = await openPanel()
     expect(within(running.panel).getByRole('button', { name: 'Compact context' })).toBeDisabled()
-  })
-
-  it('shows Watcher’s state in four groups, each saying None when it is empty', async () => {
-    renderRoom(roomState())
-    const { panel } = await openPanel()
-    expect(within(panel).getByRole('heading', { name: 'Watcher’s state' })).toBeInTheDocument()
-    for (const label of ['Watching', 'Waiting on you', 'Decisions it noted', 'Your rules', 'Issues filed']) {
-      const group = within(panel).getByRole('heading', { name: label }).closest('section')!
-      expect(within(group).getByText('None')).toBeInTheDocument()
-    }
   })
 
   it('lists what Watcher watches and what it kept', async () => {

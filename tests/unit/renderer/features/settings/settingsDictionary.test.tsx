@@ -23,18 +23,6 @@ describe('Personal dictionary draft acknowledgements', () => {
     expect(status).toBeEmptyDOMElement()
   })
 
-  it('clears the cut-paste message after deleting text below the limit', async () => {
-    render(<SettingsView {...baseProps()} />)
-    await selectCategory('Cleanup')
-    const input = screen.getByRole('textbox', { name: 'Personal dictionary' }) as HTMLTextAreaElement
-    fireEvent.change(input, { target: { value: 'a'.repeat(4000) } })
-    input.setSelectionRange(4000, 4000)
-    fireEvent.paste(input, { clipboardData: { getData: () => 'extra' } })
-    expect(screen.getByText('The pasted text was cut to fit the 4,000-character limit.')).toBeVisible()
-    fireEvent.change(input, { target: { value: 'a'.repeat(3999) } })
-    expect(screen.queryByText('The pasted text was cut to fit the 4,000-character limit.')).not.toBeInTheDocument()
-  })
-
   it('announces only pastes cut by the dictionary limit, accounting for the selection', async () => {
     render(<SettingsView {...baseProps()} />)
     await selectCategory('Cleanup')

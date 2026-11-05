@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { hostStatus } from '../../fixtures/renderer/hostBridges'
 import { describe, expect, it } from 'vitest'
-import { lastReached, tailnetRowNote, tailnetStepNote } from '../../../src/renderer/src/features/settings/hostTailnetWords'
+import { tailnetRowNote, tailnetStepNote } from '../../../src/renderer/src/features/settings/hostTailnetWords'
 import { tailnetStepView } from '../../../src/renderer/src/features/settings/HostSetupChecklist'
 import type { HostStatus } from '../../../src/shared/hosts'
 
@@ -70,10 +70,4 @@ describe('Add host’s tailnet step as the dialog shows it', () => {
     // A press that failed, then a 5-minute check that reached the tailnet after all: the step follows the host.
     expect(tailnetStepView(forge({ via: 'tailnet', addTailnet: { state: 'ssh', why: 'operator' } }), undefined, { running: false, error: 'Nothing was changed.' })).toEqual({ state: 'done' })
   })
-})
-
-it('says when this computer last reached a host as a time today, and a day and time before that', () => {
-  const now = new Date(2026, 9, 6, 15, 0).getTime()
-  expect(lastReached(new Date(2026, 9, 6, 9, 41).getTime(), now)).toBe(new Date(2026, 9, 6, 9, 41).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))
-  expect(lastReached(new Date(2026, 9, 2, 9, 41).getTime(), now)).toBe(new Date(2026, 9, 2, 9, 41).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))
 })

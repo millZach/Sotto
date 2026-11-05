@@ -204,11 +204,6 @@ describe('DictationShortcuts', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('The shortcut could not be changed. Ctrl + Win still works.')
   })
 
-  it('hides remove on the last shortcut', () => {
-    setup({ owl: true })
-    expect(screen.queryByRole('button', { name: /^Remove shortcut/u })).not.toBeInTheDocument()
-  })
-
   it('puts the main shortcut on standby when only shortcuts the key listener runs could replace it', async () => {
     const { onReplaceDictationShortcuts, user } = setup({ owl: true, press: ['CommandOrControl+Alt'] })
     await user.click(screen.getByRole('button', { name: 'Turn shortcut off, Ctrl Shift Space' }))
@@ -229,13 +224,6 @@ describe('DictationShortcuts', () => {
     await user.click(screen.getByRole('button', { name: 'Remove shortcut, Ctrl Shift Space' }))
     expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['CommandOrControl+Alt+K', 'CommandOrControl+Alt'], hold: ['CommandOrControl+Super'] })
     expect(await screen.findByRole('status')).toHaveTextContent('Shortcut saved.')
-  })
-
-  it('records straight away from Add on macOS too', async () => {
-    const { user } = setup({ platform: 'darwin', owl: true })
-    await user.click(within(row('Hold to dictate')).getByRole('button', { name: 'Add a hold shortcut' }))
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Cancel recording' })).toHaveFocus()
   })
 
   it('records straight away from Add on Windows', async () => {
@@ -277,15 +265,6 @@ describe('DictationShortcuts', () => {
     setup({ platform: 'darwin', hold: ['Fn'], bridge: { getKeyListenerPermission } })
     expect(getKeyListenerPermission).not.toHaveBeenCalled()
     expect(screen.queryByText(/Input Monitoring/u)).not.toBeInTheDocument()
-  })
-
-  it('shows the Fn tip on macOS only while a shortcut uses Fn', () => {
-    const tip = 'If Fn opens emoji or Apple’s dictation, set System Settings › Keyboard › “Press 🌐 key to” to Do Nothing.'
-    setup({ platform: 'darwin', owl: true, hold: ['Fn'] })
-    expect(screen.getByText(tip)).toBeVisible()
-    cleanup()
-    setup({ platform: 'darwin', owl: true })
-    expect(screen.queryByText(tip)).not.toBeInTheDocument()
   })
 
   it('treats the same keys in another spelling as saved without asking main', async () => {

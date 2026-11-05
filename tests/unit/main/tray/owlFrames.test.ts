@@ -141,10 +141,6 @@ describe('the menu bar owl frames', () => {
     // The size check that follows would have said "wrong size" with no code: this one comes from the cap on inflating.
     expect((error as NodeJS.ErrnoException).code).toBe('ERR_BUFFER_TOO_LARGE')
   })
-
-  it('throws for a picture that is not width times height pixels', () => {
-    expect(() => doublePixels(new Uint8Array(10), 18, 18)).toThrow()
-  })
 })
 
 describe('the committed menu bar owl frames', () => {

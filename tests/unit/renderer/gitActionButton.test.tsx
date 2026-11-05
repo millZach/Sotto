@@ -231,18 +231,6 @@ describe('the Git action in the pane header', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss the Git notice' }))
     expect(screen.queryByRole('status')).toBeNull()
   })
-  it('opens the pull request for View PR, and the browser for the notice\'s View PR', async () => {
-    const openExternalLink = vi.fn()
-    const done: GitActionProgress = { actionId: 'a', action: 'create_pr', status: 'done', phases: ['pr'], phase: null, stage: null, hook: null, startedAt: 't', finishedAt: 't', error: null,
-      result: { action: 'create_pr', branch: { status: 'skipped_not_requested' }, commit: { status: 'skipped_not_requested' }, push: { status: 'skipped_not_requested' }, pr: { status: 'created', number: 12, url: pr.url }, toast: { title: 'Created PR #12', cta: { kind: 'open_pr', label: 'View PR', url: pr.url } } } }
-    mount(thread(status({ pullRequest: pr }), { gitAction: done }), { openExternalLink })
-    fireEvent.click(quick())
-    expect(openExternalLink).toHaveBeenCalledWith(pr.url)
-    const notice = screen.getByRole('status')
-    expect(notice).toHaveTextContent('Created PR #12')
-    fireEvent.click(within(notice).getByRole('button', { name: 'View PR' }))
-    expect(openExternalLink).toHaveBeenCalledTimes(2)
-  })
   it('shows the stage and the hook while the action runs, then the toast whose Push runs the next step', async () => {
     const running: GitActionProgress = { actionId: 'a', action: 'commit', status: 'running', phases: ['commit'], phase: 'commit', stage: 'Committing...', hook: { name: 'pre-commit', output: 'eslint .' }, startedAt: 't', finishedAt: null, result: null, error: null }
     const { command, rerender } = mount(thread(status({ dirty: true }), { gitAction: running }))

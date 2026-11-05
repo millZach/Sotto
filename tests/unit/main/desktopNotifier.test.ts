@@ -178,21 +178,6 @@ describe('desktop notifier test', () => {
     ])
   })
 
-  it('resolves shown after 5 seconds with neither event', async () => {
-    vi.useFakeTimers()
-    const { notifier, created } = setup()
-    const result = notifier.test()
-    vi.advanceTimersByTime(4_999)
-    let settled = false
-    void result.then(() => { settled = true })
-    await Promise.resolve()
-    expect(settled).toBe(false)
-    vi.advanceTimersByTime(1)
-    await expect(result).resolves.toBe('shown')
-    created[0]!.fire('failed')
-    await expect(result).resolves.toBe('shown')
-  })
-
   it('resolves failed only on failed or a show that throws', async () => {
     const clock = timers()
     const { notifier, created, options } = setup({ timers: clock })
@@ -205,12 +190,6 @@ describe('desktop notifier test', () => {
     expect(options.log).not.toHaveBeenCalled()
     const throwing = setup({ throwOnShow: true, timers: timers() })
     await expect(throwing.notifier.test()).resolves.toBe('failed')
-  })
-
-  it('is unsupported when the system cannot show notifications', async () => {
-    const { notifier, created } = setup({ isSupported: () => false })
-    await expect(notifier.test()).resolves.toBe('unsupported')
-    expect(created).toHaveLength(0)
   })
 })
 

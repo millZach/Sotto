@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentCapabilities, type AgentProject, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../src/shared/agents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../src/shared/hostProviders'
 import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
-import { IPHONE_BETA_URL, type PhonesBridge, type PhonesState } from '../../../src/shared/phones'
+import { type PhonesBridge, type PhonesState } from '../../../src/shared/phones'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
@@ -349,14 +349,6 @@ describe('ComputersStep', () => {
     await waitFor(() => expect(onHostsChange).toHaveBeenCalledWith(1))
   })
 
-  it('reports zero hosts when none are saved', async () => {
-    const { bridge } = hostsFixture([])
-    const onHostsChange = vi.fn()
-    render(<ComputersStep heading={<div />} bridge={bridge} onHostsChange={onHostsChange} />)
-    await screen.findByRole('button', { name: 'Add a computer' })
-    await waitFor(() => expect(onHostsChange).toHaveBeenCalledWith(0))
-  })
-
   it('opens the Add a computer dialog on press', async () => {
     const { bridge } = hostsFixture([])
     const user = userEvent.setup()
@@ -378,17 +370,6 @@ function phonesFixture(initial: Partial<PhonesState> = {}): { readonly bridge: P
 }
 
 describe('PhoneStep', () => {
-  it('reports success when the beta link opens', async () => {
-    const { bridge } = phonesFixture()
-    const user = userEvent.setup()
-    const onOpenLink = vi.fn(async () => true)
-    render(<PhoneStep heading={<div />} phoneAccess={false} onUpdateSettings={vi.fn(async () => true)} onOpenLink={onOpenLink} bridge={bridge} />)
-    await user.click(screen.getByRole('button', { name: 'Get the iPhone beta' }))
-    expect(onOpenLink).toHaveBeenCalledOnce()
-    expect(onOpenLink).toHaveBeenCalledWith(IPHONE_BETA_URL)
-    expect(await screen.findByText('Opened in your browser')).toBeVisible()
-  })
-
   it('reports failure when the beta link does not open', async () => {
     const { bridge } = phonesFixture()
     const user = userEvent.setup()

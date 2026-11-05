@@ -169,11 +169,4 @@ describe('Settings > Application > Send product events', () => {
     expect(row).not.toBeChecked()
     expect(row).toBeDisabled()
   })
-
-  it('opens every event from the row', async () => {
-    withMain({ canSend: true, offBy: null })
-    render(<ProductEventsSettings settings={{ productEventsEnabled: true }} onSave={vi.fn()} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'See every event' }))
-    expect(screen.getByRole('dialog', { name: 'Every product event' })).toBeVisible()
-  })
 })

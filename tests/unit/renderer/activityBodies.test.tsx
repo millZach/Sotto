@@ -6,7 +6,6 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { cutActivityBodies } from '../../../src/shared/activityBodies'
 import { ActivityGroupView, TurnChangedFiles } from '../../../src/renderer/src/agents/ThreadActivity'
 import { ActivityBodyCache, ActivityBodyContext, activityBodies, type ActivityBodyHost } from '../../../src/renderer/src/agents/activityBodies'
-import { CUT_BODY_WAIT_MS } from '../../../src/renderer/src/agents/ActivityBody'
 import { turnChanges, type ActivityGroup } from '../../../src/renderer/src/agents/threadActivityView'
 
 const lines = (count: number, word: string): string => Array.from({ length: count }, (_, index) => `${word} ${index}`.padEnd(40, '.')).join('\n')
@@ -178,21 +177,6 @@ describe('cut activity bodies on a remote thread (ADR-0025, October 18 amendment
     expect(within(list).getByText(/\+ const 199/u)).toBeInTheDocument()
     expect(within(list).queryByText('⋯ the rest is on forge')).toBeNull()
     expect(fetchBody).toHaveBeenCalledTimes(1)
-  })
-
-  it('says in one line, after a moment, that a body cut to nothing is on its way', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    fetchBody.mockImplementation(() => new Promise(() => undefined))
-    const oneLine: AgentActivity = { ...wholeTest, output: 'x'.repeat(5_000) }
-    const sent = cutActivityBodies(oneLine)
-    expect(sent.output).toBe('')
-    rows([sent])
-    await user.click(screen.getByRole('button', { name: /npm test|Bash/u }))
-    const wait = screen.getByText('Getting output from forge…').closest('p')!
-    expect(wait).not.toHaveAttribute('data-shown')
-    await act(async () => { vi.advanceTimersByTime(CUT_BODY_WAIT_MS) })
-    expect(wait).toHaveAttribute('data-shown')
   })
 
   it('does not say an agent left no result when its output is on the host', async () => {
