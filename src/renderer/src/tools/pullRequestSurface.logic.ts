@@ -286,7 +286,15 @@ export function listMatches(item: Pick<GitPullRequestListItem, 'number' | 'title
   const needle = query.trim().toLowerCase().replace(/^#/u, '')
   return !needle || `${item.number} ${item.title} ${item.author ?? ''} ${item.headBranch}`.toLowerCase().includes(needle)
 }
-/** The first line of a description's prose, without its Markdown, for the head of its closed fold. Empty when it has none. */
+/**
+ * Where a line's first sentence ends: a stop, then a space and what starts a sentence. A stop in its first few words, as
+ * in "Fix v2. The", does not end it.
+ */
+const FIRST_SENTENCE = /^(.{16,}?[.!?])\s+(?=[\p{Lu}\p{Lt}\p{N}"'“‘([])/u
+/**
+ * The first sentence of a description's prose, without its Markdown, for the head of its closed fold: a whole sentence,
+ * so a narrow panel shows the pull request's own words ended rather than cut. Empty when it has none.
+ */
 export function descriptionPreview(body: string): string {
   let fenced = false
   // A description's first screen is all a preview needs, however long the rest runs.
@@ -296,7 +304,7 @@ export function descriptionPreview(body: string): string {
     if (fenced || /^(?:#{1,6}\s|<|\||[-=*_]{3,}$)/u.test(line)) continue
     const text = line.replace(/^(?:>\s*)+/u, '').replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/u, '').replace(/!\[[^\]]*\]\([^)]*\)/gu, '')
       .replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1').replace(/`|\*\*|__/gu, '').trim()
-    if (text) return text
+    if (text) return FIRST_SENTENCE.exec(text)?.[1] ?? text
   }
   return ''
 }

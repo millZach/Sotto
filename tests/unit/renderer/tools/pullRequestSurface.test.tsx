@@ -957,6 +957,10 @@ describe('the drill-in under the merge checklist', () => {
     expect(descriptionPreview('')).toBe('')
     expect(descriptionPreview('<!-- a template\nits second line -->\n# Title\n---\n![shot](a.png)\n1. [The link](https://x.test) and __more__')).toBe('The link and more')
     expect(descriptionPreview('```sh\nnpm test\n```\n> - [x] Quoted')).toBe('Quoted')
+    // A whole first sentence, so a narrow panel ends the preview on the pull request's own stop rather than cutting it.
+    expect(descriptionPreview('The thread store now writes on a worker thread. Main reads it and hands the worker every write.')).toBe('The thread store now writes on a worker thread.')
+    expect(descriptionPreview('Fix v2. The store keeps its order. Then it stops.')).toBe('Fix v2. The store keeps its order.')
+    expect(descriptionPreview('Reads the file at src/main/index.ts on start and writes nothing')).toBe('Reads the file at src/main/index.ts on start and writes nothing')
     expect(listReviewWord('approved')).toBe('Approved')
     expect(listReviewWord('changes_requested')).toBe('Changes requested')
     expect(listReviewWord('review_required')).toBeNull()
