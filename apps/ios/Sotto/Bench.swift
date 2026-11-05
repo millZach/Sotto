@@ -6,6 +6,7 @@ enum BenchArm {
     static let equatable = ProcessInfo.processInfo.arguments.contains("--bench-eq")
     static let quiet = ProcessInfo.processInfo.arguments.contains("--bench-quiet")
     static let warm = ProcessInfo.processInfo.arguments.contains("--bench-warm")
+    static let tabs = ProcessInfo.processInfo.arguments.contains("--bench-tabs")
 }
 #if DEBUG && os(iOS)
 import Darwin

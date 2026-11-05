@@ -67,18 +67,18 @@ arm() {
     case "$1" in
         base) use base; journey "$2" ;;
         manual) use change; journey "$2" ;;
-        eq) use change; journey "$2" --bench-eq ;;
         quiet) use change; journey "$2" --bench-eq --bench-quiet ;;
+        tabs) use change; journey "$2" --bench-eq --bench-quiet --bench-tabs ;;
         warm) use change; journey "$2" --bench-warm ;;
-        all) use change; journey "$2" --bench-eq --bench-quiet --bench-warm ;;
+        all) use change; journey "$2" --bench-eq --bench-quiet --bench-tabs --bench-warm ;;
     esac
 }
 round=1
 while [ "$round" -le "$rounds" ]; do
     if [ $(( ($(date +%s) - start) / 60 )) -ge "$limit" ]; then echo "Stopped before round $round: past $limit minutes."; break; fi
     case $((round % 2)) in
-        1) order="base manual eq quiet warm all" ;;
-        0) order="all warm quiet eq manual base" ;;
+        1) order="base manual quiet tabs warm all" ;;
+        0) order="all warm tabs quiet manual base" ;;
     esac
     for side in $order; do arm "$side" "$out/$side-$round.json"; done
     round=$((round + 1))

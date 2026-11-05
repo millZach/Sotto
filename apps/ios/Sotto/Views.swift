@@ -4,9 +4,12 @@ import SottoCore
 
 /// Pairing until this iPhone holds a computer, then Threads, Computers and Settings.
 struct RootView: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(\.unobservedModel) private var unobservedModel
+    private var model: AppModel { unobservedModel! }
+    @State private var revision = 0
     var body: some View {
         let _ = BenchProbe.body("RootView")
+        let _ = revision
         // The whole screen, safe areas included, for Glass's backdrop on every page, pairing included.
         GeometryReader { frame in
             let insets = frame.safeAreaInsets
@@ -14,13 +17,54 @@ struct RootView: View {
                 .environment(\.sottoScreen, CGSize(width: frame.size.width + insets.leading + insets.trailing,
                                                     height: frame.size.height + insets.top + insets.bottom))
         }
+        .modifier(ModelWatch(model: model, read: { [model] in model.computers.isEmpty }, revision: $revision))
+    }
+}
+
+/// Scratch: stands for a view's watch on the model. Every publish counts, as `@EnvironmentObject` does; with
+/// `--bench-tabs` only one that changes what `read` returns, checked once the change has landed.
+struct ModelWatch<Value: Equatable>: ViewModifier {
+    let model: AppModel
+    let read: @MainActor () -> Value
+    @Binding var revision: Int
+    @State private var seen: Value?
+    func body(content: Content) -> some View {
+        content
+            .onAppear { seen = read() }
+            .onReceive(model.objectWillChange) { _ in
+                guard BenchArm.tabs else { revision &+= 1; return }
+                DispatchQueue.main.async {
+                    let now = read()
+                    if now != seen { seen = now; revision &+= 1 }
+                }
+            }
+    }
+}
+
+/// Scratch: what `MainTabs` reads of the model.
+struct MainTabsInputs: Equatable {
+    var badge: Int
+    var watcherHostID: String?
+    var watcherTab: WatcherTabState
+    var selected: ThreadRef?
+    var railNested: ThreadRef?
+    var adding: Bool
+    var alertOpened: ThreadRef?
+    var watcherAlertOpened: String?
+    var shareOpened: ShareDestination?
+    @MainActor init(_ model: AppModel) {
+        badge = model.threadsBadge; watcherHostID = model.watcherHostID; watcherTab = model.watcherTab
+        selected = model.selected; railNested = model.railNested; adding = model.adding
+        alertOpened = model.alertOpened; watcherAlertOpened = model.watcherAlertOpened; shareOpened = model.shareOpened
     }
 }
 
 /// The tabs: Threads, Watcher when a paired computer runs it, Computers and Settings. The system's tab bar is hidden
 /// for `TabsBar`, which sits on the page with no glass behind it (ADR-0051, amended).
 struct MainTabs: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(\.unobservedModel) private var unobservedModel
+    private var model: AppModel { unobservedModel! }
+    @State private var revision = 0
     @State private var tab = Tab.threads
     @State private var threadPath = NavigationPath()
     @State private var watcherPath = NavigationPath()
@@ -49,10 +93,12 @@ struct MainTabs: View {
     @AppStorage(PhonePreferenceKey.duoSidebarHidden) private var sidebarHidden = false
     var body: some View {
         let _ = BenchProbe.body("MainTabs")
+        let _ = revision
         GeometryReader { frame in
             let duo = duoLayout(frame.safeAreaInsets)
             tabs(duo: duo).environment(\.duoLayout, duo)
         }
+        .modifier(ModelWatch(model: model, read: { [model] in MainTabsInputs(model) }, revision: $revision))
     }
     /// Which of the iPhone Duo's screens this is (ADR-0151, amended). Its cover screen leaves a strip down its right
     /// edge, under the clock and battery, outside the safe area but inside the window, and unfolded and held sideways
@@ -180,7 +226,7 @@ struct MainTabs: View {
             keyboard = ((note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.height ?? 0) > 120
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboard = false }
-        .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
+        .sheet(isPresented: Binding(get: { model.adding }, set: { model.adding = $0 }), onDismiss: { model.closeAdding() }) { AddComputerSheet() }
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
