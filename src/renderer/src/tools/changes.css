@@ -114,13 +114,15 @@
    they belong to the panel: every one of them counts as overflow of the panel and the workspace, far below the window. A
    press that lines a file up would then scroll the whole workspace, which clips and so has no scrollbar to bring it back. */
 .changes-files { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-/* Beside the lines where the panel has room for both. Where it has not, the tree would leave a strip with room for two
-   files and take that height from the lines, so it stays shut until All files opens it over them, whole. */
+/* Beside the lines only where the panel has room for both and the lines keep about 560px, enough for most code and a
+   reading width of prose without a wrap. Below that the lines take the whole panel, since reading them is why it is
+   open, and the tree stays shut until All files opens it over them, whole. A panel at its 56% share in a 1600px window
+   is below; a 1920px window, a widened panel or an expanded one is above. */
 .changes-tree { position: absolute; inset: 0; z-index: 2; display: none; flex-direction: column; min-height: 0; padding: 6px; background: var(--tools-bg, var(--tt-sidebar)); }
 .changes-review[data-tree-over] > .changes-tree { display: flex; }
 /* Under it the lines take no keys, and on a see-through theme they do not show through. */
-@container tools-body (max-width: 639px) { .changes-review[data-tree-over] > .changes-files { visibility: hidden; } }
-@container tools-body (min-width: 640px) {
+@container tools-body (max-width: 819px) { .changes-review[data-tree-over] > .changes-files { visibility: hidden; } }
+@container tools-body (min-width: 820px) {
   .changes-review[data-tree] { display: grid; grid-template-columns: minmax(0, 1fr) clamp(200px, 32%, 320px); }
   .changes-review[data-tree] > .changes-tree { position: static; display: flex; border-left: 1px solid var(--tt-hairline); background: transparent; }
   .changes-jump__all { display: none; }

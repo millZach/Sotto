@@ -459,7 +459,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await row.click()
     await work.click()
   } },
-  { name: 'changes', covers: ['changes-big', 'changes-file', 'changes-tree-press'], run: async capture => {
+  { name: 'changes', covers: ['changes-big', 'changes-expanded', 'changes-file', 'changes-tree-press'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
     const panel = await toolsTab(page, 'Changes')
@@ -468,16 +468,24 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     const expand = panel.getByRole('button', { name: 'Expand all files', exact: true })
     if (await expand.count()) await expand.click()
     await viewChoice(panel, 'tree', true)
-    await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeVisible()
+    await expect(panel.locator('.changes-review[data-tree]')).toBeAttached()
     await page.waitForTimeout(1_000)
-    const shows = 'Changes in Tools on Branch changes against origin/main: 30 files, about 4,200 lines added and removed, with the file tree showing and every file open.'
+    const shows = 'Changes in Tools on Branch changes against origin/main: 30 files, about 4,200 lines added and removed, with the file tree on and every file open. At this panel width the tree waits behind All files.'
     const differs = 'The diff is a real merge from this repository\'s history (ead571a0d), in a repository holding only the files it touched.'
     await capture.shoot('changes-big', shows, differs)
     for (const size of SMALLER_SIZES) await capture.shoot('changes-big', shows, differs, { modes: ['dark'], size })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
+    // Expanded, the panel has room for the tree beside the lines.
+    await page.getByRole('button', { name: 'Expand tools panel', exact: true }).click()
+    await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeVisible()
+    await page.waitForTimeout(500)
+    await capture.shoot('changes-expanded', 'The same comparison with the tools panel expanded over the thread, where the tree stands beside the lines.', differs)
+    await page.getByRole('button', { name: 'Restore tools panel', exact: true }).click()
+    await page.waitForTimeout(500)
     await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
     await capture.shoot('changes-file', 'The same diff, wheeled down to one file, src/main/agents/threadStore.ts, with its hunks.', differs)
     // A press on a file in the tree is the other way to a file, and it moves more than the list.
+    if (await panel.locator('.changes-jump__all').isVisible()) await panel.locator('.changes-jump__all').click()
     await panel.getByRole('listbox', { name: 'Files in this comparison' }).getByRole('option', { name: /storeOverlay\.ts/u }).first().click()
     await page.waitForTimeout(1_200)
     const moved = await page.evaluate(() => {
@@ -500,18 +508,21 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await panel.locator('.changes-scope__select').selectOption('branch')
     await expect(panel.locator('.changes-file').nth(29)).toBeAttached({ timeout: 60_000 })
     await viewChoice(panel, 'tree', true)
+    await panel.locator('.changes-jump__all').click()
     await panel.locator('.changes-tree__filter').fill('worker')
-    await capture.shoot('changes-tree-filter', 'The file tree filtered to the files with "worker" in their path, their long names whole.')
+    await capture.shoot('changes-tree-filter', 'The file tree, opened from All files, filtered to the files with "worker" in their path, their long names whole.')
     await panel.locator('.changes-tree__filter').fill('')
+    await page.keyboard.press('Escape')
+    await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeHidden()
     await panel.locator('.changes-view > button').click()
     await capture.shoot('changes-view-menu', 'View open in the bar above the files: the layout, wrapping, whitespace, one file at a time and the file tree.')
     await panel.locator('.changes-view > button').click()
     // A panel too narrow for the tree beside the lines opens it over them.
-    for (const size of SMALLER_SIZES) {
+    for (const size of [[1600, 1000] as const, ...SMALLER_SIZES]) {
       await resizeContentWindowFor(capture.launched, size[0], size[1])
       await panel.locator('.changes-jump__all').click()
       await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeVisible()
-      await capture.shoot('changes-all-files', 'All files open over the lines, in a panel too narrow for the tree beside them.', '', { modes: ['dark'], size })
+      await capture.shoot('changes-all-files', 'All files open over the lines, in a panel too narrow for the tree beside them.', '', { modes: size[0] === 1600 ? ['dark', 'light'] : ['dark'], size })
       await page.keyboard.press('Escape')
       await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeHidden()
     }

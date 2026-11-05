@@ -351,9 +351,10 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
             expect(layout.detailStubs, `${key} a fact in the line of chrome cut to a stub`).toEqual([])
             expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-chrome button:not([role="tab"]), .files-preview__head button, .changes-bar button, .changes-file__head button.files-icon')]
               .filter(control => control.scrollWidth > control.clientWidth + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), `${key} line and head controls clipped`).toEqual([])
-            // Changes' tree opens over the lines from All files in a narrow panel, so it is beside them or shut.
-            if (tool === 'Files' || tool === 'Changes' && layout.main >= 640) expect(layout.stacked, `${key} list and detail`).toBe(layout.main < 640)
-            if (tool === 'Changes' && layout.main < 640) await expect(panel.locator('.changes-tree'), `${key} tree shut`).toBeHidden()
+            // Changes' tree stands beside the lines only where they keep about 560px; below that it opens over them from All files, so it is beside them or shut.
+            if (tool === 'Files') expect(layout.stacked, `${key} list and detail`).toBe(layout.main < 640)
+            if (tool === 'Changes' && layout.main >= 820) expect(layout.stacked, `${key} list and detail`).toBe(false)
+            if (tool === 'Changes' && layout.main < 820) await expect(panel.locator('.changes-tree'), `${key} tree shut`).toBeHidden()
             const native = tool === 'Browser'
             const nativeBounds = native ? await browserBounds(launched, url) : null
             if (!native) await expect.poll(async () => (await nativeViews(launched)).length).toBe(0)
