@@ -651,7 +651,7 @@ private struct Conversation: View {
         let _ = BenchProbe.body("Conversation")
         let detail = model.shown(for: ref)
         let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
-        let pending = model.pending(for: ref)
+        let pending = model.replyRows(for: ref)
         let tail = Tail(revision: detail?.revision, rows: rows.count, last: rows.last?.id, pending: pending.map(\.id),
                         failed: model.failedReplies[ref.id] != nil)
         ScrollViewReader { proxy in
@@ -706,7 +706,7 @@ private struct Conversation: View {
         let last = model.lastPullRequest(ref, url: url)
         return PullRequestChip(url: url, dot: last.flatMap(PullRequests.dot), rollup: last.map { PullRequests.rollup($0.checks) })
     }
-    private func page(detail: ThreadDetail?, rows: [ConversationRow], pending: [PendingOperation], scroll: ScrollViewProxy) -> some View {
+    private func page(detail: ThreadDetail?, rows: [ConversationRow], pending: [ReplyRow], scroll: ScrollViewProxy) -> some View {
         let thread = model.thread(ref)
         let state = thread.map { ThreadState($0) } ?? .done
         return VStack(alignment: .leading, spacing: 0) {
@@ -746,7 +746,7 @@ private struct Conversation: View {
     }
 
     private func entries(thread: ThreadSummary?, state: ThreadState, detail: ThreadDetail?, rows: [ConversationRow],
-                         pending: [PendingOperation], scroll: ScrollViewProxy) -> some View {
+                         pending: [ReplyRow], scroll: ScrollViewProxy) -> some View {
         let online = model.online(ref.hostID)
         let provider = Words.provider(thread?.providerId)
         let working = workingRun(rows, state)
@@ -799,9 +799,10 @@ private struct Conversation: View {
                     .padding(.vertical, Space.s6)
                     .paragraphDirection()
             }
-            ForEach(pending) { item in
-                UnconfirmedRow(item: item, text: model.submitted[item.id], photos: model.submittedPhotos[item.id] ?? [],
-                               files: model.submittedFiles[item.id] ?? [], sending: model.isSending(item)) { dismissMarker = item }
+            ForEach(pending) { row in
+                UnconfirmedRow(item: row.item, text: row.text, photos: row.photos, files: row.files, sending: row.sending) {
+                    dismissMarker = row.item
+                }
             }
             if let text = model.failedReplies[ref.id] {
                 FailedReplyCard(ref: ref, text: text)

@@ -1167,6 +1167,36 @@ struct DraftFile: Identifiable {
     }
 }
 
+/// What a thread's page showed when a reply was sent to it: its user messages, and how many replies from this iPhone were
+/// still to join it. The reply has joined once more of the user's messages than that are new since.
+struct ReplySentFrom {
+    let before: Set<String>
+    let ahead: Int
+    func joined(_ messages: [Message]) -> Bool {
+        messages.lazy.filter { $0.role == "user" && !before.contains($0.id) }.count > ahead
+    }
+}
+
+/// A reply the computer took, kept as it was sent until its words join the page (`AppModel.arriving`).
+struct ArrivingReply {
+    let item: PendingOperation
+    let text: String?
+    let photos: [DraftPhoto]
+    let files: [DraftFile]
+    let from: ReplySentFrom
+    let at: Date
+}
+
+/// A row under a thread's conversation for something on its way or unconfirmed (`AppModel.replyRows`).
+struct ReplyRow: Identifiable {
+    let item: PendingOperation
+    let text: String?
+    let photos: [DraftPhoto]
+    let files: [DraftFile]
+    let sending: Bool
+    var id: String { item.id }
+}
+
 /// A video an agent wrote, as this iPhone fetched it to play (ADR-0170, part 4).
 enum AgentVideoOutcome: Equatable {
     case file(URL)
@@ -1359,6 +1389,13 @@ struct RailAsk: Equatable {
         if Self.publishesEverything { objectWillChange.send() }
     }
     @Published private(set) var submitted: [String: String] = [:]
+    /// Replies the computer took whose words haven't joined their thread's page yet, by operation ID. Each keeps its row
+    /// under the conversation, as on its way, until the update that shows its words, so the row and the message swap in one
+    /// step. The computer confirms a reply and adds it to the thread in separate pushes, in either order; between the two
+    /// the page lost the row or showed the words twice, and a reader at its end saw it jump up and back down.
+    @Published private(set) var arriving: [String: ArrivingReply] = [:]
+    /// What each reply's thread showed when it was sent, by operation ID, to tell its own message from the others'.
+    private var sentFrom: [String: ReplySentFrom] = [:]
     @Published private(set) var failedReplies: [String: String] = [:]
     /// Photos in each reply box, by `PhotoBox.id`, in the order they were chosen.
     @Published private(set) var draftPhotos: [String: [DraftPhoto]] = [:]
@@ -1801,7 +1838,7 @@ struct RailAsk: Equatable {
         func confirmed() {
             SendWatch.mark("confirmed")
             dispatchingOperations[operation.id] = nil
-            try? forgetMarker(operation.id)
+            try? forgetDelivered(operation)
             setStatus("running")
         }
         try? await Task.sleep(nanoseconds: 300_000_000)
@@ -2520,6 +2557,27 @@ struct RailAsk: Equatable {
         return pending.filter { $0.matches(hostID: hostID, clientID: computer.pairing.clientId) }
     }
     func pending(for ref: ThreadRef) -> [PendingOperation] { scoped(ref.hostID).filter { $0.threadID == ref.threadID } }
+    /// The rows under the open thread's conversation for what is on its way or unconfirmed: each kept marker, but a reply
+    /// still sending whose words the page already shows, and each reply the computer took whose words it doesn't show yet.
+    func replyRows(for ref: ThreadRef) -> [ReplyRow] {
+        let messages = shown(for: ref)?.messages ?? []
+        let now = Date()
+        let taken = arriving.values
+            .filter { $0.item.hostID == ref.hostID && $0.item.threadID == ref.threadID && now.timeIntervalSince($0.at) < Self.arrivingLimit
+                && !$0.from.joined(messages) }
+            .sorted { $0.at < $1.at }
+            .map { ReplyRow(item: $0.item, text: $0.text, photos: $0.photos, files: $0.files, sending: true) }
+        let kept = pending(for: ref).compactMap { item -> ReplyRow? in
+            let sending = isSending(item)
+            if sending, sentFrom[item.id]?.joined(messages) == true { return nil }
+            return ReplyRow(item: item, text: submitted[item.id], photos: submittedPhotos[item.id] ?? [],
+                            files: submittedFiles[item.id] ?? [], sending: sending)
+        }
+        return taken + kept
+    }
+    /// How long a reply the computer took keeps its row for words that haven't joined the page, as when the thread
+    /// isn't open to read them.
+    private static let arrivingLimit: TimeInterval = 30
     func provider(for ref: ThreadRef) -> Provider? {
         let providerID = thread(ref)?.providerId
         return live[ref.hostID]?.shell?.host.providers?.first { $0.id == providerID }
@@ -3254,6 +3312,7 @@ struct RailAsk: Equatable {
             let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID,
                                              draftID: draft, kind: queuing ? "queue" : "reply")
             try remember(operation); submitted[operation.id] = text; drafts[ref.id] = ""
+            if !queuing { sentFrom[operation.id] = replySentFrom(ref) }
             if !images.isEmpty { submittedPhotos[operation.id] = photos(ref); photosSent?(photos(ref), ref); draftPhotos[ref.id] = nil }
             if !stagedFiles.isEmpty { submittedFiles[operation.id] = files(ref); draftFiles[ref.id] = nil }
             photoNotices[ref.id] = nil
@@ -3835,10 +3894,11 @@ struct RailAsk: Equatable {
     private func forgetMarker(_ id: String) throws {
         let next = pending.filter { $0.id != id }
         #if DEBUG && os(iOS)
-        if isUIFixture { pending = next; submitted.removeValue(forKey: id); return }
+        if isUIFixture { pending = next; submitted.removeValue(forKey: id); sentFrom[id] = nil; return }
         #endif
         try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
         submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id); submittedFiles.removeValue(forKey: id)
+        sentFrom[id] = nil
     }
     @discardableResult private func dispatch(_ command: JSONValue, operation: PendingOperation) async -> Shell? {
         let hostID = operation.hostID, current = generations[hostID]
@@ -4042,9 +4102,28 @@ struct RailAsk: Equatable {
                     : String(localized: "Your reply to a thread on \(name(item.hostID)) wasn’t sent. Its text is back in that thread.", comment: "%@ is the computer's name")
             }
         } else if accepted || receipt.map({ item.reconciled(receipt: $0, deliveries: shell?.deliveries ?? []) }) == true {
-            try forgetMarker(item.id)
+            try forgetDelivered(item)
             if feedbackOperations.remove(item.id) != nil, feedbackOperations.isEmpty { feedback = nil }
         }
+    }
+    /// Lets go of a reply the computer took. Its row stays until the page shows its words, in the same step (`arriving`).
+    private func forgetDelivered(_ item: PendingOperation) throws {
+        let now = Date()
+        let from = sentFrom[item.id]
+        let messages = shown(for: ThreadRef(hostID: item.hostID, threadID: item.threadID))?.messages ?? []
+        var next = arriving.filter { now.timeIntervalSince($0.value.at) < Self.arrivingLimit }
+        if item.kind == "reply", let from, !from.joined(messages) {
+            next[item.id] = ArrivingReply(item: item, text: submitted[item.id], photos: submittedPhotos[item.id] ?? [],
+                                          files: submittedFiles[item.id] ?? [], from: from, at: now)
+        }
+        if Set(next.keys) != Set(arriving.keys) { arriving = next }
+        try forgetMarker(item.id)
+    }
+    /// The user's messages the thread's page shows now, and how many of this iPhone's replies are ahead of one sent now.
+    private func replySentFrom(_ ref: ThreadRef) -> ReplySentFrom {
+        let messages = shown(for: ref)?.messages ?? []
+        let ahead = arriving.values.filter { $0.item.hostID == ref.hostID && $0.item.threadID == ref.threadID && !$0.from.joined(messages) }.count
+        return ReplySentFrom(before: Set(messages.lazy.filter { $0.role == "user" }.map(\.id)), ahead: ahead)
     }
     private func rejectOperation(_ operation: PendingOperation) throws {
         if let text = submitted[operation.id], operation.kind == "reply" || operation.kind == "queue" {
