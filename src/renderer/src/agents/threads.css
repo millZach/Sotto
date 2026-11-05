@@ -259,6 +259,22 @@
 .thread-workspace__compose > * { pointer-events: auto; }
 /* How much of the transcript's foot the composer covers, and the band Jump to latest stands in above it. */
 .thread-transcript__viewport { --thread-compose-cover: var(--thread-compose-height, 0px); --thread-jump-band: 0px; display: flex; flex: 1; min-height: 0; }
+/* The words run on under the card (#1391) and end there, rather than showing again in the space under its foot or past its
+   rounded corners. They also dim over the last 24px above its top, so a line meets the card softly; a thread's last line
+   stands clear of those 24px. A mask, not a fill, so it holds on Glass and paints nothing where there are no words, which is
+   what keeps the card from reading as sitting in a well. The scroll bar's lane at the right keeps its full ink. Glass's card
+   can be seen through, so there the words end just inside its top, above what is written on the card. */
+@property --thread-foot-top { syntax: '<length>'; inherits: false; initial-value: 0px; }
+.thread-pane:not(.watcher-pane, [data-greeting], [data-questions]) > .thread-transcript > .thread-transcript__viewport {
+  --thread-foot-top: var(--thread-compose-shown, var(--thread-compose-height, 0px));
+  --thread-foot-end: calc(var(--thread-prompt-foot, 20px) + var(--tt-radius-card));
+  mask-image: linear-gradient(black, black), linear-gradient(to top, transparent var(--thread-foot-end), color-mix(in srgb, black 20%, transparent) var(--thread-foot-top), black calc(var(--thread-foot-top) + 24px));
+  mask-position: right top, left top; mask-repeat: no-repeat; mask-size: 16px 100%, 100% 100%;
+  transition: --thread-foot-top 160ms ease-out;
+}
+:root[data-glass] .thread-pane:not(.watcher-pane, [data-greeting], [data-questions]) > .thread-transcript > .thread-transcript__viewport { --thread-foot-end: calc(var(--thread-foot-top) - 14px); }
+@media (prefers-reduced-motion: reduce) { .thread-pane > .thread-transcript > .thread-transcript__viewport { transition: none; } }
+:root[data-reduced-motion='on'] .thread-pane > .thread-transcript > .thread-transcript__viewport { transition: none; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: calc(var(--thread-compose-cover) + var(--thread-jump-band)); }
 .thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap)); }
 /* A waiting question keeps 26px of conversation under its rounded corners (#1815), without clipping those words.

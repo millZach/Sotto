@@ -349,7 +349,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
-  { name: 'reading', covers: ['reading-copy', 'reading-scrubber', 'reading-jump-focus', 'reading-new-messages', 'reading-clay'], run: async capture => {
+  { name: 'reading', covers: ['reading-copy', 'reading-scrubber', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
     await scrollTranscript(page, 'middle')
@@ -396,6 +396,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('streaming-1', 'A streaming turn before its first word: the working line after three steps, one command running.', differs)
     await streamTo(page, 'second')
     await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list; the transcript follows the end.', differs)
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'glass', lightTheme: 'glass' }))
+    await capture.shoot('reading-glass', 'The same reply on Glass, whose room is painted once and whose cards are translucent, to check the foot of the transcript.')
     await streamTo(page, 'third')
     await capture.shoot('streaming-3', 'The same turn further on, its reply cut off inside the code block as it arrives.', differs)
   } },

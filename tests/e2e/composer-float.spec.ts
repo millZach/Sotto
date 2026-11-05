@@ -69,7 +69,7 @@ async function history(page: Page, threadId: string): Promise<void> {
 
 const paneOf = (page: Page, threadId: string): Locator => page.locator(`section.thread-pane[data-thread-id="${key(threadId)}"]`)
 
-interface Float { hit?: string | null; composeHeight: number; marginTop: number; overlap: number; logPadding: number; underStrip: boolean; lastClear: boolean; clipped: boolean; scrollbarClear: boolean }
+interface Float { hit?: string | null; masked: boolean; composeHeight: number; marginTop: number; overlap: number; logPadding: number; underStrip: boolean; lastClear: boolean; clipped: boolean; scrollbarClear: boolean }
 
 /** How far the composer sits over the transcript, read after the transcript is scrolled to its end. */
 async function float(pane: Locator): Promise<Float> {
@@ -92,6 +92,7 @@ async function float(pane: Locator): Promise<Float> {
       underStrip: strip !== null && log.contains(strip), hit: strip ? `${strip.tagName}.${strip.className}` : null,
       lastClear: (last ?? content).bottom <= composeBox.top + 1,
       clipped: getComputedStyle(log.parentElement!).clipPath !== 'none',
+      masked: getComputedStyle(log.parentElement!).maskImage !== 'none',
       scrollbarClear: scrollbar !== null && log.contains(scrollbar),
     }
   })
@@ -106,6 +107,8 @@ function expectFloating(layout: Float): void {
   expect(layout.underStrip, context).toBe(true)
   // Nothing cuts the words off at the composer's top: they scroll on under it (#1391).
   expect(layout.clipped, context).toBe(false)
+  // They end inside the card, so nothing shows in the space under its foot.
+  expect(layout.masked, context).toBe(true)
   expect(layout.scrollbarClear, context).toBe(true)
   expect(layout.lastClear, context).toBe(true)
 }
