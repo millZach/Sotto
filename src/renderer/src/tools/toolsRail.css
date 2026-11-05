@@ -43,6 +43,9 @@
   border-left: 1px solid var(--tt-hairline);
 }
 .tools-rail__tabs { display: flex; flex-direction: column; gap: 2px; }
+/* Three groups, parted by air rather than rules: the pages Sotto shows the thread (Browser, iPhone), its working copy
+   (Terminal, Files, Changes, PR), and Agents, which always follows the focused thread. The order is unchanged. */
+.tools-rail__tab:is([data-surface='terminal'], [data-surface='agents']) { margin-top: 10px; }
 .tools-rail__tab {
   position: relative; display: grid; place-items: center; align-content: center; gap: 4px; width: 50px; height: 50px; padding: 0;
   border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); font-weight: 500; line-height: 1;
@@ -69,6 +72,7 @@
   .tools-panel { --tools-rail-width: 44px; }
   .tools-rail { gap: 6px; padding-top: calc(var(--tools-chrome-height) + 4px); }
   .tools-rail__tab { width: 36px; height: 36px; }
+  .tools-rail__tab:is([data-surface='terminal'], [data-surface='agents']) { margin-top: 8px; }
   .tools-rail__tab[aria-selected='true']::before { top: 9px; bottom: 9px; }
   .tools-rail__word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .tools-rail__live { top: 4px; right: 4px; }

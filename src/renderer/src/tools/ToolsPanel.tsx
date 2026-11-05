@@ -3,7 +3,7 @@ import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
+import { Copy, FileDiff, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
@@ -139,7 +139,7 @@ function WorkingCopyLine({ thread, project, knownBranch, host }: { readonly thre
   </div>
 }
 
-const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, agents: Users }
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: FileDiff, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, agents: Users }
 /** A surface's name where its rail word is shortened. */
 const SURFACE_NAMES: Partial<Record<ToolSurfaceId, MessageDescriptor>> = { 'pull-request': msg`Pull request` }
 /** A surface's whole name: its rail word, or the longer name where the rail word is shortened. */
@@ -170,7 +170,7 @@ function ToolsRailTabs({ value, live, attention, onChange }: { readonly value: T
   readonly attention: Partial<Record<ToolSurfaceId, boolean>>; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
   const { t, i18n } = useLingui()
   return <div className="tools-rail__tabs" role="tablist" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} aria-orientation="vertical">
-    {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable"
+    {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable" data-surface={surface.id}
       aria-selected={value === surface.id} aria-controls={`tools-surface-${surface.id}`} tabIndex={value === surface.id ? 0 : -1}
       aria-label={SURFACE_NAMES[surface.id] ? i18n._(SURFACE_NAMES[surface.id]!) : undefined}
       aria-description={live[surface.id]} title={live[surface.id] ? `${surfaceName(surface.id)}: ${live[surface.id]}` : surfaceName(surface.id)}
