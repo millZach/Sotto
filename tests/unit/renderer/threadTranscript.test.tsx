@@ -153,7 +153,7 @@ describe('a pane holding the last turns of a long thread', () => {
   it('puts each turn’s work between its own message and its reply once the earlier messages are loaded', () => {
     render(<MessageList messages={history} provider="claude" running placement={placeActivities(history, history, activities)} context={live} />)
     const turns = screen.getAllByRole('region', { name: /Worked for/u })
-    turns.forEach((turn, index) => expect(turn).toHaveAccessibleName(['Worked for 3m 34s · 1 step · Ran 1 command', 'Worked for 29m 10s · 1 step · Ran 1 command'][index]))
+    turns.forEach((turn, index) => expect(turn).toHaveAccessibleName(['Worked for 3m 34s · Ran 1 command', 'Worked for 29m 10s · Ran 1 command'][index]))
     const transcript = document.body.textContent ?? ''
     const order = ['user u0', 'Worked for 3m 34s', 'assistant a0', 'user u1', 'Worked for 29m 10s', 'assistant a1', 'user u2', 'assistant a2']
     expect(order.map(text => transcript.indexOf(text))).toEqual([...order.map(text => transcript.indexOf(text))].sort((a, b) => a - b))

@@ -55,7 +55,7 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await expect(log.locator('.thread-message')).toHaveCount(2)
     await expect(log.locator('.thread-activity')).toHaveCount(0)
     await expect(log.locator('.thread-message').last()).toContainText('Fixed. The length marker is patched after every chunk')
-    await expect(work).toHaveCSS('font-size', '14px')
+    await expect(work).toHaveCSS('font-size', '13px')
     await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '15px')
     expect(await overflow(page)).toBeLessThanOrEqual(0)
 
@@ -202,9 +202,7 @@ test('restored history reads as unknown and trimmed, never as success', async ()
   try {
     await show(page, 'restored')
     const log = transcript(page)
-    await log.getByRole('button', { name: 'Outcome unknown' }).click()
-    const summary = log.getByRole('button', { name: 'Ran 2 commands, 1 reasoning summary' })
-    await summary.click()
+    await log.getByRole('button', { name: /^Outcome unknown/ }).click()
     const read = log.getByRole('button', { name: 'Get-Content -Path src/main/audio/wavStream.ts -TotalCount 80, Outcome unknown' })
     await read.click()
     await expect(page.locator(`#${await read.getAttribute('aria-controls')}`.replaceAll(':', '\\:'))).toContainText('Time not recorded · Some details were not kept.')
@@ -213,7 +211,7 @@ test('restored history reads as unknown and trimmed, never as success', async ()
     await expect(log.locator('.thread-activity__meta').filter({ hasText: 'Outcome unknown' })).toHaveCount(0)
     for (const mode of ['dark', 'light'] as const) {
       await theme(page, mode)
-      await scrollTo(page, summary, 60)
+      await scrollTo(page, read, 60)
       await page.screenshot({ path: resolve(shots, `restored-1280-${mode}.png`) })
     }
   } finally { await app.close() }

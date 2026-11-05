@@ -74,13 +74,35 @@ describe('settled activity in the transcript', () => {
     expect(messages[1]).toHaveTextContent('Done. The preview plays a two-second sample')
 
     fireEvent.click(summary)
-    // Opened, the group carries only its counts and opens with the fold, and its failure folds with the rest of its rows.
+    // Opened, the one group's rows stand straight under the line with no line of their own, and its failure folds with the
+    // rest of its rows.
     const group = within(work).getByRole('region', { name: 'Ran 2 commands, changed 1 file, 1 line added, 1 line removed' })
-    const counts = within(group).getByRole('button', { name: 'Ran 2 commands, changed 1 file, 1 line added, 1 line removed' })
-    expect(counts).toHaveAttribute('aria-expanded', 'true')
+    expect(within(group).queryByRole('button', { name: 'Ran 2 commands, changed 1 file, 1 line added, 1 line removed' })).not.toBeInTheDocument()
     expect(within(group).getByRole('button', { name: 'npm run lint, Exit 1' })).toBeVisible()
-    fireEvent.click(counts)
-    expect(within(group).queryByRole('button', { name: 'npm run lint, Exit 1' })).not.toBeInTheDocument()
+    fireEvent.click(summary)
+    expect(within(work).queryByRole('button', { name: 'npm run lint, Exit 1' })).not.toBeInTheDocument()
+  })
+
+  it('says an edit once: the press beside the line goes while the fold is open, and the count while the row is', () => {
+    const { transcript } = mount(stateWith({ activities: settled() }))
+    const changed = (): HTMLElement | null => within(transcript).queryByRole('button', { name: 'Edited voice.ts, 1 line added, 1 line removed' })
+    const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s · 3 steps · Ran 2 commands' })
+    expect(changed()).toBeInTheDocument()
+    fireEvent.click(work)
+    expect(changed()).not.toBeInTheDocument()
+    const row = within(transcript).getByRole('button', { name: 'Edited src/voice.ts, 1 line added, 1 line removed, completed' })
+    expect(row.querySelector('.thread-lines')).toHaveTextContent('+1 −1')
+    fireEvent.click(row)
+    expect(row.querySelector('.thread-lines')).not.toBeInTheDocument()
+    expect(row).toHaveAccessibleName('Edited src/voice.ts, 1 line added, 1 line removed, completed')
+    fireEvent.click(work)
+    expect(changed()).toBeInTheDocument()
+  })
+
+  it('keeps the total beside the line when the fold holds several changed files', () => {
+    const { transcript } = mount(stateWith({ activities: [...settled(), activity({ id: 'second', kind: 'file-change', title: 'Edit', changes: [{ path: 'src/other.ts', kind: 'edit', diff: '@@ -1 +1 @@\n-old\n+new\n' }] })] }))
+    fireEvent.click(within(transcript).getByRole('button', { name: /^Worked for/u }))
+    expect(within(transcript).getByRole('button', { name: 'Changed 2 files, 2 lines added, 2 lines removed' })).toBeInTheDocument()
   })
 
   it('says what the turn changed beside its line, with the lines it added and removed', () => {
@@ -103,8 +125,8 @@ describe('settled activity in the transcript', () => {
     expect([...transcript.querySelectorAll('.thread-message')].map(message => message.textContent)).toEqual([
       expect.stringContaining('Check the parser.'), expect.stringContaining('The parser is fine.'),
     ])
-    fireEvent.click(within(transcript).getByRole('button', { name: 'Worked for 1m 05s · 1 step · Ran 1 command' }))
-    const work = within(transcript).getByRole('region', { name: 'Worked for 1m 05s · 1 step · Ran 1 command' })
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Worked for 1m 05s · Ran 1 command' }))
+    const work = within(transcript).getByRole('region', { name: 'Worked for 1m 05s · Ran 1 command' })
     expect(work).toHaveTextContent('Looking at the parser first.')
     expect(within(work).getByRole('button', { name: 'Ran 1 command' })).toBeVisible()
   })
@@ -116,7 +138,6 @@ describe('settled activity in the transcript', () => {
     work.focus()
     await user.keyboard('{Enter}')
     expect(work).toHaveAttribute('aria-expanded', 'true')
-    expect(within(transcript).getByRole('button', { name: 'Ran 2 commands, changed 1 file, 1 line added, 1 line removed' })).toHaveAttribute('aria-expanded', 'true')
     const row = within(transcript).getByRole('button', { name: 'npm test -- --run, completed in 4.2s' })
     row.focus()
     await user.keyboard(' ')
@@ -139,7 +160,6 @@ describe('settled activity in the transcript', () => {
     const { transcript } = mount(stateWith({ activities: settled() }))
     const work = within(transcript).getByRole('button', { name: 'Worked for 2m 04s · 3 steps · Ran 2 commands' })
     await user.click(work)
-    const summary = within(transcript).getByRole('button', { name: 'Ran 2 commands, changed 1 file, 1 line added, 1 line removed' })
     const row = within(transcript).getByRole('button', { name: 'npm test -- --run, completed in 4.2s' })
     await user.click(row)
     const copy = within(document.getElementById(row.getAttribute('aria-controls')!)!).getAllByRole('button', { name: /^Copy/ })[0]!
@@ -147,9 +167,6 @@ describe('settled activity in the transcript', () => {
     await user.keyboard('{Escape}')
     expect(row).toHaveAttribute('aria-expanded', 'false')
     expect(row).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(summary).toHaveAttribute('aria-expanded', 'false')
-    expect(summary).toHaveFocus()
     await user.keyboard('{Escape}')
     expect(work).toHaveAttribute('aria-expanded', 'false')
     expect(work).toHaveFocus()
@@ -272,7 +289,7 @@ describe('the running turn', () => {
     })
     expect(within(transcript).queryByTestId('thread-activity-live')).not.toBeInTheDocument()
     // The steps were left open, so the finished turn's fold starts open.
-    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s · 9 steps · Ran 9 commands' })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(transcript).getByRole('button', { name: 'Worked for 1.0s · Ran 9 commands' })).toHaveAttribute('aria-expanded', 'true')
   })
 })
 
@@ -304,8 +321,8 @@ describe('thinking as it streams', () => {
       activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: 'Summary' }),
     ] }))
     await user.click(within(transcript).getByRole('button', { name: /^Worked/ }))
-    // The group opens with the fold.
-    expect(within(transcript).getByRole('button', { name: '1 reasoning summary, thought 2 times' })).toHaveAttribute('aria-expanded', 'true')
+    // The group is all the fold holds, so its rows stand under the line, and it keeps its counts as its name.
+    expect(within(transcript).getByRole('region', { name: '1 reasoning summary, thought 2 times' })).toBeVisible()
     const quiet = within(transcript).getByRole('group', { name: 'Thinking, completed in 1.2s' })
     expect(quiet.closest('.thread-activity__row')).toHaveAttribute('data-kind', 'reasoning')
   })
@@ -321,7 +338,7 @@ describe('honest detail', () => {
       activity({ id: 'lost', command: 'git status', status: 'unknown', truncated: true, output: 'On branch' }),
     ] }))
     await user.click(within(transcript).getByRole('button', { name: /^Worked/ }))
-    expect(within(transcript).getByRole('button', { name: 'Ran 1 command, 1 agent action, 1 reasoning summary' })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(transcript).getByRole('region', { name: 'Ran 1 command, 1 agent action, 1 reasoning summary' })).toBeVisible()
     await user.click(within(transcript).getByRole('button', { name: 'Spawn agent, 2 agents, completed' }))
     const agents = within(transcript).getByRole('list', { name: 'Agents' })
     expect(agents).toHaveTextContent('Agent 1RunningReading parserAgent 2Failed')

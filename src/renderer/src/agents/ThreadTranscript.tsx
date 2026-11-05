@@ -95,8 +95,9 @@ export interface ActivityContext {
   readonly onSeek?: ((message: HTMLElement) => void) | undefined
 }
 
-function ActivityGroups({ groups, context, outcome }: {
+function ActivityGroups({ groups, context, outcome, bare }: {
   readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext; readonly outcome?: AgentActivity['status'] | undefined
+  readonly bare?: boolean | undefined
 }): ReactNode {
   return groups?.map(group => {
     const compaction = compactionOf(group)
@@ -106,7 +107,7 @@ function ActivityGroups({ groups, context, outcome }: {
       ? <CompactionLine key={group.key} record={compaction} />
       : group.turnId === context.liveTurn ? <LiveBrowserLines key={group.key} group={group} connected={context.connected} onDisclosure={context.onDisclosure} />
       : <ActivityGroupView key={group.key} group={group} live={false} threadRunning={context.running}
-        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} />
+        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} bare={bare} />
   }) ?? null
 }
 
@@ -143,7 +144,7 @@ function QuestionWords({ text }: { readonly text: string }): ReactNode {
  * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
  * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, steps, did, delegated, open, setOpen, turn, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
+function TurnWork({ headline, steps, did, delegated, open, setOpen, turn, failed, changes, sayOnce, onDisclosure, onSeek, lifted, who, children }: {
   readonly headline: string; readonly turn?: AgentActivity | undefined; readonly changes: readonly TurnChange[]
   /** How many steps the fold holds, after the headline ("Worked for 2m 04s · 12 steps"). */
   readonly steps: number
@@ -158,6 +159,8 @@ function TurnWork({ headline, steps, did, delegated, open, setOpen, turn, failed
   readonly open: boolean; readonly setOpen: (open: boolean) => void
   /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
   readonly failed: boolean
+  /** Once the fold is open its own row names a single changed file, so the press beside this line leaves it to the row. */
+  readonly sayOnce: boolean
   readonly onDisclosure: (element: HTMLElement) => void; readonly onSeek?: ((message: HTMLElement) => void) | undefined
   readonly lifted: readonly LiftedReply[]; readonly who: string; readonly children: ReactNode
 }): ReactNode {
@@ -184,7 +187,7 @@ function TurnWork({ headline, steps, did, delegated, open, setOpen, turn, failed
         <span id={`${bodyId}-headline`} className="thread-work__headline">{headline}{steps ? ` · ${stepsLabel(steps)}` : null}{did ? ` · ${did}` : null}{delegated}</span>
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
-      <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />
+      {sayOnce && open && changes.length === 1 ? null : <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />}
       <TurnFailureReason turn={turn} />
       <Fold open={open}><div id={bodyId} ref={body} className="thread-work__body">{children}</div></Fold>
     </section>
@@ -498,16 +501,24 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
+  const records = groups.flatMap(group => group.records)
+  const steps = records.filter(isStep)
+  // Watcher's conversation keeps its own line and rows.
+  const sayOnce = speaker !== 'watcher'
+  // A fold of nothing but commands counts them in what they did, "Ran 3 commands", so the line says the count once.
+  const counted = sayOnce && steps.every(step => step.kind === 'command')
+  // A fold that holds one group and no replies has no need of that group's line: it would say what the Worked for line says.
+  const bare = sayOnce && !work.length && folded(groups).length === 1
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={groups.reduce((count, group) => count + group.records.filter(isStep).length, 0)} did={workSummary(groups.flatMap(group => group.records))} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={counted ? 0 : steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
-      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} />
+      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
         {message === turn.user || unfolded.has(message) ? null : article(message)}
-        <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
+        <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} bare={bare} />
       </React.Fragment>)}
-      <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
+      <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} bare={bare} />
       <DelegatedWork views={delegations} />
     </TurnWork>
     <ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} />

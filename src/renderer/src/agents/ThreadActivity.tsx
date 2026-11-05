@@ -70,6 +70,11 @@ export interface ActivityGroupViewProps {
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
   /** How the turn ended, when a folded turn line above the group already says it. */
   readonly outcome?: AgentActivity['status'] | undefined
+  /**
+   * The group is all a fold holds, so its line would only say again what the Worked for line above it says: the rows stand
+   * straight under that line, with no heading and no fold of their own.
+   */
+  readonly bare?: boolean | undefined
 }
 
 /** Whole seconds while the clock runs, so the number does not flicker through tenths. */
@@ -364,7 +369,8 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
-      <LineCountMarks counts={lines} spoken={false} />
+      {/* An open edit's diff says its count at the head of what it opens, right under this row. */}
+      <LineCountMarks counts={open && record.kind === 'file-change' ? null : lines} spoken={false} />
       {running ? <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" /> : null}
       {quietUnknown && record.status === 'unknown' ? null : status}
       {running && connected && record.startedAt ? <> <Elapsed startedAt={record.startedAt} /></> : null}
@@ -393,7 +399,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
  * a press here does not change that, because the group usually sits inside a fold that follows it. Nothing here can act
  * on the provider or its agents.
  */
-export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome }: ActivityGroupViewProps): ReactNode {
+export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
   const [choice, setChoice] = useState<boolean | null>(null)
   const listId = useId()
@@ -402,10 +408,10 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
   const lineCounts = recordsLineCounts(group.records)
-  const canFold = !live && group.records.length > 0
+  const canFold = !live && !bare && group.records.length > 0
   const name = [headline, summary, lineCounts ? spokenLineCounts(lineCounts) : ''].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
   // A failed turn's own group is where a press that opens the thread at its failed turn lands.
-  return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined}
+  return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined} data-bare={bare || undefined}
     data-turn-outcome={group.turn?.status === 'failed' ? 'failed' : undefined}
     aria-label={name} onKeyDown={foldOnEscape(canFold && expanded, summary => { onDisclosure?.(summary); setChoice(false) })}>
     {canFold ? <button type="button" className="thread-activity__summary tt-focusable" aria-expanded={expanded} aria-controls={expanded ? listId : undefined} aria-label={name}
@@ -413,12 +419,15 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       {headline ? <span className="thread-activity__headline">{headline}</span> : null}
       {summary ? <span className="thread-activity__counts">{summary}</span> : null}
-      <LineCountMarks counts={lineCounts} spoken={false} />
+      {/* Once open, each row says its own. */}
+      <LineCountMarks counts={expanded ? null : lineCounts} spoken={false} />
     </button> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
       <CircleAlert className="thread-activity__chevron" size={14} aria-hidden="true" /><span className="thread-activity__headline">{headline}</span>
     </p> : null}
     <TurnFailureReason turn={group.turn} />
-    <Fold open={expanded}><ActivityGroupRows id={listId} group={group} live={live} connected={connected} provider={provider} onDisclosure={onDisclosure} outcome={outcome} /></Fold>
+    {bare
+      ? <ActivityGroupRows id={listId} group={group} live={live} connected={connected} provider={provider} onDisclosure={onDisclosure} outcome={outcome} />
+      : <Fold open={expanded}><ActivityGroupRows id={listId} group={group} live={live} connected={connected} provider={provider} onDisclosure={onDisclosure} outcome={outcome} /></Fold>}
   </section>
 })
 
