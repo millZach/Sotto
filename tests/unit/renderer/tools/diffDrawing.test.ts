@@ -106,6 +106,10 @@ describe('what a diff is', () => {
   it('reads a hunk head for its line and section', () => {
     expect(hunkHeading('@@ -335,11 +340,12 @@ Answering a question')).toEqual({ line: 340, section: 'Answering a question' })
     expect(hunkHeading('@@ -1 +1 @@')).toEqual({ line: 1, section: '' })
+    // Git keeps 80 bytes of the line it names a hunk by and drops the rest unmarked.
+    const cut = "import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shar"
+    expect(hunkHeading(`@@ -15,6 +15,6 @@ ${cut}`)).toEqual({ line: 15, section: cut, cut: true })
+    expect(hunkHeading('@@ -15,6 +15,6 @@ export class ThreadStore {')?.cut).toBeUndefined()
     expect(hunkHeading('not a head')).toBeNull()
   })
 })

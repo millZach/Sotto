@@ -715,6 +715,8 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
   readonly oneNumber: boolean
 }): ReactNode {
   const { i18n } = useLingui()
+  // A document is words; only code breaks its wrapped lines by codeBreaks.
+  const code = !oneNumber
   const pickable = row.position !== null ? {
     'data-position': row.position, tabIndex: current ? 0 : -1, 'aria-selected': selected, 'aria-label': rowLabel(row), 'data-noted': noted || undefined,
   } : {}
@@ -728,7 +730,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
         <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.newLine ?? number, i18n) : undefined}>{line.newLine ?? ''}</span>
       </>}
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} /></>}</span>
+      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
     </div>
   }
   const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => {
@@ -737,7 +739,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-split__cell" role="gridcell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
       <span className="changes-line__number" aria-hidden="true" title={commentTitle(number, i18n)}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" data-shape={paint?.shape} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} /></span>
+      <span className="changes-line__text" data-shape={paint?.shape} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} code={code} /></span>
     </div>
   }
   return <div className="changes-split__row" role="row" data-path={path} data-old-line={row.old?.oldLine ?? undefined} data-new-line={row.next?.newLine ?? undefined} {...pickable}>

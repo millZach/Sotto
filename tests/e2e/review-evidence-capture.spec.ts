@@ -505,6 +505,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.waitForTimeout(500)
     await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
     await capture.shoot('changes-file', 'The same diff, wheeled down to one file, src/main/agents/threadStore.ts, with its hunks.', differs)
+    // Code wraps hardest where the panel is narrowest.
+    for (const size of SMALLER_SIZES) {
+      await resizeContentWindowFor(capture.launched, size[0], size[1])
+      await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
+      await capture.shoot('changes-file', 'The same file at a smaller window.', differs, { modes: ['dark'], size })
+    }
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
     // A press on a file in the tree is the other way to a file, and it moves more than the list.
     if (await panel.locator('.changes-jump__all').isVisible()) await panel.locator('.changes-jump__all').click()
     await panel.getByRole('listbox', { name: 'Files in this comparison' }).getByRole('option', { name: /storeOverlay\.ts/u }).first().click()

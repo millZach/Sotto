@@ -181,6 +181,9 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 /* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
 .changes-diff__rows[data-reading='code'] :is(.changes-line:not([data-kind='hunk']), .changes-split__cell) > .changes-line__text { --changes-hang: min(calc(var(--changes-indent, 0ch) + 2ch), 50%); padding-left: var(--changes-hang); text-indent: calc(var(--changes-hang) * -1); }
 .changes-files:not([data-wrap]) .changes-diff__rows .changes-line__text { white-space: pre; overflow-wrap: normal; }
+/* A short run of code a browser would break at a hyphen or a slash stays whole (codeBreaks in DiffBlock.tsx): a wrapped
+   line breaks at a space, and a long run after its dots and commas, before it breaks anywhere at all. */
+.changes-kept { white-space: nowrap; }
 /* A changed line carries a thin wash and an edge in its role's colour. The words that changed are found by their ink,
    drawn in the role's colour, over a wash only a little stronger than the line's, so a rewritten paragraph reads as
    coloured words rather than a wall of blocks. */

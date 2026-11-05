@@ -141,10 +141,19 @@ export function wholeSide(lines: readonly DiffLine[]): 'add' | 'remove' | undefi
   return side
 }
 
-/** What a hunk head says: the line it starts on, and the section Git found above it. */
-export function hunkHeading(text: string): { readonly line: number; readonly section: string } | null {
+/** Git keeps this many bytes of the line it names a hunk by, and cuts the rest without a mark (xdiff's `func_line`). */
+const GIT_SECTION_BYTES = 80
+const utf8 = new TextEncoder()
+
+/**
+ * What a hunk head says: the line it starts on, and the section Git found above it. `cut` says Git cut the section
+ * short, so the drawing can say so rather than leave a word ending mid-way as if something hid the rest.
+ */
+export function hunkHeading(text: string): { readonly line: number; readonly section: string; readonly cut?: true } | null {
   const match = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$/u.exec(text)
-  return match ? { line: Number(match[1]), section: match[2]!.trim() } : null
+  if (!match) return null
+  const section = match[2]!.trim()
+  return { line: Number(match[1]), section, ...(section && utf8.encode(match[2]!).length >= GIT_SECTION_BYTES ? { cut: true as const } : {}) }
 }
 
 const WORD = /[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu
