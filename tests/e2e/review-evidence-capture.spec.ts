@@ -641,7 +641,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   // The rest of reading a long comparison, and a diff away from the default palette. Controls are found by what they are,
   // since a new control's words only reach a build once the catalogs are extracted.
-  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-no-wrap', 'changes-one-file', 'changes-earlier', 'changes-clay', 'doc-edit-clay'], run: async capture => {
+  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-wrap', 'changes-one-file', 'changes-earlier', 'changes-clay', 'doc-edit-clay'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
     const panel = await toolsTab(page, 'Changes')
@@ -672,10 +672,10 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.waitForTimeout(300)
     await capture.shoot('changes-split', 'The same files in the split view, with the tree off.', '', { modes: ['dark'] })
     await viewChoice(panel, 'stacked', true)
-    await viewChoice(panel, 'wrap', false)
-    await page.waitForTimeout(300)
-    await capture.shoot('changes-no-wrap', 'The same files with Wrap long lines off: a long line scrolls sideways inside its own file.', '', { modes: ['dark'] })
     await viewChoice(panel, 'wrap', true)
+    await page.waitForTimeout(300)
+    await capture.shoot('changes-wrap', 'The same files with Wrap long lines on: a long line of code wraps inside its file, hanging inside its indent.', '', { modes: ['dark'] })
+    await viewChoice(panel, 'wrap', false)
     await viewChoice(panel, 'one-file', true)
     await panel.locator('.changes-jump__place + button + button').click()
     await expect(panel.locator('.changes-file')).toHaveCount(1)
