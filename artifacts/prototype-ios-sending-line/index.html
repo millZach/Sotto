@@ -1,0 +1,310 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. How the iPhone shows your words on their way so the page doesn't drop when they land
+     (the send jump, Nov 4 2026). Four ways, switched with ?variant= today|A|B|C and ?page= thread|watcher. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: words on their way (iPhone)</title>
+<style>
+@font-face { font-family: Figtree; src: url(Figtree.ttf); font-weight: 400; }
+@font-face { font-family: Figtree; src: url(Figtree-SemiBold.ttf); font-weight: 600; }
+:root {
+  --canvas: oklch(0.19 0.009 256);
+  --surface: oklch(0.235 0.01 255);
+  --raised: oklch(0.263 0.011 254);
+  --ink: oklch(0.985 0.003 255);
+  --muted: oklch(0.86 0.012 255);
+  --accent: oklch(0.8 0.12 235);
+  --onaccent: oklch(0.2 0.04 250);
+  --bubble: oklch(0.296 0.035 252);
+  --bubble-faint: oklch(0.296 0.035 252 / 0.6);
+  --hair: oklch(0.985 0.003 255 / 0.1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: oklch(0.13 0.006 256); color: var(--ink); font-family: Figtree, system-ui, sans-serif; }
+body { display: flex; flex-direction: column; align-items: center; padding: 18px 12px 120px; gap: 14px; }
+.intro { max-width: 760px; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.intro b { color: var(--ink); font-weight: 600; }
+.stage { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+.phone { width: 390px; height: 760px; border-radius: 44px; background: var(--canvas); position: relative; overflow: hidden;
+  box-shadow: 0 0 0 10px #050608, 0 0 0 11px #2a2d33, 0 30px 60px #0008; }
+.status { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: flex-end;
+  padding: 0 30px 6px; font-size: 15px; font-weight: 600; z-index: 3; background: linear-gradient(var(--canvas) 70%, transparent); }
+.title { position: absolute; top: 50px; left: 0; right: 0; height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 17px; font-weight: 600; z-index: 3; background: linear-gradient(var(--canvas) 75%, transparent); }
+.title .back { position: absolute; left: 16px; color: var(--accent); font-weight: 400; font-size: 26px; line-height: 1; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.dot.breathe { animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .35; } }
+.page { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px; }
+.col { display: flex; flex-direction: column; gap: 20px; }
+.agent { font-size: 15.5px; line-height: 1.38; color: var(--ink); max-width: 100%; }
+.agent p { margin: 0; }
+.step { font-size: 13.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.step::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: .6; }
+.working { font-size: 13.5px; font-weight: 600; color: var(--accent); display: flex; gap: 8px; align-items: center; }
+.mine { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-left: 48px; }
+.row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; }
+.bubble { font-size: 15.5px; line-height: 1.38; color: var(--ink); padding: 12px 16px; background: var(--bubble);
+  border-radius: 20px 20px 6px 20px; box-shadow: inset 0 0 0 1px oklch(0.8 0.12 235 / 0.12); max-width: 100%; transition: background-color .35s, box-shadow .35s; }
+.bubble.faint { background: var(--bubble-faint); border-radius: 20px; box-shadow: none; }
+.caption { font-size: 12px; line-height: 14.7px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.spin { width: 11px; height: 11px; border-radius: 50%; border: 1.6px solid oklch(0.86 0.012 255 / .25); border-top-color: var(--muted); animation: spin .8s linear infinite; flex: none; }
+.spin.gutter { width: 14px; height: 14px; border-width: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.tick { color: var(--accent); }
+.dock { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px 30px; z-index: 4;
+  background: linear-gradient(transparent, var(--canvas) 22%); }
+.box { display: flex; align-items: flex-end; gap: 8px; background: var(--raised); border-radius: 22px; padding: 6px 6px 6px 16px; min-height: 44px; }
+.field { flex: 1; font-size: 15.5px; line-height: 1.38; color: var(--ink); padding: 6px 0; min-height: 32px; }
+.field.empty { color: oklch(0.84 0.012 255 / .7); }
+.send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent); color: var(--onaccent); font-size: 18px; font-weight: 600; cursor: pointer; flex: none; }
+.send:disabled { opacity: .35; cursor: default; }
+.mark { position: absolute; left: 0; right: 0; border-top: 1.5px dashed oklch(0.7 0.18 23 / .9); z-index: 2; pointer-events: none; display: none; }
+.mark span { position: absolute; left: 8px; top: -18px; font-size: 11px; color: oklch(0.87 0.08 22); background: var(--canvas); padding: 0 4px; }
+.side { width: 330px; font-size: 13.5px; line-height: 1.45; color: var(--muted); display: flex; flex-direction: column; gap: 12px; }
+.side h2 { font-size: 17px; color: var(--ink); margin: 0; font-weight: 600; }
+.readout { background: var(--surface); border-radius: 14px; padding: 12px 14px; color: var(--ink); }
+.readout .big { font-size: 28px; font-weight: 600; }
+.readout .bad { color: oklch(0.7 0.18 23); }
+.readout .good { color: oklch(0.8 0.14 150); }
+.log { font: 12px ui-monospace, monospace; color: var(--muted); max-height: 170px; overflow: auto; white-space: pre; background: var(--surface); border-radius: 10px; padding: 8px 10px; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btns button, .bar button { font: 600 13.5px Figtree, sans-serif; border-radius: 999px; padding: 7px 14px; border: 0; background: var(--raised); color: var(--ink); cursor: pointer; }
+.btns button.on { background: var(--accent); color: var(--onaccent); }
+.bar { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: #f4f1ea; color: #1b1b1b;
+  border-radius: 999px; padding: 6px 8px; box-shadow: 0 8px 30px #000a; z-index: 10; font: 600 14px Figtree, sans-serif; }
+.bar button { background: #1b1b1b; color: #f4f1ea; padding: 6px 12px; }
+.bar .label { min-width: 290px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="intro">
+  <b>Prototype — throwaway.</b> Today, the words you send show with a faint "Sending…" line under them. When they land, that line goes,
+  the page loses about 20 pt at the bottom, and everything you were reading drops by that much. Each option below keeps your words
+  on their way the same height as the message they become. Press the round send button in the phone (or <b>Send again</b>) and watch the
+  red dashed line: it rides on the message above your words at the highest it has been, so a drop shows as a gap under it. Switch options in the bar at the bottom, or with ← →.
+</div>
+<div class="stage">
+  <div class="phone" id="phone">
+    <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="title" id="title"><span class="back">‹</span><span id="titleText">iPhone layout fixes</span></div>
+    <div class="mark" id="mark"><span>highest the message above your words reached</span></div>
+    <div class="page" id="page"><div class="col" id="col"></div></div>
+    <div class="dock" id="dock">
+      <div class="box"><div class="field" id="field"></div><button class="send" id="send" aria-label="Send">↑</button></div>
+    </div>
+  </div>
+  <div class="side">
+    <h2 id="vname"></h2>
+    <div id="vdesc"></div>
+    <div class="readout">
+      Words already on the page went back toward the box by<br>
+      <span class="big" id="back">—</span>
+      <div id="verdict" style="font-size:12.5px;margin-top:4px"></div>
+    </div>
+    <div class="btns">
+      <button id="again">Send again</button>
+      <button id="pThread">Thread</button>
+      <button id="pWatcher">Watcher</button>
+      <button id="slow">Slow: off</button>
+    </div>
+    <div class="log" id="log"></div>
+    <div style="font-size:12px">What isn't shown: the keyboard (it goes away on send in Watcher, as now), large text, and light mode. Movement
+      here is instant, as the run measured it on the simulator. Heights follow the app's own: body 15.5 pt, caption 12 pt, 6 pt between bubble and line.</div>
+  </div>
+</div>
+<div class="bar"><button id="prev" aria-label="Previous option">←</button><span class="label" id="barLabel"></span><button id="next" aria-label="Next option">→</button></div>
+
+<script>
+const VARIANTS = {
+  today: { name: 'Today — the line under your words goes when they land',
+           desc: 'What the app does now. The faint bubble has "Sending…" under it; when the message lands, the line is removed and the page drops by its height (20.5 pt on the SE, 20.7 on the 16 Pro Max in the run).' },
+  A: { name: 'A — Spinner beside the bubble',
+       desc: 'The small spinner sits in the empty space to the left of the faint bubble, on the same line. No text line, so nothing goes away when it lands: the spinner fades and the bubble turns solid. VoiceOver reads "Sending" on the bubble.' },
+  B: { name: 'B — Faint bubble only',
+       desc: 'No spinner and no words. The faint bubble alone says it is on its way and turns solid when it lands. Quietest; the least to tell you it is still going if the connection is slow.' },
+  C: { name: 'C — Keep the line, as "Sent"',
+       desc: 'The line stays under your message after it lands and reads "✓ Sent", until the agent\'s first step or answer arrives; it goes in the same moment the new words come in, so the page only ever grows.' },
+};
+const ORDER = ['today', 'A', 'B', 'C'];
+const params = new URLSearchParams(location.search);
+let variant = ORDER.includes(params.get('variant')) ? params.get('variant') : 'A';
+let pageKind = params.get('page') === 'watcher' ? 'watcher' : 'thread';
+let slow = false;
+
+const WORDS = 'Please check the wiring notes again.';
+const OLD = {
+  thread: [
+    { k: 'mine', t: 'The composer on the SE still covers the last line when the keyboard is up.' },
+    { k: 'step', t: 'Read ThreadViews.swift' },
+    { k: 'agent', t: 'The dock\'s inset was read before the keyboard finished moving, so the page rested 16 pt too low. I\'ve made it read the dock\'s height after the keyboard settles.' },
+    { k: 'mine', t: 'Good. And the Watcher page?' },
+    { k: 'agent', t: 'Watcher reads the same inset, so the same change covers it. Both phones pass the journey now.' },
+  ],
+  watcher: [
+    { k: 'agent', t: 'Three threads finished overnight. #2196 merged; #2199 and #2201 are waiting on checks.' },
+    { k: 'mine', t: 'Merge #2199 when it\'s green.' },
+    { k: 'agent', t: 'I\'ll merge #2199 with a merge commit once Gates, Package and Desktop pass, and tell you here.' },
+    { k: 'mine', t: 'Thanks. What\'s left on the iPhone send jump?' },
+    { k: 'agent', t: 'The run measured a 20.5 pt drop when your words land. It needs your pick on how "Sending…" shows.' },
+  ],
+};
+const STEP = { thread: 'Read docs/wiring-notes.md', watcher: null };
+const ANSWER = {
+  thread: 'The wiring notes say panel 3 still needs its second look: the relay labels on the left rail don\'t match the drawing. Panels 1, 2 and 4 are done.',
+  watcher: 'Panel 3 is the one left. Its relay labels don\'t match the drawing; the other three panels are signed off in the notes.',
+};
+
+const $ = (id) => document.getElementById(id);
+const col = $('col'), page = $('page'), dock = $('dock'), mark = $('mark');
+let timers = [], items = [], sending = null, logLines = [], t0 = 0;
+let raf = 0, anchorEl = null, highest = Infinity, back = 0;
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function scale() { return slow ? 3 : 1; }
+
+function renderOld(it) {
+  if (it.k === 'mine') { const m = el('div', 'mine'); m.append(el('div', 'bubble', it.t)); return m; }
+  if (it.k === 'step') return el('div', 'step', it.t);
+  const a = el('div', 'agent'); a.append(el('p', null, it.t)); return a;
+}
+
+// The words on their way, as each option draws them. state: 'sending' | 'landed' | 'done'
+function renderMine(state) {
+  const m = el('div', 'mine');
+  const sendingWords = pageKind === 'watcher' ? 'Sending to Watcher…' : 'Sending…';
+  const bubble = el('div', 'bubble' + (state === 'sending' ? ' faint' : ''), WORDS);
+  if (variant === 'A') {
+    const row = el('div', 'row');
+    if (state === 'sending') row.append(el('div', 'spin gutter'));
+    row.append(bubble); m.append(row);
+    bubble.setAttribute('aria-label', state === 'sending' ? WORDS + ', sending' : WORDS);
+  } else {
+    m.append(bubble);
+  }
+  if (variant === 'today' && state === 'sending') {
+    const c = el('div', 'caption'); c.append(el('div', 'spin'), el('span', null, sendingWords)); m.append(c);
+  }
+  if (variant === 'C') {
+    if (state === 'sending') { const c = el('div', 'caption'); c.append(el('div', 'spin'), el('span', null, sendingWords)); m.append(c); }
+    if (state === 'landed') { const c = el('div', 'caption'); c.append(el('span', 'tick', '✓'), el('span', null, 'Sent')); m.append(c); }
+  }
+  return m;
+}
+
+function layout() {
+  page.style.bottom = (dock.offsetHeight + 16) + 'px';
+}
+
+function log(words) {
+  const ms = Math.round((performance.now() - t0) / scale());
+  logLines.push(String(ms).padStart(5) + ' ms  ' + words);
+  $('log').textContent = logLines.join('\n');
+  $('log').scrollTop = 1e6;
+}
+
+function reset() {
+  timers.forEach(clearTimeout); timers = [];
+  cancelAnimationFrame(raf);
+  col.innerHTML = ''; items = [];
+  OLD[pageKind].forEach((it) => { const e = renderOld(it); col.append(e); items.push(e); });
+  sending = null; anchorEl = null; back = 0; highest = Infinity;
+  $('field').textContent = WORDS; $('field').className = 'field';
+  $('send').disabled = false;
+  $('back').textContent = '—'; $('back').className = 'big'; $('verdict').textContent = 'Press send.';
+  mark.style.display = 'none';
+  logLines = []; $('log').textContent = '';
+  $('titleText').textContent = pageKind === 'watcher' ? 'Watcher' : 'iPhone layout fixes';
+  if (pageKind === 'watcher') {
+    const w = el('div', 'working'); w.append(el('span', 'dot breathe'), el('span', null, 'Watcher is working'));
+    w.dataset.working = '1'; col.append(w);
+  }
+  layout();
+}
+
+function phoneTop(e) { return e.getBoundingClientRect().top - $('phone').getBoundingClientRect().top; }
+
+function watch() {
+  if (!anchorEl) return;
+  const top = phoneTop(anchorEl);
+  highest = Math.min(highest, top);
+  mark.style.top = highest + 'px';
+  const moved = top - highest;
+  if (moved > back) back = moved;
+  const shown = back < 0.5 ? 0 : back;
+  $('back').textContent = shown.toFixed(1) + ' pt';
+  $('back').className = 'big ' + (shown > 1 ? 'bad' : 'good');
+  $('verdict').textContent = shown > 1 ? 'The page dropped: this is the jump.' : 'Nothing dropped: new words only push the page up.';
+  raf = requestAnimationFrame(watch);
+}
+
+function at(ms, fn) { timers.push(setTimeout(fn, ms * scale())); }
+
+function send() {
+  if ($('send').disabled) return;
+  t0 = performance.now();
+  $('send').disabled = true;
+  $('field').textContent = 'Reply'; $('field').className = 'field empty';
+  // The red line follows the top of the last message that was on the page at Send, at the highest it has reached:
+  // new words push it up, and any drop shows as a gap below the line.
+  anchorEl = items[items.length - 1];
+  highest = phoneTop(anchorEl); back = 0;
+  mark.style.top = highest + 'px'; mark.style.display = 'block';
+  log('press Send');
+  const working = col.querySelector('[data-working]');
+  at(120, () => {
+    sending = renderMine('sending');
+    if (working) col.insertBefore(sending, working); else col.append(sending);
+    log('your words, on their way');
+  });
+  at(1100, () => {
+    const landed = renderMine('landed');
+    sending.replaceWith(landed); sending = landed;
+    log(variant === 'today' ? 'they land: the "Sending…" line goes' : variant === 'C' ? 'they land: the line now reads Sent' : 'they land: the bubble turns solid');
+  });
+  const firstNew = () => {
+    if (variant === 'C' && sending) { const done = renderMine('done'); sending.replaceWith(done); sending = done; }
+  };
+  if (STEP[pageKind]) {
+    at(2100, () => { firstNew(); col.append(el('div', 'step', STEP[pageKind])); log('a step arrives' + (variant === 'C' ? ' (Sent goes with it)' : '')); });
+  }
+  at(3000, () => {
+    if (!STEP[pageKind]) firstNew();
+    const a = el('div', 'agent'), p = el('p', null, ''); a.append(p);
+    const working = col.querySelector('[data-working]');
+    if (working) col.insertBefore(a, working); else col.append(a);
+    log('the answer starts' + (variant === 'C' && !STEP[pageKind] ? ' (Sent goes with it)' : ''));
+    const words = ANSWER[pageKind].split(' ');
+    words.forEach((w, i) => at(i * 45, () => { p.textContent += (i ? ' ' : '') + w; }));
+    at(words.length * 45 + 200, () => log('answer done'));
+  });
+  raf = requestAnimationFrame(watch);
+}
+
+function setVariant(v) {
+  variant = v;
+  params.set('variant', v); params.set('page', pageKind);
+  history.replaceState(null, '', '?' + params);
+  $('vname').textContent = VARIANTS[v].name; $('vdesc').textContent = VARIANTS[v].desc;
+  $('barLabel').textContent = (v === 'today' ? 'Today' : v) + ' — ' + VARIANTS[v].name.split(' — ')[1] + ' · ' + (pageKind === 'watcher' ? 'Watcher' : 'Thread');
+  $('pThread').className = pageKind === 'thread' ? 'on' : ''; $('pWatcher').className = pageKind === 'watcher' ? 'on' : '';
+  reset();
+}
+function cycle(d) { setVariant(ORDER[(ORDER.indexOf(variant) + d + ORDER.length) % ORDER.length]); }
+$('prev').onclick = () => cycle(-1); $('next').onclick = () => cycle(1);
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input,textarea,[contenteditable]')) return;
+  if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1);
+});
+$('send').onclick = send;
+$('again').onclick = () => { reset(); setTimeout(send, 250); };
+$('pThread').onclick = () => { pageKind = 'thread'; setVariant(variant); };
+$('pWatcher').onclick = () => { pageKind = 'watcher'; setVariant(variant); };
+$('slow').onclick = () => { slow = !slow; $('slow').textContent = 'Slow: ' + (slow ? 'on (3×)' : 'off'); $('slow').className = slow ? 'on' : ''; };
+window.addEventListener('resize', layout);
+document.fonts.ready.then(() => setVariant(variant));
+</script>
+</body>
+</html>
