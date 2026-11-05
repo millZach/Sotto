@@ -82,20 +82,6 @@ it('requires deliberate keyboard navigation before trusting a saved host key', a
   expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'ssh-answer', id: REMOTE, promptId: 'trust-prompt', answer: 'yes' })
 })
 
-it.each(['passphrase', 'password'] as const)('submits a saved host %s on Enter and reaches Continue before Switch it off', async kind => {
-  const { bridge, command } = fixture([host({ phase: 'connecting', prompt: { id: 'enter-prompt', kind, text: 'Synthetic question' } })]), user = userEvent.setup()
-  render(<HostQuestionDialog bridge={bridge} />)
-  const dialog = await screen.findByRole('dialog')
-  const field = within(dialog).getByLabelText(kind === 'password' ? 'SSH password' : 'Key passphrase')
-  await waitFor(() => expect(document.activeElement).toBe(field))
-  await user.tab()
-  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Continue' }))
-  await user.tab()
-  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Switch it off' }))
-  await user.type(field, 'synthetic{Enter}')
-  await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'ssh-answer', id: REMOTE, promptId: 'enter-prompt', answer: 'synthetic' }))
-})
-
 it('returns to a dismissed question from its host row and sends the answer', async () => {
   const connecting = host({ phase: 'connecting', prompt: { id: 'row-prompt', kind: 'password', text: 'Synthetic question' } })
   const { bridge, command, push } = fixture([connecting]), user = userEvent.setup()

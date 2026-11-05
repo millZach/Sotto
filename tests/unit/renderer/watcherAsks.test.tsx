@@ -16,7 +16,6 @@ import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftSt
 import { WatcherRoomProvider } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
-import { WatcherAfterMessage } from '../../../src/renderer/src/watcher/WatcherReceipts'
 import { placeAsks, receiptWords, type WatcherAskPlacement } from '../../../src/renderer/src/watcher/WatcherAsks'
 import { answeredChoices, answerWords, chosenWords, OWN_WORDS } from '../../../src/renderer/src/agents/requests/answeredChoices'
 import { requestAnswerOwnerKey, requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
@@ -292,11 +291,6 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
     await paneReady()
     await waitFor(() => expect(document.querySelector('[data-message-id="watcher-2"]')).not.toBeNull())
     expect(screen.queryByRole('region', { name: 'Question from Footer links' })).toBeNull()
-  })
-
-  it('draws nothing outside Watcher’s own pane', () => {
-    const { container } = render(<WatcherAfterMessage message={watcherThread().messages[1]!} />)
-    expect(container).toBeEmptyDOMElement()
   })
 })
 

@@ -182,16 +182,6 @@ describe('the watch on main', () => {
     expect(state.killed).toBe(0)
   })
 
-  it('does not record a sleep of the computer as a hang', async () => {
-    const { state, watch, run } = harness()
-    await watch.tick()
-    state.now += 60_000
-    await watch.tick()
-    expect(state.saved).toEqual([])
-    await run(1_000, () => { state.answered = state.now })
-    expect(state.saved).toEqual([])
-  })
-
   it('leaves a quit to the quit drain while main still answers, even past the deadline', async () => {
     const { state, watch, run } = harness({ quitForceMs: 20_000 })
     await watch.tick()

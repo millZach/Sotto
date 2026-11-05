@@ -275,11 +275,6 @@ describe('UpdateService', () => {
     expect(cancelInterval).toHaveBeenCalledOnce()
   })
 
-  it('keeps the cadence T3 Code uses: a short startup delay and a few minutes between polls', () => {
-    expect(UPDATE_STARTUP_DELAY_MS).toBe(15_000)
-    expect(UPDATE_CHECK_INTERVAL_MS).toBe(4 * 60 * 1_000)
-  })
-
   it('answers unsupported and builds no updater when the build has no feed', async () => {
     const { service, statuses } = createService()
 

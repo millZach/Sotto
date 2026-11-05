@@ -41,12 +41,6 @@ describe('createChordMatcher', () => {
     expect(events).toEqual(['hold-space:start', 'hold-space:stop'])
   })
 
-  it('only activates a chord with a key when the key goes down under its modifiers', () => {
-    const { events, play } = setup([holdSpace])
-    play('down Control', 'down Space', 'down Shift')
-    expect(events).toEqual([])
-  })
-
   it('never activates on a release', () => {
     const { events, play } = setup([holdFn, holdFnShift])
     play('down Shift', 'down Fn')

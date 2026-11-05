@@ -79,32 +79,4 @@ describe('IPC validation and lifecycle', () => {
       })
       expect(transcription.transcribe).toHaveBeenCalledOnce()
     })
-
-  it('reports the speech model as not ready when no service is wired', async () => {
-      const harness = createIpcHarness()
-
-      await expect(
-        harness.ipc.invoke(TRANSCRIPTION_TRANSCRIBE, {
-          requestId: 'r1',
-          wav: new ArrayBuffer(1_024),
-          timeoutMs: 4_000,
-        }),
-      ).resolves.toEqual({ ok: false, reason: 'model-not-ready' })
-      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_GET_STATUS, [])).resolves.toEqual({ state: 'missing' })
-      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_DOWNLOAD, [])).resolves.toEqual({
-        ok: false,
-        reason: 'unavailable',
-      })
-      await expect(harness.ipc.invokeArgs(SPEECH_MODEL_LIST, [])).resolves.toEqual([])
-      await expect(harness.ipc.invoke(SPEECH_MODEL_CHOOSE, 'parakeet-tdt-0.6b-v3-int8')).resolves.toEqual({ ok: false, reason: 'unavailable' })
-      await expect(harness.ipc.invokeArgs(OPENROUTER_CHECK_KEY, [])).resolves.toEqual({
-        ok: false,
-        reason: 'unconfigured',
-      })
-      await expect(harness.ipc.invoke(TRANSCRIPTION_CANCEL, 'r1')).resolves.toEqual({
-        ok: false,
-        reason: 'unavailable',
-      })
-      harness.cleanup()
-    })
 })

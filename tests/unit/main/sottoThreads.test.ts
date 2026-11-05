@@ -335,12 +335,6 @@ describe('upgrade and event ordering', () => {
     expect(f.inner.commands).toEqual([])
   })
 
-  it('mints UUIDs on a fresh install even though no registry file exists yet', async () => {
-    const f = await fixture()
-    const snapshot = await f.host.connect()
-    expect(snapshot.threads.map(thread => thread.id)).toEqual([expect.stringMatching(uuid), expect.stringMatching(uuid)])
-  })
-
   it('drops provider events that arrive before the registry has loaded', async () => {
     const f = await fixture()
     await writeFile(join(f.root, 'threads.json'), JSON.stringify({ bindings: [

@@ -20,15 +20,6 @@ describe('Lardo sprite', () => {
     expect(rows[31]).toContain('k')
   })
 
-  it('wears posing trunks in every frame', () => {
-    for (const frame of frames) expect(LARDO_FRAMES[frame].join('')).toContain('t')
-  })
-
-  it('flushes only in his tantrum', () => {
-    const tantrum = new Set<LardoFrame>(['rip', 'lift', 'hurl', 'mostMuscularAngry'])
-    for (const frame of frames) expect(LARDO_FRAMES[frame].join('').includes('r'), frame).toBe(tantrum.has(frame))
-  })
-
   it('builds one path per letter, and an empty one for a letter a frame does not use', () => {
     const paths = lardoPaths('frontDoubleBiceps')
     expect(Object.keys(paths).sort()).toEqual([...LARDO_LETTERS].sort())

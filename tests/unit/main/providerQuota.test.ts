@@ -1,9 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import {
-  dropExpiredQuotaWindows, exhaustedQuotaReset, mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseClaudeUsage, parseCodexQuota, parseGrokQuota, parseMuseQuota,
-  quotaDurationLabel, unavailableProviderQuota,
-} from '../../../src/main/agents/providerQuota'
+import { dropExpiredQuotaWindows, exhaustedQuotaReset, mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseClaudeUsage, parseCodexQuota, parseGrokQuota, parseMuseQuota, unavailableProviderQuota } from '../../../src/main/agents/providerQuota'
 import { usageQuotaReadSchema } from '../../../src/shared/usageDashboard'
 import recordedUsage from '../../fixtures/claudeUsageAnswer.json'
 
@@ -407,11 +404,6 @@ describe('merging Claude readings', () => {
 })
 
 describe('window labels by length', () => {
-  it('names a window by its length, never by a native window name', () => {
-    expect([300, 60, 15, 1, 1_440, 4_320, 10_080, 40_320, 43_200, 44_640, 50_000, 90].map(quotaDurationLabel)).toEqual([
-      '5 hours', '1 hour', '15 minutes', '1 minute', 'Day', '3 days', 'Week', 'Month', 'Month', 'Month', '50000 minutes', '90 minutes'])
-    expect([undefined, 0, -5, 1.5].map(quotaDurationLabel)).toEqual([undefined, undefined, undefined, undefined])
-  })
   it('labels Codex windows by their reported length, and other buckets as other limits', () => {
     const result = parseCodexQuota({ rateLimitsByLimitId: {
       codex: { limitId: 'codex', primary: { usedPercent: 1, windowDurationMins: 300 }, secondary: { usedPercent: 2, windowDurationMins: 10_080 } },

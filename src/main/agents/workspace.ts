@@ -1,7 +1,7 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
 import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
-import { isDynamicThread, overseerInstructions, overseerNoteFor, whyNotDynamic } from '../../shared/dynamicThreads'
+import { dynamicNoteText, dynamicSessionAfterCompaction, isDynamicThread, overseerInstructions, overseerNoteFor, overseerSend, whyNotDynamic, type DynamicSession, type OverseerUserNote } from '../../shared/dynamicThreads'
 import { compactionPending } from '../../shared/compaction'
 import { withKeptMessageMetadata } from '../../shared/agents'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
@@ -865,12 +865,31 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   useWorkerRoles(roles: WorkerRoleSource): void {
     if (!this.dynamicThreads) { this.inner.useWorkerRoles?.(roles); return }
     this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
-      overseer: threadId => { const thread = this.threadById(threadId); return thread && isDynamicThread(thread, this.dynamicThreads) ? overseerInstructions() : undefined },
-      overseerNote: threadId => { const thread = this.threadById(threadId); return thread && overseerNoteFor(thread, this.dynamicThreads) } })
+      overseer: threadId => {
+        const thread = this.threadById(threadId)
+        if (!thread || !isDynamicThread(thread, this.dynamicThreads)) return undefined
+        // What this launch read, for a first message that may go to a process started before the note changed.
+        const note = this.dynamicNote()
+        this.dynamicNoteAtLaunch.set(thread.id, note?.digest)
+        return overseerInstructions(note?.text)
+      },
+      overseerNote: threadId => { const thread = this.threadById(threadId); return thread && overseerNoteFor(thread, this.dynamicThreads, this.dynamicNote()) } })
   }
-  /** Dynamic threads' Owl answer (ADR-0191), given once at start. */
+  /** Dynamic threads' Owl answer (ADR-0191), given once at start, and where **your note** is read each time it is needed. */
   private dynamicThreads = false
-  allowDynamicThreads(): void { this.dynamicThreads = true }
+  private dynamicNoteSource: (() => string | undefined) | undefined
+  /** The last **your note** read, words and digest, so its digest is worked out again only when the words change. */
+  private cachedDynamicNote: OverseerUserNote | undefined
+  /** By thread, the digest of the note an overseer's launch read, until its first message goes: in memory only. */
+  private readonly dynamicNoteAtLaunch = new Map<string, string | undefined>()
+  allowDynamicThreads(note?: () => string | undefined): void { this.dynamicThreads = true; this.dynamicNoteSource = note }
+  /** **Your note** as it stands, with the digest a session's record keeps in place of its words. */
+  private dynamicNote(): OverseerUserNote | undefined {
+    const text = dynamicNoteText(this.dynamicNoteSource?.())
+    if (text === undefined) return undefined
+    if (this.cachedDynamicNote?.text !== text) this.cachedDynamicNote = { text, digest: createHash('sha256').update(text).digest('hex').slice(0, 16) }
+    return this.cachedDynamicNote
+  }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(this.watcherEnabled ? tools : tools.filter(tool => tool.name !== 'sotto_threads')) }
   readonly concurrentProviders: boolean
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
@@ -4694,7 +4713,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.councilJudge ? { councilJudge: true as const } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
-      ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? { ...old.dynamicSession, told: old.dynamicSession.created } : old.dynamicSession } : {}),
+      ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? dynamicSessionAfterCompaction(old.dynamicSession) : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
       ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
       ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
@@ -5863,14 +5882,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks, command.hiddenWakeUp === true)
       // A session keeps the instructions it was created with, so a change since then goes as a note with this message (ADR-0191).
-      const overseerNote = command.type === 'send' && !thread.councilJudge && !firstSend ? overseerNoteFor(thread, this.dynamicThreads) : undefined
+      const userNote = command.type === 'send' && !thread.councilJudge && this.dynamicThreads ? this.dynamicNote() : undefined
+      // A first message's session starts on the instructions its launch read; one with no launch seen read the note as it is now.
+      const launchedNote = this.dynamicNoteAtLaunch.has(thread.id) ? this.dynamicNoteAtLaunch.get(thread.id) : userNote?.digest
+      const owed = command.type === 'send' && !thread.councilJudge ? overseerSend(thread, this.dynamicThreads, userNote, firstSend ? { launchedNote } : undefined) : {}
+      const overseerNote = owed.note
       const dispatched = command.type === 'send' ? withoutWakeUp({ ...preparedSkills ? { ...command, skills: preparedSkills } : command, ...overseerNote ? { overseerNote } : {} })
         : command.type === 'configure-thread' ? this.hostRead(command) : command
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       watcherGuard?.()
       const result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(dispatched, watcherGuard) : this.inner.execute(dispatched))
       turnBegan = result.accepted
-      if (command.type === 'send' && !thread.councilJudge && result.accepted && (firstSend || overseerNote)) this.dynamicSessionTold(thread.id, firstSend)
+      if (command.type === 'send' && !thread.councilJudge && result.accepted && firstSend) this.dynamicNoteAtLaunch.delete(thread.id)
+      if (command.type === 'send' && !thread.councilJudge && result.accepted && owed.session) this.dynamicSessionTold(thread.id, owed.session)
       // A continued thread's first message begins with its handover; its branch is named from the user's words (ADR-0089).
       if (command.type === 'send' && !thread.councilJudge && firstSend && result.accepted) this.nameBranch(thread.id, continuedPromptWords(thread, command.text))
       if (command.type === 'configure-thread') {
@@ -5887,11 +5911,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (inspectAfter) this.inspectAfterSend(thread.id)
     }
   }
-  /** What a thread's provider session now knows of Dynamic: from its creation, or the note that just went with a send. */
-  private dynamicSessionTold(threadId: string, created: boolean): void {
-    const thread = this.thread(threadId), told = isDynamicThread(thread, this.dynamicThreads)
-    if (created && !told) return
-    this.touched(thread).dynamicSession = { created: created ? told : thread.dynamicSession?.created ?? false, told }
+  /** What a thread's provider session now knows of Dynamic, from its creation or the note that just went with a send (`overseerSend`). */
+  private dynamicSessionTold(threadId: string, session: DynamicSession): void {
+    this.touched(this.thread(threadId)).dynamicSession = session
     this.dirty = true; this.writeSoon()
   }
   private requireCreation(provider?: ProviderId): void {

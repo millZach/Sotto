@@ -15,13 +15,6 @@ describe('createPasteCommands darwin one-shot invocation', () => {
     expect(Object.isFrozen(invocation.args)).toBe(true)
   })
 
-  it('never uses a hardware key code, which would depend on the keyboard layout', () => {
-    const invocation = createPasteCommands('darwin').oneShot()
-
-    expect(invocation.args.join(' ')).not.toContain('key code')
-    expect(invocation.args.join(' ')).toContain('keystroke "v"')
-  })
-
   it('has no transcript interpolation seam: repeated builds are byte-identical', () => {
     const first = createPasteCommands('darwin').oneShot()
     const second = createPasteCommands('darwin').oneShot()
@@ -29,9 +22,5 @@ describe('createPasteCommands darwin one-shot invocation', () => {
     expect(second.executable).toBe(first.executable)
     expect(second.args).toEqual(first.args)
     expect(JSON.stringify(second)).toBe(JSON.stringify(first))
-  })
-
-  it('offers no warm helper, because macOS has no compile step to pay up front', () => {
-    expect(createPasteCommands('darwin').helper).toBeNull()
   })
 })

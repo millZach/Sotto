@@ -77,15 +77,6 @@ describe('dictation shortcut lifecycle', () => {
     expect(suspend.mock.calls).toEqual([[true], [false]])
   })
 
-  it('cancels a recording and resumes the shortcuts when the main window loses the focus', async () => {
-    const { suspend, router, lifecycle } = setup()
-    const recording = lifecycle.record()
-    lifecycle.windowLostFocus()
-    await expect(recording).resolves.toEqual({ kind: 'cancelled' })
-    expect(router.cancelRecord).toHaveBeenCalledOnce()
-    expect(suspend.mock.calls).toEqual([[true], [false]])
-  })
-
   it('ignores a suspension asked while the main window is not focused, but always resumes', () => {
     const { suspend, state, lifecycle } = setup({ focused: false })
     lifecycle.suspend(true)

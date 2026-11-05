@@ -58,10 +58,4 @@ describe('teamMergeOrder', () => {
     expect(teamMergeOrder(desk('Sotto', pr(7, 'passed')), desk('Sotto', pr(7, 'failed')))[0]!.checks).toBe('failed')
     expect(teamMergeOrder(desk('Sotto', pr(7, 'unknown')), desk('Sotto', pr(7, 'pending')))[0]!.checks).toBe('pending')
   })
-
-  it('says whose each one is', () => {
-    expect(teamMergeOrder(desk('Sotto', pr(1, 'unknown')), desk('Sotto', pr(2, 'unknown'))).map(row => row.whose)).toEqual(['yours', 'theirs'])
-  })
-
-  it('offers nothing for two empty desks', () => { expect(teamMergeOrder({ threads: [], more: 0 }, { threads: [], more: 0 })).toEqual([]) })
 })

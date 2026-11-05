@@ -58,6 +58,8 @@ export type ProviderProblem = z.infer<typeof providerProblemSchema>
 const providerAccountSchema = z.string().min(1).max(80)
 
 const id = z.string().min(1).max(512)
+/** A digest of a Dynamic thread's **your note**, as a session's record keeps it in place of the words (ADR-0191). */
+const dynamicNoteDigestSchema = z.string().regex(/^[0-9a-f]{16}$/u)
 /** How many of a thread's newest wake-ups its record names (`wakeUpMessageIds`). */
 export const WAKE_UP_MESSAGE_IDS_MAX = 50
 // Scoped public model/project IDs include an encoded native identifier.
@@ -271,8 +273,19 @@ export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreview
 export const AGENT_THREAD_MEDIA = 'sotto:agents:thread-media'
 export const agentThreadMediaRequestSchema = z.object({ threadId: id, activityId: id, mediaId: z.string().regex(/^m[0-7]$/u) }).strict()
 export type AgentThreadMediaRequest = z.infer<typeof agentThreadMediaRequestSchema>
-/** What a window asks for: the picture whole for the viewer, or a thumbnail at tile size, which main makes. */
-export const agentThreadMediaWindowRequestSchema = agentThreadMediaRequestSchema.extend({ size: z.enum(['tile', 'full']) }).strict()
+/**
+ * The scale a window's thumbnails are made at (ADR-0170): its device pixel ratio, to the hundredth above, from 1 to 4, so a
+ * tile is sharp on its screen and holds no more pixels than that screen shows. Below 1 a tile still gets its full size.
+ */
+export function mediaTileScale(devicePixelRatio: number): number {
+  return Math.min(4, Math.max(1, Math.ceil((Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1) * 100 - 1e-6) / 100))
+}
+/**
+ * What a window asks for: the picture whole for the viewer, or a thumbnail at tile size, which main makes at the window's
+ * `scale`, or at 2 when it names none.
+ */
+export const agentThreadMediaWindowRequestSchema = agentThreadMediaRequestSchema.extend({ size: z.enum(['tile', 'full']),
+  scale: z.number().min(1).max(4).optional() }).strict()
 export type AgentThreadMediaWindowRequest = z.infer<typeof agentThreadMediaWindowRequestSchema>
 export const agentThreadMediaResultSchema = z.object({ dataUrl: z.string().max(14_000_000).regex(/^data:image\/(png|jpeg|gif|webp);base64,/u) }).strict().nullable()
 export type AgentThreadMediaResult = z.infer<typeof agentThreadMediaResultSchema>
@@ -637,7 +650,8 @@ export const agentThreadSchema = z.object({
   /** The user turned Dynamic on for this thread (ADR-0191): Sotto's own record, read through `isDynamicThread`. */
   dynamic: z.literal(true).optional().catch(undefined),
   /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
-  dynamicSession: z.object({ created: z.boolean(), told: z.boolean() }).strict().optional().catch(undefined),
+  dynamicSession: z.object({ created: z.boolean(), told: z.boolean(), createdNote: dynamicNoteDigestSchema.optional(), toldNote: dynamicNoteDigestSchema.optional(),
+    noteHeard: z.literal(true).optional(), noteOwed: z.literal(true).optional() }).strict().optional().catch(undefined),
   /** Live swarm membership, supplied by its owner only while worker-swarms is on. */
   swarm: z.object({ id, leadThreadId: id, index: z.number().int().nonnegative().optional(), count: z.number().int().positive(),
     synthesisDone: z.boolean().optional(), synthesisFailed: z.enum(['failed', 'stopped']).optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),

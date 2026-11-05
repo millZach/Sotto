@@ -349,3 +349,7 @@ Nothing a provider or model receives changes. This is what main sends its own wi
 ## Amendment: a team link is not a paired client (November 3, 2026)
 
 [ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) admits another owner's computer by a code on a listener of its own. Its token never opens a host session, and this record's client kinds do not cover it.
+
+## Amendment: one Owl feature's forms are removed from version 1 (November 4, 2026)
+
+The version rule says v1 changes only by adding. Zach removed the to-do list ([ADR-0188](0188-a-to-do-list-holds-what-only-the-users-hands-can-do.md), reversed), and its `to-dos` feature, `to-dos` push and `to-do-request` go with it, in `v: 1`. This is the one exception, and it holds for these reasons: they lived one day, on Owl alone, no stable build or iPhone client ever knew them, and a client used them only after finding `to-dos` in `features`. So an older client that asks for it is not offered it and never sends the request. One that sent it anyway would be refused without losing its connection. Anything a released stable client or the iPhone reads still stays under the rule.

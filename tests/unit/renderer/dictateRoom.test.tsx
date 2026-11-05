@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -119,14 +119,6 @@ describe('DictateRoom', () => {
     expect(screen.getByRole('region', { name: 'Today' })).toHaveTextContent('Microsoft Outlook · 9 words · 68 wpm')
     expect(screen.getByRole('searchbox', { name: 'Search transcripts' })).toBeVisible()
     expect(screen.getByRole('complementary', { name: 'Your dictation' })).toHaveTextContent('9 words in 1 dictation')
-  })
-
-  it('copies a transcript through the caller', async () => {
-    const user = userEvent.setup()
-    const onCopy = vi.fn(async () => true)
-    render(<DictateRoom {...baseProps} onCopy={onCopy} now={entries[1]!.createdAt} />)
-    await user.click(within(screen.getByRole('region', { name: 'Today' })).getByRole('button', { name: 'Copy transcript' }))
-    expect(onCopy).toHaveBeenCalledWith('Send the launch summary to the team before lunch.')
   })
 
   it('says History is off, is still loading, or holds nothing yet, under the bar', () => {

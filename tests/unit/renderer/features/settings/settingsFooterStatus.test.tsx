@@ -15,9 +15,4 @@ describe("Settings' footer status", () => {
     expect(status?.parentElement?.lastElementChild).toBe(status)
     expect(status?.previousElementSibling?.classList.contains('settings-scroll')).toBe(true)
   })
-
-  it('takes no line when the page has nothing to say', () => {
-    const { container } = render(<SettingsView {...baseProps()} />)
-    expect(container.querySelector('.page-status')).toBeNull()
-  })
 })

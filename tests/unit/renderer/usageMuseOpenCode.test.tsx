@@ -58,11 +58,4 @@ describe('Muse and OpenCode on the Usage page', () => {
     expect(within(screen.getByRole('listbox', { name: 'Provider' })).getAllByRole('option').map(option => option.textContent))
       .toEqual(['All providers', 'Codex', 'Claude Code', 'Grok Build', 'Devin'])
   })
-
-  it('says which providers are counted in Sotto only and that OpenCode reports no limits', async () => {
-    await open()
-    const about = screen.getByText('About these numbers').closest('details')!
-    expect(about).toHaveTextContent('Grok Build, Devin, Muse and OpenCode are counted in Sotto only.')
-    expect(about).toHaveTextContent("OpenCode doesn't report account limits, so it isn't on Subscriptions.")
-  })
 })

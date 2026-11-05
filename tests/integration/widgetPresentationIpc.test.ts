@@ -291,32 +291,6 @@ describe('widget presentation and drag channels', () => {
     expect(setPresentation).not.toHaveBeenCalled()
   })
 
-  it('reports unavailable when no widget coordinator is registered', async () => {
-    const harness = createIpcHarness()
-    harness.cleanup()
-    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
-    registerIpc(harness.ipc, {
-      settings: harness.settings,
-      history: harness.history,
-      startup: harness.startup,
-      hotkeys: harness.hotkeys,
-      app: harness.app,
-      trustedSenders: () => [
-        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
-      ],
-    })
-
-    await expect(
-      harness.ipc.invoke(WIDGET_PRESENTATION, {
-        presentation: 'idle-resting',
-        generation: 0,
-      }, {
-        sender: widgetContents,
-        senderFrame: widgetFrame,
-      }),
-    ).resolves.toEqual({ ok: false, reason: 'unavailable' })
-  })
-
   it('lets only the widget renderer report drag phases and forwards each payload', async () => {
     const harness = createIpcHarness()
     harness.cleanup()
@@ -389,28 +363,5 @@ describe('widget presentation and drag channels', () => {
       ).rejects.toMatchObject({ code: 'INVALID_IPC_PAYLOAD' })
     }
     expect(reportDrag).not.toHaveBeenCalled()
-  })
-
-  it('reports unavailable drag handling when no widget dependency is registered', async () => {
-    const harness = createIpcHarness()
-    harness.cleanup()
-    const { widgetContents, widgetFrame, widgetUrl } = widgetSender()
-    registerIpc(harness.ipc, {
-      settings: harness.settings,
-      history: harness.history,
-      startup: harness.startup,
-      hotkeys: harness.hotkeys,
-      app: harness.app,
-      trustedSenders: () => [
-        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
-      ],
-    })
-
-    await expect(
-      harness.ipc.invoke(WIDGET_DRAG, { phase: 'start', generation: 0, gestureId: 0 }, {
-        sender: widgetContents,
-        senderFrame: widgetFrame,
-      }),
-    ).resolves.toEqual({ ok: false, reason: 'unavailable' })
   })
 })

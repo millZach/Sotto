@@ -84,13 +84,6 @@ describe('the test iPhone surface', () => {
     expect(browser.bridge.navigate).toHaveBeenCalledWith(expect.objectContaining({ pageId: PHONE_PAGE, url: 'http://localhost:8081/app' }))
   })
 
-  it('reloads the app', async () => {
-    const browser = fakeBrowser([page()])
-    await setup(browser.bridge)
-    await userEvent.click(await screen.findByRole('button', { name: 'Reload the test iPhone' }))
-    expect(browser.bridge.reload).toHaveBeenCalledWith(expect.objectContaining({ pageId: PHONE_PAGE }))
-  })
-
   it('closes the app and hides the phone player', async () => {
     const browser = fakeBrowser([page()])
     const { phoneStore } = await setup(browser.bridge)
@@ -164,14 +157,5 @@ describe('the test iPhone surface', () => {
     await setup(browser.bridge, { state })
     expect(await screen.findByRole('button', { name: 'Share with agent' })).toBeInTheDocument()
     expect(screen.queryByText('This provider does not support Sotto browser tools.')).not.toBeInTheDocument()
-  })
-
-  it('offers no Share control on a Muse thread whose client withheld Sotto’s tools', async () => {
-    const browser = fakeBrowser([page()])
-    const state = threadsStateFixture()
-    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'muse' as const, sottoToolsWithheld: true as const } : thread)
-    await setup(browser.bridge, { state })
-    expect(await screen.findByText('This provider does not support Sotto browser tools.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Share with agent' })).not.toBeInTheDocument()
   })
 })

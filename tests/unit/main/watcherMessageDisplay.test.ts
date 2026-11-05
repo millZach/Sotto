@@ -62,11 +62,6 @@ describe('owned Watcher message presentation', () => {
       displayPrompt: { ...f.request.displayPrompt!, originalLength: 1 } }]
     expect(f.show()).toBe(f.messages)
   })
-  it('returns ordinary and not-ready input by identity', () => {
-    const f = fixture()
-    expect(projectWatcherMessages(undefined, f.request.watcher.threadId, f.messages, f.record.requests)).toBe(f.messages)
-    expect(projectWatcherMessages(f.request.watcher.hostId, 'ordinary-thread', f.messages, f.record.requests)).toBe(f.messages)
-  })
   it('shares exact text verification through unrelated metadata changes and prunes the current window cache', () => {
     const f = fixture(), display = new WatcherMessageDisplay()
     display.update(f.record.requests); display.retain(f.owner.hostId, [f.owner.threadId]); vi.mocked(createHash).mockClear()

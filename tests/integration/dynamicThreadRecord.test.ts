@@ -1,10 +1,10 @@
 // @vitest-environment node
 // ADR-0191: Dynamic is a mark Sotto keeps on a thread at rest. Setting it asks no provider, and a provider's own updates and
 // a restart keep it. With the Owl feature off, nothing sets it and a saved mark stays whole.
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { WorkerRoles } from '../../src/main/agents/subagentRoles'
-import { OVERSEER_NOTE_OFF, overseerInstructions, overseerNoteOn } from '../../src/shared/dynamicThreads'
+import { OVERSEER_NOTE_OFF, overseerInstructions, overseerNoteChanged, overseerNoteOn } from '../../src/shared/dynamicThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
@@ -14,7 +14,9 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 async function fixture(enabled = true) {
   const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
   cleanups.push(workspace.remove)
-  if (enabled) workspace.host.allowDynamicThreads()
+  // Your note, as Settings would hand it over each time it is read.
+  const note: { text?: string } = {}
+  if (enabled) workspace.host.allowDynamicThreads(() => note.text)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => true, watcherEnabled: false, dynamicThreadsEnabled: enabled } })
   cleanups.push(async () => { f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -28,8 +30,9 @@ async function fixture(enabled = true) {
   }
   const set = (threadId: string, dynamic: boolean) => f.control.commandShell({ type: 'set-thread-dynamic', threadId, dynamic })
   const mark = (threadId: string) => f.control.shell().host.threads.find(item => item.id === threadId)?.dynamic
-  return { ...f, workspace, thread, set, mark }
+  return { ...f, workspace, thread, set, mark, note }
 }
+const digest = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 16)
 
 it('sets and clears the mark on a thread at rest, asking the provider nothing', async () => {
   const f = await fixture(), id = await f.thread('claude')
@@ -79,6 +82,67 @@ it('sends no note with a first message, since the session starts on the overseer
   expect(sends().at(-1)).toBe(overseerNoteOn())
 })
 
+it('tells an overseer your note as it starts, once more after it changes or is cleared, and again after a compaction', async () => {
+  const f = await fixture(), id = await f.thread('claude')
+  f.note.text = '  Sol for reviews.  '
+  const sends = () => f.workspace.adapters.claude.commands.filter(command => command.type === 'send').map(command => (command as { overseerNote?: string }).overseerNote)
+  const session = () => f.control.shell().host.threads.find(item => item.id === id)?.dynamicSession
+  const held = () => f.workspace.adapters.claude.state.threads.find(thread => thread.id === f.workspace.registry.byThread(id)!.sessionId)!
+  const settle = async () => { held().status = 'idle'; f.workspace.adapters.claude.emit(); await f.control.commandShell({ type: 'refresh', provider: 'claude' }) }
+  const compact = async (commandId: string) => {
+    held().compaction = { commandId, status: 'running' }; f.workspace.adapters.claude.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'claude' })
+    held().compaction = { commandId, status: 'completed' }; f.workspace.adapters.claude.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'claude' })
+  }
+  const send = async () => {
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
+    await settle()
+  }
+  expect((await f.set(id, true)).error).toBeNull()
+  await send()
+  // The first message starts the session on instructions that carry the note, so no note goes with it.
+  expect(sends()).toEqual([undefined])
+  expect(session()).toEqual({ created: true, told: true, createdNote: digest('Sol for reviews.'), toldNote: digest('Sol for reviews.') })
+  await send()
+  expect(sends().at(-1)).toBeUndefined()
+  // Changed: the next message carries it, once. The record keeps a digest, never the words.
+  f.note.text = 'Opus for debugging.'
+  await send()
+  expect(sends().at(-1)).toBe(overseerNoteChanged('Opus for debugging.'))
+  expect(session()).toEqual({ created: true, told: true, createdNote: digest('Sol for reviews.'), toldNote: digest('Opus for debugging.'), noteHeard: true })
+  expect(JSON.stringify(f.control.shell().host.threads)).not.toContain('Opus for debugging.')
+  await send()
+  expect(sends().at(-1)).toBeUndefined()
+  // A compaction can lose a note, so the session goes back to what it was created with and hears the change again.
+  await compact('compact')
+  expect(session()).toEqual({ created: true, told: true, createdNote: digest('Sol for reviews.'), toldNote: digest('Sol for reviews.'), noteHeard: true, noteOwed: true })
+  await send()
+  expect(sends().at(-1)).toBe(overseerNoteChanged('Opus for debugging.'))
+  // Cleared: the overseer is told to set it aside, once.
+  f.note.text = ' '
+  await send()
+  expect(sends().at(-1)).toBe(overseerNoteChanged(undefined))
+  expect(session()).toEqual({ created: true, told: true, createdNote: digest('Sol for reviews.'), noteHeard: true })
+  await send()
+  expect(sends().at(-1)).toBeUndefined()
+  // A compaction can lose the clearing too, so it goes again.
+  await compact('compact-again')
+  await send()
+  expect(sends().at(-1)).toBe(overseerNoteChanged(undefined))
+  await send()
+  expect(sends().at(-1)).toBeUndefined()
+  // Turned off, then on: the note that turns it on carries the note in its instructions, and sets aside the ones heard before.
+  f.note.text = 'Sol for reviews.'
+  expect((await f.set(id, false)).error).toBeNull()
+  await send()
+  expect(sends().at(-1)).toBe(OVERSEER_NOTE_OFF)
+  expect((await f.set(id, true)).error).toBeNull()
+  await send()
+  expect(sends().at(-1)).toBe(overseerNoteOn('Sol for reviews.', true))
+  expect(session()?.toldNote).toBe(digest('Sol for reviews.'))
+})
+
 it('tells a thread that began ordinary by a note when it turns Dynamic later', async () => {
   const f = await fixture(), id = await f.thread('codex')
   const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send').map(command => (command as { overseerNote?: string }).overseerNote)
@@ -97,7 +161,7 @@ it('tells a thread that began ordinary by a note when it turns Dynamic later', a
 it('reaches the adapter by its session, whichever ID each side keeps, for its instructions, its note and letting go of its process', async () => {
   const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
   cleanups.push(workspace.remove)
-  workspace.host.allowDynamicThreads()
+  workspace.host.allowDynamicThreads(() => 'Sol for reviews.')
   let source: { overseer?(id: string): string | undefined; overseerNote?(id: string): string | undefined } | undefined
   ;(workspace.adapters.claude as unknown as { useWorkerRoles(roles: typeof source): void }).useWorkerRoles = roles => { source = roles }
   const released: string[] = []
@@ -119,8 +183,8 @@ it('reaches the adapter by its session, whichever ID each side keeps, for its in
   await f.control.commandShell({ type: 'refresh', provider: 'claude' })
   expect(source!.overseer!(sessionId)).toBeUndefined()
   expect((await f.control.commandShell({ type: 'set-thread-dynamic', threadId: id, dynamic: true })).error).toBeNull()
-  expect(source!.overseer!(sessionId)).toBe(overseerInstructions())
-  expect(source!.overseerNote!(sessionId)).toBe(overseerNoteOn())
+  expect(source!.overseer!(sessionId)).toBe(overseerInstructions('Sol for reviews.'))
+  expect(source!.overseerNote!(sessionId)).toBe(overseerNoteOn('Sol for reviews.'))
   expect(released).toEqual([sessionId])
 })
 

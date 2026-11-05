@@ -5,7 +5,6 @@ import { Minus, Square, Copy, X } from 'lucide-react'
 import { useOptionalApp } from '../state/AppContext'
 import { Button } from './Button'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
-import { ToDoCorner, useToDosOn } from '../features/toDos/ToDoCorner'
 
 export interface WindowControlsProps {
   readonly maximized?: boolean
@@ -45,14 +44,12 @@ export function WindowControls({ maximized = false, onMaximize, onMinimize, onCl
  */
 export function PageWindowControls(): ReactNode {
   const app = useOptionalApp()
-  const toDos = useToDosOn()
   if (app === null) return null
   // The main freeze notice (an Owl feature, ADR-0098) sits left of the controls on Windows, and alone in the corner
-  // where the system draws or omits them. The to-do list's icon (Owl, ADR-0188) stands between it and the controls.
-  if (app.platform !== 'win32') return toDos ? <div className="threads-view__winctl"><MainFreezeNotice /><ToDoCorner /></div> : <MainFreezeNotice frame="threads-view__winctl" />
+  // where the system draws or omits them.
+  if (app.platform !== 'win32') return <MainFreezeNotice frame="threads-view__winctl" />
   return <div className="threads-view__winctl">
     <MainFreezeNotice />
-    <ToDoCorner />
     <WindowControls maximized={app.windowMaximized} onMaximize={app.actions.toggleMaximizeApp} onMinimize={app.actions.minimizeApp} onClose={app.actions.hideApp} />
   </div>
 }

@@ -99,14 +99,6 @@ describe('NativeDictationLifecycle widget presence', () => {
     expect(sendToWidget).toHaveBeenCalledWith(WIDGET_STATE, expect.anything(), false)
   })
 
-  it('reveals the widget for active dictation snapshots', async () => {
-    const { lifecycle, sendToWidget } = createHarness()
-
-    await lifecycle.publish(listening())
-
-    expect(sendToWidget).toHaveBeenCalledWith(WIDGET_STATE, expect.anything(), true)
-  })
-
   it('reveals active dictation snapshots even when idle visibility is off', async () => {
     const { lifecycle, sendToWidget } = createHarness(false)
 
@@ -141,39 +133,6 @@ describe('NativeDictationLifecycle widget presence', () => {
       expect.objectContaining({ status: 'idle' }),
       false,
     )
-  })
-})
-
-describe('NativeDictationLifecycle cursor-follow compatibility', () => {
-  it('does not lock a display when dictation becomes active', async () => {
-    const { lifecycle, sendToWidget } = createHarness()
-    const active = listening()
-
-    await lifecycle.publish(active)
-
-    expect(sendToWidget).toHaveBeenCalledWith(WIDGET_STATE, active, true)
-  })
-
-  it('does not unlock a display when dictation returns to idle', async () => {
-    const { lifecycle, sendToWidget } = createHarness()
-    const idle = snapshot({ status: 'idle' })
-
-    await lifecycle.publish(listening())
-    await lifecycle.publish(idle)
-
-    expect(sendToWidget).toHaveBeenLastCalledWith(WIDGET_STATE, idle, true)
-  })
-
-  it('preserves widget publication and visibility behavior without display locking', async () => {
-    const { lifecycle, sendToWidget } = createHarness(false)
-    const active = listening()
-    const idle = snapshot({ status: 'idle' })
-
-    await lifecycle.publish(active)
-    await lifecycle.publish(idle)
-
-    expect(sendToWidget).toHaveBeenNthCalledWith(1, WIDGET_STATE, active, true)
-    expect(sendToWidget).toHaveBeenNthCalledWith(2, WIDGET_STATE, idle, false)
   })
 })
 

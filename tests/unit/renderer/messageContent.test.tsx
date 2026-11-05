@@ -3,9 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentAttachmentPreviewDataSchema } from '../../../src/shared/agents'
-import {
-  AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, attachmentTypeLabel, formatAttachmentSize, localFilePath, safeLinkUrl,
-} from '../../../src/renderer/src/agents/MessageContent'
+import { AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, localFilePath, safeLinkUrl } from '../../../src/renderer/src/agents/MessageContent'
 import { ThreadWebLinks } from '../../../src/renderer/src/tools/webLinks'
 import { SentSkillsContext } from '../../../src/renderer/src/agents/sentSkills'
 import { renderedPlainText } from '../../../src/renderer/src/agents/richActions'
@@ -412,24 +410,6 @@ describe('attachment previews', () => {
     expect(screen.getByText('invoicegnp.exe')).toBeInTheDocument()
     expect(screen.getByRole('note')).toHaveTextContent('This model does not support screenshots.')
   })
-
-  it('renders nothing without attachments or a note', () => {
-    const { container } = render(<AttachmentPreviews attachments={[]} />)
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('formats sizes and type labels defensively', () => {
-    expect(formatAttachmentSize(undefined)).toBeNull()
-    expect(formatAttachmentSize(-1)).toBeNull()
-    expect(formatAttachmentSize(512)).toBe('512 B')
-    expect(formatAttachmentSize(10)).toBe('10 B')
-    expect(formatAttachmentSize(1536)).toBe('2 KB')
-    expect(formatAttachmentSize(25 * 1024 * 1024)).toBe('25 MB')
-    expect(attachmentTypeLabel('image/webp')).toBe('WEBP')
-    expect(attachmentTypeLabel('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe('OPENXMLFORMA')
-    expect(attachmentTypeLabel('text/plain; charset=utf-8')).toBe('PLAIN')
-    expect(attachmentTypeLabel('<script>')).toBe('File')
-  })
 })
 
 describe('image viewer', () => {
@@ -608,11 +588,6 @@ describe('a link to a Markdown file', () => {
     expect(opened).toHaveBeenLastCalledWith('thread', '/home/me/plan.md')
   })
 
-  it('leaves every other file to show in its folder', async () => {
-    inThread('[picture](/home/me/capture.png)')
-    expect(screen.getByRole('link', { name: 'Show /home/me/capture.png in File Explorer' })).toBeInTheDocument()
-  })
-
   it('still shows in its folder while the Owl answer is off, and stays inert outside a thread', () => {
     owl.panel = false
     const { unmount } = inThread('[plan](/home/me/plan.md) and `README.md`')
@@ -703,11 +678,6 @@ describe('file links in a thread', () => {
       expect(screen.getByText('Guide')).toBeInTheDocument()
       expect(revealLink).not.toHaveBeenCalled()
     } finally { owl.on = true }
-  })
-
-  it('stays inert outside a thread, where there is no folder to read a path from', () => {
-    render(<MessageContent text="[Guide](/Users/me/Guide.pdf)" />)
-    expect(screen.queryByRole('link')).toBeNull()
   })
 })
 

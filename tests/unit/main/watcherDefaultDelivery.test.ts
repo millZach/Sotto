@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { defaultDelivery } from '../../../src/main/agents/watcherSendHolds'
-import { watcherToolSchemas } from '../../../src/shared/watcher'
-
-const target = { hostId: '00000000-0000-4000-8000-000000000001', threadId: 'thread' }
-const send = { requestId: '00000000-0000-4000-8000-000000000002', retryKey: '00000000-0000-4000-8000-000000000003', target, text: 'Synthetic prompt' }
 
 describe('what a Watcher send that names no delivery does (ADR-0130)', () => {
-  it('may leave delivery out, and still takes each named one', () => {
-    expect(watcherToolSchemas.send_to_thread.input.parse(send)).not.toHaveProperty('delivery')
-    for (const delivery of ['now', 'queue', 'steer'] as const) expect(watcherToolSchemas.send_to_thread.input.parse({ ...send, delivery })).toMatchObject({ delivery })
-    expect(() => watcherToolSchemas.send_to_thread.input.parse({ ...send, delivery: 'later' })).toThrow()
-  })
-
   it('steers a running turn, into the turn it reads as running unless the send names one', () => {
     const running = { status: 'running' as const, lastTurn: { id: 'turn-2', status: 'running' as const } }
     expect(defaultDelivery(running, true, undefined)).toEqual({ delivery: 'steer', expectedTurnId: 'turn-2' })

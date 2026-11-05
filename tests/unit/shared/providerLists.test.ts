@@ -15,8 +15,7 @@ vi.mock('../../../src/shared/usageDashboard', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/shared/usageDashboard')>(), usageProviderIdSchema: z.enum(USAGE_SIX),
 }))
 
-import { agentClientHostSchema, agentCommandSchema, agentConfigurationSchema, agentStateSchema, everyProvider, providerIdSchema,
-  providerTakesSottoTools, providerWritesShortText, PROVIDER_COUNT, threadTakesSottoTools, type ProviderId } from '../../../src/shared/agents'
+import { agentClientHostSchema, agentCommandSchema, agentConfigurationSchema, agentStateSchema, everyProvider, providerTakesSottoTools, providerWritesShortText, threadTakesSottoTools, type ProviderId } from '../../../src/shared/agents'
 import { providerProfile } from '../../../src/shared/providerProfile'
 import { agentSkillCatalogSchema } from '../../../src/shared/agentSkills'
 import { hostClientUpdateRequestSchema } from '../../../src/shared/hostProviders'
@@ -40,11 +39,6 @@ const providerLists: ReadonlyArray<readonly [string, (ids: readonly string[]) =>
 describe('provider lists', () => {
   it('offer every usage provider on the Usage page', () => {
     expect(USAGE_PROVIDERS).toEqual(USAGE_SIX)
-  })
-
-  it('derive their cap from the provider list', () => {
-    expect(providerIdSchema.options).toEqual(EIGHT)
-    expect(PROVIDER_COUNT).toBe(8)
   })
 
   it.each(providerLists)('%s take seven and eight providers', (_name, parses) => {

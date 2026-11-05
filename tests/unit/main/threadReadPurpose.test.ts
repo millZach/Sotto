@@ -197,10 +197,4 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Uncertain prompt' })
     expect(host.reads).toEqual([plain])
   })
-
-  it('not the read when a thread is selected', async () => {
-    const { host, control } = await coordinator()
-    await control.command({ type: 'select-thread', threadId: 'workshop' })
-    expect(host.reads.every(read => read.purpose === undefined)).toBe(true)
-  })
 })

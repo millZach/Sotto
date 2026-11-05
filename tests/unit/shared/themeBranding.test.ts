@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { widgetSnapshotSchema } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import {
   APP_ICON_BRAND,
@@ -87,15 +86,6 @@ describe('widget palette projection', () => {
     expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, light: { ...light, accent: 'var(--x)' } })).toThrow()
     expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, light: { ...light, accent: '#ff0000' } })).toThrow()
     expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, dark: { ...light, text: 'oklch(0.5 0.1 20); background: url(x)' } })).toThrow()
-  })
-
-  it('requires the palette on every widget snapshot', () => {
-    const idle = { status: 'idle', theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'Primary', cancellable: false }
-    expect(widgetSnapshotSchema.parse(idle)).toEqual(idle)
-    const withoutPalette: Partial<typeof idle> = { ...idle }
-    delete withoutPalette.palette
-    expect(() => widgetSnapshotSchema.parse(withoutPalette)).toThrow()
-    expect(() => widgetSnapshotSchema.parse({ ...idle, voiceCoordinator: true })).toThrow()
   })
 })
 

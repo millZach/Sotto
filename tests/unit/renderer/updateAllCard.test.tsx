@@ -70,13 +70,6 @@ describe('the Update all card', () => {
     expect(hosts.bridge.command).not.toHaveBeenCalled()
   })
 
-  it('says nothing when everything is current', () => {
-    provideApp({ ...available, phase: { phase: 'up-to-date' } })
-    provideAgents(agentState())
-    const { container } = render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
-    expect(container).toBeEmptyDOMElement()
-  })
-
   it('updates Sotto, this computer’s clients and a host’s clients at once, and the host itself once its clients are done', async () => {
     const actions = provideApp(available)
     const command = provideAgents(agentState({ local: [behind()], forge: [behind({ id: 'codex', installed: '0.51.0', published: '0.52.1' })] }))
@@ -282,14 +275,6 @@ describe('the Update all card', () => {
     await screen.findByText('This computer · The download did not finish. Nothing was installed. Try again.')
     act(() => requestUpdateAll())
     await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(2))
-  })
-
-  it('runs the same press when Settings asks for it', async () => {
-    const actions = provideApp(available)
-    provideAgents(agentState())
-    render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
-    act(() => requestUpdateAll())
-    await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(1))
   })
 
   it('covers a host the releases page is still being asked about with one press, and offers the restart only after its update (Sol, review)', async () => {

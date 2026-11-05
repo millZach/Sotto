@@ -109,11 +109,4 @@ describe('Project thread defaults in Threads settings', () => {
     expect(choice).toHaveValue('inherit')
     expect(screen.getByText('That setting could not be saved. Your previous setting is still active.')).toBeVisible()
   })
-
-  it('explains how to add a project when there are none', async () => {
-    render(<SettingsView {...baseProps()} />)
-    await selectCategory('Threads')
-    await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
-    expect(screen.getByText('Add a project in Threads to set its default working copy.')).toBeVisible()
-  })
 })

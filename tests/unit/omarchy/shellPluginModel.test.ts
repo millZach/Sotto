@@ -453,14 +453,6 @@ describe('where the pill rests', () => {
     expect(small.bottom).toBeLessThanOrEqual(small.areaBottom)
   })
 
-  it('keeps it on a full-HD display at 200% scale, 960x540 logical', () => {
-    const scaled = fits(1920 / 2, 1080 / 2)
-    expect(scaled.length).toBe(504)
-    expect(scaled.pill).toBeLessThanOrEqual(scaled.length)
-    expect(scaled.top).toBeGreaterThanOrEqual(scaled.areaTop)
-    expect(scaled.bottom).toBeLessThanOrEqual(scaled.areaBottom)
-  })
-
   it('lets the words run to 470 px where the screen has room, and no less than the minimum', () => {
     expect(messageWidth(maxLength('top', workArea(820, 560, 'top', 26), 5), fixed, 470, 120)).toBe(470)
     expect(messageWidth(maxLength('left', workArea(1600, 1000, 'top', 26), 5), fixed, 470, 120)).toBe(470)

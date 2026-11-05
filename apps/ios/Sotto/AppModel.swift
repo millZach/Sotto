@@ -1544,6 +1544,11 @@ struct RailAsk: Equatable {
     private var benchShellRevision = 0
     private var benchSequence = 1_000
     private var benchState: Data?
+    /// Which form of the picture thread this journey measures: full, noimages (grids whose pictures never come), nomedia
+    /// (the same steps, no pictures) or nosteps (only the messages).
+    private var benchPictureArm: String?
+    private var benchWorkSequence = 0
+    private var benchWorkStopped = false
     private func loadUIFixture() {
         isUIFixture = true
         if ProcessInfo.processInfo.arguments.contains("--reset-ui-preferences"), let bundle = Bundle.main.bundleIdentifier {
@@ -1803,6 +1808,18 @@ struct RailAsk: Equatable {
                           long: ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID))
         let now = Date()
         benchLongFrame = Task.detached(priority: .userInitiated) { BenchWire.longDetailFrame(turns: turns, now: now) }
+        // With --bench-pictures, the picture thread's shape in place of the long thread, as one `detail` push.
+        if let arm = arguments.firstIndex(of: "--bench-pictures").flatMap({ arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) {
+            benchPictureArm = arm
+            BenchProbe.count("fixture.imageBytes", by: Self.benchShot.count)
+            _ = Self.benchShotURL
+            let (runMessages, runSteps) = Self.fixturePictureRuns({ BenchWire.stamp(now, $0) }, media: arm == "full" || arm == "noimages", steps: arm != "nosteps")
+            let detail: [String: Any] = ["threadId": BenchWire.longThreadID, "revision": 1, "earlierAvailable": false, "messages": runMessages, "activities": runSteps]
+            let frame: [String: Any] = ["v": 1, "event": "detail", "threadId": BenchWire.longThreadID, "detail": detail]
+            let data = (try? JSONSerialization.data(withJSONObject: frame)) ?? Data()
+            BenchProbe.count("fixture.detailBytes", by: data.count)
+            benchLongFrame = Task { data }
+        }
         Task { [weak self] in
             let records = await Task.detached(priority: .userInitiated) { BenchWire.threadRecords(count: threads, hostID: laptop, now: now) }.value
             guard let self else { return }
@@ -1828,6 +1845,38 @@ struct RailAsk: Equatable {
         benchSequence += 1
         push(frame, from: laptop, sequence: benchSequence)
         BenchProbe.record("apply." + kind, nanoseconds: Int(DispatchTime.now().uptimeNanoseconds - applied))
+    }
+    /// A working thread's steps: one every half second, a picture every fourth where this form has pictures, each followed
+    /// by a shell push listing the thread's record. `done` is called after the last, or once `benchStopWork` is.
+    func benchStopWork() { benchWorkStopped = true }
+    func benchWork(updates: Int, done: @escaping @MainActor () -> Void) {
+        guard let laptop = benchLaptop, let state = benchState else { done(); return }
+        let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
+        let pictures = benchPictureArm == "full" || benchPictureArm == "noimages"
+        benchWorkStopped = false
+        Task { [weak self] in
+            for _ in 0..<max(1, updates) {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let self, !benchWorkStopped, selected == ref, let detail = openDetail else { break }
+                benchWorkSequence += 1
+                let sequence = benchWorkSequence
+                var record: [String: Any] = ["id": "live-\(sequence)", "sequence": 100_000 + sequence, "kind": "tool", "status": "completed", "title": "Ran",
+                                             "command": "node shoot.js --live \(sequence)", "exitCode": 0, "durationMs": 1_000,
+                                             "startedAt": BenchWire.stamp(Date(), 1)]
+                if pictures, sequence % 4 == 0 {
+                    record["media"] = [["id": "shot", "kind": "image", "mimeType": "image/png", "width": 1600, "height": 1000, "name": "live-\(sequence).png",
+                                        "source": "tool-result", "sizeBytes": 192_000]]
+                }
+                let delta: [String: Any] = ["threadId": BenchWire.longThreadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
+                                            "messageDeltas": [[String: Any]](), "activityDeltas": [["record": record]]]
+                let frame: [String: Any] = ["v": 1, "event": "detail-delta", "threadId": BenchWire.longThreadID, "delta": delta]
+                await benchDeliver((try? JSONSerialization.data(withJSONObject: frame)) ?? Data(), kind: "delta")
+                let shell = BenchWire.longThreadRecord(hostID: laptop, now: Date())
+                await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: [shell]), kind: "shell")
+                benchShellRevision += 1
+            }
+            done()
+        }
     }
     /// Streams `chunks` words into the long thread's last reply, one every 50 ms as a computer sends them, each a
     /// `detail-delta` push; every fifth is followed by a shell push listing only the long thread's record, and every
@@ -1889,6 +1938,38 @@ struct RailAsk: Equatable {
                       "command": "python summarize_drives.py", "exitCode": 0, "durationMs": 2_000, "startedAt": at(30)])
         return (messages, steps)
     }
+    /// The shape of the thread that showed a page jumping under its reader, November 4, 2026: "steps:pictures" for a run,
+    /// "u" or "a" and a length for a message, with the lengths and counts as they were and none of its words. It ends on
+    /// a run of forty pictures, the size of run it has when work goes on past a turn's end.
+    private static func fixturePictureRuns(_ at: (Double) -> String, media: Bool = true, steps wantsSteps: Bool = true) -> ([[String: Any]], [[String: Any]]) {
+        let shape = "24:0 u7570 10:0 u264 18:0 a1035 142:6 a264 53:29 a171 30:0 a1013 52:1 u3277 5:1 a1180 6:0 a138 53:27 a107 10:4 a275 15:0 a83 35:17 a107 4:0 a134 19:2 a109 14:3 a144 2:0 a58 22:5 a116 80:76 a130 83:23 a1397 320:34 a99 75:6 a131 60:16 a86 45:7 a55 10:0 a94 10:6 u65 3:0 a2717 13:0 a70 15:0 a84 19:1 a88 17:4 a126 13:0 a86 47:7 a90 60:40"
+        let sentence = "The page at this width keeps its rhythm, and the next pass tightens the spacing of the list. "
+        var messages: [[String: Any]] = []
+        var steps: [[String: Any]] = []
+        var clock = 8_000.0
+        for (index, part) in shape.split(separator: " ").enumerated() {
+            if let role = part.first, role == "u" || role == "a" {
+                let length = Int(part.dropFirst()) ?? 80
+                let text = String(String(repeating: sentence, count: length / sentence.count + 1).prefix(length))
+                messages.append(["id": "run-message-\(index)", "role": role == "u" ? "user" : "assistant", "createdAt": at(clock), "text": text])
+                clock -= 5
+                continue
+            }
+            let counts = part.split(separator: ":").compactMap { Int($0) }
+            if !wantsSteps { continue }
+            for step in 0..<counts[0] {
+                var record: [String: Any] = ["id": "run-\(index)-\(step)", "sequence": steps.count + 1, "kind": step < counts[1] ? "tool" : "command", "status": "completed",
+                                             "title": "Ran", "command": "node shoot.js --page \(step)", "exitCode": 0, "durationMs": 1_000, "startedAt": at(clock)]
+                if media, step < counts[1] {
+                    record["media"] = [["id": "shot", "kind": "image", "mimeType": "image/png", "width": 1600, "height": 1000, "name": "shot-\(index)-\(step).png",
+                                        "source": "tool-result", "sizeBytes": 192_000]]
+                }
+                steps.append(record)
+                clock -= 1
+            }
+        }
+        return (messages, steps)
+    }
     private static let fixtureScreenshotSize = (width: 1280, height: 800)
     /// A screenshot, wider than a tile, and a photo, taller than wide, each made once.
     private static let fixtureScreenshot = fixtureImage(width: fixtureScreenshotSize.width, height: fixtureScreenshotSize.height)
@@ -1904,12 +1985,42 @@ struct RailAsk: Equatable {
             context.fill(CGRect(x: size.width / 4, y: size.height / 4, width: size.width / 2, height: size.height / 2))
         }
     }
+    /// The picture thread's median picture: 1600 by 1000, about 190 KB of PNG, the size coming from a patch of noise.
+    private static let benchShot: Data = {
+        let size = CGSize(width: 1600, height: 1000)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        var seed: UInt32 = 12_345
+        return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 800, y: 100, width: 700, height: 800))
+            for y in 0..<240 {
+                for x in 0..<240 {
+                    seed = seed &* 1_664_525 &+ 1_013_904_223
+                    let red = CGFloat((seed >> 24) & 255) / 255
+                    let green = CGFloat((seed >> 16) & 255) / 255
+                    let blue = CGFloat((seed >> 8) & 255) / 255
+                    UIColor(red: red, green: green, blue: blue, alpha: 1).setFill()
+                    context.fill(CGRect(x: 200 + x, y: 200 + y, width: 1, height: 1))
+                }
+            }
+        }
+    }()
+    private static let benchShotURL: String = "data:image/png;base64," + benchShot.base64EncodedString()
     /// A picture or photo of the pictures journeys, handed over most of a second after it is asked for, as a computer
     /// across the network does, and not at all once nothing shows it.
     private func fixturePicture(photo: Bool, wanted: @escaping @MainActor () -> Bool) async -> Data? {
         guard fixturePictures else { return nil }
         try? await Task.sleep(nanoseconds: 800_000_000)
         guard wanted() else { return nil }
+        // The picture thread's journey: its median picture, read from a data URL as a computer's answer is.
+        if let arm = benchPictureArm {
+            if arm == "noimages" { return nil }
+            return await Photos.bytes(fromDataURL: Self.benchShotURL)
+        }
         return photo ? Self.fixturePhoto : Self.fixtureScreenshot
     }
     /// The working thread's worktree record, as a host sends it: its own branch, uncommitted changes and a draft pull request.

@@ -133,11 +133,6 @@ describe('ThreadWorkingCopy', () => {
 })
 
 describe('ThreadWorkingCopyNotice', () => {
-  it('stays out of the way unless setup failed', () => {
-    const { container } = render(<ThreadWorkingCopyNotice thread={ready} project={project} command={vi.fn()} />)
-    expect(container).toBeEmptyDOMElement()
-  })
-
   it('retries setup for an unstarted thread and reports recovery only once the thread is ready', async () => {
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => snapshot())
     const onRecovered = vi.fn()

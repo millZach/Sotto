@@ -50,7 +50,7 @@ describe('Watcher own changes', () => {
     // Only while that news runs (Restart stopped threads); without it nothing would tell Watcher a check failed.
     expect(watcherSystemPrompt(false, false, true)).toContain(WATCHER_PULL_REQUEST_NEWS_PROMPT)
     expect(watcherSystemPrompt(true, true)).not.toContain(WATCHER_PULL_REQUEST_NEWS_PROMPT)
-    expect(watcherSystemPrompt(false, false, false, false, false, false, true)).toContain(WATCHER_MARKDOWN_LINKS_PROMPT)
+    expect(watcherSystemPrompt(false, false, false, false, false, true)).toContain(WATCHER_MARKDOWN_LINKS_PROMPT)
     expect(watcherSystemPrompt(true, true, true, true, true)).not.toContain(WATCHER_MARKDOWN_LINKS_PROMPT)
   })
 

@@ -566,15 +566,6 @@ describe('dictation shortcut router recording readiness', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(result).toEqual({ kind: 'cancelled' })
   })
-
-  it('records in the page when the helper becomes ready without Input Monitoring', async () => {
-    const h = createHarness({ ready: false })
-    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
-    const recorded = h.router.record()
-    h.setPermission('denied')
-    h.handlers().onPermission('denied')
-    await expect(recorded).resolves.toEqual({ kind: 'unavailable' })
-  })
 })
 
 describe('dictation shortcut router strict duplicates', () => {

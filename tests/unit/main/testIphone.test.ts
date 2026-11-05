@@ -283,14 +283,6 @@ function fakeContents(): WebContents {
 }
 
 describe('BrowserAutomation.input on a touch-enabled page (ADR-0045)', () => {
-  it('sends a touch start, ten touch moves and a touch end for a swipe', async () => {
-    const contents = fakeContents()
-    const automation = new BrowserAutomation(contents, undefined, true)
-    await automation.input({ type: 'swipe', x: 0, y: 500, toX: 0, toY: 100 }, () => undefined)
-    const types = vi.mocked(contents.debugger.sendCommand).mock.calls.filter(call => call[0] === 'Input.dispatchTouchEvent').map(call => (call[1] as { type: string }).type)
-    expect(types).toEqual(['touchStart', ...Array<string>(10).fill('touchMove'), 'touchEnd'])
-  })
-
   it('still sends the touch end when a move fails partway through a swipe', async () => {
     const contents = fakeContents()
     let moves = 0

@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Film, ImageIcon, Pause, Play } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
-import { plural } from '@lingui/core/macro'
+import { msg, plural } from '@lingui/core/macro'
 import { WRITTEN_STEP_PREFIX, type AgentActivity, type AgentActivityMedia } from '../../../shared/agentActivity'
 import { AttachmentViewer, type ViewerImage } from './AttachmentViewer'
 import type { ActivityGroup } from './threadActivityView'
@@ -24,15 +24,18 @@ export function mediaDetails(media: AgentActivityMedia): string {
 }
 
 
+// Built with `msg` and read with the component's own `t`: a `t` handed to a helper is no longer the macro, so a message
+// written with it there is never extracted, never translated, and warns on every render of a built app.
+const WRITTEN_STEP = msg({ message: 'Pictures and videos it wrote', comment: 'The step that holds the pictures and videos an agent wrote in its folder during a turn.' })
+
 /** The name of the step a picture came from: the host's words, or this window's for a step Sotto made itself. */
 function stepTitle(t: ReturnType<typeof useLingui>['t'], record: AgentActivity): string {
-  return record.id.startsWith(WRITTEN_STEP_PREFIX)
-    ? t({ message: 'Pictures and videos it wrote', comment: 'The step that holds the pictures and videos an agent wrote in its folder during a turn.' }) : record.title
+  return record.id.startsWith(WRITTEN_STEP_PREFIX) ? t(WRITTEN_STEP) : record.title
 }
 
 /** "Picture 2": a picture's name on its tile and in the viewer, by its place among the turn's pictures. */
 function pictureName(t: ReturnType<typeof useLingui>['t'], number: number): string {
-  return t({ message: `Picture ${number}`, comment: '{number} is the place of an agent\'s picture among the pictures of one turn.' })
+  return t(msg({ message: `Picture ${number}`, comment: '{number} is the place of an agent\'s picture among the pictures of one turn.' }))
 }
 
 /** A tile's picture box inside its border: the 208 by 140 frame less a pixel each side. */

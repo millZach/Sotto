@@ -32,7 +32,6 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Fork a thread from a reply](#fork-a-thread-from-a-reply)
 - [The Council](#the-council)
 - [The popup](#the-popup)
-- [To-do list](#to-do-list)
 - [Sotto Owl](#sotto-owl)
 
 ## Threads
@@ -315,22 +314,6 @@ Sotto accepts as many threads as you, Watcher or your threads ask for. In Sotto 
 Standalone Chats, including Talk and Generate prompt, has been removed. With **Keep local history** on, existing `personal-chat/` files and personal records in `request-drafts.json` are preserved without reopening conversations, reconnecting providers or showing old drafts. Turning history off clears Sotto's retained personal transcripts and submitted answers; startup applies the same cleanup when history is already off. Provider-owned history is untouched; nothing is migrated into Threads.
 
 Claude Code, Codex and Grok Build run one process per thread; if one stops, only that thread is affected. A reply it was writing says it may be cut short, and the client starts again there when you send a message.
-
-### To-do list
-
-In Sotto Owl, a small list icon stands in the window's top right corner on every page, left of the window's controls where your computer draws them. It holds what only your hands can do, such as a hand test, something to send or a walkthrough to run. Question and permission cards don't go on it, because they already come to you. A thread adds one with its own tool, and you can type your own in **Add your own** at the bottom of the list. Your own goes to this computer.
-
-The badge is an orange count of what is new. Once you open the list it turns to a quiet grey count of what is left, and with nothing left there is no badge. What was new keeps a small dot until you roll the list up.
-
-A press on the icon unrolls the list downward, as long as what it holds, up to the window. **Roll up**, Escape, a press outside, the icon again or the last item going rolls it back up. With reduced motion on it fades in place instead. An item shows its words, why it is there, the thread that added it, a link to open and **Show steps** where it has them.
-
-Check an item off and it is gone, with **Undo** for five seconds. Those seconds go on if you roll the list up or move to another page, and nothing reaches the computer that holds it until they end. If the window closes first, the item stays on the list. If a press fails, the list unrolls to say so, and the item stays. A thread that said it waits on an item is told when you check it off, and no other thread is. **It didn't work** stands on those items, and sends your words to the thread at once. Neither approves anything.
-
-A prototype waiting for review is on the list too. Sotto puts it there itself from the thread's **Prototype ready** mark, with **Open the prototype**. Opening its page, checking it off or replying in the thread takes it off, and the thread's own Prototype ready line goes with it.
-
-Watcher works from the list too. On Owl its replies don't repeat what waits on you, because cards come to you by themselves. When a worker asks you to do something by hand, Watcher puts it on the list, and it hears when you check something off. A thread still waiting on its to-do doesn't settle.
-
-Each computer keeps its own list, and the window joins the lists of every computer it is connected to. A press goes back to the computer that holds the item. While a computer is away its items aren't shown, and they come back with it. The words are saved only while **Keep local history** is on.
 
 ### Terminal drawer
 
@@ -1291,6 +1274,7 @@ Each worker is a delegated thread. Its row under **Worked for** names the model 
 - **What it may use.** Your code goes to the company behind each provider ticked here. A provider off the list is never used, even if your message names it. The first time you turn Dynamic on, a question names these companies, unless you have already changed the list here. **Turn on** makes the list, so a provider you connect later doesn't join it on its own, and **Choose providers** opens it here and turns nothing on. OpenCode has no company of its own: its work goes to the model source its model runs on. A provider that reports no limits starts unticked, since it would be chosen blind.
 - **Highest effort.** A higher one is held to this, and the worker's row says so. Ultracode is only ever yours to choose, on your own thread.
 - **Workers at once.** The overseer starts the next as one returns. Your ceiling for the computer still applies.
+- **Your note.** Advice in your own words, up to 600 characters, such as "Sol for reviews. Save Opus for the hard debugging." A Dynamic thread reads it when it starts, and once more, with your next message, after you change or clear it. It is advice and can be ignored, so a provider you must not use belongs off the list.
 
 When a limit stops a worker, the overseer can give the piece to a model with room, and the old thread doesn't restart at the reset. If the overseer's own provider stops, the thread stops as any thread does: it restarts at the reset, or you continue on another provider with a press. Workers on other providers carry on, and their results wait.
 

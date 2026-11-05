@@ -119,6 +119,8 @@ Focused follow-up checks:
   roster before dispatch; the shared eligibility rule also excludes other providers.
 - `tests/unit/renderer/pointerCursor.test.ts`: 3 passed after removing the two conflicting cursor rules.
 - `tests/unit/shared/interfaceCatalogs.test.ts`: 4 passed after extraction.
+- `tests/unit/scripts/desktopSmoke.test.ts`: 13 passed after merging main; the
+  selected journeys retain main's host-client and Update all checks alongside Climb.
 - `tests/unit/main/codexConfirmation.test.ts`: 8 passed; existing permission
   confirmations still require an explicit answer.
 - The setup shows both providers and resets effort when switching models.
@@ -147,7 +149,12 @@ ran head `27ff139ee8eb1c32683cdfabfdf5766e9ca9f71f` through PR merge
 Gates (Windows) and Desktop result are downstream failure summaries, not extra
 failing assertions. Package result passed. The desktop artifact's error context
 was read; this failure precedes opening Climb, so it supplies no Climb screenshots.
-The base already used by this run contains neither repair; fetching main found
-no newer fix to merge. No failed job was rerun. Both repairs travel with the
-Codex judge change, and CI must run the desktop journey and provide the pending
-screenshots before a Watcher-directed merge.
+Neither repair was already on main. Main `45c799471f460bc1da1f7a609783aaf33cafdd35`
+was merged to resolve the reported base conflicts in the same push as the repairs
+and Codex judging. The resolution retains main's desktop journeys and Dynamic
+thread notes while excluding those notes from Climb judges, preserves the Council
+runtime gate, and regenerates the combined interface catalogs. Typecheck, lint,
+the 15 Codex judge cases, the 9 Climb loop cases, the 13 desktop-selector cases and
+the 4 catalog cases passed on the merged tree. No failed job was rerun. CI must
+run the desktop journey and provide the pending screenshots before a
+Watcher-directed merge.
