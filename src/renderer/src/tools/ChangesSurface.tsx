@@ -227,7 +227,15 @@ function ChangesReading({ changes, review, view, store, comments, onCopy, onReve
       const block = scroller?.querySelector<HTMLElement>(`.changes-file[data-file-path="${CSS.escape(path)}"]`)
       if (!scroller || !block) return
       // Only the list moves. scrollIntoView would ask every box around it to line the file up too.
-      if (!latest.current.oneFile) scroller.scrollTo({ top: block.offsetTop, behavior: instant || prefersReducedMotion() ? 'auto' : 'smooth' })
+      if (!latest.current.oneFile) {
+        scroller.scrollTo({ top: block.offsetTop, behavior: instant || prefersReducedMotion() ? 'auto' : 'smooth' })
+        // Files drawn on the way change height under the scroll, so it can stop short and leave the file before at the
+        // top. Once it stops near the file, it lines the file up again; a reader who scrolled away is left there.
+        scroller.addEventListener('scrollend', () => {
+          const off = block.offsetTop - scroller.scrollTop
+          if (block.isConnected && off !== 0 && Math.abs(off) < scroller.clientHeight / 2) scroller.scrollTo({ top: block.offsetTop, behavior: 'auto' })
+        }, { once: true })
+      }
       block.querySelector<HTMLElement>('.changes-file__toggle')?.focus({ preventScroll: true })
     })
   }, [threadId])

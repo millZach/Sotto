@@ -557,6 +557,16 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeVisible()
     await page.waitForTimeout(500)
     await capture.shoot('changes-expanded', 'The same comparison with the tools panel expanded over the thread, where the tree stands beside the lines.', differs)
+    // A press on a file in the tree is the other way to a file, and it must move only the list. The tree stands beside the
+    // lines here, so the shot shows it with the file pressed marked; at the panel's own width it waits behind All files.
+    await panel.getByRole('listbox', { name: 'Files in this comparison' }).getByRole('option', { name: /storeOverlay\.ts/u }).first().click()
+    await page.waitForTimeout(1_200)
+    const moved = await page.evaluate(() => {
+      let most = 0
+      for (const element of document.querySelectorAll('.threads-view, .threads-view *')) if (!element.closest('.changes-files, .changes-tree__list, [role="log"], .thread-nav')) most = Math.max(most, element.scrollTop)
+      return most
+    })
+    await capture.shoot('changes-tree-press', 'The same comparison, expanded, after a press on src/main/agents/storeOverlay.ts in the file tree beside the lines: the file is at the top of the list and marked in the tree.', moved > 0 ? `Shown as the app does it: the press also scrolled the workspace itself up by ${Math.round(moved)} px, which moves the header, the composer and the window controls with it and leaves a blank band at the foot.` : '')
     await page.getByRole('button', { name: 'Restore tools panel', exact: true }).click()
     await page.waitForTimeout(500)
     await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
@@ -568,17 +578,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('changes-file', 'The same file at a smaller window.', differs, { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
-    await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')
-    // A press on a file in the tree is the other way to a file, and it moves more than the list.
-    if (await panel.locator('.changes-jump__all').isVisible()) await panel.locator('.changes-jump__all').click()
-    await panel.getByRole('listbox', { name: 'Files in this comparison' }).getByRole('option', { name: /storeOverlay\.ts/u }).first().click()
-    await page.waitForTimeout(1_200)
-    const moved = await page.evaluate(() => {
-      let most = 0
-      for (const element of document.querySelectorAll('.threads-view, .threads-view *')) if (!element.closest('.changes-files, [role="log"], .thread-nav')) most = Math.max(most, element.scrollTop)
-      return most
-    })
-    await capture.shoot('changes-tree-press', 'The same diff after a press on src/main/agents/storeOverlay.ts in the file tree.', moved > 0 ? `Shown as the app does it: the press also scrolled the workspace itself up by ${Math.round(moved)} px, which moves the header, the composer and the window controls with it and leaves a blank band at the foot.` : '')
     await page.evaluate(() => {
       for (const element of document.querySelectorAll('.threads-view, .threads-view *')) if (element.scrollTop > 0 && !element.closest('.changes-files, [role="log"], .thread-nav')) element.scrollTop = 0
     })
