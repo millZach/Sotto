@@ -19,7 +19,7 @@ import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
 import { DiffBlock } from '../tools/DiffBlock'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { heardFrom, LiveServerMark } from './ServerMark'
@@ -121,9 +121,9 @@ export function LineCountMarks({ counts, spoken = true }: {
   if (!counts || (!counts.added && !counts.removed)) return null
   return <span className="thread-lines">
     <span dir="ltr" aria-hidden="true">
-      {counts.added ? <span className="thread-lines__added">+{shownCount(counts.added)}</span> : null}
+      {counts.added ? <span className="thread-lines__added">+{shownLineCount(counts.added)}</span> : null}
       {counts.added && counts.removed ? ' ' : null}
-      {counts.removed ? <span className="thread-lines__removed">−{shownCount(counts.removed)}</span> : null}
+      {counts.removed ? <span className="thread-lines__removed">−{shownLineCount(counts.removed)}</span> : null}
     </span>
     {spoken ? <span className="tt-visually-hidden">, {spokenLineCounts(counts)}</span> : null}
   </span>

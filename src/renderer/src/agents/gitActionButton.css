@@ -49,7 +49,7 @@
 .commit-dialog__list > li[data-excluded] { color: var(--tt-text-muted); text-decoration: line-through; }
 .commit-dialog__badge { flex: none; width: 16px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-align: center; }
 .commit-dialog__path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
-.commit-dialog__counts { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
+.commit-dialog__counts { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .commit-dialog__message { color: var(--tt-text-2); font-size: var(--tt-type-small); }
 .commit-dialog textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-sm); padding: 8px 10px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); resize: vertical; }
 .commit-dialog .tt-dialog__status { margin: 0; }

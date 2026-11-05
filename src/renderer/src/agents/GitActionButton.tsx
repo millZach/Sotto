@@ -22,7 +22,7 @@ import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { commitLabel, commits, defaultBranchQuestion, fileCount, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor, STATUS_LETTER, type GitNotice, type GitQuickKind } from './gitActionButton.logic'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { holdingThread, ON_HOLD, openHolderWords } from './checkoutHold'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import './gitActionButton.css'
 
 type Command = AgentConnection['command']
@@ -313,7 +313,7 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
             {editing ? <input type="checkbox" className="tt-focusable" checked={!out} aria-label={t({ message: `Include ${ph({ path: leftToRight(path) })}`, comment: '{path} is a changed file\'s path.' })} onChange={() => toggle(file)} /> : null}
             <span className="commit-dialog__badge" data-status={file.status} role="img" aria-label={label} title={label}>{letter}</span>
             <span className="commit-dialog__path" dir="auto">{file.path}</span>
-            {counts ? <span className="commit-dialog__counts" aria-label={t({ message: `${{ added: shownCount(added ?? 0) }} added, ${{ removed: shownCount(removed ?? 0) }} removed`, comment: 'Lines added to and removed from a changed file.' })}>{counts}</span> : null}
+            {counts ? <span className="commit-dialog__counts" aria-label={t({ message: `${{ added: shownLineCount(added ?? 0) }} added, ${{ removed: shownLineCount(removed ?? 0) }} removed`, comment: 'Lines added to and removed from a changed file.' })}>{counts}</span> : null}
           </li>
         })}</ul> : null}
       </div>

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it } from 'vitest'
 import { i18n } from '@lingui/core'
-import { shownCompactCount, shownCount, shownDecimal, shownLocalCount } from '../../../src/renderer/src/state/interfaceNumbers'
+import { shownCompactCount, shownCount, shownDecimal, shownLineCount, shownLocalCount } from '../../../src/renderer/src/state/interfaceNumbers'
 
 afterEach(() => { i18n.activate('en') })
 
@@ -11,6 +11,13 @@ it('writes English counts as Sotto always did: ungrouped, or the computer’s ow
   expect(shownDecimal(1234.56, 1)).toBe('1234.6')
   expect(shownLocalCount(1234)).toBe((1234).toLocaleString())
   expect(shownCompactCount(1234)).toBe(new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(1234))
+})
+
+it('groups a count of lines in every language, English included', () => {
+  expect(shownLineCount(2957)).toBe('2,957')
+  expect(shownLineCount(12)).toBe('12')
+  i18n.loadAndActivate({ locale: 'de', messages: {} })
+  expect(shownLineCount(2957)).toBe('2.957')
 })
 
 it('groups and writes decimals the way another interface language does', () => {

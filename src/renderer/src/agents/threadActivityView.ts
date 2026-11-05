@@ -4,7 +4,7 @@ import { msg, plural, t } from '@lingui/core/macro'
 import { isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 
 /**
  * Where a thread's activity records sit in its transcript and how they read. Provider neutral:
@@ -867,8 +867,8 @@ export function recordsLineCounts(records: readonly AgentActivity[]): LineCounts
 /** Assistive tech's words for a line count: the marks on screen are not words. */
 export function spokenLineCounts({ added, removed }: LineCounts): string {
   return [
-    added ? plural(added, { one: `${{ lineCount: shownCount(added) }} line added`, other: `${{ lineCount: shownCount(added) }} lines added` }) : '',
-    removed ? plural(removed, { one: `${{ lineCount: shownCount(removed) }} line removed`, other: `${{ lineCount: shownCount(removed) }} lines removed` }) : '',
+    added ? plural(added, { one: `${{ lineCount: shownLineCount(added) }} line added`, other: `${{ lineCount: shownLineCount(added) }} lines added` }) : '',
+    removed ? plural(removed, { one: `${{ lineCount: shownLineCount(removed) }} line removed`, other: `${{ lineCount: shownLineCount(removed) }} lines removed` }) : '',
   ].filter(Boolean).join(', ')
 }
 
