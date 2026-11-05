@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, providerIdSchema, type ProviderId } from '../../../../shared/agents'
-import { DYNAMIC_EFFORTS, dynamicEffortSchema, WORKERS_AT_ONCE_MAX, workersAtOnceSchema, type DynamicThreadSettings } from '../../../../shared/dynamicThreads'
+import { DYNAMIC_EFFORTS, DYNAMIC_NOTE_MAX_CHARACTERS, dynamicEffortSchema, WORKERS_AT_ONCE_MAX, workersAtOnceSchema, type DynamicThreadSettings } from '../../../../shared/dynamicThreads'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { reportsUsageLimits, type UsageQuotaRead } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
@@ -17,6 +18,9 @@ function limitWords(quota: UsageQuotaRead | undefined): { readonly label: string
   const window = quota?.status === 'available' ? quota.windows.find(item => item.usedPercent !== undefined) : undefined
   return window ? { label: window.label, used: Math.round(window.usedPercent!) } : undefined
 }
+
+/** How long typing in **Your note** pauses before it saves, as Custom instructions does. */
+const NOTE_SAVE_DELAY_MS = 600
 
 /**
  * Settings › Threads › Dynamic threads (ADR-0191; Owl only): the limits every Dynamic thread on this computer works inside.
@@ -42,12 +46,14 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
   const latest = useRef(settings), saving = useRef(0), held = useRef(settings)
   held.current = settings
   useEffect(() => { if (saving.current === 0) { latest.current = settings; setDraft(settings) } }, [settings])
-  const save = (next: Partial<DynamicThreadSettings>): void => {
+  // `failed` hears a save that did not land before what was saved takes over, so typed words can wait to be tried again.
+  const save = (next: Partial<DynamicThreadSettings>, failed?: () => void): void => {
     const whole = { ...latest.current, ...next }
     latest.current = whole
     setDraft(whole)
     saving.current++
-    void Promise.resolve(onSave({ dynamicThreads: whole })).catch(() => false).then(() => {
+    void Promise.resolve(onSave({ dynamicThreads: whole })).catch(() => false).then(saved => {
+      if (saved === false) failed?.()
       saving.current--
       if (saving.current === 0) { latest.current = held.current; setDraft(held.current) }
     })
@@ -63,6 +69,28 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
     setCount(String(next.data))
     if (next.data !== draft.workersAtOnce) save({ workersAtOnce: next.data })
   }
+  // Your note saves once typing pauses, on leaving the field and when Settings closes, so nothing typed is lost
+  // mid-sentence. A saved value from elsewhere shows only while nothing typed here waits to be saved.
+  const [note, setNote] = useState(draft.note ?? '')
+  const pendingNote = useRef<string | null>(null)
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveRef = useRef(save)
+  saveRef.current = save
+  /** Counts the note's saves sent, so a failed older one never brings back words a newer one replaced. */
+  const noteSends = useRef(0)
+  const flushNote = useCallback(() => {
+    if (noteTimer.current) { clearTimeout(noteTimer.current); noteTimer.current = null }
+    const value = pendingNote.current
+    pendingNote.current = null
+    if (value === null || value === (latest.current.note ?? '')) return
+    // A save that did not land keeps the words waiting for the next pause or leaving the field, but only while it is the
+    // latest sent and nothing newer waits.
+    const sequence = ++noteSends.current
+    saveRef.current({ note: value }, () => { if (sequence === noteSends.current && pendingNote.current === null) pendingNote.current = value })
+  }, [])
+  useEffect(() => { if (pendingNote.current === null) setNote(draft.note ?? '') }, [draft.note])
+  useEffect(() => flushNote, [flushNote])
+  const noteId = useId(), noteAboutId = useId()
   const toggle = (provider: ProviderId, on: boolean): void => {
     const list = new Set(allowed)
     if (on) list.add(provider); else list.delete(provider)
@@ -97,5 +125,19 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
         onChange={event => setCount(event.currentTarget.value)} onBlur={event => commitCount(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Enter') commitCount(event.currentTarget.value) }} />
     </Field>
+    <div className="dynamic-threads__your-note">
+      <label htmlFor={noteId}><Trans>Your note</Trans></label>
+      <p id={noteAboutId} className="dynamic-threads__note tt-paragraph"><Trans>Advice in your own words. A Dynamic thread reads it when it starts, and once more after you change it. It can be ignored, so a provider you must not use belongs off the list above.</Trans> {plural(DYNAMIC_NOTE_MAX_CHARACTERS, { one: 'Up to # character.', other: 'Up to # characters.' })}</p>
+      <textarea id={noteId} data-setting="dynamic-threads-note" className="tt-input tt-focusable" rows={3} maxLength={DYNAMIC_NOTE_MAX_CHARACTERS} value={note} aria-label={t`Your note to the overseer`} aria-describedby={noteAboutId}
+        placeholder={t`Sol for reviews. Save Opus for the hard debugging.`}
+        onChange={event => {
+          const value = event.currentTarget.value
+          setNote(value)
+          pendingNote.current = value
+          if (noteTimer.current) clearTimeout(noteTimer.current)
+          noteTimer.current = setTimeout(flushNote, NOTE_SAVE_DELAY_MS)
+        }}
+        onBlur={flushNote} />
+    </div>
   </div>
 }
