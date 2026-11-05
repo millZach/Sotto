@@ -29,7 +29,7 @@ keys = ["scroll_hitches", "scroll_ms_s", "scroll_longest", "scroll_cpu", "scroll
 print("| variant | round | phase | " + " | ".join(keys) + " |")
 print("|" + " --- |" * (len(keys) + 3))
 def f(v): return "–" if v is None else (f"{v:,.1f}" if isinstance(v, float) else str(v))
-for variant in ["whole", "lazy", "fixed", "chunks", "chunksfixed", "plain"]:
+for variant in ["whole", "lazy", "nomenu", "noax", "noicons", "nolight", "noago", "nobutton", "plain"]:
     for r in sorted(rows.get(variant, []), key=lambda r: r["round"]):
         print(f"| {variant} | {r['round']} | {r['phase']} | " + " | ".join(f(r[k]) for k in keys) + " |")
 print(json.dumps(rows), file=open(os.path.join(sys.argv[1], "variants.json"), "w"))

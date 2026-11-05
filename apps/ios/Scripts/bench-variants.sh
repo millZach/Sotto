@@ -77,7 +77,7 @@ journey() {
 }
 
 for round in 1 2 3; do
-    for variant in whole lazy fixed chunks chunksfixed plain; do
+    for variant in whole lazy nomenu noax noicons nolight noago nobutton plain; do
         journey "$out/app/$variant-$round.json" 300 scroll --bench-list "$variant"
         echo "Round $round, $variant: $outcome"
     done

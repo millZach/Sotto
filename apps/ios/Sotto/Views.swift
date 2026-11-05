@@ -971,7 +971,7 @@ struct ThreadListRow: View, Equatable {
     }
     var body: some View {
         let _ = BenchProbe.body("ThreadListRow")
-        if canWatch || shelf != nil {
+        if (canWatch || shelf != nil) && ThreadListSections.variant != "nomenu" {
             button.contextMenu {
                 if canWatch {
                     Button { setWatched(!watched) } label: {
@@ -988,18 +988,22 @@ struct ThreadListRow: View, Equatable {
         // At the accessibility text sizes a title can't hold one line: titles and lines wrap and the age goes under them.
         let large = typeSize.isAccessibilitySize
         let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
-        return Button(action: open) {
-            HStack(alignment: .top, spacing: Space.s3) {
-                Light(tone: tone, breathing: kind == .working).padding(.top, 6)
+        let v = ThreadListSections.variant
+        let content = HStack(alignment: .top, spacing: Space.s3) {
+                if v != "nolight" { Light(tone: tone, breathing: kind == .working).padding(.top, 6) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
                         .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
-                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
-                              tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
+                    if v == "noicons" {
+                        Text(line).lineLimit(1).font(.sotto(.small)).foregroundStyle(row.failed ? Palette.dangerText : Palette.muted)
+                    } else {
+                        PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
+                                  tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
+                    }
                     if large, let ago { Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
                 }
                 Spacer(minLength: Space.s1)
-                if !large, let ago {
+                if !large, v != "noago", let ago {
                     Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
                 }
             }
@@ -1008,13 +1012,14 @@ struct ThreadListRow: View, Equatable {
             .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .background { if chosen { RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(ThemeRole(.accentSurface)) } }
             .contentShape(Rectangle())
+        return Group {
+            if v == "nobutton" {
+                content.onTapGesture(perform: open)
+            } else {
+                Button(action: open) { content }.buttonStyle(PressStyle())
+            }
         }
-        .buttonStyle(PressStyle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: label))
-        .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
-        .accessibilityHint("Opens the thread")
-        .accessibilityIdentifier("\(identifier)\(row.id)")
+        .modifier(VariantAX(on: v != "noax", label: label, chosen: chosen, id: "\(identifier)\(row.id)"))
     }
 }
 
@@ -1313,6 +1318,26 @@ struct ComputerBanner: View {
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         } else {
             FeedbackBanner()
+        }
+    }
+}
+
+/// Scratch only: the row's VoiceOver modifiers, left off for the `noax` variant.
+private struct VariantAX: ViewModifier {
+    let on: Bool
+    let label: String
+    let chosen: Bool
+    let id: String
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: label))
+                .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
+                .accessibilityHint("Opens the thread")
+                .accessibilityIdentifier(id)
+        } else {
+            content
         }
     }
 }
