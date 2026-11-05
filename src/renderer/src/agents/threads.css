@@ -44,8 +44,10 @@
    pull request's number. An open list is shown whatever the room, so the chords that open one keep working. The box is
    empty row too, so its bare stretch still moves the window; in a split, the crumb's words stay the pane's handle. Its small
    padding keeps a control's focus ring clear of the clipped edge. */
-.thread-workspace__head .thread-workspace__title > .thread-workspace__where { position: relative; z-index: 30; display: flex; flex: 1 1 0; align-items: center; gap: 4px; align-self: stretch; min-width: 0; padding-inline: 2px; overflow-x: clip; container: pane-where / inline-size; -webkit-app-region: drag; }
-.thread-workspace__head .thread-workspace__title > .thread-workspace__where:has([aria-expanded='true']) { overflow-x: visible; }
+.thread-workspace__head .thread-workspace__title > .thread-workspace__where { position: relative; display: flex; flex: 1 1 0; align-items: center; gap: 4px; align-self: stretch; min-width: 0; padding-inline: 2px; overflow-x: clip; container: pane-where / inline-size; -webkit-app-region: drag; }
+/* Only an open list rises over its neighbours; at rest the box stays in the header's layer, so Tools expanded over the
+   thread covers it whole rather than showing the project and branch through its own header. */
+.thread-workspace__head .thread-workspace__title > .thread-workspace__where:has([aria-expanded='true']) { z-index: 30; overflow-x: visible; }
 /* A tag says something the row must not lose, so it keeps what room there is once the name has its floor. */
 .thread-workspace__head .thread-workspace__title > .thread-workspace__where:has(.thread-workspace__tag) { min-width: min(148px, 100cqi - var(--pane-name-lead, 26px) - 10px - 48px); }
 .thread-workspace__head .thread-workspace__crumb { -webkit-app-region: no-drag; }
