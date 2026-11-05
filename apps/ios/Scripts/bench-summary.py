@@ -61,9 +61,10 @@ BUDGETS = {
     "list-scroll.worst.body.ThreadListSections": 0,
     # Its rows are made as they scroll in, once each (#2120): 12,000 points of rows, and no more than that.
     "list-scroll.worst.body.ThreadListRow": 450,
-    # The launch makes the rows on screen and not all 300 (#2120): about 18, one hidden row a section to measure, and room for
-    # one drawing again in the launch, which #2120 did not stop.
-    "launch.worst.body.ThreadListRow": 60,
+    # The launch makes the rows on screen and not all 300 (#2120). How many times the list draws in a launch moves from 2 to 6
+    # on either build, a cause #2120 did not find, so this counts rows for each time: at most 11 in 30 launches, against 44 to
+    # 124 for the whole list.
+    "launch.worst.per_list_body.ThreadListRow": 15,
     # The Threads page lets go of its held list before the first frame that shows it again, in every journey.
     "journey.page.stale_frames": 0,
 }
@@ -159,6 +160,9 @@ def app_metrics(folder):
     values = [c.get("body.ThreadListRow", 0) for c in counts["launch"]]
     if values:
         rows["launch.worst.body.ThreadListRow"] = {"value": max(values), "unit": "count", "n": len(values)}
+    values = [c.get("body.ThreadListRow", 0) / c["body.ThreadListSections"] for c in counts["launch"] if c.get("body.ThreadListSections")]
+    if values:
+        rows["launch.worst.per_list_body.ThreadListRow"] = {"value": max(values), "unit": "count", "n": len(values)}
     for kind in ["delta", "shell"]:
         put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
         put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")

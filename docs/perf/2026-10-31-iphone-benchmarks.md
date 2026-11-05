@@ -105,7 +105,8 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
 | `stream.worst_per_chunk.<count>` | The Threads list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
 | `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for their budgets: zero for the page and the list, and the rows it makes as they scroll in (#2120). |
-| `launch.worst.body.ThreadListRow` | The rows made by the end of the launch in the worst of the five journeys, for its budget: those on screen, not all 300 (#2120). |
+| `launch.worst.body.ThreadListRow` | The rows made by the end of the launch in the worst of the five journeys. It moves with how many times the list draws in the launch, 2 to 6 on either build. |
+| `launch.worst.per_list_body.ThreadListRow` | Those rows for each time the list drew, in the worst launch, for its budget: those on screen, not all 300 (#2120). |
 | `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
 | `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
@@ -319,11 +320,12 @@ newest ages tick, the rows' words between them must match. Photos taken during t
 12 points taller than the whole list's. `testPressingTheChosenTabAgainScrollsItsPageToTheTop` covers the app's own way to the
 top. None of this is a finger, the scroll bar or a status-bar tap.
 
-This version passed that check in [run 41933361521](https://github.com/millZach/Sotto/actions/runs/41933361521), one journey for each list and font: the top at -62 at each of its three stops, 14,454.3 points tall throughout, the same offset of 4,938 and the same photo before and after a thread, and a tallest gap during the fast scrolls of 25 points against the whole list's 23 (Figtree titles) and 25 (others). What the plain scroll costs, in the medians of 5 journeys a side:
+This version passed that check in [run 41933361521](https://github.com/millZach/Sotto/actions/runs/41933361521) and [run 41942395247](https://github.com/millZach/Sotto/actions/runs/41942395247), one journey for each list and font in each: the top at -62 at each of its three stops, 14,454.3 points tall throughout, the same offset of 4,938 and the same photo before and after a thread, and a tallest gap during the fast scrolls of 23 to 25 points against the whole list's 23 to 25. What the plain scroll costs, in the medians of 5 journeys a side, on a faster runner and then a slower one:
 
-| Plain list scroll of 12,000 points | Before | After |
-| --- | ---: | ---: |
-| Hitches | 0 | 0 |
-| Longest frame | 16.67 ms | 16.67 ms |
-| App CPU | 2,374 ms | 3,485 ms |
-| Row bodies, worst journey | 0 | 379 |
+| Plain list scroll of 12,000 points | Before, 41933361521 | After, 41933361521 | Before, 41942395247 | After, 41942395247 |
+| --- | ---: | ---: | ---: | ---: |
+| Hitches | 0 | 0 | 1 | 16 |
+| Time in hitches | 0 ms/s | 0 ms/s | 1.95 ms/s | 31.89 ms/s |
+| Longest frame | 16.67 ms | 16.67 ms | 33.33 ms | 38.93 ms |
+| App CPU | 2,374 ms | 3,485 ms | 3,604 ms | 6,049 ms |
+| Row bodies, worst journey | 0 | 379 | 0 | 379 |
