@@ -60,7 +60,9 @@ Then:
    frame, so a late frame jumps as a fling would.
 3. **The long thread's look**, twice from a cold launch: the app photographs the long thread at fixed distances above
    its end. `bench-summary.py look` fails the run when the change's photos differ from the base's at a distance where
-   the base's two launches agree.
+   the base's two launches agree. It can fail a change that draws the same page: about one launch in four, on either
+   build, makes 33 markdown blocks at the open rather than 27, and lands 11.67 and 244.33 points along at the two far
+   distances. Read a failure by comparing the launches and those counts ([#2125](https://github.com/millZach/Sotto/issues/2125)).
 4. **Where the main thread goes**, on the change's side only: one more journey with `--bench-sample`, in which a
    background thread in the app suspends the main thread about once a millisecond, walks its frame pointers and resumes
    it (`BenchSampler`). `Scripts/bench-sample.py` names the addresses with `atos` and writes `trace.md`: for the open,
@@ -316,3 +318,12 @@ height and offset and match byte for byte at every stop away from the top. At th
 newest ages tick, the rows' words between them must match. Photos taken during the fast scrolls must show no blank band more than
 12 points taller than the whole list's. `testPressingTheChosenTabAgainScrollsItsPageToTheTop` covers the app's own way to the
 top. None of this is a finger, the scroll bar or a status-bar tap.
+
+This version passed that check in [run 41933361521](https://github.com/millZach/Sotto/actions/runs/41933361521), one journey for each list and font: the top at -62 at each of its three stops, 14,454.3 points tall throughout, the same offset of 4,938 and the same photo before and after a thread, and a tallest gap during the fast scrolls of 25 points against the whole list's 23 (Figtree titles) and 25 (others). What the plain scroll costs, in the medians of 5 journeys a side:
+
+| Plain list scroll of 12,000 points | Before | After |
+| --- | ---: | ---: |
+| Hitches | 0 | 0 |
+| Longest frame | 16.67 ms | 16.67 ms |
+| App CPU | 2,374 ms | 3,485 ms |
+| Row bodies, worst journey | 0 | 379 |
