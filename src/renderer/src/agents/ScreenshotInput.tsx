@@ -10,10 +10,11 @@ import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import type { ScreenshotReadPort } from './threadDraftStore'
 import { prepareScreenshot, wasResized } from './screenshotResize'
-import { stageAttachedFile, stageImage, stagingReason, useThumbnail } from './stagedImages'
+import { stageAttachedFile, stageImage, stagingReason, fullImageSource, useThumbnail } from './stagedImages'
 import { useRegisterReplyAttach, useReplyAttach, type ReplyAttach } from './replyAttach'
 import { attachmentKind, AttachmentKindIcon, splitAttachmentName } from './attachmentKinds'
-import { formatAttachmentSize } from './MessageContent'
+import { attachmentDetails, formatAttachmentSize } from './MessageContent'
+import { AttachmentViewer, type ViewerImage } from './AttachmentViewer'
 import * as words from './attachmentWords'
 import './screenshots.css'
 
@@ -62,8 +63,8 @@ function resizedDescription({ original, sent }: AgentAttachmentDimensions): stri
  * is none. A plain image is a bare card in the deck; Point at something's picture (ADR-0154) is its own tile, named
  * after the element with the comment under it. A scaled-down image says so in a badge on the picture (ADR-0030).
  */
-function Chip({ target, attachment, disabled, onRemove, removeLabel, count, index }: { readonly target: string | null; readonly attachment: AgentAttachmentHandle; readonly disabled: boolean
-  readonly onRemove: () => void; readonly removeLabel?: string; readonly count?: number; readonly index?: number }): ReactNode {
+function Chip({ target, attachment, disabled, onRemove, onOpen, removeLabel, count, index }: { readonly target: string | null; readonly attachment: AgentAttachmentHandle; readonly disabled: boolean
+  readonly onRemove: () => void; readonly onOpen: (anchor: HTMLButtonElement) => void; readonly removeLabel?: string; readonly count?: number; readonly index?: number }): ReactNode {
   const { t } = useLingui()
   const thumbnail = useThumbnail(target, attachment)
   const name = attachment.name
@@ -75,15 +76,16 @@ function Chip({ target, attachment, disabled, onRemove, removeLabel, count, inde
   const comment = pointed?.comment ?? ''
   return <figure data-pointed={pointed ? '' : undefined} title={dimensions === undefined ? name : `${name}\n${resizedDescription(dimensions)}`}
     style={index === undefined ? undefined : { '--i': index } as React.CSSProperties}>
-    <span className="screenshot-previews__picture">
+    <button type="button" className="screenshot-previews__picture tt-focusable"
+      aria-label={t({ message: `Open ${name}`, comment: '{name} is an attached image\'s file name.' })} onClick={event => onOpen(event.currentTarget)}>
       {thumbnail ? <img src={thumbnail} alt={name} /> : <span className="screenshot-previews__placeholder" role="img" aria-label={name} />}
       {dimensions !== undefined && <small className="screenshot-previews__resized">
         <span aria-hidden="true"><Trans>Resized from {from} to&nbsp;{to}</Trans></span>
         <span className="tt-visually-hidden">{resizedDescription(dimensions)}</span></small>}
-    </span>
+    </button>
     {pointed && <figcaption><span>{name}</span>{comment ? <small className="screenshot-previews__note" title={comment}>{comment}</small> : null}</figcaption>}
     {count !== undefined && count > 1 && <span className="screenshot-deck__count" aria-hidden="true">{count}</span>}
-    <button type="button" title={remove} aria-label={remove} disabled={disabled} onClick={onRemove}><X size={12} /></button>
+    <button type="button" className="screenshot-previews__remove" title={remove} aria-label={remove} disabled={disabled} onClick={onRemove}><X size={12} /></button>
   </figure>
 }
 
@@ -182,6 +184,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   const pending = reads?.pending ?? false
   const busy = readingHere || pending
   const [error, setError] = useState<string | null>(null)
+  const [viewer, setViewer] = useState<{ images: ViewerImage[]; startId: string; anchor: HTMLButtonElement } | null>(null)
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -272,11 +275,25 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   const files = anyFile ? attachments.filter(attachment => !isImageAttachment(attachment.mimeType)) : []
   const plain = images.filter(attachment => !attachment.browserFeedback)
   const pointed = images.filter(attachment => attachment.browserFeedback)
+  const openImage = async (attachment: AgentAttachmentHandle, anchor: HTMLButtonElement): Promise<void> => {
+    const previews = await Promise.all([...plain, ...pointed].map(async item => {
+      const dataUrl = await fullImageSource(target, item)
+      return dataUrl === null ? null : { id: item.id, name: item.name, details: attachmentDetails(item, anyFile), preview: { dataUrl } }
+    }))
+    if (!mounted.current || !anchor.isConnected) return
+    if (!previews.some(image => image?.id === attachment.id)) {
+      const name = attachment.name
+      setError(t`Could not open ${name}. It is still attached. Try opening it again.`)
+      return
+    }
+    setError(null)
+    setViewer({ images: previews.filter(image => image !== null), startId: attachment.id, anchor })
+  }
   const chip = (attachment: AgentAttachmentHandle, deck: { readonly index?: number; readonly count?: number }): ReactNode =>
-    <Chip key={attachment.id} target={target} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)} {...deck}
+    <Chip key={attachment.id} target={target} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)} onOpen={anchor => { void openImage(attachment, anchor) }} {...deck}
       {...anyFile ? { removeLabel: words.removeAttachment(attachment.name) } : {}} />
   const endDrag = (): void => { dragDepth.current = 0; setDragging(false) }
-  return <div ref={root} className="screenshot-input" data-dragging={(anyFile || !replyBox) && dragging ? true : undefined} onPaste={event => {
+  return <><div ref={root} className="screenshot-input" data-dragging={(anyFile || !replyBox) && dragging ? true : undefined} onPaste={event => {
     const files = [...event.clipboardData.items].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => file !== null)
     if (files.length) { event.preventDefault(); void add(files) }
   }} onDragEnter={anyFile || !replyBox ? event => {
@@ -308,4 +325,11 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     </div>
     {(anyFile || !replyBox) && dragging && <div className="screenshot-input__drop" role="status"><span><Download size={16} aria-hidden="true" />{words.dropToAttach()}</span></div>}
   </div>
+    {/* Portals keep React ancestry: keep viewer keys and clipboard/drop events out of the composer and its ancestors. */}
+    {viewer && <div style={{ display: 'contents' }} onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()} onKeyPress={event => event.stopPropagation()}
+      onPaste={event => event.stopPropagation()} onDragEnter={event => event.stopPropagation()} onDragLeave={event => event.stopPropagation()}
+      onDragOver={event => { event.preventDefault(); event.stopPropagation() }} onDrop={event => { event.preventDefault(); event.stopPropagation() }}>
+      <AttachmentViewer {...viewer} origin={undefined} onClose={() => setViewer(null)} />
+    </div>}
+  </>
 }

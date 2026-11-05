@@ -3286,6 +3286,10 @@ msgstr ""
 msgid "Could not open {failedHost}."
 msgstr ""
 
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "Could not open {name}. It is still attached. Try opening it again."
+msgstr ""
+
 #. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not open {url}"
@@ -5997,7 +6001,9 @@ msgid "Open {file} in the side panel"
 msgstr ""
 
 #. {name} is an attached image's file name.
+#. {name} is an attached image's file name.
 #: src/renderer/src/agents/MessageContent.tsx
+#: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "Open {name}"
 msgstr ""
 
