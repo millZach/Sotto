@@ -52,9 +52,10 @@
 .projects-directory__path { display: block; margin-top: 6px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
 .projects-directory__path--none { color: var(--tt-text-muted); font-family: inherit; }
 .projects-directory__error { color: var(--tt-error); font-size: var(--tt-type-small); }
-.help-view { width: min(100%, 800px); margin: 0 auto; padding: 28px 40px 48px; }
+.help-view { width: min(100%, 720px); margin: 0 auto; padding: 28px 40px 48px; }
 .help-view > h1 { margin: 0 0 24px; font-size: var(--tt-type-title); font-weight: 500; letter-spacing: -.9px; }
-.help-grid { display: flex; flex-direction: column; gap: 42px; }
+/* The topics take the column's width, not their longest line's, so the page sits in the middle of the room. */
+.help-grid { display: flex; flex-direction: column; align-items: stretch; gap: 42px; }
 .help-topics { display: block; }
 /* Each group's topics are a card, as a group of Settings rows is (ADR-0110): the words stand clear of its edge, and its rows are divided the same way. */
 .help-topics__group { margin: 28px 0 10px; padding: 0; border: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; }
