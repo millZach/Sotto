@@ -175,7 +175,8 @@ export type PlanStep = NonNullable<AgentActivity['steps']>[number]
 
 /**
  * Codex, Claude and Grok name the same three plan states differently; anything else has not started. `active` is the words a
- * provider gives the step while it runs (Claude's `activeForm`), kept only on the step in progress, which is the one read.
+ * provider gives the step while it runs (Claude's `activeForm`), kept only on the step in progress. The renderer draws a plan's items as written and no
+ * longer reads it.
  */
 export function planSteps(steps: readonly { text: unknown; status: unknown; active?: unknown }[]): PlanStep[] {
   const state = (value: unknown): PlanStep['status'] =>
