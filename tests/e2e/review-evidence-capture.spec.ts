@@ -578,7 +578,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await closeTools(page)
   } },
   // How the answer holds: the blocked and the ready surface at every size, in a third theme, and the states that take Merge's place.
-  { name: 'pr-states', covers: ['pr-blocked-many', 'pr-auto-merge', 'pr-merged', 'pr-failed-clay', 'pr-ready-clay', 'pr-merge-method'], run: async capture => {
+  { name: 'pr-states', covers: ['pr-blocked-many', 'pr-auto-merge', 'pr-merged', 'pr-failed-clay', 'pr-ready-clay', 'pr-ready-glass', 'pr-merge-method'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
     const scripted = 'The pull request lives in the scripted gh: its checks, reviews and how it stands are data, read through the real status reader and surface.'
@@ -592,6 +592,9 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await resizeContentWindowFor(capture.launched, 1600, 1000)
     await pullRequestMomentRead(capture, 'ready')
     await capture.shoot('pr-ready-clay', 'Ready, in the Clay theme.', scripted)
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'glass', lightTheme: 'glass' }))
+    await page.waitForTimeout(400)
+    await capture.shoot('pr-ready-glass', 'Ready, on Glass, whose surfaces are translucent: Merge and the box of folds over the painted room.', scripted)
     await page.evaluate(async id => window.sotto!.updateSettings({ darkTheme: id, lightTheme: id }), DEFAULT_THEME_ID)
     await page.waitForTimeout(400)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
