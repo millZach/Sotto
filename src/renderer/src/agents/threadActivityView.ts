@@ -2,7 +2,7 @@ import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 
 import { changeFailed, isTerminalActivity, REASONING_SUMMARY_TITLE, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
-import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
+import { isVisualMessage, type AgentMessage, type AgentRequest, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 
@@ -445,9 +445,17 @@ function reasoningNow(steps: readonly AgentActivity[]): string {
  * between steps are, since a provider reports its tool calls and not the thinking between them; the Spaceballs words carry
  * that wait (ADR-0134, November 4 amendment). A plan's record stays running for the whole turn, so it never counts as the
  * step; its step in progress says what the step is for. What the work is for comes first from the plan's step in progress,
- * then from a command's own description, then from the reasoning summary that led to it. Reads without copying.
+ * then from a command's own description, then from the reasoning summary that led to it. While a request waits on the
+ * user, a permission outranking a question as everywhere else, the line says that instead. Reads without copying.
  */
-export function workingNow(steps: readonly AgentActivity[], replyId?: string): WorkingNow | null {
+export function workingNow(steps: readonly AgentActivity[], replyId?: string, waitingOn?: AgentRequest['kind']): WorkingNow | null {
+  // A turn held on the user's answer is neither running a step nor writing: the line says what it waits for.
+  if (waitingOn !== undefined) {
+    const waiting = waitingOn === 'permission'
+      ? t({ message: 'Waiting for your permission', comment: 'The working line while a permission request waits on the user, above its card.' })
+      : t({ message: 'Waiting for your answer', comment: 'The working line while a question waits on the user, above its card.' })
+    return { words: waiting, detail: '', code: false, spoken: waiting }
+  }
   const running = steps.findLast(record => record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
   const replying = running === undefined && replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)
   if (running === undefined && !replying) return null

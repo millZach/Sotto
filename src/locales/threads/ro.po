@@ -9983,12 +9983,22 @@ msgstr ""
 msgid "Waiting for Sotto…"
 msgstr ""
 
+#. The working line while a question waits on the user, above its card.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Waiting for your answer"
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Waiting for your answer to its question. Answer it below."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Waiting for your last prompt to be confirmed."
+msgstr ""
+
+#. The working line while a permission request waits on the user, above its card.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Waiting for your permission"
 msgstr ""
 
 #. {toolName} is the name of a tool the delegated thread asks to use.

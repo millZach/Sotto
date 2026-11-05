@@ -9983,6 +9983,11 @@ msgstr "Waiting for Cursor. This connects by itself."
 msgid "Waiting for Sotto…"
 msgstr "Waiting for Sotto…"
 
+#. The working line while a question waits on the user, above its card.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Waiting for your answer"
+msgstr "Waiting for your answer"
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Waiting for your answer to its question. Answer it below."
 msgstr "Waiting for your answer to its question. Answer it below."
@@ -9990,6 +9995,11 @@ msgstr "Waiting for your answer to its question. Answer it below."
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Waiting for your last prompt to be confirmed."
 msgstr "Waiting for your last prompt to be confirmed."
+
+#. The working line while a permission request waits on the user, above its card.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Waiting for your permission"
+msgstr "Waiting for your permission"
 
 #. {toolName} is the name of a tool the delegated thread asks to use.
 #: src/renderer/src/agents/delegationWords.ts

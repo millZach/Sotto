@@ -543,7 +543,7 @@ function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode 
  * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
 export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince }: {
-  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction'>>; readonly connected: boolean
+  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction' | 'requests'>>; readonly connected: boolean
   /** Display name of the provider, for the opened steps' "Reported by Codex". */
   readonly provider: string
   /** Called before the steps open or fold so the transcript can keep the line in place. */
@@ -586,9 +586,12 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const last = thread.messages.at(-1)
   // A reply from before this turn began, such as the one above a Watcher news turn, is not being written now.
   const replyId = last?.role === 'assistant' && !isVisualMessage(last) && !(turn?.startedAt && Date.parse(last.createdAt) < Date.parse(turn.startedAt)) ? last.id : undefined
-  // Read again only when the turn's steps or its newest reply change, not for each word of a reply streaming in, or when
-  // the interface language does, since the words are in it.
-  const now = useMemo(() => workingNow(steps, replyId), [steps, replyId, i18n.locale])
+  // A request waiting on the user holds the turn, so the line says so rather than that a reply is being written.
+  const requests = thread.requests
+  const waitingOn = requests?.some(request => request.kind === 'permission') ? 'permission' : requests?.length ? 'question' : undefined
+  // Read again only when the turn's steps, its newest reply or what it waits on change, not for each word of a reply
+  // streaming in, or when the interface language does, since the words are in it.
+  const now = useMemo(() => workingNow(steps, replyId, waitingOn), [steps, replyId, waitingOn, i18n.locale])
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">

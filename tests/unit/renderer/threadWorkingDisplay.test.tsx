@@ -147,6 +147,22 @@ describe('what the working line names', () => {
     expect(word(within(before.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Combing the desert')
   })
 
+  it('says what it waits for while a request waits on the user, not that a reply is being written', () => {
+    const messages = threadsStateFixture().host.threads.find(item => item.id === THREAD)!.messages
+    const reply = { ...messages.at(-1)!, id: 'reply', role: 'assistant' as const, text: 'I will run the benchmark.', createdAt: iso(0) }
+    const request = (id: string, kind: 'permission' | 'question') => ({ id, kind, text: kind === 'permission' ? 'Run npm run bench?' : 'Which store?', options: [] })
+    const first = mount(stateWith({ status: 'running', messages: [...messages, reply], activities: waiting(), requests: [request('p', 'permission')] }))
+    expect(word(within(first.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Waiting for your permission')
+    cleanup()
+    // A permission outranks a question, as it does in the sidebar and the composer.
+    const both = mount(stateWith({ status: 'running', messages: [...messages, reply], activities: [...waiting(), activity({ id: 's', status: 'running', command: 'npm run bench' })],
+      requests: [request('q', 'question'), request('p', 'permission')] }))
+    expect(word(within(both.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Waiting for your permission')
+    cleanup()
+    const asked = mount(stateWith({ status: 'running', messages: [...messages, reply], activities: waiting(), requests: [request('q', 'question')] }))
+    expect(word(within(asked.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Waiting for your answer')
+  })
+
   it('holds what it says so quick steps do not flicker, and comes back to the words only after a gap that lasts', () => {
     vi.useFakeTimers({ now: NOW })
     const step = (id: string, command: string, status: AgentActivity['status'] = 'running'): AgentActivity => activity({ id, command, status })
