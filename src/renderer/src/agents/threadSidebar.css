@@ -109,13 +109,17 @@
 .thread-nav__rail-rename .thread-nav__rename { width: 100%; box-sizing: border-box; }
 .pane-menu__list.thread-snooze { display: flex; align-items: center; gap: 8px; width: 320px; max-width: calc(100vw - 16px); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; scroll-padding-block: 16px 20px; }
-/* Where the list is cut by what stands above or below it, a row fades out instead of being sliced through its words. Each
-   edge is a sticky strip with its own place in the flow, so at the list's ends it lies over nothing: a row fades only while
-   there is more of the list that way. */
-.thread-nav[data-mode] .thread-nav__scroll::before, .thread-nav[data-mode] .thread-nav__scroll::after { content: ''; position: sticky; z-index: 2; display: block; pointer-events: none; }
-.thread-nav[data-mode] .thread-nav__scroll::before { top: 0; height: 16px; background: linear-gradient(to bottom, var(--threads-sidebar), transparent); }
-.thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 20px; background: linear-gradient(to top, var(--threads-sidebar), transparent); }
+.thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 0 4px; scroll-padding-block: 7px; }
+/* Where the list is cut by what stands above or below it (Needs you and the search over it, the foot under it), it passes
+   under a band of the sidebar that ends in a hairline, so a cut row reads as one scrolled away and never as one drawn half.
+   Each band is a sticky strip with its own place in the flow, so at the list's ends it is only space: the hairline shows
+   only while there is more of the list that way. It spans the sidebar's width, as the foot's own rule does. */
+.thread-nav[data-mode] .thread-nav__scroll { container-type: scroll-state; }
+.thread-nav[data-mode] .thread-nav__scroll::before, .thread-nav[data-mode] .thread-nav__scroll::after { content: ''; position: sticky; z-index: 2; display: block; margin-inline: -4px; border: 0 solid transparent; background: var(--threads-sidebar); pointer-events: none; }
+.thread-nav[data-mode] .thread-nav__scroll::before { top: 0; height: 6px; border-bottom-width: 1px; }
+.thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 6px; border-top-width: 1px; }
+@container scroll-state(scrollable: top) { .thread-nav[data-mode] .thread-nav__scroll::before { border-bottom-color: var(--tt-hairline); } }
+@container scroll-state(scrollable: bottom) { .thread-nav[data-mode] .thread-nav__scroll::after { border-top-color: var(--tt-hairline); } }
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; font-variant-numeric: tabular-nums; }
 /* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */
@@ -276,9 +280,14 @@
 .thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 1px; padding: 5px 10px 5px 8px; width: 100%; }
 .thread-nav__row--details { margin: 0; }
 .thread-nav__row--details .thread-nav__title { grid-area: 1 / 2 / auto / -1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--tt-type-body); line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
-/* What is moving or waiting reads first; a plain Done steps back and keeps its word. */
+/* What is moving or waiting reads first; a plain Done steps back and keeps its word. Its provider's mark keeps its shape and
+   drops its colour, so down a long list of finished threads the colour left is what is working or waiting; hovering, or
+   the row on screen, gives the colour back. */
 .thread-nav__row--details:not([data-resting]) .thread-nav__title { color: var(--tt-text); }
 .thread-nav__row--details[data-resting]:not([data-current]) .thread-nav__title { font-weight: 400; }
+.thread-nav__row--details[data-resting]:not([data-current], :hover) .thread-nav__provider .thread-nav__mark { color: var(--tt-text-muted); }
+/* By day the caption's thin strokes read fainter than their contrast says, so a row's words and clock take a step more ink. */
+:root[data-theme='light'] .thread-nav__row--details { --tt-text-muted: color-mix(in oklab, var(--tt-text-muted) 45%, var(--tt-text-2)); }
 /* A title may take two lines; the ring stays on its first. */
 .thread-nav__row--details .thread-nav__ring { grid-area: 1 / 1; align-self: start; margin-top: calc((var(--tt-type-body) * 1.35 - 10px) / 2); }
 .thread-nav .thread-nav__row--details .thread-nav__time { grid-area: 2 / 3; display: block; align-self: center; line-height: 16px; visibility: visible; }
@@ -300,10 +309,12 @@
 /* The row's shortcuts stand at the second line's end in the clock's place, so the name and the words stay put under the pointer. */
 .thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 1px; right: 2px; padding-right: 0; opacity: 0; pointer-events: none; }
 .thread-nav .thread-nav__row--details .thread-nav__action { width: 24px; height: 24px; min-height: 24px; }
-.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
-.thread-nav .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__time { visibility: hidden; }
-.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__standing { padding-right: 52px; }
-.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__branch { padding-right: 104px; }
+/* They show under the pointer and with the keyboard's focus, not for the focus a click leaves behind, so the row just
+   pressed reads as quietly as the rest once the pointer moves on. */
+.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
+.thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: hidden; }
+.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: 52px; }
+.thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__branch { padding-right: 104px; }
 .thread-nav__resize { position: absolute; top: 0; bottom: 0; right: 0; width: 8px; cursor: col-resize; touch-action: none; z-index: 5; -webkit-app-region: no-drag; }
 .thread-nav__resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; transition: background-color 160ms ease; }
 .thread-nav__resize:is(:hover, :focus-visible)::before, .thread-nav[data-resizing] .thread-nav__resize::before { background: var(--tt-focus); }
@@ -349,8 +360,8 @@
 @container thread-sidebar (min-width: 340px) {
   .thread-nav__branch { display: flex; }
   /* Here the shortcuts have the branch's line, so the clock and the words keep theirs. */
-  .thread-nav .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__time { visibility: visible; }
-  .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__standing { padding-right: 0; }
+  .thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: visible; }
+  .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: 0; }
 }
 @container thread-sidebar (min-width: 420px) { .thread-nav__model, .thread-nav__copy-kind { display: inline; } }
 
