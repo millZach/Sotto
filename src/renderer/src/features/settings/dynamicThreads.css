@@ -10,3 +10,8 @@
 .dynamic-threads__count { width: 72px; height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; appearance: textfield; }
 .dynamic-threads__count:hover { border-color: var(--tt-border); }
 .dynamic-threads__count::-webkit-inner-spin-button, .dynamic-threads__count::-webkit-outer-spin-button { margin: 0; appearance: none; }
+.dynamic-threads__your-note { display: grid; gap: 6px; }
+.dynamic-threads__your-note label { color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; }
+.dynamic-threads__your-note textarea { display: block; width: 100%; min-height: 72px; padding: 10px 12px; resize: vertical; border: 1px solid transparent; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); }
+.dynamic-threads__your-note textarea:hover { border-color: var(--tt-border); }
+.dynamic-threads__your-note textarea::placeholder { color: var(--tt-text-muted); opacity: 1; }

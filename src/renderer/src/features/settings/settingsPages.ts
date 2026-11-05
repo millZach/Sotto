@@ -154,7 +154,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
     { id: 'command-summaries', label: msg`Generated command summaries`, section: 'settings-agents', words: 'permission approve explain' },
     { id: 'next-prompt', label: msg`Suggest a next prompt`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
-    { id: 'dynamic-threads', label: msg`Dynamic threads`, section: 'settings-agents', words: 'overseer overseeing choose model limit providers allowed list effort workers', gate: 'dynamic-threads' },
+    { id: 'dynamic-threads', label: msg`Dynamic threads`, section: 'settings-agents', words: 'overseer overseeing choose model limit providers allowed list effort workers your note advice', gate: 'dynamic-threads' },
     { id: 'thread-tips', label: msg`Show tips`, section: 'settings-agents', words: 'tips hints shortcuts skills hidden again', gate: 'thread-tips' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
     { id: 'restart-stopped-threads', label: msg`Restart stopped threads`, section: 'settings-agents', words: 'usage limit resets resume continue carry on after a restart', gate: 'restart-stopped-threads' },

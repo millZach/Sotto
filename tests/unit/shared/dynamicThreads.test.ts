@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_DYNAMIC_THREADS, isDynamicThread, OVERSEER_NOTE_OFF, overseerNoteFor, overseerNoteOn, OVERSEER_REASON_PREFIX, overseerInstructions, parseDynamicThreadSettings, whyNotDynamic } from '../../../src/shared/dynamicThreads'
+import { DEFAULT_DYNAMIC_THREADS, DYNAMIC_NOTE_MAX_CHARACTERS, dynamicNoteText, dynamicSessionAfterCompaction, isDynamicThread, OVERSEER_NOTE_OFF, overseerNoteChanged, overseerNoteFor, overseerNoteOn, OVERSEER_REASON_PREFIX, overseerInstructions, overseerSend, parseDynamicThreadSettings, whyNotDynamic } from '../../../src/shared/dynamicThreads'
 import { isOwlFeatureEnabled } from '../../../src/shared/owlFeatures'
 
 describe('Dynamic threads (ADR-0191)', () => {
@@ -55,6 +55,79 @@ describe('Dynamic threads (ADR-0191)', () => {
     // None at all with the feature off, whatever a saved record says.
     expect(overseerNoteFor(thread(true), false)).toBeUndefined()
     expect(overseerNoteFor(thread(false, true), false)).toBeUndefined()
+  })
+
+  it('keeps your note as written, up to its limit, and reads one of only spaces as none', () => {
+    expect(parseDynamicThreadSettings({ ...DEFAULT_DYNAMIC_THREADS, note: 'Sol for reviews.\nOpus for debugging.' }).note).toBe('Sol for reviews.\nOpus for debugging.')
+    expect(parseDynamicThreadSettings({ ...DEFAULT_DYNAMIC_THREADS, note: 'x'.repeat(DYNAMIC_NOTE_MAX_CHARACTERS + 50) }).note).toHaveLength(DYNAMIC_NOTE_MAX_CHARACTERS)
+    expect(parseDynamicThreadSettings({ ...DEFAULT_DYNAMIC_THREADS, note: 42 })).toEqual(DEFAULT_DYNAMIC_THREADS)
+    expect(parseDynamicThreadSettings({ ...DEFAULT_DYNAMIC_THREADS, note: '' })).toEqual(DEFAULT_DYNAMIC_THREADS)
+    expect(dynamicNoteText('  Sol for reviews.  ')).toBe('Sol for reviews.')
+    expect(dynamicNoteText(' \n ')).toBeUndefined()
+    expect(dynamicNoteText(undefined)).toBeUndefined()
+  })
+
+  it('gives an overseer your note last in its instructions, as advice the limits still hold', () => {
+    const words = overseerInstructions('Sol for reviews.')
+    expect(words.startsWith(overseerInstructions())).toBe(true)
+    expect(words.endsWith('Sol for reviews.')).toBe(true)
+    expect(words).toContain('delegate still holds the allowed list and the limits')
+    expect(overseerInstructions()).not.toContain('The user\'s note')
+    expect(overseerNoteOn('Sol for reviews.')).toContain(words)
+  })
+
+  it('owes a note when your note changed since the session was told, and never while the thread is not Dynamic', () => {
+    const note = { text: 'Sol for reviews.', digest: 'aaaaaaaaaaaaaaaa' }
+    const thread = (dynamic: boolean, session?: object) => ({ providerId: 'claude', ...dynamic ? { dynamic: true } : {}, ...session ? { dynamicSession: session } : {} }) as never
+    expect(overseerNoteFor(thread(true, { created: true, told: true, createdNote: note.digest, toldNote: note.digest }), true, note)).toBeUndefined()
+    expect(overseerNoteFor(thread(true, { created: true, told: true }), true, note)).toBe(overseerNoteChanged(note.text))
+    expect(overseerNoteChanged(note.text)).toContain('set aside any earlier note')
+    expect(overseerNoteFor(thread(true, { created: true, told: true, toldNote: 'bbbbbbbbbbbbbbbb' }), true, note)).toBe(overseerNoteChanged(note.text))
+    // Cleared: the overseer is told to set the old one aside.
+    expect(overseerNoteFor(thread(true, { created: true, told: true, toldNote: note.digest }), true)).toBe(overseerNoteChanged(undefined))
+    expect(overseerNoteChanged(undefined)).toBe('The user cleared their note. From this message on, set aside any earlier note from them.')
+    // Turning on carries the note with the instructions; a thread that is not Dynamic hears nothing of it.
+    expect(overseerNoteFor(thread(true), true, note)).toBe(overseerNoteOn(note.text))
+    expect(overseerNoteFor(thread(false, { created: true, told: false, createdNote: note.digest }), true)).toBeUndefined()
+    expect(overseerNoteFor(thread(true, { created: true, told: true }), false, note)).toBeUndefined()
+  })
+
+  it('tells a first message of a change since its process launched, and records the note each held', () => {
+    const now = { text: 'Opus for debugging.', digest: 'bbbbbbbbbbbbbbbb' }
+    const dynamic = { providerId: 'claude', dynamic: true } as never
+    expect(overseerSend(dynamic, true, now, { launchedNote: 'aaaaaaaaaaaaaaaa' })).toEqual({ note: overseerNoteChanged(now.text),
+      session: { created: true, told: true, createdNote: 'aaaaaaaaaaaaaaaa', toldNote: now.digest, noteHeard: true } })
+    expect(overseerSend(dynamic, true, now, { launchedNote: now.digest })).toEqual({ session: { created: true, told: true, createdNote: now.digest, toldNote: now.digest } })
+    expect(overseerSend(dynamic, true, undefined, { launchedNote: 'aaaaaaaaaaaaaaaa' }).note).toBe(overseerNoteChanged(undefined))
+    expect(overseerSend(dynamic, true, undefined, { launchedNote: undefined })).toEqual({ session: { created: true, told: true } })
+    // A first message on a thread that is not Dynamic keeps no record, as before.
+    expect(overseerSend({ providerId: 'claude' } as never, true, now, { launchedNote: undefined })).toEqual({})
+    expect(overseerSend(dynamic, false, now, { launchedNote: undefined })).toEqual({})
+  })
+
+  it('remembers a note heard in the conversation, owes it again after a compaction, and has a session that heard one set it aside when Dynamic comes back', () => {
+    const note = { text: 'Sol for reviews.', digest: 'aaaaaaaaaaaaaaaa' }
+    const thread = (dynamic: boolean, session: object) => ({ providerId: 'claude', ...dynamic ? { dynamic: true } : {}, dynamicSession: session }) as never
+    // A change note goes, and the session heard it.
+    expect(overseerSend(thread(true, { created: true, told: true }), true, note)).toEqual({ note: overseerNoteChanged(note.text), session: { created: true, told: true, toldNote: note.digest, noteHeard: true } })
+    // Cleared, then compacted: its digests match its creation again, but the clearing is owed, once.
+    const compacted = dynamicSessionAfterCompaction({ created: true, told: true, noteHeard: true })
+    expect(compacted).toEqual({ created: true, told: true, noteHeard: true, noteOwed: true })
+    expect(overseerSend(thread(true, compacted), true)).toEqual({ note: overseerNoteChanged(undefined), session: { created: true, told: true, noteHeard: true } })
+    // Back on after a note was heard and cleared: the note that turns it on says to set the old one aside.
+    expect(overseerSend(thread(true, { created: false, told: false, noteHeard: true }), true).note).toBe(overseerNoteOn(undefined, true))
+    expect(overseerNoteOn(undefined, true)).toContain('Set aside any earlier note from the user')
+    expect(overseerSend(thread(true, { created: true, told: false, createdNote: note.digest }), true, note).note).toBe(overseerNoteOn(note.text, true))
+    expect(overseerNoteOn(note.text)).not.toContain('Set aside')
+    // The note that turns it on with a note in it is heard; one that turns it off keeps what was.
+    expect(overseerSend(thread(true, { created: false, told: false }), true, note).session).toEqual({ created: false, told: true, toldNote: note.digest, noteHeard: true })
+    expect(overseerSend(thread(false, { created: false, told: true, toldNote: note.digest }), true, note)).toEqual({ note: OVERSEER_NOTE_OFF, session: { created: false, told: false } })
+  })
+
+  it('goes back to what a session was created with after a compaction, note and all', () => {
+    expect(dynamicSessionAfterCompaction({ created: true, told: true, createdNote: 'aaaaaaaaaaaaaaaa', toldNote: 'bbbbbbbbbbbbbbbb' })).toEqual({ created: true, told: true, createdNote: 'aaaaaaaaaaaaaaaa', toldNote: 'aaaaaaaaaaaaaaaa' })
+    expect(dynamicSessionAfterCompaction({ created: true, told: true, toldNote: 'bbbbbbbbbbbbbbbb' })).toEqual({ created: true, told: true })
+    expect(dynamicSessionAfterCompaction({ created: false, told: true, toldNote: 'bbbbbbbbbbbbbbbb' })).toEqual({ created: false, told: false })
   })
 
   it('reads the mark only on a thread that can hold it, while the feature is on', () => {

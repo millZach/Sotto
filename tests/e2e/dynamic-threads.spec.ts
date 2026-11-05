@@ -116,6 +116,67 @@ test('a thread made Dynamic after its first message is told by one note with its
   }
 })
 
+test('your note in Settings starts a Dynamic thread\'s session, and goes once more with the next message after it changes', async () => {
+  test.setTimeout(180_000)
+  const { profile, root, project, restore } = await fixture()
+  let launched: LaunchedSotto | undefined
+  try {
+    await onReleaseTrack('owl', async () => {
+      launched = await launchSotto('success', profile)
+      const { page } = launched
+      const id = await newThread(page, project)
+      await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'xhigh', workersAtOnce: 4 } }))
+      const saved = () => page.evaluate(async () => (await window.sotto!.getSettings()).dynamicThreads.note)
+      // Past first-run setup, which the window shows until it loads again.
+      await page.reload()
+      await openThreads(page)
+      // Typed in Settings, reached from Workers at once by the keyboard, and saved on leaving the field.
+      await openSettingsAt(page)
+      const card = page.locator('[data-setting="dynamic-threads"]')
+      await card.getByLabel('Workers at once').focus()
+      await page.keyboard.press('Tab')
+      const note = card.getByRole('textbox', { name: 'Your note to the overseer' })
+      await expect(note).toBeFocused()
+      await page.keyboard.type('Sol for reviews.')
+      await page.keyboard.press('Tab')
+      await expect.poll(saved).toBe('Sol for reviews.')
+      await page.reload()
+      await openSettingsAt(page)
+      await expect(card.getByRole('textbox', { name: 'Your note to the overseer' })).toHaveValue('Sol for reviews.')
+      // The first message starts the overseer's session with the note at the end of its instructions.
+      expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
+      expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
+      await expect.poll(async () => (await fakeClaudeLaunches(join(root, 'claude'))).some(launch => appended(launch.args).includes('You do no work yourself')), { timeout: 30_000 }).toBe(true)
+      const launch = (await fakeClaudeLaunches(join(root, 'claude'))).find(item => appended(item.args).includes('You do no work yourself'))!
+      expect(appended(launch.args)).toContain(overseerInstructions('Sol for reviews.'))
+      const records = () => fakeClaudeRecords(join(root, 'claude'))
+      const notes = async () => (await records()).filter(record => record.method === 'hook-context').map(record => (record.params as { frame: { additionalContext: string | null; prompt: string } }).frame)
+      const atRest = () => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.status !== 'running', id)
+      await expect.poll(atRest, { timeout: 30_000 }).toBe(true)
+      expect((await notes()).filter(item => item.additionalContext !== null)).toHaveLength(0)
+      // Changed: the next message carries it, once, beside the words as typed.
+      await card.getByRole('textbox', { name: 'Your note to the overseer' }).fill('Opus for the hard debugging.')
+      await card.getByRole('textbox', { name: 'Your note to the overseer' }).blur()
+      await expect.poll(saved).toBe('Opus for the hard debugging.')
+      expect(await send(page, id, 'Now have it reviewed.')).toBeNull()
+      await expect.poll(async () => (await notes()).filter(item => item.additionalContext !== null).length, { timeout: 30_000 }).toBe(1)
+      const noted = (await notes()).find(item => item.additionalContext !== null)!
+      expect(noted.additionalContext).toContain('The user changed their note.')
+      expect(noted.additionalContext).toContain('Opus for the hard debugging.')
+      expect(noted.prompt).toBe('Now have it reviewed.')
+      // The thread's record keeps no words of it.
+      expect(await page.evaluate(async threadId => JSON.stringify((await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)), id)).not.toContain('hard debugging')
+      await expect.poll(atRest, { timeout: 30_000 }).toBe(true)
+      expect(await send(page, id, 'And merge it.')).toBeNull()
+      await expect.poll(async () => (await notes()).some(item => item.prompt === 'And merge it.'), { timeout: 30_000 }).toBe(true)
+      expect((await notes()).filter(item => item.additionalContext !== null)).toHaveLength(1)
+    })
+  } finally {
+    if (launched) await closeSotto(launched)
+    await restore()
+  }
+})
+
 test('an overseer starts the model it names inside the list, with its reason, and is refused one off it', async () => {
   test.setTimeout(120_000)
   const { profile, project, restore } = await fixture()
@@ -269,7 +330,7 @@ test('the switch, a worker\'s row and the Settings card hold in both themes at e
       launched = await launchSotto('success', profile)
       const { page } = launched
       const id = await newThread(page, project)
-      await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4 } }))
+      await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4, note: 'Sol for reviews. Save Opus for the hard debugging, and keep each change as small as the issue allows.' } }))
       expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
       expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
       await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.status !== 'running', id), { timeout: 30_000 }).toBe(true)
@@ -309,8 +370,8 @@ test('the switch, a worker\'s row and the Settings card hold in both themes at e
           const card = page.locator('[data-setting="dynamic-threads"]')
           await card.scrollIntoViewIfNeeded()
           await expect(card, where).toBeVisible()
-          expect(await settingsLayoutProblems(page, 'settings-agents', '.dynamic-threads, .dynamic-threads__provider'), where).toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })
-          const low = (await settingsTextContrast(page, 'settings-agents', '.dynamic-threads__lead, .dynamic-threads__note, .dynamic-threads__name, .dynamic-threads__name small, .dynamic-threads__limit')).filter(item => item.text.trim() && item.ratio < 4.5)
+          expect(await settingsLayoutProblems(page, 'settings-agents', '.dynamic-threads, .dynamic-threads__provider, .dynamic-threads__your-note, .dynamic-threads__your-note textarea'), where).toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })
+          const low = (await settingsTextContrast(page, 'settings-agents', '.dynamic-threads__lead, .dynamic-threads__note, .dynamic-threads__name, .dynamic-threads__name small, .dynamic-threads__limit, .dynamic-threads__your-note label, .dynamic-threads__your-note textarea')).filter(item => item.text.trim() && item.ratio < 4.5)
           expect(low, where).toEqual([])
           await page.screenshot({ path: join(evidence, `settings-${appearance}-${width}x${height}.png`), animations: 'disabled' })
         }

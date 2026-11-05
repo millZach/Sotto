@@ -58,6 +58,8 @@ export type ProviderProblem = z.infer<typeof providerProblemSchema>
 const providerAccountSchema = z.string().min(1).max(80)
 
 const id = z.string().min(1).max(512)
+/** A digest of a Dynamic thread's **your note**, as a session's record keeps it in place of the words (ADR-0191). */
+const dynamicNoteDigestSchema = z.string().regex(/^[0-9a-f]{16}$/u)
 /** How many of a thread's newest wake-ups its record names (`wakeUpMessageIds`). */
 export const WAKE_UP_MESSAGE_IDS_MAX = 50
 // Scoped public model/project IDs include an encoded native identifier.
@@ -646,7 +648,8 @@ export const agentThreadSchema = z.object({
   /** The user turned Dynamic on for this thread (ADR-0191): Sotto's own record, read through `isDynamicThread`. */
   dynamic: z.literal(true).optional().catch(undefined),
   /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
-  dynamicSession: z.object({ created: z.boolean(), told: z.boolean() }).strict().optional().catch(undefined),
+  dynamicSession: z.object({ created: z.boolean(), told: z.boolean(), createdNote: dynamicNoteDigestSchema.optional(), toldNote: dynamicNoteDigestSchema.optional(),
+    noteHeard: z.literal(true).optional(), noteOwed: z.literal(true).optional() }).strict().optional().catch(undefined),
   /** Live swarm membership, supplied by its owner only while worker-swarms is on. */
   swarm: z.object({ id, leadThreadId: id, index: z.number().int().nonnegative().optional(), count: z.number().int().positive(),
     synthesisDone: z.boolean().optional(), synthesisFailed: z.enum(['failed', 'stopped']).optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),

@@ -129,10 +129,10 @@ Proposed bar, for Zach to change: it goes on if it uses no more limit than roles
 
 ## Part 8: Later
 
-In the order the comparison points to:
+In the order the comparison points to. Zach's picks, November 5, 2026: the user's note first, ahead of its record, Give it to another model… and more overseers. It reaches a thread when its session starts and once, as an overseer note, after it changes, rather than with every message.
 
+- **The user's note:** **Your note** on the Settings card, up to 600 characters, in the overseer's instructions at creation and as an overseer note after a change. `dynamicSession` keeps digests of the note, never its words.
 - **Its record:** counts per model on this computer, on Usage's numbers-only terms, with a clear press.
-- **The user's note.**
 - **Give it to another model…** on a row's ···.
 - **More overseers:** Grok Build, whose rules are set only at creation, and Muse, whose instructions go with each message.
 - **The iPhone's switch, paired hosts, and Watcher starting Dynamic threads.**

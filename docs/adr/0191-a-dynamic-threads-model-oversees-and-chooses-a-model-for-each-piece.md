@@ -50,6 +50,8 @@ A start with `count` above one is refused on a Dynamic thread, because a swarm's
 
 Two more come later: **its record**, how each model's earlier pieces ended on this computer, in counts and no words, cleared with a press; and **the user's note**, a few lines in Settings sent with its standing instructions. The note is advice, so a provider that must not be used belongs off the list.
 
+The user's note came first, after the comparison (Zach, November 5, 2026). It is **Your note** on the Settings card, up to 600 characters. A session is created with it at the end of its standing instructions. After the user changes or clears it, each Dynamic thread is told once, by an **overseer note** with its next message, and again after a compaction Sotto sees finish. Zach chose this over sending the note with every message, which would have cost its lines on each one. The thread's record keeps a digest of the note each session was told, never its words.
+
 **10. Running out.** The overseer is told to prefer providers with room. A worker stopped by a limit has an outcome that says which provider and when it resets. Giving the piece to another model names the old delegation in `delegate`'s `replaces`, which links the two rows and cancels the old thread's restart (ADR-0144), or stops the old thread if its restart has already gone, so two models don't carry on with the same piece. Partial work stays in the folder and the new brief says so.
 
 If the overseer's own provider stops, the thread stops as any thread does: **Restart** at the reset, or **Or continue now on** with a press (ADR-0089). Workers on other providers go on, and their results wait for its next turn. Sotto never continues a thread on another provider without a press.

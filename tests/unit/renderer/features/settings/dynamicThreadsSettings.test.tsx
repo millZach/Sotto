@@ -77,6 +77,57 @@ describe('the Dynamic threads card', () => {
     expect(payloads(onSave)[0]?.workersAtOnce).toBe(2)
   })
 
+  it('saves your note once typing pauses or the field is left, as the whole setting, and not when nothing changed', () => {
+    vi.useFakeTimers()
+    try {
+      const onSave = vi.fn(() => new Promise(() => undefined))
+      render(<DynamicThreadsSettings settings={{ ...DEFAULT_DYNAMIC_THREADS, providers: ['claude'] }} onSave={onSave} />)
+      const note = screen.getByRole('textbox', { name: 'Your note to the overseer' })
+      expect(note).toHaveAttribute('maxlength', '600')
+      fireEvent.change(note, { target: { value: 'Sol for reviews.' } })
+      expect(onSave).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(600)
+      expect(payloads(onSave)).toEqual([{ ...DEFAULT_DYNAMIC_THREADS, providers: ['claude'], note: 'Sol for reviews.' }])
+      fireEvent.change(note, { target: { value: 'Sol for reviews. Opus for debugging.' } })
+      fireEvent.blur(note)
+      expect(payloads(onSave)[1]?.note).toBe('Sol for reviews. Opus for debugging.')
+      fireEvent.blur(note)
+      vi.advanceTimersByTime(600)
+      expect(onSave).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('keeps your note as typed when its save does not land, and tries again when the field is left', async () => {
+    let land: (saved: boolean) => void = () => undefined
+    const onSave = vi.fn(() => new Promise<boolean>(resolve => { land = resolve }))
+    render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={onSave} />)
+    const note = screen.getByRole('textbox', { name: 'Your note to the overseer' })
+    fireEvent.change(note, { target: { value: 'Sol for reviews.' } })
+    fireEvent.blur(note)
+    land(false)
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
+    expect(note).toHaveValue('Sol for reviews.')
+    fireEvent.blur(note)
+    expect(payloads(onSave)[1]?.note).toBe('Sol for reviews.')
+  })
+
+  it('never brings back an older note when its save fails after a newer one was sent', async () => {
+    const lands: ((saved: boolean) => void)[] = []
+    const onSave = vi.fn(() => new Promise<boolean>(resolve => { lands.push(resolve) }))
+    render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={onSave} />)
+    const note = screen.getByRole('textbox', { name: 'Your note to the overseer' })
+    fireEvent.change(note, { target: { value: 'Sol for reviews.' } })
+    fireEvent.blur(note)
+    fireEvent.change(note, { target: { value: 'Opus for debugging.' } })
+    fireEvent.blur(note)
+    expect(payloads(onSave).map(item => item.note)).toEqual(['Sol for reviews.', 'Opus for debugging.'])
+    lands[0]!(false)
+    await Promise.resolve(); await Promise.resolve()
+    fireEvent.blur(note)
+    expect(onSave).toHaveBeenCalledTimes(2)
+  })
+
   it('names who the work goes to: a company, or for OpenCode, which is a client, its model sources', () => {
     render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={vi.fn()} />)
     expect(companyWords('claude')).toBe('Anthropic')

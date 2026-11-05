@@ -190,6 +190,10 @@ msgstr ""
 msgid "{downloadCount, plural, other {{downloads} downloads}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "{DYNAMIC_NOTE_MAX_CHARACTERS, plural, one {Up to # character.} other {Up to # characters.}}"
+msgstr ""
+
 #: src/renderer/src/features/settings/hostTailnetWords.ts
 msgid "{error} {name} is connected over SSH and nothing was lost. Press {button}."
 msgstr ""
@@ -965,6 +969,10 @@ msgstr ""
 #. Edits every color family instead of two colors
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Advanced"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Advice in your own words. A Dynamic thread reads it when it starts, and once more after you change it. It can be ignored, so a provider you must not use belongs off the list above."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -5101,6 +5109,10 @@ msgstr ""
 msgid "Snowy pines and falling snow under the northern lights."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Sol for reviews. Save Opus for the hard debugging."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
 msgstr ""
@@ -7249,6 +7261,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your note"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your note to the overseer"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
