@@ -358,6 +358,11 @@
   --tt-rail-group-4: oklch(from var(--tt-accent) l var(--rail-chroma) calc(var(--rail-hue-4) + 120 * clamp(0, (75 - var(--rail-hue-4)) * 100000, 1)));
 
   --tt-success: oklch(0.79 0.13 165);
+  /* A ready Merge (ADR-0110, November 5): the status green washed over the surface, inside an edge of it. */
+  --tt-success-wash: color-mix(in oklab, var(--tt-success) 18%, var(--tt-surface));
+  --tt-success-wash-hover: color-mix(in oklab, var(--tt-success) 25%, var(--tt-surface));
+  --tt-success-wash-press: color-mix(in oklab, var(--tt-success) 31%, var(--tt-surface));
+  --tt-success-edge: color-mix(in oklab, var(--tt-success) 55%, var(--tt-field-border));
   --tt-provider-codex: #d7dbe1;
   --tt-provider-claude: #e3b58e;
   --tt-provider-grok: #c9baff;
@@ -454,6 +459,12 @@
   --tt-glass-blur: 12px;
   --tt-glass-saturation: 1.14;
   --tt-success: oklch(0.445 0.11 158);
+  /* By day the green is dark, and a little of it over a near-white surface reads grey, as a control at rest. So the
+     wash is the same green raised to a light, clear tint, and its edge is the green itself. */
+  --tt-success-wash: oklch(from var(--tt-success) .9 calc(c * .62) h);
+  --tt-success-wash-hover: oklch(from var(--tt-success) .86 calc(c * .7) h);
+  --tt-success-wash-press: oklch(from var(--tt-success) .82 calc(c * .78) h);
+  --tt-success-edge: var(--tt-success);
   --tt-provider-codex: #c9ced6;
   --tt-provider-claude: #e2ad80;
   --tt-provider-grok: #bfaefc;

@@ -192,11 +192,12 @@ describe('Omarchy M3 and readability check', () => {
     // 2026), which derives tokens from the same roles, and when Sotto's dark room went soft warm ink with its sidebar and
     // Tools below it, as Zach picked (ADR-0024, November 5, 2026 amendment), which sets the desktop's tokens and leaves the
     // palettes as they were, and when the type scale's comments came to name what each step is used for now (November 5,
-    // 2026), which changes no value.
+    // 2026), which changes no value, and when a ready Merge's green wash, its edge and its hover and press moved into
+    // tokens, with a clearer tint by day (`--tt-success-wash`, November 5, 2026), derived from the status green.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('5f5a46ea1999bb726fa89bb8d573116bb5978ea1f9650786d1f40b403f37f284')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('b22fcbebd9258a998c74131266b85f402381aaea777ee6c781dcec4ae2f2b10c')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })
