@@ -759,6 +759,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await openThread(page, 'Measure the store worker')
     await expect(focusedPane(page).getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
     await capture.shoot('permission-card', 'A thread waiting on a permission request to run a benchmark, with its Allow, Allow for this session and Deny choices.', 'The request is the fake provider host\'s, in the shape the Claude adapter sends.')
+    await capture.shoot('permission-card', 'The same at the minimum window.', 'The request is the fake provider host\'s, in the shape the Claude adapter sends.', { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
   { name: 'split-panes', covers: [], run: async capture => {
     const { page } = capture
@@ -767,8 +769,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     const row = page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Repository review', exact: true }).first()
     await row.hover({ position: { x: 16, y: 12 } })
     await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click()
-    await capture.shoot('permission-card', 'The same at the minimum window.', 'The request is the fake provider host\'s, in the shape the Claude adapter sends.', { modes: ['dark'], size: [820, 560] })
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
     await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
     await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.')
     for (const size of SMALLER_SIZES) await capture.shoot('split-panes', 'Two threads side by side: the finished review and a thread still streaming its reply.', 'The stream is held at one moment while each image is taken.', { modes: ['dark'], size })
