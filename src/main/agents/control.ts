@@ -5338,6 +5338,7 @@ export class AgentControl {
           ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
           ...(command.check ? { check: true as const } : {}),
           ...(origin?.keptSpeed ? { keptSpeed: true as const } : {}),
+          ...(command.dynamic && !origin && this.dependencies.dynamicThreadsEnabled === true ? { dynamic: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
         // A thread the popup starts stays the popup's: the window keeps what it shows (ADR-0181).
         const opens = !origin && client.keepsSelection !== true

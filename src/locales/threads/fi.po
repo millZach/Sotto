@@ -697,6 +697,10 @@ msgid "{modelName} oversees and chooses a model for each piece. Turned off, it w
 msgstr ""
 
 #: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "{modelName} oversees each new thread and chooses a model for each piece. It does no work itself."
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "{modelName} will choose a model for each piece, and your code can go to any company on your list: {companies}."
 msgstr ""
 
@@ -2511,6 +2515,10 @@ msgstr ""
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Choose model"
+msgstr ""
+
+#: src/renderer/src/agents/AgentAccountSettings.tsx
+msgid "Choose model. {modelName} oversees new threads"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -5966,6 +5974,11 @@ msgstr ""
 msgid "one of its agents"
 msgstr ""
 
+#. {provider} is a provider's name.
+#: src/renderer/src/agents/AgentAccountSettings.tsx
+msgid "Only a Claude Code or Codex thread can be Dynamic for now, so {provider} threads start as usual."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
 msgstr ""
@@ -6349,6 +6362,7 @@ msgstr ""
 msgid "Outcome unknown"
 msgstr ""
 
+#. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
 #. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
 #: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "oversees"
@@ -8299,6 +8313,10 @@ msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Start here"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Start new threads as Dynamic?"
 msgstr ""
 
 #. A body its host sent cut shows only this part.

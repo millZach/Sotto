@@ -138,7 +138,7 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
     save({ providers: [...list] })
   }
   return <div className="dynamic-threads" data-setting="dynamic-threads">
-    <p className="dynamic-threads__lead tt-paragraph"><Trans>A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on for a thread at the foot of its model menu.</Trans></p>
+    <p className="dynamic-threads__lead tt-paragraph"><Trans>A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread.</Trans></p>
     <fieldset className="dynamic-threads__providers">
       <legend><Trans>What it may use</Trans></legend>
       <p className="dynamic-threads__note tt-paragraph"><Trans>Your code goes to the company behind each provider ticked here. A provider off this list is never used, even if your message names it.</Trans></p>

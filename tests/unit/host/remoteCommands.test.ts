@@ -17,7 +17,9 @@ const HOST_LOCAL = ['set-aside-send', 'set-thread-dynamic', 'credential', 'check
 const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
   connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'],
   // The reading the window showed, which the router names when it asks a paired host for a confirmation receipt (#1691).
-  'git-pull-request-action': ['readId'] }
+  'git-pull-request-action': ['readId'],
+  // A thread on another machine cannot be Dynamic (ADR-0191), so only this computer's window starts one.
+  'create-thread': ['dynamic'] }
 /**
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.

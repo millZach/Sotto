@@ -37,6 +37,8 @@ export const dynamicThreadSettingsSchema = z.object({
   workersAtOnce: workersAtOnceSchema,
   /** **Your note**: advice in the user's own words, which an overseer is told when its session starts and once after a change. */
   note: dynamicNoteSchema.optional(),
+  /** New threads start Dynamic: set at the foot of the model menu in Settings' New threads start with row. */
+  newThreads: z.boolean().optional(),
 }).strict()
 export type DynamicThreadSettings = z.infer<typeof dynamicThreadSettingsSchema>
 export const DEFAULT_DYNAMIC_THREADS: DynamicThreadSettings = { highestEffort: DEFAULT_HIGHEST_EFFORT, workersAtOnce: DEFAULT_WORKERS_AT_ONCE }
@@ -52,7 +54,7 @@ export function parseDynamicThreadSettings(input: unknown): DynamicThreadSetting
   return { ...providers.success ? { providers: [...new Set(providers.data)] } : {},
     highestEffort: highestEffort.success ? highestEffort.data : DEFAULT_HIGHEST_EFFORT,
     workersAtOnce: workersAtOnce.success ? workersAtOnce.data : DEFAULT_WORKERS_AT_ONCE,
-    ...note ? { note } : {} }
+    ...note ? { note } : {}, ...saved.newThreads === true ? { newThreads: true } : {} }
 }
 
 /** The note as an overseer is told it, or undefined when there is nothing but space in it. */

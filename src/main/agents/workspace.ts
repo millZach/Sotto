@@ -5723,6 +5723,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(command.providerMode ? { providerMode: command.providerMode } : {}),
         worktree: command.councilJudge ? { mode: 'shared', path: command.workingDirectory!, status: 'ready' } : await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
+      if (command.dynamic && whyNotDynamic(thread) === undefined) thread.dynamic = true
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
       // New work reopens the folder, while the work put aside stays settled.
       // Re-read after working-copy preparation, which can accept a fresh snapshot.
