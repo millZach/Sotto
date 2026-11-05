@@ -149,8 +149,8 @@ export interface CouncilPromptContext {
 const KIND_WORDS: Readonly<Record<CouncilKind, string>> = { decision: 'a decision', fact: 'a fact to check', review: 'a review', ideas: 'ideas' }
 /**
  * What a panelist is told when the question needs outside research (Drake, November 2, 2026): to use its own tools, and to
- * cite what it found as sources. Sotto adds no tool and widens no permission; a lookup its provider asks about reaches the
- * user on the thread's card.
+ * cite what it found as sources. Sotto adds no tool. The seat starts at the origin's permission or a safer offered mode
+ * (Drake, November 5, 2026); a lookup that still needs approval reaches the user on the thread's card.
  */
 const RESEARCH_BRIEF = 'This question needs outside research. Research it with your own tools: search the web, and read papers and library documentation where they bear on it. '
   + 'Where your own setup has a skill or instructions for research, follow them. Cite what you found as a source: its link and the passage that supports your claim, quoted exactly. '

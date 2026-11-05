@@ -628,11 +628,12 @@ export class CouncilService {
       .catch(() => undefined)
   }
   /**
-   * Makes a seat's thread in the snapshot, or in the thread's own folder when it has none, at the narrowest permission its
-   * provider offers, linked to the origin thread.
+   * Makes a seat's thread in the snapshot, or in the thread's own folder when it has none, at the origin's permission
+   * or the closest safer mode its provider offers, linked to the origin thread.
    */
   private async createThread(record: CouncilRecord, seat: CouncilSeat): Promise<boolean> {
-    const models = this.options.control.watcherSnapshot().models
+    const { models, threads } = this.options.control.watcherSnapshot()
+    const origin = threads.find(thread => thread.id === record.originThread)
     const model = resolveModel(models, seat.modelId)
     if (!model?.ready) return false
     const name = seat.seat === COUNCIL_CHAIR ? 'Council chair' : `Council ${seat.seat}`
@@ -640,7 +641,7 @@ export class CouncilService {
       const created = await this.options.control.commandFromCouncil({ type: 'create-thread', threadId: seat.thread, projectId: record.projectId, title: clip(`${name}: ${record.originTitle}`, 120),
         titleSource: 'user', modelId: seat.modelId, ...record.snapshot ? { workingCopy: 'independent' as const, existingWorktreePath: record.snapshot.path } : { workingCopy: 'shared' as const },
         ...seat.effort ? { reasoningEffort: seat.effort } : {},
-        ...narrowestPermission(model) }, () => { if (record.stoppedAt || record.settledAt) throw new Error('This Council has stopped.') })
+        ...seatPermission(origin, model, models) }, () => { if (record.stoppedAt || record.settledAt) throw new Error('This Council has stopped.') })
       if (created.error || !created.host.threads.some(thread => thread.id === seat.thread)) return false
       await this.options.host.setDelegatedBy(seat.thread, record.originThread)
       seat.started = true
@@ -1042,10 +1043,25 @@ export class CouncilService {
   }
 }
 
-/** The narrowest permission a model offers (decision 2): Ask for approval where it is offered, or its provider's own mode that allows nothing. */
-export function narrowestPermission(model: AgentModel): { readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string } {
-  if (model.providerModes?.length) return { providerMode: (model.providerModes.find(mode => mode.allows === 'nothing') ?? model.providerModes[0]!).id }
-  const mode = nearestRuntimeMode('approval-required', model.runtimeModes ?? [])
+/** The origin's permission at creation, compared by allowance across mode kinds; unknown modes keep the old narrowest start. */
+function seatPermission(origin: AgentThread | undefined, model: AgentModel, models: readonly AgentModel[]): { readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string } {
+  if (origin?.providerMode && model.providerModes?.some(mode => mode.id === origin.providerMode)) return { providerMode: origin.providerMode }
+  const allowances = ['nothing', 'edits', 'everything'] as const
+  const allowance = origin?.providerMode
+    ? resolveModel(models, origin.modelId)?.providerModes?.find(mode => mode.id === origin.providerMode)?.allows
+    : origin?.runtimeMode === 'full-access' ? 'everything' : origin?.runtimeMode === 'approval-required' ? 'nothing' : origin?.runtimeMode ? 'edits' : undefined
+  if (model.providerModes?.length) {
+    let selected: (typeof model.providerModes)[number] | undefined
+    for (const mode of model.providerModes) {
+      if (allowance && mode.allows && allowances.indexOf(mode.allows) <= allowances.indexOf(allowance)
+        && (!selected || allowances.indexOf(mode.allows) > allowances.indexOf(selected.allows!))) selected = mode
+    }
+    return { providerMode: (selected ?? model.providerModes.find(mode => mode.allows === 'nothing') ?? model.providerModes[0]!).id }
+  }
+  const desired = origin?.providerMode
+    ? allowance === 'everything' ? 'full-access' : allowance === 'edits' ? 'auto-accept-edits' : 'approval-required'
+    : origin?.runtimeMode ?? 'approval-required'
+  const mode = nearestRuntimeMode(desired, model.runtimeModes ?? [])
   return mode ? { runtimeMode: mode } : {}
 }
 
