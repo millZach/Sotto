@@ -324,7 +324,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
       <span className="pr-surface__lead">
         {chosen ? <button type="button" className="files-icon tt-focusable" aria-label={back} title={back} onClick={() => show(null)}><ArrowLeft size={15} aria-hidden="true" /></button> : null}
         <StateIcon size={16} aria-hidden="true" data-state={stateKey(detail)} />
-        <h2 ref={top} tabIndex={-1} className="pr-surface__name" title={detail.title}><span className="pr-surface__number">#{detail.number}</span> {detail.title}</h2>
+        <span className="pr-surface__number">#{detail.number}</span>
         <span className="pr-surface__tag">{stateLabel(detail)}</span>
       </span>
       <div className="tools-chrome__actions">
@@ -335,6 +335,8 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
     </div>
     {noticeLine(stopRefused !== null)}
     <div ref={body} className="pr-surface__body">
+      {/* The title is the pull request's name, so it leads the surface whole, under the line the window's own buttons share. */}
+      <h2 ref={top} tabIndex={-1} className="pr-surface__title"><span className="tt-visually-hidden">#{detail.number}</span>{' '}<bdi>{detail.title}</bdi></h2>
       {/* A pull request that has ended says so first: the checklist is only what it was by then. */}
       {!open && known ? mergeDock : null}
       <h3 className="pr-surface__heading">{checklistHeading(detail, clear)}{' '}<small data-tone={clear ? 'done' : undefined}>{checklistCount(lines)}</small></h3>

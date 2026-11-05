@@ -7,15 +7,19 @@
 .pr-surface :is(svg[data-state='closed'], svg[data-state='draft'], svg[data-state='none']) { color: var(--tt-text-muted); }
 
 .pr-surface__top { gap: 6px; }
+/* The line the window's own buttons share says which pull request and how it stands, in one line at every width; the
+   title it belongs to leads the body below. */
 .pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
 .pr-surface__lead > svg { flex: none; }
-/* The title is what names the pull request, so it takes a second line before it is cut, at every width; a short one
-   stays on one. Past two lines it is cut, whole in its tooltip. */
-.pr-surface__name { display: -webkit-box; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; overflow-wrap: anywhere; text-wrap: pretty; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pr-surface__name { min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .pr-surface__name:focus { outline: none; }
-.pr-surface__name:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-tag); }
-.pr-surface__number { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
-.pr-surface__tag { flex: none; padding: 1px 8px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 18px; }
+.pr-surface__number { flex: none; color: var(--tt-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+/* Its state is a word beside its icon, as every status is (ADR-0110). */
+.pr-surface__tag { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+/* The title, whole, at the head of what the surface says about it: its lines balanced, as a heading's are. */
+.pr-surface__title { margin: 0 0 18px; color: var(--tt-text); font-size: var(--tt-type-heading); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; text-wrap: balance; }
+.pr-surface__title:focus { outline: none; }
+.pr-surface__title:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-tag); }
 .tools-panel .pr-surface__menu > .pane-action { width: 30px; height: 30px; border-radius: var(--tt-radius-sm); }
 
 .pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
@@ -71,7 +75,7 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
 .pr-surface__dock:has(.pr-surface__merge-go[data-blocked]) { position: static; }
 /* A pull request that has ended leads with that, and its checklist follows. */
-.pr-surface__dock:first-child { padding-top: 0; }
+.pr-surface__title + .pr-surface__dock { padding-top: 0; }
 .pr-surface__lines + .pr-surface__folds { margin-top: 14px; }
 .pr-surface__merge { position: relative; display: flex; gap: 8px; }
 .pr-surface__merge .tt-button { min-height: 44px; font-size: var(--tt-type-reading); }
@@ -234,8 +238,7 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
   .pr-surface__check-go { grid-area: go; }
 }
 @container tools-body (max-width: 439px) {
-  /* The title takes the word's room; the state's icon stays, and the word stays for a screen reader. */
-  .pr-surface__tag { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+  .pr-surface__title { margin-bottom: 14px; }
   .pr-surface__body { padding-inline: 12px; }
   .pr-surface__dock { margin-inline: -12px; padding-inline: 12px; }
 }
