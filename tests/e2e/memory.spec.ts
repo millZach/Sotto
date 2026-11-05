@@ -1,14 +1,25 @@
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Page } from '@playwright/test'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { closeSotto, launchSotto, openPage, openThreads } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/memory')
 
+// Main reads the memory setting once, at start (ADR-0013), so a memory test starts with it already on.
+async function memoryProfile(): Promise<string> {
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-memory-' })).directory
+  await writeFile(join(directory, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, memoryEnabled: true }))
+  return directory
+}
+
 async function snapshot(page: Page) { return page.evaluate(() => window.sotto!.memory!.get()) }
 
 test('remembers working preferences across restart, retains supersession history and keeps policies separate', async () => {
-  const original = await launchSotto()
+  const profile = await memoryProfile()
+  const original = await launchSotto('success', profile)
   let launched = original
   try {
     let page = launched.page
@@ -88,11 +99,13 @@ test('remembers working preferences across restart, retains supersession history
   } finally {
     await closeSotto(launched)
     if (launched !== original) await closeSotto(original)
+    await removeOwnedE2EProfile(profile)
   }
 })
 
 test('keeps an unsaved correction when another edit supersedes its memory', async () => {
-  const launched = await launchSotto()
+  const profile = await memoryProfile()
+  const launched = await launchSotto('success', profile)
   const { page } = launched
   try {
     const originalId = await page.evaluate(async () => {
@@ -119,5 +132,8 @@ test('keeps an unsaved correction when another edit supersedes its memory', asyn
     await expect(current.getByRole('textbox', { name: 'Edit memory' })).toHaveValue('Keep spoken replies brief and show details in writing.')
     await current.getByRole('button', { name: 'Save memory', exact: true }).click()
     await expect(page.getByRole('article', { name: 'Keep spoken replies brief and show details in writing.', exact: true })).toBeVisible()
-  } finally { await closeSotto(launched) }
+  } finally {
+    await closeSotto(launched)
+    await removeOwnedE2EProfile(profile)
+  }
 })
