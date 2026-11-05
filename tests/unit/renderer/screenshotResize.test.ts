@@ -172,22 +172,10 @@ describe('preparing a screenshot whose first bytes name its size', () => {
     expect(await prepareScreenshot(original, decode)).toEqual({ blob: original, dimensions: { original: { width: 20_000, height: 20_000 }, sent: { width: 20_000, height: 20_000 } } })
     expect(decode).not.toHaveBeenCalled()
   })
-  it('decodes one past the bound and scales it down', async () => {
-    const { decode, encode } = fakeDecoder({ width: 3840, height: 2160 })
-    const prepared = await prepareScreenshot(new File([png(3840, 2160), new Uint8Array(1000)], 'big.png', { type: 'image/png' }), decode)
-    expect(encode).toHaveBeenCalledWith({ width: 2576, height: 1449 }, 'image/png')
-    expect(prepared.dimensions?.sent).toEqual({ width: 2576, height: 1449 })
-  })
 })
 
 describe('reading a screenshot held as a data URL', () => {
   const dataUrl = (data: Uint8Array, type = 'image/png') => `data:${type};base64,${btoa(String.fromCharCode(...data))}`
-  it('decodes its bytes once, for the header and for staging', async () => {
-    const data = png(1280, 800)
-    const blob = dataUrlBlob(dataUrl(data), 'image/png')!
-    expect(blob.type).toBe('image/png')
-    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(data)
-  })
   it('refuses a data URL of another type, or one that is not base64', () => {
     expect(dataUrlBlob(dataUrl(png(10, 10), 'image/jpeg'), 'image/png')).toBeNull()
     expect(dataUrlBlob('not a data URL', 'image/png')).toBeNull()

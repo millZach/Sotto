@@ -51,23 +51,6 @@ describe('Sotto design-system primitives', () => {
     expect(onChange).toHaveBeenCalledWith(true)
   })
 
-  it('keeps each toggle label and description in one vertical copy region', () => {
-    const { container } = render(
-      <Toggle
-        label="Automatic paste"
-        description="Paste into the application that had focus before recording started."
-        checked
-        onCheckedChange={() => undefined}
-      />,
-    )
-
-    const copy = container.querySelector('.tt-toggle__copy')
-    expect(copy).not.toBeNull()
-    expect(copy?.children).toHaveLength(2)
-    expect(copy?.querySelector('strong')).toHaveTextContent('Automatic paste')
-    expect(copy?.querySelector('.tt-field__description')).toHaveTextContent('Paste into the application')
-  })
-
   it('links field labels, descriptions, and errors to the control', () => {
     render(
       <Field

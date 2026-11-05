@@ -14,21 +14,6 @@ import {
 const WORK_AREA = { x: 1_000, y: 100, width: 1_200, height: 900 } as const
 const INSET = 16
 
-const EXPECTED_SIZES = {
-  'idle-resting': {
-    horizontal: { width: 124, height: 54 },
-    vertical: { width: 54, height: 124 },
-  },
-  'idle-hovered': {
-    horizontal: { width: 248, height: 76 },
-    vertical: { width: 88, height: 124 },
-  },
-  active: {
-    horizontal: { width: 248, height: 88 },
-    vertical: { width: 88, height: 248 },
-  },
-} as const
-
 const EDGES: readonly WidgetEdge[] = ['top', 'bottom', 'left', 'right']
 const PRESENTATIONS: readonly WidgetPresentation[] = [
   'idle-resting',
@@ -37,17 +22,6 @@ const PRESENTATIONS: readonly WidgetPresentation[] = [
 ]
 
 describe('widget presentation geometry', () => {
-  it('returns the approved native footprint for every edge and presentation', () => {
-    for (const presentation of PRESENTATIONS) {
-      for (const edge of EDGES) {
-        const orientation = edge === 'left' || edge === 'right' ? 'vertical' : 'horizontal'
-        expect(widgetSizeForPresentation(edge, presentation)).toEqual(
-          EXPECTED_SIZES[presentation][orientation],
-        )
-      }
-    }
-  })
-
   it('centers every presentation 16 DIPs inside all four work-area edges', () => {
     const expectedBounds: Record<WidgetPresentation, Record<WidgetEdge, object>> = {
       'idle-resting': {

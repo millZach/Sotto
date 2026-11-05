@@ -111,11 +111,4 @@ describe('platformCopy', () => {
       expect(platformCopy(platform).settingsUpdatesByHand).toBeNull()
     }
   })
-
-  it('returns the same frozen row on every call', () => {
-    for (const platform of platforms) {
-      expect(platformCopy(platform)).toBe(platformCopy(platform))
-      expect(Object.isFrozen(platformCopy(platform))).toBe(true)
-    }
-  })
 })

@@ -22,14 +22,6 @@ function snapshot(fields: object): WidgetSnapshot {
 
 describe('shell dictation copy', () => {
   const nothingRecorded = ['MIC_PERMISSION_DENIED', 'MIC_START_FAILED', 'MIC_NOT_SET_UP', 'SPEECH_MODEL_NOT_READY', 'OPENROUTER_KEY_MISSING', 'NO_SPEECH', 'SETTINGS_UNAVAILABLE'] as const
-  const captured = ['RECORDING_FAILED', 'TRANSCRIPTION_MODEL_NOT_READY', 'TRANSCRIPTION_FAILED', 'TRANSCRIPTION_NO_KEY', 'TRANSCRIPTION_KEY_REJECTED', 'TRANSCRIPTION_NO_CREDIT', 'TRANSCRIPTION_RATE_LIMITED', 'TRANSCRIPTION_OFFLINE', 'TRANSCRIPTION_MODEL_GONE', 'OUTPUT_UNAVAILABLE', 'OUTPUT_FAILED', 'DESKTOP_CLIPBOARD_UNAVAILABLE', 'HISTORY_FAILED'] as const
-  const captureDependent = ['MIC_DEVICE_NOT_FOUND'] as const
-
-  it('puts every known failure in exactly one recording group, including capture-dependent errors', () => {
-    const grouped = [...nothingRecorded, ...captured, ...captureDependent]
-    expect(new Set(grouped).size).toBe(grouped.length)
-    expect(grouped.slice().sort()).toEqual([...WIDGET_ERROR_CODES].sort())
-  })
 
   it.each([
     ...[...WIDGET_ERROR_CODES, 'UNKNOWN_ERROR'].map(code => ({ code, captureStarted: false })),

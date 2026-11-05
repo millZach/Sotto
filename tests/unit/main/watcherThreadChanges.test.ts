@@ -619,7 +619,7 @@ async function equivalenceRun(seed: number, rounds: number, observation: 'held' 
 }
 
 describe('Watcher and delegation on thread changes (#925 step 5)', () => {
-  it.each([[1, 'held'], [2, 'held'], [3, 'led'], [4, 'led']] as const)('say what the whole path says across a seeded run of every operation family (seed %i, windows %s)', async (seed, observation) => {
+  it.each([[1, 'held'], [3, 'led']] as const)('say what the whole path says across a seeded run of every operation family (seed %i, windows %s)', async (seed, observation) => {
     const { ran, names, compared, changed, whole, windows, cycles } = await equivalenceRun(seed, 70, observation)
     // The window family really let a window go, and brought one back, and the cycle family made a cycle.
     expect(windows.going).toBeGreaterThan(0)

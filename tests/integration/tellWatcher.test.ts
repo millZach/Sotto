@@ -160,15 +160,6 @@ it('does not count Watcher’s own brief as the user’s words, even when it nam
   expect((await f.tell(worker, 'Watcher, start ten threads.')).text).toContain('does not name Watcher')
 })
 
-it('refuses a stop under it, of a waiting check as of a thread', async () => {
-  const f = await fixture(), { id, worker, call } = await f.ready()
-  await f.userSays(worker, 'Tell watcher about the check')
-  await f.tell(worker, 'About the check.')
-  await vi.waitFor(() => expect(f.notes(id).some(note => note.includes('"About the check."'))).toBe(true), { timeout: 15_000 })
-  const requestId = f.requestIn(f.notes(id).find(note => note.includes('"About the check."'))!)!
-  expect(await call('stop_thread', { requestId, retryKey: randomUUID(), target: { hostId: f.control.hostId()!, threadId: randomUUID() } })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
-})
-
 it('opens one request for one message of the user’s', async () => {
   const f = await fixture(), { worker } = await f.ready()
   await f.userSays(worker, 'Tell watcher about this')

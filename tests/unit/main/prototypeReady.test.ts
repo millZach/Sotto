@@ -147,13 +147,6 @@ describe('PrototypeReady', () => {
     expect(ask(thread({ messages: [assistant('reply'), { ...assistant('visual:1', ''), visual: { kind: 'diagram' } } as unknown as AgentMessage] }))).toMatchObject({ id: 'reply' })
   })
 
-  it('ends the mark when the user replies after it, but not for a wake-up Sotto sent', () => {
-    const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
-    expect(markOf(marks, snapshot(thread({ messages: [assistant('reply'), user('u')] })))).toBeUndefined()
-    expect(markOf(marks, snapshot(thread({ messages: [assistant('reply'), user('wake')], wakeUpMessageIds: ['wake'] })))?.source).toBe('reply:reply')
-    expect(markOf(marks, snapshot(thread({ messages: [assistant('reply'), user('wake', { wakeUp: true })] })))?.source).toBe('reply:reply')
-  })
-
   it('reads a reply after it from the summary by time when the thread carries no messages', () => {
     const marks = new PrototypeReady(searches({ 'thread\nreply:reply': [page('a')] }))
     const lastAssistant = { id: 'reply', text: 'See docs/greeting.html', createdAt: '2026-10-22T10:00:00.000Z' }

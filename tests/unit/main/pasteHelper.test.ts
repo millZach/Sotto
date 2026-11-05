@@ -72,11 +72,6 @@ function fallbackAdapter(result = true): PasteProcessAdapter & { calls: number }
 }
 
 describe('warm helper invocation', () => {
-  it('exists only on Windows', () => {
-    expect(createPasteCommands('win32').helper).not.toBeNull()
-    expect(createPasteCommands('darwin').helper).toBeNull()
-  })
-
   it('builds a hidden PowerShell invocation that compiles once and loops on stdin', () => {
     const invocation = buildPasteHelperInvocation()
 

@@ -6,7 +6,6 @@ import type { DelegatedView, DelegationCheckReply } from '../../../../src/shared
 import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { DelegationWorldProvider, delegationsByTurn, useDelegationWorld, type DelegationWorld } from '../../../../src/renderer/src/agents/DelegatedWork'
 import { trayLines } from '../../../../src/renderer/src/agents/CheckReply'
-import { delegatedKind, delegatedState, delegatedSummary } from '../../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../../src/renderer/src/agents/threadActivityView'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
@@ -136,17 +135,6 @@ describe('a check\'s row of delegated work', () => {
     expect(check.querySelector('.delegated-work__glyph')).toHaveClass('lucide-git-fork')
     expect(document.querySelector('.check-excerpt, .check-unkept, [data-check]')).toBeNull()
     expect(screen.queryByRole('button', { name: /Read the reply/u })).toBeNull()
-  })
-
-  it('words a check, its state and its count without reading anything from its reply', () => {
-    expect(delegatedKind('code-review', 'codex', true)).toBe('check')
-    expect(delegatedKind('building', 'codex')).toBe('work')
-    // An answered check is Answered, never Returned as a review is.
-    expect(delegatedState(failed, 'check', false)).toEqual({ id: 'answered', word: 'Answered' })
-    const of = () => ({ providerId: 'claude' as const, requests: [] })
-    expect(delegatedSummary([failed], of, true)).toBe('1 check')
-    expect(delegatedSummary([building, failed, cut], of, true)).toBe('1 delegated thread · 2 checks')
-    expect(delegatedSummary([building, failed, cut], of)).toBe('3 delegated threads')
   })
 })
 

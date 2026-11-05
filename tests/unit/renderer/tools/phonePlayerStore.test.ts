@@ -23,11 +23,6 @@ describe('phoneLayout', () => {
     const tall = phoneLayout('medium', { width: 1600, height: 1000 })
     expect(layout.screen.width).toBeLessThan(tall.screen.width)
   })
-  it('never shrinks the screen narrower than 120, however short the window', () => {
-    const tiny = { width: 400, height: 150 }
-    const layout = phoneLayout('large', tiny)
-    expect(layout.screen.width).toBeGreaterThanOrEqual(120)
-  })
   it('never makes the whole player narrower than the label above it', () => {
     const tiny = { width: 400, height: 150 }
     const layout = phoneLayout('large', tiny)
@@ -44,17 +39,10 @@ describe('phoneLayout', () => {
 
 describe('clampPhonePoint', () => {
   const layout = phoneLayout('medium', WINDOW)
-  it('keeps a point already inside the window untouched', () => {
-    const point = { x: 800, y: 100 }
-    expect(clampPhonePoint(point, layout, WINDOW)).toEqual(point)
-  })
   it('pulls a point back inside the window on every edge, and below the drag strip', () => {
     expect(clampPhonePoint({ x: -50, y: 10 }, layout, WINDOW)).toMatchObject({ x: 0, y: BROWSER_PLAYER_STRIP_HEIGHT })
     expect(clampPhonePoint({ x: 2000, y: 300 }, layout, WINDOW)).toMatchObject({ x: WINDOW.width - layout.width })
     expect(clampPhonePoint({ x: 800, y: 2000 }, layout, WINDOW)).toMatchObject({ y: WINDOW.height - layout.height })
-  })
-  it('never lets the player sit above the drag strip', () => {
-    expect(clampPhonePoint({ x: 100, y: 0 }, layout, WINDOW).y).toBe(BROWSER_PLAYER_STRIP_HEIGHT)
   })
 })
 

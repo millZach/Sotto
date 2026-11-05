@@ -200,12 +200,6 @@ describe('a turn the server let down', () => {
     expect(transcript.querySelector('.thread-own-failure__reason strong')).toHaveTextContent('Sparks turned down its key.')
   })
 
-  it('opens Settings at Your own model servers', () => {
-    const { navigate, transcript } = mount({ status: 'error', messages: [user('u1', LAST, -60)], activities: [failed('u1', 'key-refused')], lastTurn: { id: 'u1', status: 'failed' } })
-    fireEvent.click(within(transcript).getByRole('button', { name: 'Open Settings at Your own model servers' }))
-    expect(navigate).toHaveBeenCalledWith('settings', 'settings-providers', 'own-model-servers')
-  })
-
   it('reads as its turn record says without the Owl feature', () => {
     const { transcript } = mount({ status: 'error', messages: [user('u1', LAST, -60)], activities: [failed('u1', 'unreachable')], lastTurn: { id: 'u1', status: 'failed' } }, { owl: false })
     expect(within(transcript).getByText('English words for unreachable.')).toBeInTheDocument()

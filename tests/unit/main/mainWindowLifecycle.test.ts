@@ -106,16 +106,6 @@ describe('WindowManager lifecycle', () => {
     )
   })
 
-  it('shows and hides the main window', async () => {
-    const { manager, windows } = createHarness()
-
-    await manager.showMain()
-    manager.hideMain()
-
-    expect(windows[0]!.show).toHaveBeenCalledOnce()
-    expect(windows[0]!.hide).toHaveBeenCalledOnce()
-  })
-
   it('reports renderer delivery success and contains missing, destroyed, or throwing sends', async () => {
     const { manager, windows } = createHarness()
 

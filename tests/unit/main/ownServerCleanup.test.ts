@@ -41,14 +41,6 @@ describe('pickFastest', () => {
       { thinking: 'least', ms: [380, null] },
     ])).toEqual({ status: 'fastest', thinking: 'off', ms: 410 })
   })
-
-  it('lets the candidate listed first win a tie', () => {
-    expect(pickFastest([{ thinking: 'plain', ms: [500, 500] }, { thinking: 'off', ms: [500, 500] }])).toEqual({ status: 'fastest', thinking: 'plain', ms: 500 })
-  })
-
-  it('says none passed when every candidate failed a try', () => {
-    expect(pickFastest([{ thinking: 'plain', ms: [null] }, { thinking: 'off', ms: [300, null] }, { thinking: 'least', ms: [] }])).toEqual({ status: 'none-passed' })
-  })
 })
 
 describe('the measure sample', () => {

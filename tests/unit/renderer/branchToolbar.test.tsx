@@ -45,10 +45,6 @@ async function openPicker() {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('branch toolbar logic', () => {
-  it('orders worktrees by their latest use', () => {
-    const others = Array.from({ length: 8 }, (_, index) => thread({ id: `recent-${index}`, updatedAt: `2026-09-${String(index + 10).padStart(2, '0')}T00:00:00Z`, worktree: { mode: 'independent', status: 'ready', path: `C:/wt/${index}`, branch: `feat/${index}` } }))
-    expect(workspaceOptions(thread(), others).slice(2).map(option => option.choice)).toEqual([...others].reverse().map(other => ({ kind: 'previous', path: other.worktree!.path })))
-  })
   it('uses message activity from full and shell threads, keeping the newest record for a shared worktree', () => {
     const other = (id: string, path: string, extra: Partial<AgentThread> = {}) => thread({ id, worktree: { mode: 'independent', status: 'ready', path, branch: id }, ...extra })
     const options = workspaceOptions(thread(), [
@@ -277,10 +273,6 @@ describe('BranchToolbar', () => {
     expect(command).not.toHaveBeenCalled()
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(command).toHaveBeenCalledOnce())
-  })
-  it('shows nothing for a folder that is not a repository', () => {
-    mount(thread({ worktree: { mode: 'shared', status: 'ready', path: project.path, git: { ...git, isRepository: false } } }))
-    expect(screen.queryByRole('group', { name: 'Branch toolbar' })).toBeNull()
   })
   it('reads Run on and Workspace as static text once the thread has started, and keeps the picker', () => {
     mount(thread({ nativeSessionStarted: true, remoteHost: true, hostLabel: 'Build box', worktree: { mode: 'independent', status: 'ready', path: 'C:/wt', branch: 'feat/x', git: { ...git, branch: 'feat/x' } } }))

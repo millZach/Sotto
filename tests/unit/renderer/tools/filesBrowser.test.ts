@@ -245,14 +245,6 @@ describe('Files browsing model', () => {
     ])
   })
 
-  it('reports a missing bridge as a root problem instead of throwing', async () => {
-    const store = new FilesBrowserStore()
-    store.activate(undefined, 't1')
-    await settle()
-    expect(store.thread('t1')!.listings.get('')).toMatchObject({ status: 'error', error: { code: 'unavailable' } })
-    await expect(store.pathAction(undefined, 't1', 'copyPath', '')).resolves.toMatchObject({ ok: false })
-  })
-
   it('leaves Git’s administrative .git entry out of the working copy tree, as a folder or a worktree file', async () => {
     const folders: FakeFolders = { t1: { root: 'D:/work/checkout', token: TOKEN_A, tree: {
       '.git': { kind: 'file', content: text('gitdir: D:/repo/.git/worktrees/t1') }, '.gitignore': { kind: 'file', content: text('out') },

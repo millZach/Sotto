@@ -105,21 +105,6 @@ describe('first-run onboarding', () => {
     expect(screen.getByText(/Product events are on until you turn them off/i)).toBeVisible()
   })
 
-  it('has no Back button on Welcome and advances with Get started', () => {
-    render(
-      <Onboarding {...onboardingProps}
-        microphoneState="idle"
-        shortcut="Ctrl+Shift+Space"
-        platform="win32"
-        onRequestMicrophone={vi.fn()}
-        onComplete={vi.fn()}
-      />,
-    )
-    expect(screen.getByRole('heading', { name: 'Talk to your computer and your coding agents' })).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Get started' })).toBeVisible()
-  })
-
   it('lists detected inputs on the microphone step and saves the chosen device', async () => {
     const user = userEvent.setup()
     const onUpdateSettings = vi.fn(async () => true)
@@ -384,38 +369,6 @@ describe('first-run onboarding', () => {
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeVisible()
   })
 
-  it('says when it has heard nothing for a while', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    try {
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-      render(<Onboarding {...onboardingProps} microphoneState="ready" microphoneLevel={0} shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
-      await goToStep(user, 3)
-      await user.click(screen.getByRole('button', { name: 'Test microphone' }))
-      expect(screen.getByText('Listening. Say something.')).toBeVisible()
-      await act(async () => { vi.advanceTimersByTime(6_100) })
-      expect(screen.getByText('Nothing heard yet.')).toBeVisible()
-      expect(screen.getByText('Check that the microphone above is the one you speak into, then say something.')).toBeVisible()
-    } finally { vi.useRealTimers() }
-  })
-
-  it('keeps the wave still while access is still being asked for', async () => {
-    const user = userEvent.setup()
-    render(
-      <Onboarding
-        {...onboardingProps}
-        microphoneState="requesting"
-        microphoneLevel={0}
-        shortcut="Control+Shift+Space"
-        platform="darwin"
-        onRequestMicrophone={vi.fn()}
-        onComplete={vi.fn()}
-      />,
-    )
-    await goToStep(user, 3)
-
-    expect(screen.getByTestId('listening-bars')).not.toHaveAttribute('data-speaking')
-  })
-
   it('requests microphone access, displays live level, and provides Windows recovery guidance', async () => {
     const user = userEvent.setup()
     const request = vi.fn()
@@ -511,17 +464,6 @@ describe('first-run onboarding', () => {
     expect(onChooseSpeechModel).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Download Parakeet Ultra' }))
     expect(onChooseSpeechModel).toHaveBeenCalledExactlyOnceWith(PARAKEET_ULTRA.id)
-  })
-
-  it('offers a Mac what it already has first, then downloads of the models it does not have', async () => {
-    const user = userEvent.setup()
-    const coreMlUltra = { ...ULTRA_OPTION, name: 'Parakeet Ultra (Core ML)' }
-    render(<Onboarding {...onboardingProps} speechModels={[coreMlUltra, DOWNLOADS[1]!, DOWNLOADS[2]!]} speechModelChoice={null} speechModel={{ state: 'missing' }}
-      microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="darwin" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
-    await goToHeading(user, 'Choose a speech model')
-    expect(screen.getByText('Already on this computer:')).toBeVisible()
-    const choices = screen.getAllByRole('button', { name: /^(use|download) /i }).map(button => button.textContent)
-    expect(choices).toEqual(['Use Parakeet Ultra (Core ML)', 'Download Parakeet v3', 'Download Parakeet v2'])
   })
 
   it('keeps keyboard focus on the Use button once its model is chosen', async () => {

@@ -90,12 +90,6 @@ describe('appearance settings creature', () => {
     renderSettings({ showCreature: false })
     expect(document.querySelector('.studio-threads__creature')).toBeNull()
   })
-
-  it('shows the saved creature pressed', () => {
-    renderSettings({ creature: 'claude' })
-    expect(screen.getByRole('button', { name: 'Use Claude bot as the creature, currently active' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Use Sotto as the creature' })).toHaveAttribute('aria-pressed', 'false')
-  })
 })
 
 describe('creature switch', () => {

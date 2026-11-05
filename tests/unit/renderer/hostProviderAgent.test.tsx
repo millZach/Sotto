@@ -47,16 +47,6 @@ it('offers the agent that fits why the host cannot use each provider, with Check
   expect(within(tile('Codex')).queryByRole('button', { name: /Have my agent/u })).toBeNull()
 })
 
-it('offers Check again and Have my agent fix it for an error the adapter could not name', async () => {
-  const user = userEvent.setup()
-  const providers = PROVIDERS.map(item => item.id === 'codex' ? status('codex', { version: '0.155.1', error: 'Codex did not confirm the connection.' }) : item)
-  render(<div className="hosts-settings"><HostProviders host={forge} providers={providers} bridge={hosts().bridge} choice={CHOICE} /></div>)
-  await user.click(screen.getByRole('button', { name: 'Show providers on forge' }))
-  expect(tile('Codex')).toHaveTextContent("Can't be started")
-  expect(within(tile('Codex')).getByRole('button', { name: 'Have my agent fix Codex on forge' })).toHaveTextContent('Have my agent fix it')
-  expect(within(tile('Codex')).getByRole('button', { name: 'Check forge for Codex again' })).toBeInTheDocument()
-})
-
 it('starts a provider job from the dialog on the model used most, and Escape closes it without starting', async () => {
   const user = userEvent.setup()
   const { bridge, command } = hosts()

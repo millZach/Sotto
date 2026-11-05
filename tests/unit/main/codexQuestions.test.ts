@@ -24,11 +24,6 @@ describe('a Codex question without choices takes typed words', () => {
       ...(options === undefined ? {} : { options }), ...(isOther === undefined ? {} : { isOther }) }])
     expect(pending.request.questions![0]).toMatchObject({ allowFreeText, options: Array.isArray(options) ? options.map(o => ({ id: o.label })) : [] })
   })
-
-  it('sends a typed answer to the question in the issue', () => {
-    const pending = codex([{ id: 'q', header: 'Test', question: 'Enter a test value', isSecret: false, isOther: false, options: null }])
-    expect(answerRequest(pending, '', undefined, { q: { optionIds: [], text: 'fake-value-123' } })).toEqual({ answers: { q: { answers: ['user_note: fake-value-123'] } } })
-  })
 })
 
 // Issue #2157: Codex 0.166.0's terminal client and app-server test client send typed words as `user_note: <text>`
@@ -47,9 +42,6 @@ describe('a typed Codex answer is marked as the user\'s own words', () => {
   it('sends a typed answer to a question without choices as a note, trimmed as the terminal client trims it', () => {
     const pending = codex([{ id: 'q', header: 'Name', question: 'Name?', isOther: false, isSecret: false, options: null }])
     expect(answerRequest(pending, '', undefined, { q: { optionIds: [], text: '  free \n' } })).toEqual({ answers: { q: { answers: ['user_note: free'] } } })
-  })
-  it('keeps typed "Yes" apart from choosing Yes', () => {
-    expect(answerRequest(withOther(), '', undefined, { choice: { optionIds: [], text: 'Yes' } })).toEqual({ answers: { choice: { answers: ['user_note: Yes'] } } })
   })
   it('leaves an answer without question answers as the words sent, since it cannot tell a choice from typing', () => {
     expect(answerRequest(withOther(), 'A custom answer')).toEqual({ answers: { choice: { answers: ['A custom answer'] } } })

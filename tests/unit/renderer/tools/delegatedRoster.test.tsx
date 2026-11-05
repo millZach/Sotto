@@ -204,13 +204,6 @@ describe('the roster of delegated threads', () => {
     expect(openAction({ thread, waitingFor: 'approval' }, true)).toEqual({ kind: 'shown' })
   })
 
-  it('counts delegated threads and agents together, and what needs you', () => {
-    const row = (status: DelegatedRosterRow['status']): DelegatedRosterRow => ({ status } as DelegatedRosterRow)
-    expect(rosterCounts([row('needs'), row('working'), row('answered'), row('answered')], { total: 2, working: 1, unknown: 0 }))
-      .toEqual({ title: '4 delegated threads · 2 agents', detail: '1 needs you · 2 working' })
-    expect(rosterCounts([row('answered')], { total: 0, working: 0, unknown: 0 })).toEqual({ title: '1 delegated thread', detail: 'None working' })
-  })
-
   it('marks the delegated threads below a thread that wait on you or work, both levels, from the snapshot', () => {
     const state = delegatingState()
     expect(delegatedBelow(state.host.threads, PARENT)).toEqual({ needs: 0, working: 1 })

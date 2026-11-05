@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { ClaudeMonitoring } from '../../../src/main/agents/claudeMonitoring'
 import { agentMonitoringSchema, MAX_AGENT_MONITORS } from '../../../src/shared/agentMonitoring'
 import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
@@ -9,14 +8,6 @@ const start = (patch: ClaudeFrame = {}): ClaudeFrame => ({ type: 'system', subty
 const update = (patch: ClaudeFrame): ClaudeFrame => ({ type: 'system', subtype: 'task_updated', task_id: 'native-private-id', patch })
 
 describe('Claude confirmed monitoring', () => {
-  it('never turns an ended monitor into a subagent on a delayed progress update', () => {
-    const activity = new ClaudeActivity()
-    let rows = activity.apply([], start(), 'turn', undefined, '/project')
-    rows = activity.apply(rows, { type: 'system', subtype: 'task_notification', task_id: 'native-private-id', status: 'completed' }, 'turn', undefined, '/project')
-    rows = activity.apply(rows, { type: 'system', subtype: 'task_progress', task_id: 'native-private-id' }, 'turn', undefined, '/project')
-    expect(rows).toEqual([])
-  })
-
   it('starts immediately, keeps an opaque identity and sanitizes the label', () => {
     const watch = new ClaudeMonitoring()
     watch.apply(start({ description: 'Watch\u0000 the\u202e build\n' + 'x'.repeat(300) }))

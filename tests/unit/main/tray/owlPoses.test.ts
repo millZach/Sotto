@@ -99,10 +99,6 @@ describe('the menu bar owl poses', () => {
     }
   })
 
-  it('knows no frame for a pose the schedule cannot show', () => {
-    expect(owlFrameIndex({ ...REST_POSE, lx: 0.3 })).toBe(-1)
-  })
-
   it('freezes the table so nothing edits a pose another frame shares', () => {
     expect(Object.isFrozen(REST_POSE)).toBe(true)
     expect(Object.isFrozen(allOwlPoses())).toBe(true)

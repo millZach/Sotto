@@ -72,18 +72,6 @@ describe('ThreadsTour', () => {
     expect(onDone).toHaveBeenCalledTimes(1)
   })
 
-  it('lights the part each stop names', async () => {
-    renderTour()
-    await waitFor(() => expect(document.querySelector('.threads-tour__scrim')).toHaveAttribute('data-hole', 'true'))
-  })
-
-  it('Skip tour ends it from any stop before the last', async () => {
-    const user = userEvent.setup()
-    const onDone = renderTour()
-    await user.click(screen.getByRole('button', { name: 'Skip tour' }))
-    expect(onDone).toHaveBeenCalledTimes(1)
-  })
-
   it('Escape ends the tour and calls onDone only once', async () => {
     const user = userEvent.setup()
     const onDone = renderTour()

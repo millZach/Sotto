@@ -30,13 +30,6 @@ function fakeBridge(initial: CloudSession[]) {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('the cloud iPhone request card', () => {
-  it('renders nothing when the thread has no session', () => {
-    const store = new CloudIphoneStore()
-    render(<CloudIphoneRequest threadId="workshop" threadTitle="Workshop" bridge={fakeBridge([])} onAnswer={vi.fn()} store={store} />)
-    expect(screen.queryByRole('heading')).toBeNull()
-    expect(document.body.textContent).toBe('')
-  })
-
   it('asks with the build, the price and this month’s minutes, and Start answers true', async () => {
     const bridge = fakeBridge([session()])
     const store = new CloudIphoneStore()

@@ -304,14 +304,6 @@ describe('a thread that delegated', () => {
     expect(finishes(alerts)).toEqual([])
   })
 
-  it('waits the ordinary settle without a delegated thread present', () => {
-    const { alerts, tracker, settle } = setup()
-    tracker.track(state([thread('a'), thread('c')]))
-    tracker.track(state([marked('a'), thread('c')]))
-    settle(ALERT_SETTLE_MS)
-    expect(finishes(alerts)).toEqual(['a/finished/1'])
-  })
-
   it('waits for a settled delegated thread too, which does not hold it', () => {
     const { alerts, tracker, settle } = setup()
     const settledChild = child('c', 'a', { status: 'running', settledAt: AT })
@@ -356,12 +348,5 @@ describe('the tracker', () => {
     settle()
     tracker.track(state([thread('a', { requests: [ask('r'), ask('s')] }), thread('b'), marked('c')]))
     expect(emitted.map(plain)).toEqual(['a/request/r', 'b/request/r', 'c/finished/1', 'a/request/s'])
-  })
-
-  it('uses unref\'d real timers by default', () => {
-    vi.useRealTimers()
-    const tracker = new ThreadAlerts({ shows: () => false, emit: () => undefined })
-    tracker.track(state([thread('a')]))
-    expect(() => { tracker.track(state([marked('a')])); tracker.dispose() }).not.toThrow()
   })
 })

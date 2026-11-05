@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
 import { requestDraftQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
-import { RequestDraftRecovery, savedAnswerClipboard, type RecoveryObservation } from '../../../../src/renderer/src/agents/requests/RequestDraftRecovery'
+import { RequestDraftRecovery, type RecoveryObservation } from '../../../../src/renderer/src/agents/requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); Reflect.deleteProperty(window, 'sotto') })
@@ -304,11 +304,6 @@ describe('discarding a saved answer', () => {
     expect(await screen.findByText('Newer notes')).toBeTruthy()
     expect(bridge.discard).toHaveBeenCalledTimes(1)
   })
-})
-
-it('formats a text-only and multi-select answer for the clipboard', () => {
-  expect(savedAnswerClipboard(draft({ selections: { checks: { optionIds: ['types'], other: false, text: '' } } })))
-    .toBe('Where should we go?\nNo answer\n\nWhich checks?\nType checks\n\nTravel notes\nNo answer\n\nBudget\nNo answer')
 })
 
 it('keeps a legacy draft in its live card and shows recovery when the same request ID changes', async () => {

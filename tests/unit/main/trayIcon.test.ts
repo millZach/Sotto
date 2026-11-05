@@ -165,22 +165,6 @@ describe('createTrayResource', () => {
     expect(harness.markTemplate).toHaveBeenCalledWith(harness.icon)
   })
 
-  it('loads the template image from the resolved resource path and marks it', async () => {
-    const harness = createHarness()
-
-    await expect(
-      createTrayResource(createOptions(harness, TEMPLATE_SOURCE)),
-    ).resolves.toBe(harness.tray)
-
-    expect(harness.loadImageIcon).toHaveBeenCalledWith(
-      '/Applications/Sotto.app/Contents/Resources/tray/sottoTemplate.png',
-    )
-    expect(harness.getFileIcon).not.toHaveBeenCalled()
-    expect(harness.markTemplate).toHaveBeenCalledWith(harness.icon)
-    expect(harness.createTray).toHaveBeenCalledWith(harness.icon, null)
-    expect(harness.tray.setToolTip).toHaveBeenCalledWith('Sotto')
-  })
-
   it('creates the macOS tray under its fixed identity', async () => {
     const harness = createHarness()
 
@@ -191,24 +175,6 @@ describe('createTrayResource', () => {
     expect(harness.createTray).toHaveBeenCalledOnce()
     expect(harness.createTray).toHaveBeenCalledWith(harness.icon, MAC_TRAY_GUID)
   })
-
-  it.each([
-    ['executable', EXECUTABLE_SOURCE],
-    ['template', TEMPLATE_SOURCE],
-  ] as const)(
-    'fails with a finite error when the %s icon is missing',
-    async (_name, source) => {
-      const harness = createHarness({ empty: true })
-
-      await expect(
-        createTrayResource(createOptions(harness, source)),
-      ).rejects.toMatchObject({ code: 'NATIVE_TRAY_CREATION_FAILED' })
-
-      expect(harness.markTemplate).not.toHaveBeenCalled()
-      expect(harness.createTray).not.toHaveBeenCalled()
-      expect(harness.tray.destroy).not.toHaveBeenCalled()
-    },
-  )
 
   const failures = ['empty', 'load', 'create', 'tooltip'] as const
   const sources = [

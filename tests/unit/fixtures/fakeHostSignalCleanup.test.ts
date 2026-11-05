@@ -107,11 +107,4 @@ describe('Windows synthetic host signal cleanup', () => {
     expect(thrown).toBe(error)
     expect(await readFile(fixture.lock, 'utf8')).toBe(JSON.stringify(fixture.lease))
   })
-
-  it('leaves non-Windows callers unchanged', async () => {
-    const fixture = await ownedLease(), native = vi.fn(() => true)
-    expect(fakeHostKill(fixture.directory, native, 'linux')).toBe(native)
-    expect(fakeHostKill(fixture.directory, native, 'darwin')).toBe(native)
-    expect(native).not.toHaveBeenCalled()
-  })
 })

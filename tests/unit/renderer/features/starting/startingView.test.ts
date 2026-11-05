@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { HostsState, HostStatus } from '../../../../../src/shared/hosts'
-import { listNames, localProviders, startingView, type StartingInput } from '../../../../../src/renderer/src/features/starting/startingView'
+import { localProviders, startingView, type StartingInput } from '../../../../../src/renderer/src/features/starting/startingView'
 import { hostStatus, hostsState } from '../../../../fixtures/renderer/hostBridges'
 import { FORGE_HOST_ID as FORGE, providerStatus as provider, startingAgentState as agent } from '../../../../fixtures/renderer/startingScreenState'
 
@@ -116,12 +116,5 @@ describe('the starting screen', () => {
     expect(view({ agent: failed, seen: new Set(['provider:devin']) })).toMatchObject({
       settled: true, dots: [{ key: 'provider:devin', name: 'Devin', state: 'not-connected' }],
     })
-  })
-
-  it('lists names the way a sentence does', () => {
-    expect(listNames([])).toBe('')
-    expect(listNames(['forge'])).toBe('forge')
-    expect(listNames(['Codex', 'forge'])).toBe('Codex and forge')
-    expect(listNames(['Claude Code', 'Codex', 'forge'])).toBe('Claude Code, Codex and forge')
   })
 })

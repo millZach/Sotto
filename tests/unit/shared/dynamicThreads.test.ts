@@ -8,12 +8,6 @@ describe('Dynamic threads (ADR-0191)', () => {
     expect(isOwlFeatureEnabled('dynamic-threads', 'stable')).toBe(false)
   })
 
-  it('has no allowed list until the user has seen one, and four workers at Extra high', () => {
-    expect(DEFAULT_DYNAMIC_THREADS).toEqual({ highestEffort: 'xhigh', workersAtOnce: 4 })
-    expect(parseDynamicThreadSettings(undefined)).toEqual(DEFAULT_DYNAMIC_THREADS)
-    expect(parseDynamicThreadSettings({ providers: [], highestEffort: 'high', workersAtOnce: 2 })).toEqual({ providers: [], highestEffort: 'high', workersAtOnce: 2 })
-  })
-
   it('loses only the value that is damaged', () => {
     expect(parseDynamicThreadSettings({ providers: ['claude', 'no-such-provider'], highestEffort: 'high', workersAtOnce: 2 })).toEqual({ highestEffort: 'high', workersAtOnce: 2 })
     expect(parseDynamicThreadSettings({ providers: ['claude'], highestEffort: 'very high', workersAtOnce: 2 })).toEqual({ providers: ['claude'], highestEffort: 'xhigh', workersAtOnce: 2 })

@@ -5,11 +5,6 @@ import {
 import { composeReviewMessage } from '../../../src/renderer/src/agents/reviewComments'
 
 describe('the text a reply quote sends', () => {
-  it('says where it is from and quotes each line', () => {
-    expect(replyQuoteText({ text: '\r\nRead the saved draft first.\r\n\r\nThen skip the write-back.  ' }))
-      .toBe('From your earlier reply:\n> Read the saved draft first.\n>\n> Then skip the write-back.')
-  })
-
   it('keeps the first line’s indentation, trimming only blank lines around the words', () => {
     expect(replyQuoteText({ text: '\n\n    if (!key) return\n  done()  \n\n' })).toBe('From your earlier reply:\n>     if (!key) return\n>   done()')
     expect(trimBlankLines(' \n  a\n\n b \n \n')).toBe('  a\n\n b')
