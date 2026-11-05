@@ -245,3 +245,12 @@ The lines above that say the checklist and Merge do not change are about what th
 Zach chose this: on November 5 he tried both answers in the design pass's prototype `sotto-council/prototypes/checklist-labels/`, kept outside the repository, and picked B.
 
 Each line of the merge checklist now names its state rather than its requirement: "2 checks failed", "1 check running", "Checks passed"; "Needs a review", "Changes requested", "No review required", "Review approved"; "Behind main", "Up to date with main"; "Conflicts with main", "No conflicts"; "Still a draft", "Ready for review". The checks line still names the first failing check in its reason and carries **Open check**, a cancelled check counts among the failed as the Checks fold counts it, and the draft line's press still says **Ready for review**. This replaces the November 4 amendment's line that **Checks passing** still names the first failing check; the rest of that amendment stands.
+
+## Note, November 5, 2026: a ready Merge in green, and the folds in one box
+
+Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
+
+- **A ready Merge is washed in green** (`f4c6abaa3`). Where it was the theme's solid plate, white on a dark panel, it is a wash of the success green the checklist's ticks are drawn in, over the surface, with a green edge, a green merge mark and the panel's own text. It is still the one filled control in the surface. Hover and press deepen the wash. The blocked Merge and a read in flight dimming a ready one are unchanged.
+- **The five folds share one box** (`ee7252975`). **Description**, **Checks**, **Changed files**, **Linked pull requests** and **Open pull requests** stand in one box with the checklist's hairline edge and corners, where they were rows between hairlines with nothing under the last, so the surface ends where the box does and an open fold grows inside it. They keep their order and stay closed until pressed. A closed **Description** shows its first line under its name, in up to two lines.
+
+The checklist's lines, Merge's words and what each fold reads are as the amendments above say.
