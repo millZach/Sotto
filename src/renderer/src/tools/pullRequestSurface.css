@@ -28,10 +28,12 @@
 .pr-surface__heading small { color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; }
 .pr-surface__heading small[data-tone='done'] { color: var(--tt-success); }
 .pr-surface__lines { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
-/* A line still open is whole, in the one box they share, and leads. */
-.pr-surface__line:not([data-tone='done']) { display: grid; flex: 0 0 100%; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-bottom: 0; }
+/* A line still open is whole and leads, on the one card they share (ADR-0110: filled, with no outline, its rows divided
+   by the card's inset), as the folds below are. */
+.pr-surface__line:not([data-tone='done']) { display: grid; flex: 0 0 100%; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; box-sizing: border-box; padding: 10px 12px; background: var(--tt-card); }
+.pr-surface__line:not([data-tone='done']) + .pr-surface__line:not([data-tone='done']) { border-top: 2px solid var(--tt-card-inset); }
 .pr-surface__line:not([data-tone='done']):first-child { border-top-left-radius: var(--tt-radius-md); border-top-right-radius: var(--tt-radius-md); }
-.pr-surface__line:not([data-tone='done']):is(:last-child, :has(+ [data-tone='done'])) { border-bottom: 1px solid var(--tt-hairline); border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
+.pr-surface__line:not([data-tone='done']):is(:last-child, :has(+ [data-tone='done'])) { border-bottom-left-radius: var(--tt-radius-md); border-bottom-right-radius: var(--tt-radius-md); }
 .pr-surface__line:not([data-tone='done']):has(+ [data-tone='done']) { margin-bottom: 8px; }
 .pr-surface__line:not([data-tone='done']) > svg { color: var(--tt-text-muted); }
 /* A line that is done has done its job: a tick and its words, in a row that takes no more than it must. */
@@ -96,7 +98,8 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__hint { margin: 8px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
 .pr-surface__textlink { padding: 0; border: 0; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .pr-surface__textlink:disabled { color: var(--tt-text-muted); cursor: default; }
-.pr-surface__finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
+/* What happened to it, or that the thread does not know it: a card, like the checklist and the folds. */
+.pr-surface__finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--tt-radius-md); background: var(--tt-card); }
 .pr-surface__finished > svg { flex: none; color: var(--tt-text-muted); }
 .pr-surface__finished[data-state='merged'] > svg { color: var(--tt-activity); }
 .pr-surface__finished > div { flex: 1; min-width: 12ch; }
