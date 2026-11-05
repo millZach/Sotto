@@ -170,7 +170,7 @@ export class ClaudeActivity {
       const path = text(input?.file_path ?? input?.notebook_path)
       // Claude keeps its plan in a todo list; its steps are the plan, not tool input to read as JSON.
       const todos = kind === 'plan' && Array.isArray(input?.todos)
-        ? planSteps(input.todos.map(value => ({ text: object(value)?.content, status: object(value)?.status }))) : undefined
+        ? planSteps(input.todos.map(value => ({ text: object(value)?.content, status: object(value)?.status, active: object(value)?.activeForm }))) : undefined
       rows.push({ ...base, id: `claude-tool-${block.id}`, kind, status: old && isTerminalActivity(old.status) ? old.status : 'running', title: kind === 'plan' ? 'Plan' : name,
         ...(child ? { agents: [child] } : {}),
         ...(todos?.length ? { steps: todos } : {}),

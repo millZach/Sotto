@@ -32,6 +32,12 @@ class Turn {
     return this.add({ id, kind: 'command', title: 'Command', command, cwd: 'D:\\Projects\\sotto', output, status,
       ...(status === 'running' ? {} : { durationMs, exitCode: status === 'failed' ? 1 : 0 }) }, after)
   }
+  /** The command just added, with the input Claude sends for it: the command and what it is for. */
+  described(description: string): this {
+    const record = this.records.at(-1)!
+    this.records[this.records.length - 1] = { ...record, text: JSON.stringify({ command: record.command, description }) }
+    return this
+  }
   reasoning(id: string, text: string, after?: string): this { return this.add({ id, kind: 'reasoning', title: 'Reasoning summary', text }, after) }
   edit(id: string, path: string, kind: 'update' | 'add' | 'delete', diff: string, after?: string): this {
     return this.add({ id, kind: 'file-change', title: 'File changes', changes: [{ path, kind, diff }], durationMs: 240 }, after)
@@ -134,7 +140,7 @@ const PLAN_STEPS: NonNullable<Activity['steps']> = [
   { text: 'List every job AgentControl does and the private fields each one reads', status: 'completed' },
   { text: 'Count the callers of each public method across src/main and src/host', status: 'completed' },
   { text: 'Find which jobs touch the update path, and keep those for last', status: 'completed' },
-  { text: 'Order the cuts so each pull request is safe to merge alone', status: 'running' },
+  { text: 'Order the cuts so each pull request is safe to merge alone', status: 'running', active: 'Ordering the cuts so each pull request is safe to merge alone' },
   { text: 'Write docs/plans/agent-control-split.md with the order and the seams', status: 'pending' },
   { text: 'Name the tests that hold each cut, and what moves with it', status: 'pending' },
   { text: 'Check the plan against ADR-0002 and ADR-0004 before asking for review', status: 'pending' },
@@ -143,11 +149,11 @@ const PLAN_STEPS: NonNullable<Activity['steps']> = [
 const planTurn = new Turn('plan-1', 'plan-u1', 'running', undefined, 6)
   .reasoning('plan-r1', '**Planning the split**\n\nThe order matters more than the seams. Each cut has to leave the update path alone until the very end, so nothing here can make streaming slower by accident.')
   .plan('plan-p1', 'Plan the split', PLAN_STEPS)
-  .command('plan-c1', 'rg -c "this\\.(pendingSends|outbox|turns|requests)" src/main/agents/control.ts', '412', 70)
-  .command('plan-c2', 'rg -n "^  (async )?[a-zA-Z]+\\(" src/main/agents/control.ts | wc -l', '184', 60)
-  .command('plan-c3', 'rg -l "agentControl\\." src/main src/host | xargs wc -l | tail -n 1', '  9841 total', 210)
-  .command('plan-c4', 'cat src/main/agents/publishWindows.ts', 'export interface PublishWindow {\n  readonly threadId: string\n  readonly opensAt: number\n  …', 40)
-  .command('plan-c5', 'cat tests/unit/main/workspaceControl.test.ts | head -n 80', "import { describe, expect, test } from 'vitest'\n…", 0, 'running')
+  .command('plan-c1', 'rg -c "this\\.(pendingSends|outbox|turns|requests)" src/main/agents/control.ts', '412', 70).described('Count reads of the shared private fields')
+  .command('plan-c2', 'rg -n "^  (async )?[a-zA-Z]+\\(" src/main/agents/control.ts | wc -l', '184', 60).described('Count the methods AgentControl has')
+  .command('plan-c3', 'rg -l "agentControl\\." src/main src/host | xargs wc -l | tail -n 1', '  9841 total', 210).described('Measure the files that call AgentControl')
+  .command('plan-c4', 'cat src/main/agents/publishWindows.ts', 'export interface PublishWindow {\n  readonly threadId: string\n  readonly opensAt: number\n  …', 40).described('Read the publish windows module')
+  .command('plan-c5', 'cat tests/unit/main/workspaceControl.test.ts | head -n 80', "import { describe, expect, test } from 'vitest'\n…", 0, 'running').described('Read how the workspace control tests build a coordinator')
 
 const PLAN: EvidenceThread = {
   key: 'plan', id: threadId(2), title: 'Plan the split', modelId: 'claude:sonnet', project: 'sotto', status: 'running',
@@ -299,18 +305,18 @@ export const STREAM_SHOWN = { first: '', second: 'is the only place t', third: '
 
 const streamBase = (): Turn => new Turn('stream-1', 'stream-u1', 'running', undefined, 4)
   .reasoning('stream-r1', '**Following one request end to end**\n\nThe adapter is where a request starts, so I am reading that first, then the snapshot handler that sees it arrive.')
-  .command('stream-c1', 'rg -n "kind: \'permission\'" src/main/agents/claude.ts', "1204:        kind: 'permission', text, options: [],", 60)
-  .command('stream-c2', 'sed -n 1190,1240p src/main/agents/claude.ts', "      const request: AgentRequest = {\n        id: requestId,\n        kind: 'permission', text, options: [],\n…", 45)
+  .command('stream-c1', 'rg -n "kind: \'permission\'" src/main/agents/claude.ts', "1204:        kind: 'permission', text, options: [],", 60).described('Find where Claude permission requests are built')
+  .command('stream-c2', 'sed -n 1190,1240p src/main/agents/claude.ts', "      const request: AgentRequest = {\n        id: requestId,\n        kind: 'permission', text, options: [],\n…", 45).described('Read the permission request builder')
 
 /** The turn's steps at each moment: it reads, then keeps reading while it writes. */
 export function streamActivities(moment: keyof typeof STREAM_MOMENTS): readonly Activity[] {
   const turn = streamBase()
-  if (moment === 'first') return turn.command('stream-c3', 'cat src/main/agents/requestPolicy.ts', 'export class RequestPolicy {\n…', 0, 'running').records
-  turn.command('stream-c3', 'cat src/main/agents/requestPolicy.ts', 'export class RequestPolicy {\n  answer(thread: AgentThread, request: AgentRequest, answer: RequestAnswer): AgentHostResult {\n…', 55)
-    .command('stream-c4', 'rg -n "onHostSnapshot" src/main/agents/control.ts', '2210:  private onHostSnapshot(snapshot: AgentHostSnapshot): void {', 50)
-  if (moment === 'second') return turn.command('stream-c5', 'sed -n 2210,2290p src/main/agents/control.ts', '  private onHostSnapshot(snapshot: AgentHostSnapshot): void {\n…', 0, 'running', STREAM_MESSAGE_ID).records
-  return turn.command('stream-c5', 'sed -n 2210,2290p src/main/agents/control.ts', '  private onHostSnapshot(snapshot: AgentHostSnapshot): void {\n    for (const thread of snapshot.threads) {\n…', 48, 'completed', STREAM_MESSAGE_ID)
-    .command('stream-c6', 'rg -n "waitingSince" src/main/agents src/renderer/src/agents | wc -l', '', 0, 'running', STREAM_MESSAGE_ID).records
+  if (moment === 'first') return turn.command('stream-c3', 'cat src/main/agents/requestPolicy.ts', 'export class RequestPolicy {\n…', 0, 'running').described('Read the request policy, which decides whether to ask').records
+  turn.command('stream-c3', 'cat src/main/agents/requestPolicy.ts', 'export class RequestPolicy {\n  answer(thread: AgentThread, request: AgentRequest, answer: RequestAnswer): AgentHostResult {\n…', 55).described('Read the request policy, which decides whether to ask')
+    .command('stream-c4', 'rg -n "onHostSnapshot" src/main/agents/control.ts', '2210:  private onHostSnapshot(snapshot: AgentHostSnapshot): void {', 50).described('Find where AgentControl takes a host snapshot')
+  if (moment === 'second') return turn.command('stream-c5', 'sed -n 2210,2290p src/main/agents/control.ts', '  private onHostSnapshot(snapshot: AgentHostSnapshot): void {\n…', 0, 'running', STREAM_MESSAGE_ID).described('Read the snapshot handler').records
+  return turn.command('stream-c5', 'sed -n 2210,2290p src/main/agents/control.ts', '  private onHostSnapshot(snapshot: AgentHostSnapshot): void {\n    for (const thread of snapshot.threads) {\n…', 48, 'completed', STREAM_MESSAGE_ID).described('Read the snapshot handler')
+    .command('stream-c6', 'rg -n "waitingSince" src/main/agents src/renderer/src/agents | wc -l', '', 0, 'running', STREAM_MESSAGE_ID).described('Count the places that read the waiting clock').records
 }
 
 const STREAM: EvidenceThread = {

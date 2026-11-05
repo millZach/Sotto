@@ -96,7 +96,11 @@ export const agentActivitySchema = z.object({
   timingSource: z.enum(['provider', 'observed']).optional(), durationMs: z.number().nonnegative().optional(),
   changes: z.array(z.object({ path: detail, kind: detail, diff: detail.optional() })).max(200).optional(),
   /** A plan exactly as the provider last reported it, so it reads as a checklist rather than lines of text. */
-  steps: z.array(z.object({ text: detail, status: z.enum(['pending', 'running', 'completed']) })).max(200).optional(),
+  steps: z.array(z.object({
+    text: detail, status: z.enum(['pending', 'running', 'completed']),
+    /** The step in progress in the words the provider says it with while it runs, such as Claude's "Patching the adapter". */
+    active: detail.optional(),
+  })).max(200).optional(),
   /** Context size in tokens either side of a compaction, as the provider reported it or as the ledger bracketed it. */
   context: z.object({ before: z.number().int().nonnegative().optional(), after: z.number().int().nonnegative().optional() }).optional(),
   /** Display identities only. These cannot address provider sessions or grant authority. */
@@ -169,13 +173,20 @@ export function compactAgentIdentity(agent: ObservedAgent): ObservedAgent {
 
 export type PlanStep = NonNullable<AgentActivity['steps']>[number]
 
-/** Codex, Claude and Grok name the same three plan states differently; anything else has not started. */
-export function planSteps(steps: readonly { text: unknown; status: unknown }[]): PlanStep[] {
+/**
+ * Codex, Claude and Grok name the same three plan states differently; anything else has not started. `active` is the words a
+ * provider gives the step while it runs (Claude's `activeForm`), kept only on the step in progress, which is the one read.
+ */
+export function planSteps(steps: readonly { text: unknown; status: unknown; active?: unknown }[]): PlanStep[] {
   const state = (value: unknown): PlanStep['status'] =>
     value === 'completed' || value === 'done' ? 'completed' : value === 'in_progress' || value === 'running' || value === 'active' ? 'running' : 'pending'
   // A step is one line of a checklist, so it is bounded far below a record's detail budget.
-  return steps.flatMap(step => typeof step.text === 'string' && step.text.trim()
-    ? [{ text: step.text.slice(0, 1_000), status: state(step.status) }] : []).slice(0, 200)
+  return steps.flatMap(step => {
+    if (typeof step.text !== 'string' || !step.text.trim()) return []
+    const status = state(step.status)
+    const active = status === 'running' && typeof step.active === 'string' && step.active.trim() ? step.active.slice(0, 1_000) : undefined
+    return [{ text: step.text.slice(0, 1_000), status, ...(active === undefined ? {} : { active }) }]
+  }).slice(0, 200)
 }
 
 /**

@@ -140,6 +140,19 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 .thread-activity-live__state { flex: 0 1 auto; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
 /* One line, cut at its end, with the light still crossing its letters: a step's name can be a long command. */
 .thread-activity-live__word { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* What the line's words are for comes first, and what is running for it sits beside them, smaller and still: the command a
+   described step runs, or the step a plan's item is on. The words keep their room and the detail takes what is left, never
+   less than a few letters, and on a line too narrow for both it goes, since the opened steps name it. */
+.thread-activity-live:has(.thread-activity-live__now) { container-type: inline-size; }
+.thread-activity-live__now { display: grid; grid-template-columns: minmax(0, max-content) minmax(8ch, 1fr); align-items: baseline; column-gap: 10px; min-width: 0; }
+.thread-activity-live__now:has(> .thread-activity-live__detail:empty) { grid-template-columns: minmax(0, max-content); }
+.thread-activity-live__detail { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-small); text-overflow: ellipsis; white-space: nowrap; }
+.thread-activity-live__detail[data-code] { font-family: var(--tt-font-mono); }
+.thread-activity-live__detail:empty { display: none; }
+@container (max-width: 560px) {
+  .thread-activity-live__now { grid-template-columns: minmax(0, max-content); }
+  .thread-activity-live__detail { display: none; }
+}
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
 .thread-activity-live__steps > .thread-activity { margin: 0; }
 

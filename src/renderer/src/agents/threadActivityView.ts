@@ -1,7 +1,7 @@
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 
-import { changeFailed, isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
+import { changeFailed, isTerminalActivity, REASONING_SUMMARY_TITLE, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 import { shownCount, shownLineCount } from '../state/interfaceNumbers'
@@ -395,17 +395,74 @@ function runningWords(record: AgentActivity): string {
   }
 }
 
+/** What the working line says while a step runs or a reply arrives (ADR-0134, November 4 amendment). */
+export interface WorkingNow {
+  /** The line's own words, which the light crosses: what the work is for when the provider said, else the step itself. */
+  readonly words: string
+  /** Smaller beside them, what is running for it: the step, or the command a step the provider described runs. Empty when the words say it all. */
+  readonly detail: string
+  /** The detail is a command, set in the code face. */
+  readonly code: boolean
+  /** All of it as one sentence for assistive tech, with the command even when the line leaves it to the opened steps. */
+  readonly spoken: string
+}
+
+/** What a command is for, in the provider's words: Claude sends a `description` with every shell command it runs. */
+function stepDescription(record: AgentActivity): string {
+  if (record.kind !== 'command') return ''
+  const described = activityInput(record)?.description
+  return typeof described === 'string' ? oneLine(described) : ''
+}
+
+/** The plan's step in progress, in the words its provider gives a running step (Claude's activeForm) or as written. */
+function planNow(steps: readonly AgentActivity[]): string {
+  const step = newestPlan(steps)?.steps?.find(item => item.status === 'running')
+  return step ? oneLine(step.active ?? step.text) : ''
+}
+
+/** A reasoning summary's own heading, the bold first line Codex starts each one with. Nothing else in it is read. */
+const SUMMARY_HEADING = /^\s*\*\*([^*\n]{1,160})\*\*\s*(?:\n|$)/u
+
+/**
+ * The heading of the reasoning summary that led to the work running now. Only a summary with nothing finished after it counts,
+ * so a heading from earlier in the turn never speaks for later work.
+ */
+function reasoningNow(steps: readonly AgentActivity[]): string {
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const record = steps[index]!
+    if (record.kind === 'reasoning') {
+      const heading = record.title === REASONING_SUMMARY_TITLE ? SUMMARY_HEADING.exec(record.text ?? '')?.[1] : undefined
+      return heading ? oneLine(heading) : ''
+    }
+    if (record.kind !== 'plan' && record.status !== 'running') return ''
+  }
+  return ''
+}
+
 /**
  * What the working line says the turn is doing now, from its steps alone: the newest step running, else the reply being
- * written. Null when neither is known, which is what thinking and a gap between steps are, since a provider reports its
- * tool calls and not the thinking between them; the Spaceballs words carry that wait (ADR-0134, November 4 amendment).
- * A plan's record stays running for the whole turn, so it says nothing about what is going on now. Reads without copying.
+ * written, with what it is for when the provider said so. Null when neither is known, which is what thinking and a gap
+ * between steps are, since a provider reports its tool calls and not the thinking between them; the Spaceballs words carry
+ * that wait (ADR-0134, November 4 amendment). A plan's record stays running for the whole turn, so it never counts as the
+ * step; its step in progress says what the step is for. What the work is for comes first from the plan's step in progress,
+ * then from a command's own description, then from the reasoning summary that led to it. Reads without copying.
  */
-export function workingNow(steps: readonly AgentActivity[], replyId?: string): string | null {
+export function workingNow(steps: readonly AgentActivity[], replyId?: string): WorkingNow | null {
   const running = steps.findLast(record => record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
-  if (running) return runningWords(running)
-  if (replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)) return t({ message: 'Writing a reply', comment: 'The working line while the agent writes its reply.' })
-  return null
+  const replying = running === undefined && replyId !== undefined && !steps.some(record => record.afterMessageId === replyId)
+  if (running === undefined && !replying) return null
+  const doing = running ? runningWords(running) : t({ message: 'Writing a reply', comment: 'The working line while the agent writes its reply.' })
+  const described = running ? stepDescription(running) : ''
+  const planned = planNow(steps)
+  const purpose = planned || described || (running ? reasoningNow(steps) : '')
+  if (!purpose) return { words: doing, detail: '', code: false, spoken: doing }
+  if (purpose === described && !planned) {
+    // A described command leads with its description, and the command itself sits beside it.
+    const command = running?.command ? isolated(innerCommand(running.command)) : ''
+    return { words: described, detail: command || doing, code: command !== '', spoken: [described, doing].join(', ') }
+  }
+  const detail = described || doing
+  return { words: purpose, detail, code: false, spoken: [purpose, detail, described ? doing : ''].filter(Boolean).join(', ') }
 }
 
 /** The plan as it stands: the newest plan record of a turn that has steps. */

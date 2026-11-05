@@ -17,9 +17,11 @@ describe('plans as checklists', () => {
       { content: 'Reproduce the failure', status: 'completed', activeForm: 'Reproducing the failure' },
       { content: 'Patch the adapter', status: 'in_progress', activeForm: 'Patching the adapter' },
     ] } }] } }, 'turn', 'message', '/project')
+    // The step in progress keeps the words Claude says it with while it runs, for the working line.
     expect(rows[0]).toMatchObject({ kind: 'plan', title: 'Plan', steps: [
-      { text: 'Reproduce the failure', status: 'completed' }, { text: 'Patch the adapter', status: 'running' },
+      { text: 'Reproduce the failure', status: 'completed' }, { text: 'Patch the adapter', status: 'running', active: 'Patching the adapter' },
     ] })
+    expect(rows[0]!.steps![0]).not.toHaveProperty('active')
     expect(rows[0]!.text).toBeUndefined()
   })
 

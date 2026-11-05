@@ -13,7 +13,7 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, activityLineCounts, agentStatusLabel, changeDiffIsCut, changeLeadKind, changesLineCounts, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, openActivityLabel, recordsLineCounts, spokenLineCounts, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, workingNow, type ActivityGroup, type ActivityNode, type LineCounts, type TurnChange,
-  activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind,
+  activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind, type WorkingNow,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
@@ -197,59 +197,74 @@ const FADE_MS = 220
 /** How long what is on the line holds it, so a quick run of steps reads rather than flickers, and a short gap between two steps never shows. */
 const HOLD_MS = 1500
 
-function writeWorking(node: HTMLElement, words: string): void {
+function writeWorking(node: HTMLElement, words: string, detail: HTMLElement | null, now: WorkingNow | null): void {
   node.textContent = words
   // The light crossing the words draws a lit copy of them, which reads the words from here.
   node.dataset.word = words
+  // What is running for those words sits beside them, still and smaller; the light crosses only the words.
+  if (detail) {
+    detail.textContent = now?.detail ?? ''
+    detail.toggleAttribute('data-code', now?.code === true)
+  }
   const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
-  if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
+  if (!still) for (const part of [node, detail]) part?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
 }
 
 const nextWord = (current: number): number => (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
 
+/** One string for what the line says, so a step that reads the same as the one on the line changes nothing. */
+const workingKey = (now: WorkingNow | null): string | null => now === null ? null : `${now.words}\n${now.detail}`
+
 /**
- * The working line's words: the step the turn is on when one is known (`workingNow`), else the Spaceballs words. Writes its own
- * text instead of re-rendering the transcript, and never repeats the word it is replacing.
+ * The working line's words: what the turn is on when it is known (`workingNow`), with what is running for it beside them,
+ * else the Spaceballs words. Writes its own text instead of re-rendering the transcript, and never repeats the word it is
+ * replacing.
  */
-function WorkingWord({ now }: { readonly now: string | null }): ReactNode {
+function WorkingWord({ now }: { readonly now: WorkingNow | null }): ReactNode {
   const { t } = useLingui()
   const ref = useRef<HTMLSpanElement>(null)
+  const detailRef = useRef<HTMLSpanElement>(null)
   // The first words only: from here the effects write them, so a redraw of the line never undoes it.
-  const [first] = useState(now ?? WORKING_WORDS[0])
-  const line = useRef({ step: now, at: 0, word: 0 })
+  const [first] = useState(() => ({ words: now?.words ?? WORKING_WORDS[0], detail: now?.detail ?? '', code: now?.code === true }))
+  const key = workingKey(now)
+  const line = useRef({ step: key, at: 0, word: 0 })
+  const latest = useRef(now)
+  latest.current = now
   useEffect(() => {
     const state = line.current
     const timer = window.setInterval(() => {
       const node = ref.current
       if (!node || state.step !== null || Date.now() - state.at < WORD_MS) return
       state.word = nextWord(state.word)
-      writeWorking(node, WORKING_WORDS[state.word]!)
+      writeWorking(node, WORKING_WORDS[state.word]!, detailRef.current, null)
     }, WORD_MS)
     return () => window.clearInterval(timer)
   }, [])
   useEffect(() => {
     const state = line.current
-    if (state.step === now) return
+    if (state.step === key) return
     const show = (): void => {
       const node = ref.current
       if (!node) return
-      state.step = now
+      const shown = latest.current
+      state.step = workingKey(shown)
       state.at = Date.now()
-      if (now !== null) { writeWorking(node, now); return }
+      if (shown !== null) { writeWorking(node, shown.words, detailRef.current, shown); return }
       state.word = nextWord(state.word)
-      writeWorking(node, WORKING_WORDS[state.word]!)
+      writeWorking(node, WORKING_WORDS[state.word]!, detailRef.current, null)
     }
     // The words come back only after a gap that lasts; a new step waits out the hold of the one on the line.
-    const wait = now === null ? HOLD_MS : state.at + HOLD_MS - Date.now()
+    const wait = key === null ? HOLD_MS : state.at + HOLD_MS - Date.now()
     if (wait <= 0) { show(); return }
     const timer = window.setTimeout(show, wait)
     return () => window.clearTimeout(timer)
-  }, [now])
+  }, [key])
   // The words are decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
-  return <>
-    <span ref={ref} className="thread-activity-live__word" data-word={first} aria-hidden="true">{first}</span>
+  return <span className="thread-activity-live__now">
+    <span ref={ref} className="thread-activity-live__word" data-word={first.words} aria-hidden="true">{first.words}</span>
+    <span ref={detailRef} className="thread-activity-live__detail" data-code={first.code || undefined} aria-hidden="true">{first.detail}</span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
-  </>
+  </span>
 }
 
 /** A finished subagent whose provider sent no result says so, instead of opening to nothing. */
@@ -618,7 +633,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
     onKeyDown={disclosure.onKeyDown}>
     <button type="button" className="thread-activity-live__line tt-focusable" aria-expanded={open} aria-controls={open ? stepsId : undefined} aria-label={name}
-      aria-description={connected ? now ?? undefined : undefined} onClick={disclosure.onToggle}>
+      aria-description={connected ? now?.spoken : undefined} onClick={disclosure.onToggle}>
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
