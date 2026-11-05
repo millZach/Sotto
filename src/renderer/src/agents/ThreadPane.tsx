@@ -58,6 +58,7 @@ import { continueChoiceFor, continueModels, continueStore, providerDefaults, use
 import { useOwlFeature } from '../state/owlFeature'
 import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
 import { isPutAway, moveSheetStore, useMoveMachines, useMovesOffered } from '../watcher/MoveThreads'
+import { useHeaderFocusName } from './RailFocusName'
 
 type Command = AgentConnection['command']
 
@@ -448,6 +449,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const paneChrome = chrome ?? NO_CHROME
   const handle = paneChrome.handle
   const pressedControl = useRef(false)
+  const headerName = useHeaderFocusName()
   const close: PaneClose | undefined = paneChrome.close ?? (onClose ? { label: t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' }), title: t`Close pane`, keys: undefined, run: onClose } : undefined)
   // A key typed in the transcript is the start of a message: the composer takes it, and comes back full to show it.
   const typeAhead = slimOn ? focusAnswerComposer : undefined
@@ -491,7 +493,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows or takes focus: the Git action (once
           the host has read a repository's status), Watch, the Council (Owl only), Tools, the Terminal drawer, the ··· menu
           and, in a split, close (ADR-0163, ADR-0182, ADR-0177). */}
-      <div className="thread-workspace__actions">
+      {/* A symbol the keys reach is named under the header, as the pointer's tooltip names it. */}
+      <div className="thread-workspace__actions" onFocus={headerName.onFocus} onBlur={headerName.onBlur} onKeyDown={headerName.onKeyDown}>
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
@@ -504,6 +507,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         <PaneMenu groups={[[...(beside ? [beside] : []), ...paneChrome.layout], initialize, naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
         {close ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={close.label}
           aria-keyshortcuts={close.keys} title={close.title} onClick={close.run}><X size={16} aria-hidden="true" /></button> : null}
+        {headerName.name}
       </div>
     </header>}
     {/* Delegated by the thread that started this one, a link back (ADR-0081; Owl only). */}

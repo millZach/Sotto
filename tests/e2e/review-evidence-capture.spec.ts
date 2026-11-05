@@ -844,6 +844,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.keyboard.press('Tab')
     await sidebar.getByRole('button', { name: 'Plan the split', exact: true }).first().focus()
     await capture.shoot('shell-row-focus', 'The keyboard on a working row, with its shortcuts showing.', '', { modes: ['dark', 'light'] })
+    // A header symbol the keys reach is named under it, as the pointer's tooltip names it.
+    const headerFocus = async (): Promise<void> => {
+      await page.keyboard.press('Tab')
+      await page.locator('.thread-pane[data-focused] [data-pane-terminal-toggle]').focus()
+      await expect(page.locator('.focus-name')).toBeVisible()
+    }
+    await capture.shoot('shell-header-focus', 'The keyboard on the Terminal drawer button, named under the header.', '', { modes: ['dark', 'light'], before: headerFocus })
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     // The row may sit faded at the list's edge, where it takes no presses, so it comes to the middle and is pointed at first.
     const review = sidebar.getByRole('button', { name: 'Repository review', exact: true }).first()
