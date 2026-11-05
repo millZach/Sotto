@@ -13,12 +13,12 @@ import { ChoiceMenu } from '../usage/UsageMenu'
 import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
-import { clearCouncilDraft, councilAskable, heldCouncilForm, holdCouncilForm, onCouncilDraft, readCouncilDraft, type CouncilDraft } from './councilDraft'
+import { clearCouncilDraft, councilAskable, councilMode, heldCouncilForm, holdCouncilForm, holdCouncilMode, onCouncilDraft, onCouncilMode, readCouncilDraft, type CouncilDraft } from './councilDraft'
 import type { ClimbRecord } from '../../../../shared/councilClimb'
 import { ClimbPanel } from './ClimbPanel'
+import { AskedByLine } from './AskedByLine'
 import './council.css'
 
-const climbModes = new Map<string, 'ask' | 'climb'>()
 
 /**
  * The Council the chamber shows: the one being worked now, the newest if several are; with none, the newest Council
@@ -61,8 +61,10 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const { councils, failed } = useCouncils(bridge)
-  const [mode, setMode] = useState<'ask' | 'climb'>(() => climbModes.get(thread ?? '') ?? 'ask')
-  useEffect(() => { climbModes.set(thread ?? '', mode) }, [mode, thread])
+  const [mode, setMode] = useState<'ask' | 'climb'>(() => councilMode(thread ?? ''))
+  useEffect(() => { holdCouncilMode(thread ?? '', mode) }, [mode, thread])
+  // A thread's agent that starts a Climb, or a Council, brings this tab to it (ADR-0177, November 5, 2026).
+  useEffect(() => onCouncilMode(() => setMode(councilMode(thread ?? ''))), [thread])
   const settings = app?.settings
   const state = agents?.state
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
@@ -289,6 +291,7 @@ function CouncilEntry({ council, bridge }: { readonly council: CouncilRecord; re
         {open && !running ? <button type="button" className="tt-button tt-focusable" onClick={() => void run({ type: 'settle', council: council.id })}>{t`Settle`}</button> : null}
       </div>
     </header>
+    <AskedByLine askedBy={council.askedBy} />
     <p className="council-entry__seats tt-paragraph">{seatNames}</p>
     <p className="council-entry__meta tt-paragraph">
       {!snapshot ? t`Working in the thread's own folder, which is not a Git repository, so Sotto cannot check the lines panelists cite.`

@@ -2,11 +2,15 @@ import SwiftUI
 import UIKit
 import SottoCore
 
-/// Pairing until this iPhone holds a computer, then Threads, Computers and Settings.
+/// Pairing until this iPhone holds a computer, then Threads, Computers and Settings. It watches only whether there is a
+/// computer, so the model's other updates don't run it, nor the tabs under it (#2120).
 struct RootView: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(\.unwatchedModel) private var unwatchedModel
+    private var model: AppModel { unwatchedModel! }
+    @State private var revision = 0
     var body: some View {
         let _ = BenchProbe.body("RootView")
+        let _ = revision
         // The whole screen, safe areas included, for Glass's backdrop on every page, pairing included.
         GeometryReader { frame in
             let insets = frame.safeAreaInsets
@@ -14,13 +18,67 @@ struct RootView: View {
                 .environment(\.sottoScreen, CGSize(width: frame.size.width + insets.leading + insets.trailing,
                                                     height: frame.size.height + insets.top + insets.bottom))
         }
+        .modifier(ModelWatch(read: { $0.computers.isEmpty }, revision: $revision))
+    }
+}
+
+/// The model, for a view that reads it without watching it, and watches only what it shows through `ModelWatch`.
+private struct UnwatchedModelKey: EnvironmentKey { static let defaultValue: AppModel? = nil }
+extension EnvironmentValues {
+    var unwatchedModel: AppModel? {
+        get { self[UnwatchedModelKey.self] }
+        set { self[UnwatchedModelKey.self] = newValue }
+    }
+}
+
+/// A view's watch on the model, kept to what it reads. `@EnvironmentObject` runs a view's body on every update to any
+/// thread, a dozen times a second while a reply streams, and in some launches SwiftUI then runs the pages under it too,
+/// past their equality: the held Threads list drew all its rows for nobody to see (#2120). Here `revision`, which the
+/// view's body reads, moves only when `read` gives something new. A small view under it watches the model and compares,
+/// in the same update as the change, so nothing it shows lands later than it did.
+struct ModelWatch<Value: Equatable>: ViewModifier {
+    let read: @MainActor (AppModel) -> Value
+    @Binding var revision: Int
+    func body(content: Content) -> some View {
+        content.background { ModelReading(read: read, changed: { revision &+= 1 }).accessibilityHidden(true) }
+    }
+}
+
+private struct ModelReading<Value: Equatable>: View {
+    @EnvironmentObject var model: AppModel
+    let read: @MainActor (AppModel) -> Value
+    let changed: () -> Void
+    var body: some View {
+        Color.clear.onChange(of: read(model)) { changed() }
+    }
+}
+
+/// What `MainTabs` reads of the model as it draws: its badges, its tabs and rail, and what opens a page. A read added to
+/// its body joins this, or the tabs don't follow it.
+private struct MainTabsInputs: Equatable {
+    var badge: Int
+    var watcherHostID: String?
+    var watcherTab: WatcherTabState
+    var selected: ThreadRef?
+    var railNested: ThreadRef?
+    var adding: Bool
+    var alertOpened: ThreadRef?
+    var watcherAlertOpened: String?
+    var shareOpened: ShareDestination?
+    @MainActor init(_ model: AppModel) {
+        badge = model.threadsBadge; watcherHostID = model.watcherHostID; watcherTab = model.watcherTab
+        selected = model.selected; railNested = model.railNested; adding = model.adding
+        alertOpened = model.alertOpened; watcherAlertOpened = model.watcherAlertOpened; shareOpened = model.shareOpened
     }
 }
 
 /// The tabs: Threads, Watcher when a paired computer runs it, Computers and Settings. The system's tab bar is hidden
 /// for `TabsBar`, which sits on the page with no glass behind it (ADR-0051, amended).
 struct MainTabs: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(\.unwatchedModel) private var unwatchedModel
+    private var model: AppModel { unwatchedModel! }
+    /// Moves when what the tabs read of the model changes (`MainTabsInputs`).
+    @State private var revision = 0
     @State private var tab = Tab.threads
     @State private var threadPath = NavigationPath()
     @State private var watcherPath = NavigationPath()
@@ -49,10 +107,12 @@ struct MainTabs: View {
     @AppStorage(PhonePreferenceKey.duoSidebarHidden) private var sidebarHidden = false
     var body: some View {
         let _ = BenchProbe.body("MainTabs")
+        let _ = revision
         GeometryReader { frame in
             let duo = duoLayout(frame.safeAreaInsets)
             tabs(duo: duo).environment(\.duoLayout, duo)
         }
+        .modifier(ModelWatch(read: { MainTabsInputs($0) }, revision: $revision))
     }
     /// Which of the iPhone Duo's screens this is (ADR-0151, amended). Its cover screen leaves a strip down its right
     /// edge, under the clock and battery, outside the safe area but inside the window, and unfolded and held sideways
@@ -180,7 +240,7 @@ struct MainTabs: View {
             keyboard = ((note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.height ?? 0) > 120
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboard = false }
-        .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
+        .sheet(isPresented: Binding(get: { model.adding }, set: { model.adding = $0 }), onDismiss: { model.closeAdding() }) { AddComputerSheet() }
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
@@ -304,7 +364,7 @@ struct MainTabs: View {
     private var pages: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $threadPath) {
-                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
+                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).equatable().threadDestination()
             }
                 .environment(\.pageTop, tops[.threads, default: 0])
                 .toolbar(.hidden, for: .tabBar)

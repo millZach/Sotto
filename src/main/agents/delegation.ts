@@ -7,6 +7,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleInForce, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { dynamicRecordTokens, type DynamicRecord } from './dynamicRecord'
 import { allowedProviders, DYNAMIC_WHY_MAX, isDynamicThread, providerAbilities, WORKERS_AT_ONCE_MAX, type DynamicEffort, type DynamicThreadSettings } from '../../shared/dynamicThreads'
 import { providerProfile } from '../../shared/providerProfile'
 import { effortRank } from '../../shared/reasoningEfforts'
@@ -119,6 +120,8 @@ export interface DelegationServiceOptions {
   readonly dynamicThreads?: () => DynamicThreadSettings
   /** A provider's limits as Usage reads them, for an overseer choosing (ADR-0191 decision 9). */
   readonly providerLimits?: (provider: ProviderId) => Promise<UsageQuotaRead | undefined>
+  /** **Its record** (ADR-0191 decision 9): told of each overseer's start, replacement and outcome, and read by an overseer choosing. */
+  readonly record?: Pick<DynamicRecord, 'started' | 'ended' | 'moved' | 'watches' | 'read'>
   /** Owl worker-swarms: one machine admission owner and identity-only group updates. */
   readonly swarms?: { readonly admission: WorkerAdmission; readonly changed?: (swarm: WorkerSwarm) => void }
   /**
@@ -296,6 +299,8 @@ const recordSchema = z.object({
   charged: z.boolean(),
   /** What an overseer chose for this worker, as it started; why, in its own words, for its row (ADR-0191); the delegation it took over. */
   chosen: delegationChoiceSchema.optional(), why: z.string().max(DYNAMIC_WHY_MAX).optional(), replaces: z.uuid().optional(),
+  /** The user gave the piece to this model from the old worker's row, rather than the overseer choosing it (ADR-0191 decision 11). */
+  byUser: z.literal(true).optional(),
   /** What the result says when Highest effort held this start's effort, kept so a retry says it too. */
   effortHeld: z.string().max(400).optional(),
   /** How long the `delegate` call waited for the outcome and when it began; the window's card says it (decision 8). */
@@ -387,10 +392,16 @@ function callerBranch(caller: AgentThread): string | undefined {
 interface LandedBranch { readonly moveId: string; readonly projectId: string; readonly takenAt?: string | undefined; readonly receipt: BranchStartReceipt
   readonly hostId?: string; readonly madeFrom?: WorktreeMadeFrom; readonly given?: true }
 /** What a delegate call carries from the machine that asked, besides its arguments (#1316). */
+/** Why Give it to another model… started nothing, for the window to say in the interface's own words (ADR-0123). */
+export type DelegationGiveRefusal = 'not-overseen' | 'not-dynamic' | 'not-ready' | 'not-allowed' | 'same-model' | 'already-moved' | 'no-brief' | 'too-long' | 'not-started'
+export type DelegationGiveAnswer = { readonly status: 'ok' }
+  | { readonly status: 'refused'; readonly reason: DelegationGiveRefusal; readonly model?: string; readonly provider?: ProviderId }
 interface DelegateContext {
   readonly waitMs?: number
   /** The call as it was asked, where its role held against what it named (#1202), so a retry of that call is still that call. */
   readonly askedDigest?: string
+  /** The user moved an overseer's worker from its row (Give it to another model…, ADR-0191), so its record says so. */
+  readonly byUser?: true
   /** Where the desktop relay already placed a start for a thread on another machine, on one of this computer's paired hosts. */
   readonly placement?: WorkerPlacement
   /** The caller's branch, which the desktop already landed in this host's project for this start (#1316 part 2). */
@@ -1261,7 +1272,7 @@ export class DelegationService {
     if (branch && 'status' in branch) return branch
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
     // A start that took its place in this machine's queue is a check, saved as one with its admission (#1312).
-    try { admitted = await this.transaction(() => this.admit(threadId, input, ticket !== undefined, context.askedDigest)) }
+    try { admitted = await this.transaction(() => this.admit(threadId, input, ticket !== undefined, context.askedDigest, context.byUser === true)) }
     catch (error) {
       // A start refused here never runs, so the branch landed for it is let go.
       await this.letGo(branch)
@@ -1391,6 +1402,63 @@ export class DelegationService {
   brief(threadId: string): string | undefined {
     return this.briefsOf([threadId]).get(threadId)
   }
+  /** The delegation the user started in place of this one from its row, if any. */
+  private movedByUser(delegationId: string): DelegationRecord | undefined {
+    return this.records.find(record => record.byUser && record.replaces === delegationId)
+  }
+  /**
+   * Give it to another model… (ADR-0191 decision 11): the user moves an overseer's worker to `modelId` from its row. The
+   * new worker starts as the overseer's own move would, naming the newest delegation to that worker in `replaces`, so the
+   * old thread's restart is let go of and its turn stopped, and it is held to the same list and Highest effort. Its brief
+   * is the newest one the old worker was sent, with a line that the user moved it and where any partial work is. The
+   * overseer is told: the old worker's ending says the user gave its piece on, and the new one's outcome reaches it as
+   * news, as one it had started. Why nothing started, where nothing did, is a reason the window puts into words.
+   */
+  async giveTo(delegatingThreadId: string, delegationId: string, modelId: string): Promise<DelegationGiveAnswer> {
+    const old = this.record(delegationId)
+    if (!old || old.delegatingThreadId !== delegatingThreadId || old.action !== 'start' || !old.chosen) return { status: 'refused', reason: 'not-overseen' }
+    const snapshot = this.snapshot(), caller = snapshot.threads.find(thread => thread.id === delegatingThreadId)
+    const limits = caller && this.dynamicLimits(caller, snapshot)
+    if (!caller || !limits?.overseeing) return { status: 'refused', reason: 'not-dynamic' }
+    const model = resolveModel(snapshot.models, modelId)
+    if (!model?.ready || !model.providerId) return { status: 'refused', reason: 'not-ready' }
+    const named = { model: model.name, provider: model.providerId }
+    if (!allowedProviders(limits.settings, limits.thread.providerId).has(model.providerId)) return { status: 'refused', reason: 'not-allowed', ...named }
+    // A piece already given on is moved from its newer worker's row, so two models never carry on with it.
+    const worker = old.delegatedThreadId
+    if (this.records.some(record => record.replaces !== undefined && this.record(record.replaces)?.delegatedThreadId === worker)) return { status: 'refused', reason: 'already-moved', ...named }
+    if (model.id === old.chosen.model) return { status: 'refused', reason: 'same-model', ...named }
+    const asked = this.brief(worker)
+    if (asked === undefined) return { status: 'refused', reason: 'no-brief', ...named }
+    const previousWorker = snapshot.threads.find(thread => thread.id === worker)
+    const from = resolveModel(snapshot.models, old.chosen.model)?.name ?? 'another model'
+    // A worker in its own worktree left its work there; one in the shared checkout left it in this folder.
+    const previousWorktree = previousWorker?.worktree?.mode === 'independent' ? previousWorker.worktree.path : undefined
+    const moved = `The user moved this piece to you from ${from}, whose worker was stopped. Any work it did is ${previousWorktree ? `in its own worktree, ${previousWorktree}` : 'already in this folder'}, so look at that before you start.`
+    if (asked.length + moved.length + 2 > DELEGATION_BRIEF_MAX) return { status: 'refused', reason: 'too-long', ...named }
+    const efforts = withoutUltracode(model.reasoningEfforts ?? [])
+    const effort = old.chosen.effort && efforts.includes(old.chosen.effort) ? old.chosen.effort : model.defaultReasoningEffort && efforts.includes(model.defaultReasoningEffort) ? model.defaultReasoningEffort : efforts.at(-1)
+    // The old worker's permission where the new model offers it, or else asking for approval: never wider than it was.
+    const modes = model.runtimeModes ?? []
+    const permission = previousWorker?.runtimeMode && modes.includes(previousWorker.runtimeMode) ? previousWorker.runtimeMode : modes.includes('approval-required') ? 'approval-required' : modes[0]
+    // The newest delegation to that worker is the one whose turn may still run, so it is the one replaced.
+    const newest = (this.byDelegated.get(worker) ?? []).filter(record => record.delegatingThreadId === delegatingThreadId).at(-1) ?? old
+    const input = delegateInputSchema.safeParse({ work: old.work, brief: `${asked}\n\n${moved}`, wait_seconds: 0, provider: model.providerId, model: model.id,
+      ...effort ? { effort } : {}, ...permission && !model.providerModes?.length ? { permission } : {}, working_copy: previousWorktree ? 'independent' : 'shared',
+      why: `The user gave this piece to ${model.name}.`.slice(0, DYNAMIC_WHY_MAX), replaces: newest.id })
+    if (!input.success) return { status: 'refused', reason: 'not-started', ...named }
+    const answer = await this.route(caller.id, input.data, { byUser: true }) as { readonly status?: string; readonly delegation?: { readonly id?: string } }
+    if (answer.status !== 'ok' || !answer.delegation?.id) return { status: 'refused', reason: 'not-started', ...named }
+    // The overseer did not make this call, so nothing of it has been told: the old worker's ending, unless it had already
+    // answered, and the new worker's outcomes reach it as news.
+    const started = answer.delegation.id
+    this.update(started, saved => { delete saved.told })
+    if (this.outcomeOf(newest) !== 'answered') this.update(newest.id, saved => { delete saved.told })
+    this.changed(newest.id); this.changed(started)
+    await this.persist()
+    return { status: 'ok' }
+  }
+
   /**
    * `brief` for several threads, in the order asked, each read newest first from the briefs that thread was sent
    * (#1291) and stopping at the first one held.
@@ -1430,7 +1498,7 @@ export class DelegationService {
       ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
       ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
       waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record), ...(record.held ? { held: record.held } : {}),
-      ...(record.chosen ? { chosen: record.chosen } : {}), ...(record.why && this.reasonKept(record) ? { why: record.why } : {}), ...(record.effortHeld ? { effortHeld: true as const } : {}),
+      ...(record.chosen ? { chosen: record.chosen } : {}), ...(record.byUser ? { byUser: true as const } : {}), ...(record.why && this.reasonKept(record) ? { why: record.why } : {}), ...(record.effortHeld ? { effortHeld: true as const } : {}),
       ...(record.replaces ? { replaces: record.replaces, ...this.replacedThread(record.replaces) } : {}),
       ...(made && record.check && this.options.checkReplies ? { check: true as const, ...this.checkExcerpt(record, outcome) } : {}) }
   }
@@ -2079,7 +2147,7 @@ export class DelegationService {
   }
 
   /** Admission, in one transaction: who calls, under which root, within which ceiling and limits. Records the brief. */
-  private async admit(threadId: string, input: DelegateInput, check = false, askedDigest?: string) {
+  private async admit(threadId: string, input: DelegateInput, check = false, askedDigest?: string, byUser = false) {
     if (this.closed) refuse('STOPPING', 'Sotto is stopping. Nothing was started.')
     const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
     const inputDigest = askedDigest ?? digest(input)
@@ -2165,6 +2233,7 @@ export class DelegationService {
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}),
       ...limits?.overseeing ? { chosen: { model: model.id, ...effort ? { effort } : {}, ...input.speed ? { speed: input.speed } : {} } } : {},
       ...limits?.overseeing && input.why ? { why: input.why } : {}, ...limits?.overseeing && input.replaces ? { replaces: input.replaces } : {},
+      ...limits?.overseeing && byUser ? { byUser: true } : {},
       ...effort !== asked ? { effortHeld: `Its effort, ${asked}, was held to ${effort}, the most the user's Settings allow for a Dynamic thread's workers.` } : {},
       ...(check ? { check: true } : {}) })
     this.add(record)
@@ -2173,6 +2242,13 @@ export class DelegationService {
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
     this.touched(record)
+    // Its record counts an overseer's piece once it is admitted, and the piece it took over as moved.
+    if (record.chosen && this.options.record) {
+      this.options.record.started({ thread: delegatedThreadId, provider: model.providerId!, model: model.id, name: model.name })
+      // Only a piece of its own, as letting go of the old worker is.
+      const replaced = record.replaces ? this.record(record.replaces) : undefined
+      if (replaced?.delegatingThreadId === caller.id) this.options.record.moved(replaced.delegatedThreadId, model.id)
+    }
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default',
       // A role's own choice may name a long-context variant the catalog lists under its base, so its ID is kept.
       modelId: byRole && !named ? byRole.modelId! : model.id, speed: byRole ? byRole.speed : input.speed ?? null, ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared',
@@ -2622,7 +2698,7 @@ export class DelegationService {
         if (this.unproved(record, thread)) {
           this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.unknownBecause = 'unconfirmed'; saved.outcomeAt = now() })
           changed = true
-          this.changed(record.id)
+          this.changed(record.id, thread)
         }
         continue
       }
@@ -2661,7 +2737,7 @@ export class DelegationService {
       for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) { if (seen[field]) saved[field] = seen[field]; else delete saved[field] }
     })
     if (seen.outcome === 'answered' && !restarted) this.answeredThisRun.add(record.id)
-    this.changed(record.id)
+    this.changed(record.id, thread)
     return true
   }
   /**
@@ -2684,7 +2760,7 @@ export class DelegationService {
       this.lastWorking.delete(record.id)
       this.update(record.id, saved => { saved.releasedAt = new Date(clock).toISOString(); delete saved.releaseTold })
       released = true
-      this.changed(record.id)
+      this.changed(record.id, thread)
     }
     if (Number.isFinite(next) && !this.closed) this.cancelRelease = this.schedule(() => { this.cancelRelease = undefined; if (!this.closed) this.observe(this.snapshot()) }, next - clock)
     return released
@@ -2707,7 +2783,8 @@ export class DelegationService {
    * An outcome moved: a call waiting on it hears it; otherwise, once it says something new, the delegating thread is sent
    * it as a wake-up carrying identities only (decision 7).
    */
-  private changed(delegationId: string): void {
+  /** `thread`: the delegated thread as the pass that moved the outcome already read it, so nothing searches for it again. */
+  private changed(delegationId: string, thread?: AgentThread): void {
     const record = this.record(delegationId)
     if (!record) return
     this.releaseCheck(record)
@@ -2718,6 +2795,11 @@ export class DelegationService {
     }
     this.syncSwarmMember(delegationId)
     const outcome = this.outcomeOf(record)
+    // A piece of an overseer's that reached an outcome: its record counts it finished if answered, and the tokens since.
+    if (outcome !== 'working' && this.options.record?.watches(record.delegatedThreadId)) {
+      const seen = thread ?? this.snapshot().threads.find(item => item.id === record.delegatedThreadId)
+      this.options.record.ended(record.delegatedThreadId, outcome === 'answered', dynamicRecordTokens(seen?.usage?.total))
+    }
     if (!this.open(record)) this.waiters.get(record.id)?.forEach(wake => wake())
     if (this.calling.has(record.id) || outcome === 'working' || outcome === record.told && this.heldMinutes(record) === undefined) return
     const swarm = this.swarmByDelegation.get(delegationId)?.swarm
@@ -2890,6 +2972,10 @@ export class DelegationService {
         const reply = thread && held && !held.laterTurn ? watcherNewestTurnReply(thread) : undefined
         details.set(record.id, { ...reply ? { lastReply: reply.text } : {}, ...held?.laterTurn ? { laterTurn: true as const } : {} })
       }
+      // Give it to another model… (ADR-0191): the overseer hears that the user moved a piece, on both delegations.
+      if (record.byUser && record.replaces) details.set(record.id, { ...details.get(record.id), userMoved: { replaces: record.replaces } })
+      const mover = item.outcome !== 'answered' ? this.movedByUser(record.id) : undefined
+      if (mover?.chosen) details.set(record.id, { ...details.get(record.id), movedTo: { delegationId: mover.id, model: resolveModel(this.snapshot().models, mover.chosen.model)?.name ?? mover.chosen.model } })
     }
     const group = this.options.swarms ? this.swarmByLead.get(threadId) : undefined
     const summary = group ? swarmReceipt(group) : undefined
@@ -2915,7 +3001,13 @@ export class DelegationService {
     }))
     const { roles: _roles, ...rest } = listed as T & { roles?: unknown }
     void _roles
-    return { ...rest, models: listed.models.filter(model => allowed.has(model.provider)), providers, highestEffort: limits.settings.highestEffort, ...limits.overseeing ? { workersAtOnce: limits.settings.workersAtOnce } : {} } as Omit<T, 'roles'> & Record<string, unknown>
+    // Its record on this computer, beside each model it has counted: how many pieces it was given, finished and moved.
+    const lines = this.options.record ? new Map(this.options.record.read().models.map(row => [row.model, row])) : undefined
+    const models = listed.models.filter(model => allowed.has(model.provider)).map(model => {
+      const line = lines && 'model' in model && typeof model.model === 'string' ? lines.get(model.model) : undefined
+      return line ? { ...model, record: { pieces: line.pieces, finished: line.finished, moved: line.moved, tokens: line.tokens } } : model
+    })
+    return { ...rest, models, providers, highestEffort: limits.settings.highestEffort, ...limits.overseeing ? { workersAtOnce: limits.settings.workersAtOnce } : {} } as Omit<T, 'roles'> & Record<string, unknown>
   }
   private listing(caller: AgentThread, snapshot: AgentHostSnapshot) {
     // The newest twenty, refused ones among them, oldest first.

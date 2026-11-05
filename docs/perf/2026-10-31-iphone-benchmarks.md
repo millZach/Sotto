@@ -101,7 +101,7 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.wall_per_chunk` | Time per streamed word, including the 50 ms wait after each: 50 ms is the floor. |
 | `stream.cpu_per_chunk` | CPU time per streamed word. |
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
-| `stream.worst_per_chunk.<count>` | The Threads list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
+| `stream.worst_per_chunk.<count>` | The Threads page's and its list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
 | `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for the budgets of zero. |
 | `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
@@ -284,3 +284,43 @@ of those 24 points, so main likely cost a person more than these numbers show, b
 measured. The benchmark builds Debug with optimization, so whether Release builds drew the rows again is also not
 measured. The workflow's look step photographs the long thread and not this fade, so the fade's look rests on the code:
 the same view, opacity and 24 points.
+
+## The tabs' watch and the thread page's warm-up
+
+The fourth change, aimed at opening the long thread and at #2120. The aim was 1.75 s from the tap to the drawn thread,
+and it was not reached. Two scratch runs on one runner each took turns between candidate builds of one change commit, 12
+rounds, each journey a cold launch, the long thread opened, 60 streamed words, then back and opened again twice. Main has
+no such journey, so the reference is the change built with neither candidate on, whose launch matched main's.
+
+[Run 41972451740](https://github.com/millZach/Sotto/actions/runs/41972451740) placed #2120. In the journeys whose held
+list drew, SwiftUI ran `ThreadsView`'s body on every update even with its equality saying nothing changed and its own
+watch stopped while held, and `MainTabs`, which watched the whole model, ran every time too. In journeys that drew nothing
+`MainTabs` also ran on every update but the page under it did not. So what runs the page is the tabs above it running.
+Now `RootView` and `MainTabs` read the model without watching it, and a small view under each compares what they read
+(`ModelWatch`, `MainTabsInputs`) and runs them only when it changes, in the same update. The page stops watching while it
+is held and catches up as it lets go, and its equality keeps the tabs from drawing it again.
+
+The second change is the warm-up. A second after launch, in a turn of the run loop that isn't following a scroll, a short
+made-up thread is read from wire bytes and laid out hidden for 300 ms, so the first thread opened doesn't pay for the page's first use.
+
+[Run 41981480704](https://github.com/millZach/Sotto/actions/runs/41981480704), on a slower runner than the first, with
+each round's journey set against the reference's in the same round:
+
+| Metric | Reference | Watch only | Warm-up only | Both | Unit |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `open.app.tap_to_drawn`, median | 3,830 | 3,473 | 3,016 | 2,916 | ms |
+| Rounds the open was faster than the reference | | 7 of 12 | 8 of 12 | 9 of 12 | |
+| Open, median of the rounds' differences | | −63 | −653 | −859 | ms |
+| Journeys whose held list drew in the stream | 3 of 12 | 0 of 12 | 3 of 12 | 0 of 12 | |
+| `ThreadsView` bodies in the stream, worst journey | 24 | 0 | 24 | 0 | count |
+| Stream CPU, median of the rounds' differences | | −838 | −2,379 | −1,151 | ms |
+| Launch CPU, median | 5,260 | 5,479 | 5,871 | 6,005 | ms |
+| Launch CPU, median of the rounds' differences | | +390 | +773 | +1,057 | ms |
+| Launch's longest frame, median | 1,313 | 1,315 | 1,194 | 1,265 | ms |
+
+In the first run the warm-up alone opened the thread in 2,188 ms against the reference's 2,557, faster in 9 of 12
+rounds, for 596 ms more launch CPU. The launch's longest frame and the time to the first list stayed within a few
+milliseconds of the reference or below it in both runs. In the second run no journey with the new watch drew the held list in the stream, against 8 of the other
+candidates' 36. The list still draws in about one open in four, in every build: `ThreadsView` runs about four times
+while the thread pushes over it, which is the navigation, not the model. `stream.worst_per_chunk.body.ThreadsView` has a
+budget of zero. The app's own body still runs on every update; that is #2120's next lead.

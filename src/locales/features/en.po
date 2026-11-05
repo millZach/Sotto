@@ -1395,6 +1395,16 @@ msgstr "Ask Watcher instead"
 msgid "Ask Watcher…"
 msgstr "Ask Watcher…"
 
+#. Under a Council an agent started at the user's request, when the user's words are not kept.
+#: src/renderer/src/features/council/AskedByLine.tsx
+msgid "Asked by {provider} in this thread, at your request."
+msgstr "Asked by {provider} in this thread, at your request."
+
+#. Under a Council an agent started at the user's request; the provider's name, then the user's own message quoted.
+#: src/renderer/src/features/council/AskedByLine.tsx
+msgid "Asked by {provider} in this thread, because you said “{words}”"
+msgstr "Asked by {provider} in this thread, because you said “{words}”"
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Asking {machine}"
 msgstr "Asking {machine}"

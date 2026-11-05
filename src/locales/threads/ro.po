@@ -4463,6 +4463,14 @@ msgstr ""
 msgid "Git said:"
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Give {threadTitle} to"
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Give it to another model…"
+msgstr ""
+
 #: src/renderer/src/agents/VisualStepper.tsx
 msgid "Go to step {stepNumber}"
 msgstr ""
@@ -5666,6 +5674,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "No models were returned. Refresh this provider to check again."
+msgstr ""
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "No other ready model is on the list in Settings."
 msgstr ""
 
 #: src/renderer/src/agents/MessageContent.tsx
@@ -8139,6 +8151,10 @@ msgstr ""
 msgid "Sotto couldn’t load skills."
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Sotto couldn't reach the new worker's start. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
+msgstr ""
+
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
 msgstr ""
@@ -10421,6 +10437,10 @@ msgstr ""
 msgid "You"
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "You chose this."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You had sent your own message in that thread since this thread last read it. {nothing}"
 msgstr ""
@@ -10457,6 +10477,11 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "You were working in that thread, so it takes no brief until your turn there ends. {nothing}"
+msgstr ""
+
+#. Before the line saying the user, not the overseer, gave this piece to this model.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "You:"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx

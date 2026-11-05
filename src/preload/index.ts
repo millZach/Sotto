@@ -1,5 +1,7 @@
 import { COUNCIL_CLIMB, climbRequestSchema, climbResultSchema } from '../shared/councilClimb'
 import { DICTATION_TIMING, DICTATION_TIMING_ARGUMENT, type DictationTimingBridge } from '../shared/dictationTiming'
+import { DYNAMIC_RECORD_CLEAR, DYNAMIC_RECORD_READ, dynamicRecordReadSchema, type DynamicRecordBridge } from '../shared/dynamicRecord'
+import { DYNAMIC_THREADS_RENDERER_ARGUMENT } from '../shared/dynamicThreads'
 import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type HostsState } from '../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD, type HostDeviceList, type TailscaleConnectOutcome, type TailscaleSummary } from '../shared/hostDevices'
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
@@ -20,7 +22,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
-import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
+import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATION_GIVE, delegationGiveRequestSchema, delegationGiveResultSchema, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
   delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
 import {
   OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
@@ -436,6 +438,8 @@ export function createSottoBridge(
   /** The popup's shortcut row and its Open in Sotto (ADR-0181): only while the `popup` Owl feature is on. */
   popupEnabled = false,
   dictationTiming = false,
+  /** Dynamic threads' record in Settings and Give it to another model… (ADR-0191): only while the `dynamic-threads` Owl feature is on. */
+  dynamicThreadsEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -476,6 +480,10 @@ export function createSottoBridge(
   )
   const bridge: SottoBridge = {
     ...(dictationTiming ? { dictationTiming: createDictationTimingBridge(renderer) } : {}),
+    ...(dynamicThreadsEnabled ? { dynamicRecord: Object.freeze<DynamicRecordBridge>({
+      read: () => invokeParsed(renderer, DYNAMIC_RECORD_READ, dynamicRecordReadSchema),
+      clear: () => invokeParsed(renderer, DYNAMIC_RECORD_CLEAR, dynamicRecordReadSchema),
+    }) } : {}),
     productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) }, state: () => renderer.invoke(PRODUCT_EVENT_STATE) as Promise<ProductEventsState | null> }),
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
@@ -502,6 +510,8 @@ export function createSottoBridge(
       brief: request => invokeParsed(renderer, DELEGATION_BRIEF_READ, delegationBriefSchema, delegationBriefRequestSchema.parse(request)),
       // A check's reply on a press (#1312): only where checks are offered, with Watcher and Work across machines on.
       ...(watcherMachinesEnabled ? { checkReply: request => invokeParsed(renderer, DELEGATION_CHECK_REPLY_READ, delegationCheckReplySchema, delegationCheckReplyRequestSchema.parse(request)) } : {}),
+      // Give it to another model… on a Dynamic thread's worker row (ADR-0191): only while its Owl feature is on.
+      ...(dynamicThreadsEnabled ? { give: request => invokeParsed(renderer, DELEGATION_GIVE, delegationGiveResultSchema, delegationGiveRequestSchema.parse(request)) } : {}),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
@@ -902,7 +912,8 @@ export function exposeRendererBridge(
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
-      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT)))
+      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
+      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {

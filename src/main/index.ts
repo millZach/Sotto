@@ -19,12 +19,15 @@ import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { MediaToolServer, SHOW_IN_THREAD_TOOL } from './agents/mediaTools'
+import { councilUserMessage, CouncilToolServer } from './agents/councilTools'
 import { tellWatcherTools } from './agents/tellWatcherTools'
 import { DesktopTellWatcherRelay } from './agents/tellWatcherRelay'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
+import { registerDynamicRecordIpc } from './agents/dynamicRecordIpc'
+import { DynamicRecord } from './agents/dynamicRecord'
 import { registerCouncilIpc } from './council/councilIpc'
 import { CouncilService } from './council/councilService'
 import { BranchBundles } from './agents/branchBundles'
@@ -37,6 +40,7 @@ import { nextPromptWatcherFacts } from './agents/nextPromptProject'
 import { nextPromptWatcherRequest, parseNextPrompt } from './llm/nextPrompt'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
+import { DYNAMIC_THREADS_RENDERER_ARGUMENT } from '../shared/dynamicThreads'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import { COUNCIL_RENDERER_ARGUMENT } from '../shared/council'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
@@ -965,6 +969,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
+        // A Dynamic thread overseer's record and Give it to another model… (ADR-0191), only while its Owl feature is on.
+        ...(owlFeatures['dynamic-threads'] ? [DYNAMIC_THREADS_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
@@ -1312,6 +1318,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // exist, so one data folder keeps one staging folder for them. Stable and a desktop without its local host build none.
   const councilService = councilEnabled && startupSettings.localHostEnabled ? new CouncilService({ directory: userDataPath, control: agentControl, host: agentHost,
     historyEnabled: () => agentHistoryEnabled, stageDeadline: () => workingCopySettings.councilStageDeadline,
+    panel: () => ({ panelists: workingCopySettings.councilPanelists, chair: workingCopySettings.councilChair }),
     bundles: ('branchBundles' in localRuntime ? localRuntime.branchBundles : undefined)
       ?? new BranchBundles({ stagingDirectory: join(userDataPath, 'council-staging'), recordsPath: join(userDataPath, 'council-staging', 'records.json') }) }) : undefined
   if (councilService) { await councilService.recover(); quitHandles.council = councilService }
@@ -1325,7 +1332,27 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
   }) : undefined
   if (tellTools) quitHandles.tellWatcherTools = tellTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : [])])
+  // Lets an ordinary thread's agent ask the Council, or start a Climb's setup, when the user's own message there asks for one
+  // (ADR-0177, November 5, 2026): only where the Council itself is built, so stable offers no server.
+  const councilTools = councilService ? new CouncilToolServer({
+    admits: threadId => {
+      if (!agentHost.admitsTellWatcher(threadId)) return false
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread !== undefined && thread.delegatedBy === undefined && thread.councilJudge !== true && thread.remoteHost !== true
+        && (thread.hostId === undefined || thread.hostId === agentControl.hostId())
+    },
+    userMessage: async threadId => {
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread ? councilUserMessage(thread, { message: messageId => agentHost.threadMessage(threadId, messageId), newest: () => agentHost.threadMessages(threadId) },
+        messageId => agentControl.delegationMessage(messageId) || localWatcher?.sentToThread(threadId, messageId) === true) : undefined
+    },
+    ask: (threadId, input, user) => councilService.askFromThread(threadId, input.question, user),
+    climb: (threadId, input, user) => councilService.climbFromThread(threadId, input, user),
+    read: (threadId, council) => councilService.readForThread(threadId, council),
+  }) : undefined
+  if (councilTools) quitHandles.councilTools = councilTools
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []),
+    ...(councilTools ? [councilTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
@@ -2385,7 +2412,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // A thread on another machine is read on that machine where Work across machines is on (#1310); stable reads none.
       // A check's reply is read on a press only where checks are offered, with Watcher and Work across machines on (#1312).
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
-        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled)
+        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled, owlFeatures['dynamic-threads'])
+      // Settings' read of its record and Clear its record (ADR-0191 decision 9); stable registers nothing.
+      // With this computer's host off, what it saved is opened here, so it can still be read and cleared.
+      const dynamicRecord = 'dynamicRecord' in localRuntime && localRuntime.dynamicRecord ? localRuntime.dynamicRecord : owlFeatures['dynamic-threads'] ? new DynamicRecord(userDataPath) : undefined
+      const cleanupDynamicRecord = registerDynamicRecordIpc(ipcMain, owlFeatures['dynamic-threads'], dynamicRecord, () => windows.getTrustedRenderers())
       // Every machine's check queue for its panel and Tools › Agents (#1312), only where Watcher and Work across machines are
       // both on, as the machines line is, so stable registers nothing. With the local host off, This computer keeps no queue
       // and each host's is still read.
@@ -2510,7 +2541,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           return result.canceled || !result.filePath ? null : result.filePath
         },
       }, () => windows.getTrustedRenderers())
-      const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
+      // Memory is hidden for the beta (ADR-0013). Without the setting at start, the IPC serves an empty snapshot and refuses commands, while the policy store stays open for permissions (ADR-0004).
+      const cleanupMemory = registerMemoryIpc(ipcMain, startupSettings.memoryEnabled ? memoryProfile : undefined, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
       // An end-to-end run reads a stand-in SSH folder and a recorded Tailscale status inside its own profile,
       // never the machine's ~/.ssh or Tailscale, and opens no browser.
       const hostTailscale = new HostTailscale({
@@ -2680,6 +2712,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupUsage()
         cleanupProductEvents()
         cleanupDelegations()
+        cleanupDynamicRecord()
         cleanupCheckQueues()
         cleanupContinue()
         cleanupCouncil()

@@ -134,8 +134,8 @@ Proposed bar, for Zach to change: it goes on if it uses no more limit than roles
 In the order the comparison points to. Zach's picks, November 5, 2026: the user's note first, ahead of its record, Give it to another model… and more overseers. It reaches a thread when its session starts and once, as an overseer note, after it changes, rather than with every message.
 
 - **The user's note:** **Your note** on the Settings card, up to 600 characters, in the overseer's instructions at creation and as an overseer note after a change. `dynamicSession` keeps digests of the note, never its words.
-- **Its record:** counts per model on this computer, on Usage's numbers-only terms, with a clear press.
-- **Give it to another model…** on a row's ···.
+- **Its record:** counts per model on this computer, on Usage's numbers-only terms, with a clear press. Built next, Zach's pick on November 5: pieces, finished, moved and tokens per model on the Settings card, and beside each model in an overseer's listing.
+- **Give it to another model…** on a row's ···. Built third, Zach's pick on November 5: the row's menu lists the models the allowed list lets it go to, and the new worker starts on the old brief, replacing the old one.
 - **More overseers:** Grok Build, whose rules are set only at creation, and Muse, whose instructions go with each message.
 - **The iPhone's switch, paired hosts, and Watcher starting Dynamic threads.**
 - **A per-project allowed list,** if client work calls for it.

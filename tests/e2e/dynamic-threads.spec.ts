@@ -177,6 +177,88 @@ test('your note in Settings starts a Dynamic thread\'s session, and goes once mo
   }
 })
 
+test('its record in Settings counts an overseer\'s piece on the model it chose, and Clear its record empties it for good', async () => {
+  test.setTimeout(180_000)
+  const { profile, project, restore } = await fixture()
+  let launched: LaunchedSotto | undefined
+  try {
+    await onReleaseTrack('owl', async () => {
+      launched = await launchSotto('success', profile)
+      const { page } = launched
+      const id = await newThread(page, project)
+      await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4 } }))
+      expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
+      expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
+      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.status !== 'running', id), { timeout: 30_000 }).toBe(true)
+      await page.evaluate(threadId => window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: { work: 'code-review', brief: 'Review the reconnect fix.', wait_seconds: 0,
+        provider: 'codex', model: 'native:codex:model:gpt-6.1-sol', effort: 'high', permission: 'approval-required', why: 'Another maker\'s read.' } }), id)
+      // The worker answers on its own: the fake Codex replies at once.
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.dynamicRecord!.read()).models), { timeout: 30_000 })
+        .toEqual([expect.objectContaining({ provider: 'codex', name: 'GPT-6.1 Sol', pieces: 1, finished: 1, moved: 0 })])
+      await page.reload()
+      await openSettingsAt(page)
+      const record = page.locator('[data-setting="dynamic-threads-record"]')
+      await record.scrollIntoViewIfNeeded()
+      await expect(record.getByRole('heading', { name: 'Its record on this computer' })).toBeVisible()
+      const row = record.getByRole('row', { name: /GPT-6\.1 Sol/u })
+      await expect(row.getByRole('cell').nth(0)).toHaveText('1')
+      await expect(row.getByRole('cell').nth(1)).toHaveText('1')
+      await record.getByRole('button', { name: 'Clear its record' }).click()
+      await expect(record).toContainText('Its record was cleared.')
+      await expect(record.getByRole('table')).toHaveCount(0)
+      await page.reload()
+      await openSettingsAt(page)
+      await expect(page.locator('[data-setting="dynamic-threads-record"]')).toContainText('Nothing counted yet.')
+    })
+  } finally {
+    if (launched) await closeSotto(launched)
+    await restore()
+  }
+})
+
+test('a worker row\'s ··· gives its piece to another model the user chooses, on its brief, and the new row says You chose this', async () => {
+  test.setTimeout(180_000)
+  const { profile, root, project, restore } = await fixture()
+  let launched: LaunchedSotto | undefined
+  try {
+    await onReleaseTrack('owl', async () => {
+      launched = await launchSotto('success', profile)
+      const { page } = launched
+      const id = await newThread(page, project)
+      await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4 } }))
+      expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
+      expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
+      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.status !== 'running', id), { timeout: 30_000 }).toBe(true)
+      await page.evaluate(threadId => window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: { work: 'code-review', brief: 'Review the reconnect fix in src/net.ts.', wait_seconds: 0,
+        provider: 'codex', model: 'native:codex:model:gpt-6.1-sol', effort: 'high', permission: 'approval-required', why: 'Another maker\'s read.' } }), id)
+      await page.reload()
+      await openThreads(page)
+      await page.getByRole('button', { name: 'Reconnect fix', exact: true }).first().click({ position: { x: 16, y: 12 } })
+      const sol = page.locator('.delegated-work__row', { hasText: 'GPT-6.1 Sol' }).first()
+      const worked = page.getByRole('button', { name: /Worked for/u }).first()
+      await expect(sol.or(worked)).toBeVisible({ timeout: 15_000 })
+      if (!await sol.isVisible()) await worked.click()
+      await sol.getByRole('button', { name: /^Actions for / }).click()
+      await page.getByRole('menuitem', { name: 'Give it to another model…' }).click()
+      const models = page.getByRole('menu', { name: /^Give .+ to$/u })
+      await expect(models.getByRole('menuitem', { name: 'Opus 5.5' })).toBeFocused()
+      await expect(models.getByRole('menuitem', { name: 'GPT-6.1 Sol' })).toHaveCount(0)
+      await page.keyboard.press('Enter')
+      // A new row on Opus, the user's own choice, taking over from the old one.
+      const moved = page.locator('.delegated-work__row', { hasText: 'You chose this.' })
+      await expect(moved).toBeVisible({ timeout: 15_000 })
+      await expect(moved).toContainText('You: You chose this.')
+      await expect(moved).toContainText('It took over from')
+      // The new worker on Claude Code was sent the old brief, with the line that the user moved it.
+      await expect.poll(async () => JSON.stringify(await fakeClaudeRecords(join(root, 'claude'))), { timeout: 30_000 })
+        .toMatch(/Review the reconnect fix in src\/net\.ts\.[\s\S]*The user moved this piece to you from GPT-6\.1 Sol/u)
+    })
+  } finally {
+    if (launched) await closeSotto(launched)
+    await restore()
+  }
+})
+
 test('an overseer starts the model it names inside the list, with its reason, and is refused one off it', async () => {
   test.setTimeout(120_000)
   const { profile, project, restore } = await fixture()
@@ -370,10 +452,15 @@ test('the switch, a worker\'s row and the Settings card hold in both themes at e
           const card = page.locator('[data-setting="dynamic-threads"]')
           await card.scrollIntoViewIfNeeded()
           await expect(card, where).toBeVisible()
-          expect(await settingsLayoutProblems(page, 'settings-agents', '.dynamic-threads, .dynamic-threads__provider, .dynamic-threads__your-note, .dynamic-threads__your-note textarea'), where).toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })
-          const low = (await settingsTextContrast(page, 'settings-agents', '.dynamic-threads__lead, .dynamic-threads__note, .dynamic-threads__name, .dynamic-threads__name small, .dynamic-threads__limit, .dynamic-threads__your-note label, .dynamic-threads__your-note textarea')).filter(item => item.text.trim() && item.ratio < 4.5)
+          expect(await settingsLayoutProblems(page, 'settings-agents', '.dynamic-threads, .dynamic-threads__provider, .dynamic-threads__your-note, .dynamic-threads__your-note textarea, .dynamic-threads__record, .dynamic-threads__table'), where).toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })
+          const low = (await settingsTextContrast(page, 'settings-agents', '.dynamic-threads__lead, .dynamic-threads__note, .dynamic-threads__name, .dynamic-threads__name small, .dynamic-threads__limit, .dynamic-threads__your-note label, .dynamic-threads__your-note textarea, .dynamic-threads__record h3, .dynamic-threads__table th, .dynamic-threads__table td')).filter(item => item.text.trim() && item.ratio < 4.5)
           expect(low, where).toEqual([])
           await page.screenshot({ path: join(evidence, `settings-${appearance}-${width}x${height}.png`), animations: 'disabled' })
+          // Its record sits at the foot of the card, with the overseer's one piece on it.
+          const record = page.locator('[data-setting="dynamic-threads-record"]')
+          await record.scrollIntoViewIfNeeded()
+          await expect(record.getByRole('row', { name: /GPT-6\.1 Sol/u }), where).toBeVisible()
+          await page.screenshot({ path: join(evidence, `record-${appearance}-${width}x${height}.png`), animations: 'disabled' })
         }
       }
     })

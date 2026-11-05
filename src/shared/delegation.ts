@@ -242,6 +242,8 @@ export const delegatedViewSchema = z.object({
    * that Highest effort held its effort; the delegation it took over, and that delegation's thread while Sotto still holds it.
    */
   chosen: delegationChoiceSchema.optional(),
+  /** The user gave the piece to this model from the old worker's row (Give it to another model…), so its row says You. */
+  byUser: z.literal(true).optional(),
   why: z.string().max(DYNAMIC_WHY_MAX).optional(),
   effortHeld: z.literal(true).optional(),
   replaces: z.uuid().optional(),
@@ -328,12 +330,25 @@ export const delegationCheckReplyRequestSchema = z.object({ threadId: id, delega
 export type DelegationCheckReplyRequest = z.infer<typeof delegationCheckReplyRequestSchema>
 export const delegationCheckReplySchema = z.object({ delegation: z.uuid(), text: z.string().max(WATCHER_REPLY_BYTES_MAX), truncated: z.boolean() }).strict().nullable()
 export type DelegationCheckReply = z.infer<typeof delegationCheckReplySchema>
+/**
+ * Give it to another model… on a Dynamic thread's worker row (ADR-0191 decision 11): the window names the delegating
+ * thread, the worker's delegation and the model the user chose. Only where the `dynamic-threads` Owl feature is on, for a
+ * thread on this computer. The answer says, in plain words, why nothing was started when nothing was.
+ */
+export const DELEGATION_GIVE = 'sotto:delegations:give'
+export const delegationGiveRequestSchema = z.object({ threadId: id, delegation: z.uuid(), model: z.string().min(1).max(512) }).strict()
+export type DelegationGiveRequest = z.infer<typeof delegationGiveRequestSchema>
+export const delegationGiveResultSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('ok') }).strict(),
+  z.object({ status: z.literal('refused'), message: z.string().min(1).max(600) }).strict()])
+export type DelegationGiveResult = z.infer<typeof delegationGiveResultSchema>
 /** What the main window's preload offers while delegation is on. */
 export interface DelegationsBridge {
   read(request: DelegationsRequest): Promise<DelegationsRead>
   brief(request: DelegationBriefRequest): Promise<DelegationBrief>
   /** A check's reply, on a press: only where Watcher and Work across machines are on, as checks are (#1312). */
   checkReply?(request: DelegationCheckReplyRequest): Promise<DelegationCheckReply>
+  /** Give it to another model… (ADR-0191): only while the `dynamic-threads` Owl feature is on. */
+  give?(request: DelegationGiveRequest): Promise<DelegationGiveResult>
   onChanged(listener: (change: DelegationsChanged) => void): () => void
 }
 
