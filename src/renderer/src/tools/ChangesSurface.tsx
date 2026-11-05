@@ -217,6 +217,11 @@ function ChangesReading({ changes, review, view, store, comments, onCopy, onReve
   // The latest answers, so a press can read them while the list keeps the same handlers and its lines stay memoised.
   const latest = useRef({ changes, store, oneFile })
   latest.current = { changes, store, oneFile }
+  // The file a press asked for. Until it settles at the top it is the file in view, whatever passes on the way there.
+  const held = useRef<string | null>(null)
+  const letGo = useRef<(() => void) | null>(null)
+  useEffect(() => () => letGo.current?.(), [])
+  const noteInView = useCallback((path: string): void => { if (held.current === null) setInView(path) }, [])
   /** Open a file if it was collapsed, bring it to the top of the list, and put focus on its name. */
   const show = useCallback((path: string, instant = false): void => {
     const now = latest.current
@@ -228,13 +233,9 @@ function ChangesReading({ changes, review, view, store, comments, onCopy, onReve
       if (!scroller || !block) return
       // Only the list moves. scrollIntoView would ask every box around it to line the file up too.
       if (!latest.current.oneFile) {
-        scroller.scrollTo({ top: block.offsetTop, behavior: instant || prefersReducedMotion() ? 'auto' : 'smooth' })
-        // Files drawn on the way change height under the scroll, so it can stop short and leave the file before at the
-        // top. Once it stops near the file, it lines the file up again; a reader who scrolled away is left there.
-        scroller.addEventListener('scrollend', () => {
-          const off = block.offsetTop - scroller.scrollTop
-          if (block.isConnected && off !== 0 && Math.abs(off) < scroller.clientHeight / 2) scroller.scrollTo({ top: block.offsetTop, behavior: 'auto' })
-        }, { once: true })
+        letGo.current?.()
+        held.current = path
+        letGo.current = holdAtTop(scroller, block, instant || prefersReducedMotion(), () => { held.current = null; letGo.current = null })
       }
       block.querySelector<HTMLElement>('.changes-file__toggle')?.focus({ preventScroll: true })
     })
@@ -248,12 +249,49 @@ function ChangesReading({ changes, review, view, store, comments, onCopy, onReve
   return <>
     {jumpSlot ? createPortal(<FileJump files={files} current={current} onShow={path => show(path, true)} allFiles={tree ? { open: treeOver, button: allFiles, onPress: () => { if (treeOver) closeTree(); else setTreeOver(true) } } : null} />, jumpSlot) : null}
     <div className="changes-review" data-tree={tree || undefined} data-tree-over={treeOver || undefined}>
-      <ChangesFiles changes={changes} review={review} view={view} store={store} comments={comments} body={list} only={oneFile ? current : null} onInView={setInView} onShow={show}
+      <ChangesFiles changes={changes} review={review} view={view} store={store} comments={comments} body={list} only={oneFile ? current : null} onInView={noteInView} onShow={show}
         onCopy={onCopy} onReveal={onReveal} onOpenFile={onOpenFile} platform={platform} />
       {tree ? <ChangesTree files={files} current={current} over={treeOver} toggleButton={allFiles} onLeave={() => setTreeOver(false)} onClose={closeTree}
         onPick={path => { setTreeOver(false); show(path) }} /> : null}
     </div>
   </>
+}
+
+/** What the reader does to move the list themselves, which ends a hold. */
+const READER_MOVES = ['wheel', 'pointerdown', 'keydown', 'touchstart'] as const
+/** How long a held file stays put, with nothing scrolling or changing height, before the list lets it go. */
+const HOLD_SETTLES_MS = 700
+
+/**
+ * Brings a file to the top of the list and keeps it there while the files above it change height, as their lines are
+ * compared and coloured on the way, so a press never stops short with the file before it at the top. The hold ends
+ * once the file has stayed put, or at once when the reader wheels, presses, types or touches in the list. Returns
+ * what ends it early.
+ */
+function holdAtTop(scroller: HTMLElement, block: HTMLElement, instant: boolean, onDone: () => void): () => void {
+  let timer = 0
+  let moving = !instant
+  const align = (): void => { if (block.isConnected && Math.abs(block.offsetTop - scroller.scrollTop) >= 1) scroller.scrollTop = block.offsetTop }
+  const settle = (): void => { window.clearTimeout(timer); timer = window.setTimeout(done, HOLD_SETTLES_MS) }
+  const ended = (): void => { moving = false; align(); settle() }
+  const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { if (!moving) align(); settle() })
+  function done(): void {
+    window.clearTimeout(timer)
+    observer?.disconnect()
+    for (const type of READER_MOVES) scroller.removeEventListener(type, done)
+    scroller.removeEventListener('scroll', settle)
+    scroller.removeEventListener('scrollend', ended)
+    onDone()
+  }
+  for (const file of scroller.getElementsByClassName('changes-file')) observer?.observe(file)
+  for (const type of READER_MOVES) scroller.addEventListener(type, done, { passive: true })
+  scroller.addEventListener('scroll', settle, { passive: true })
+  scroller.addEventListener('scrollend', ended)
+  scroller.scrollTo({ top: block.offsetTop, behavior: instant ? 'auto' : 'smooth' })
+  // A list already where it was asked to be does not scroll, so nothing will say the scroll ended.
+  if (Math.abs(scroller.scrollTop - block.offsetTop) < 1) moving = false
+  settle()
+  return done
 }
 
 /**

@@ -596,6 +596,13 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     // A press on a file in the tree is the other way to a file, and it must move only the list. The tree stands beside the
     // lines here, so the shot shows it with the file pressed marked; at the panel's own width it waits behind All files.
     await panel.getByRole('listbox', { name: 'Files in this comparison' }).getByRole('option', { name: /storeOverlay\.ts/u }).first().click()
+    // The place says the pressed file at once. The shot waits for the press to end: a smooth scroll this long takes
+    // about two seconds, and a shot at one caught the list on its way, with the file before it at the top.
+    await expect(panel.locator('.changes-jump__place')).toHaveText('10 of 30')
+    await expect.poll(() => panel.locator('.changes-files').evaluate(list => {
+      const block = list.querySelector<HTMLElement>('.changes-file[data-file-path="src/main/agents/storeOverlay.ts"]')
+      return block ? Math.abs(block.offsetTop - list.scrollTop) : -1
+    }), { timeout: 10_000 }).toBeLessThan(1)
     await page.waitForTimeout(1_200)
     const moved = await page.evaluate(() => {
       let most = 0
