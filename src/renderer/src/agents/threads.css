@@ -282,6 +282,19 @@
 .thread-pane[data-questions] > .thread-transcript > .thread-transcript__viewport { --thread-compose-height: 26px; --thread-compose-cover: 0px; margin-bottom: -26px; }
 .thread-pane[data-questions] > .thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap) + var(--thread-compose-height)); }
 .thread-pane .thread-transcript__jump { bottom: calc(var(--thread-jump-gap) + var(--thread-compose-height, 0px)); }
+/* A pane too narrow to give Jump to latest a margin keeps it a lane. Jump stands 18px into the column, so a reply's prose stops
+   short of it, and that costs nothing in a pane wide enough for the 42em line. In a bubble the words stop short by padding; the
+   bubble's edge and the box of a code block or a diff still pass under it. */
+.thread-pane:not(.watcher-pane) .thread-message:not([data-role='user']) .rich-message { --rich-measure: min(42em, calc(100% - 22px)); }
+.thread-pane:not(.watcher-pane) .thread-message:not([data-role='user']) .thread-message__text { max-width: min(42em, calc(100% - 22px)); }
+@container thread-pane (max-width: 871px) {
+  .thread-pane:not(.watcher-pane) .thread-message[data-role='user'] { padding-right: 20px; }
+}
+/* New messages is too wide for that lane, so in a pane that narrow it is the arrow too, with its coloured edge and its name. */
+@container thread-pane (max-width: 800px) {
+  .thread-pane:not(.watcher-pane) .thread-transcript__jump[data-unseen] { padding: 0; }
+  .thread-pane:not(.watcher-pane) .thread-transcript__jump[data-unseen] .thread-transcript__jump-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 /* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
    user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row steps
    away, and the branch toolbar and the row under the card hide but keep their place, so the card's foot never moves

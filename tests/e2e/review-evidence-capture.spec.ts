@@ -390,6 +390,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
   } },
   { name: 'streaming', covers: ['streaming-1', 'streaming-2', 'streaming-3'], run: async capture => {
+    await capture.shoot('reading-new-messages', 'The same at the minimum window, where the button has no margin to stand in.', 'The reply is told to the thread by the fake provider host and taken back afterwards.', { modes: ['dark'], size: [820, 560] })
     const { page } = capture
     await openThread(page, 'Trace a permission request')
     const differs = 'The deltas come from the fake provider host at a steady rate, not a model.'
