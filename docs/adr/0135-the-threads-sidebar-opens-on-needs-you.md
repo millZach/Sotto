@@ -12,6 +12,8 @@ Amended October 29, 2026: an entry no longer draws its ask or answers in place. 
 
 Amended November 5, 2026, by Zach's pick of variant B: Needs you stays as it is, and a waiting thread's row in its folder drops the amber and reads **In Needs you** (below, "November 5, 2026 amendment: said once, in the card").
 
+Amended November 5, 2026, by Zach's pick of variant C of a second prototype: approvals and questions lead on one line each with **Answer** in view, and failed turns rest under them in muted ink (below, "November 5, 2026 amendment: what holds an agent leads").
+
 ## Context
 
 A collapsed project folder said "● 4". The 4 was the folder's thread total; how many of them needed the user, and for what, was a bare 6px dot, with the count only in its tooltip and screen-reader text (`Indicators` in `ThreadSidebar.tsx`). Sighted users were told less than screen-reader users. The dot also lumped three different waits together: a permission, which holds the agent still; a question; and a failed turn nobody had seen, which blocks nothing and can be dismissed. A second count competed with it: the Dismiss all line, which counts unseen failures alone (ADR-0092). To learn anything, the user expanded folders one by one.
@@ -80,3 +82,21 @@ Pointing at an entry lights its row, and pointing at the row lights its entry: t
 **Why.** Amber says that something waits on the user, and it now says so once for each thread, where the card has the room to say what for.
 
 **What it costs.** The folder row no longer says what its thread waits for; the card does. A thread past the card's three still reads **In Needs you** while its entry is folded under **Show all**, so pointing at it lights nothing until the card is unfolded.
+
+## November 5, 2026 amendment: what holds an agent leads
+
+Zach chose this. Reviewers of the design pass found the card tall and loud: each entry took two lines, with its need words in amber and its press in view on every one. On November 5 he tried three answers in the design pass's prototype `sotto-council/prototypes/needs-you-quiet/index.html`, kept outside the repository, each on the real window with two threads waiting and with five: A, the card as it stood; B, one line a thread, amber on its ring only, its kind and wait in muted words that its presses replaced under the pointer or the keys; and C, approvals and questions leading on one line each with **Answer** in view, and failed turns resting under them in muted ink. He picked C. The prototype's stylesheets are Sotto's own at commit `fd7e62643`. The card he turned down earlier the same day, cut to a count and Next, was not offered again.
+
+**What changed.** While the card stands:
+
+- An approval or a question takes one line: its amber status ring, its title, its wait once it has waited a minute or more, and **Answer**, always in view. **Answer** pops the thread's card open as **Open to answer** did, and its name still says which: "Open to answer the approval in *title*", or "the question".
+- A failed turn blocks nothing, so it rests under them in muted ink, its ring an outline in that ink: "Turn failed in *title*". Its **Dismiss** and **Show why** show while the pointer is on its line or the keys are in it, and always on a screen whose pointer cannot hover.
+- Which wait a line is no longer stands in its words. The line's tooltip says it (**Needs your approval**, **Needs your answer**, **Needs attention**), and so does the title's spoken name: "Open *title*, needs your approval", "Open *title*, needs your answer", "Open *title*, its last turn failed". A delegated wait adds where it waits.
+- The heading says "longest wait 26 min" only while an approval or a question has waited a minute or more, and names the longest of them. "oldest just now" is gone, and a failure's wait is not said there. While two or more failures stand, **Dismiss N failed** takes the wait's place in the heading under the pointer or the keys; out of sight it keeps its Tab stop, so the keys reach it.
+- Three approvals and questions stand, then two failed turns, and the rest are counted in the foot: "+ 2 more: 1 approval, 1 failed", with **Show all** and Escape as before. The heading still counts everyone.
+
+The rest of this record holds: blocking first, then oldest; every thread one press away; its folder row reading **In Needs you**; the **Settled** tag; a delegated wait opening its thread; the popped card and its one store; no live region.
+
+**Why.** An agent held still costs the user time and a failed turn does not, and the card now says that by look as well as by order, in about one line a thread.
+
+**What it costs.** On screen an approval and a question look the same: only the tooltip and the spoken name tell them apart, as Zach saw in the prototype. A failed turn's presses are out of sight until the pointer or the keys reach it. With failures waiting the card stands at five lines, not three.

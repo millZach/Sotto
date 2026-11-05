@@ -37,7 +37,7 @@ const sidebar = (): HTMLElement => document.querySelector<HTMLElement>('aside.th
 
 describe('a waiting thread said once, in Needs you (ADR-0135, November 5, 2026)', () => {
   const row = (title: string): HTMLElement => within(document.querySelector<HTMLElement>('.thread-folder')!).getByRole('button', { name: title }).closest('li')!
-  const entry = (title: string): HTMLElement => within(document.querySelector<HTMLElement>('.needs-you')!).getByRole('button', { name: `Open ${title}` }).closest('li')!
+  const entry = (title: string): HTMLElement => within(document.querySelector<HTMLElement>('.needs-you')!).getByRole('button', { name: new RegExp(`^Open ${title}, `) }).closest('li')!
 
   it('rests the row in its folder and has it read In Needs you, with the need kept for a screen reader', () => {
     owl(true)
