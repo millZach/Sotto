@@ -31,6 +31,9 @@
   --rich-code-chip: color-mix(in oklab, var(--tt-text) 9%, transparent);
   /* How wide a line of prose runs: about 90 characters of Figtree. Code and tables keep the column's whole width. */
   --rich-measure: 42em;
+  /* The space after a paragraph, list or quote, and between list items. */
+  --rich-gap: 14px;
+  --rich-item-gap: 5px;
 
   min-width: 0;
   color: var(--rich-text);
@@ -47,7 +50,7 @@
 .rich-message > :is(p, ul, ol, blockquote, .rich-heading) { max-width: var(--rich-measure); }
 
 /* Doubled class beats `.thread-message p`, which keeps pre-wrap for plain text. */
-.rich-message.rich-message p { margin: 0 0 14px; color: inherit; font-size: inherit; line-height: inherit; white-space: normal; overflow-wrap: anywhere; }
+.rich-message.rich-message p { margin: 0 0 var(--rich-gap); color: inherit; font-size: inherit; line-height: inherit; white-space: normal; overflow-wrap: anywhere; }
 .rich-message.rich-message > p:nth-last-child(2) { margin-bottom: 0; }
 
 /* Bold by weight alone: the same ink as the sentence, so emphasis does not flare white. */
@@ -59,15 +62,15 @@
 .rich-heading--2 { font-size: var(--tt-type-lead); }
 .rich-heading--3, .rich-heading--4, .rich-heading--5, .rich-heading--6 { font-size: var(--tt-type-reading); }
 
-.rich-message ul, .rich-message ol { margin: 0 0 14px; padding-left: 22px; }
-.rich-message li { margin: 5px 0; padding-left: 3px; }
+.rich-message ul, .rich-message ol { margin: 0 0 var(--rich-gap); padding-left: 22px; }
+.rich-message li { margin: var(--rich-item-gap) 0; padding-left: 3px; }
 .rich-message li > p { margin: 0; }
 .rich-message li > ul, .rich-message li > ol { margin: 2px 0 4px; }
 .rich-message li::marker { color: var(--rich-muted); }
 .rich-message li:has(> .rich-task) { list-style: none; margin-left: -22px; }
 .rich-task { width: 15px; height: 15px; margin: 0 9px 0 0; vertical-align: -2px; accent-color: var(--tt-primary); }
 
-.rich-message blockquote { margin: 0 0 14px; padding: 2px 0 2px 14px; border-left: 2px solid var(--rich-rule); color: var(--rich-muted); }
+.rich-message blockquote { margin: 0 0 var(--rich-gap); padding: 2px 0 2px 14px; border-left: 2px solid var(--rich-rule); color: var(--rich-muted); }
 .rich-message blockquote > :last-child { margin-bottom: 0; }
 
 .rich-message hr { height: 1px; margin: 20px 0; border: 0; background: var(--rich-rule); }
@@ -107,6 +110,19 @@
 }
 .rich-image-blocked svg { flex: none; color: var(--rich-muted); }
 .rich-image-blocked small { color: var(--rich-muted); font-size: var(--tt-type-caption); }
+
+/* A thread's conversation is read for long stretches at a time, so its replies and the user's messages set a size up from
+   the rest of the window: the lead step, with headings and inline code a step up with them, a shorter line of about 85
+   characters and a little more room between paragraphs. Code blocks, tables and the work lines keep their size, and so do
+   the composer and Watcher's conversation, whose room is the owner's (ADR-0126). */
+.thread-pane:not(.watcher-pane) .thread-message .rich-message { --rich-measure: 38em; --rich-gap: 16px; --rich-item-gap: 6px; font-size: var(--tt-type-lead); }
+.thread-pane:not(.watcher-pane) .thread-message .rich-heading--1 { font-size: var(--tt-type-figure); }
+.thread-pane:not(.watcher-pane) .thread-message .rich-heading--2 { font-size: var(--tt-type-heading); }
+.thread-pane:not(.watcher-pane) .thread-message :is(.rich-heading--3, .rich-heading--4, .rich-heading--5, .rich-heading--6) { font-size: var(--tt-type-lead); }
+.thread-pane:not(.watcher-pane) .thread-message .rich-message :not(pre) > code { font-size: var(--tt-type-body); }
+.thread-pane:not(.watcher-pane) .thread-message .rich-heading--1 > code { font-size: var(--tt-type-heading); }
+.thread-pane:not(.watcher-pane) .thread-message .rich-heading--2 > code { font-size: var(--tt-type-lead); }
+.thread-pane:not(.watcher-pane) .thread-message :is(.rich-heading--3, .rich-heading--4, .rich-heading--5, .rich-heading--6) > code { font-size: var(--tt-type-reading); }
 
 /* Code */
 
