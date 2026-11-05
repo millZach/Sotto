@@ -187,7 +187,12 @@
 
   --tt-text: color-mix(in oklab, color-mix(in oklab, var(--theme-text) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
   --tt-text-2: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
-  --tt-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  /* Secondary text, the times, statuses, labels and metadata read at the caption sizes: the theme's muted role, a quarter
+     of the way to its text, so a 12px time reads clearly and still sits a step under the words it describes. It lifts in
+     proportion, so a theme whose muted text is already near its body text (Glass) moves little. The composer keeps the
+     quieter tier it was drawn in, `--tt-text-quiet`, the muted role 15% of the way, and so does the effort control. */
+  --tt-text-quiet: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 76%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
   /* The prompt's hint (its placeholder): the theme's own Placeholder role, the ink every other field's placeholder takes.
      It was the Muted text role, but a theme can draw its muted text close to its body text (Vellum Night's sits at
      7.7:1 on the composer card, against the body's 12:1), and a hint that bright reads as typed words (Drake, November
@@ -196,8 +201,8 @@
   --tt-text-hint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-hint-boost));
   --tt-text-faint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
   /* What the transcript writes in the muted tier, names, times and folded work, a step nearer the body, because it is read
-     for a long time at small sizes. threads.css sets it as the transcript's muted tier; the composer stays on the tier above. */
-  --tt-transcript-muted: color-mix(in oklab, var(--tt-text-muted) 80%, var(--tt-text));
+     for a long time at small sizes. threads.css sets it as the transcript's muted tier; the composer stays on its quiet tier. */
+  --tt-transcript-muted: color-mix(in oklab, var(--tt-text-quiet) 80%, var(--tt-text));
   /* What the reading surface reads: the theme's own inks and rules, unless a block below softens them. */
   --tt-reading-text: var(--tt-text);
   --tt-reading-text-2: var(--tt-text-2);
@@ -280,7 +285,8 @@
   /* Surfaces that own their palette: the sidebar, toolbars, accent and
      secondary surfaces, and terminals. */
   --tt-sidebar-text: color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-foreground) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
-  --tt-sidebar-text-muted: color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-muted-foreground) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  /* The sidebar's times and statuses lift a quarter of the way to its text, as the window's secondary text does. */
+  --tt-sidebar-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-muted-foreground) 76%, var(--theme-sidebar-foreground)) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
   --tt-sidebar-control: var(--theme-sidebar-control-surface);
   --tt-sidebar-row-hover: var(--theme-sidebar-row-hover);
   --tt-sidebar-row-active: var(--theme-sidebar-row-active);
@@ -388,8 +394,8 @@
      `--tt-effort-text-image` the gradient clipped to it, so a colourway that paints its word as a gradient
      needs no branch in feature CSS. */
   --tt-effort-track: color-mix(in srgb, var(--tt-text) 7%, var(--tt-surface-elevated));
-  --tt-effort-dot: color-mix(in srgb, var(--tt-text-muted) 55%, var(--tt-effort-track));
-  --tt-effort-fill-cool: var(--tt-text-muted);
+  --tt-effort-dot: color-mix(in srgb, var(--tt-text-quiet) 55%, var(--tt-effort-track));
+  --tt-effort-fill-cool: var(--tt-text-quiet);
   --tt-effort-fill-veil: transparent;
   --tt-effort-thumb: var(--tt-text);
   --tt-effort-thumb-edge: color-mix(in srgb, var(--tt-text) 10%, transparent);
@@ -476,7 +482,7 @@
   --tt-shadow-color: rgb(20 24 22 / 18%);
   /* Light: the effort fill tints toward white so it stays a light surface, the thumb is paper with an edge,
      and the tinted word mixes toward the ink so it reads at 4.5:1. */
-  --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-muted) 40%, var(--tt-surface-elevated));
+  --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-quiet) 40%, var(--tt-surface-elevated));
   --tt-effort-fill-veil: color-mix(in srgb, white 38%, transparent);
   --tt-effort-thumb: var(--tt-surface);
   --tt-effort-thumb-edge: var(--tt-border);
@@ -513,12 +519,13 @@
   --tt-reading-code-text: color-mix(in oklab, var(--tt-code-text) 90%, var(--theme-code-background));
 }
 :root[data-theme='dark'][data-theme-id='t3-code'] .app-shell:not(:has(.watcher-room)) { --tt-canvas: oklch(0.13 0.003 75); }
-/* By day the rules a reader's eye follows go a step darker, and so do the sidebar's times. */
+/* By day the rules a reader's eye follows go a step darker. */
 :root[data-theme='light'][data-theme-id='t3-code'] {
   --tt-reading-hairline: color-mix(in srgb, var(--tt-border-faint) 88%, var(--theme-text));
   --tt-reading-field-border: color-mix(in srgb, var(--tt-field-border) 88%, var(--theme-text));
-  --tt-sidebar-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-muted-foreground) 85%, var(--theme-sidebar-foreground)) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
 }
+/* The composer keeps exactly the inks it had: its secondary text stays on the quiet tier, and so do the menus it opens. */
+.thread-prompt, .thread-followups, .followup-editor, .composer-picker, .screenshot-input, .thread-options-notices { --tt-text-muted: var(--tt-text-quiet); }
 /* The reading surface: a thread's transcript, and not Watcher's conversation. */
 .thread-pane:not(.watcher-pane) .thread-transcript {
   --tt-text: var(--tt-reading-text);

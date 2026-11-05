@@ -187,11 +187,13 @@ describe('Omarchy M3 and readability check', () => {
     // took its red and amber inks, `--tt-ink-red` and `--tt-ink-amber`, from the theme's error and warning colours at full
     // strength (November 1, 2026), and when that hint moved to the theme's Placeholder role (November 2, 2026); none of
     // them changes a palette, and when the desktop's Sotto halves got their softer room and reading inks and the transcript its
-    // muted tier (ADR-0024, November 4, 2026 amendment), which leaves the palettes as they were.
+    // muted tier (ADR-0024, November 4, 2026 amendment), which leaves the palettes as they were, and when secondary text and
+    // the sidebar's times lifted a quarter of the way to the text with the composer kept on its quiet tier (November 4,
+    // 2026), which derives tokens from the same roles.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('f5d03a2e048435fa1a28889a5c68e8a0fd402edf2f3f46a7a18ee7e1a88af2f3')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('920bd0cb4e149f1cdf93b7783700859edbf7d6ff5d57daaf7aad792996f3052f')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })
