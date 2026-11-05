@@ -348,15 +348,13 @@
 .thread-nav[data-resizing] { user-select: none; }
 .thread-nav__rail { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding-top: 12px; }
 .thread-nav--mac .thread-nav__rail { padding-top: 44px; }
-/* The rail is 52px, so a scrollbar in it pushed the tiles off its centre and cut the trays' edges. It scrolls with no bar,
-   and says there is more as the thread list does: a short band of the sidebar ending in a hairline at the edge there is
-   more beyond, and only space at the list's own ends. */
-.thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; container-type: scroll-state; }
-.thread-nav__rail-list::before, .thread-nav__rail-list::after { content: ''; position: sticky; z-index: 2; display: block; height: 4px; border: 0 solid transparent; background: var(--threads-sidebar); pointer-events: none; }
-.thread-nav__rail-list::before { top: 0; border-bottom-width: 1px; }
-.thread-nav__rail-list::after { bottom: 0; border-top-width: 1px; }
-@container scroll-state(scrollable: top) { .thread-nav__rail-list::before { border-bottom-color: var(--tt-hairline); } }
-@container scroll-state(scrollable: bottom) { .thread-nav__rail-list::after { border-top-color: var(--tt-hairline); } }
+/* The rail is 52px, so a scrollbar in it pushed the tiles off its centre and cut the trays' edges. It scrolls with no bar.
+   A short band of the sidebar stands at each edge, with no line: the rail has no hairlines (ADR-0146, October 28), so a
+   tile going under the band fades out whole, and that is what says there is more. */
+.thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; }
+.thread-nav__rail-list::before, .thread-nav__rail-list::after { content: ''; position: sticky; z-index: 2; display: block; height: 4px; background: var(--threads-sidebar); pointer-events: none; }
+.thread-nav__rail-list::before { top: 0; }
+.thread-nav__rail-list::after { bottom: 0; }
 /* A tile the band would cut through its letters fades out whole, as a row of the list does, unless the keys are on it. */
 @supports (animation-timeline: view()) {
   .thread-nav__rail-list .thread-nav__rail-thread:not(:focus-visible) { animation: thread-nav-edge linear both; animation-timeline: view(block 5px); animation-range: cover; }
