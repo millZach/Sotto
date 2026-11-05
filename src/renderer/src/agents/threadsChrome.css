@@ -29,6 +29,9 @@
 /* Linux keeps the title area but has no buttons to reserve room for. */
 [data-platform='linux'] .threads-view { --threads-winctl-inset: var(--main-freeze-room, 0px); }
 .threads-view[data-tools='docked'] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
+/* Beside an open panel the pane is away from the window's corner, so its header ends 12px from the panel as a split pane's
+   does from its divider, rather than keeping the 24px that parts it from the window's buttons. The 12px go to the name. */
+.threads-view[data-tools='docked'] .thread-pane[data-under-controls] > .thread-workspace__head { padding-right: 12px; }
 
 /* Before agent state arrives, and for as long as an agent error stands, the page is one sentence. It is still a
    window that has to move, and one that needs a way to Settings. */
