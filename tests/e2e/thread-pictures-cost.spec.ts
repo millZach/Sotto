@@ -723,11 +723,28 @@ async function sweepRun(tiles: number, run: number, profiled = false): Promise<R
 }
 
 /** The app started with Node's inspector on main and nothing on the window, and how to ask main and the window things. */
-async function launchUndriven(profile: string, owl: boolean) {
+/**
+ * Main's inspector sometimes answers before main can reach Electron, and now and then never does on a loaded machine, so
+ * a launch that cannot reach the window is stopped and made again, up to three times.
+ */
+async function launchUndriven(profile: string, owl: boolean): Promise<Awaited<ReturnType<typeof launchUndrivenOnce>>> {
+  for (let attempt = 1; ; attempt++) {
+    const started: { child?: ReturnType<typeof spawn> } = {}
+    try { return await launchUndrivenOnce(profile, owl, started) } catch (error) {
+      started.child?.kill('SIGKILL')
+      if (attempt === 3) throw error
+      console.log(`undriven launch ${attempt} failed, launching again: ${String(error).slice(0, 300)}`)
+      await sleep(3_000)
+    }
+  }
+}
+
+async function launchUndrivenOnce(profile: string, owl: boolean, started: { child?: ReturnType<typeof spawn> }) {
   process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = join(profile, 'native-fixture')
   process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
   process.env.SOTTO_OWL_FEATURES = `inline-media=${owl ? 1 : 0}`
   const child = spawn(createRequire(resolve('package.json'))('electron') as unknown as string, ['--inspect=0', 'out/main/index.js'], { env: e2eEnvironment('success', profile), stdio: ['ignore', 'ignore', 'pipe'] })
+  started.child = child
   const url = await new Promise<string>((done, fail) => {
     let seen = ''
     child.stderr.on('data', (part: Buffer) => { seen += String(part); const found = /ws:\/\/\S+/u.exec(seen); if (found) done(found[0]) })
