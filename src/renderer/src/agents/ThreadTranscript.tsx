@@ -318,8 +318,13 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  */
 /** The model overseeing the thread drawn, where it is a Dynamic thread (ADR-0191): its replies carry a mark if it changed files itself. */
 const OverseenContext = createContext<string | undefined>(undefined)
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity }: {
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity, named = true }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
+  /**
+   * Whether its name and time head the reply. A thread's replies are all its provider's, so only the first one drawn says
+   * whose they are; the rest keep the name and time for assistive tech and show them beside Copy on hover or focus.
+   */
+  readonly named?: boolean | undefined
   readonly threadId: string | undefined
   /** Watcher's conversation names its replies Watcher, with the owl, whatever provider it runs on. */
   readonly speaker?: 'watcher' | undefined
@@ -375,7 +380,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
   <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={placeRow}
-    data-not-carried={fork?.after.has(message.id) || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
+    data-not-carried={fork?.after.has(message.id) || undefined} data-named={named ? undefined : 'no'} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>{t({ message: 'delegated', comment: 'Follows the name of the thread that sent this brief: that thread delegated it.' })}</span></>
       : <span className="thread-message__who">{message.role === 'user' ? t({ message: 'You', comment: 'Who wrote a message: the user.' }) : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : t({ message: 'System', comment: 'Who wrote a message: the system.' })}</span>}
@@ -409,8 +414,10 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, namedReply }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
+  /** The one reply in the list that is headed by the provider's name and time; undefined heads every reply. */
+  readonly namedReply?: string | undefined
   /** The thread is working on the newest turn drawn, so that turn, when `last`, keeps the live layout. */
   readonly running: boolean
   readonly writing: string | undefined
@@ -438,6 +445,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     ? <VisualCard visual={message.visual} threadId={threadId} />
     : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
       delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId}
+      named={namedReply === undefined || message.role !== 'assistant' || isWakeUpMessage(message) || message.id === namedReply}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
@@ -617,6 +625,10 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const writing = live && !sending && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
+  // Every reply here is the provider's, so its name heads only the first one drawn. Watcher's conversation keeps its own.
+  // The search stops at the first reply, which is near the start of what is drawn.
+  const namedReply = useMemo(() => speaker === 'watcher' ? undefined
+    : messages.find(message => message.role === 'assistant' && drawn(message) && !isVisualMessage(message) && !isWakeUpMessage(message))?.id, [messages, speaker])
   const movedAfter = modelMoved ? turnBefore(turns, modelMoved.at) : undefined
   const movedLine = modelMoved ? <ModelMovedLine moved={modelMoved} provider={provider} /> : null
   return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
@@ -625,7 +637,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} namedReply={namedReply} />
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />

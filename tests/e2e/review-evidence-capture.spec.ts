@@ -363,7 +363,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
-  { name: 'reading', covers: ['reading-copy', 'reading-scrubber', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
+  { name: 'reading', covers: ['reading-copy', 'reading-reply-copy', 'reading-scrubber', 'reading-jump-focus', 'reading-new-messages', 'reading-clay', 'reading-glass'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Split AgentControl')
     await scrollTranscript(page, 'middle')
@@ -380,6 +380,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await capture.shoot('reading-copy', copyShows, '', { modes: ['dark'], size })
     }
     await resizeContentWindowFor(capture.launched, 1600, 1000)
+    // A reply after the first is headed by nothing; its name and time show beside its copy control.
+    const reply = transcript(page).locator('.thread-message[data-role="assistant"][data-named="no"]').filter({ hasText: 'threadTitles' }).first()
+    await reply.locator('.thread-message__copy').focus()
+    await reply.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    await capture.shoot('reading-reply-copy', 'The keyboard on the copy control of a reply after the first one, with its name and time beside it.')
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const lane = pane.locator('.message-scrubber')
     if (await lane.count()) {

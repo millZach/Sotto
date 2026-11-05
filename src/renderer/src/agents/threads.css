@@ -201,6 +201,12 @@
 .thread-message[data-role='user'] .thread-message__copy { bottom: 6px; left: 9px; }
 .thread-message[data-role='user']:has(> .thread-message__copy) { margin-bottom: 28px; padding-bottom: 36px; }
 .thread-message:hover .thread-message__copy, .thread-message:focus-within .thread-message__copy, .thread-message__copy[data-copied], .thread-message__copy[aria-expanded='true'] { opacity: 1; }
+/* A thread's replies are all its provider's, so the name and time head only the first one. On the rest they wait beside
+   Copy, in the room it already keeps, and show with it on hover or focus. Assistive tech still reads them first. While
+   Copy says what it did, they make way for its words. */
+.thread-message[data-named='no'] > header { position: absolute; bottom: 0; left: 34px; height: 28px; margin: 0; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.thread-message[data-named='no']:has(> .thread-message__copy):is(:hover, :focus-within) > header { opacity: 1; }
+.thread-message[data-named='no']:has(> .thread-message__copy:is([data-copied], [aria-expanded='true'])) > header { opacity: 0; }
 .thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .thread-message__text { max-width: 42em; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: var(--tt-type-reading); }
 /* The user's message is as wide as what they wrote, against the column's right edge, every corner the same. */
@@ -516,8 +522,8 @@
 
 /* The copy control's reveal and check pop are motion; reduced motion keeps them instant. */
 @media (prefers-reduced-motion: reduce) {
-  .thread-message__copy { transition: none; }
+  .thread-message__copy, .thread-message[data-named='no'] > header { transition: none; }
   .thread-message__copy[data-copied] svg { animation: none; }
 }
-:root[data-reduced-motion='on'] .thread-message__copy { transition: none; }
+:root[data-reduced-motion='on'] .thread-message__copy, :root[data-reduced-motion='on'] .thread-message[data-named='no'] > header { transition: none; }
 :root[data-reduced-motion='on'] .thread-message__copy[data-copied] svg { animation: none; }

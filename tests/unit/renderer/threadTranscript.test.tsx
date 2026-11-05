@@ -63,6 +63,20 @@ describe('message copy control', () => {
     }
   })
 
+  it('heads only the first reply with the provider and time, and keeps the rest for assistive tech', () => {
+    const turns: AgentMessage[] = [
+      { id: 'u1', role: 'user', text: 'One?', createdAt: at },
+      { id: 'r1', role: 'assistant', text: 'First.', createdAt: at },
+      { id: 'u2', role: 'user', text: 'Two?', createdAt: at },
+      { id: 'r2', role: 'assistant', text: 'Second.', createdAt: at },
+    ]
+    render(<MessageList messages={turns} provider="Codex" running={false} placement={placeActivities(turns, turns, [])} context={{ ...context, running: false }} />)
+    const articles = [...document.querySelectorAll<HTMLElement>('.thread-message')]
+    expect(articles.map(article => article.dataset.named ?? 'yes')).toEqual(['yes', 'yes', 'yes', 'no'])
+    // The quiet reply still says who wrote it and when, in its header, ahead of its words.
+    expect(articles[3]!.querySelector('header')).toHaveTextContent(`Codex${clockLabel(Date.parse(at))}`)
+  })
+
   it('copies the source Markdown on press and confirms for a moment', async () => {
     vi.useFakeTimers()
     const writeText = stubClipboard()
