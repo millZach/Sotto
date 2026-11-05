@@ -34,6 +34,16 @@ export function hangingIndent(text: string): CSSProperties | undefined {
   return columns === 0 ? undefined : { '--changes-indent': `${columns}ch` } as CSSProperties
 }
 
+/**
+ * How wide a diff's line numbers run: as many digits as its last number has, two at least, so a short file's lines
+ * start close to the edge and a long file's numbers still line up.
+ */
+export function numberWidth(lines: readonly DiffLine[]): CSSProperties {
+  let last = 0
+  for (const line of lines) last = Math.max(last, line.oldLine ?? 0, line.newLine ?? 0)
+  return { '--changes-digits': `${Math.max(2, String(last).length)}ch` } as CSSProperties
+}
+
 /** A run of code this short never breaks inside: a wrap goes at the space before it. A longer run can be wider than a wrapped line. */
 const KEPT_RUN = 16
 /** Where a browser would break inside a run of code a reader reads as one word, such as `'history-off'` or `a/b`. */
@@ -236,6 +246,7 @@ export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly
     return { additions: shownLineCount(added), deletions: shownLineCount(removed) }
   }, [lines])
   const numbers = lines.some(line => line.oldLine !== null || line.newLine !== null)
+  const digits = useMemo(() => numberWidth(lines), [lines])
   const copied = outcome === 'copied'
   const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
   const copy = (): void => { if (!cut) void writeClipboard(diff).then(() => showOutcome('copied'), () => showOutcome('failed')) }
@@ -252,7 +263,7 @@ export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly
         {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
       </button>
     </div>
-    <div className="changes-diff__rows" data-reading={reading} data-numbers={numbers ? 'one' : 'none'} data-whole={wholeSide(lines)}>
+    <div className="changes-diff__rows" data-reading={reading} data-numbers={numbers ? undefined : 'none'} data-whole={wholeSide(lines)} style={numbers ? digits : undefined}>
       {rows.map(([index, partner]) => partner === undefined ? <Line key={index} line={shown[index]!} decoration={decoration} numbers={numbers} code={reading === 'code'} />
         : <EditedLine key={index} before={shown[index]!} after={shown[partner]!} segments={decoration.inline.get(shown[index]!)!} decoration={decoration} numbers={numbers} />)}
       {cut ? <div className="changes-block__cut activity-body__cut">{cut.line}</div> : null}

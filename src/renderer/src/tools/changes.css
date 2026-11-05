@@ -171,13 +171,15 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-diff__body { container-type: inline-size; overflow-x: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-diff__rows { padding: 4px 0 8px; font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.7; }
 .changes-files:not([data-wrap]) .changes-diff__rows { width: max-content; min-width: 100%; }
-.changes-line { display: grid; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 16px; color: var(--tt-code-text); }
-.changes-diff__rows[data-numbers='one'] .changes-line { grid-template-columns: 4ch 1ch minmax(0, 1fr); }
+/* Every line has one number, the line's place now or, for a removed line, where it was, as wide as the file's
+   longest (numberWidth in DiffBlock.tsx): the sign says which, and the width goes to the code. A line's parts sit on
+   its first baseline, so a number stands level with its line whatever their sizes. */
+.changes-diff__rows { --changes-number-pad: 8px; --changes-number: calc(var(--changes-digits, 4ch) + var(--changes-number-pad)); }
+.changes-line { display: grid; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); align-items: baseline; column-gap: 5px; padding-right: 16px; color: var(--tt-code-text); }
 .changes-diff__rows[data-numbers='none'] .changes-line { grid-template-columns: 1ch minmax(0, 1fr); padding-left: 8px; }
-.changes-files:not([data-wrap]) .changes-diff__rows .changes-line { grid-template-columns: 4ch 4ch 1ch max-content; }
-.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line { grid-template-columns: 4ch 1ch max-content; }
+.changes-files:not([data-wrap]) .changes-diff__rows .changes-line { grid-template-columns: var(--changes-number) 1ch max-content; }
 .changes-line__number { color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
-.changes-line__number:first-child { padding-left: 8px; box-sizing: content-box; }
+.changes-line__number:first-child { padding-left: var(--changes-number-pad); box-sizing: content-box; }
 .changes-line__sign { color: var(--tt-text-muted); font-family: var(--tt-font-mono); user-select: none; }
 .changes-line__text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 /* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
@@ -231,8 +233,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .changes-line[data-kind='hunk'] .changes-line__text { display: flex; gap: 10px; min-width: 0; overflow: hidden; white-space: nowrap; }
-.changes-files:not([data-wrap]) .changes-diff__rows .changes-line[data-kind='hunk'] { position: sticky; left: 0; width: 100cqw; box-sizing: border-box; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); }
-.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line[data-kind='hunk'] { grid-template-columns: 4ch 1ch minmax(0, 1fr); }
+.changes-files:not([data-wrap]) .changes-diff__rows .changes-line[data-kind='hunk'] { position: sticky; left: 0; width: 100cqw; box-sizing: border-box; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); }
 .changes-hunk__line { flex: none; font-variant-numeric: tabular-nums; }
 .changes-hunk__section { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
@@ -293,7 +294,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 @container tools-body (max-width: 479px) {
   .changes-diff__rows[data-reading='document'] { font-size: var(--tt-type-small); line-height: calc(var(--tt-type-small) * 1.55); }
   .changes-diff__rows[data-reading='document'] .changes-line { column-gap: 4px; padding-right: 10px; }
-  .changes-diff__rows .changes-line__number:first-child { padding-left: 4px; }
+  .changes-diff__rows { --changes-number-pad: 4px; }
   .changes-file__head { min-height: 32px; }
   .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-code { font-size: var(--tt-type-caption); }
 }
@@ -318,12 +319,11 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-diff__rows[data-layout='split'] > .changes-line { grid-column: 1 / -1; }
 /* A split row is a real box on the file's grid, so it can take focus and a selection while its cells stay aligned. */
 .changes-split__row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
-.changes-split__cell { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); column-gap: 5px; min-width: 0; padding-right: 8px; color: var(--tt-code-text); }
-.changes-files:not([data-wrap]) .changes-diff__rows .changes-split__cell { grid-template-columns: 4ch 1ch max-content; }
+.changes-split__cell { display: grid; grid-template-columns: var(--changes-number) 1ch minmax(0, 1fr); align-items: baseline; column-gap: 5px; min-width: 0; padding-right: 8px; color: var(--tt-code-text); }
+.changes-files:not([data-wrap]) .changes-diff__rows .changes-split__cell { grid-template-columns: var(--changes-number) 1ch max-content; }
 .changes-split__row > .changes-split__cell:first-child { border-right: 1px solid var(--tt-hairline); }
 @container tools-body (max-width: 479px) {
-  .changes-split__cell { grid-template-columns: 3ch 1ch minmax(0, 1fr); column-gap: 3px; }
-  .changes-files:not([data-wrap]) .changes-diff__rows .changes-split__cell { grid-template-columns: 3ch 1ch max-content; }
+  .changes-split__cell { column-gap: 3px; }
 }
 
 /* Review comments (#270): lines are picked like T3's, a comment is written under them and stays marked there until

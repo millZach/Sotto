@@ -10,7 +10,7 @@ import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, u
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { decorateDiff, fileLines, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
-import { EDITED_SIGN, EditedText, HunkHeading, hangingIndent, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
+import { EDITED_SIGN, EditedText, HunkHeading, hangingIndent, numberWidth, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { ChangesViewMenu } from './ChangesViewMenu'
 import { revealLabel } from './FilePreview'
@@ -578,6 +578,7 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   const grid = useRef<HTMLDivElement>(null)
   const patch = file.content.kind === 'text' ? file.content.patch : ''
   const lines = useMemo(() => fileLines(patch), [patch])
+  const digits = useMemo(() => numberWidth(lines), [lines])
   const shown = useMemo(() => all ? lines : lines.slice(0, DIFF_ROW_LIMIT), [all, lines])
   const near = useNearView(grid)
   const isDocument = isDocumentPath(file.path)
@@ -694,13 +695,13 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
 
   return <div className="changes-diff__body">
     {split ? <div className="changes-split__head" aria-hidden="true"><span>{labels[0]}</span><span>{labels[1]}</span></div> : null}
-    <div ref={grid} className="changes-diff__rows" data-layout={split ? 'split' : 'unified'} data-reading={isDocument ? 'document' : 'code'} data-numbers={isDocument ? 'one' : undefined} data-whole={wholeSide(lines)} role="grid" aria-multiselectable="true" aria-label={t({ message: `Lines of ${path}`, comment: '{path} is a file\'s path.' })}
+    <div ref={grid} className="changes-diff__rows" data-layout={split ? 'split' : 'unified'} data-reading={isDocument ? 'document' : 'code'} data-whole={wholeSide(lines)} style={digits} role="grid" aria-multiselectable="true" aria-label={t({ message: `Lines of ${path}`, comment: '{path} is a file\'s path.' })}
       onMouseDown={event => { if (event.shiftKey && rowOf(event.target)) event.preventDefault() }} onClick={onClick} onKeyDown={onKeyDown}>
       {rows.map(row => {
         // The draft's own lines stay marked while it is open, and a new pick shows beside them.
         const selected = row.position !== null && (row.position >= from && row.position <= to || draft !== null && draftRows.has(row.key))
         return <Fragment key={row.key}>
-          <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} decoration={decoration} oneNumber={isDocument} split={split} />
+          <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} decoration={decoration} code={!isDocument} split={split} />
           {selection && !pickIsDraft && row.position === to ? <CommentPill label={reviewLabel({ path: file.path, lines: quotedLines(shown, selectable, from, to) })} full={review.full}
             waiting={review.drafting} onPress={() => commentOn(to)} /> : null}
           {markers.get(row.key)?.map(({ comment, place }) => <CommentMarker key={comment.id} comment={comment} note={MARKER_NOTE[place] ? i18n._(MARKER_NOTE[place]!) : null}
@@ -722,16 +723,14 @@ const commentTitle = (number: number | null | undefined, words: I18n): string | 
  * One row. Rows carry the file and both line numbers as data; a row a comment can cover is also a grid row the
  * keyboard reaches, with its place among them and what a screen reader hears for it.
  */
-const DiffRowView = memo(function DiffRowView({ row, path, selected, current, noted, decoration, oneNumber, split }: {
+const DiffRowView = memo(function DiffRowView({ row, path, selected, current, noted, decoration, code, split }: {
   readonly row: DiffRow; readonly path: string; readonly selected: boolean; readonly current: boolean; readonly noted: boolean
   readonly decoration: DiffDecoration | null
-  /** A document gives its lines one number, for more room for its words. */
-  readonly oneNumber: boolean
+  /** Code breaks its wrapped lines by codeBreaks; a document is words. */
+  readonly code: boolean
   readonly split: boolean
 }): ReactNode {
   const { i18n } = useLingui()
-  // A document is words; only code breaks its wrapped lines by codeBreaks.
-  const code = !oneNumber
   const pickable = row.position !== null ? {
     'data-position': row.position, tabIndex: current ? 0 : -1, 'aria-selected': selected, 'aria-label': rowLabel(row), 'data-noted': noted || undefined,
   } : {}
@@ -740,10 +739,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     const number = line.newLine ?? line.oldLine
     const paint = decoration?.paint.get(line)
     return <div className="changes-line" role="row" data-kind={line.kind} data-paired={paint?.paired} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
-      {oneNumber ? <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span> : <>
-        <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.oldLine ?? number, i18n) : undefined}>{line.oldLine ?? ''}</span>
-        <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.newLine ?? number, i18n) : undefined}>{line.newLine ?? ''}</span>
-      </>}
+      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
       <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
     </div>
