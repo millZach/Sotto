@@ -307,7 +307,7 @@ describe('Changes as T3’s diff', () => {
     expect(totals.title).toBe('2,957 lines added, 1,230 removed')
     expect(panel().querySelector('.changes-whitespace')).toBeNull()
     await pressView(user, 'Hide whitespace changes')
-    expect(panel().querySelector('.changes-whitespace--chrome')).toHaveTextContent('whitespace hidden')
+    expect(panel().querySelector('.changes-whitespace--chrome')).toHaveTextContent('without whitespace')
     expect(panel().querySelector<HTMLElement>('.changes-counts--chrome')!.title).toBe('2,957 lines added, 1,230 removed, not counting whitespace changes.')
     await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
     await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--chrome')!.title).toContain('not counting whitespace changes. GitHub counts those too, so a pull request\'s numbers can be higher.'))

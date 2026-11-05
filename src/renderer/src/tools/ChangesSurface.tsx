@@ -173,11 +173,14 @@ function Totals({ additions, deletions, place, hidesWhitespace, againstGitHub }:
   </span>
 }
 
-/** Says beside the totals what they leave out: the words the view's own row turns on, in sight when that menu is shut. */
+/**
+ * Says beside the totals what they leave out, so a branch's totals reading lower than its pull request's has its reason
+ * in sight: Hide whitespace changes leaves whitespace-only lines out of the counts as well as the lines.
+ */
 function WhitespaceNote({ place }: { readonly place: 'chrome' }): ReactNode {
   const { t } = useLingui()
   // The totals' own words already say it to a screen reader.
-  return <span className={`changes-whitespace changes-whitespace--${place}`} aria-hidden="true">{t({ message: 'whitespace hidden', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on.' })}</span>
+  return <span className={`changes-whitespace changes-whitespace--${place}`} aria-hidden="true">{t({ message: 'without whitespace', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.' })}</span>
 }
 
 function turnWhen(createdAt: string): string {
