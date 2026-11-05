@@ -78,6 +78,24 @@ import UIKit
         await quiet()
         if kind == "look" { return await look() }
         if kind == "place" { return await place() }
+        if kind == "scroll" {
+            next("list-scroll")
+            scrolled(await scroll(up: false))
+            await quiet()
+            next("open")
+            mark("open-begin")
+            model?.alertOpened = long
+            guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
+            await quiet()
+            next("back")
+            guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+            guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+            await quiet()
+            next("list-scroll-2")
+            scrolled(await scroll(up: false))
+            await quiet()
+            return finish(nil)
+        }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")

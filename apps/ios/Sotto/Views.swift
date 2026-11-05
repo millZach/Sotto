@@ -788,8 +788,20 @@ struct ThreadListSections: View, Equatable {
                                       row: @escaping (HostedThread) -> ThreadListRow) -> some View {
         if !rows.isEmpty {
             ThreadListHeading(title: title, count: rows.count, id: id)
-            if !typeSize.isAccessibilitySize && !Self.benchWholeList && Words.agoDrawsInFigtree && rows.allSatisfy({ row($0).standsOneHeight }) {
-                LazyVStack(alignment: .leading, spacing: 0) { ForEach(rows) { row($0).equatable() } }
+            if !typeSize.isAccessibilitySize && !Self.benchWholeList && Self.variant != "whole" && Words.agoDrawsInFigtree && rows.allSatisfy({ row($0).standsOneHeight }) {
+                Group {
+                    if Self.variant == "chunks" || Self.variant == "chunksfixed" {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(stride(from: 0, to: rows.count, by: 20)), id: \.self) { start in
+                                let chunk = Array(rows[start..<min(start + 20, rows.count)])
+                                LazyVStack(alignment: .leading, spacing: 0) { ForEach(chunk) { variantRow(row($0)) } }
+                                    .frame(height: rowHeight.map { CGFloat(chunk.count) * $0 }, alignment: .top)
+                            }
+                        }
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 0) { ForEach(rows) { variantRow(row($0)) } }
+                    }
+                }
                     .frame(height: rowHeight.map { CGFloat(rows.count) * $0 }, alignment: .top)
                     .background(alignment: .top) {
                         row(rows[0]).equatable()
@@ -801,6 +813,23 @@ struct ThreadListSections: View, Equatable {
             } else {
                 ForEach(rows) { row($0).equatable() }
             }
+        }
+    }
+    /// Scratch only: which list the variant run measures (`--bench-list <name>`).
+    static let variant: String = {
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--bench-list"), arguments.indices.contains(index + 1) { return arguments[index + 1] }
+        return "lazy"
+    }()
+    @ViewBuilder private func variantRow(_ made: ThreadListRow) -> some View {
+        switch Self.variant {
+        case "fixed", "chunksfixed":
+            made.equatable().frame(height: rowHeight)
+        case "plain":
+            Text(verbatim: made.row.thread.title).font(.sotto(.body, .semibold)).lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: rowHeight ?? 52, maxHeight: rowHeight ?? 52, alignment: .leading)
+        default:
+            made.equatable()
         }
     }
     /// The benchmarks' list with every row made at once, to hold the lazy one to (`Bench.swift`'s `place`).
