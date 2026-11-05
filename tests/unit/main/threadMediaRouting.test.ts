@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * A window reads an agent's picture by its handle (ADR-0170): the router asks the host that runs the thread for the whole
- * picture and makes the tile's thumbnail itself, keeping the newest ones; the IPC answers only the main window.
+ * picture and makes the tile's thumbnail itself, keeping them up to a budget in bytes; the IPC answers only the main window.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ipcRegistry, trustedIpcSender } from '../../fixtures/ipcHarness'
@@ -13,6 +13,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fix
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
+import { KeptThumbnails, MEDIA_TILE_KEEP_BYTES } from '../../../src/main/agents/mediaThumbnail'
 
 const REMOTE = '22222222-2222-4222-8222-222222222222'
 const WHOLE = 'data:image/png;base64,AAAA'
@@ -48,6 +49,39 @@ describe('reading an agent\'s picture from the window', () => {
     // The viewer reads the whole picture, with no thumbnail.
     await expect(router.threadMedia({ ...tile, size: 'full' })).resolves.toEqual({ dataUrl: WHOLE })
     expect(thumbnail).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps every thumbnail of a long thread, so a second trip through it reads and decodes nothing', async () => {
+    const host = remoteHost()
+    // About the size of a 416x260 thumbnail of a screenshot.
+    const thumbnail = vi.fn(() => `data:image/jpeg;base64,${'B'.repeat(37_000)}`)
+    const router = new DesktopHostRouter(emptyDesktopState, { mediaThumbnail: thumbnail })
+    router.add(host.connection)
+    const threadId = hostEntityKey(REMOTE, 'thread')
+    // 361 pictures, the longest thread measured (docs/perf/2026-11-04-thread-pictures-cost.md), up and back twice.
+    const tiles = Array.from({ length: 361 }, (_, index) => ({ threadId, activityId: `step-${index}`, mediaId: 'm0', size: 'tile' as const }))
+    for (const trip of [tiles, [...tiles].reverse(), tiles]) for (const tile of trip) await router.threadMedia(tile)
+    expect(host.media).toHaveBeenCalledTimes(361)
+    expect(thumbnail).toHaveBeenCalledTimes(361)
+  })
+
+  it('holds thumbnails to a budget in bytes, letting the one read longest ago go first', () => {
+    const kept = new KeptThumbnails(100)
+    for (const key of ['a', 'b', 'c']) kept.set(key, 'x'.repeat(30))
+    expect(kept.get('a')).toBeDefined()
+    kept.set('d', 'x'.repeat(30))
+    // 'b' was read longest ago once 'a' was read again.
+    expect([kept.get('a'), kept.get('b'), kept.get('c'), kept.get('d')].map(Boolean)).toEqual([true, false, true, true])
+    expect(kept.bytes).toBe(90)
+    kept.set('e', 'x'.repeat(101))
+    expect(kept.get('e')).toBeUndefined()
+    expect(kept.bytes).toBeLessThanOrEqual(100)
+    // However many are made, what is kept stays within its budget.
+    const real = new KeptThumbnails()
+    for (let index = 0; index < 2_000; index++) real.set(String(index), 'x'.repeat(50_000))
+    expect(real.bytes).toBeLessThanOrEqual(MEDIA_TILE_KEEP_BYTES)
+    expect(real.get('1999')).toBeDefined()
+    expect(real.get('0')).toBeUndefined()
   })
 
   it('reads nothing while the Owl feature is off, or when the host keeps no such picture', async () => {

@@ -1,3 +1,4 @@
+import { KeptThumbnails } from '../agents/mediaThumbnail'
 import { t } from '@lingui/core/macro'
 import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { StopLeft } from '../agents/delegationRelayHost'
@@ -1294,12 +1295,12 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     return connection.preview({ ...request, threadId: id! })
   }
-  /** The thumbnails this window asked for most recently, so a tile scrolled back into view is not read again (ADR-0170). */
-  private readonly mediaTiles = new Map<string, string>()
+  /** The thumbnails made for this window, so a tile scrolled back into view is neither read nor decoded again (ADR-0170). */
+  private readonly mediaTiles = new KeptThumbnails()
   /**
    * One picture a thread's record names (ADR-0170), from the host that runs the thread: whole for the viewer, or at tile
    * size for a tile. The thumbnail is made here, so the window never decodes a whole picture to draw a tile, and a headless
-   * host needs no image library. The newest 120 are kept; a picture is only ever read when a tile or the viewer asks.
+   * host needs no image library. Thumbnails are kept up to `MEDIA_TILE_KEEP_BYTES`; a picture is only ever read when a tile or the viewer asks.
    */
   async threadMedia(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult> {
     const thumbnail = this.options.mediaThumbnail
@@ -1307,7 +1308,7 @@ export class DesktopHostRouter {
     const key = JSON.stringify([request.threadId, request.activityId, request.mediaId])
     if (request.size === 'tile') {
       const kept = this.mediaTiles.get(key)
-      if (kept !== undefined) { this.mediaTiles.delete(key); this.mediaTiles.set(key, kept); return { dataUrl: kept } }
+      if (kept !== undefined) return { dataUrl: kept }
     }
     const { connection, id } = this.target(request.threadId)
     const whole = await connection.media?.({ threadId: id!, activityId: request.activityId, mediaId: request.mediaId }) ?? null
@@ -1315,7 +1316,6 @@ export class DesktopHostRouter {
     const tile = thumbnail(whole.dataUrl)
     if (tile === null) return null
     this.mediaTiles.set(key, tile)
-    if (this.mediaTiles.size > 120) this.mediaTiles.delete(this.mediaTiles.keys().next().value!)
     return { dataUrl: tile }
   }
   /**

@@ -20,7 +20,8 @@
  *            is the pass that says what the warning costs; the other passes silence it (SOTTO_PICTURES_KEEP_WARNING=1 keeps it).
  *
  * Switches: SOTTO_PICTURES_ROOT (where profiles and results live, default ~/.cache/sotto-thread-pictures), SOTTO_PICTURES_SCALE,
- * SOTTO_PICTURES_RUNS, SOTTO_PICTURES_CASES (a comma list of 0,25,100,275,275-off) and SOTTO_PICTURES_LABEL (the result
+ * SOTTO_PICTURES_RUNS, SOTTO_PICTURES_CASES (a comma list of 0,25,100,275,275-off), SOTTO_PICTURES_SWEEP (the sweep's tiles),
+ * SOTTO_PICTURES_ARMS (the undriven pass's arms, thread and sweep) and SOTTO_PICTURES_LABEL (the result
  * file's suffix). A run stops at once when the machine's available memory falls under SOTTO_PICTURES_MIN_FREE_MIB.
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -881,12 +882,17 @@ test(`thread pictures: ${PASS}`, async () => {
         await save({ arm, retried: true, ...await undrivenRun(...options) })
       }
     }
+    // SOTTO_PICTURES_ARMS=sweep runs only the update sweep, over the tiles SOTTO_PICTURES_SWEEP names.
+    const arms = (process.env.SOTTO_PICTURES_ARMS ?? 'thread,sweep').split(',')
+    const sweepTiles = process.env.SOTTO_PICTURES_SWEEP ? SWEEP : [0, 100, 275]
     for (let run = 0; run < RUNS; run++) {
       // The fixture thread as a whole, with and without the warning, then a step's cost by the working turn's tiles.
-      await once('thread', 0, 0, 76, true, run, 'all')
-      await once('thread', 275, 76, 0, true, run, 'all')
-      await once('thread', 275, 76, 0, false, run, 'all')
-      for (const tilesInTurn of [0, 100, 275]) for (const warning of [true, false]) await once('sweep', 0, tilesInTurn, 275 - tilesInTurn, warning, run, 'updates')
+      if (arms.includes('thread')) {
+        await once('thread', 0, 0, 76, true, run, 'all')
+        await once('thread', 275, 76, 0, true, run, 'all')
+        await once('thread', 275, 76, 0, false, run, 'all')
+      }
+      if (arms.includes('sweep')) for (const tilesInTurn of sweepTiles) for (const warning of [true, false]) await once('sweep', 0, tilesInTurn, 275 - tilesInTurn, warning, run, 'updates')
     }
     return
   }
