@@ -241,13 +241,14 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 /* Syntax colour supports the change and never speaks over it. Green, red and amber mean added, removed and modified
    here, so no syntax ink is drawn from them: a string is not amber and a number not red. What colour syntax has is
    the theme's own hue at under half strength, on keywords and numbers and a little on types, and a string reads a step
-   quieter than the code around it. The wash and edge of a change are then the only strong colour on a line. Every ink
-   holds 4.5:1 on a changed line's wash too. */
+   quieter than the code around it. Each ink mixes toward the body text, as ADR-0024's October 11 amendment has code
+   keywords do. The wash and edge of a change are then the only strong colour on a line. Every ink holds 4.5:1 on a
+   changed line's wash too. */
 .changes-diff__rows {
-  --changes-code-keyword: color-mix(in oklab, var(--tt-primary) 45%, var(--tt-code-text));
-  --changes-code-string: color-mix(in oklab, var(--tt-code-text) 50%, var(--tt-text-muted));
-  --changes-code-number: color-mix(in oklab, var(--tt-primary) 45%, var(--tt-code-text));
-  --changes-code-type: color-mix(in oklab, var(--tt-primary) 22%, var(--tt-code-text));
+  --changes-code-keyword: color-mix(in oklab, var(--tt-primary) 45%, var(--tt-text));
+  --changes-code-string: color-mix(in oklab, var(--tt-text) 50%, var(--tt-text-muted));
+  --changes-code-number: color-mix(in oklab, var(--tt-primary) 45%, var(--tt-text));
+  --changes-code-type: color-mix(in oklab, var(--tt-primary) 22%, var(--tt-text));
 }
 .changes-diff__rows .hljs-keyword, .changes-diff__rows .hljs-selector-tag, .changes-diff__rows .hljs-built_in, .changes-diff__rows .hljs-literal, .changes-diff__rows .hljs-doctag { color: var(--changes-code-keyword); }
 .changes-diff__rows .hljs-string, .changes-diff__rows .hljs-regexp, .changes-diff__rows .hljs-template-tag, .changes-diff__rows .hljs-attr-value { color: var(--changes-code-string); }
