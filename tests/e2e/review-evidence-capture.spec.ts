@@ -49,7 +49,7 @@ const resizeContentWindowFor = (launched: LaunchedSotto, width: number, height: 
 /** Holds the frame still. The pointer goes to the corner first unless the image is of what it points at. */
 async function settle(page: Page, pointerAway = true): Promise<void> {
   if (pointerAway) await page.mouse.move(0, 0)
-  await page.evaluate(async hold => {
+  const blank = await page.evaluate(async hold => {
     await document.fonts.ready
     const endOf = (animation: Animation): number | undefined => animation.effect?.getComputedTiming().endTime as number | undefined
     await Promise.race([
@@ -69,8 +69,25 @@ async function settle(page: Page, pointerAway = true): Promise<void> {
     const list = document.querySelector('.thread-nav__scroll'), open = list?.querySelector('[aria-current="page"]')
     if (list && open) list.scrollTop += open.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - open.clientHeight) / 2
     else if (list) list.scrollTop = 0
-    await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))
+    const frames = (): Promise<unknown> => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))
+    await frames()
+    // The rows' fades follow the list's scroll. A list that was hidden, as under the rail at the minimum window, or whose
+    // size changed with the window, can keep the fades it had then until it scrolls again, which once left every row
+    // invisible. A scroll there and back moves nothing and brings every fade to the list as it stands.
+    if (list && list.clientHeight > 0) {
+      const at = list.scrollTop
+      list.scrollTop = at > 0 ? at - 1 : at + 1
+      await frames()
+      list.scrollTop = at
+      await frames()
+    }
+    // A list whose rows in its middle are all faded out is the blank list above, and its image would be wrong.
+    if (!list || list.clientHeight === 0) return false
+    const box = list.getBoundingClientRect(), middle = box.top + box.height / 2
+    const rows = [...list.querySelectorAll('.thread-nav__row')].filter(row => { const at = row.getBoundingClientRect(); return at.height > 0 && at.top <= middle + 60 && at.bottom >= middle - 60 })
+    return rows.length > 0 && rows.every(row => Number(getComputedStyle(row).opacity) < 0.1)
   }, ANIMATION_HOLD_MS)
+  if (blank) throw new Error('The sidebar\'s thread list drew no rows: their fades did not follow the list.')
   await holdOwlSky(page)
 }
 
@@ -124,6 +141,9 @@ const focusedPane = (page: Page): Locator => page.locator('section.thread-pane[d
 
 async function openThread(page: Page, title: string): Promise<void> {
   const row = page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).first()
+  // A row at the list's edge is faded out and takes no presses (b5a3d9adc), so it is brought to the middle first, as a
+  // reader would scroll to it.
+  await row.evaluate(element => element.scrollIntoView({ block: 'center' }))
   await row.click({ position: { x: 16, y: 12 } })
   await expect(focusedPane(page).getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
@@ -463,13 +483,13 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await openThread(page, 'Trace a permission request')
     const differs = 'The deltas come from the fake provider host at a steady rate, not a model.'
     await capture.shoot('streaming-1', 'A streaming turn before its first word: the working line after three steps, one command running.', differs)
-    await capture.shoot('streaming-1', 'The same at the minimum window.', differs, { modes: ['dark'], size: [820, 560] })
+    await capture.shoot('streaming-1', 'The same at the minimum window.', differs, { size: [820, 560] })
     await streamTo(page, 'second')
     await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list; the transcript follows the end.', differs)
-    await capture.shoot('streaming-2', 'The same at the minimum window.', differs, { modes: ['dark'], size: [820, 560] })
+    await capture.shoot('streaming-2', 'The same at the minimum window.', differs, { size: [820, 560] })
     await streamTo(page, 'third')
     await capture.shoot('streaming-3', 'The same turn further on, its reply cut off inside the code block as it arrives.', differs)
-    await capture.shoot('streaming-3', 'The same at the minimum window.', differs, { modes: ['dark'], size: [820, 560] })
+    await capture.shoot('streaming-3', 'The same at the minimum window.', differs, { size: [820, 560] })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },
   { name: 'steps', covers: ['steps-collapsed', 'steps-expanded'], run: async capture => {
@@ -767,6 +787,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await openThread(page, 'Trace a permission request')
     await streamTo(page, 'third')
     const row = page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Repository review', exact: true }).first()
+    await row.evaluate(element => element.scrollIntoView({ block: 'center' }))
     await row.hover({ position: { x: 16, y: 12 } })
     await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click()
     await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
@@ -823,7 +844,11 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await sidebar.getByRole('button', { name: 'Plan the split', exact: true }).first().focus()
     await capture.shoot('shell-row-focus', 'The keyboard on a working row, with its shortcuts showing.', '', { modes: ['dark', 'light'] })
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-    await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click({ force: true })
+    // The row may sit faded at the list's edge, where it takes no presses, so it comes to the middle and is pointed at first.
+    const review = sidebar.getByRole('button', { name: 'Repository review', exact: true }).first()
+    await review.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    await review.hover({ position: { x: 16, y: 12 } })
+    await page.getByRole('button', { name: 'Open Repository review beside', exact: true }).click()
     await expect(page.getByRole('separator', { name: 'Resize panes', exact: true })).toBeVisible()
     await everySize('shell-split', 'Two threads side by side, with the sidebar full.')
     await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
