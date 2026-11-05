@@ -26,6 +26,9 @@
 .branch-toolbar__pr[data-state='draft'] > svg { color: var(--tt-text-muted); }
 .branch-toolbar__pr[data-state='merged'] > svg { color: var(--tt-accent-text); }
 .branch-toolbar__pr[data-state='closed'] > svg { color: var(--tt-error); }
+/* A new thread has no pull request of its own yet: the number is its checkout's branch's, so before the first send the mark
+   rests in the line's muted ink rather than in its state's colour, until the pointer or the focus comes to the header. */
+.thread-pane[data-greeting] > .thread-workspace__head:not(:hover, :focus-within) .branch-toolbar__pr > svg { color: inherit; }
 
 /* The Workspace list and the picker's panel open upward over the composer, anchored to their chip. */
 .branch-toolbar__menu, .branch-toolbar__picker { position: relative; min-width: 0; }
