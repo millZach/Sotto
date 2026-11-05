@@ -25,8 +25,9 @@ const profile = join(root, 'profile')
 const executable = join(home, '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude')
 if (fs.realpathSync(executable) !== executable) throw new Error('The placeholder executable must be owned.')
 const record = event => fs.appendFileSync(join(root, 'events.jsonl'), JSON.stringify({ event }) + '\n')
-// No inherited Sotto switches, provider keys, provider homes or Node injection settings.
-const keep = new Set(['systemroot', 'windir', 'comspec', 'temp', 'tmp', 'lang', 'lc_all', 'display', 'xauthority', 'wayland_display', 'xdg_runtime_dir'])
+// No inherited Sotto switches, provider keys, provider homes or Node injection settings. SystemDrive stays: without it
+// Windows writes its caches to a folder named %SystemDrive% in the current directory.
+const keep = new Set(['systemroot', 'systemdrive', 'windir', 'comspec', 'temp', 'tmp', 'lang', 'lc_all', 'display', 'xauthority', 'wayland_display', 'xdg_runtime_dir'])
 for (const key of Object.keys(process.env)) if (!keep.has(key.toLowerCase())) delete process.env[key]
 Object.assign(process.env, { HOME: home, USERPROFILE: home, APPDATA: join(home, 'appdata'), LOCALAPPDATA: join(home, 'localappdata'),
   XDG_CONFIG_HOME: join(home, 'config'), XDG_CACHE_HOME: join(home, 'cache'), XDG_DATA_HOME: join(home, 'data'), PATH: dirname(executable) })
