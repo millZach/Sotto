@@ -154,8 +154,18 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
       // In the short window the files, not the chrome above them, take the panel.
       const heights = await panel.evaluate(element => ({ bar: element.querySelector('.changes-bar')!.getBoundingClientRect().height, diff: element.querySelector('.changes-files')!.getBoundingClientRect().height }))
       expect(heights.diff).toBeGreaterThan(heights.bar * 2)
+      // A wrapped line stays inside its file's box. A hunk's head cuts its own section short, so it is not counted.
+      expect(await panel.evaluate(element => [...element.querySelectorAll('.changes-diff__rows > .changes-line:not([data-kind="hunk"]) .changes-line__text')]
+        .filter(text => text.getBoundingClientRect().right > text.closest('.changes-diff__body')!.getBoundingClientRect().right + 0.5).length)).toBe(0)
       // The file tree walks the files from the keyboard, and picking one brings its block to the top of the list.
-      await panel.getByRole('button', { name: 'Show file tree' }).click()
+      const viewOption = async (name: string): Promise<void> => {
+        await panel.getByRole('button', { name: 'View options' }).click()
+        await panel.getByRole('menuitemcheckbox', { name }).click()
+        await page.keyboard.press('Escape')
+      }
+      await viewOption('File tree')
+      // A panel this narrow opens the tree over the lines, from All files.
+      await panel.getByRole('button', { name: 'All files', exact: true }).click()
       const tree = panel.getByRole('listbox', { name: 'Files in this comparison' })
       await expect(tree.getByRole('option')).toHaveCount(3)
       const blockAtTop = (path: string) => panel.evaluate((element, path) => {
@@ -163,7 +173,7 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
         const block = element.querySelector(`.changes-file[data-file-path="${path}"]`)!.getBoundingClientRect()
         return Math.abs(block.top - box.top) <= 2 || box.bottom - block.bottom < 2
       }, path)
-      await tree.getByRole('option').first().focus()
+      await expect(tree.locator('[tabindex="0"]')).toBeFocused()
       await page.keyboard.press('End')
       await page.keyboard.press('Enter')
       await expect.poll(() => blockAtTop('src/app.ts')).toBe(true)
@@ -175,7 +185,7 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
       await expect(diff).toContainText('return `Hello, ${name}!`')
       await expectContained(page, ['.tools-panel'])
       await shoot(page, 'changes-diff-820x560')
-      await panel.getByRole('button', { name: 'Hide file tree' }).click()
+      await viewOption('File tree')
       await resize(launched, 1280, 860)
 
       // Terminal: a real shell in the working copy, typed into by keyboard.

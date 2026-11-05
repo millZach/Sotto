@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { i18n, type I18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, Copy, FileText, FolderTree, MessageSquare, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ChevronUp, Copy, ListTree, MessageSquare, RotateCw } from 'lucide-react'
 import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
 import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
@@ -12,6 +12,7 @@ import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, r
 import { decorateDiff, fileLines, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
 import { HunkHeading, hangingIndent, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
+import { ChangesViewMenu } from './ChangesViewMenu'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, collapsedIn, fileProblemWords, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
 import { GitActions } from './GitActions'
@@ -21,7 +22,7 @@ import { useDiffPreferences } from '../state/gitSettings'
 import { inEnglish } from '../state/interfaceLanguage'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { shownWords } from '../features/settings/laterWords'
-import { shownCount } from '../state/interfaceNumbers'
+import { shownLineCount } from '../state/interfaceNumbers'
 import { shownNotice } from './toolsWords'
 
 const BINARY_DIFF = msg`Binary file: no text diff.`
@@ -108,14 +109,14 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
   const copy = (path: string): void => { void store.copyPath(bridge, threadId, path).then(result => onStatus(result.ok ? t`Path copied` : t`Could not copy the path`)) }
   const reveal = bridge?.reveal ? (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus(t`Could not open the folder`) }) } : undefined
   const setScope = (scope: ChangesScope): void => store.setScope(bridge, threadId, scope)
-  const toggle = (key: keyof Pick<ChangesView, 'wrap' | 'ignoreWhitespace' | 'fileTree' | 'oneFile'>): void => store.setView({ [key]: !view[key] })
 
   return <div className="changes-surface">
     <div className="changes-summary tools-chrome">
       {/* The scope keeps its words; the counts beside it show whole or drop to a line the lead never shows. */}
       <span className="changes-lead">
         <ScopePicker changes={changes} turns={bridge?.checkpoints !== undefined} onChange={setScope} />
-        {files.length > 0 ? <Totals {...totals} place="chrome" /> : null}
+        {files.length > 0 ? <Totals {...totals} place="chrome" hidesWhitespace={view.ignoreWhitespace} againstGitHub={changes.scope.kind === 'branch'} /> : null}
+        {files.length > 0 && view.ignoreWhitespace ? <WhitespaceNote place="chrome" /> : null}
       </span>
       <div className="tools-chrome__actions">
         <span className="changes-summary__git" ref={setToggleSlot} />
@@ -128,28 +129,14 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
       {changes.scope.kind === 'branch'
         ? <ChangesBasePicker key={threadId} threadId={threadId} selected={changes.scope.base} resolved={review?.branch} refs={refs} onPick={base => setScope({ kind: 'branch', base })} />
         : <span className="changes-bar__fact">{changes.scope.kind === 'working' ? t`Against HEAD` : review?.turn ? turnWhen(review.turn.checkpoint.createdAt) : ''}</span>}
+      {files.length > 0 ? <span className="changes-bar__totals"><Totals {...totals} place="bar" hidesWhitespace={view.ignoreWhitespace} againstGitHub={changes.scope.kind === 'branch'} />{view.ignoreWhitespace ? <WhitespaceNote place="bar" /> : null}</span> : null}
       <div className="changes-bar__view" role="group" aria-label={t`Diff view`}>
-        {files.length > 0 ? <Totals {...totals} place="bar" /> : null}
         <span ref={setJumpSlot} className="changes-bar__jump" />
-        <button type="button" className="files-icon files-icon--small tt-focusable" disabled={files.length === 0}
+        <button type="button" className="changes-bar__word tt-focusable" disabled={files.length === 0}
           aria-label={allCollapsed ? t`Expand all files` : t`Collapse all files`} title={allCollapsed ? t`Expand all files` : t`Collapse all files`}
-          onClick={() => store.setAllCollapsed(threadId, !allCollapsed)}>{allCollapsed ? <ChevronsUpDown size={15} aria-hidden="true" /> : <ChevronsDownUp size={15} aria-hidden="true" />}</button>
-        <span className="changes-bar__segment">
-          <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={t`Stacked diff view`} title={t`Stacked diff view`} aria-pressed={view.layout === 'stacked'} onClick={() => store.setView({ layout: 'stacked' })}><Rows3 size={15} aria-hidden="true" /></button>
-          <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={t`Split diff view`} title={t`Split diff view`} aria-pressed={view.layout === 'split'} onClick={() => store.setView({ layout: 'split' })}><Columns2 size={15} aria-hidden="true" /></button>
-        </span>
-        <button type="button" className="files-icon files-icon--small tt-focusable" data-on={view.wrap || undefined}
-          aria-label={view.wrap ? t`Disable line wrapping` : t`Enable line wrapping`} title={view.wrap ? t`Disable line wrapping` : t`Enable line wrapping`}
-          onClick={() => toggle('wrap')}><WrapText size={15} aria-hidden="true" /></button>
-        <button type="button" className="files-icon files-icon--small tt-focusable" data-on={view.ignoreWhitespace || undefined}
-          aria-label={view.ignoreWhitespace ? t`Show whitespace changes` : t`Hide whitespace changes`} title={view.ignoreWhitespace ? t`Show whitespace changes` : t`Hide whitespace changes`}
-          onClick={() => toggle('ignoreWhitespace')}><Pilcrow size={15} aria-hidden="true" /></button>
-        <button type="button" className="files-icon files-icon--small tt-focusable" data-on={view.oneFile || undefined} disabled={files.length === 0}
-          aria-label={view.oneFile ? t`Show every file` : t`Show one file at a time`} title={view.oneFile ? t`Show every file` : t`Show one file at a time`}
-          onClick={() => toggle('oneFile')}><FileText size={15} aria-hidden="true" /></button>
-        <button type="button" className="files-icon files-icon--small tt-focusable" data-on={view.fileTree || undefined} disabled={files.length === 0}
-          aria-label={view.fileTree ? t`Hide file tree` : t`Show file tree`} title={view.fileTree ? t`Hide file tree` : t`Show file tree`}
-          onClick={() => toggle('fileTree')}><FolderTree size={15} aria-hidden="true" /></button>
+          onClick={() => store.setAllCollapsed(threadId, !allCollapsed)}>{allCollapsed ? <ChevronsUpDown size={15} aria-hidden="true" /> : <ChevronsDownUp size={15} aria-hidden="true" />}
+          <span className="changes-bar__word-text">{allCollapsed ? t({ message: 'Expand all', comment: 'Opens every file of a comparison in Changes.' }) : t({ message: 'Collapse all', comment: 'Folds every file of a comparison in Changes.' })}</span></button>
+        <ChangesViewMenu view={view} hasFiles={files.length > 0} onView={next => store.setView(next)} />
       </div>
     </div>
     {reviewState?.status === 'error'
@@ -171,14 +158,27 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
  * The comparison's `+adds −dels`. It sits on the line of chrome; in a narrow panel the chrome has no room beside
  * the window's own controls, so CSS shows the copy at the head of the view bar instead. Only one is ever displayed.
  */
-function Totals({ additions, deletions, place }: { readonly additions: number; readonly deletions: number; readonly place: 'chrome' | 'bar' }): ReactNode {
-  // Each count in the interface language, and in English as it always read: a plural's own # would group its digits.
-  const added = shownCount(additions), removed = shownCount(deletions)
-  const words = plural(additions, { other: `${added} lines added, ${removed} removed` })
+function Totals({ additions, deletions, place, hidesWhitespace, againstGitHub }: {
+  readonly additions: number; readonly deletions: number; readonly place: 'chrome' | 'bar'; readonly hidesWhitespace: boolean
+  /** A branch's totals are the ones a reader holds up against its pull request. */
+  readonly againstGitHub: boolean
+}): ReactNode {
+  const added = shownLineCount(additions), removed = shownLineCount(deletions)
+  // Git leaves whitespace-only lines out of these while Hide whitespace changes is on, and GitHub counts every line, so the two can differ.
+  const words = !hidesWhitespace ? plural(additions, { other: `${added} lines added, ${removed} removed` })
+    : againstGitHub ? i18n._(msg({ message: `${added} lines added, ${removed} removed, not counting whitespace changes. GitHub counts those too, so a pull request's numbers can be higher.`, comment: '{added} and {removed} are counts of lines.' }))
+      : i18n._(msg({ message: `${added} lines added, ${removed} removed, not counting whitespace changes.`, comment: '{added} and {removed} are counts of lines.' }))
   return <span className={`changes-counts changes-counts--${place}`} title={words}>
-    <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
+    <span aria-hidden="true"><span className="changes-counts__add">+{added}</span> <span className="changes-counts__remove">−{removed}</span></span>
     <span className="tt-visually-hidden">{words}</span>
   </span>
+}
+
+/** Says beside the totals what they leave out: the words the view's own row turns on, in sight when that menu is shut. */
+function WhitespaceNote({ place }: { readonly place: 'chrome' | 'bar' }): ReactNode {
+  const { t } = useLingui()
+  // The totals' own words already say it to a screen reader.
+  return <span className={`changes-whitespace changes-whitespace--${place}`} aria-hidden="true">{t({ message: 'whitespace hidden', comment: 'Beside a comparison\'s line counts, while Hide whitespace changes is on.' })}</span>
 }
 
 function turnWhen(createdAt: string): string {
@@ -233,34 +233,50 @@ function ChangesReading({ changes, review, view, store, comments, onCopy, onReve
     })
   }, [threadId])
   const tree = view.fileTree && files.length > 0
+  // A narrow panel has no room beside the lines, so the tree opens over them from All files and goes when a file is picked.
+  const [treeOver, setTreeOver] = useState(false)
+  const allFiles = useRef<HTMLButtonElement>(null)
+  useEffect(() => { if (!tree) setTreeOver(false) }, [tree])
+  const closeTree = (): void => { setTreeOver(false); allFiles.current?.focus() }
   return <>
-    {jumpSlot && (!tree || oneFile) ? createPortal(<FileJump files={files} current={current} onShow={path => show(path, true)} />, jumpSlot) : null}
-    <div className="changes-review" data-tree={tree || undefined}>
+    {jumpSlot ? createPortal(<FileJump files={files} current={current} onShow={path => show(path, true)} allFiles={tree ? { open: treeOver, button: allFiles, onPress: () => { if (treeOver) closeTree(); else setTreeOver(true) } } : null} />, jumpSlot) : null}
+    <div className="changes-review" data-tree={tree || undefined} data-tree-over={treeOver || undefined}>
       <ChangesFiles changes={changes} review={review} view={view} store={store} comments={comments} body={list} only={oneFile ? current : null} onInView={setInView} onShow={show}
         onCopy={onCopy} onReveal={onReveal} onOpenFile={onOpenFile} platform={platform} />
-      {tree ? <ChangesTree files={files} current={current} onPick={path => show(path)} /> : null}
+      {tree ? <ChangesTree files={files} current={current} over={treeOver} toggleButton={allFiles} onLeave={() => setTreeOver(false)} onClose={closeTree}
+        onPick={path => { setTreeOver(false); show(path) }} /> : null}
     </div>
   </>
 }
 
-/** The previous and next file, for when the tree is not beside the lines. It sits in the bar, so it costs the lines no height. */
-function FileJump({ files, current, onShow }: { readonly files: readonly GitReviewFile[]; readonly current: string | null; readonly onShow: (path: string) => void }): ReactNode {
+/**
+ * Where the reader is among the files, and the previous and next one. It sits in the bar, so it costs the lines no height.
+ * In a panel too narrow for the tree beside the lines, All files opens the tree over them.
+ */
+function FileJump({ files, current, onShow, allFiles }: {
+  readonly files: readonly GitReviewFile[]; readonly current: string | null; readonly onShow: (path: string) => void
+  readonly allFiles: { readonly open: boolean; readonly button: RefObject<HTMLButtonElement | null>; readonly onPress: () => void } | null
+}): ReactNode {
   const { t } = useLingui()
   const index = files.findIndex(file => file.path === current)
   if (index < 0) return null
   const previous = files[index - 1], next = files[index + 1]
   const place = (index + 1).toLocaleString(), total = files.length.toLocaleString()
   return <>
+    {allFiles ? <button ref={allFiles.button} type="button" className="changes-bar__word changes-jump__all tt-focusable" aria-expanded={allFiles.open} title={t`Show every file in this comparison`} onClick={allFiles.onPress}>
+      <ListTree size={15} aria-hidden="true" />{t({ message: 'All files', comment: 'Opens the list of a comparison\'s files over its lines, in a narrow panel.' })}</button> : null}
     <span className="changes-jump__place">{t({ message: `${place} of ${total}`, comment: 'Which file of a comparison is in view, as in "3 of 30".' })}</span>
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!previous} aria-label={t`Previous file`} title={previous ? t({ message: `Previous file: ${previous.path}`, comment: '{previous.path} is a file\'s path.' }) : t`Previous file`} onClick={() => { if (previous) onShow(previous.path) }}><ChevronUp size={15} aria-hidden="true" /></button>
     <button type="button" className="files-icon files-icon--small tt-focusable" disabled={!next} aria-label={t`Next file`} title={next ? t({ message: `Next file: ${next.path}`, comment: '{next.path} is a file\'s path.' }) : t`Next file`} onClick={() => { if (next) onShow(next.path) }}><ChevronDown size={15} aria-hidden="true" /></button>
   </>
 }
 
-/** A file's name cut in the middle, so two long names that start alike still read apart and the ending shows. */
+/** Where a file's name may break: before a capital that ends a lower-case run, after a hyphen or underscore, or before any dot but the last, so `.ts` never sits alone. */
+const NAME_BREAK = /(?<=[\p{Ll}\p{N}])(?=\p{Lu})|(?<=[^.])(?=\.[^.]*\.)|(?<=[-_])/gu
+
+/** A file's whole name, which wraps at its word joins rather than losing letters, so two long names that start alike read apart. */
 function FileName({ name }: { readonly name: string }): ReactNode {
-  const tail = Math.min(8, Math.floor(name.length / 2))
-  return <span className="changes-name"><span className="changes-name__head">{name.slice(0, name.length - tail)}</span><span className="changes-name__tail">{name.slice(name.length - tail)}</span></span>
+  return <span className="changes-name">{name.split(NAME_BREAK).map((part, index) => <Fragment key={index}>{index > 0 ? <wbr /> : null}{part}</Fragment>)}</span>
 }
 
 /**
@@ -337,10 +353,14 @@ const ChangesFiles = memo(function ChangesFiles({ changes, review, view, store, 
   // The saved position is restored once; refreshed content then keeps whatever the reader has scrolled to.
   const initialTop = useRef(store.scrollOf(threadId, key))
   useLayoutEffect(() => { if (body.current) body.current.scrollTop = initialTop.current }, [body])
-  // One file at a time starts each file from its top.
+  // One file at a time starts each file from its top, and going back to every file stays on the file being read.
   const lastOnly = useRef(only)
   useLayoutEffect(() => {
-    if (lastOnly.current !== only && only !== null && body.current) body.current.scrollTop = 0
+    const scroller = body.current
+    if (lastOnly.current !== only && scroller) {
+      if (only !== null) scroller.scrollTop = 0
+      else if (lastOnly.current !== null) scroller.scrollTop = scroller.querySelector<HTMLElement>(`.changes-file[data-file-path="${CSS.escape(lastOnly.current)}"]`)?.offsetTop ?? 0
+    }
     lastOnly.current = only
   }, [body, only])
   const frame = useRef(0)
@@ -492,7 +512,7 @@ const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onTo
   const { t } = useLingui()
   const { folder, name } = splitPath(file.path)
   const status = CHANGE_STATUS[file.status]
-  const path = file.path, additions = file.additions, deletions = file.deletions, originalPath = file.originalPath
+  const path = file.path, additions = shownLineCount(file.additions ?? 0), deletions = shownLineCount(file.deletions ?? 0), originalPath = file.originalPath
   const title = <>{folder ? <span className="changes-file__folder"><bdi>{folder}</bdi></span> : null}<span className="changes-file__base">{name}</span></>
   return <section className="changes-file" data-file-path={file.path} data-collapsed={collapsed || undefined} role="group" aria-label={file.path}>
     <div className="changes-file__head">
@@ -504,7 +524,7 @@ const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onTo
       {onOpen ? <button type="button" className="changes-file__name tt-focusable" aria-label={t({ message: `Open ${path}`, comment: '{path} is a file\'s path.' })} title={t({ message: `Open ${path} in Files`, comment: '{path} is a file\'s path.' })} onClick={() => onOpen(file.path)}>{title}</button>
         : <span className="changes-file__name" title={file.path}>{title}</span>}
       {file.additions !== null && file.deletions !== null ? <span className="changes-counts changes-counts--file">
-        <span aria-hidden="true"><span className="changes-counts__add">+{file.additions}</span> <span className="changes-counts__remove">−{file.deletions}</span></span>
+        <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
         <span className="tt-visually-hidden">{t`${additions} added, ${deletions} removed`}</span>
       </span> : null}
       <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={t({ message: `Copy path: ${path}`, comment: '{path} is a file\'s path.' })} title={t`Copy path`} onClick={() => onCopy(file.path)}><Copy size={14} aria-hidden="true" /></button>
@@ -810,8 +830,16 @@ function CommentMarker({ comment, note, full = false, onDelete }: {
  * The file tree: the comparison's files under their folders, one list the arrow keys walk, and a filter when there are
  * many. Picking a file brings its block into view.
  */
-function ChangesTree({ files, current: inView, onPick }: {
+function ChangesTree({ files, current: inView, over, toggleButton, onLeave, onClose, onPick }: {
   readonly files: readonly GitReviewFile[]; readonly current: string | null; readonly onPick: (path: string) => void
+  /** Whether the tree is open over the lines, in a narrow panel. */
+  readonly over: boolean
+  /** The button that opens it, which focus may move to without closing it. */
+  readonly toggleButton: RefObject<HTMLButtonElement | null>
+  /** Focus has gone elsewhere, so the tree gets out of the way and focus stays where it went. */
+  readonly onLeave: () => void
+  /** Escape: the tree goes and focus returns to the button that opened it. */
+  readonly onClose: () => void
 }): ReactNode {
   const { t } = useLingui()
   const list = useRef<HTMLDivElement>(null)
@@ -850,7 +878,14 @@ function ChangesTree({ files, current: inView, onPick }: {
     if (top < scroller.scrollTop) scroller.scrollTop = top - 28
     else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight + 8
   }, [inView])
-  return <nav className="changes-tree" aria-label={t`File tree`}>
+  // Opened over the lines, the tree starts on the file being read, so the arrows and Enter work at once.
+  useEffect(() => { if (over) list.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus() }, [over])
+  return <nav className="changes-tree" aria-label={t`File tree`}
+    onKeyDown={event => { if (over && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); onClose() } }}
+    onBlur={event => {
+      const to = event.relatedTarget as Node | null
+      if (over && to !== null && !event.currentTarget.contains(to) && !toggleButton.current?.contains(to)) onLeave()
+    }}>
     {files.length >= FILTER_FROM_FILES ? <input ref={filterField} type="search" className="changes-tree__filter" value={filter} placeholder={t`Filter files`} aria-label={t`Filter files`}
       onChange={event => setFilter(event.target.value)}
       onKeyDown={event => {
@@ -866,7 +901,7 @@ function ChangesTree({ files, current: inView, onPick }: {
           const { name } = splitPath(file.path)
           const state = status.label
           return <div key={file.path} role="option" aria-selected={file.path === current} aria-current={file.path === inView || undefined} tabIndex={file.path === current ? 0 : -1} data-tree-path={file.path}
-            className="changes-tree__item" title={file.path} data-nested={folder !== '' || undefined} aria-label={folder ? t({ message: `${name}, ${state}, in ${folder}`, comment: '{name} is a file name; {state} its Git status, as in Modified; {folder} its folder.' }) : t({ message: `${name}, ${state}`, comment: '{name} is a file name; {state} its Git status, as in Modified.' })}
+            className="changes-tree__item" title={file.path} aria-label={folder ? t({ message: `${name}, ${state}, in ${folder}`, comment: '{name} is a file name; {state} its Git status, as in Modified; {folder} its folder.' }) : t({ message: `${name}, ${state}`, comment: '{name} is a file name; {state} its Git status, as in Modified.' })}
             onFocus={() => setFocused(file.path)} onClick={() => onPick(file.path)}
             onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPick(file.path) } }}>
             <span className="changes-badge" data-status={file.status} aria-hidden="true">{status.letter}</span>

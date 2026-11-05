@@ -310,6 +310,14 @@ async function pullRequestMoment(capture: Capture, moment: PullRequestMoment): P
   await capture.shoot(PR_STATE[moment], PR_NOTES[moment], 'The pull request lives in the scripted gh: its checks and reviews are data, read through the real status reader and surface. Shown as the app does it: with Tools open the pane header is narrow, and the branch name and the #1612 badge are drawn over each other.')
 }
 
+/** Sets one row of Changes' View menu by its place in the menu, since a new row's words only reach a build once the catalogs are extracted. */
+async function viewChoice(panel: Locator, row: 'stacked' | 'split' | 'wrap' | 'whitespace' | 'one-file' | 'tree', on: boolean): Promise<void> {
+  await panel.locator('.changes-view > button').click()
+  const item = panel.locator('.changes-view [role^="menuitem"]').nth(['stacked', 'split', 'wrap', 'whitespace', 'one-file', 'tree'].indexOf(row))
+  if (await item.getAttribute('aria-checked') !== String(on)) await item.click()
+  await panel.locator('.changes-view > button').click()
+}
+
 /** Every state, in an order that leaves each next one a clean start. A name in --states picks a group or a single image's state. */
 const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly string[]; readonly run: (capture: Capture) => Promise<void> }> = [
   { name: 'threads-empty', covers: [], run: async capture => {
@@ -454,8 +462,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await expect(panel.locator('.changes-file').nth(29)).toBeAttached({ timeout: 60_000 })
     const expand = panel.getByRole('button', { name: 'Expand all files', exact: true })
     if (await expand.count()) await expand.click()
-    const showTree = panel.getByRole('button', { name: 'Show file tree' })
-    if (await showTree.count()) await showTree.click()
+    await viewChoice(panel, 'tree', true)
     await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeVisible()
     await page.waitForTimeout(1_000)
     const shows = 'Changes in Tools on Branch changes against origin/main: 30 files, about 4,200 lines added and removed, with the file tree showing and every file open.'
@@ -481,27 +488,46 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
   // The rest of reading a long comparison, and a diff away from the default palette. Controls are found by what they are,
   // since a new control's words only reach a build once the catalogs are extracted.
-  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-one-file', 'changes-clay', 'doc-edit-clay'], run: async capture => {
+  { name: 'changes-more', covers: ['changes-tree-filter', 'changes-view-menu', 'changes-all-files', 'changes-split', 'changes-no-wrap', 'changes-one-file', 'changes-clay', 'doc-edit-clay'], run: async capture => {
     const { page } = capture
     await openThread(page, 'Thread store on a worker')
     const panel = await toolsTab(page, 'Changes')
     await panel.locator('.changes-scope__select').selectOption('branch')
     await expect(panel.locator('.changes-file').nth(29)).toBeAttached({ timeout: 60_000 })
-    const treeButton = panel.locator('.changes-bar__view button:has(svg.lucide-folder-tree)')
-    if (await treeButton.getAttribute('data-on') === null) await treeButton.click()
+    await viewChoice(panel, 'tree', true)
     await panel.locator('.changes-tree__filter').fill('worker')
-    await capture.shoot('changes-tree-filter', 'The file tree filtered to the files with "worker" in their path, their long names cut in the middle.')
+    await capture.shoot('changes-tree-filter', 'The file tree filtered to the files with "worker" in their path, their long names whole.')
     await panel.locator('.changes-tree__filter').fill('')
-    await treeButton.click()
-    const oneFile = panel.locator('.changes-bar__view button:has(svg.lucide-file-text)')
-    await oneFile.click()
-    await panel.locator('.changes-bar__view button:has(svg.lucide-chevron-down)').click()
+    await panel.locator('.changes-view > button').click()
+    await capture.shoot('changes-view-menu', 'View open in the bar above the files: the layout, wrapping, whitespace, one file at a time and the file tree.')
+    await panel.locator('.changes-view > button').click()
+    // A panel too narrow for the tree beside the lines opens it over them.
+    for (const size of SMALLER_SIZES) {
+      await resizeContentWindowFor(capture.launched, size[0], size[1])
+      await panel.locator('.changes-jump__all').click()
+      await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeVisible()
+      await capture.shoot('changes-all-files', 'All files open over the lines, in a panel too narrow for the tree beside them.', '', { modes: ['dark'], size })
+      await page.keyboard.press('Escape')
+      await expect(panel.getByRole('listbox', { name: 'Files in this comparison' })).toBeHidden()
+    }
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await viewChoice(panel, 'tree', false)
+    await viewChoice(panel, 'split', true)
+    await page.waitForTimeout(300)
+    await capture.shoot('changes-split', 'The same files in the split view, with the tree off.', '', { modes: ['dark'] })
+    await viewChoice(panel, 'stacked', true)
+    await viewChoice(panel, 'wrap', false)
+    await page.waitForTimeout(300)
+    await capture.shoot('changes-no-wrap', 'The same files with Wrap long lines off: a long line scrolls sideways inside its own file.', '', { modes: ['dark'] })
+    await viewChoice(panel, 'wrap', true)
+    await viewChoice(panel, 'one-file', true)
+    await panel.locator('.changes-jump__place + button + button').click()
     await expect(panel.locator('.changes-file')).toHaveCount(1)
     await page.waitForTimeout(500)
     await capture.shoot('changes-one-file', 'One file at a time, after a press on Next file, with the tree off.')
-    await oneFile.click()
+    await viewChoice(panel, 'one-file', false)
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
-    await treeButton.click()
+    await viewChoice(panel, 'tree', true)
     await wheelToFile(page, panel, 'CONTEXT.md')
     await capture.shoot('changes-clay', 'A document\'s change in Changes on the Clay theme, to check the marks away from the default palette.')
     await wheelToFile(page, panel, 'src/main/agents/threadStore.ts')

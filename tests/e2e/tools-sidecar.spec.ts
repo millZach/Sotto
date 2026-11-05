@@ -129,7 +129,7 @@ async function chromeContrast(panel: Locator): Promise<{ lowest: number; name: s
     const texts = [
       '.tools-rail__tab', '.tools-chrome__title', '.tools-chrome__detail', '.tools-chrome .terminal-tabs__tab', '.tools-chrome__button:not(:disabled)',
       '.tools-panel__copy', '.tools-panel__branch', '.tools-panel__label', '.tools-panel__foot', '.tools-panel__pinned-owner .tools-panel__thread-title', '.tools-panel__tag',
-      '.changes-scope__select', '.changes-counts__add', '.changes-counts__remove', '.changes-bar__fact', '.changes-base__head', '.changes-base__value', '.changes-file__base', '.changes-file__folder',
+      '.changes-scope__select', '.changes-counts__add', '.changes-counts__remove', '.changes-whitespace', '.changes-bar__fact', '.changes-base__head', '.changes-base__against', '.changes-base__value', '.changes-bar__word:not(:disabled)', '.changes-jump__place', '.changes-file__base', '.changes-file__folder',
     ].join(', ')
     const ratios = [...element.querySelectorAll(texts)].map(node => {
       const layers: string[] = []
@@ -282,7 +282,9 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await expect(panel.getByRole('group', { name: 'src/app.ts' })).toContainText('return `Hello, ${name}!`')
     await expect(tab('Changes')).toHaveAttribute('aria-description', '3 changed files')
     // The file tree stays open through the matrix, so its place beside or above the files is measured too.
-    await panel.getByRole('button', { name: 'Show file tree', exact: true }).click()
+    await panel.getByRole('button', { name: 'View options', exact: true }).click()
+    await panel.getByRole('menuitemcheckbox', { name: 'File tree', exact: true }).click()
+    await page.keyboard.press('Escape')
     await select('Terminal')
     await panel.getByRole('button', { name: 'Start terminal' }).click()
     await expect(panel.locator('.xterm-screen')).toBeVisible()
@@ -349,7 +351,9 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
             expect(layout.detailStubs, `${key} a fact in the line of chrome cut to a stub`).toEqual([])
             expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-chrome button:not([role="tab"]), .files-preview__head button, .changes-bar button, .changes-file__head button.files-icon')]
               .filter(control => control.scrollWidth > control.clientWidth + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), `${key} line and head controls clipped`).toEqual([])
-            if (tool === 'Files' || tool === 'Changes') expect(layout.stacked, `${key} list and detail`).toBe(layout.main < 640)
+            // Changes' tree opens over the lines from All files in a narrow panel, so it is beside them or shut.
+            if (tool === 'Files' || tool === 'Changes' && layout.main >= 640) expect(layout.stacked, `${key} list and detail`).toBe(layout.main < 640)
+            if (tool === 'Changes' && layout.main < 640) await expect(panel.locator('.changes-tree'), `${key} tree shut`).toBeHidden()
             const native = tool === 'Browser'
             const nativeBounds = native ? await browserBounds(launched, url) : null
             if (!native) await expect.poll(async () => (await nativeViews(launched)).length).toBe(0)
@@ -372,11 +376,15 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await select('Changes')
     await changesScope('working')
     const app = panel.getByRole('group', { name: 'src/app.ts' })
-    await panel.getByRole('button', { name: 'Split diff view', exact: true }).click()
+    await panel.getByRole('button', { name: 'View options', exact: true }).click()
+    await panel.getByRole('menuitemradio', { name: 'Split diff view', exact: true }).click()
+    await page.keyboard.press('Escape')
     await expect(app.locator('.changes-diff__rows')).toHaveAttribute('data-layout', 'split')
     await expect(app.locator('.changes-split__cell[data-kind="add"]')).toContainText(['return `Hello, ${name}!`', '', 'export const version = 2'])
     await screenshot(launched, 'changes-split-1280-dark', false)
-    await panel.getByRole('button', { name: 'Stacked diff view', exact: true }).click()
+    await panel.getByRole('button', { name: 'View options', exact: true }).click()
+    await panel.getByRole('menuitemradio', { name: 'Stacked diff view', exact: true }).click()
+    await page.keyboard.press('Escape')
     // The shortcut: mod+d closes Tools while it shows Changes and opens it on Changes again (the fixture's hotkey is not mod+d).
     await tab('Changes').focus()
     await page.keyboard.press('Control+d')
@@ -560,7 +568,8 @@ test('Changes reads every scope, turns from checkpoints, at three window sizes, 
       }
       await openThreads(page)
       await page.evaluate(() => document.fonts.ready)
-      await page.getByRole('button', { name: 'Scopes review', exact: true }).first().click()
+      // The thread takes its name from its first prompt.
+      await page.getByRole('button', { name: /^(?:Scopes review|Note where the trail starts\.)/u }).first().click()
       await toggleTools(page)
       const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
       await panel.getByRole('tab', { name: 'Changes', exact: true }).click()

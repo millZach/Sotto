@@ -2,7 +2,7 @@ import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Checkpoint } from '../../../../src/shared/checkpoints'
 import type { GitChange, GitChangesBridge, GitReview, GitReviewFile } from '../../../../src/shared/gitChanges'
 import type { GitRef } from '../../../../src/shared/gitRefs'
@@ -27,7 +27,8 @@ vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal =>
   useOptionalApp: vi.fn(() => null),
 }))
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReturnValue(null) })
+beforeEach(() => { Element.prototype.scrollTo = function scrollTo() { /* jsdom has no layout */ } })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReturnValue(null); delete (Element.prototype as Partial<Element>).scrollTo })
 
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,3 +3,3 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n'
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
@@ -82,6 +83,18 @@ function setup(git = fakeGit(), state = threadsStateFixture()) {
 
 const panel = () => screen.getByRole('complementary', { name: 'Tools' })
 const block = (path: string) => panel().querySelector<HTMLElement>(`.changes-file[data-file-path="${path}"]`)!
+
+type Pressing = ReturnType<typeof userEvent.setup>
+const viewRow = (name: string): HTMLElement => {
+  const row = [...panel().querySelectorAll<HTMLElement>('.changes-view [role^="menuitem"]')].find(item => item.textContent === name)
+  expect(row, name).toBeDefined()
+  return row!
+}
+const openView = async (user: Pressing): Promise<void> => { await user.click(within(panel()).getByRole('button', { name: 'View options' })) }
+/** Presses one row of the View menu and puts the menu away. */
+const pressView = async (user: Pressing, name: string): Promise<void> => { await openView(user); await user.click(viewRow(name)); await user.keyboard('{Escape}') }
+/** Whether a row of the View menu is on. */
+const viewOn = async (user: Pressing, name: string): Promise<boolean> => { await openView(user); const on = viewRow(name).getAttribute('aria-checked') === 'true'; await user.keyboard('{Escape}'); return on }
 
 describe('Changes as T3’s diff', () => {
   it('shows the working tree as file blocks with counts, and offers no staging or commit of its own', async () => {
@@ -182,21 +195,23 @@ describe('Changes as T3’s diff', () => {
     await waitFor(() => expect(git.bridge.review).toHaveBeenCalled())
     expect(git.bridge.review).toHaveBeenNthCalledWith(1, expect.objectContaining({ ignoreWhitespace: true }))
     await waitFor(() => expect(panel().querySelectorAll('.changes-file[data-collapsed]')).toHaveLength(3))
-    expect(within(panel()).getByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(panel()).getByRole('button', { name: 'Show whitespace changes' })).toBeInTheDocument()
+    expect(await viewOn(user, 'Split diff view')).toBe(true)
+    expect(await viewOn(user, 'Hide whitespace changes')).toBe(true)
     // A file the user opens stays open, and a layout they choose outlasts a return to Changes.
     await user.click(within(block('src/app.ts')).getByRole('button', { name: 'Expand src/app.ts' }))
-    await user.click(within(panel()).getByRole('button', { name: 'Stacked diff view' }))
+    await pressView(user, 'Stacked diff view')
     act(() => { store.setSurface('files') })
     act(() => { store.setSurface('changes') })
-    expect(await within(panel()).findByRole('button', { name: 'Stacked diff view' })).toHaveAttribute('aria-pressed', 'true')
+    await within(panel()).findByRole('button', { name: 'View options' })
+    expect(await viewOn(user, 'Stacked diff view')).toBe(true)
     await waitFor(() => expect(block('src/app.ts')).not.toHaveAttribute('data-collapsed'))
     // A setting changed in Settings is followed: here whitespace is shown again, and the layout goes back to Split.
     vi.mocked(useOptionalApp).mockImplementation(() => ({ settings: { ...settings, diffHideWhitespace: false } } as unknown as AppContextValue))
     act(() => { store.setSurface('files') })
     act(() => { store.setSurface('changes') })
-    expect(await within(panel()).findByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(panel()).getByRole('button', { name: 'Hide whitespace changes' })).toBeInTheDocument()
+    await within(panel()).findByRole('button', { name: 'View options' })
+    expect(await viewOn(user, 'Split diff view')).toBe(true)
+    expect(await viewOn(user, 'Hide whitespace changes')).toBe(false)
   })
 
   it('waits for settings on a cold start, so the first read already hides whitespace and there is no second', async () => {
@@ -247,7 +262,7 @@ describe('Changes as T3’s diff', () => {
     await within(panel()).findByText(diffLine('export const ready = true'))
     const previous = within(panel()).getByRole('button', { name: 'Previous file' }), next = within(panel()).getByRole('button', { name: 'Next file' })
     expect(previous).toBeDisabled()
-    await user.click(within(panel()).getByRole('button', { name: 'Show one file at a time' }))
+    await pressView(user, 'One file at a time')
     expect(panel().querySelectorAll('.changes-file')).toHaveLength(1)
     expect(block('docs/new.md')).not.toBeNull()
     await user.click(next)
@@ -255,19 +270,81 @@ describe('Changes as T3’s diff', () => {
     await user.click(next)
     expect(block('src/app.ts')).not.toBeNull()
     expect(next).toBeDisabled()
-    await user.click(within(panel()).getByRole('button', { name: 'Show every file' }))
+    await pressView(user, 'One file at a time')
     expect(panel().querySelectorAll('.changes-file')).toHaveLength(3)
   })
 
-  it('filters a long tree, and cuts a long name in the middle so like names read apart', async () => {
+  it('keeps the View menu open through each press, and Escape hands focus back to its button', async () => {
+    const user = userEvent.setup()
+    setup()
+    await within(panel()).findByText(diffLine('export const ready = true'))
+    const button = within(panel()).getByRole('button', { name: 'View options' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    await user.click(button)
+    expect(within(panel()).getByRole('menu', { name: 'View options' })).toBeInTheDocument()
+    expect(viewRow('Stacked diff view')).toHaveFocus()
+    expect(viewRow('Stacked diff view')).toHaveAttribute('role', 'menuitemradio')
+    expect(viewRow('File tree')).toHaveAttribute('role', 'menuitemcheckbox')
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(viewRow('Split diff view')).toHaveAttribute('aria-checked', 'true')
+    expect(viewRow('Stacked diff view')).toHaveAttribute('aria-checked', 'false')
+    await user.keyboard('{Escape}')
+    expect(within(panel()).queryByRole('menu')).toBeNull()
+    expect(button).toHaveFocus()
+  })
+
+  it('says beside the totals when they leave whitespace out, and writes every line count one way', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit({ files: [reviewFile('src/app.ts', 'modified', { kind: 'text', patch: PATCH }, 2957, 1230)] }))
+    await within(panel()).findByRole('group', { name: 'src/app.ts' })
+    const totals = panel().querySelector<HTMLElement>('.changes-counts--chrome')!
+    expect(totals).toHaveTextContent('+2,957 −1,230')
+    expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+2,957 −1,230')
+    expect(totals.title).toBe('2,957 lines added, 1,230 removed')
+    expect(panel().querySelector('.changes-whitespace')).toBeNull()
+    await pressView(user, 'Hide whitespace changes')
+    expect(panel().querySelector('.changes-whitespace--chrome')).toHaveTextContent('whitespace hidden')
+    expect(panel().querySelector<HTMLElement>('.changes-counts--chrome')!.title).toBe('2,957 lines added, 1,230 removed, not counting whitespace changes.')
+    await user.selectOptions(within(panel()).getByRole('combobox', { name: 'Diff scope' }), 'branch')
+    await waitFor(() => expect(panel().querySelector<HTMLElement>('.changes-counts--chrome')!.title).toContain('not counting whitespace changes. GitHub counts those too, so a pull request\'s numbers can be higher.'))
+  })
+
+  it('opens the tree over the lines from All files, and it goes on a pick, on Escape or when focus leaves', async () => {
+    const user = userEvent.setup()
+    setup()
+    await within(panel()).findByText(diffLine('export const ready = true'))
+    expect(within(panel()).queryByRole('button', { name: 'All files' })).toBeNull()
+    await pressView(user, 'File tree')
+    const review = panel().querySelector('.changes-review')!
+    const allFiles = within(panel()).getByRole('button', { name: 'All files' })
+    expect(review).not.toHaveAttribute('data-tree-over')
+    await user.click(allFiles)
+    expect(review).toHaveAttribute('data-tree-over')
+    expect(allFiles).toHaveAttribute('aria-expanded', 'true')
+    expect(within(within(panel()).getByRole('listbox', { name: 'Files in this comparison' })).getByRole('option', { selected: true })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(review).not.toHaveAttribute('data-tree-over')
+    expect(allFiles).toHaveFocus()
+    await user.click(allFiles)
+    await user.click(within(panel()).getByRole('option', { name: 'app.ts, Modified, in src/' }))
+    expect(review).not.toHaveAttribute('data-tree-over')
+    await user.click(allFiles)
+    within(panel()).getByRole('button', { name: 'Refresh diff' }).focus()
+    await waitFor(() => expect(review).not.toHaveAttribute('data-tree-over'))
+  })
+
+  it('filters a long tree, and keeps a long name whole so like names read apart', async () => {
     const user = userEvent.setup()
     const many = Array.from({ length: 9 }, (_, index) => reviewFile(`src/walCheckpointWorkerPart${index}.ts`, 'modified', { kind: 'text', patch: PATCH }))
     setup(fakeGit({ files: many }))
     await within(panel()).findByRole('group', { name: many[0]!.path })
-    await user.click(within(panel()).getByRole('button', { name: 'Show file tree' }))
+    await pressView(user, 'File tree')
     const tree = within(panel()).getByRole('listbox', { name: 'Files in this comparison' })
     expect(within(tree).getAllByRole('option')).toHaveLength(9)
-    expect(tree.querySelector('.changes-name__tail')).toHaveTextContent('Part0.ts')
+    const name = tree.querySelector('.changes-name')!
+    expect(name).toHaveTextContent('walCheckpointWorkerPart0.ts')
+    // It may break where its words join, and its ending stays with the last of them.
+    expect(name.querySelectorAll('wbr')).toHaveLength(3)
     await user.type(within(panel()).getByRole('searchbox', { name: 'Filter files' }), 'part3')
     expect(within(tree).getAllByRole('option')).toHaveLength(1)
     await user.clear(within(panel()).getByRole('searchbox', { name: 'Filter files' }))
@@ -285,10 +362,9 @@ describe('Changes as T3’s diff', () => {
     expect(within(file).getByText('src/old.ts').closest('.changes-note')).toHaveTextContent('Renamed from src/old.ts')
     // The head names the file and the rename; the rows keep only the mode change Git reported.
     expect([...file.querySelectorAll('.changes-line[data-kind="meta"]')].map(row => row.textContent)).toEqual(['old mode 100644', 'new mode 100755'])
-    const split = within(panel()).getByRole('button', { name: 'Split diff view' })
-    expect(within(panel()).getByRole('button', { name: 'Stacked diff view' })).toHaveAttribute('aria-pressed', 'true')
-    await user.click(split)
-    expect(split).toHaveAttribute('aria-pressed', 'true')
+    expect(await viewOn(user, 'Stacked diff view')).toBe(true)
+    await pressView(user, 'Split diff view')
+    expect(await viewOn(user, 'Split diff view')).toBe(true)
     expect(file.querySelector('.changes-split__head')).toHaveTextContent('HEADWorking tree')
     const rows = [...file.querySelectorAll('.changes-split__row')].map(row => [...row.children].map(cell => [
       cell.querySelector('.changes-line__number')!.textContent, cell.querySelector('.changes-line__text')!.textContent?.trim(),
@@ -304,20 +380,20 @@ describe('Changes as T3’s diff', () => {
     ])
     const note = [...file.querySelector('.changes-diff__rows')!.children].findIndex(row => row.getAttribute('data-kind') === 'note')
     expect(file.querySelector('.changes-diff__rows')!.children[note - 1]).toHaveTextContent('old end')
-    await user.click(within(panel()).getByRole('button', { name: 'Stacked diff view' }))
+    await pressView(user, 'Stacked diff view')
     expect(file.querySelector('.changes-split__row')).toBeNull()
 
     const files = panel().querySelector('.changes-files')!
     expect(files).toHaveAttribute('data-wrap')
-    await user.click(within(panel()).getByRole('button', { name: 'Disable line wrapping' }))
+    await pressView(user, 'Wrap long lines')
     expect(files).not.toHaveAttribute('data-wrap')
-    expect(within(panel()).getByRole('button', { name: 'Enable line wrapping' })).toBeInTheDocument()
+    expect(await viewOn(user, 'Wrap long lines')).toBe(false)
 
-    await user.click(within(panel()).getByRole('button', { name: 'Hide whitespace changes' }))
+    await pressView(user, 'Hide whitespace changes')
     await waitFor(() => expect(git.bridge.review).toHaveBeenLastCalledWith(expect.objectContaining({ ignoreWhitespace: true })))
-    expect(await within(panel()).findByRole('button', { name: 'Show whitespace changes' })).toBeInTheDocument()
+    expect(await viewOn(user, 'Hide whitespace changes')).toBe(true)
 
-    await user.click(within(panel()).getByRole('button', { name: 'Show file tree' }))
+    await pressView(user, 'File tree')
     const tree = within(panel()).getByRole('listbox', { name: 'Files in this comparison' })
     expect(within(tree).getByRole('option', { name: 'app.ts, Renamed, in src/' })).toBeInTheDocument()
   })
@@ -371,9 +447,9 @@ describe('Changes as T3’s diff', () => {
     expect(await within(panel()).findByText('THREE')).toBeInTheDocument()
     expect(git.bridge.inspectCheckpoint).toHaveBeenLastCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, checkpointId: TURN_TWO })
     expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+2 −2')
-    await user.click(within(panel()).getByRole('button', { name: 'Hide whitespace changes' }))
+    await pressView(user, 'Hide whitespace changes')
     await waitFor(() => expect(block('src/app.ts').querySelector('.changes-counts')).toHaveTextContent('+1 −1'))
-    await user.click(within(panel()).getByRole('button', { name: 'Show whitespace changes' }))
+    await pressView(user, 'Hide whitespace changes')
     await user.selectOptions(scope, `turn:${TURN_ONE}`)
     expect(await within(panel()).findByText('deux')).toBeInTheDocument()
     expect(git.bridge.review).not.toHaveBeenCalledWith(expect.objectContaining({ scope: expect.objectContaining({ kind: 'turn' }) }))

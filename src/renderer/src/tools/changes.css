@@ -1,13 +1,13 @@
-/* Changes as T3's diff panel (#268): the scope on the line of chrome, a quiet bar of view controls under it, then
-   the comparison's files as blocks whose heads stay in view while their lines scroll, and a file tree beside them.
+/* Changes as T3's diff panel (#268): the scope on the line of chrome, a quiet bar under it that says what is compared,
+   where the reader is and how it is drawn, then the comparison's files as blocks whose heads stay in view while their lines scroll, and a file tree beside them.
    Colour comes only from theme roles; additions and removals are washes of the success and error roles. The lines
    here are also how the transcript draws a change (DiffBlock.tsx), so the two read as one product. */
 
 .changes-surface { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .changes-surface > * { flex: none; }
 
-/* The line of chrome: scope, counts, then the surface's own actions. */
-.changes-summary { gap: 6px; padding-left: 8px; }
+/* The line of chrome: scope, counts, then the surface's own actions. It and the bar under it read as one head, so no rule parts them. */
+.tools-panel .changes-summary { gap: 6px; padding-left: 8px; border-bottom-color: transparent; }
 .tools-panel .changes-summary__git { display: contents; }
 /* The scope and its counts wrap inside a one-line box, so counts without room drop out whole instead of clipping.
    The select is as wide as the scope it shows, not its longest option. */
@@ -22,13 +22,18 @@
 .changes-scope__select:active:not(:disabled) { background: var(--tt-hover-strong); }
 .changes-scope__select option, .changes-scope__select optgroup { background: var(--tt-surface-elevated); color: var(--tt-text); }
 .changes-scope__chevron { position: absolute; right: 8px; color: var(--tt-text-muted); pointer-events: none; }
-.changes-counts { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.changes-counts--bar { display: none; margin-right: 6px; }
+.changes-counts { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* What the totals leave out, beside them. It is the first thing to go when the line has no room: their tooltip still says it. */
+.changes-whitespace { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
+.changes-bar__totals { display: none; flex: none; align-items: center; gap: 6px; }
 /* Beside the window's controls a narrow panel's line of chrome holds the scope and its actions only; the totals
-   move to the head of the view bar, which has the room. */
-@container tools-body (max-width: 559px) {
-  .changes-counts--chrome { display: none; }
-  .changes-counts--bar { display: inline; }
+   move to the view bar, which has the room. */
+@container tools-body (max-width: 479px) {
+  .changes-counts--chrome, .changes-whitespace--chrome { display: none; }
+  .changes-bar__totals { display: flex; margin-left: auto; }
+  /* Two rows here: what is compared and its totals, then the way through the files with View at the far end. */
+  .changes-bar__view { width: 100%; margin-left: 0; }
+  .changes-view { margin-left: auto; }
 }
 .changes-counts__add { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
 .changes-counts__remove { color: var(--tt-error-text); }
@@ -39,17 +44,30 @@
   min-height: 38px; padding: 3px 6px 3px 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: var(--tt-type-small);
 }
 .changes-bar__fact { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
-.changes-bar__view { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
-.changes-bar__segment { display: inline-flex; gap: 1px; padding: 1px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row); }
-.changes-bar__segment .files-icon--small { width: 26px; height: 26px; border-radius: var(--tt-radius-control); }
-.tools-panel .changes-bar .files-icon[aria-pressed='true'], .tools-panel .changes-bar .files-icon[data-on] { background: var(--tt-selected); color: var(--tt-text); }
+.changes-bar__view { display: flex; flex: none; align-items: center; gap: 4px; margin-left: auto; }
+/* A control of the bar says its word. Only Collapse all drops to its icon, and only in a panel too narrow to hold every word. */
+.changes-bar__word {
+  display: inline-flex; flex: none; align-items: center; gap: 5px; height: 28px; padding: 0 7px; border: 0; border-radius: var(--tt-radius-control);
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.changes-bar__word > svg { flex: none; color: var(--tt-text-muted); }
+.changes-bar__word:hover:not(:disabled), .changes-bar__word[aria-expanded='true'] { background: var(--tools-hover); color: var(--tt-text); }
+.changes-bar__word:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
+.changes-bar__word:disabled { color: var(--tt-text-muted); opacity: .6; }
+@container tools-body (max-width: 559px) { .changes-bar__word-text { display: none; } }
 
 /* Branch changes: the branch, an arrow, and the base as the button that opens the list. */
-.changes-base { display: flex; flex: 1 1 auto; align-items: center; gap: 4px; min-width: 0; }
-.changes-base__head { min-width: 3ch; max-width: 40%; overflow: hidden; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
+.changes-base { display: flex; flex: 1 1 150px; align-items: center; gap: 4px; min-width: 0; }
+.changes-base__against { display: none; flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+@container tools-body (max-width: 559px) {
+  .changes-base__head, .changes-base__arrow { display: none; }
+  .changes-base__against { display: inline; }
+}
+.changes-base__head { flex: 0 1 auto; min-width: 3ch; overflow: hidden; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .changes-base__arrow { flex: none; color: var(--tt-text-muted); }
 .changes-base__trigger {
-  display: inline-flex; flex: 0 1 auto; align-items: center; gap: 4px; min-width: 0; height: 28px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-control);
+  display: inline-flex; flex: none; align-items: center; gap: 4px; min-width: 0; max-width: 70%; height: 28px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-control);
   background: transparent; color: var(--tt-text); font: inherit; font-family: var(--tt-font-mono); font-size: var(--tt-type-caption);
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -96,26 +114,24 @@
    they belong to the panel: every one of them counts as overflow of the panel and the workspace, far below the window. A
    press that lines a file up would then scroll the whole workspace, which clips and so has no scrollbar to bring it back. */
 .changes-files { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.changes-tree { order: -1; display: flex; flex: none; flex-direction: column; min-height: 0; max-height: clamp(96px, 30%, 220px); padding: 6px 8px; border-bottom: 1px solid var(--tt-hairline); }
+/* Beside the lines where the panel has room for both. Where it has not, the tree would leave a strip with room for two
+   files and take that height from the lines, so it stays shut until All files opens it over them, whole. */
+.changes-tree { position: absolute; inset: 0; z-index: 2; display: none; flex-direction: column; min-height: 0; padding: 6px; background: var(--tools-bg, var(--tt-sidebar)); }
+.changes-review[data-tree-over] > .changes-tree { display: flex; }
+/* Under it the lines take no keys, and on a see-through theme they do not show through. */
+@container tools-body (max-width: 639px) { .changes-review[data-tree-over] > .changes-files { visibility: hidden; } }
 @container tools-body (min-width: 640px) {
-  .changes-review[data-tree] { display: grid; grid-template-columns: minmax(0, 1fr) clamp(160px, 28%, 256px); }
-  .changes-review[data-tree] > .changes-tree { order: 0; max-height: none; border-bottom: 0; border-left: 1px solid var(--tt-hairline); }
-}
-@media (max-height: 640px) {
-  .changes-tree { max-height: 96px; }
-  /* A strip this short keeps its rows for the files. */
-  .changes-tree__filter { display: none; }
+  .changes-review[data-tree] { display: grid; grid-template-columns: minmax(0, 1fr) clamp(200px, 32%, 320px); }
+  .changes-review[data-tree] > .changes-tree { position: static; display: flex; border-left: 1px solid var(--tt-hairline); background: transparent; }
+  .changes-jump__all { display: none; }
 }
 
-/* From file to file, in the bar. The place gives way first when the bar is short of room. */
+/* From file to file, in the bar. */
 .changes-bar__jump { display: contents; }
-.changes-jump__place { flex: none; margin-right: 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
-@container tools-body (max-width: 479px) { .changes-jump__place { display: none; } }
+.changes-jump__place { flex: none; margin: 0 2px 0 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* A long name keeps its start and its ending; only the middle gives way. */
-.changes-name { display: flex; flex: 0 1 auto; min-width: 0; white-space: pre; }
-.changes-name__head { flex: 0 1 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; }
-.changes-name__tail { flex: none; }
+/* A file's whole name, on as many lines as it takes: it wraps where its words join, and anywhere at all only if one word is wider than the row. */
+.changes-name { flex: 1 1 auto; min-width: 0; padding-top: 1px; line-height: 1.35; overflow-wrap: anywhere; }
 
 .changes-file { border-bottom: 1px solid var(--tt-hairline); }
 .changes-file__head {
@@ -151,10 +167,13 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-diff__rows[data-numbers='one'] .changes-line { grid-template-columns: 4ch 1ch minmax(0, 1fr); }
 .changes-diff__rows[data-numbers='none'] .changes-line { grid-template-columns: 1ch minmax(0, 1fr); padding-left: 8px; }
 .changes-files:not([data-wrap]) .changes-diff__rows .changes-line { grid-template-columns: 4ch 4ch 1ch max-content; }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line { grid-template-columns: 4ch 1ch max-content; }
 .changes-line__number { color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
 .changes-line__number:first-child { padding-left: 8px; box-sizing: content-box; }
 .changes-line__sign { color: var(--tt-text-muted); font-family: var(--tt-font-mono); user-select: none; }
 .changes-line__text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
+/* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
+.changes-diff__rows[data-reading='code'] :is(.changes-line:not([data-kind='hunk']), .changes-split__cell) > .changes-line__text { --changes-hang: min(calc(var(--changes-indent, 0ch) + 2ch), 50%); padding-left: var(--changes-hang); text-indent: calc(var(--changes-hang) * -1); }
 .changes-files:not([data-wrap]) .changes-diff__rows .changes-line__text { white-space: pre; overflow-wrap: normal; }
 /* A changed line carries a thin wash and an edge in its role's colour; the words that changed carry a stronger wash, and
    only a wash, so a rewritten paragraph stays something to read rather than a page of underlined blocks. */
@@ -168,18 +187,16 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-line[data-kind='add'], .changes-split__cell[data-kind='add'] { background: var(--changes-added); box-shadow: inset 2px 0 0 var(--changes-edge-added); }
 .changes-line[data-kind='add'] .changes-line__sign, .changes-split__cell[data-kind='add'] .changes-line__sign { color: var(--tt-success); }
 .changes-line[data-kind='remove'], .changes-split__cell[data-kind='remove'] { background: var(--changes-removed); box-shadow: inset 2px 0 0 var(--changes-edge-removed); }
-.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line { grid-template-columns: 4ch 1ch max-content; }
 .changes-line[data-kind='remove'] .changes-line__sign, .changes-split__cell[data-kind='remove'] .changes-line__sign { color: var(--tt-error-text); }
 .changes-word { border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 [data-kind='add'] .changes-word { background: var(--changes-word-added); }
 [data-kind='remove'] .changes-word { background: var(--changes-word-removed); }
-/* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
-.changes-diff__rows[data-reading='code'] :is(.changes-line:not([data-kind='hunk']), .changes-split__cell) > .changes-line__text { --changes-hang: min(calc(var(--changes-indent, 0ch) + 2ch), 50%); padding-left: var(--changes-hang); text-indent: calc(var(--changes-hang) * -1); }
 /* A hunk's head is a quiet divider, one line at any width: where the part starts, then the section around it. */
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .changes-line[data-kind='hunk'] .changes-line__text { display: flex; gap: 10px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .changes-files:not([data-wrap]) .changes-diff__rows .changes-line[data-kind='hunk'] { position: sticky; left: 0; width: 100cqw; box-sizing: border-box; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line[data-kind='hunk'] { grid-template-columns: 4ch 1ch minmax(0, 1fr); }
 .changes-hunk__line { flex: none; font-variant-numeric: tabular-nums; }
 .changes-hunk__section { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
@@ -196,7 +213,6 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-diff__rows .hljs-string, .changes-diff__rows .hljs-regexp, .changes-diff__rows .hljs-template-tag, .changes-diff__rows .hljs-attr-value { color: var(--changes-code-string); }
 .changes-diff__rows .hljs-number, .changes-diff__rows .hljs-symbol, .changes-diff__rows .hljs-bullet, .changes-diff__rows .hljs-variable.language_ { color: var(--changes-code-number); }
 .changes-diff__rows .hljs-title, .changes-diff__rows .hljs-section, .changes-diff__rows .hljs-name, .changes-diff__rows .hljs-selector-id, .changes-diff__rows .hljs-selector-class { color: var(--tt-text); }
-.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line[data-kind='hunk'] { grid-template-columns: 4ch 1ch minmax(0, 1fr); }
 .changes-diff__rows .hljs-type, .changes-diff__rows .hljs-class, .changes-diff__rows .hljs-attr, .changes-diff__rows .hljs-attribute, .changes-diff__rows .hljs-property, .changes-diff__rows .hljs-params { color: var(--changes-code-type); }
 .changes-diff__rows .hljs-comment, .changes-diff__rows .hljs-quote, .changes-diff__rows .hljs-meta, .changes-diff__rows .hljs-punctuation, .changes-diff__rows .hljs-operator { color: var(--tt-text-muted); }
 
@@ -308,9 +324,8 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-tree__none { margin: 0; padding: 6px 8px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .changes-tree__list { position: relative; display: flex; flex: 1; flex-direction: column; gap: 1px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-tree__group { flex: none; }
-.changes-tree__folder { overflow: hidden; padding: 6px 8px 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.changes-tree__item { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 28px; padding: 0 8px; border-radius: var(--tt-radius-control); color: var(--tt-text-2); font-size: var(--tt-type-small); user-select: none; }
-.changes-tree__item[data-nested] { padding-left: 16px; }
+.changes-tree__folder { overflow: hidden; padding: 6px 6px 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.changes-tree__item { display: flex; align-items: flex-start; gap: 4px; min-width: 0; min-height: 28px; padding: 4px 6px 4px 4px; border-radius: var(--tt-radius-control); color: var(--tt-text-2); font-size: var(--tt-type-small); user-select: none; }
 .changes-tree__item:hover { background: var(--tools-hover); color: var(--tt-text); }
 .changes-tree__item[aria-current] { background: var(--tt-selected); color: var(--tt-text); }
 .changes-tree__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
