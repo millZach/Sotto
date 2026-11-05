@@ -66,8 +66,8 @@ Zach chose this. On November 2 he asked: "shorten the name of the thread down, i
 
 The Consequences' line on `calc-size()` still holds. The floor also reads the title's own width, so the title is a size container, and the name's cap reads the pane's width through the registered property `--pane-width`.
 
-## Note, November 4, 2026: words beside three of the buttons
+## Note, November 4, 2026: a word beside Tools
 
 Zach has not been asked about this yet. It came from the design pass of November 4, 2026 and no decision recorded it, so this records what the surface now does. He will be asked when he reviews that work, and nothing here says he picked it.
 
-In a pane 1100px or wider, Council, Tools and Terminal each say their word beside their symbol. In a narrower pane they are the symbols alone, with the word in the tooltip and for a screen reader. The symbols, their order and every decision above are unchanged. A pane that crosses 1100px as it is resized sees those three buttons grow or shrink by their words, which ADR-0163's decision 5, that nothing in the header moves as a pane narrows, did not foresee.
+In a pane 1100px or wider, Tools says its word beside its symbol. The Council and the Terminal drawer are their symbols alone at every width, with the word in the tooltip and for a screen reader; an earlier step of the same pass gave them words too, and reviewers read the row as clutter. Watch has no edge at rest, so the Git action is the one outlined control, and a little space after Watch parts the thread's presses from the layout's buttons. The symbols, their order and every decision above are unchanged. A pane that crosses 1100px as it is resized sees Tools grow or shrink by its word, which ADR-0163's decision 5, that nothing in the header moves as a pane narrows, did not foresee.

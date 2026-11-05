@@ -96,14 +96,17 @@
 .pane-action:hover:not(:disabled, [aria-disabled='true']), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-action:active:not(:disabled, [aria-disabled='true']):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .pane-action:is(:disabled, [aria-disabled='true']) { opacity: .5; cursor: default; }
-/* A symbol alone says little to someone new to it, so where a pane has room to spare the header's panel and drawer buttons
-   carry their words, as the Git action and Watch do (ADR-0182). The name and where the thread works are served first, so the
-   words come only once they cost neither. Below that the word is read and not drawn, and hovering names the button. */
+/* The header says words only for what a press does to the thread: the Git action, Watch, and Tools, whose panel holds the
+   thread's work (ADR-0182). The Council and the Terminal drawer are symbols named on hover and for a screen reader, so the
+   row reads as two presses and a few quiet keys. Tools draws its word only where the pane has room to spare: the name and
+   where the thread works are served first. */
 .pane-action__word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @container thread-pane (min-width: 1100px) {
   .pane-action:has(> .pane-action__word) { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 0 9px 0 7px; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); }
   .pane-action__word { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
 }
+/* The thread's own presses, then a little air, then the layout's keys: two groups, in ADR-0163's fixed order. */
+.thread-workspace__actions > .watch-toggle { margin-right: 6px; }
 /* In a narrow pane every pixel beside the buttons is the name's and then the pull request number's, so the row tightens and
    the name takes the sidebar row's size. The buttons keep their size and their place against the pane's right edge, so
    nothing moves under a pointer as a pane is resized (ADR-0163, decision 5). */
@@ -111,6 +114,7 @@
   .thread-workspace__head { gap: 2px; }
   .thread-workspace__title { gap: 6px; }
   .thread-workspace__head h2 { font-size: var(--tt-type-body); letter-spacing: -.1px; }
+  .thread-workspace__actions > .watch-toggle { margin-right: 2px; }
 }
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
