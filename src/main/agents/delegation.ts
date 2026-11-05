@@ -7,6 +7,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleInForce, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { dynamicRecordTokens, type DynamicRecord } from './dynamicRecord'
 import { allowedProviders, DYNAMIC_WHY_MAX, isDynamicThread, providerAbilities, WORKERS_AT_ONCE_MAX, type DynamicEffort, type DynamicThreadSettings } from '../../shared/dynamicThreads'
 import { providerProfile } from '../../shared/providerProfile'
 import { effortRank } from '../../shared/reasoningEfforts'
@@ -119,6 +120,8 @@ export interface DelegationServiceOptions {
   readonly dynamicThreads?: () => DynamicThreadSettings
   /** A provider's limits as Usage reads them, for an overseer choosing (ADR-0191 decision 9). */
   readonly providerLimits?: (provider: ProviderId) => Promise<UsageQuotaRead | undefined>
+  /** **Its record** (ADR-0191 decision 9): told of each overseer's start, replacement and outcome, and read by an overseer choosing. */
+  readonly record?: Pick<DynamicRecord, 'started' | 'ended' | 'moved' | 'watches' | 'read'>
   /** Owl worker-swarms: one machine admission owner and identity-only group updates. */
   readonly swarms?: { readonly admission: WorkerAdmission; readonly changed?: (swarm: WorkerSwarm) => void }
   /**
@@ -2173,6 +2176,13 @@ export class DelegationService {
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
     this.touched(record)
+    // Its record counts an overseer's piece once it is admitted, and the piece it took over as moved.
+    if (record.chosen && this.options.record) {
+      this.options.record.started({ thread: delegatedThreadId, provider: model.providerId!, model: model.id, name: model.name })
+      // Only a piece of its own, as letting go of the old worker is.
+      const replaced = record.replaces ? this.record(record.replaces) : undefined
+      if (replaced?.delegatingThreadId === caller.id) this.options.record.moved(replaced.delegatedThreadId, model.id)
+    }
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default',
       // A role's own choice may name a long-context variant the catalog lists under its base, so its ID is kept.
       modelId: byRole && !named ? byRole.modelId! : model.id, speed: byRole ? byRole.speed : input.speed ?? null, ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared',
@@ -2622,7 +2632,7 @@ export class DelegationService {
         if (this.unproved(record, thread)) {
           this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.unknownBecause = 'unconfirmed'; saved.outcomeAt = now() })
           changed = true
-          this.changed(record.id)
+          this.changed(record.id, thread)
         }
         continue
       }
@@ -2661,7 +2671,7 @@ export class DelegationService {
       for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) { if (seen[field]) saved[field] = seen[field]; else delete saved[field] }
     })
     if (seen.outcome === 'answered' && !restarted) this.answeredThisRun.add(record.id)
-    this.changed(record.id)
+    this.changed(record.id, thread)
     return true
   }
   /**
@@ -2684,7 +2694,7 @@ export class DelegationService {
       this.lastWorking.delete(record.id)
       this.update(record.id, saved => { saved.releasedAt = new Date(clock).toISOString(); delete saved.releaseTold })
       released = true
-      this.changed(record.id)
+      this.changed(record.id, thread)
     }
     if (Number.isFinite(next) && !this.closed) this.cancelRelease = this.schedule(() => { this.cancelRelease = undefined; if (!this.closed) this.observe(this.snapshot()) }, next - clock)
     return released
@@ -2707,7 +2717,8 @@ export class DelegationService {
    * An outcome moved: a call waiting on it hears it; otherwise, once it says something new, the delegating thread is sent
    * it as a wake-up carrying identities only (decision 7).
    */
-  private changed(delegationId: string): void {
+  /** `thread`: the delegated thread as the pass that moved the outcome already read it, so nothing searches for it again. */
+  private changed(delegationId: string, thread?: AgentThread): void {
     const record = this.record(delegationId)
     if (!record) return
     this.releaseCheck(record)
@@ -2718,6 +2729,11 @@ export class DelegationService {
     }
     this.syncSwarmMember(delegationId)
     const outcome = this.outcomeOf(record)
+    // A piece of an overseer's that reached an outcome: its record counts it finished if answered, and the tokens since.
+    if (outcome !== 'working' && this.options.record?.watches(record.delegatedThreadId)) {
+      const seen = thread ?? this.snapshot().threads.find(item => item.id === record.delegatedThreadId)
+      this.options.record.ended(record.delegatedThreadId, outcome === 'answered', dynamicRecordTokens(seen?.usage?.total))
+    }
     if (!this.open(record)) this.waiters.get(record.id)?.forEach(wake => wake())
     if (this.calling.has(record.id) || outcome === 'working' || outcome === record.told && this.heldMinutes(record) === undefined) return
     const swarm = this.swarmByDelegation.get(delegationId)?.swarm
@@ -2915,7 +2931,13 @@ export class DelegationService {
     }))
     const { roles: _roles, ...rest } = listed as T & { roles?: unknown }
     void _roles
-    return { ...rest, models: listed.models.filter(model => allowed.has(model.provider)), providers, highestEffort: limits.settings.highestEffort, ...limits.overseeing ? { workersAtOnce: limits.settings.workersAtOnce } : {} } as Omit<T, 'roles'> & Record<string, unknown>
+    // Its record on this computer, beside each model it has counted: how many pieces it was given, finished and moved.
+    const lines = this.options.record ? new Map(this.options.record.read().models.map(row => [row.model, row])) : undefined
+    const models = listed.models.filter(model => allowed.has(model.provider)).map(model => {
+      const line = lines && 'model' in model && typeof model.model === 'string' ? lines.get(model.model) : undefined
+      return line ? { ...model, record: { pieces: line.pieces, finished: line.finished, moved: line.moved, tokens: line.tokens } } : model
+    })
+    return { ...rest, models, providers, highestEffort: limits.settings.highestEffort, ...limits.overseeing ? { workersAtOnce: limits.settings.workersAtOnce } : {} } as Omit<T, 'roles'> & Record<string, unknown>
   }
   private listing(caller: AgentThread, snapshot: AgentHostSnapshot) {
     // The newest twenty, refused ones among them, oldest first.

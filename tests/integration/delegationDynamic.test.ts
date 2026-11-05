@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DelegationService } from '../../src/main/agents/delegation'
+import { DynamicRecord } from '../../src/main/agents/dynamicRecord'
 import type { AgentRuntimeMode, ProviderId } from '../../src/shared/agents'
 import { DEFAULT_DYNAMIC_THREADS, type DynamicThreadSettings } from '../../src/shared/dynamicThreads'
 import type { UsageQuotaRead } from '../../src/shared/usageDashboard'
@@ -36,8 +37,11 @@ async function fixture(options: { enabled?: boolean; limits?: Partial<DynamicThr
   let settings: DynamicThreadSettings = { ...DEFAULT_DYNAMIC_THREADS, providers: ['claude', 'codex'], ...options.limits }
   const choices: WorkerRoleChoices = {}
   let history = true
+  // Its record (ADR-0191 decision 9), wherever the feature is on.
+  const record = enabled ? new DynamicRecord(f.root) : undefined
+  await record?.load()
   const open = () => new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => history, roles: () => choices,
-    ...enabled ? { dynamicThreads: () => settings, ...options.quota ? { providerLimits: options.quota } : {} } : {} })
+    ...enabled ? { dynamicThreads: () => settings, ...options.quota ? { providerLimits: options.quota } : {}, ...record ? { record } : {} } : {} })
   let service = open()
   cleanups.push(async () => { service.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
   await f.control.start()
@@ -65,7 +69,19 @@ async function fixture(options: { enabled?: boolean; limits?: Partial<DynamicThr
     if (command?.type !== 'create-thread') throw new Error('not created')
     return { provider: binding.provider, reasoningEffort: command.reasoningEffort, runtimeMode: command.runtimeMode }
   }
-  return { ...f, workspace, get service() { return service }, model, overseer, named, delegate, ok, created, setLimits: (next: Partial<DynamicThreadSettings>) => { settings = { ...settings, ...next } },
+  /** A worker's provider ends its turn with a reply, having used `total` tokens all told. */
+  const answer = async (threadId: string, total: { input: number; output: number }) => {
+    const binding = workspace.registry.byThread(threadId)!
+    const adapter = workspace.adapters[binding.provider as keyof typeof workspace.adapters]
+    const thread = adapter.state.threads.find(item => item.id === binding.sessionId)!
+    thread.messages.push({ id: randomUUID(), role: 'assistant', text: 'Synthetic reply', createdAt: new Date().toISOString() })
+    thread.lastTurn = { id: thread.messages.findLast(message => message.role === 'user')!.id, status: 'completed' }
+    thread.usage = { total, rateVersions: [], partial: false, updatedAt: new Date().toISOString() }
+    thread.status = 'idle'
+    adapter.emit()
+    await f.control.commandShell({ type: 'refresh', provider: binding.provider as ProviderId })
+  }
+  return { ...f, workspace, record, answer, get service() { return service }, model, overseer, named, delegate, ok, created, setLimits: (next: Partial<DynamicThreadSettings>) => { settings = { ...settings, ...next } },
     setHistory: (on: boolean) => { history = on; service.privacyChanged() },
     restart: async () => {
       await vi.waitFor(async () => expect(await readFile(join(f.root, 'delegations.json'), 'utf8')).toContain('"why"'))
@@ -224,6 +240,33 @@ it('reads an overseer only the models on its list, what each can do and what is 
   const plain = await f.service.read(await f.overseer(false), {}) as Record<string, unknown>
   expect(plain).toHaveProperty('roles')
   expect(plain).not.toHaveProperty('providers')
+})
+
+it('counts each of an overseer\'s pieces on its record, finished with the tokens its worker used, moved when it replaces one of its own, and reads it to the overseer', async () => {
+  const f = await fixture(), parent = await f.overseer()
+  const sol = f.model('codex'), opus = f.model('claude')
+  const first = f.ok(await f.delegate(parent, f.named('codex')))
+  expect(f.record!.line(sol.id)).toEqual({ provider: 'codex', model: sol.id, name: sol.name, pieces: 1, finished: 0, moved: 0, tokens: 0 })
+  await f.answer(first.delegation.thread, { input: 4_000, output: 600 })
+  await vi.waitFor(() => expect(f.record!.line(sol.id)).toMatchObject({ finished: 1, tokens: 4_600 }))
+  const read = await f.service.read(parent, {}) as { models: { model: string; record?: unknown }[] }
+  expect(read.models.find(item => item.model === sol.id)?.record).toEqual({ pieces: 1, finished: 1, moved: 0, tokens: 4_600 })
+  expect(read.models.find(item => item.model === opus.id)).not.toHaveProperty('record')
+  // Given to the same model again: no move. Given to another: the old piece is moved on its own model's line.
+  const again = f.ok(await f.delegate(parent, f.named('codex', { why: 'Another go.' })))
+  f.ok(await f.delegate(parent, f.named('codex', { replaces: again.delegation.id, why: 'Same model, fresh thread.' })))
+  expect(f.record!.line(sol.id)).toMatchObject({ pieces: 3, moved: 0 })
+  const second = f.ok(await f.delegate(parent, f.named('codex', { why: 'A second piece.' })))
+  f.ok(await f.delegate(parent, f.named('claude', { replaces: second.delegation.id, why: 'Codex stopped at its limit.' })))
+  expect(f.record!.line(sol.id)).toMatchObject({ pieces: 4, finished: 1, moved: 1 })
+  expect(f.record!.line(opus.id)).toMatchObject({ pieces: 1, moved: 0 })
+  // Another overseer naming a piece that is not its own moves nothing.
+  f.ok(await f.delegate(await f.overseer(), f.named('claude', { replaces: first.delegation.id })))
+  expect(f.record!.line(sol.id)!.moved).toBe(1)
+  // An ordinary thread's delegation is no piece of an overseer's.
+  const plain = await f.overseer(false)
+  await f.delegate(plain, { work: 'code-review', brief: 'Synthetic brief', wait_seconds: 0, provider: 'codex', model: sol.id, effort: 'high', permission: 'auto' })
+  expect(f.record!.line(sol.id)!.pieces).toBe(4)
 })
 
 it('lets go of what a new worker replaces: its restart at the reset, and its turn if that restart has already gone', async () => {

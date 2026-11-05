@@ -25,6 +25,8 @@ import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
+import { registerDynamicRecordIpc } from './agents/dynamicRecordIpc'
+import { DynamicRecord } from './agents/dynamicRecord'
 import { registerCouncilIpc } from './council/councilIpc'
 import { CouncilService } from './council/councilService'
 import { BranchBundles } from './agents/branchBundles'
@@ -37,6 +39,7 @@ import { nextPromptWatcherFacts } from './agents/nextPromptProject'
 import { nextPromptWatcherRequest, parseNextPrompt } from './llm/nextPrompt'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
+import { DYNAMIC_RECORD_RENDERER_ARGUMENT } from '../shared/dynamicRecord'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import { COUNCIL_RENDERER_ARGUMENT } from '../shared/council'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
@@ -965,6 +968,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
+        // Settings' read of a Dynamic thread overseer's record (ADR-0191 decision 9), only while its Owl feature is on.
+        ...(owlFeatures['dynamic-threads'] ? [DYNAMIC_RECORD_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
@@ -2386,6 +2391,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // A check's reply is read on a press only where checks are offered, with Watcher and Work across machines on (#1312).
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled)
+      // Settings' read of its record and Clear its record (ADR-0191 decision 9); stable registers nothing.
+      // With this computer's host off, what it saved is opened here, so it can still be read and cleared.
+      const dynamicRecord = 'dynamicRecord' in localRuntime && localRuntime.dynamicRecord ? localRuntime.dynamicRecord : owlFeatures['dynamic-threads'] ? new DynamicRecord(userDataPath) : undefined
+      const cleanupDynamicRecord = registerDynamicRecordIpc(ipcMain, owlFeatures['dynamic-threads'], dynamicRecord, () => windows.getTrustedRenderers())
       // Every machine's check queue for its panel and Tools › Agents (#1312), only where Watcher and Work across machines are
       // both on, as the machines line is, so stable registers nothing. With the local host off, This computer keeps no queue
       // and each host's is still read.
@@ -2680,6 +2689,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupUsage()
         cleanupProductEvents()
         cleanupDelegations()
+        cleanupDynamicRecord()
         cleanupCheckQueues()
         cleanupContinue()
         cleanupCouncil()

@@ -3,12 +3,15 @@ import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, providerIdSchema, type ProviderId } from '../../../../shared/agents'
 import { DYNAMIC_EFFORTS, DYNAMIC_NOTE_MAX_CHARACTERS, dynamicEffortSchema, WORKERS_AT_ONCE_MAX, workersAtOnceSchema, type DynamicThreadSettings } from '../../../../shared/dynamicThreads'
+import type { DynamicRecordRead } from '../../../../shared/dynamicRecord'
 import type { SettingsPatch } from '../../../../shared/settings'
+import { formatTokenCount } from '../../../../shared/threadUsage'
 import { reportsUsageLimits, type UsageQuotaRead } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { companyWords, firstAllowedProviders } from '../../agents/DynamicSwitch'
 import { effortLabel } from '../../agents/EffortPicker'
 import { ProviderMark } from '../../agents/ProviderMark'
+import { Button } from '../../components/Button'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import './dynamicThreads.css'
@@ -17,6 +20,44 @@ import './dynamicThreads.css'
 function limitWords(quota: UsageQuotaRead | undefined): { readonly label: string; readonly used: number } | undefined {
   const window = quota?.status === 'available' ? quota.windows.find(item => item.usedPercent !== undefined) : undefined
   return window ? { label: window.label, used: Math.round(window.usedPercent!) } : undefined
+}
+
+/**
+ * **Its record on this computer** (ADR-0191 decision 9): each model's pieces, finished, moved and tokens, in counts and
+ * no words, read when the card opens; Clear its record empties it. Absent where the window has no reach to it.
+ */
+function ItsRecord(): ReactNode {
+  const { t } = useLingui()
+  const bridge = window.sotto?.dynamicRecord
+  const [read, setRead] = useState<DynamicRecordRead | null>(null)
+  const [said, setSaid] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
+  const headingId = useId()
+  useEffect(() => {
+    let current = true
+    void bridge?.read().then(next => { if (current) setRead(next) }).catch(() => { if (current) setSaid(t`Its record could not be read. Nothing was changed. Open Settings again to try again.`) })
+    return () => { current = false }
+  }, [bridge, t])
+  if (!bridge) return null
+  const rows = read?.models ?? []
+  const clear = (): void => {
+    setClearing(true)
+    void bridge.clear().then(next => { setRead(next); setSaid(t`Its record was cleared. Pieces from now on are counted here.`) })
+      .catch(() => setSaid(t`Its record could not be cleared. Its counts may remain. Try again.`)).finally(() => setClearing(false))
+  }
+  return <section className="dynamic-threads__record" aria-labelledby={headingId} data-setting="dynamic-threads-record">
+    <h3 id={headingId}><Trans>Its record on this computer</Trans></h3>
+    <p className="dynamic-threads__note tt-paragraph"><Trans>Counts only, no words. The overseer reads this when it chooses. Moved means the piece was then given to another model.</Trans></p>
+    {rows.length ? <table className="dynamic-threads__table">
+      <thead><tr><th scope="col"><Trans>Model</Trans></th><th scope="col"><Trans>Pieces</Trans></th><th scope="col"><Trans>Finished</Trans></th><th scope="col"><Trans>Moved</Trans></th><th scope="col"><Trans>Tokens</Trans></th></tr></thead>
+      <tbody>{rows.map(row => <tr key={row.model}>
+        <th scope="row"><span className="dynamic-threads__record-model"><ProviderMark provider={row.provider} name={PROVIDER_LABELS[row.provider]} size={14} />{row.name}</span></th>
+        <td>{row.pieces}</td><td>{row.finished}</td><td>{row.moved}</td><td>{formatTokenCount(row.tokens)}</td>
+      </tr>)}</tbody>
+    </table> : read ? <p className="dynamic-threads__note tt-paragraph"><Trans>Nothing counted yet. Each piece an overseer gives a model is counted here.</Trans></p> : null}
+    <p className="dynamic-threads__note tt-paragraph" role="status">{said}</p>
+    <div><Button variant="secondary" disabled={!rows.length || clearing} onClick={clear}><Trans>Clear its record</Trans></Button></div>
+  </section>
 }
 
 /** How long typing in **Your note** pauses before it saves, as Custom instructions does. */
@@ -139,5 +180,6 @@ export function DynamicThreadsSettings({ settings, onSave }: { readonly settings
         }}
         onBlur={flushNote} />
     </div>
+    <ItsRecord />
   </div>
 }

@@ -102,7 +102,7 @@ const userNoteWords = (note: string): string => `The user's note, advice in thei
 export function overseerInstructions(note?: string): string {
   return [
     'The user made you this thread\'s overseer. Plan the work and hand each piece to a delegated thread with the delegate tool, on the model you judge best for that piece. You do no work yourself: you read code, write briefs, check what comes back and answer the user.',
-    'Call read_delegation with no delegation to see the models you may use, what each can do and how much of its limit is left. Choose from those alone, and prefer a provider with room.',
+    'Call read_delegation with no delegation to see the models you may use, what each can do, how much of its limit is left and, where it has one, its record on this computer: how many pieces it was given, how many its worker finished, how many were moved to another model, and the tokens they used. Choose from those alone, and prefer a provider with room.',
     'For each new thread, name its provider, model, effort and permission, and give why in one short plain line the user will read. Leave speed out unless the user\'s message asks for one. A brief is all a worker sees of this thread, so write it in full.',
     'Do not edit project files or run commands that change anything. If you must, list the files or commands in your reply, and give the reason once, on a line of its own that starts with exactly "' + OVERSEER_REASON_PREFIX + '". Sotto marks the reply either way.',
     'One worker at a time may write in the shared checkout. Give any other writer its own worktree with working_copy, and say so in its brief.',

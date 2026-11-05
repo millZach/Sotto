@@ -1,5 +1,6 @@
 import { COUNCIL_CLIMB, climbRequestSchema, climbResultSchema } from '../shared/councilClimb'
 import { DICTATION_TIMING, DICTATION_TIMING_ARGUMENT, type DictationTimingBridge } from '../shared/dictationTiming'
+import { DYNAMIC_RECORD_CLEAR, DYNAMIC_RECORD_READ, DYNAMIC_RECORD_RENDERER_ARGUMENT, dynamicRecordReadSchema, type DynamicRecordBridge } from '../shared/dynamicRecord'
 import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type HostsState } from '../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD, type HostDeviceList, type TailscaleConnectOutcome, type TailscaleSummary } from '../shared/hostDevices'
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
@@ -436,6 +437,8 @@ export function createSottoBridge(
   /** The popup's shortcut row and its Open in Sotto (ADR-0181): only while the `popup` Owl feature is on. */
   popupEnabled = false,
   dictationTiming = false,
+  /** A Dynamic thread overseer's record in Settings (ADR-0191 decision 9): only while the `dynamic-threads` Owl feature is on. */
+  dynamicRecordEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -476,6 +479,10 @@ export function createSottoBridge(
   )
   const bridge: SottoBridge = {
     ...(dictationTiming ? { dictationTiming: createDictationTimingBridge(renderer) } : {}),
+    ...(dynamicRecordEnabled ? { dynamicRecord: Object.freeze<DynamicRecordBridge>({
+      read: () => invokeParsed(renderer, DYNAMIC_RECORD_READ, dynamicRecordReadSchema),
+      clear: () => invokeParsed(renderer, DYNAMIC_RECORD_CLEAR, dynamicRecordReadSchema),
+    }) } : {}),
     productEvents: Object.freeze<ProductEventsBridge>({ toolOpened: tool => { void renderer.invoke(PRODUCT_EVENT_TOOL_OPENED, tool).catch(() => undefined) }, state: () => renderer.invoke(PRODUCT_EVENT_STATE) as Promise<ProductEventsState | null> }),
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
@@ -902,7 +909,8 @@ export function exposeRendererBridge(
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
-      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT)))
+      parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
+      arguments_.includes(DYNAMIC_RECORD_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {

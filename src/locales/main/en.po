@@ -1006,6 +1006,7 @@ msgstr "Open Hosts in the main Sotto window."
 msgid "Open Phones in the main Sotto window."
 msgstr "Open Phones in the main Sotto window."
 
+#: src/main/agents/dynamicRecordIpc.ts
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
 #: src/main/phones/ipc.ts
