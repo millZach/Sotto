@@ -209,18 +209,18 @@
 .rich-table tr:last-child td { border-bottom: 0; }
 .rich-table td + td, .rich-table th + th { border-left: 1px solid var(--tt-hairline); }
 
-/* Streaming caret: the last paragraph or list item carries it while the provider writes. */
+/* Streaming caret: the last paragraph or list item carries it while the provider writes, and so does the last line of a
+   code block whose fence has not closed yet, so a line that stops part-way reads as still arriving rather than cut. It is
+   a word joiner drawn as a bar, not a box of its own, so it never wraps away from the last letter onto a line alone. */
 
 .rich-message[data-streaming] > p:nth-last-child(2)::after,
-.rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after {
-  content: '';
-  display: inline-block;
-  width: 7px;
-  height: 1.05em;
+.rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after,
+.rich-code[data-writing] .rich-code__scroll > code::after {
+  content: '\2060';
+  padding-left: 7px;
   margin-left: 3px;
   border-radius: var(--tt-radius-mark);
   background: var(--rich-caret);
-  vertical-align: -0.15em;
   animation: rich-caret 1.1s ease-in-out infinite;
 }
 
@@ -254,12 +254,14 @@
 /* Both the system preference and Sotto's own reduced-motion setting hold the caret solid. */
 @media (prefers-reduced-motion: reduce) {
   .rich-message[data-streaming] > p:nth-last-child(2)::after,
-  .rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after { animation: none; }
+  .rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after,
+  .rich-code[data-writing] .rich-code__scroll > code::after { animation: none; }
   .rich-code__copy, .rich-code__copy[data-copied] svg { transition: none; animation: none; }
 }
 
 :root[data-reduced-motion='on'] .rich-message[data-streaming] > p:nth-last-child(2)::after,
 :root[data-reduced-motion='on'] .rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after,
+:root[data-reduced-motion='on'] .rich-code[data-writing] .rich-code__scroll > code::after,
 :root[data-reduced-motion='on'] .rich-code__copy[data-copied] svg { animation: none; }
 :root[data-reduced-motion='on'] .rich-code__copy { transition: none; }
 

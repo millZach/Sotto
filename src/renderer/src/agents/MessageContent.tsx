@@ -259,9 +259,11 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
   </span>
 }
 
-export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run }: {
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run, writing = false }: {
   code: string; language: string | undefined
   readonly cut?: CodeBlockCut | undefined
+  /** The reply is still writing this block: its fence has not closed, so its last line carries the reply's caret. */
+  readonly writing?: boolean | undefined
   /** Offers Run beside Copy when the block holds shell input (ADR-0139). */
   readonly run?: RunCommand | undefined
   /** Opens scrolled to its end, and keeps the same lines in view as the code above them grows, as command output does. */
@@ -304,7 +306,7 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
   const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
   const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showOutcome('copied'), () => showOutcome('failed')) }
   const marker = cut ? <span className="activity-body__cut">{cut.line}</span> : null
-  return <div className="rich-code" data-language={language} data-cut={cut?.keep}>
+  return <div className="rich-code" data-language={language} data-cut={cut?.keep} data-writing={writing || undefined}>
     <div className="rich-code__bar">
       <span className="rich-code__language">{label}</span>
       <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
@@ -343,7 +345,7 @@ function MarkdownCodeBlock({ source, language, start, end }: { source: string; l
   const complete = !streaming || (start !== undefined && end !== undefined && isFenceClosed(text.slice(start, end)))
   // A finished diff is drawn the way Changes draws one. Until its fence closes it stays text, so a chunk reads nothing.
   if (language === 'diff' && complete) return <DiffBlock diff={source} />
-  return <CodeBlock code={source} language={language} run={complete ? run : undefined} />
+  return <CodeBlock code={source} language={language} run={complete ? run : undefined} writing={!complete} />
 }
 
 /** What a link to a Markdown file does: a press opens it in the side panel, and its menu offers the folder and the path. */
