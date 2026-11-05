@@ -1,6 +1,6 @@
-/* The popup (ADR-0181): one floating card in the theme's colours, set in Figtree, its prompt at the bottom and the
-   conversation growing upward above it. A port of Sotto Popup: the night behind the card is its faint accent glow and
-   three quiet stars, the owl marks it, and every colour is a theme role. The window is the card; around it is nothing. */
+/* The popup (ADR-0181): one floating card in the theme's colours, set in Figtree, the conversation above and the prompt
+   with its tools at the bottom, every line of words on one left edge. Every colour is a theme role. The window is the
+   card; around it is nothing. */
 
 html:has(> body.popup-page),
 body.popup-page {
@@ -17,23 +17,14 @@ body.popup-page #root {
 }
 
 .popup-card {
-  --popup-night: color-mix(in oklch, var(--tt-accent) 10%, transparent);
-  --popup-star: color-mix(in oklch, var(--tt-accent) 22%, transparent);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  --popup-wash: color-mix(in oklch, var(--tt-text) 7%, transparent);
+  --popup-edge: 16px;
   box-sizing: border-box;
   height: 100vh;
-  padding: 8px 14px;
   overflow: hidden;
   border: 1px solid var(--tt-panel-border);
   border-radius: var(--tt-radius-overlay);
-  background:
-    radial-gradient(1.2px 1.2px at 13% 15px, var(--popup-star) 99%, transparent),
-    radial-gradient(1px 1px at 29% 30px, var(--popup-star) 99%, transparent),
-    radial-gradient(1.4px 1.4px at 47% 11px, var(--popup-star) 99%, transparent),
-    radial-gradient(150px 110px at 45px 12px, var(--popup-night), transparent),
-    var(--tt-surface-elevated);
+  background: var(--tt-surface-elevated);
   color: var(--tt-text);
   font-family: var(--tt-font-ui);
   font-size: var(--tt-type-body);
@@ -41,52 +32,168 @@ body.popup-page #root {
   -webkit-app-region: drag;
 }
 
-.popup-card :is(button, textarea, a, input, select, label, [role='listbox'], .popup-transcript, .agent-request) {
+.popup-card :is(button, textarea, a, input, select, label, figure, [role='listbox'], .popup-transcript, .agent-request) {
   -webkit-app-region: no-drag;
 }
 
-/* The conversation: newest at the bottom, fading out under the card's top edge, scrolling once main stops the window
-   growing at its share of the screen. */
+/* The whole card takes a paste or a drop, so its parts stack by order: the conversation, the photos going with the next
+   prompt, what became of adding them, then the prompt and its tools. */
+.popup-card > .screenshot-input {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.popup-card > .screenshot-input > .popup-transcript {
+  order: -3;
+}
+
+.popup-card > .screenshot-input > .screenshot-previews {
+  order: -2;
+  flex: none;
+  margin: 0;
+  padding: 12px var(--popup-edge) 0;
+  border-top: 1px solid var(--tt-panel-border);
+}
+
+.popup-card > .screenshot-input > .screenshot-input__tools {
+  order: -1;
+  flex: none;
+  margin: 0;
+  padding: 0 var(--popup-edge);
+}
+
+.popup-card > .screenshot-input > .screenshot-input__tools small {
+  padding-top: 8px;
+  font-size: var(--tt-type-caption);
+}
+
+/* Its own paperclip, in the tools row, opens the picker: focus reaches it in the order the eye does. */
+.popup-card > .screenshot-input > .screenshot-input__tools .tt-button {
+  display: none;
+}
+
+.popup-card > .screenshot-input > .screenshot-input__drop {
+  inset: 6px;
+  border-radius: var(--tt-radius-card);
+}
+
+/* The conversation: newest at the bottom, fading out under the card's top edge, older messages a scroll up. */
 .popup-transcript {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
-  mask-image: linear-gradient(to bottom, transparent 0, black 18px);
+  mask-image: linear-gradient(to bottom, transparent 0, black 14px);
 }
 
 .popup-transcript__inner {
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding: 16px 4px 4px;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 14px var(--popup-edge) 12px;
+  animation: popup-arrive 110ms ease-out;
 }
 
 .popup-entry {
   min-width: 0;
-  font-size: var(--tt-type-reading);
+  font-size: var(--tt-type-body);
   line-height: 1.5;
   user-select: text;
 }
 
+.popup-entry .rich-message {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.popup-entry .rich-message.rich-message p {
+  margin-bottom: 10px;
+}
+
+.popup-entry .rich-message.rich-message > p:nth-last-child(2) {
+  margin-bottom: 0;
+}
+
+/* A code block's bar is slimmer here than in a pane. */
+.popup-entry .rich-code {
+  margin: 10px 0;
+}
+
+.popup-entry .rich-code__bar {
+  min-height: 28px;
+  padding: 0 2px 0 10px;
+}
+
+/* A prompt: the main window's bubble, with its photos above it. */
 .popup-entry--user {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--tt-text-muted);
-  font-weight: 500;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 14px 0 12px;
 }
 
-.popup-entry--user > svg {
-  flex: none;
-  color: var(--tt-accent-text);
-  transform: translateY(1px);
+.popup-entry--user:first-child {
+  margin-top: 0;
 }
 
-.popup-entry--user > p {
+.popup-bubble {
+  max-width: 82%;
+  padding: 7px 12px;
+  border-radius: var(--tt-radius-card);
+  background: var(--popup-wash);
+  color: var(--tt-text);
+  overflow-wrap: anywhere;
+}
+
+.popup-bubble > p {
   margin: 0;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+}
+
+.popup-bubble .rich-message {
+  --rich-text: var(--tt-text);
+}
+
+.popup-entry--user .rich-attachments {
+  margin: 0;
+}
+
+.popup-entry--user .rich-attachments__list {
+  justify-content: flex-end;
+}
+
+/* A sent photo is the picture alone here: its name is in the frame's title and the main window has the rest. */
+.popup-entry--user .rich-attachment--image {
+  width: 180px;
+}
+
+.popup-entry--user .rich-attachment__frame {
+  width: 180px;
+  height: 120px;
+}
+
+.popup-entry--user .rich-attachment--image figcaption {
+  display: none;
+}
+
+.popup-photos {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.popup-photos img {
+  display: block;
+  max-width: 180px;
+  max-height: 120px;
+  border-radius: var(--tt-radius-inset);
 }
 
 .popup-entry--user.is-sending {
@@ -94,41 +201,68 @@ body.popup-page #root {
 }
 
 .popup-entry--reply {
-  color: var(--tt-text);
+  color: var(--tt-text-2);
 }
 
-.popup-entry--reply > :first-child {
+/* A thread's messages in one turn run on as one reply; only Watcher's are parted. */
+.popup-entry--reply + .popup-entry--reply {
+  margin-top: 10px;
+}
+
+/* Watcher speaks unasked: its reports are parted by a rule and the time. */
+.popup-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 12px;
+  color: var(--tt-text-hint);
+  font-size: var(--tt-type-caption);
+}
+
+.popup-rule::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--tt-panel-border);
+}
+
+/* The labelled lines that close a reply, set up as one block. */
+.popup-closing {
+  margin-top: 12px;
+}
+
+.popup-closing:first-child {
   margin-top: 0;
+}
+
+.popup-entry .popup-closing .rich-message.rich-message p {
+  margin-bottom: 3px;
 }
 
 .popup-status {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
-  margin: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: var(--tt-text-muted);
   font-size: var(--tt-type-small);
 }
 
-.popup-status__spark {
-  display: inline-block;
-  width: 14px;
-  color: var(--tt-accent);
-  text-align: center;
-  animation: popup-spark 2.4s steps(8) infinite;
-}
-
-.popup-status__words {
-  color: var(--tt-accent-text);
-  font-weight: 600;
-}
-
-.popup-status__hint {
-  color: var(--tt-text-muted);
-  font-size: var(--tt-type-caption);
-}
-
 .popup-chrome {
+  position: relative;
   flex: none;
+  padding: 0 8px 8px;
+  border-top: 1px solid var(--tt-panel-border);
+}
+
+/* One rule between the conversation and what goes next: above the photos when there are any, else above the prompt. */
+.popup-card > .screenshot-input > .popup-chrome:first-child,
+.popup-card > .screenshot-input:has(> .screenshot-previews) > .popup-chrome {
+  border-top: 0;
+}
+
+.popup-card > .screenshot-input > .popup-chrome:first-child ~ .screenshot-previews {
+  border-top: 0;
 }
 
 .popup-notice {
@@ -188,18 +322,12 @@ body.popup-page #root {
 }
 
 .popup-prompt {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 8px 0;
-}
-
-.popup-prompt__field {
-  flex: 1;
-  min-width: 0;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   max-height: calc(1.45em * 8);
   margin: 0;
-  padding: 4px 0;
+  padding: 12px 8px 8px;
   border: 0;
   outline: 0;
   resize: none;
@@ -212,9 +340,21 @@ body.popup-page #root {
   line-height: 1.45;
 }
 
-.popup-prompt__field::placeholder {
+.popup-prompt::placeholder {
   color: var(--tt-text-hint);
   opacity: 1;
+}
+
+.popup-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+}
+
+.popup-tools__space {
+  flex: 1;
+  min-width: 8px;
 }
 
 .popup-send {
@@ -223,18 +363,18 @@ body.popup-page #root {
   place-items: center;
   width: 28px;
   height: 28px;
-  margin-bottom: 1px;
+  margin-left: 4px;
   padding: 0;
   border: 0;
-  border-radius: var(--tt-radius-control);
+  border-radius: var(--tt-radius-full);
   background: var(--tt-accent);
   color: var(--tt-on-accent);
-  transition: background-color 150ms ease-out, color 150ms ease-out;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
 }
 
 .popup-send:disabled {
-  background: color-mix(in oklch, var(--tt-text) 8%, transparent);
-  color: var(--tt-text-muted);
+  background: var(--popup-wash);
+  color: var(--tt-text-hint);
 }
 
 .popup-send.is-stop {
@@ -242,22 +382,203 @@ body.popup-page #root {
   color: var(--tt-pill-ink);
 }
 
-/* The owl: 18 by 18 points drawn 1.5 to a point, crisp at every size. Its moon is muted, its eyes the accent. */
+.popup-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-row);
+  background: transparent;
+  color: var(--tt-text-muted);
+}
+
+.popup-notice .popup-icon {
+  width: 20px;
+  height: 20px;
+  color: inherit;
+}
+
+.popup-icon:hover:not(:disabled) {
+  background: var(--tt-hover);
+  color: var(--tt-text);
+}
+
+.popup-icon:disabled {
+  opacity: 0.45;
+}
+
+/* Who the prompt goes to: both named, the one it goes to now filled. */
+.popup-targets {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.popup-target {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--tt-radius-row);
+  background: transparent;
+  color: var(--tt-text-muted);
+  font: inherit;
+  font-size: var(--tt-type-small);
+  white-space: nowrap;
+}
+
+.popup-target:hover {
+  background: var(--tt-hover);
+  color: var(--tt-text);
+}
+
+.popup-target[aria-pressed='true'] {
+  background: var(--popup-wash);
+  color: var(--tt-text);
+  font-weight: 500;
+}
+
+.popup-target--thread {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-right: 5px;
+  border-radius: var(--tt-radius-row) 0 0 var(--tt-radius-row);
+}
+
+.popup-target__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.popup-target__more {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 28px;
+  margin-left: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 var(--tt-radius-row) var(--tt-radius-row) 0;
+  background: transparent;
+  color: var(--tt-text-hint);
+}
+
+.popup-target__more:hover,
+.popup-target__more[aria-expanded='true'] {
+  background: var(--tt-hover);
+  color: var(--tt-text);
+}
+
+.popup-target[aria-pressed='true'] + .popup-target__more {
+  background: var(--popup-wash);
+  color: var(--tt-text-muted);
+}
+
+.popup-target__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--tt-radius-full);
+  background: var(--tt-accent);
+  animation: popup-pulse 1.4s ease-in-out infinite;
+}
+
+/* The threads to choose from, opening upward from the tools. */
+.popup-list {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  z-index: 2;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--tt-panel-border);
+  border-radius: var(--tt-radius-card);
+  background: var(--tt-surface-elevated);
+  list-style: none;
+}
+
+.popup-list__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: var(--tt-radius-row);
+  color: var(--tt-text-2);
+  font-size: var(--tt-type-small);
+}
+
+.popup-list__row:hover,
+.popup-list__row[aria-selected='true'] {
+  background: var(--tt-hover);
+  color: var(--tt-text);
+}
+
+.popup-list__row[aria-current='true'] {
+  color: var(--tt-text);
+  font-weight: 600;
+}
+
+.popup-list__row.is-new {
+  position: relative;
+  margin-top: 9px;
+}
+
+.popup-list__row.is-new::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 5px;
+  left: 5px;
+  height: 1px;
+  background: var(--tt-panel-border);
+}
+
+.popup-list__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-list__meta {
+  flex: none;
+  font-family: inherit;
+  color: var(--tt-text-hint);
+  font-size: var(--tt-type-caption);
+  font-weight: 400;
+}
+
+.popup-list__meta.is-busy {
+  color: var(--tt-accent-text);
+}
+
+/* The owl: 18 by 18 points, one pixel to a point, crisp at every size. Its moon is muted, its eyes the accent. */
 .popup-owl {
   flex: none;
-  width: 27px;
-  height: 27px;
-  margin-bottom: 1px;
+  width: 18px;
+  height: 18px;
 }
 
 .popup-owl__moon,
 .popup-owl__star {
-  fill: var(--tt-text-faint);
+  fill: var(--tt-text-hint);
 }
 
 .popup-owl__eyes {
   fill: var(--tt-accent);
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
 .popup-owl.is-working .popup-owl__eyes {
@@ -270,75 +591,18 @@ body.popup-page #root {
   animation: popup-owl-star 1.2s steps(1) infinite;
 }
 
-.popup-footer {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-height: 24px;
-  color: var(--tt-text-muted);
-  font-size: var(--tt-type-caption);
-}
-
-.popup-footer__button,
-.popup-icon {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: var(--tt-radius-control);
-  background: transparent;
-  color: var(--tt-text-muted);
-  font: inherit;
-}
-
-.popup-icon {
-  justify-content: center;
-  width: 24px;
-  padding: 0;
-}
-
-.popup-notice .popup-icon {
-  width: 20px;
-  height: 20px;
-  color: inherit;
-}
-
-.popup-footer__button:hover:not(:disabled),
-.popup-icon:hover:not(:disabled) {
-  background: var(--tt-hover);
-  color: var(--tt-text);
-}
-
-.popup-footer__button:disabled {
-  opacity: 0.45;
-}
-
-.popup-target.is-watcher {
-  color: var(--tt-accent-text);
-}
-
-.popup-footer__where {
-  min-width: 0;
-  overflow: hidden;
-  padding: 0 4px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.popup-footer__space {
-  flex: 1;
-}
-
 /* A question or permission the target waits on, at the conversation's foot. */
 .popup-transcript .agent-request {
-  margin: 0;
+  margin: 12px 0 0;
 }
 
-@keyframes popup-spark {
-  to { transform: rotate(360deg); }
+@keyframes popup-arrive {
+  from { opacity: 0; }
+}
+
+@keyframes popup-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
 }
 
 @keyframes popup-owl-glance {
@@ -354,7 +618,8 @@ body.popup-page #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .popup-status__spark,
+  .popup-transcript__inner,
+  .popup-target__dot,
   .popup-owl.is-working .popup-owl__eyes,
   .popup-owl.is-working .popup-owl__star {
     animation: none;
@@ -365,7 +630,7 @@ body.popup-page #root {
   }
 }
 
-:root[data-reduced-motion='on'] :is(.popup-status__spark, .popup-owl.is-working .popup-owl__eyes, .popup-owl.is-working .popup-owl__star) {
+:root[data-reduced-motion='on'] :is(.popup-transcript__inner, .popup-target__dot, .popup-owl.is-working .popup-owl__eyes, .popup-owl.is-working .popup-owl__star) {
   animation: none;
 }
 

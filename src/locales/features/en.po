@@ -1371,6 +1371,10 @@ msgstr "As of {when}"
 msgid "Ask"
 msgstr "Ask"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask {threadName}"
+msgstr "Ask {threadName}"
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask a follow-up"
 msgstr "Ask a follow-up"
@@ -1379,13 +1383,17 @@ msgstr "Ask a follow-up"
 msgid "Ask chair for proposal"
 msgstr "Ask chair for proposal"
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Ask Sotto…"
-msgstr "Ask Sotto…"
-
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Ask the Council"
 msgstr "Ask the Council"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask this thread"
+msgstr "Ask this thread"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Ask Watcher"
+msgstr "Ask Watcher"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Ask Watcher instead"
@@ -1454,6 +1462,14 @@ msgstr "at least {shown}"
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "At least <0>{perPrompt}</0> tokens per prompt"
 msgstr "At least <0>{perPrompt}</0> tokens per prompt"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Attach images"
+msgstr "Attach images"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Attach images, or paste or drop them"
+msgstr "Attach images, or paste or drop them"
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "Attach to a thread"
@@ -1798,6 +1814,10 @@ msgstr "Choose a range of a year or less to see each day. The totals still cover
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Choose a speech model"
 msgstr "Choose a speech model"
+
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Choose a thread"
+msgstr "Choose a thread"
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Choose All to see every transcript."
@@ -2586,10 +2606,6 @@ msgstr "English"
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "Enter your OpenRouter API key first."
 msgstr "Enter your OpenRouter API key first."
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Esc stops it"
-msgstr "Esc stops it"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Every judge must pass every criterion. Relative improvement uses the baseline judged in the same round. No regression beyond tolerance is allowed when choosing a new incumbent."
@@ -4006,10 +4022,6 @@ msgstr "New folder path"
 msgid "New thread"
 msgstr "New thread"
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "New thread (/new)"
-msgstr "New thread (/new)"
-
 #. placeholder {0}: project.title
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread in {0}"
@@ -5419,6 +5431,10 @@ msgstr "Replaced by"
 msgid "Replacement memory"
 msgstr "Replacement memory"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Reply to this thread…"
+msgstr "Reply to this thread…"
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "reporting the crux check"
 msgstr "reporting the crux check"
@@ -5857,12 +5873,8 @@ msgid "Show in folder"
 msgstr "Show in folder"
 
 #: src/renderer/src/popup/PopupApp.tsx
-msgid "Show in Sotto (⌘O)"
-msgstr "Show in Sotto (⌘O)"
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Show in Sotto (Ctrl+O)"
-msgstr "Show in Sotto (Ctrl+O)"
+msgid "Show in Sotto"
+msgstr "Show in Sotto"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Show it in Sotto"
@@ -6758,14 +6770,6 @@ msgstr "Talk to your computer and your coding agents"
 msgid "talking"
 msgstr "talking"
 
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Talking to the thread. Switch to Watcher"
-msgstr "Talking to the thread. Switch to Watcher"
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Talking to Watcher. Switch to the thread"
-msgstr "Talking to Watcher. Switch to the thread"
-
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Target"
 msgstr "Target"
@@ -7170,6 +7174,10 @@ msgstr "This memory changed in another window. Your unsaved wording is still her
 msgid "This memory was deleted. Your unsaved wording is still here to copy."
 msgstr "This memory was deleted. Your unsaved wording is still here to copy."
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "This model does not read images"
+msgstr "This model does not read images"
+
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "This month"
 msgstr "This month"
@@ -7207,6 +7215,7 @@ msgstr "Thread {threadId}: {ref}"
 #. The room switch and page links: the Threads page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Threads"
 msgstr "Threads"
 
@@ -7705,6 +7714,7 @@ msgid "Voxtype has these keys now. Sotto takes them over; Voxtype stays installe
 msgstr "Voxtype has these keys now. Sotto takes them over; Voxtype stays installed."
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 msgid "Waiting"
 msgstr "Waiting"
 
@@ -7740,10 +7750,6 @@ msgstr "Waiting for the answer."
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Waiting for the update before it."
 msgstr "Waiting for the update before it."
-
-#: src/renderer/src/popup/PopupApp.tsx
-msgid "Waiting for your answer"
-msgstr "Waiting for your answer"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Waiting on its owner"
@@ -7979,6 +7985,10 @@ msgstr "Where you work"
 msgid "Where, last 30 days"
 msgstr "Where, last 30 days"
 
+#: src/renderer/src/popup/PopupApp.tsx
+msgid "Who to ask"
+msgstr "Who to ask"
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Whole range"
 msgstr "Whole range"
@@ -8027,6 +8037,7 @@ msgstr "Words, speed, streak and where your words went show here once you have d
 #. A thread’s status
 #: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
+#: src/renderer/src/popup/PopupApp.tsx
 #: src/renderer/src/watcher/TeamDesks.tsx
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx

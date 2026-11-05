@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { sameChord, chordHasKey, chordTokens } from './dictationShortcuts'
-import type { AgentCommand, AgentCommandReceipt, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from './agents'
+import type { AgentAttachmentContent, AgentAttachmentContentRequest, AgentAttachmentHandle, AgentAttachmentPreviewRequest, AgentAttachmentPreviewResult, AgentAttachmentStageRequest, AgentCommand, AgentCommandReceipt, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from './agents'
 import type { InterfaceLanguageBridge } from './interfaceLanguageBridge'
 import type { SottoPlatform } from './platform'
 import type { AppSettings } from './settings'
@@ -107,6 +107,10 @@ export interface PopupBridge {
   /** One of `POPUP_COMMAND_TYPES`; main refuses any other from this window. */
   command(command: AgentCommand): Promise<AgentCommandReceipt>
   openExternalLink(url: string): Promise<{ readonly ok: boolean }>
+  /** The prompt stages a photo once and carries its handle; its chip and a sent photo read their pictures back (ADR-0031). */
+  stageAttachment(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle>
+  attachmentContent(request: AgentAttachmentContentRequest): Promise<AgentAttachmentContent | null>
+  attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   hide(): Promise<void>
   fit(height: number): Promise<void>
   open(request: PopupOpen): Promise<void>

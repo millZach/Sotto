@@ -1,20 +1,25 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ArrowUp, ArrowUpRight, ChevronRight, MessageSquareText, MoonStar, SquarePen, Square, X } from 'lucide-react'
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { ArrowUp, ArrowUpRight, ChevronDown, Paperclip, Square, X } from 'lucide-react'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
-import type { AgentCommand, AgentRequest, AgentState, AgentThread } from '../../../shared/agents'
+import type { AgentAttachmentHandle, AgentCommand, AgentMessage, AgentRequest, AgentState, AgentThread } from '../../../shared/agents'
+import { resolveModel } from '../../../shared/modelCatalog'
 import type { PopupBridge } from '../../../shared/popup'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import { AgentRequestCard } from '../agents/requests/AgentRequestCard'
 import type { RequestAnswer, SubmitOutcome } from '../agents/requests/requestAnswers'
-import { MessageContent } from '../agents/MessageContent'
+import { AttachmentPreviews, MessageContent } from '../agents/MessageContent'
+import { chordClaimed } from '../agents/branchToolbar.logic'
 import { beginNewThread } from '../agents/newThread'
+import { ScreenshotInput } from '../agents/ScreenshotInput'
+import { useThumbnail } from '../agents/stagedImages'
+import { clockLabel } from '../agents/threadFacts'
 import { shownWords, type LaterWords } from '../agents/interfaceWords'
 import { threadForTarget } from '../watcher/watcherRoom'
 import { PopupOwl } from './PopupOwl'
 import {
-  nextPopupDetail, popupKeyAction, popupProject, readPopupMemory, shownMessages, slashCommandOf, slashCommands, slashMatches, writePopupMemory,
+  newestExchangeStart, nextPopupDetail, popupKeyAction, popupProject, readPopupMemory, recentThreads, shownMessages, slashCommandOf, slashCommands, slashMatches, splitClosingLines, writePopupMemory,
   type PopupDetail, type PopupMemory, type PopupTarget, type SlashCommand,
 } from './popupLogic'
 import './popup.css'
@@ -34,7 +39,47 @@ const WATCHER_UNAVAILABLE = msg`Sotto could not read Watcher’s room. Reopen th
 /** Main's answer to a command, or null when none came: the popup reads only whether it was refused, and why. */
 type Reply = { readonly error: string | null } | null
 
+/** The keys that work wherever the keyboard is in the card; the others are the prompt's. */
+const CARD_WIDE_ACTIONS: ReadonlySet<string> = new Set(['hide', 'stop', 'open', 'ask-watcher', 'ask-thread', 'choose-thread', 'new-thread'])
+/** The keys of the card's own chords, with Command on a Mac and Ctrl elsewhere. */
+const CHORD_KEYS: Readonly<Record<string, string>> = { 'ask-watcher': '1', 'ask-thread': '2', 'choose-thread': 'k', 'new-thread': 'n', open: 'o' }
+
 const storage = (): Storage | undefined => { try { return window.localStorage } catch { return undefined } }
+
+type OpenLink = (url: string) => Promise<{ ok: boolean }>
+
+/** A sent reply: its words, then the labelled lines that close it as one block. */
+const PopupReply = memo(function PopupReply({ text, streaming, onOpenLink }: { readonly text: string; readonly streaming: boolean; readonly onOpenLink: OpenLink }): ReactNode {
+  const { body, closing } = useMemo(() => splitClosingLines(text), [text])
+  return <>
+    {body !== '' ? <MessageContent text={body} streaming={streaming && closing === ''} onOpenLink={onOpenLink} /> : null}
+    {closing !== '' ? <div className="popup-closing"><MessageContent text={closing} streaming={streaming} onOpenLink={onOpenLink} /></div> : null}
+  </>
+})
+
+/** One message of the conversation. `newest` marks where the card's opening height starts. */
+const PopupEntry = memo(function PopupEntry({ message, threadId, afterReply, newest, streaming, onOpenLink }: { readonly message: AgentMessage; readonly threadId: string
+  readonly afterReply: boolean; readonly newest: boolean; readonly streaming: boolean; readonly onOpenLink: OpenLink }): ReactNode {
+  const mark = newest ? { 'data-newest': '' } : {}
+  const attachments = <AttachmentPreviews attachments={message.attachments ?? []} origin={{ threadId, messageId: message.id }} />
+  if (message.role === 'user') return <div className="popup-entry popup-entry--user" {...mark}>
+    {attachments}
+    {message.text.trim() !== '' ? <div className="popup-bubble"><MessageContent text={message.text} onOpenLink={onOpenLink} /></div> : null}
+  </div>
+  return <>
+    {afterReply ? <div className="popup-rule" {...mark}><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></div> : null}
+    <div className="popup-entry popup-entry--reply" {...afterReply ? {} : mark}>
+      <PopupReply text={message.text} streaming={streaming} onOpenLink={onOpenLink} />
+      {attachments}
+    </div>
+  </>
+})
+
+/** A photo just sent, until the thread's own copy of the message arrives. */
+function EchoPhoto({ threadId, photo }: { readonly threadId: string | null; readonly photo: AgentAttachmentHandle }): ReactNode {
+  const source = useThumbnail(threadId, photo)
+  return source ? <img src={source} alt={photo.name} /> : null
+}
 
 /**
  * The popup (ADR-0181): a prompt at the bottom and the conversation growing upward above it as the reply streams in,
@@ -46,19 +91,27 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
   const [memory, setMemory] = useState<PopupMemory>(() => readPopupMemory(storage()))
   const [shell, setShell] = useState<AgentState | null>(null)
   const [watcher, setWatcher] = useState<{ readonly threadId: string; readonly handover: boolean } | null>(null)
-  const [thread, setThread] = useState<AgentThread | null>(null)
-  const [detail, setDetail] = useState<PopupDetail | null>(null)
+  // Both targets are observed and held while the card shows, so a switch shows the other one at once.
+  const [records, setRecords] = useState<Readonly<Record<string, AgentThread>>>({})
+  const [details, setDetails] = useState<Readonly<Record<string, PopupDetail>>>({})
   const [input, setInput] = useState('')
+  const [photos, setPhotos] = useState<readonly AgentAttachmentHandle[]>([])
+  const [reading, setReading] = useState(0)
   const [menuIndex, setMenuIndex] = useState(0)
+  const [listOpen, setListOpen] = useState(false)
   const [notice, setNotice] = useState<LaterWords | null>(null)
-  const [echo, setEcho] = useState<{ readonly text: string; readonly after: number } | null>(null)
+  const [echo, setEcho] = useState<{ readonly text: string; readonly after: number; readonly photos: readonly AgentAttachmentHandle[] } | null>(null)
   const [busy, setBusy] = useState(false)
   const [shown, setShown] = useState(0)
+  const [hotkey, setHotkey] = useState<string | undefined>(undefined)
   const prompt = useRef<HTMLTextAreaElement>(null)
   const card = useRef<HTMLDivElement>(null)
   const transcript = useRef<HTMLDivElement>(null)
   const chrome = useRef<HTMLDivElement>(null)
+  const threadList = useRef<HTMLUListElement>(null)
   const pinned = useRef(true)
+  /** The tallest the card has asked to be since it was shown: it only grows during one showing, so a switch moves the words and not the window. */
+  const held = useRef(0)
 
   const remember = useCallback((next: Partial<PopupMemory>): void => {
     setMemory(current => {
@@ -72,17 +125,23 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
   const threadId = target === 'watcher' ? watcher?.threadId ?? null : memory.threadId
   const commands = slashCommands(target, watcher !== null)
   const menu = slashMatches(input, commands)
-  // What is held for another thread is not this one's: nothing shows until this one's arrives.
-  const current = thread?.id === threadId ? thread : null
+  const current = threadId === null ? null : records[threadId] ?? null
   const running = current !== null && isThreadTurnRunning(current)
   const waiting = (current?.requests.length ?? 0) > 0
   const project = shell === null ? null : popupProject(shell, memory.projectId)
+  const myThread = memory.threadId === null ? null : records[memory.threadId] ?? null
+  const watcherThread = watcher === null ? null : records[watcher.threadId] ?? null
 
   // Each time the popup is shown it reads its target again: the threads, Watcher's current conversation, and whether the
   // thread it last used is still there. A thread that went is forgotten and the next prompt starts a new one.
   useEffect(() => bridge.onShown(() => setShown(count => count + 1)), [bridge])
   useEffect(() => {
+    void bridge.getSettings().then(settings => setHotkey(settings.hotkey), () => undefined)
+    return bridge.onSettingsChanged(settings => setHotkey(settings.hotkey))
+  }, [bridge])
+  useEffect(() => {
     let live = true
+    setListOpen(false)
     void (async () => {
       const state = await bridge.shell().catch(() => null)
       if (!live) return
@@ -110,58 +169,87 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     return () => { live = false }
   }, [bridge, shown]) // Read on each show: the target remembered then is the one the show finds.
 
-  // The target's thread: observed while the popup shows it, its record from main's pushes and its history read whole once,
-  // then kept up by the changes main sends. A change the popup cannot place reads the history whole again.
+  // The two threads: observed while the popup shows them, their records from main's pushes and their histories read whole
+  // once, then kept up by the changes main sends. A change the popup cannot place reads that history whole again.
   // Main lets go of the observation each time the popup hides, so each show observes again and reads what it missed,
   // keeping what it holds on screen until the read lands.
-  const observed = useRef<string | null>(null)
+  const observedIds = useMemo(() => [...new Set([watcher?.threadId, memory.threadId].filter((id): id is string => id !== undefined && id !== null))], [watcher?.threadId, memory.threadId])
+  const observed = useRef<readonly string[]>([])
   const readDetail = useCallback((id: string): void => {
     void bridge.threadDetail(id).then(read => {
-      if (observed.current !== id) return
-      if (read !== null) { setDetail(nextPopupDetail(null, read)); setNotice(current => current === HISTORY_UNAVAILABLE ? null : current) }
-    }, () => { if (observed.current === id) setNotice(HISTORY_UNAVAILABLE) })
+      if (!observed.current.includes(id)) return
+      const whole = read === null ? null : nextPopupDetail(null, read)
+      if (whole !== null) { setDetails(held => ({ ...held, [id]: whole })); setNotice(current => current === HISTORY_UNAVAILABLE ? null : current) }
+    }, () => { if (observed.current.includes(id)) setNotice(HISTORY_UNAVAILABLE) })
   }, [bridge])
+  const observedKey = observedIds.join('\n')
+  const readOnShow = useRef(-1)
+  const heldDetails = useRef(details)
+  heldDetails.current = details
   useEffect(() => {
-    observed.current = threadId
+    observed.current = observedIds
     pinned.current = true
-    void bridge.command({ type: 'observe-threads', threadIds: threadId === null ? [] : [threadId] }).catch(() => undefined)
-    if (threadId !== null) readDetail(threadId)
-    return () => { observed.current = null }
-  }, [bridge, threadId, shown, readDetail])
-  // The record the show's read found, until main pushes a newer one.
+    void bridge.command({ type: 'observe-threads', threadIds: [...observedIds] }).catch(() => undefined)
+    // A show reads what it missed while hidden; a change of thread reads only the thread it does not hold.
+    const newShow = readOnShow.current !== shown
+    readOnShow.current = shown
+    for (const id of observedIds) if (newShow || heldDetails.current[id] === undefined) readDetail(id)
+    const keep = <T,>(held: Readonly<Record<string, T>>): Readonly<Record<string, T>> => Object.fromEntries(Object.entries(held).filter(([id]) => observedIds.includes(id)))
+    setDetails(keep)
+    setRecords(keep)
+    return () => { observed.current = [] }
+  }, [bridge, observedKey, shown, readDetail])
+  // The records a read of the shell found, until main pushes newer ones. A change of thread takes from the shell only the
+  // thread it does not hold: the shell is older than what main has pushed for the other since.
+  const placedShell = useRef<AgentState | null>(null)
   useEffect(() => {
-    const record = threadId === null ? undefined : shell?.host.threads.find(item => item.id === threadId)
-    if (record !== undefined) setThread(record)
-  }, [shell, threadId])
-  useEffect(() => bridge.onThread(record => { if (record.id === observed.current) setThread(record) }), [bridge])
+    if (shell === null) return
+    const fresh = placedShell.current !== shell
+    placedShell.current = shell
+    setRecords(held => {
+      const found = shell.host.threads.filter(item => observedIds.includes(item.id) && (fresh || held[item.id] === undefined))
+      return found.length === 0 ? held : { ...held, ...Object.fromEntries(found.map(item => [item.id, item])) }
+    })
+  }, [shell, observedKey])
+  useEffect(() => bridge.onThread(record => { if (observed.current.includes(record.id)) setRecords(held => ({ ...held, [record.id]: record })) }), [bridge])
   useEffect(() => bridge.onThreadDetail(update => {
-    if (update.threadId !== observed.current) return
-    setDetail(held => {
-      const next = nextPopupDetail(held, update)
-      if (next !== null) return next
+    if (!observed.current.includes(update.threadId)) return
+    setDetails(held => {
+      const next = nextPopupDetail(held[update.threadId] ?? null, update)
+      if (next !== null) return { ...held, [update.threadId]: next }
       readDetail(update.threadId)
       return held
     })
   }), [bridge, readDetail])
 
-  const shownDetail = detail?.threadId === threadId ? detail : null
+  const shownDetail = threadId === null ? null : details[threadId] ?? null
   const messages = useMemo(() => shownMessages(shownDetail?.messages ?? []), [shownDetail])
+  const newest = newestExchangeStart(messages)
   const live = messages.length > 0 || echo !== null || waiting || running
   const userMessages = useMemo(() => (shownDetail?.messages ?? []).filter(message => message.role === 'user').length, [shownDetail])
   // What the user just sent shows at once, until the thread's own copy of it arrives.
   useEffect(() => { if (echo !== null && userMessages > echo.after) setEcho(null) }, [echo, userMessages])
 
-  // The window is as tall as the card wants to be, which main holds to a share of the screen: the conversation scrolls
-  // inside it beyond that, kept at its newest line unless the user scrolled up.
+  // The window is as tall as the newest exchange wants, which main holds to a share of the screen, and older messages are
+  // a scroll up. It keeps the tallest it has been since it was shown, and the conversation stays at its newest line
+  // unless the user scrolled up. The list of threads gets the room it needs while it is open.
+  useLayoutEffect(() => { held.current = 0 }, [shown])
   useLayoutEffect(() => {
-    const root = card.current, controls = chrome.current, list = transcript.current
-    if (!root || !controls) return undefined
+    const root = card.current, inside = root?.firstElementChild, controls = chrome.current, list = transcript.current
+    if (!root || !inside || !controls) return undefined
     const report = (): void => {
-      const inner = list?.firstElementChild as HTMLElement | null | undefined
+      const words = list?.firstElementChild as HTMLElement | null | undefined
+      const mark = words?.querySelector('[data-newest]')
       const style = getComputedStyle(root)
-      const frame = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((sum, side) => sum + (Number.parseFloat(style[side as 'paddingTop']) || 0), 0)
+      const border = (Number.parseFloat(style.borderTopWidth) || 0) + (Number.parseFloat(style.borderBottomWidth) || 0)
+      // The drop overlay lies over the card and takes no room of its own.
+      const around = [...inside.children].reduce((sum, child) => child === list || child.matches('.screenshot-input__drop') ? sum : sum + (child as HTMLElement).offsetHeight, 0)
+      const opening = !words ? 0 : !mark ? words.offsetHeight
+        : words.getBoundingClientRect().bottom - mark.getBoundingClientRect().top + (Number.parseFloat(getComputedStyle(words).paddingTop) || 0)
+      held.current = Math.max(held.current, Math.ceil(border + around + opening))
+      const forList = threadList.current ? Math.ceil(border + around + threadList.current.offsetHeight + 16) : 0
       // Main holds the window to a share of the screen; a long conversation asks for no more than the channel takes.
-      void bridge.fit(Math.min(10_000, Math.ceil(frame + controls.offsetHeight + (inner?.offsetHeight ?? 0)))).catch(() => undefined)
+      void bridge.fit(Math.min(10_000, Math.max(held.current, forList))).catch(() => undefined)
       if (list && pinned.current) list.scrollTop = list.scrollHeight
     }
     const observer = new ResizeObserver(report)
@@ -170,23 +258,36 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     if (list?.firstElementChild) observer.observe(list.firstElementChild)
     report()
     return () => observer.disconnect()
-  }, [bridge, live])
+  }, [bridge, live, threadId, shown, listOpen, photos.length])
 
   const command = useCallback((request: AgentCommand): Promise<Reply> => bridge.command(request).catch(() => null), [bridge])
 
+  /** A switch keeps the words and photos going with the next prompt: they go to whoever the prompt goes to when sent. */
   const switchTarget = (next: PopupTarget): void => {
     if (next === 'watcher' && watcher === null) { setNotice(msg`Watcher isn’t running. Start it in Sotto, then switch again.`); return }
-    setInput('')
     setNotice(null)
     setEcho(null)
+    setListOpen(false)
+    pinned.current = true
     remember({ target: next })
+    prompt.current?.focus()
+  }
+
+  const chooseThread = (thread: AgentThread): void => {
+    setNotice(null)
+    setEcho(null)
+    setListOpen(false)
+    pinned.current = true
+    remember({ target: 'thread', threadId: thread.id, projectId: thread.projectId })
     prompt.current?.focus()
   }
 
   const startOver = (): void => {
     setNotice(null)
     setEcho(null)
-    remember({ threadId: null })
+    setListOpen(false)
+    held.current = 0
+    remember({ target: 'thread', threadId: null })
     prompt.current?.focus()
   }
 
@@ -209,22 +310,24 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     else switchTarget(name === 'watcher' ? 'watcher' : 'thread')
   }
 
-  /** Sends the prompt: a new thread first when there is none, then the words, queued behind a turn that is running. */
+  /** Sends the prompt: a new thread first when there is none, then the words and photos, queued behind a turn that is running. */
   const send = async (): Promise<void> => {
     const text = input
     const named = slashCommandOf(text, commands)
-    if (named !== null) { run(named); return }
-    if (text.trim() === '' || busy) return
+    if (named !== null && photos.length === 0) { run(named); return }
+    if ((text.trim() === '' && photos.length === 0) || busy || reading > 0) return
     if (target === 'watcher' && watcher?.handover) {
       setNotice(msg`Watcher is offering the last Watcher’s handover. Open Watcher’s room to continue with it or put it away, then send again.`)
       return
     }
+    const sending = photos
     setBusy(true)
     setNotice(null)
     setInput('')
-    setEcho({ text, after: userMessages })
+    setPhotos([])
+    setEcho({ text, after: userMessages, photos: sending })
     pinned.current = true
-    const failed = (words: LaterWords): void => { setNotice(words); setInput(text); setEcho(null) }
+    const failed = (words: LaterWords): void => { setNotice(words); setInput(text); setPhotos(sending); setEcho(null) }
     try {
       let id = threadId
       let queue = running || waiting
@@ -241,10 +344,11 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
         const refused = await started.created
         if (refused !== null) { failed(refused); remember({ threadId: null }); return }
         // Observed again now main has it: the first observation may have reached main before the thread did.
-        await command({ type: 'observe-threads', threadIds: [id] })
+        await command({ type: 'observe-threads', threadIds: [...new Set([id, ...observed.current])] })
         readDetail(id)
       } else if (target === 'thread' && current !== null) remember({ projectId: current.projectId })
-      const reply = await command({ type: queue ? 'queue-followup' : 'manual-send', threadId: id, draftId: crypto.randomUUID(), text })
+      const reply = await command({ type: queue ? 'queue-followup' : 'manual-send', threadId: id, draftId: crypto.randomUUID(), text,
+        ...(sending.length > 0 ? { attachments: [...sending] } : {}) })
       if (reply === null) failed(msg`Sotto didn’t confirm the prompt. It is back in the box; check the thread before you send it again.`)
       else if (reply.error !== null) failed(reply.error)
     } finally {
@@ -252,112 +356,179 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
     }
   }
 
+  const threadChoices = useMemo(() => listOpen ? recentThreads(shell?.host.threads ?? [], shell?.host.projects ?? []) : [], [listOpen, shell])
+  const listLength = threadChoices.length + 1
+  const listActive = Math.min(menuIndex, listLength - 1)
+  const chooseFromList = (index: number): void => {
+    const thread = threadChoices[index]
+    setMenuIndex(0)
+    if (thread) chooseThread(thread)
+    else startOver()
+  }
+  const toggleList = (): void => {
+    const opening = !listOpen
+    setMenuIndex(0)
+    setListOpen(opening)
+    prompt.current?.focus()
+    // The list says what is running now, not what was when the card was shown.
+    if (opening) void bridge.shell().then(setShell, () => undefined)
+  }
+
+  const chordFree = (key: string): boolean => chordClaimed(`mod+${key}`, hotkey, bridge.platform)
+  const chordLeftToDictation = (action: string): boolean => { const key = CHORD_KEYS[action]; return key !== undefined && !chordFree(key) }
+
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.defaultPrevented) return
+    // The list answers Escape wherever the keyboard is.
+    if (listOpen && event.key === 'Escape') { event.preventDefault(); setListOpen(false); prompt.current?.focus(); return }
     const inPrompt = event.target === prompt.current
-    const action = popupKeyAction(event.nativeEvent, { platform: bridge.platform, menu: inPrompt && menu.length > 0, canStop: target === 'thread' && running })
-    if (action === null || (!inPrompt && action !== 'hide' && action !== 'stop' && action !== 'open')) return
+    const action = popupKeyAction(event.nativeEvent, { platform: bridge.platform, menu: inPrompt && (menu.length > 0 || listOpen), canStop: target === 'thread' && running })
+    if (action === null || (!inPrompt && !CARD_WIDE_ACTIONS.has(action))) return
     if (action === 'newline') return
+    if (chordLeftToDictation(action)) return
     event.preventDefault()
     const chosen = menu[Math.min(menuIndex, menu.length - 1)]
+    const count = listOpen ? listLength : menu.length
     if (action === 'send') void send()
-    else if (action === 'run-command' && chosen) run(chosen)
-    else if (action === 'complete' && chosen) setInput(`/${chosen} `)
-    else if (action === 'menu-next') setMenuIndex(index => (index + 1) % menu.length)
-    else if (action === 'menu-previous') setMenuIndex(index => (index - 1 + menu.length) % menu.length)
+    else if (action === 'run-command' || action === 'complete') {
+      if (listOpen) chooseFromList(listActive)
+      else if (chosen && action === 'run-command') run(chosen)
+      else if (chosen) setInput(`/${chosen} `)
+    }
+    else if (action === 'menu-next') setMenuIndex(index => (index + 1) % count)
+    else if (action === 'menu-previous') setMenuIndex(index => (index - 1 + count) % count)
     else if (action === 'close-menu') setInput('')
     else if (action === 'stop') stop()
     else if (action === 'open') open()
     else if (action === 'hide') void bridge.hide()
+    else if (action === 'ask-watcher') { if (bridge.watcher) switchTarget('watcher') }
+    else if (action === 'ask-thread') switchTarget('thread')
+    else if (action === 'choose-thread') toggleList()
+    else if (action === 'new-thread') startOver()
   }
 
   const answer = (request: AgentRequest) => (reply: RequestAnswer): Promise<SubmitOutcome> => current === null ? Promise.resolve(null)
     : command({ type: 'answer', threadId: current.id, requestId: request.id, ...reply }).then(result => result === null ? null : { error: result.error })
-  const openLink = (url: string): Promise<{ ok: boolean }> => bridge.openExternalLink(url).catch(() => ({ ok: false }))
-  const placeholder = target === 'watcher' ? t`Ask Watcher…` : t`Ask Sotto…`
-  const canSend = input.trim() !== '' && menu.length === 0 && !busy
+  const openLink = useCallback<OpenLink>(url => bridge.openExternalLink(url).catch(() => ({ ok: false })), [bridge])
+  const newThreadWords = project === null ? t`New thread` : t`New thread in ${project.title}`
+  const placeholder = target === 'watcher' ? t`Ask Watcher…` : threadId === null ? `${newThreadWords}…` : t`Reply to this thread…`
+  const canSend = (input.trim() !== '' || photos.length > 0) && menu.length === 0 && !busy && reading === 0
   const showStop = target === 'thread' && running && !canSend
-  const where = target === 'watcher' ? 'Watcher' : threadId === null ? project === null ? t`New thread` : t`New thread in ${project.title}` : current?.title ?? t`Thread`
+  const threadName = memory.threadId === null ? t`New thread` : myThread?.title ?? t`Thread`
+  const where = target === 'watcher' ? 'Watcher' : threadId === null ? newThreadWords : threadName
+  const threadBusy = myThread !== null && (isThreadTurnRunning(myThread) || myThread.requests.length > 0)
+  const watcherWaits = (watcherThread?.requests.length ?? 0) > 0
+  const models = shell?.host.models ?? []
+  const model = current === null ? undefined : resolveModel(models, current.modelId)
+  const reads = useMemo(() => ({ pending: false, problem: null, begin: () => { setReading(count => count + 1); return () => setReading(count => count - 1) } }), [])
+  const primary = bridge.platform === 'darwin' ? '⌘' : 'Ctrl+'
+  /** " (⌘K)", or nothing when the dictation hotkey holds those keys and the card has left them to it. */
+  const keys = (key: string): string => chordFree(key) ? ` (${primary}${key.toUpperCase()})` : ''
+  const activeId = listOpen ? `popup-thread-${listActive}` : menu.length > 0 ? `popup-command-${menu[Math.min(menuIndex, menu.length - 1)]}` : null
 
   return (
-    <div ref={card} className="popup-card" onKeyDown={onKeyDown}>
-      {live ? (
-        <div ref={transcript} className="popup-transcript" onScroll={event => {
-          const list = event.currentTarget
-          pinned.current = list.scrollHeight - list.scrollTop - list.clientHeight < 24
-        }}>
-          <div className="popup-transcript__inner" role="log" aria-live="polite" aria-label={t`Conversation with ${where}`}>
-            {messages.map((message, index) => message.role === 'user'
-              ? <div key={message.id} className="popup-entry popup-entry--user"><ChevronRight size={12} aria-hidden="true" /><p>{message.text}</p></div>
-              : <div key={message.id} className="popup-entry popup-entry--reply">
-                <MessageContent text={message.text} streaming={running && index === messages.length - 1} onOpenLink={openLink} />
-              </div>)}
-            {echo !== null ? <div className="popup-entry popup-entry--user is-sending"><ChevronRight size={12} aria-hidden="true" /><p>{echo.text}</p></div> : null}
-            {current?.requests.map(request => (
-              <AgentRequestCard key={request.id} ownerId={current.id} ownerTitle={current.title} watcher={target === 'watcher'} request={request} blocked={null}
-                onSubmit={answer(request)} onWriteAnswer={open} />
-            ))}
-            {running || waiting ? (
-              <p className="popup-status" role="status">
-                <span className="popup-status__spark" aria-hidden="true">✳</span>
-                <span className="popup-status__words">{waiting ? <Trans>Waiting for your answer</Trans> : <Trans>Working…</Trans>}</span>
-                {!waiting && target === 'thread' ? <span className="popup-status__hint"><Trans>Esc stops it</Trans></span> : null}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      <div ref={chrome} className="popup-chrome">
-        {notice !== null ? (
-          <div className="popup-notice" role="alert">
-            <p>{shownWords(notice)}</p>
-            <button type="button" className="popup-icon tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={() => setNotice(null)}><X size={12} aria-hidden="true" /></button>
+    <div ref={card} className="popup-card" onKeyDown={onKeyDown} onMouseDown={event => {
+      if (listOpen && !(event.target as HTMLElement).closest('.popup-list, .popup-target__more')) setListOpen(false)
+    }}>
+      <ScreenshotInput target={threadId} attachments={photos} onChange={setPhotos} disabled={false} supported={model?.supportsImages !== false} replyBox={false} reads={reads} errorScope={shown}>
+        {live ? (
+          <div ref={transcript} className="popup-transcript" onScroll={event => {
+            const list = event.currentTarget
+            pinned.current = list.scrollHeight - list.scrollTop - list.clientHeight < 24
+          }}>
+            <div key={threadId ?? 'new'} className="popup-transcript__inner" role="log" aria-live="polite" aria-label={t`Conversation with ${where}`}>
+              {threadId !== null ? messages.map((message, index) => (
+                <PopupEntry key={message.id} message={message} threadId={threadId} afterReply={target === 'watcher' && index > 0 && messages[index - 1]!.role !== 'user'} newest={index === newest}
+                  streaming={running && index === messages.length - 1} onOpenLink={openLink} />
+              )) : null}
+              {echo !== null ? <div className="popup-entry popup-entry--user is-sending">
+                {echo.photos.length > 0 ? <div className="popup-photos">{echo.photos.map(photo => <EchoPhoto key={photo.id} threadId={threadId} photo={photo} />)}</div> : null}
+                {echo.text.trim() !== '' ? <div className="popup-bubble"><p>{echo.text}</p></div> : null}
+              </div> : null}
+              {current?.requests.map(request => (
+                <AgentRequestCard key={request.id} ownerId={current.id} ownerTitle={current.title} watcher={target === 'watcher'} request={request} blocked={null}
+                  onSubmit={answer(request)} onWriteAnswer={open} />
+              ))}
+              {running && !waiting ? <p className="popup-status" role="status"><PopupOwl working /><span><Trans>Working…</Trans></span></p> : null}
+            </div>
           </div>
         ) : null}
-        {menu.length > 0 ? (
-          <ul className="popup-menu" role="listbox" id="popup-commands" aria-label={t`Commands`}>
-            {menu.map((name, index) => (
-              <li key={name} role="option" id={`popup-command-${name}`} aria-selected={index === Math.min(menuIndex, menu.length - 1)}
-                className="popup-menu__item" onMouseDown={event => { event.preventDefault(); run(name) }}>
-                <span className="popup-menu__name">/{name}</span>
-                <span className="popup-menu__words">{i18n._(COMMAND_WORDS[name])}</span>
+        <div ref={chrome} className="popup-chrome">
+          {notice !== null ? (
+            <div className="popup-notice" role="alert">
+              <p>{shownWords(notice)}</p>
+              <button type="button" className="popup-icon tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={() => setNotice(null)}><X size={12} aria-hidden="true" /></button>
+            </div>
+          ) : null}
+          {menu.length > 0 ? (
+            <ul className="popup-menu" role="listbox" id="popup-commands" aria-label={t`Commands`}>
+              {menu.map((name, index) => (
+                <li key={name} role="option" id={`popup-command-${name}`} aria-selected={index === Math.min(menuIndex, menu.length - 1)}
+                  className="popup-menu__item" onMouseDown={event => { event.preventDefault(); run(name) }}>
+                  <span className="popup-menu__name">/{name}</span>
+                  <span className="popup-menu__words">{i18n._(COMMAND_WORDS[name])}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {listOpen ? (
+            <ul ref={threadList} className="popup-list" role="listbox" id="popup-threads" aria-label={t`Threads`}>
+              {threadChoices.map((thread, index) => {
+                const working = isThreadTurnRunning(thread)
+                const asks = thread.requests.length > 0
+                return (
+                  <li key={thread.id} role="option" id={`popup-thread-${index}`} aria-selected={index === listActive} aria-current={target === 'thread' && thread.id === memory.threadId}
+                    className="popup-list__row" onMouseDown={event => { event.preventDefault(); chooseFromList(index) }}>
+                    <span className="popup-list__name">{thread.title}</span>
+                    {asks ? <span className="popup-list__meta is-busy"><Trans>Waiting</Trans></span> : working ? <span className="popup-list__meta is-busy"><Trans>Working</Trans></span> : null}
+                  </li>
+                )
+              })}
+              <li role="option" id={`popup-thread-${threadChoices.length}`} aria-selected={listActive === threadChoices.length}
+                className="popup-list__row is-new" onMouseDown={event => { event.preventDefault(); chooseFromList(threadChoices.length) }}>
+                <span className="popup-list__name">{newThreadWords}</span>
+                {chordFree('n') ? <kbd className="popup-list__meta">{primary}N</kbd> : null}
               </li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="popup-prompt">
-          <PopupOwl working={running} />
-          <textarea ref={prompt} className="popup-prompt__field" rows={1} value={input} placeholder={placeholder} autoFocus spellCheck
+            </ul>
+          ) : null}
+          <textarea ref={prompt} className="popup-prompt" rows={1} value={input} placeholder={placeholder} autoFocus spellCheck
             aria-label={target === 'watcher' ? t`Message Watcher` : t`Message ${where}`}
-            {...(menu.length > 0 ? { 'aria-controls': 'popup-commands', 'aria-activedescendant': `popup-command-${menu[Math.min(menuIndex, menu.length - 1)]}` } : {})}
-            onChange={event => { setInput(event.target.value); setMenuIndex(0) }} />
-          {showStop
-            ? <button type="button" className="popup-send is-stop tt-focusable" aria-label={t`Stop the running turn`} title={t`Stop (Esc)`} onClick={stop}><Square size={10} fill="currentColor" aria-hidden="true" /></button>
-            : <button type="button" className="popup-send tt-focusable" aria-label={t`Send`} title={t`Send (Return)`} disabled={!canSend} onClick={() => void send()}><ArrowUp size={14} aria-hidden="true" /></button>}
-        </div>
-        <div className="popup-footer">
-          {watcher !== null ? (
-            <button type="button" className={`popup-footer__button popup-target tt-focusable${target === 'watcher' ? ' is-watcher' : ''}`}
-              aria-label={target === 'watcher' ? t`Talking to Watcher. Switch to the thread` : t`Talking to the thread. Switch to Watcher`}
-              onClick={() => switchTarget(target === 'watcher' ? 'thread' : 'watcher')}>
-              {target === 'watcher' ? <MoonStar size={12} aria-hidden="true" /> : <MessageSquareText size={12} aria-hidden="true" />}
-              <span>{target === 'watcher' ? 'Watcher' : <Trans>Thread</Trans>}</span>
+            {...(activeId !== null ? { 'aria-controls': listOpen ? 'popup-threads' : 'popup-commands', 'aria-activedescendant': activeId } : {})}
+            onChange={event => { setInput(event.target.value); setMenuIndex(0); setListOpen(false) }} />
+          <div className="popup-tools">
+            <button type="button" className="popup-icon tt-focusable" aria-label={t`Attach images`} disabled={model?.supportsImages === false}
+              title={model?.supportsImages === false ? t`This model does not read images` : t`Attach images, or paste or drop them`}
+              onClick={() => card.current?.querySelector<HTMLInputElement>('.screenshot-input__tools input[type="file"]')?.click()}>
+              <Paperclip size={15} aria-hidden="true" />
             </button>
-          ) : null}
-          {target === 'thread' ? <span className="popup-footer__where" title={where}>{where}</span> : null}
-          <span className="popup-footer__space" />
-          {target === 'thread' ? (
-            <button type="button" className="popup-footer__button popup-icon tt-focusable" aria-label={t`New thread`} title={t`New thread (/new)`} onClick={startOver}>
-              <SquarePen size={12} aria-hidden="true" />
+            <div className="popup-targets" role="group" aria-label={t`Who to ask`}>
+              {bridge.watcher ? (
+                <button type="button" className="popup-target tt-focusable" aria-pressed={target === 'watcher'} aria-label={t`Ask Watcher`} title={`${t`Ask Watcher`}${keys('1')}`} onClick={() => switchTarget('watcher')}>
+                  <PopupOwl working={watcherThread !== null && isThreadTurnRunning(watcherThread)} />
+                  <span>Watcher</span>
+                  {watcherWaits && target !== 'watcher' ? <span className="popup-target__dot" aria-hidden="true" /> : null}
+                </button>
+              ) : null}
+              <button type="button" className="popup-target popup-target--thread tt-focusable" aria-pressed={target === 'thread'} aria-label={t`Ask ${threadName}`} title={`${t`Ask this thread`}${keys('2')}`} onClick={() => switchTarget('thread')}>
+                {threadBusy && target !== 'thread' ? <span className="popup-target__dot" aria-hidden="true" /> : null}
+                <span className="popup-target__name">{threadName}</span>
+              </button>
+              <button type="button" className="popup-target__more tt-focusable" aria-haspopup="listbox" aria-expanded={listOpen} aria-label={t`Choose a thread`} title={`${t`Choose a thread`}${keys('k')}`} onClick={toggleList}>
+                <ChevronDown size={12} aria-hidden="true" />
+              </button>
+            </div>
+            <span className="popup-tools__space" />
+            <button type="button" className="popup-icon tt-focusable" disabled={threadId === null}
+              aria-label={target === 'watcher' ? t`Show Watcher’s room in Sotto` : t`Show this thread in Sotto`}
+              title={`${t`Show in Sotto`}${keys('o')}`} onClick={open}>
+              <ArrowUpRight size={14} aria-hidden="true" />
             </button>
-          ) : null}
-          <button type="button" className="popup-footer__button popup-icon tt-focusable" disabled={threadId === null}
-            aria-label={target === 'watcher' ? t`Show Watcher’s room in Sotto` : t`Show this thread in Sotto`}
-            title={bridge.platform === 'darwin' ? t`Show in Sotto (⌘O)` : t`Show in Sotto (Ctrl+O)`} onClick={open}>
-            <ArrowUpRight size={12} aria-hidden="true" />
-          </button>
+            {showStop
+              ? <button type="button" className="popup-send is-stop tt-focusable" aria-label={t`Stop the running turn`} title={t`Stop (Esc)`} onClick={stop}><Square size={10} fill="currentColor" aria-hidden="true" /></button>
+              : <button type="button" className="popup-send tt-focusable" aria-label={t`Send`} title={t`Send (Return)`} disabled={!canSend} onClick={() => void send()}><ArrowUp size={15} aria-hidden="true" /></button>}
+          </div>
         </div>
-      </div>
+      </ScreenshotInput>
     </div>
   )
 }

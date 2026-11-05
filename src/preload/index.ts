@@ -870,6 +870,9 @@ export function createSottoPopupBridge(
       return invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command))
     },
     openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
+    stageAttachment: request => invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
+    attachmentContent: request => invokeParsed(renderer, AGENT_ATTACHMENT_CONTENT, agentAttachmentContentResultSchema, agentAttachmentContentRequestSchema.parse(request)),
+    attachmentPreview: request => invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
     hide: async () => { await renderer.invoke(POPUP_HIDE) },
     fit: async height => { await renderer.invoke(POPUP_FIT, popupFitSchema.parse(height)) },
     open: async request => { await renderer.invoke(POPUP_OPEN, popupOpenSchema.parse(request)) },
