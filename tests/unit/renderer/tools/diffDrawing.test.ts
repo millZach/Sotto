@@ -115,9 +115,10 @@ describe('markdownPaint', () => {
     expect(markdownPaint('## The order')).toEqual({ shape: 'heading-2', tokens: [{ start: 0, end: 3, className: 'diff-md-mark' }] })
   })
 
-  it('dresses bold, code and links with their marks faint', () => {
+  it('fades the marks of bold, code and links, and leaves the words they dress as the source has them', () => {
     const { tokens } = markdownPaint('1. **Bold** then `code` and [link](url)')
-    expect(tokens?.map(token => token.className)).toEqual(['diff-md-mark', 'diff-md-mark', 'diff-md-strong', 'diff-md-mark', 'diff-md-mark', 'diff-md-code', 'diff-md-mark', 'diff-md-mark', 'diff-md-link', 'diff-md-mark'])
+    expect(tokens?.map(token => token.className)).toEqual(Array.from({ length: 7 }, () => 'diff-md-mark'))
+    expect(tokens?.map(({ start, end }) => '1. **Bold** then `code` and [link](url)'.slice(start, end))).toEqual(['1. ', '**', '**', '`', '`', '[', '](url)'])
   })
 
   it('leaves plain words alone', () => {

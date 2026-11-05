@@ -147,7 +147,7 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-diff__body { container-type: inline-size; overflow-x: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-diff__rows { padding: 4px 0 8px; font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.7; }
 .changes-files:not([data-wrap]) .changes-diff__rows { width: max-content; min-width: 100%; }
-.changes-line { display: grid; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 12px; color: var(--tt-code-text); }
+.changes-line { display: grid; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 16px; color: var(--tt-code-text); }
 .changes-diff__rows[data-numbers='one'] .changes-line { grid-template-columns: 4ch 1ch minmax(0, 1fr); }
 .changes-diff__rows[data-numbers='none'] .changes-line { grid-template-columns: 1ch minmax(0, 1fr); padding-left: 8px; }
 .changes-files:not([data-wrap]) .changes-diff__rows .changes-line { grid-template-columns: 4ch 4ch 1ch max-content; }
@@ -156,10 +156,11 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-line__sign { color: var(--tt-text-muted); font-family: var(--tt-font-mono); user-select: none; }
 .changes-line__text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 .changes-files:not([data-wrap]) .changes-diff__rows .changes-line__text { white-space: pre; overflow-wrap: normal; }
-/* A changed line carries a thin wash and an edge in its role's colour; the words that changed carry the stronger wash. */
+/* A changed line carries a thin wash and an edge in its role's colour; the words that changed carry a stronger wash, and
+   only a wash, so a rewritten paragraph stays something to read rather than a page of underlined blocks. */
 .changes-diff__rows {
-  --changes-added: color-mix(in srgb, var(--tt-success) 8%, transparent); --changes-removed: color-mix(in srgb, var(--tt-error) 8%, transparent);
-  --changes-word-added: color-mix(in srgb, var(--tt-success) 14%, transparent); --changes-word-removed: color-mix(in srgb, var(--tt-error) 14%, transparent);
+  --changes-added: color-mix(in srgb, var(--tt-success) 5%, transparent); --changes-removed: color-mix(in srgb, var(--tt-error) 5%, transparent);
+  --changes-word-added: color-mix(in srgb, var(--tt-success) 15%, transparent); --changes-word-removed: color-mix(in srgb, var(--tt-error) 15%, transparent);
   --changes-edge-added: color-mix(in srgb, var(--tt-success) 60%, transparent); --changes-edge-removed: color-mix(in srgb, var(--tt-error) 60%, transparent);
 }
 /* A whole file added or removed has nothing to compare, and a solid wash over all of it is only tiring: the edge says it. */
@@ -167,10 +168,13 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-line[data-kind='add'], .changes-split__cell[data-kind='add'] { background: var(--changes-added); box-shadow: inset 2px 0 0 var(--changes-edge-added); }
 .changes-line[data-kind='add'] .changes-line__sign, .changes-split__cell[data-kind='add'] .changes-line__sign { color: var(--tt-success); }
 .changes-line[data-kind='remove'], .changes-split__cell[data-kind='remove'] { background: var(--changes-removed); box-shadow: inset 2px 0 0 var(--changes-edge-removed); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line { grid-template-columns: 4ch 1ch max-content; }
 .changes-line[data-kind='remove'] .changes-line__sign, .changes-split__cell[data-kind='remove'] .changes-line__sign { color: var(--tt-error-text); }
 .changes-word { border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-[data-kind='add'] .changes-word { background: var(--changes-word-added); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--tt-success) 40%, transparent); }
-[data-kind='remove'] .changes-word { background: var(--changes-word-removed); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--tt-error) 40%, transparent); }
+[data-kind='add'] .changes-word { background: var(--changes-word-added); }
+[data-kind='remove'] .changes-word { background: var(--changes-word-removed); }
+/* A wrapped line of code hangs two columns inside its own indent, so what follows it at that indent is plainly a new line. */
+.changes-diff__rows[data-reading='code'] :is(.changes-line:not([data-kind='hunk']), .changes-split__cell) > .changes-line__text { --changes-hang: min(calc(var(--changes-indent, 0ch) + 2ch), 50%); padding-left: var(--changes-hang); text-indent: calc(var(--changes-hang) * -1); }
 /* A hunk's head is a quiet divider, one line at any width: where the part starts, then the section around it. */
 .changes-line[data-kind='hunk'] { margin-top: 6px; padding-top: 3px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-ui); font-size: var(--tt-type-caption); }
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -192,32 +196,26 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-diff__rows .hljs-string, .changes-diff__rows .hljs-regexp, .changes-diff__rows .hljs-template-tag, .changes-diff__rows .hljs-attr-value { color: var(--changes-code-string); }
 .changes-diff__rows .hljs-number, .changes-diff__rows .hljs-symbol, .changes-diff__rows .hljs-bullet, .changes-diff__rows .hljs-variable.language_ { color: var(--changes-code-number); }
 .changes-diff__rows .hljs-title, .changes-diff__rows .hljs-section, .changes-diff__rows .hljs-name, .changes-diff__rows .hljs-selector-id, .changes-diff__rows .hljs-selector-class { color: var(--tt-text); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-numbers='one'] .changes-line[data-kind='hunk'] { grid-template-columns: 4ch 1ch minmax(0, 1fr); }
 .changes-diff__rows .hljs-type, .changes-diff__rows .hljs-class, .changes-diff__rows .hljs-attr, .changes-diff__rows .hljs-attribute, .changes-diff__rows .hljs-property, .changes-diff__rows .hljs-params { color: var(--changes-code-type); }
 .changes-diff__rows .hljs-comment, .changes-diff__rows .hljs-quote, .changes-diff__rows .hljs-meta, .changes-diff__rows .hljs-punctuation, .changes-diff__rows .hljs-operator { color: var(--tt-text-muted); }
 
 /* The words that changed are the loudest thing on the line, so inside them syntax colour and Markdown's faint marks give way. */
 .changes-diff__rows .changes-word [class] { color: inherit; }
 
-/* A document reads as words: the interface's face, at a reading width while wrapped, with the lines around a change
-   drawn quiet and Markdown's marks faint beside the words they dress. */
-.changes-diff__rows[data-reading='document'] { font-family: var(--tt-font-ui); font-size: var(--tt-type-body); line-height: 1.55; }
+/* A document is its source, read as words: the interface's face at a reading width, with the lines around a change drawn
+   quiet and Markdown's marks faint. Nothing is rendered. One size and one line height run through the whole diff, so every
+   row sits on the same rhythm; a heading says what it is by its weight alone. */
+.changes-diff__rows[data-reading='document'] { font-family: var(--tt-font-ui); font-size: var(--tt-type-body); line-height: calc(var(--tt-type-body) * 1.55); }
 .changes-diff__rows[data-reading='document'] .changes-line { row-gap: 0; padding-top: 1px; padding-bottom: 1px; }
-.changes-diff__rows[data-reading='document'] .changes-line__number { line-height: 1.75; }
-.changes-diff__rows[data-reading='document'] .changes-line__sign { line-height: 1.4; }
 .changes-files[data-wrap] .changes-diff__rows[data-reading='document'] .changes-line__text, .changes-block .changes-line__text { max-width: 74ch; }
 .changes-diff__rows[data-reading='document'] [data-kind='context'] { color: var(--tt-text-muted); }
 .changes-diff__rows[data-reading='document'] [data-kind='add'] { color: var(--tt-text); }
 .changes-diff__rows[data-reading='document'] [data-kind='remove'] { color: var(--tt-text-2); }
-.changes-line__text[data-shape='heading-1'] { font-size: var(--tt-type-heading); font-weight: 600; line-height: 1.35; }
-.changes-line__text[data-shape='heading-2'] { font-size: var(--tt-type-lead); font-weight: 600; line-height: 1.35; }
-.changes-line__text[data-shape='heading-3'] { font-size: var(--tt-type-body); font-weight: 600; }
+.changes-line__text:is([data-shape='heading-1'], [data-shape='heading-2'], [data-shape='heading-3']) { color: var(--tt-text); font-weight: 600; }
 .changes-line__text[data-shape='list'] { padding-left: 1.2em; text-indent: -1.2em; }
 .changes-line__text[data-shape='fence'], .changes-line__text[data-shape='table'] { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .diff-md-mark { color: var(--tt-text-muted); font-weight: 400; }
-.diff-md-strong { font-weight: 600; }
-.diff-md-em { font-style: italic; }
-.diff-md-code { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
-.diff-md-link { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 
 /* The transcript's box around one change: its counts and Copy, then the same lines as Changes. Nothing scrolls sideways. */
 .changes-block { margin: 10px 0; overflow: hidden; border: 1px solid var(--tt-code-border, var(--tt-border-faint)); border-radius: var(--tt-radius-md); background: var(--tt-code-bg); color: var(--tt-code-text); font-size: var(--tt-type-small); }

@@ -10,7 +10,7 @@ import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, u
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { decorateDiff, fileLines, isDocumentPath, languageOfPath, readingOrder, wholeSide, type DiffDecoration } from './diffDrawing'
-import { HunkHeading, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
+import { HunkHeading, hangingIndent, PaintedText, sign, spoken, useHighlighter } from './DiffBlock'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, collapsedIn, fileProblemWords, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
@@ -708,7 +708,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
         <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.newLine ?? number, i18n) : undefined}>{line.newLine ?? ''}</span>
       </>}
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} /></>}</span>
+      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} /></>}</span>
     </div>
   }
   const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => {
@@ -717,7 +717,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-split__cell" role="gridcell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
       <span className="changes-line__number" aria-hidden="true" title={commentTitle(number, i18n)}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" data-shape={paint?.shape}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} /></span>
+      <span className="changes-line__text" data-shape={paint?.shape} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} /></span>
     </div>
   }
   return <div className="changes-split__row" role="row" data-path={path} data-old-line={row.old?.oldLine ?? undefined} data-new-line={row.next?.newLine ?? undefined} {...pickable}>

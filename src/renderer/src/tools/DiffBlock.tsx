@@ -1,10 +1,11 @@
-import React, { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import React, { memo, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { I18n } from '@lingui/core'
 import { Check, Copy } from 'lucide-react'
 import { highlighterNow, loadHighlighter, type Highlighter } from '../agents/codeHighlighter'
 import { useTransientFlag, writeClipboard } from '../agents/richActions'
+import { shownLineCount } from '../state/interfaceNumbers'
 import type { DiffLine } from './changesStore'
 import { decorateDiff, guessLanguage, hunkHeading, isDocumentPath, languageOfPath, looksLikeDocument, paintedParts, parseDiffText, readingOrder, wholeSide, type DiffDecoration, type LinePaint } from './diffDrawing'
 import './changes.css'
@@ -17,6 +18,21 @@ export const sign = (line: DiffLine | undefined): string => line?.kind === 'add'
 /** What a screen reader hears before a changed line, which sighted readers get from its sign. */
 export const spoken = (line: DiffLine | undefined, words: I18n): ReactNode => line?.kind === 'add' ? <span className="tt-visually-hidden">{words._(msg({ message: 'Added: ', comment: 'Read before an added line of a diff.' }))}</span>
   : line?.kind === 'remove' ? <span className="tt-visually-hidden">{words._(msg({ message: 'Removed: ', comment: 'Read before a removed line of a diff.' }))}</span> : null
+
+/**
+ * How far a line of code is indented, for the stylesheet to hang its wrapped remainder inside that indent, so a wrapped
+ * line reads as one line of its block and not as the next one. Nothing for a line that starts at the margin.
+ */
+export function hangingIndent(text: string): CSSProperties | undefined {
+  let columns = 0
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index]
+    if (character === ' ') columns++
+    else if (character === '\t') columns += 4
+    else break
+  }
+  return columns === 0 ? undefined : { '--changes-indent': `${columns}ch` } as CSSProperties
+}
 
 /** A line's words with their colours, and the words that changed marked as one phrase each. */
 export function PaintedText({ text, paint }: { readonly text: string; readonly paint: LinePaint | undefined }): ReactNode {
@@ -75,7 +91,7 @@ function Line({ line, decoration, numbers }: { readonly line: DiffLine; readonly
   return <div className="changes-line" data-kind={line.kind} title={line.kind === 'hunk' ? line.text : undefined}>
     {numbers ? <span className="changes-line__number" aria-hidden="true">{line.newLine ?? line.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-    <span className="changes-line__text" data-shape={paint?.shape}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} /></>}</span>
+    <span className="changes-line__text" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} /></>}</span>
   </div>
 }
 
@@ -99,9 +115,9 @@ export const DiffBlock = memo(function DiffBlock({ diff, path, cut }: { readonly
   const decoration = useMemo(() => decorateDiff(shown, { reading, language, highlighter }), [highlighter, language, reading, shown])
   const order = useMemo(() => reading === 'document' ? readingOrder(shown, decoration.pairs) : null, [decoration, reading, shown])
   const { additions, deletions } = useMemo(() => {
-    let additions = 0, deletions = 0
-    for (const line of lines) { if (line.kind === 'add') additions++; else if (line.kind === 'remove') deletions++ }
-    return { additions, deletions }
+    let added = 0, removed = 0
+    for (const line of lines) { if (line.kind === 'add') added++; else if (line.kind === 'remove') removed++ }
+    return { additions: shownLineCount(added), deletions: shownLineCount(removed) }
   }, [lines])
   const numbers = lines.some(line => line.oldLine !== null || line.newLine !== null)
   const copied = outcome === 'copied'

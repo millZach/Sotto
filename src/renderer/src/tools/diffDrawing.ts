@@ -164,7 +164,15 @@ function joined(ranges: readonly TextRange[], text: string, prose: boolean): Tex
     if (phrase) out[out.length - 1] = { start: last.start, end: range.end }
     else out.push(range)
   }
-  return out
+  return out.map(range => withoutEdgeSpace(range, text))
+}
+
+/** A mark starts and ends on a word, so no wash hangs off the end of a wrapped line. A change that is only whitespace stays as it is: that is what changed. */
+function withoutEdgeSpace(range: TextRange, text: string): TextRange {
+  let { start, end } = range
+  while (start < end && /\s/u.test(text[start]!)) start++
+  while (end > start && /\s/u.test(text[end - 1]!)) end--
+  return start === end ? range : { start, end }
 }
 
 const markedInk = (ranges: readonly TextRange[], text: string): number => ranges.reduce((sum, range) => sum + inkLength(text.slice(range.start, range.end)), 0)
@@ -287,7 +295,7 @@ export function readingOrder(lines: readonly DiffLine[], pairs: ReadonlyMap<numb
 
 const INLINE = /(\*\*|__)(?=\S)(.+?)(?<=\S)\1|(?<![\p{L}\p{N}*_])([*_])(?=\S)([^*_\n]+?)(?<=\S)\3(?![\p{L}\p{N}*_])|(`+)(.+?)\5|!?\[([^\]\n]*)\]\(([^)\n]*)\)/gu
 
-/** The shape of a line of Markdown, and its marks drawn faint with the words they dress drawn as they will read. */
+/** The shape of a line of Markdown, and its marks to draw faint. The words they dress stay as they are: this is the source, not the page. */
 export function markdownPaint(text: string): Pick<LinePaint, 'shape' | 'tokens'> {
   const tokens: TextToken[] = []
   const marker = (start: number, end: number): void => { if (end > start) tokens.push({ start, end, className: 'diff-md-mark' }) }
@@ -314,13 +322,12 @@ export function markdownPaint(text: string): Pick<LinePaint, 'shape' | 'tokens'>
   INLINE.lastIndex = from
   for (let match = INLINE.exec(text); match; match = INLINE.exec(text)) {
     const start = match.index, end = start + match[0].length
-    if (match[1]) { marker(start, start + 2); tokens.push({ start: start + 2, end: end - 2, className: 'diff-md-strong' }); marker(end - 2, end) }
-    else if (match[3]) { marker(start, start + 1); tokens.push({ start: start + 1, end: end - 1, className: 'diff-md-em' }); marker(end - 1, end) }
-    else if (match[5]) { const size = match[5].length; marker(start, start + size); tokens.push({ start: start + size, end: end - size, className: 'diff-md-code' }); marker(end - size, end) }
+    if (match[1]) { marker(start, start + 2); marker(end - 2, end) }
+    else if (match[3]) { marker(start, start + 1); marker(end - 1, end) }
+    else if (match[5]) { const size = match[5].length; marker(start, start + size); marker(end - size, end) }
     else {
       const open = match[0].indexOf('[') + 1, label = match[7]!.length
       marker(start, start + open)
-      tokens.push({ start: start + open, end: start + open + label, className: 'diff-md-link' })
       marker(start + open + label, end)
     }
   }
