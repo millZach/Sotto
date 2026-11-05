@@ -145,6 +145,18 @@
    reaches up to the band, and its hover keeps the sidebar under the wash, so no row shows through either. */
 .thread-nav[data-mode] .thread-folder__head { position: sticky; top: 6px; z-index: 1; background-color: var(--threads-sidebar); box-shadow: 0 -6px 0 var(--threads-sidebar); container-type: scroll-state; }
 .thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) { background: linear-gradient(var(--threads-hover), var(--threads-hover)), var(--threads-sidebar); }
+/* Glass's sidebar is a tint over the room, so a head stuck in that tint let the rows passing under it read through its
+   name. Once stuck, the head's toggle, which spans it, lies on the room's own layers under the tint: the window's
+   material is the operating system's and cannot be painted, so over it the room's tint lies on the solid overlay
+   surface, and in-app glass's backdrop, which stays where it is as the page scrolls, is painted fixed so it matches the
+   sidebar beside it. At rest a head is drawn as before. It sticks at the list's very top, with no band above it, since
+   the band can only be drawn in the tint. */
+:root[data-glass] .thread-nav[data-mode] .thread-folder__head { --folder-head-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)), var(--tt-surface-overlay); top: 0; box-shadow: none; }
+:root[data-glass='in-app'] .thread-nav[data-mode] .thread-folder__head { --folder-head-under: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)) fixed, var(--tt-glass-backdrop) fixed; }
+@container scroll-state(stuck: top) {
+  :root[data-glass] .thread-nav[data-mode] .thread-folder__toggle { background: linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--folder-head-under); }
+  :root[data-glass] .thread-nav[data-mode] .thread-folder__head:is(:hover, [data-peeking]) > .thread-folder__toggle { background: linear-gradient(var(--threads-hover), var(--threads-hover)), linear-gradient(var(--threads-sidebar), var(--threads-sidebar)), var(--folder-head-under); }
+}
 .thread-nav[data-mode] .thread-folder__toggle::after { content: ''; position: absolute; top: 100%; right: -4px; left: -4px; height: 1px; background: transparent; pointer-events: none; }
 @container scroll-state(stuck: top) { .thread-nav[data-mode] .thread-folder__toggle::after { background: var(--tt-hairline); } }
 
