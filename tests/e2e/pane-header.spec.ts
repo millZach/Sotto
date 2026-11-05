@@ -40,10 +40,10 @@ const fromRight = (scope: Locator): Promise<number[]> => scope.evaluate(head => 
 const nameOverButtons = (scope: Locator): Promise<number> => scope.evaluate(head =>
   head.querySelector('h2')!.getBoundingClientRect().right - head.querySelector('.thread-workspace__actions')!.getBoundingClientRect().left)
 
-/** The parts of the title that are cut off: the name, the project and the folder. */
+/** The parts of the title that are cut off, at the end of a line or after a narrow pane's two lines: the name, the project and the folder. */
 const cut = (scope: Locator): Promise<string[]> => scope.evaluate(head =>
   [...head.querySelectorAll<HTMLElement>('h2, .thread-workspace__crumb > span:first-of-type, .working-copy__trigger, .working-copy__label')]
-    .filter(part => part.offsetWidth > 0 && part.scrollWidth > part.clientWidth + 1).map(part => part.textContent ?? ''))
+    .filter(part => part.offsetWidth > 0 && (part.scrollWidth > part.clientWidth + 1 || part.scrollHeight > part.clientHeight + 1)).map(part => part.textContent ?? ''))
 
 /** The window's content at exactly this size, held: the nested Linux desktop can hand a new window its first size back. */
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
@@ -179,7 +179,8 @@ test('a pane header carries the Git action, Watch, Tools, the Terminal drawer, o
     await page.evaluate(async title => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'footer-links', title }) }, 'Repository review of the coordinator and its adapters')
     await expect(right.locator('h2')).toHaveText('Repository review of the coordinator and its adapters')
     for (const head of [left, right]) expect(await nameOverButtons(head)).toBeLessThanOrEqual(0)
-    expect(await right.locator('h2').evaluate(heading => heading.scrollWidth > heading.clientWidth)).toBe(true)
+    // In a pane under 720px a long name takes the header's two lines first, and is cut at the end of the second.
+    expect(await right.locator('h2').evaluate(heading => heading.scrollWidth > heading.clientWidth || heading.scrollHeight > heading.clientHeight + 1)).toBe(true)
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'rename-thread', threadId: 'footer-links', title: 'Footer links' }) })
     await expect(right.locator('h2')).toHaveText('Footer links')
     await capture(page, 'split-1280x800')

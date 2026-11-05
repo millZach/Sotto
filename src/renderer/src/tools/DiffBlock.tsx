@@ -182,10 +182,10 @@ export const EDITED_SIGN = '±'
 function Line({ line, decoration, numbers, code }: { readonly line: DiffLine; readonly decoration: DiffDecoration; readonly numbers: boolean; readonly code: boolean }): ReactNode {
   const { i18n } = useLingui()
   const paint = decoration.paint.get(line)
-  return <div className="changes-line" data-kind={line.kind} title={line.kind === 'hunk' ? line.text : undefined}>
+  return <div className="changes-line" data-kind={line.kind} data-paired={paint?.paired} title={line.kind === 'hunk' ? line.text : undefined}>
     {numbers ? <span className="changes-line__number" aria-hidden="true">{line.newLine ?? line.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-    <span className="changes-line__text" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+    <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
   </div>
 }
 
@@ -197,7 +197,7 @@ function EditedLine({ before, after, segments, decoration, numbers }: {
   return <div className="changes-line" data-kind="edited">
     {numbers ? <span className="changes-line__number" aria-hidden="true">{after.newLine ?? before.oldLine ?? ''}</span> : null}
     <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
-    <span className="changes-line__text" data-shape={paintAfter?.shape}><EditedText before={before.text} after={after.text} segments={segments} paintBefore={decoration.paint.get(before)} paintAfter={paintAfter} /></span>
+    <span className="changes-line__text" data-shape={paintAfter?.shape} data-source={paintAfter?.source}><EditedText before={before.text} after={after.text} segments={segments} paintBefore={decoration.paint.get(before)} paintAfter={paintAfter} /></span>
   </div>
 }
 

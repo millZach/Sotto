@@ -731,13 +731,13 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     const { line } = row
     const number = line.newLine ?? line.oldLine
     const paint = decoration?.paint.get(line)
-    return <div className="changes-line" role="row" data-kind={line.kind} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
+    return <div className="changes-line" role="row" data-kind={line.kind} data-paired={paint?.paired} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} title={line.kind === 'hunk' ? line.text : undefined} {...pickable}>
       {oneNumber ? <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span> : <>
         <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.oldLine ?? number, i18n) : undefined}>{line.oldLine ?? ''}</span>
         <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.newLine ?? number, i18n) : undefined}>{line.newLine ?? ''}</span>
       </>}
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
+      <span className="changes-line__text" role="gridcell" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line.text)}>{line.kind === 'hunk' ? <HunkHeading text={line.text} /> : <>{spoken(line, i18n)}<PaintedText text={line.text} paint={paint} code={code} /></>}</span>
     </div>
   }
   const segments = row.old && row.next && row.old !== row.next ? decoration?.inline.get(row.old) : undefined
@@ -749,7 +749,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-line" role="row" data-kind="edited" data-path={path} data-old-line={before.oldLine ?? undefined} data-new-line={after.newLine ?? undefined} {...pickable}>
       <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(number, i18n) : undefined}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{EDITED_SIGN}</span>
-      <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape}><EditedText before={before.text} after={after.text} segments={segments} paintBefore={decoration?.paint.get(before)} paintAfter={paintAfter} /></span>
+      <span className="changes-line__text" role="gridcell" data-shape={paintAfter?.shape} data-source={paintAfter?.source}><EditedText before={before.text} after={after.text} segments={segments} paintBefore={decoration?.paint.get(before)} paintAfter={paintAfter} /></span>
     </div>
   }
   const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => {
@@ -758,7 +758,7 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     return <div className="changes-split__cell" role="gridcell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
       <span className="changes-line__number" aria-hidden="true" title={commentTitle(number, i18n)}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" data-shape={paint?.shape} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} code={code} /></span>
+      <span className="changes-line__text" data-shape={paint?.shape} data-source={paint?.source} style={hangingIndent(line?.text ?? '')}>{spoken(line, i18n)}<PaintedText text={line?.text ?? ''} paint={paint} code={code} /></span>
     </div>
   }
   return <div className="changes-split__row" role="row" data-path={path} data-old-line={row.old?.oldLine ?? undefined} data-new-line={row.next?.newLine ?? undefined} {...pickable}>

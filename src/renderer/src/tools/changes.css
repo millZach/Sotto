@@ -255,9 +255,10 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 /* The words that changed are the loudest thing on the line, so inside them syntax colour and Markdown's faint marks give way. */
 .changes-diff__rows .changes-word [class] { color: inherit; }
 
-/* A document is its source, read as words: the interface's face at a reading width, with the lines around a change drawn
-   quiet and Markdown's marks faint. Nothing is rendered. One size and one line height run through the whole diff, so every
-   row sits on the same rhythm; a heading says what it is by its weight alone. */
+/* A document reads as its page: the interface's face at a reading width, the lines around a change quiet. Markdown's
+   marks go and what they dress shows: bold, slanted, code in its chip, a link's words, a bullet for a list's dash, a
+   heading by its weight. A line whose change goes through a mark without taking what it dresses (data-source, as when
+   words are only made bold) keeps its marks, faint, so no change is hidden. One line height runs through the whole diff. */
 .changes-diff__rows[data-reading='document'] { font-family: var(--tt-font-ui); font-size: var(--tt-type-body); line-height: calc(var(--tt-type-body) * 1.55); }
 .changes-diff__rows[data-reading='document'] .changes-line { row-gap: 0; padding-top: 1px; padding-bottom: 1px; }
 .changes-files[data-wrap] .changes-diff__rows[data-reading='document'] .changes-line__text, .changes-block .changes-line__text { max-width: 74ch; }
@@ -268,6 +269,25 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
 .changes-line__text[data-shape='list'] { padding-left: 1.2em; text-indent: -1.2em; }
 .changes-line__text[data-shape='fence'], .changes-line__text[data-shape='table'] { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); }
 .diff-md-mark { color: var(--tt-text-muted); font-weight: 400; }
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-mark:not(.diff-md-kept, .diff-md-number, .diff-md-bullet) { display: none; }
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-number { color: inherit; }
+/* The dash keeps its room, so a wrapped item still hangs under its words, and a bullet stands in it. */
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-bullet { position: relative; color: transparent; }
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-bullet::before { content: '\2022'; position: absolute; left: 0; color: var(--tt-text-muted); text-indent: 0; }
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-strong { font-weight: 600; }
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-em { font-style: italic; }
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-link { text-decoration: underline; text-decoration-color: var(--tt-text-faint); text-underline-offset: 2px; }
+.changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-code {
+  padding: 0 2px; border-radius: var(--tt-radius-tag); background: color-mix(in oklab, var(--tt-text) 8%, transparent);
+  font-family: var(--tt-font-mono); font-size: var(--tt-type-small); -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.changes-line__text[data-shape='quote']:not([data-source]) { padding-left: 10px; box-shadow: inset 2px 0 0 var(--tt-hairline); }
+/* A paragraph reworked rather than edited stands above what it became, each whole. The line before reads quieter and the
+   line after in the body ink, each with its changed words in its role's ink over their wash. No line wash, so two long
+   paragraphs never read as two blocks of colour: the edges and signs say which is which. */
+.changes-diff__rows[data-reading='document'] .changes-line[data-paired] { background: none; }
+.changes-diff__rows[data-reading='document'] .changes-line[data-paired][data-kind='remove'] { color: var(--tt-text-muted); }
+.changes-diff__rows[data-reading='document'] .changes-line[data-paired][data-kind='remove'] + .changes-line[data-paired][data-kind='add'] { margin-top: 4px; }
 /* In a narrow panel the lines keep what room there is for words: a document reads a step smaller, its gutter and the
    file's head grow tighter, so a paragraph wraps at about fifty characters rather than forty. */
 @container tools-body (max-width: 479px) {
@@ -275,6 +295,7 @@ ins.changes-word--edit { background: var(--changes-word-added); color: var(--cha
   .changes-diff__rows[data-reading='document'] .changes-line { column-gap: 4px; padding-right: 10px; }
   .changes-diff__rows .changes-line__number:first-child { padding-left: 4px; }
   .changes-file__head { min-height: 32px; }
+  .changes-diff__rows[data-reading='document'] .changes-line__text:not([data-source]) .diff-md-code { font-size: var(--tt-type-caption); }
 }
 
 /* The transcript's box around one change: its counts and Copy, then the same lines as Changes. Nothing scrolls sideways. */

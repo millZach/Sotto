@@ -23,18 +23,36 @@ const MAX_SYNTAX_CHARS = 120_000
 const MIN_LIKENESS = 0.34
 /** When more than this share of both lines changed, the line was rewritten; marking its words would only be noise. */
 const REWRITTEN_SHARE = 0.68
+/**
+ * A prose line changed in this many places or more, with more than REWORKED_SHARE of it changed on average, was
+ * reworked rather than edited: read once it alternates struck and new words all through, so the two stand one above
+ * the other, each a paragraph.
+ */
+const REWORKED_CHANGES = 3
+const REWORKED_SHARE = 0.25
 /** The most of a diff read to guess its language when nothing names the file. */
 const GUESS_SAMPLE_CHARS = 1_600
 const GUESSED_LANGUAGES = ['typescript', 'javascript', 'python', 'css', 'scss', 'json', 'bash', 'go', 'rust', 'java', 'cpp', 'csharp', 'xml', 'yaml', 'sql', 'ruby', 'php', 'swift', 'kotlin']
 
 export interface TextRange { readonly start: number; readonly end: number }
-export interface TextToken extends TextRange { readonly className: string }
+export interface TextToken extends TextRange {
+  readonly className: string
+  /** For a Markdown mark, the whole of what it dresses: the bold run, the code span, the link, or the line for a heading's or a list's mark. */
+  readonly of?: TextRange
+}
 /** What a line of a document is, which sets its shape. */
 export type DocumentLine = 'heading-1' | 'heading-2' | 'heading-3' | 'quote' | 'list' | 'fence' | 'table'
 export interface LinePaint {
   readonly marks?: readonly TextRange[]
   readonly tokens?: readonly TextToken[]
   readonly shape?: DocumentLine
+  /**
+   * A document's line whose change goes through one of its Markdown marks without taking all it dresses, as a change
+   * that only makes words bold does. It shows its marks, faint, where every other line of a document hides them.
+   */
+  readonly source?: true
+  /** A document's line drawn one above the other with the line it became or came from, rather than read once. */
+  readonly paired?: true
 }
 
 export type Reading = 'document' | 'code'
@@ -298,6 +316,8 @@ export function wordSegments(before: string, after: string): WordSegment[] | nul
   }
   const inkA = inkLength(before), inkB = inkLength(after)
   if (inkA > 0 && inkB > 0 && changedA / inkA > REWRITTEN_SHARE && changedB / inkB > REWRITTEN_SHARE) return null
+  const changes = segments.reduce((count, segment) => count + (segment.kind === 'changed' ? 1 : 0), 0)
+  if (changes >= REWORKED_CHANGES && (changedA / Math.max(inkA, 1) + changedB / Math.max(inkB, 1)) / 2 > REWORKED_SHARE) return null
   return segments
 }
 
@@ -392,43 +412,69 @@ export function readingOrder(lines: readonly DiffLine[], pairs: ReadonlyMap<numb
 
 const INLINE = /(\*\*|__)(?=\S)(.+?)(?<=\S)\1|(?<![\p{L}\p{N}*_])([*_])(?=\S)([^*_\n]+?)(?<=\S)\3(?![\p{L}\p{N}*_])|(`+)(.+?)\5|!?\[([^\]\n]*)\]\(([^)\n]*)\)/gu
 
-/** The shape of a line of Markdown, and its marks to draw faint. The words they dress stay as they are: this is the source, not the page. */
+/**
+ * The shape of a line of Markdown, its marks and what they dress. A document draws as its page: the marks go, and the
+ * words they dress read bold, slanted, as code or as a link. Each mark carries the run it dresses (`of`), so a change
+ * that goes through a mark without taking the whole run brings that line's marks back (LinePaint.source).
+ */
 export function markdownPaint(text: string): Pick<LinePaint, 'shape' | 'tokens'> {
   const tokens: TextToken[] = []
-  const marker = (start: number, end: number): void => { if (end > start) tokens.push({ start, end, className: 'diff-md-mark' }) }
+  const whole = { start: 0, end: text.length }
+  const marker = (start: number, end: number, of: TextRange, kind?: string): void => { if (end > start) tokens.push({ start, end, className: kind ? `diff-md-mark ${kind}` : 'diff-md-mark', of }) }
+  const dressed = (start: number, end: number, className: string): void => { if (end > start) tokens.push({ start, end, className }) }
   let shape: DocumentLine | undefined
   let from = 0
   const heading = /^(#{1,6})\s+/u.exec(text)
-  const list = /^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/u.exec(text)
+  const list = /^\s*(?:([-*+])|\d+[.)])\s+(?:\[[ xX]\]\s+)?/u.exec(text)
   const quote = /^(?:>\s?)+/u.exec(text)
-  if (/^\s*(?:```|~~~)/u.test(text)) return { shape: 'fence', tokens: [{ start: 0, end: text.length, className: 'diff-md-mark' }] }
+  // A fence's backticks and a table's pipes are the page's own shape: they stay, faint.
+  if (/^\s*(?:```|~~~)/u.test(text)) return { shape: 'fence', tokens: [{ start: 0, end: text.length, className: 'diff-md-mark diff-md-kept' }] }
   if (/^\s*\|.*\|\s*$/u.test(text)) return { shape: 'table' }
   if (heading) {
     shape = heading[1]!.length === 1 ? 'heading-1' : heading[1]!.length === 2 ? 'heading-2' : 'heading-3'
-    marker(0, heading[0].length)
+    marker(0, heading[0].length, whole)
     from = heading[0].length
   } else if (quote) {
     shape = 'quote'
-    marker(0, quote[0].length)
+    marker(0, quote[0].length, whole)
     from = quote[0].length
   } else if (list) {
     shape = 'list'
-    marker(0, list[0].length)
+    // A bullet is drawn as one, and a number stays, as a page shows them.
+    marker(0, list[0].length, whole, list[1] ? 'diff-md-bullet' : 'diff-md-number')
     from = list[0].length
   }
   INLINE.lastIndex = from
   for (let match = INLINE.exec(text); match; match = INLINE.exec(text)) {
-    const start = match.index, end = start + match[0].length
-    if (match[1]) { marker(start, start + 2); marker(end - 2, end) }
-    else if (match[3]) { marker(start, start + 1); marker(end - 1, end) }
-    else if (match[5]) { const size = match[5].length; marker(start, start + size); marker(end - size, end) }
+    const start = match.index, end = start + match[0].length, of = { start, end }
+    if (match[1]) { marker(start, start + 2, of); dressed(start + 2, end - 2, 'diff-md-strong'); marker(end - 2, end, of) }
+    else if (match[3]) { marker(start, start + 1, of); dressed(start + 1, end - 1, 'diff-md-em'); marker(end - 1, end, of) }
+    else if (match[5]) { const size = match[5].length; marker(start, start + size, of); dressed(start + size, end - size, 'diff-md-code'); marker(end - size, end, of) }
     else {
       const open = match[0].indexOf('[') + 1, label = match[7]!.length
-      marker(start, start + open)
-      marker(start + open + label, end)
+      marker(start, start + open, of)
+      dressed(start + open, start + open + label, 'diff-md-link')
+      marker(start + open + label, end, of)
     }
   }
   return { ...(shape ? { shape } : {}), ...(tokens.length ? { tokens } : {}) }
+}
+
+/**
+ * Whether a change on a document's line goes through one of its marks without taking all the mark dresses. The page
+ * would then hide what changed (a word made bold, a backtick added), so the line shows its marks. Words that came or
+ * went with their marks, or a change inside what the marks dress, leave the page as it is.
+ */
+export function changeCutsMarks(tokens: readonly TextToken[] | undefined, changes: readonly TextRange[]): boolean {
+  if (!tokens?.length || changes.length === 0) return false
+  for (const token of tokens) {
+    if (!token.of) continue
+    for (const change of changes) {
+      if (change.start >= token.end || change.end <= token.start) continue
+      if (change.start > token.of.start || change.end < token.of.end) return true
+    }
+  }
+  return false
 }
 
 /** A highlighted text's coloured stretches, by line. Nested spans flatten to one stretch carrying every class around it. */
@@ -516,18 +562,40 @@ export function decorateDiff(lines: readonly DiffLine[], { reading, language, hi
     }
   } else if (language && highlighter) syntaxPaint(lines, language, highlighter, paint)
   const inline = new Map<DiffLine, readonly WordSegment[]>()
+  const document = reading === 'document'
+  // A document's pair drawn one above the other says so, and a line whose change cuts through a mark shows its marks.
+  const stacked = (line: DiffLine, changes: readonly TextRange[]): void => {
+    const source = changeCutsMarks(paint.get(line)?.tokens, changes)
+    paint.set(line, { ...paint.get(line), paired: true, ...(source ? { source: true as const } : {}) })
+  }
   let budget = MAX_WORD_CHARS
   for (const [removed, added] of pairs) {
     const before = lines[removed]!, after = lines[added]!
     budget -= before.text.length + after.text.length
-    if (budget < 0) break
-    const words = changedWords(before.text, after.text, reading === 'document')
-    if (!words) continue
-    if (words.before.length) paint.set(before, { ...paint.get(before), marks: words.before })
-    if (words.after.length) paint.set(after, { ...paint.get(after), marks: words.after })
-    if (reading !== 'document') continue
-    const segments = wordSegments(before.text, after.text)
-    if (segments) inline.set(before, segments)
+    if (budget < 0) {
+      if (!document) break
+      stacked(before, [{ start: 0, end: before.text.length }])
+      stacked(after, [{ start: 0, end: after.text.length }])
+      continue
+    }
+    const words = changedWords(before.text, after.text, document)
+    if (words?.before.length) paint.set(before, { ...paint.get(before), marks: words.before })
+    if (words?.after.length) paint.set(after, { ...paint.get(after), marks: words.after })
+    if (!document) continue
+    const segments = words ? wordSegments(before.text, after.text) : null
+    if (segments) {
+      inline.set(before, segments)
+      const changed = segments.filter(segment => segment.kind === 'changed')
+      // Read once, the pair is one line, so a cut on either side shows the marks of both.
+      if (changeCutsMarks(paint.get(before)?.tokens, changed.map(segment => segment.before)) || changeCutsMarks(paint.get(after)?.tokens, changed.map(segment => segment.after))) {
+        paint.set(before, { ...paint.get(before), source: true })
+        paint.set(after, { ...paint.get(after), source: true })
+      }
+    } else {
+      // A rewritten line has no marked words: all of it changed, so its marks change with it.
+      stacked(before, words?.before ?? [{ start: 0, end: before.text.length }])
+      stacked(after, words?.after ?? [{ start: 0, end: after.text.length }])
+    }
   }
   return { reading, pairs, paint, inline }
 }

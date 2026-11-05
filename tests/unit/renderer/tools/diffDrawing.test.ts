@@ -158,14 +158,22 @@ describe('what a diff is', () => {
 })
 
 describe('markdownPaint', () => {
-  it('shapes a heading and fades its mark', () => {
-    expect(markdownPaint('## The order')).toEqual({ shape: 'heading-2', tokens: [{ start: 0, end: 3, className: 'diff-md-mark' }] })
+  it('shapes a heading, and its mark dresses the whole line', () => {
+    expect(markdownPaint('## The order')).toEqual({ shape: 'heading-2', tokens: [{ start: 0, end: 3, className: 'diff-md-mark', of: { start: 0, end: 12 } }] })
   })
 
-  it('fades the marks of bold, code and links, and leaves the words they dress as the source has them', () => {
-    const { tokens } = markdownPaint('1. **Bold** then `code` and [link](url)')
-    expect(tokens?.map(token => token.className)).toEqual(Array.from({ length: 7 }, () => 'diff-md-mark'))
-    expect(tokens?.map(({ start, end }) => '1. **Bold** then `code` and [link](url)'.slice(start, end))).toEqual(['1. ', '**', '**', '`', '`', '[', '](url)'])
+  it('finds the marks of bold, code and links and the words each dresses, and keeps a list number', () => {
+    const text = '1. **Bold** then `code` and [link](url)'
+    const { tokens } = markdownPaint(text)
+    expect(tokens?.map(token => [text.slice(token.start, token.end), token.className])).toEqual([
+      ['1. ', 'diff-md-mark diff-md-number'], ['**', 'diff-md-mark'], ['Bold', 'diff-md-strong'], ['**', 'diff-md-mark'],
+      ['`', 'diff-md-mark'], ['code', 'diff-md-code'], ['`', 'diff-md-mark'], ['[', 'diff-md-mark'], ['link', 'diff-md-link'], ['](url)', 'diff-md-mark'],
+    ])
+    expect(tokens?.[1]?.of).toEqual({ start: 3, end: 11 })
+  })
+
+  it('draws a dash as a bullet', () => {
+    expect(markdownPaint('- Which job should leave first?').tokens?.[0]?.className).toBe('diff-md-mark diff-md-bullet')
   })
 
   it('leaves plain words alone', () => {
@@ -194,6 +202,29 @@ describe('decorateDiff', () => {
     const lines = fileLines('@@ -1,3 +1,3 @@\n ```\n # not a heading\n ```\n')
     const decoration = decorateDiff(lines, { reading: 'document' })
     expect(decoration.paint.get(lines[2]!)).toEqual({ shape: 'fence' })
+  })
+
+  it('draws a document as its page unless a change goes through a mark without what it dresses', () => {
+    const lines = fileLines('@@ -1,3 +1,3 @@\n-The **store worker** runs it.\n+The **event store** runs it.\n-Make it plain here.\n+Make it **plain** here.\n-Some words here.\n+Some words here, and **new bold ones** now.\n')
+    const decoration = decorateDiff(lines, { reading: 'document' })
+    // A change inside what the marks dress, or words that came with their marks, leaves the page.
+    expect(decoration.paint.get(lines[2]!)?.source).toBeUndefined()
+    expect(decoration.paint.get(lines[6]!)?.source).toBeUndefined()
+    // Only making words bold would vanish on the page, so that line shows its marks.
+    expect(decoration.paint.get(lines[3]!)?.source).toBe(true)
+    expect(decoration.paint.get(lines[4]!)?.source).toBe(true)
+  })
+
+  it('stands a reworked paragraph above what it became rather than read it once', () => {
+    const before = 'The worker thread runs them on a connection of its own, half a second after the last one finished, so no save on main runs one, and a save can still wait for one.'
+    const after = 'The store worker runs them between its writes, half a second after the last one finished, so nothing on main runs one, and only the writer waits for it.'
+    const lines = fileLines(`@@ -1 +1 @@\n-${before}\n+${after}\n`)
+    expect(wordSegments(before, after)).toBeNull()
+    const decoration = decorateDiff(lines, { reading: 'document' })
+    expect(decoration.inline.size).toBe(0)
+    expect(decoration.paint.get(lines[1]!)?.paired).toBe(true)
+    expect(decoration.paint.get(lines[2]!)?.paired).toBe(true)
+    expect(decoration.paint.get(lines[2]!)?.marks?.length).toBeGreaterThan(0)
   })
 
   it("reads a document's edited line once with what it became, and leaves code as two lines", () => {
