@@ -18,7 +18,7 @@ export interface HostQuitHandles {
   tellWatcherTools?: AsyncClose
   toDoTools?: AsyncClose
   /** The Council (ADR-0177), the desktop's own: it lets go of the coordinator before the runtime closes. */
-  council?: { close(): void }
+  council?: { close(): void | Promise<void> }
   providerJobs?: { close(): void }
   hostUpdates?: { dispose(): void }
   hostBoot?: { dispose(): void }
@@ -59,14 +59,14 @@ export function registerHostQuitDrain(app: Parameters<typeof registerQuitDrain>[
     handles.hostUpdates?.dispose()
     handles.hostBoot?.dispose()
     handles.hostPhones?.close()
-    handles.council?.close()
+    const councilResults = await Promise.allSettled([handles.council?.close()])
     const results = await Promise.allSettled([
       handles.desktopHosts?.close(), closeLocal(),
       handles.hostSetupTools?.close(), handles.visualTools?.close(), handles.mediaTools?.close(), handles.pullRequestTools?.close(), handles.delegationTools?.close(), handles.tellWatcherTools?.close(), handles.toDoTools?.close(),
       closeCloud(),
     ])
     handles.hostRouter?.dispose()
-    const failure = results.find(result => result.status === 'rejected')
+    const failure = [...councilResults, ...results].find(result => result.status === 'rejected')
     if (failure?.status === 'rejected') throw failure.reason
   }, failed, platform === 'darwin' || platform === 'linux' ? { source: powerMonitor, platform, prepare } : undefined)
 }

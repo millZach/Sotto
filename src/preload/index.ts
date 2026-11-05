@@ -1,3 +1,4 @@
+import { COUNCIL_CLIMB, climbRequestSchema, climbResultSchema } from '../shared/councilClimb'
 import { DICTATION_TIMING, DICTATION_TIMING_ARGUMENT, type DictationTimingBridge } from '../shared/dictationTiming'
 import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type HostsState } from '../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD, type HostDeviceList, type TailscaleConnectOutcome, type TailscaleSummary } from '../shared/hostDevices'
@@ -585,6 +586,7 @@ export function createSottoBridge(
     }) } : {}),
     // The Council (ADR-0177): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(councilEnabled ? { council: Object.freeze<CouncilBridge>({
+      climb: request => invokeParsed(renderer, COUNCIL_CLIMB, climbResultSchema, climbRequestSchema.parse(request)),
       read: () => invokeParsed(renderer, COUNCIL_READ, councilViewsSchema),
       estimate: request => invokeParsed(renderer, COUNCIL_ESTIMATE, councilEstimateSchema, councilEstimateRequestSchema.parse(request)),
       command: command => invokeParsed(renderer, COUNCIL_COMMAND, councilCommandResultSchema, councilCommandSchema.parse(command)),

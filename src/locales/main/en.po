@@ -294,6 +294,22 @@ msgstr "A checkpoint file backup failed its integrity check."
 msgid "A checkpoint path is outside the working folder."
 msgstr "A checkpoint path is outside the working folder."
 
+#: src/main/council/climbService.ts
+msgid "A Climb thread is unavailable. Review this round before continuing."
+msgstr "A Climb thread is unavailable. Review this round before continuing."
+
+#: src/main/council/climbService.ts
+msgid "A Climb thread is waiting for you. Answer it before continuing."
+msgstr "A Climb thread is waiting for you. Answer it before continuing."
+
+#: src/main/council/climbService.ts
+msgid "A Climb turn reached the Council deadline. Its result is still held; review before continuing."
+msgstr "A Climb turn reached the Council deadline. Its result is still held; review before continuing."
+
+#: src/main/council/climbService.ts
+msgid "A Climb turn stopped or failed. No attempt was counted as improvement."
+msgstr "A Climb turn stopped or failed. No attempt was counted as improvement."
+
 #: src/main/themes/openVsx.ts
 msgid "A color theme contribution has a missing or unsafe path; nothing was imported."
 msgstr "A color theme contribution has a missing or unsafe path; nothing was imported."
@@ -351,6 +367,10 @@ msgstr "A remote host address must use HTTPS."
 msgid "A remote host address must use HTTPS. Nothing was saved."
 msgstr "A remote host address must use HTTPS. Nothing was saved."
 
+#: src/main/council/climbService.ts
+msgid "A required criterion is unmeasurable. No attempt was counted. Review the rubric and evidence in a new Climb."
+msgstr "A required criterion is unmeasurable. No attempt was counted. Review the rubric and evidence in a new Climb."
+
 #: src/main/council/councilService.ts
 msgid "A seat's model is not ready: its provider is not connected. Choose another model for it, then ask again. Nothing was started."
 msgstr "A seat's model is not ready: its provider is not connected. Choose another model for it, then ask again. Nothing was started."
@@ -401,6 +421,10 @@ msgstr "Agents cannot reach the host machine from this window. Nothing was chang
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Agents is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones."
 msgstr "Agents is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones."
+
+#: src/main/council/climbService.ts
+msgid "All required targets met."
+msgstr "All required targets met."
 
 #: src/main/hosts/desktopHosts.ts
 msgid "An agent cannot set up a host from this window. Nothing was started."
@@ -487,6 +511,10 @@ msgstr "Answer the request to open this page first."
 msgid "Ask for Watcher's first message from the main Sotto window."
 msgstr "Ask for Watcher's first message from the main Sotto window."
 
+#: src/main/council/climbService.ts
+msgid "Attempt limit reached."
+msgstr "Attempt limit reached."
+
 #: src/main/tray/trayController.ts
 msgid "Auto-paste"
 msgstr "Auto-paste"
@@ -549,6 +577,10 @@ msgstr "Checkpoint capture was interrupted before its completed file snapshot wa
 msgid "Checkpoint paths cannot follow symbolic links or directory junctions."
 msgstr "Checkpoint paths cannot follow symbolic links or directory junctions."
 
+#: src/main/council/councilIpc.ts
+msgid "Choose a builder on this computer."
+msgstr "Choose a builder on this computer."
+
 #: src/main/hosts/sshHostValidation.ts
 msgid "Choose a host port between 1 and 65535."
 msgstr "Choose a host port between 1 and 65535."
@@ -556,6 +588,10 @@ msgstr "Choose a host port between 1 and 65535."
 #: src/main/hosts/sshHostValidation.ts
 msgid "Choose a SSH port between 1 and 65535."
 msgstr "Choose a SSH port between 1 and 65535."
+
+#: src/main/council/climbService.ts
+msgid "Choose a standard effort for Climb judges. Ultracode starts extra agents."
+msgstr "Choose a standard effort for Climb judges. Ultracode starts extra agents."
 
 #: src/main/hosts/sshLauncher.ts
 msgid "Choose a valid paired client."
@@ -572,6 +608,14 @@ msgstr "Choose an absolute host installation path, or a path starting with ~/."
 #: src/main/hosts/sshHostValidation.ts
 msgid "Choose an absolute path for the SSH identity file."
 msgstr "Choose an absolute path for the SSH identity file."
+
+#: src/main/council/climbService.ts
+msgid "Choose an open local project thread as the builder."
+msgstr "Choose an open local project thread as the builder."
+
+#: src/main/council/climbService.ts
+msgid "Choose connected Claude models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary."
+msgstr "Choose connected Claude models for all three judges and the chair. Other providers do not yet enforce Climb's read-only boundary."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Choose each computer once before clearing usage."
@@ -737,6 +781,10 @@ msgstr "Files is unavailable on this host. Nothing was changed. Check the host i
 msgid "Finish or resolve active and pending work before reverting."
 msgstr "Finish or resolve active and pending work before reverting."
 
+#: src/main/council/climbService.ts
+msgid "Finish the builder's current work and clear its draft before starting a Climb."
+msgstr "Finish the builder's current work and clear its draft before starting a Climb."
+
 #: src/main/tools/checkpointCapture.ts
 msgid "Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts."
 msgstr "Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts."
@@ -825,6 +873,10 @@ msgstr "Local history is off, but saved Chats could not be cleared. Restore acce
 msgid "Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again."
 msgstr "Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again."
 
+#: src/main/council/climbService.ts
+msgid "Local history was off. This Climb's words and temporary evidence were removed. Start a new Climb."
+msgstr "Local history was off. This Climb's words and temporary evidence were removed. Start a new Climb."
+
 #: src/main/ownModelServers/ipc.ts
 msgid "Manage your own model servers from the main Sotto window."
 msgstr "Manage your own model servers from the main Sotto window."
@@ -840,6 +892,10 @@ msgstr "Measure your own server from the main Sotto window."
 #: src/main/memory/ipc.ts
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr "Memory is unavailable. Restart Sotto and try again."
+
+#: src/main/council/climbService.ts
+msgid "Model turn limit reached."
+msgstr "Model turn limit reached."
 
 #: src/main/agents/threadMovesIpc.ts
 msgid "Move threads from the main Sotto window."
@@ -860,6 +916,10 @@ msgstr "Native rollback is still unconfirmed. No files were changed and rollback
 #: src/main/tools/browser.ts
 msgid "No element is available there. Use Region to comment on the saved screenshot."
 msgstr "No element is available there. Use Region to comment on the saved screenshot."
+
+#: src/main/council/climbService.ts
+msgid "No meaningful improvement in two completed attempts."
+msgstr "No meaningful improvement in two completed attempts."
 
 #: src/main/hosts/hostSetupThreads.ts
 msgid "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
@@ -1039,6 +1099,14 @@ msgstr "Point at something is not available in this version of Sotto."
 #: src/main/tools/browser.ts
 msgid "Point at something needs the theme's accent colour from the window."
 msgstr "Point at something needs the theme's accent colour from the window."
+
+#: src/main/council/climbService.ts
+msgid "Preview the fixed reference before approving."
+msgstr "Preview the fixed reference before approving."
+
+#: src/main/council/climbService.ts
+msgid "Preview the fixed reference before starting."
+msgstr "Preview the fixed reference before starting."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Pull requests are unavailable on this host."
@@ -1351,6 +1419,7 @@ msgstr "Sotto is already updating or changing the host on {name}. Nothing was ch
 msgid "Sotto is changing whether the host on {host} starts at boot. Nothing was changed. Wait for it to finish, then try again."
 msgstr "Sotto is changing whether the host on {host} starts at boot. Nothing was changed. Wait for it to finish, then try again."
 
+#: src/main/council/climbService.ts
 #: src/main/council/councilService.ts
 msgid "Sotto is closing. Nothing was changed."
 msgstr "Sotto is closing. Nothing was changed."
@@ -1382,6 +1451,10 @@ msgstr "Sotto kept the copy of bindings.lua it made at setup, in ~/.config/hypr.
 #: src/main/agents/visualPageStore.ts
 msgid "Sotto no longer has this page, so it is not shown."
 msgstr "Sotto no longer has this page, so it is not shown."
+
+#: src/main/council/climbService.ts
+msgid "Sotto restarted. Review the held round before continuing. Unconfirmed builder turns are never sent again."
+msgstr "Sotto restarted. Review the held round before continuing. Unconfirmed builder turns are never sent again."
 
 #: src/main/tools/checkpoints.ts
 msgid "Sotto set aside a checkpoint file it could not read as {file} and kept the rest."
@@ -1475,6 +1548,10 @@ msgstr "Stop Dictation"
 msgid "Stop the host on {name}, then connect to it again from Settings > Hosts & phones, and Sotto starts {to}."
 msgstr "Stop the host on {name}, then connect to it again from Settings > Hosts & phones, and Sotto starts {to}."
 
+#: src/main/council/climbService.ts
+msgid "Stopped by you."
+msgstr "Stopped by you."
+
 #: src/main/teams/teams.ts
 msgid "Tailscale could not set up the link's address. Nothing was linked. Try again."
 msgstr "Tailscale could not set up the link's address. Nothing was linked. Try again."
@@ -1535,6 +1612,10 @@ msgstr "Terminal is shutting down."
 msgid "That address is not an Open VSX address."
 msgstr "That address is not an Open VSX address."
 
+#: src/main/council/climbService.ts
+msgid "That Climb is no longer here."
+msgstr "That Climb is no longer here."
+
 #: src/main/teams/teams.ts
 msgid "That code came from this computer. Send it to your teammate instead. Nothing was linked."
 msgstr "That code came from this computer. Send it to your teammate instead. Nothing was linked."
@@ -1588,6 +1669,10 @@ msgstr "That model is not ready on this computer. Choose another one. Nothing wa
 #: src/main/council/councilService.ts
 msgid "That model is not ready: its provider is not connected. Choose another. Nothing was changed."
 msgstr "That model is not ready: its provider is not connected. Choose another. Nothing was changed."
+
+#: src/main/council/climbService.ts
+msgid "That round has no kept evidence to export."
+msgstr "That round has no kept evidence to export."
 
 #: src/main/council/councilService.ts
 msgid "That row has nothing to do now. Nothing was changed."
@@ -1649,13 +1734,53 @@ msgstr "The archive on the releases page is not the Sotto {to} host, so nothing 
 msgid "The bar could not restart with the newer owl. Your previous owl was restored. Try again."
 msgstr "The bar could not restart with the newer owl. Your previous owl was restored. Try again."
 
+#: src/main/council/climbService.ts
+msgid "The builder answered but its candidate was not captured. Start a new Climb from the work you want to keep."
+msgstr "The builder answered but its candidate was not captured. Start a new Climb from the work you want to keep."
+
+#: src/main/council/climbService.ts
+msgid "The builder did not confirm its turn. Review its delivery before continuing."
+msgstr "The builder did not confirm its turn. Review its delivery before continuing."
+
+#: src/main/council/climbService.ts
+msgid "The builder did not return the selected text artifacts. Review its reply before continuing."
+msgstr "The builder did not return the selected text artifacts. Review its reply before continuing."
+
+#: src/main/council/climbService.ts
+msgid "The builder is busy. Review its work before continuing."
+msgstr "The builder is busy. Review its work before continuing."
+
+#: src/main/council/climbService.ts
+msgid "The builder needs your attention. Clear its draft or request, then continue the Climb."
+msgstr "The builder needs your attention. Clear its draft or request, then continue the Climb."
+
+#: src/main/council/climbService.ts
+msgid "The builder's last send is unconfirmed. It will not be sent twice. Review that thread and start a new Climb."
+msgstr "The builder's last send is unconfirmed. It will not be sent twice. Review that thread and start a new Climb."
+
+#: src/main/council/climbService.ts
+msgid "The builder's text artifacts do not match the approved selection."
+msgstr "The builder's text artifacts do not match the approved selection."
+
 #: src/main/themes/openVsx.ts
 msgid "The checksum from Open VSX could not be read."
 msgstr "The checksum from Open VSX could not be read."
 
+#: src/main/council/climbService.ts
+msgid "The Climb could not continue. Your kept rounds are unchanged."
+msgstr "The Climb could not continue. Your kept rounds are unchanged."
+
+#: src/main/council/climbService.ts
+msgid "The Climb reply is unavailable. The held round was kept."
+msgstr "The Climb reply is unavailable. The held round was kept."
+
 #: src/main/tools/cloudIphone/service.ts
 msgid "The cloud iPhone’s viewer address is not secure enough to show."
 msgstr "The cloud iPhone’s viewer address is not secure enough to show."
+
+#: src/main/council/climbService.ts
+msgid "The complete evidence exceeds this judge's context limit. Narrow it in a new Climb; nothing was truncated."
+msgstr "The complete evidence exceeds this judge's context limit. Narrow it in a new Climb; nothing was truncated."
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "The connection closed before the host confirmed this command. Nothing was saved. Refresh before deciding what to do next."
@@ -1732,6 +1857,10 @@ msgstr "The download on {name} did not match the release's checksum, so Sotto de
 #: src/main/hosts/hostUpdate.ts
 msgid "The download on this computer did not match the release's checksum, so Sotto installed nothing on {name}."
 msgstr "The download on this computer did not match the release's checksum, so Sotto installed nothing on {name}."
+
+#: src/main/council/climbService.ts
+msgid "The evidence selection changed. Preview it in a new Climb before approving."
+msgstr "The evidence selection changed. Preview it in a new Climb before approving."
 
 #: src/main/hosts/hostUpdate.ts
 msgid "The existing versions/{to} folder on {name} differs from the release. Sotto kept it unchanged."
@@ -2078,6 +2207,10 @@ msgstr "The image was saved, but this terminal has exited. Reopen it before past
 msgid "The installer could not be started."
 msgstr "The installer could not be started."
 
+#: src/main/council/climbService.ts
+msgid "The judge's turn was not confirmed. Review this round before continuing."
+msgstr "The judge's turn was not confirmed. Review this round before continuing."
+
 #: src/main/omarchy/setup.ts
 msgid "The line Sotto added changed. Your keys were left alone."
 msgstr "The line Sotto added changed. Your keys were left alone."
@@ -2163,6 +2296,10 @@ msgstr "The previous owl folder changed. Sotto left it alone. Restore it before 
 msgid "The provider rejected rollback. Files are unchanged; review the native thread before retrying."
 msgstr "The provider rejected rollback. Files are unchanged; review the native thread before retrying."
 
+#: src/main/council/climbService.ts
+msgid "The read-only judge could not start. No replacement provider was chosen."
+msgstr "The read-only judge could not start. No replacement provider was chosen."
+
 #: src/main/hosts/hostUpdate.ts
 msgid "The releases page has no Sotto {to} host for {name}."
 msgstr "The releases page has no Sotto {to} host for {name}."
@@ -2174,6 +2311,10 @@ msgstr "The releases page has no Sotto {to} host for {name}'s system ({platform}
 #: src/main/hosts/desktopHosts.ts
 msgid "The revoke failed."
 msgstr "The revoke failed."
+
+#: src/main/council/climbService.ts
+msgid "The selected evidence contains a file this judge cannot read. Select text or PNG, JPEG, GIF or WebP images in a new Climb."
+msgstr "The selected evidence contains a file this judge cannot read. Select text or PNG, JPEG, GIF or WebP images in a new Climb."
 
 #: src/main/hosts/hostSetup.ts
 msgid "The setup thread could not start."
@@ -2400,6 +2541,10 @@ msgstr "This address belongs to a different host. Check the connection before co
 msgid "This address belongs to a different host. Nothing was saved. Check the connection before continuing."
 msgstr "This address belongs to a different host. Nothing was saved. Check the connection before continuing."
 
+#: src/main/council/climbService.ts
+msgid "This assessment exceeds the judge's eight-image or 10 MiB image limit. Narrow the evidence in a new Climb."
+msgstr "This assessment exceeds the judge's eight-image or 10 MiB image limit. Narrow the evidence in a new Climb."
+
 #. Stands in for a branch name at the start of a sentence, when the branch is unknown.
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This branch"
@@ -2412,6 +2557,10 @@ msgstr "This browser request changed or expired. Ask the agent to try again."
 #: src/main/tools/browser.ts
 msgid "This browser task has finished."
 msgstr "This browser task has finished."
+
+#: src/main/council/climbService.ts
+msgid "This builder cannot receive the frozen images. Nothing was sent."
+msgstr "This builder cannot receive the frozen images. Nothing was sent."
 
 #: src/main/tools/checkpoints.ts
 msgid "This checkpoint expired or local history changed. No rollback was sent. Review the working copy."
@@ -2428,6 +2577,26 @@ msgstr "This checkpoint no longer matches the selected native thread and working
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This clear could not be read. Nothing was deleted."
 msgstr "This clear could not be read. Nothing was deleted."
+
+#: src/main/council/climbService.ts
+msgid "This Climb cannot continue. Start a new Climb with the kept evidence."
+msgstr "This Climb cannot continue. Start a new Climb with the kept evidence."
+
+#: src/main/council/climbService.ts
+msgid "This Climb is held. Nothing was sent."
+msgstr "This Climb is held. Nothing was sent."
+
+#: src/main/council/climbService.ts
+msgid "This Climb needs your attention."
+msgstr "This Climb needs your attention."
+
+#: src/main/council/climbService.ts
+msgid "This Climb was held while capturing. Nothing was sent."
+msgstr "This Climb was held while capturing. Nothing was sent."
+
+#: src/main/council/climbService.ts
+msgid "This Climb was stopped while capturing. Nothing was sent."
+msgstr "This Climb was stopped while capturing. Nothing was sent."
 
 #: src/main/tools/cloudIphone/service.ts
 msgid "This cloud iPhone request already changed or expired. Ask again."
@@ -2538,6 +2707,10 @@ msgstr "This host already runs Sotto {version}, which this computer installs whe
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This host cannot list its folders yet. Update Sotto on it, then try again."
 msgstr "This host cannot list its folders yet. Update Sotto on it, then try again."
+
+#: src/main/council/climbService.ts
+msgid "This host cannot run read-only Climb judges."
+msgstr "This host cannot run read-only Climb judges."
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This host connection was closed."
@@ -2843,6 +3016,10 @@ msgstr "This terminal is still running; select it instead."
 msgid "This terminal was closed while it was starting."
 msgstr "This terminal was closed while it was starting."
 
+#: src/main/council/climbService.ts
+msgid "This thread already has a Climb. Stop or settle it first."
+msgstr "This thread already has a Climb. Stop or settle it first."
+
 #: src/main/hosts/hostedTerminals.ts
 msgid "This thread moved to another project. Open its terminal again."
 msgstr "This thread moved to another project. Open its terminal again."
@@ -3021,6 +3198,10 @@ msgstr "Wait for the pending host request to finish."
 msgid "Wait for the pending host request to finish. Nothing was saved."
 msgstr "Wait for the pending host request to finish. Nothing was saved."
 
+#: src/main/council/climbService.ts
+msgid "Wait for the setup proposal before approving."
+msgstr "Wait for the setup proposal before approving."
+
 #: src/main/council/councilService.ts
 msgid "Wait for the verdict and its fairness check before asking a follow-up."
 msgstr "Wait for the verdict and its fairness check before asking a follow-up."
@@ -3036,6 +3217,10 @@ msgstr "Window"
 #: src/main/agents/ipc.ts
 msgid "Working-copy choices are unavailable. Reopen the project and try again."
 msgstr "Working-copy choices are unavailable. Reopen the project and try again."
+
+#: src/main/council/climbService.ts
+msgid "You used the builder thread. Review the held round before continuing."
+msgstr "You used the builder thread. Review the held round before continuing."
 
 #: src/main/omarchy/setup.ts
 msgid "Your bindings.lua already gives {keys} to Sotto. Leaving those lines alone."

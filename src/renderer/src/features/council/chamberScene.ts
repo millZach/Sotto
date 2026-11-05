@@ -1,3 +1,4 @@
+import type { ClimbRecord } from '../../../../shared/councilClimb'
 import { PROVIDER_LABELS, type AgentThread } from '../../../../shared/agents'
 import { COUNCIL_CHAIR, COUNCIL_STAGES, type CouncilRow, type CouncilSeatInForce, type CouncilStage, type CouncilThreadState, type CouncilTurnStage,
   type CouncilView } from '../../../../shared/council'
@@ -180,6 +181,28 @@ export function askScene(seats: { readonly panelists: readonly (CouncilSeatInFor
   const letters = 'ABCDE'
   return { id: null, stage: null, panelists: seats.panelists.map((inForce, place) => seat(inForce, letters[place] ?? String(place + 1), place)),
     chair: seat(seats.chair, COUNCIL_CHAIR, seats.panelists.length), answered: [], reviews: new Map(), verdict: null, finished: false }
+}
+
+/** Climb shares the room, but only the fresh threads in this assessment move its figures. */
+export function climbScene(record: ClimbRecord, seats: Parameters<typeof askScene>[0], facts: (thread: string) => ThreadFacts): ChamberScene {
+  const scene = askScene(seats), round = record.rounds.at(-1)
+  const finished = ['done', 'stopped', 'settled'].includes(record.phase)
+  const figure = (seat: ChamberSeat, index?: number): ChamberSeat => {
+    const turn = record.turns.findLast(turn => turn.round === (round?.index ?? 0)
+      && (index === undefined ? turn.stage === 'setup' || turn.stage === 'chair' : turn.stage === 'judge' && turn.seat === index))
+    if (!turn) return seat
+    const now = facts(turn.thread), answered = turn.outcome === 'answered'
+    const working = !finished && !turn.outcome && turn.delivery !== 'queued'
+    return { ...seat, figure: turn.thread, thread: turn.thread, answered,
+      act: now.waiting ? 'ask' : working ? now.words ? 'write' : 'think' : index === undefined && round?.summary ? 'present' : 'listen',
+      speech: now.waiting ? ASK : working ? now.words ? { kind: 'words', text: now.words } : { kind: 'thinking' } : NONE,
+      state: now.waiting ? 'waiting' : answered ? 'done' : turn.outcome === 'failed' ? 'failed' : working ? 'working' : null,
+      stage: index === undefined ? 'verdict' : 'answer' }
+  }
+  const panelists = scene.panelists.map((seat, index) => figure(seat, index))
+  return { ...scene, id: `${record.id}:${round?.index ?? 'setup'}`, stage: round?.summary ? 'done' : record.turns.at(-1)?.stage === 'chair' ? 'verdict' : 'answers',
+    panelists, chair: figure(scene.chair), answered: panelists.filter(seat => seat.answered).map(seat => seat.key),
+    verdict: round?.summary ? { text: plainWords(round.summary, 'head').slice(0, VERDICT_MAX), finished: true } : null, finished }
 }
 
 const STAGE_RANK = new Map<CouncilStage, number>(COUNCIL_STAGES.map((stage, rank) => [stage, rank]))

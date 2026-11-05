@@ -1,3 +1,4 @@
+import { assertCouncilJudgeDirectory } from '../council/councilJudge'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { isDynamicThread, overseerInstructions, overseerNoteFor, whyNotDynamic } from '../../shared/dynamicThreads'
 import { compactionPending } from '../../shared/compaction'
@@ -488,7 +489,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly preservedDormantThreads = new Map<string, AgentThread>()
   private readonly retainedWatcherIds = new Set<string>()
   private visible(thread: AgentThread): boolean {
-    return (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
+    return (this.councilEnabled || !thread.councilJudge) && (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
       && heldProviderOfThreadRecord(thread, this.held) === undefined
   }
   /**
@@ -2067,7 +2068,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * default branch only behind its upstream when Automatically pull is on.
    */
   private async readGitStatus(threadId: string, afterRemote: boolean, options: { readonly startedAfter?: number } = {}): Promise<void> {
-    if (!this.gitStatus || this.stopping) return
+    if (!this.gitStatus || this.stopping || this.threadById(threadId)?.councilJudge) return
     const folder = this.statusFolder(threadId)
     if (folder === undefined) return
     let status: GitStatus
@@ -2522,7 +2523,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private async discoverWorkingCopy(threadId: string): Promise<void> {
     const thread = this.thread(threadId)
-    if (thread.worktree || thread.nativeSessionStarted === false) return
+    if (thread.councilJudge || thread.worktree || thread.nativeSessionStarted === false) return
     const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
     const directory = thread.workingDirectory ?? project?.path
     if (!directory) throw new Error('This thread’s working folder is unavailable.')
@@ -2738,7 +2739,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
      */
     storeWriter: (store: ThreadStore) => ThreadStoreWriter = store => new ThreadStoreWriterOnWorker(store),
     /** The built store worker, or null to write on main; absent, the file beside this module, which the test runner lacks. */
-    storeWorker: string | StoreWorkerOptions | null = BUILT_STORE_WORKER) {
+    storeWorker: string | StoreWorkerOptions | null = BUILT_STORE_WORKER,
+    private readonly councilEnabled = false) {
     this.held = typeof heldProviders === 'boolean' ? heldProvidersOf({ muse: heldProviders }) : heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
@@ -2759,14 +2761,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       id => this.threadById(id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
     this.worktrees = new ThreadWorktrees(directory)
-    const preserveThread = watcherEnabled && !this.held.size ? undefined : (id: string): boolean => !this.threadVisible(id)
+    const preserveThread = watcherEnabled && this.councilEnabled && !this.held.size ? undefined : (id: string): boolean => !this.threadVisible(id)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread, storeWorker)
     this.writes = storeWriter(this.threadStore)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
     const parseWorkspace = (input: unknown): Workspace => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); this.hiddenWakeUpRecords = savedHiddenWakeUps(input); this.wakeUpAskRecords = savedWakeUpAsks(input); const parsed = workspaceSchema.parse(input);
       // Whichever track wrote the file, every model reads back with its provider's modes on it.
       expandProviderModes(parsed.snapshot.models)
-      if (!this.watcherEnabled || this.held.size) {
+      if (!this.watcherEnabled || !this.councilEnabled || this.held.size) {
         const original = input as { snapshot: AgentHostSnapshot }
         this.preservedDormantThreads.clear()
         for (const thread of original.snapshot.threads) if (!this.visible(thread)) this.preservedDormantThreads.set(thread.id, structuredClone(thread))
@@ -4688,6 +4690,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
       // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089) and where it began (#1028).
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
+      ...(old?.councilJudge ? { councilJudge: true as const } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
       ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? { ...old.dynamicSession, told: old.dynamicSession.created } : old.dynamicSession } : {}),
@@ -5322,10 +5325,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false, undefined, projectRestored ? undefined : guard)
     return this.workspaceSnapshot()
   }
-  /**
-   * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
-   * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
-   */
+  async closeCouncilJudge(threadId: string): Promise<void> {
+    if (!this.thread(threadId).councilJudge) throw new Error('Only a Climb judge can release its evidence workspace.')
+    await this.inner.closeCouncilJudge?.(threadId)
+  }
   /**
    * Dynamic on or off for a thread (ADR-0191), Sotto's own record, which the provider never sees. Checked here against the
    * thread as it stands now, since what the coordinator was last told can be a moment behind a turn that just began.
@@ -5509,6 +5512,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
     await this.discoverWorkingCopy(threadId)
     const thread = this.thread(threadId)
+    if (thread.councilJudge) {
+      await assertCouncilJudgeDirectory(this.directory, thread.workingDirectory!)
+      return thread.workingDirectory!
+    }
     const worktree = thread.worktree
     if (worktree?.path && (worktree.status === 'ready' || worktree.status === 'error')) {
       // A folder that was deleted is put back on its recorded branch before the turn (ADR-0014). A record
@@ -5548,6 +5555,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.preparations.get(threadId)
     await this.discoverWorkingCopy(threadId)
     const thread = this.thread(threadId)
+    if (thread.councilJudge) return { folder: await this.threadWorkingDirectory(threadId), inspectAfter: false }
     const worktree = thread.worktree
     if (worktree?.path && worktree.status === 'ready' && !worktree.reclaimedAt && thread.workingDirectory !== undefined && !this.fullCheckDue.has(threadId)) {
       const seen = await this.worktrees.readyOnDisk(worktree)
@@ -5594,6 +5602,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private async executeCreationGuarded(command: Extract<AgentHostCommand, { type: 'create-thread' }>): Promise<AgentHostResult> {
     await this.initialize()
+    if (command.councilJudge) return this.executeOne(command)
     const selection = { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }
     const release = await this.reserveWorkingCopySelection(command.projectId, selection, { kind: 'preparation', threadId: command.threadId, title: command.title })
     try { return await this.executeOne(command) } finally { release?.() }
@@ -5639,9 +5648,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (model?.providerId !== thread.providerId) throw new Error('Changing Watcher’s provider needs a new watcher conversation. This conversation was kept.')
       }
     }
+    if ('threadId' in command && command.type !== 'create-thread' && this.threadById(command.threadId)?.councilJudge) {
+      if (!['send', 'interrupt'].includes(command.type)) throw new Error('A Climb judge is read-only. Start a new assessment to change its setup.')
+      if (command.type === 'send' && (command.skills?.length || command.files?.length)) throw new Error('A Climb judge reads only its frozen evidence.')
+    }
     let preparedSkills: AgentSkillReference[] | undefined
     let firstSend = false
-    if ('threadId' in command && command.type !== 'create-thread' && command.type !== 'interrupt' && await this.checkpointHooks?.isBlocked(command.threadId)) throw new Error('Wait for Git changes or resolve the interrupted checkpoint revert before changing this thread.')
+    if ('threadId' in command && command.type !== 'create-thread' && command.type !== 'interrupt' && !this.threadById(command.threadId)?.councilJudge && await this.checkpointHooks?.isBlocked(command.threadId)) throw new Error('Wait for Git changes or resolve the interrupted checkpoint revert before changing this thread.')
     if ((command.type === 'send' || command.type === 'steer') && command.skills?.length) {
       const thread = this.thread(command.threadId)
       const capabilities = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.capabilities ?? this.state.snapshot.capabilities
@@ -5673,16 +5686,22 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         await this.launchProfiles.assertCreationBinding(command.threadId, command.projectId, model.providerId)
       }
       this.requireCreation(model.providerId)
+      if (command.councilJudge) {
+        if (!this.councilEnabled) throw new Error('Climb is unavailable on this release. Its records were kept.')
+        if (model.providerId !== 'claude' || !command.workingDirectory) throw new Error('This provider has no enforced Climb judge mode.')
+        await assertCouncilJudgeDirectory(this.directory, command.workingDirectory)
+      }
       const speed = command.speed !== undefined ? command.speed : command.fastMode ? 'fast' : null
       const thread: AgentThread = { hostId: this.hostId, id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
         ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         ...(commandProfile ? { kind: 'watcher' } : {}),
+        ...(command.councilJudge ? { councilJudge: true as const } : {}),
         titleSource: command.titleSource ?? 'default',
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
         ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
         ...(command.providerMode ? { providerMode: command.providerMode } : {}),
-        worktree: await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
+        worktree: command.councilJudge ? { mode: 'shared', path: command.workingDirectory!, status: 'ready' } : await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
       // New work reopens the folder, while the work put aside stays settled.
@@ -5797,6 +5816,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           const createCommand: AgentHostCommand = { type: 'create-thread', commandId: creation.commandId, threadId: thread.id,
             projectId: thread.projectId, project, title: thread.title, modelId: thread.modelId,
             workingDirectory,
+            ...(thread.councilJudge ? { councilJudge: true as const } : {}),
             ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
             ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
             ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
@@ -5826,7 +5846,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (command.type === 'send' || command.type === 'steer') {
       ({ folder: dispatchFolder, inspectAfter } = await this.sendWorkingDirectory(thread.id))
       // The folder was just read, so this is the branch the prompt goes to; the pane compares against it afterwards.
-      await this.recordSentBranch(thread.id)
+      if (!thread.councilJudge) await this.recordSentBranch(thread.id)
     }
     const releaseSend = !checkoutHeld && dispatchFolder
       ? await this.checkoutMutations.acquire(dispatchFolder, 'send', this.checkoutThreadHolder(thread.id, 'send')) : undefined
@@ -5834,24 +5854,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     let turnStart: { at: number; folder: string; messageId: string; sequence: number | undefined } | undefined
     let turnBegan = false
     try {
-      if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
+      if (command.type === 'send' && !thread.councilJudge) await this.checkpointHooks?.beforeTurn(thread.id)
       // A turn's start, for the pictures it writes: the first send of a turn holds it until the turn ends.
-      if (command.type === 'send' && this.writtenMediaKept?.wanted() && dispatchFolder && !this.turnStarts.has(thread.id)) {
+      if (command.type === 'send' && !thread.councilJudge && this.writtenMediaKept?.wanted() && dispatchFolder && !this.turnStarts.has(thread.id)) {
         turnStart = { at: Date.now(), folder: dispatchFolder, messageId: command.messageId, sequence: this.storedActivity.has(thread.id) ? undefined : thread.activities?.at(-1)?.sequence ?? -1 }
         this.turnStarts.set(thread.id, turnStart)
       }
       if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId, command.watcherAsks, command.hiddenWakeUp === true)
       // A session keeps the instructions it was created with, so a change since then goes as a note with this message (ADR-0191).
-      const overseerNote = command.type === 'send' && !firstSend ? overseerNoteFor(thread, this.dynamicThreads) : undefined
+      const overseerNote = command.type === 'send' && !thread.councilJudge && !firstSend ? overseerNoteFor(thread, this.dynamicThreads) : undefined
       const dispatched = command.type === 'send' ? withoutWakeUp({ ...preparedSkills ? { ...command, skills: preparedSkills } : command, ...overseerNote ? { overseerNote } : {} })
         : command.type === 'configure-thread' ? this.hostRead(command) : command
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       watcherGuard?.()
       const result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(dispatched, watcherGuard) : this.inner.execute(dispatched))
       turnBegan = result.accepted
-      if (command.type === 'send' && result.accepted && (firstSend || overseerNote)) this.dynamicSessionTold(thread.id, firstSend)
+      if (command.type === 'send' && !thread.councilJudge && result.accepted && (firstSend || overseerNote)) this.dynamicSessionTold(thread.id, firstSend)
       // A continued thread's first message begins with its handover; its branch is named from the user's words (ADR-0089).
-      if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, continuedPromptWords(thread, command.text))
+      if (command.type === 'send' && !thread.councilJudge && firstSend && result.accepted) this.nameBranch(thread.id, continuedPromptWords(thread, command.text))
       if (command.type === 'configure-thread') {
         const [confirmed, snapshot] = confirmedSettingsSnapshot(result)
         if (!snapshot || this.deliveryStopped) return confirmed
@@ -5888,7 +5908,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const thread = this.threadById(threadId)
-    if (!thread || !this.visible(thread)) return null
+    if (!thread || !this.visible(thread) || thread.councilJudge) return null
     if (thread.nativeSessionStarted === false) {
       if (prompt.purpose !== 'next-prompt' || !this.inner.writeShortTextOn) return null
       // In its own folder, or its project's while a new worktree waits for the first send to be made.

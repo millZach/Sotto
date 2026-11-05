@@ -389,6 +389,7 @@ export const councilViewsSchema = z.array(councilViewSchema).max(COUNCIL_VIEWS_M
 
 /** The main window's bridge, present only while the `council` Owl feature is on. */
 export interface CouncilBridge {
+  climb?(request: import('./councilClimb').ClimbRequest): Promise<import('./councilClimb').ClimbResult>
   read(): Promise<CouncilView[]>
   estimate(request: z.infer<typeof councilEstimateRequestSchema>): Promise<CouncilEstimate>
   command(command: CouncilCommand): Promise<CouncilCommandResult>

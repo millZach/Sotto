@@ -133,3 +133,43 @@
 .council-objection p { margin: 0; }
 .council-pending { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .council-follow-up { display: grid; gap: 8px; }
+
+/* Climb stays in the drawer's reading column beside the Council chamber. */
+.climb-mode { display: flex; gap: 4px; border-bottom: 1px solid var(--tt-hairline); padding-bottom: 8px; }
+.climb-mode button { padding: 6px 14px; color: var(--tt-text-muted); border: 1px solid transparent; border-radius: var(--tt-radius-control); background: transparent; }
+.climb-mode button[aria-pressed="true"] { color: var(--tt-text); border-color: var(--tt-border); background: var(--tt-surface); }
+.climb-panel, .climb-fields { display: grid; gap: 12px; min-width: 0; }
+.climb-panel fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.climb-panel h3, .climb-panel h4, .climb-panel p { margin: 0; }
+.climb-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.climb-heading h3 { font-size: var(--tt-type-body); }
+.climb-heading > span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.climb-card, .climb-progress { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-card); min-width: 0; }
+.climb-card h4 { display: flex; align-items: center; gap: 6px; font-size: var(--tt-type-body); }
+.climb-panel label, .climb-source { display: grid; gap: 6px; }
+.climb-panel label { font-size: var(--tt-type-caption); }
+.climb-panel input:not([type="checkbox"]), .climb-panel textarea, .climb-panel select { min-width: 0; max-width: 100%; box-sizing: border-box; width: 100%; color: var(--tt-text); background: var(--tt-canvas); border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); padding: 7px; font: inherit; }
+.climb-panel textarea { min-height: 72px; resize: vertical; }
+.climb-panel button { font: inherit; color: var(--tt-text); background: var(--tt-surface); border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); padding: 6px 10px; cursor: pointer; }
+.climb-panel button:disabled { cursor: default; opacity: 0.5; }
+.climb-panel :focus-visible, .climb-mode button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.climb-panel details { min-width: 0; }
+.climb-panel summary { padding: 6px 0; cursor: pointer; }
+.climb-pair, .climb-seat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.climb-limit { grid-template-columns: 1fr auto; align-items: center; }
+.climb-limit input { grid-column: 1 / -1; accent-color: var(--tt-accent); }
+.climb-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.climb-actions label { display: flex; align-items: center; gap: 8px; }
+.climb-turns { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.climb-turns li { display: flex; justify-content: space-between; gap: 8px; }
+.climb-turns li > span:last-child { color: var(--tt-text-muted); }
+.climb-table { overflow-x: auto; }
+.climb-table table { border-collapse: collapse; font-size: var(--tt-type-caption); }
+.climb-table th, .climb-table td { padding: 6px; border-bottom: 1px solid var(--tt-hairline); text-align: left; vertical-align: top; }
+.climb-table td { overflow-wrap: anywhere; }
+.climb-help { position: relative; display: inline-flex; }
+.climb-help button { width: 20px; height: 20px; padding: 0; border-radius: var(--tt-radius-full); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.climb-help [role="tooltip"] { position: absolute; z-index: 10; top: 26px; left: 0; width: min(260px, 60cqw); padding: 10px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-card); color: var(--tt-text); background: var(--tt-canvas); font-size: var(--tt-type-caption); font-weight: normal; }
+@container drawer-tab (max-width: 520px) { .climb-pair, .climb-seat { grid-template-columns: minmax(0, 1fr); } }
+
+.climb-progress > .climb-actions { position: sticky; top: 0; z-index: 2; background: var(--tt-canvas); padding: 8px 0; }

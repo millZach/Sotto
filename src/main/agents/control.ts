@@ -872,7 +872,7 @@ export class AgentControl {
   hostView(): Readonly<AgentHostSnapshot> { return this.state.host }
   /** Whether the user has words or images waiting in this thread's composer: typing there pauses delegated sends (ADR-0081). */
   hasUserDraft(threadId: string): boolean {
-    return (this.state.threadDrafts ?? []).some(draft => draft.threadId === threadId && (draft.text.trim() !== '' || (draft.attachments?.length ?? 0) > 0))
+    return (this.state.threadDrafts ?? []).some(draft => draft.threadId === threadId && (draft.text.trim() !== '' || (draft.attachments?.length ?? 0) > 0 || (draft.files?.length ?? 0) > 0 || (draft.skills?.length ?? 0) > 0))
       || this.state.draftThreadId === threadId && this.hasDraft()
   }
   private delegationObservedIds = ''

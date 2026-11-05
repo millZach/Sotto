@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
+import type { ClimbRecord } from '../../../../shared/councilClimb'
 import type { AgentThread } from '../../../../shared/agents'
 import type { CouncilLayout, CouncilSeatInForce, CouncilView as CouncilRecord } from '../../../../shared/council'
 import { useOptionalAgents } from '../../agents/AgentContext'
@@ -13,7 +14,7 @@ import { fitCells } from './chamberGrid'
 import { chamberInk } from './chamberInk'
 import { figureBox } from './chamberLayout'
 import { ChamberPainter, type ChamberFlightNow, type SeatWords } from './chamberPainter'
-import { askScene, chamberPace, councilScene, flightsBetween, sceneBusy, threadFacts, type ChamberScene, type ChamberSeat } from './chamberScene'
+import { askScene, chamberPace, climbScene, councilScene, flightsBetween, sceneBusy, threadFacts, type ChamberScene, type ChamberSeat } from './chamberScene'
 
 /** A figure's button over the canvas, in the chamber's box. */
 interface FigureBox { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
@@ -107,7 +108,8 @@ function useChamberWords(): {
  * the room only flickers and glances, throughout the fairness check, or a finished Council's fire only flickers. With
  * motion reduced it draws nothing until something changes, and nothing while the window is hidden.
  */
-export function CouncilChamber({ council, askSeats, layout }: {
+export function CouncilChamber({ council, climb, askSeats, layout }: {
+  readonly climb?: ClimbRecord | null
   /** The Council shown, live or finished, or null for the Ask view. */
   readonly council: CouncilRecord | null
   /** The seats the Ask form would start, for the Ask view. */
@@ -122,8 +124,8 @@ export function CouncilChamber({ council, askSeats, layout }: {
   const command = agents?.command
   // A live Council's threads, by ID: only theirs are looked up, once per update, and their histories asked for. A finished
   // Council's threads have nothing more to show.
-  const working = council?.status === 'working' || council?.status === 'waiting'
-  const wanted = useMemo(() => working ? council!.seats.map(seat => seat.thread) : [], [council, working])
+  const working = climb ? !['done', 'stopped', 'settled'].includes(climb.phase) : council?.status === 'working' || council?.status === 'waiting'
+  const wanted = useMemo(() => working ? climb ? climb.turns.filter(turn => turn.round === Math.max(0, climb.rounds.length - 1) && turn.stage !== 'builder').map(turn => turn.thread) : council!.seats.map(seat => seat.thread) : [], [council, climb, working])
   const wantedKey = wanted.join('\n')
   useEffect(() => {
     if (command === undefined || wanted.length === 0) return
@@ -134,8 +136,8 @@ export function CouncilChamber({ council, askSeats, layout }: {
   const lastHeld = useRef(NO_THREADS)
   const held = useMemo(() => heldThreads(threads, wanted, lastHeld.current), [threads, wanted])
   lastHeld.current = held
-  const scene = useMemo<ChamberScene>(() => council ? councilScene(council, thread => threadFacts(held.get(thread))) : askScene(askSeats), [council, held, askSeats])
-  const live = council !== null
+  const scene = useMemo<ChamberScene>(() => climb ? climbScene(climb, askSeats, thread => threadFacts(held.get(thread))) : council ? councilScene(council, thread => threadFacts(held.get(thread))) : askScene(askSeats), [council, climb, held, askSeats])
+  const live = council !== null || !!climb
   const seatWords = useMemo(() => new Map([...scene.panelists, scene.chair].map(seat => [seat.key, words.seat(seat, live)] as const)), [scene, live, words])
   const verdictText = useMemo(() => fitCells(scene.verdict?.text || words.verdict), [scene.verdict?.text, words.verdict])
 

@@ -1392,6 +1392,25 @@ Under the figures, the seats run the drawer's whole width: how many panelists, t
 
 **Settings → Council**, below Watcher, holds how many panelists sit, each one's model and effort, the chair's, the chamber's layout and the stage deadline, ten minutes at first. Sotto fills an empty seat with the strongest model of each connected provider in turn, and the chair with one more, on a provider no panelist uses where there is one. The page says when a seat's provider is not connected, when a seat cannot read this computer's files, as Devin in the cloud cannot, and when two seats hold the same model, since a second copy adds less than a different model.
 
+### Climb
+
+Choose **Climb** in the Council tab to improve selected work repeatedly. **Ask** keeps the ordinary Council workflow. Climb works on explanations, code, designs and other work with evidence you can judge; **Design** is only a preset. The **From** thread is the Builder throughout the run, even when you change panes. Start from an idle local project thread with its draft cleared.
+
+Set the goal, choose a folder, Git working folder or selected artifacts, then **Preview capture**. Folder selection supports relative paths and exclusions; artifact selection accepts absolute file paths and supplied text. Git is optional. Preview shows the file count, bytes and exclusions. A fixed reference is optional and needs its own preview. Choose three judges and a chair. Only connected Claude models currently enforce Climb's tool-free judging mode; other providers remain available for the Builder and ordinary Councils.
+
+**Ask chair for proposal** sends only the goal, constraints and any context you supplied to a fresh setup chair. Review and edit its proposed scoring anchors, criterion direction, targets and guardrails. Relative targets compare with the baseline judged in the same round; absolute targets and fixed references are also available. Confirm **Allow fix briefs to this builder within these limits**, then **Approve & start round 0**. This authorizes Climb's fix briefs, not any wider file or command permission.
+
+**Attempts** counts candidate versions after the baseline. **Model turns** counts setup, Builder, judges, chair and format repairs. Both sliders end at **No limit**; their initial values are five attempts and 30 turns. Climb still ends when every required target passes, two completed attempts bring no meaningful improvement, or you press **Stop**. Help buttons open on hover, click or keyboard focus; Escape dismisses them. Progress and **Turns** show completed and planned turns, without estimated cost.
+
+Every round uses fresh independent judges and a fresh chair, with complete frozen exhibits under neutral letters. The baseline stays available; identical content is shown once. Judges receive neither origin history, target thresholds nor previous scores. Every judge must return every criterion with matching evidence citations. Missing or unmeasurable evidence holds the run; a chair cannot waive it. **Kept rounds** preserves each seat's scores, reasons, citations and the exhibit identities instead of an overall average.
+
+A draft, request or unrelated activity in the Builder holds automatic continuation. Answer or clear it, review the work, and use **Continue Climb**. After a restart, Climb stays held. An unconfirmed Builder send is never repeated; an interrupted assessment starts fresh judges when you continue. **Stop** records the stop before interrupting Climb-owned work and leaves captured rounds intact. It never stops an unrelated Builder turn.
+
+**Export to a new folder** writes the selected round's frozen files and manifest; an existing destination is refused. It does not roll the Builder's folder back. With local history off, temporary evidence is still written while Climb runs, then removed at **Settle**, quit or next start; results and prompts are not retained in Sotto's history. Provider thread history follows that provider's own settings. With history on, canonical evidence stays within the disclosed 1 GiB per-Climb bound. Disposable judge copies are removed after each result.
+
+Capture is limited to 10,000 files and 100 MiB per set, with 20 MiB per binary. This first judge path accepts complete text and PNG, JPEG, GIF or WebP images, up to 400,000 text characters, eight images, 10 MiB per image and 50 MiB of images per turn. An unsupported file or larger selection holds the Climb without truncation; start again with a narrower selection. Command judges, automatic rollback, forked Builders and remote origins are not part of this first slice.
+
+
 ## The popup
 
 In Sotto Owl, press `Alt+Shift+Space` (`⌥⇧Space` on a Mac) in any app, or choose **Show popup** from the tray, and a small card floats over whatever is in front, on the current desktop, without bringing Sotto's window forward. It takes the keyboard while it shows. Press the shortcut again to hide it.

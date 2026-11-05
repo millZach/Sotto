@@ -180,6 +180,14 @@ The existing independent-worktree allocator still returns the original shared di
 
 Judges must have enforced read-only tools/workspaces. The current narrowest-permission fallback is not that proof; ineligible adapters are refused for Climb judging until they can enforce it. ([councilService.ts:865–869][C31])
 
+### Slice 1b implementation
+
+The drawer and main-owned loop follow the approved mockup's two optional sliders, tooltip explanations, roster order and turn-only progress. The first admitted judging provider is Claude, using safe mode with no tools, no inherited settings/project instructions and strict empty MCP configuration. Initialization must confirm an empty tool list; tool permission requests are denied. Sotto's browser, thread tools, worker roles, automatic branch naming and side calls are absent. An older CLI or any provider without this enforced boundary is unavailable for judging; the Builder may still use its existing provider. This restriction follows the required boundary rather than silently substituting another model.
+
+Captures carry complete text and supported raster images inline to the judge, with a 400,000-character text bound and eight-image/10 MiB-per-image/50 MiB-total bounds. Unsupported media and over-limit evidence hold the run without partial prompts. Narrowing evidence or changing an approved rubric starts a new Climb in this slice; detailed in-place quota/recipe revision remains in 1c. The setup chair proposes rubric and constraints; the user supplies the other specification fields and approves the combined result. Artifact selection uses paths and supplied text until the broader artifact picker exists. These are the first-slice limits of the approved flow, not authority to broaden capture or permissions.
+
+The chamber follows the fresh judges and chair while the text record keeps raw criterion/exhibit rows, completed/planned turns, all-required target status and frozen export. Process shutdown precedes judge-copy cleanup. Retained rounds use canonical evidence; with history off, the run's transient bytes are deleted at Settle, quit or next start. Ordinary Councils and the stable gate remain unchanged.
+
 ### Command judging changes the command-evidence rule
 
 The current first-build wording that Sotto never runs Council command evidence, and the no-installed-dependencies snapshot limitation, continue to describe ordinary Council. ([ADR-0177:70][D12], [87][D02]) Climb may run a user-approved measurement recipe through a separate runner. A passing command is necessary only where the approved target says so and is never sufficient without panel integrity approval.

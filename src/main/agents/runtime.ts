@@ -98,6 +98,7 @@ type NativeHost = AgentHost & { closed?: () => Promise<void> }
 export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
+  councilEnabled?: boolean
   watcherEnabled?: boolean
   /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
   dynamicThreadsEnabled?: boolean
@@ -342,7 +343,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, held, options.streamingPublishCost ?? false)
+  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, held, options.streamingPublishCost ?? false, undefined, undefined, options.councilEnabled ?? false)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()

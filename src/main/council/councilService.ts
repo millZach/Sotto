@@ -1,7 +1,9 @@
+import { ClimbService } from './climbService'
+import type { AgentHostCommand, AgentHostResult } from '../agents/host'
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
-import { isThreadProviderConnected, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
+import { isThreadProviderConnected, PROVIDER_LABELS, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState,
   type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { COUNCIL_CHAIR, COUNCIL_LETTERS, COUNCIL_PROMPT_LEAD, councilFairnessEffort, COUNCIL_REMOTE_PROVIDERS, COUNCIL_VIEWS_MAX, councilEffort, councilFramingViewSchema, type CouncilCitation, type CouncilCommand,
@@ -60,9 +62,14 @@ export interface CouncilCoordinator {
   useCouncil(hooks: CouncilControlHooks): () => void
   commandFromCouncil(command: CouncilCoordinatorCommand, guard: () => void): Promise<AgentState>
   hasPendingThreadWork(threadId: string): boolean
+  hasUserDraft?(threadId: string): boolean
+  stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   refreshCouncilObservation(): void
 }
 export interface CouncilHost {
+  closeCouncilJudge?(threadId: string): Promise<void>
+  execute?(command: AgentHostCommand): Promise<AgentHostResult>
+  executeFromWatcher?(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult>
   setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void>
   /** Records a prompt as Sotto's before the provider hears it, as a wake-up is, so no client shows it as the user's. */
   recordSottoMessage(threadId: string, messageId: string): Promise<void>
@@ -99,6 +106,7 @@ const clip = (text: string, max: number): string => text.length <= max ? text : 
 
 export class CouncilService {
   private records: CouncilRecord[] = []
+  readonly climb: ClimbService
   private readonly store: CouncilStore
   private storageError: string | undefined
   private readonly run: RunGitCommand
@@ -126,6 +134,7 @@ export class CouncilService {
     this.newId = options.newId ?? randomUUID
     this.schedule = options.schedule ?? ((callback, delay) => { const timer = setTimeout(callback, Math.max(0, delay)); timer.unref?.(); return () => clearTimeout(timer) })
     this.store = new CouncilStore(options.directory)
+    this.climb = new ClimbService({ ...options, save: () => this.save(), unavailable: () => this.storageError, changed: () => this.tell(this.climb.records.map(record => record.id)) })
   }
 
   /**
@@ -139,7 +148,8 @@ export class CouncilService {
       return undefined
     })
     await clearTemporaryCouncilEvidence(this.options.directory)
-    this.records = file?.councils ?? []
+    this.records = (file?.councils ?? []).filter((record): record is CouncilRecord => !('phase' in record))
+    this.climb.recover((file?.councils ?? []).filter(record => 'phase' in record))
     const at = new Date(this.clock()).toISOString()
     for (const record of this.records) {
       for (const evidence of record.evidence) if (evidence.kind === 'frozen' && !evidence.retained && !evidence.removedAt) evidence.removedAt = at
@@ -150,21 +160,22 @@ export class CouncilService {
     }
     this.reindex()
     this.unhook = this.options.control.useCouncil({
-      observe: (snapshot, threads) => this.observe(snapshot, threads),
-      observedThreadIds: () => this.watched,
-      madeThread: threadId => this.records.some(record => record.seats.some(seat => seat.thread === threadId || seat.formerThreads.includes(threadId))),
-      messageIdFor: draftId => this.byDraft.get(draftId)?.turn.messageId,
-      guardFor: draftId => { const held = this.byDraft.get(draftId); return held ? () => this.guard(held.record, held.turn) : undefined },
-      ownsMessage: messageId => this.messages.has(messageId),
+      observe: (snapshot, threads) => { this.observe(snapshot, threads); this.climb.observe(snapshot) },
+      observedThreadIds: () => { const climb = this.climb.observedThreadIds(); return climb.length ? [...this.watched, ...climb] : this.watched },
+      madeThread: threadId => this.climb.madeThread(threadId) || this.records.some(record => record.seats.some(seat => seat.thread === threadId || seat.formerThreads.includes(threadId))),
+      messageIdFor: draftId => this.byDraft.get(draftId)?.turn.messageId ?? this.climb.turnForDraft(draftId)?.turn.messageId,
+      guardFor: draftId => { const held = this.byDraft.get(draftId); const climb = this.climb.turnForDraft(draftId); return held ? () => this.guard(held.record, held.turn) : climb ? () => this.climb.guard(climb.record, climb.turn) : undefined },
+      ownsMessage: messageId => this.messages.has(messageId) || this.climb.ownsMessage(messageId),
     })
     if (file) await this.persist()
     this.changed(this.records.filter(isOpen))
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.closed = true
     this.unhook?.(); this.unhook = undefined
     this.cancelTimer?.(); this.cancelTimer = undefined
+    await this.climb.close()
   }
 
   onChanged(listener: (councils: readonly string[]) => void): () => void {
@@ -849,7 +860,7 @@ export class CouncilService {
   private save(): Promise<void> {
     const keep = this.options.historyEnabled()
     if (this.storageError) return Promise.resolve()
-    return this.store.writeLatest(() => ({ version: 2, councils: this.records.map(record => savedRecord(record, keep)) }), keep)
+    return this.store.writeLatest(() => ({ version: 2, councils: [...this.records.map(record => savedRecord(record, keep)), ...this.climb.saved(keep)] }), keep)
   }
   private persist(): Promise<void> { return this.save().catch(() => undefined) }
 

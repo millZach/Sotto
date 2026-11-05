@@ -34,6 +34,8 @@ Use a separate structured result contract; ordinary Council's idea scores are no
 
 ## Pull request 1: evidence foundation (slice 1a)
 
+Merged as [#2195](https://github.com/millZach/Sotto/pull/2195), merge commit `3ff64513c`.
+
 - Bounded regular-file and artifact capture, manifest hashes, exclusions, preview consistency and immutable canonical bytes.
 - Default limits: 10,000 files, 100 MiB per set, 20 MiB per binary, 1 GiB retained per Climb. No silent truncation or partial published capture. Default-excluded ordinary files need explicit selection; `.git` is never copied.
 - Manifest-backed citations, bounded paired-text and binary-change comparison, and export to a new folder containing `manifest.json` and `files/`. Existing destinations are refused.
@@ -43,6 +45,8 @@ Use a separate structured result contract; ordinary Council's idea scores are no
 - Clear temporary evidence, abandoned captures and disposable judge copies at startup. The loop's close/settle integration belongs in PR 2. Retained canonical evidence is not a judge's working directory.
 
 ## Pull request 2: panel-only Climb (slice 1b)
+
+Built from updated main after #2195 and the independent CI repair #2197. The implementation admits only Claude’s enforced tool-free profile for judges; the Builder may use any existing local provider. The setup chair proposes criteria and constraints, with the remaining fields supplied by the user before approving the complete specification. Unsupported media and limits hold for a narrower new Climb; in-place specification revision remains later work. The artifact input uses explicit paths and supplied text.
 
 - Source selection and preview, approved setup, frozen baseline, fresh independent judging, Builder continuation, candidate capture, all-required targets, no-improvement rule, optional limits and Stop.
 - Main-owned durable loop state and exact delivery identities. Separate ephemeral form retention from the run record. Reconcile after restart; show held, uncertain and unavailable states truthfully.

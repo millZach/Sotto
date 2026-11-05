@@ -926,3 +926,6 @@ artifacts/macos-dock-icon-padding/*
 # Wrangler, for the product event Worker
 .wrangler/
 .dev.vars
+
+# Council Climb CI screenshots and geometry receipts
+artifacts/council-climb/

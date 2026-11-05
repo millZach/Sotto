@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CouncilEvidenceLimit, CouncilEvidenceStore, clearTemporaryCouncilEvidence, compareCouncilEvidence, createCouncilJudgeWorkspace } from '../../../../src/main/council/councilEvidence'
 import { CouncilStore } from '../../../../src/main/council/councilStore'
-import { councilFileSchema, legacyCouncilFileSchema, migrateCouncilFile, savedRecord } from '../../../../src/main/council/councilRecord'
+import { councilFileSchema, councilRecordSchema, legacyCouncilFileSchema, migrateCouncilFile, savedRecord } from '../../../../src/main/council/councilRecord'
 import { addRound } from '../../../../src/main/council/councilStages'
 import { COUNCIL_EVIDENCE_LIMITS, councilEvidencePathSchema, type CouncilEvidenceSource } from '../../../../src/shared/councilEvidence'
 
@@ -160,6 +160,7 @@ describe('Council history migration', () => {
     const f = await fixture(), old = legacy(snapshot), file = join(f.data, 'councils.json'), bytes = JSON.stringify(old, null, 3)
     await writeFile(file, bytes)
     const store = new CouncilStore(f.data), migrated = await store.read(), record = migrated.councils[0]!
+    if ('phase' in record) throw new Error('Expected an ordinary Council')
     expect(record.turns).toEqual(old.councils[0]!.turns)
     expect(record.evidence).toEqual(snapshot === 'absent' ? [{ kind: 'legacyLive', id: `${record.id}:legacy` }]
       : [{ kind: 'legacyGit', id: `${record.id}:legacy`, snapshot: old.councils[0]!.snapshot }])
@@ -187,7 +188,7 @@ describe('Council history migration', () => {
     const store = new CouncilStore(f.data), migrated = await store.read()
     await expect(store.writeLatest(() => { throw new Error('Cannot save') }, false)).rejects.toThrow('Cannot save')
     expect(await readFile(`${file}.v1-backup`, 'utf8')).toContain('Question 0')
-    await store.writeLatest(() => ({ version: 2, councils: migrated.councils.map(record => savedRecord(record, false)) }), false)
+    await store.writeLatest(() => ({ version: 2, councils: migrated.councils.map(record => savedRecord(councilRecordSchema.parse(record), false)) }), false)
     await expect(readFile(`${file}.v1-backup`)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await readFile(file, 'utf8')).not.toContain('Question 0')
   })
