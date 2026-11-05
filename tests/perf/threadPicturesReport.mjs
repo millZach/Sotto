@@ -11,7 +11,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 
-const median = values => { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.floor(sorted.length / 2)] ?? 0 }
+// The middle sample, or the mean of the middle two, as `tests/fixtures/perfBench.ts` reports one.
+const median = values => { const sorted = [...values].sort((a, b) => a - b); const middle = sorted.length >> 1; return sorted.length === 0 ? 0 : sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2 }
 const spread = (values, places = 0) => {
   const kept = values.filter(value => typeof value === 'number' && Number.isFinite(value))
   if (!kept.length) return '-'
@@ -20,6 +21,8 @@ const spread = (values, places = 0) => {
 }
 const table = (headers, rows) => [`| ${headers.join(' | ')} |`, `| ${headers.map((_, index) => index ? '---:' : '---').join(' | ')} |`, ...rows.map(row => `| ${row.join(' | ')} |`)].join('\n')
 const read = path => existsSync(path) ? readFileSync(path, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) : []
+/** A pass's lines from a results root (`results-<pass>.jsonl`) or from a copy in docs/perf/data (`<pass>.jsonl`). */
+const results = name => { const kept = join(root, `results-${name}.jsonl`); return read(existsSync(kept) ? kept : join(root, `${name}.jsonl`)) }
 const byCase = lines => { const held = new Map(); for (const line of lines) held.set(line.case, [...held.get(line.case) ?? [], line]); return held }
 const pick = (runs, path) => runs.map(run => path.split('.').reduce((value, key) => value?.[key], run))
 const MiB = 1024 * 1024
@@ -69,8 +72,8 @@ if (process.argv[2] === '--trace') {
 
 const root = process.argv[2] ?? join(homedir(), '.cache', 'sotto-thread-pictures')
 const suffix = process.argv[3] ? `-${process.argv[3]}` : ''
-const clean = byCase(read(join(root, `results-clean${suffix}.jsonl`)))
-const counted = byCase(read(join(root, `results-counted${suffix}.jsonl`)))
+const clean = byCase(results(`clean${suffix}`))
+const counted = byCase(results(`counted${suffix}`))
 const switches = runs => runs.flatMap(run => run.switchBack ?? [])
 
 if (clean.size) {
@@ -120,7 +123,7 @@ if (counted.size) {
   }
 }
 
-const sweep = read(join(root, `results-sweep${suffix}.jsonl`))
+const sweep = results(`sweep${suffix}`)
 if (sweep.length) {
   console.log('\n### An update by how many pictures the working turn holds (275 extra steps each)\n')
   const held = new Map()
@@ -129,10 +132,11 @@ if (sweep.length) {
     [...held].map(([tiles, runs]) => [tiles, runs.length, spread(pick(runs, 'updates.steps.rendererMsPerUpdate'), 1), spread(pick(runs, 'updates.steps.scriptMsPerUpdate'), 1), spread(pick(runs, 'updates.steps.mainCpuMsPerUpdate'), 1), spread(pick(runs, 'updates.chunks.rendererMsPerUpdate'), 1), spread(pick(runs, 'updates.chunks.mainCpuMsPerUpdate'), 1), spread(pick(runs, 'updates.steps.longestFrameMs'), 1)])))
 }
 
-const undriven = read(join(root, `results-undriven${suffix}.jsonl`))
+const undriven = results(`undriven${suffix}`)
 if (undriven.length) {
   const threads = undriven.filter(line => line.arm === 'thread')
-  const name = line => `${line.tiles} pictures, ${line.tilesInTurn} in the working turn, warning ${line.warning ? 'on' : 'silenced'}`
+  // The thread arm adds 76 steps to the working turn and the sweep arm 275, so the two are never pooled.
+  const name = line => `${line.arm}: ${line.tiles} pictures, ${line.tilesInTurn} of ${line.arm === 'sweep' ? 275 : 76} new steps with pictures, warning ${line.warning ? 'on' : 'silenced'}`
   const group = lines => { const held = new Map(); for (const line of lines) held.set(name(line), [...held.get(name(line)) ?? [], line]); return [...held] }
   console.log('\n### No debugger on the window: the thread\n')
   console.log(table(['Case', 'Runs', 'Open: reply drawn, ms', 'Open: tiles hold, ms', 'Back: tiles hold, ms', 'Window before, MiB', 'Settled, MiB', 'After a trip, MiB', 'Main after a trip, MiB', 'Trip: longest frame, ms', 'Frames over 33 ms', 'Trip CPU: main thread, ms', 'Trip CPU: all of main, ms', 'Trip CPU: window main thread, ms', 'Trip CPU: all of window, ms'],
@@ -144,7 +148,7 @@ if (undriven.length) {
 }
 
 const tracesRoot = join(root, 'traces')
-const tracedRuns = read(join(root, `results-trace${suffix}.jsonl`))
+const tracedRuns = results(`trace${suffix}`)
 if (existsSync(tracesRoot) && tracedRuns.length) {
   for (const phase of ['open', 'switch', 'scroll', 'updates']) {
     const rows = new Map()
