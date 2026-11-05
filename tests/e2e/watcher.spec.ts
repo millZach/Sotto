@@ -302,7 +302,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       const onSky = !ownFill && sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
       return onSky ? [under, token(element.closest('.watcher-room')!, '--tt-owl-room-night')] : [under]
     }
-    const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
+    const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why', '.watcher-glance__more',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro p', '.watcher-first__how',
@@ -314,7 +314,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-stop-all__button', '.watcher-stop h2', '.watcher-stop__name', '.watcher-stop__where', '.watcher-stop__state', '.watcher-stop__note', '.watcher-stop__said',
       '.watcher-stop .tt-button',
       '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button',
-      '.watcher-machines__name', '.watcher-machines__count', '.watcher-machines__words', '.watcher-machines__sep', '.watcher-machines__more', '.receipt-card__placement',
+      '.watcher-machines__name', '.watcher-machines__count', '.watcher-machines__words', '.watcher-machines__more', '.receipt-card__placement',
       '.watcher-machine-panel h2', '.watcher-machine-panel dt', '.watcher-machine-panel dd', '.watcher-machine-panel p', '.watcher-machine-panel__title',
       '.watcher-machine-panel__who', '.watcher-machine-panel__link']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
@@ -556,11 +556,14 @@ test.describe("Watcher's room on the built app", () => {
       await openRoom(page)
       const pane = watcherPane(page)
       await expect(page.locator('.watcher-glance')).toContainText('2 need you')
+      const needsYou = page.locator('.watcher-glance__lead')
+      await needsYou.click()
       await expect(page.locator('.watcher-glance')).toContainText('permission')
       await expect(page.locator('.watcher-glance')).toContainText('last turn failed')
       // Watcher's draft stays while a thread opens beside it.
       await pane.getByRole('textbox', { name: 'Watcher message' }).click()
       await page.keyboard.type('Draft for Watcher')
+      await needsYou.click()
       const glanceName = page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' })
       await glanceName.click()
       await expect(beside(page)).toBeVisible()
@@ -592,13 +595,14 @@ test.describe("Watcher's room on the built app", () => {
       await expect(divider).toHaveAttribute('aria-valuenow', String(before + 5))
       await page.keyboard.press('Enter')
       await expect(divider).toHaveAttribute('aria-valuenow', '50')
-      // Escape inside the pane closes it, and focus goes back to the name that opened it.
+      // The request list closed when the thread opened, so Escape returns to its count.
       await beside(page).locator('.agent-request[data-kind="permission"]').focus()
       await page.keyboard.press('Escape')
       await expect(beside(page)).toHaveCount(0)
-      await expect(glanceName).toBeFocused()
+      await expect(needsYou).toBeFocused()
       // A thread waiting after a failed turn opens at that turn: with no turn record to point at, the end of its
       // transcript, where the failed turn ended, with the transcript focused.
+      await needsYou.click()
       const failedName = page.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' })
       await failedName.click()
       await expect(beside(page)).toHaveAttribute('aria-label', 'Streaming WAV stall')
@@ -607,7 +611,7 @@ test.describe("Watcher's room on the built app", () => {
       expect(await failedLog.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(1)
       await page.keyboard.press('Escape')
       await expect(beside(page)).toHaveCount(0)
-      await expect(failedName).toBeFocused()
+      await expect(needsYou).toBeFocused()
 
       // From the list: the thread opens at its title; its draft is its own and survives closing.
       await allThreads(page).click()
@@ -996,9 +1000,10 @@ test.describe("Watcher's room on the built app", () => {
         await resizeContentWindow(launched, 820, 560)
         await settle(page)
         // In the needs-you line and the list, a long title gives way with an ellipsis and keeps its whole text as a tooltip.
+        await page.locator('.watcher-glance__lead').click()
         const name = page.locator('.watcher-glance__name').filter({ hasText: long })
         await expect(name).toHaveAttribute('title', long)
-        expect(await name.locator('span').evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
+        expect(await name.locator('.watcher-glance__title').evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
         await allThreads(page).click()
         const title = threadsList(page).locator('.watcher-row__title').filter({ hasText: long })
         expect(await title.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)

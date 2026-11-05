@@ -26,7 +26,7 @@ export const PLACE_FADE_MS = 600
 const NOT_BACKGROUND = [
   'button', 'a', 'input', 'textarea', 'select', 'label', 'summary', 'dialog', '[contenteditable]',
   ...['button', 'tab', 'link', 'menuitem', 'option', 'combobox', 'textbox', 'dialog', 'menu', 'listbox', 'checkbox', 'radio', 'switch', 'slider'].map(role => `[role="${role}"]`),
-  '.thread-workspace__compose', '.watcher-head', '.watcher-glance', '.watcher-handover',
+  '.thread-workspace__compose', '.watcher-head', '.watcher-status', '.watcher-handover',
 ].join(', ')
 
 function relative(box: DOMRect, base: DOMRect, scrollTop: number): Box {
@@ -54,9 +54,9 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   const words: Box[] = []
   const shown = (box: Box): boolean => box.w > 1 && box.h > 1
   const word = (element: Element): void => { const box = at(element); if (shown(box) && element.textContent?.trim()) words.push(box) }
-  // The header and the needs-you line, what stands on the composer, and the line under it.
+  // The header and the needs-you and machines strip, what stands on the composer, and the line under it.
   let header = 0
-  for (const band of pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance, .thread-workspace__error)')) {
+  for (const band of pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-status, .thread-workspace__error)')) {
     const box = at(band)
     header = Math.max(header, box.y + box.h)
     word(band)
@@ -495,7 +495,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       sizes.disconnect()
       laneMoves.disconnect()
       sizes.observe(pane)
-      for (const part of pane.querySelectorAll('.thread-workspace__compose, .thread-workspace__compose .thread-prompt, :scope > .watcher-glance, :scope > .watcher-head')) sizes.observe(part)
+      for (const part of pane.querySelectorAll('.thread-workspace__compose, .thread-workspace__compose .thread-prompt, :scope > .watcher-status, :scope > .watcher-head')) sizes.observe(part)
       const lane = pane.querySelector('.message-scrubber')
       if (lane !== null) { sizes.observe(lane); laneMoves.observe(lane, { attributes: true, attributeFilter: ['style'] }) }
     }

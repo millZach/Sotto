@@ -917,3 +917,17 @@ artifacts/macos-dock-icon-padding/*
 
 # Council Climb CI screenshots and geometry receipts
 artifacts/council-climb/
+
+# Watcher top-lines verification: only the cited frames.
+artifacts/watcher-top-lines/*
+!artifacts/watcher-top-lines/before.png
+!artifacts/watcher-top-lines/after-dark-1600.png
+!artifacts/watcher-top-lines/after-dark-1280.png
+!artifacts/watcher-top-lines/after-dark-820.png
+!artifacts/watcher-top-lines/after-light-1600.png
+!artifacts/watcher-top-lines/after-light-1280.png
+!artifacts/watcher-top-lines/after-light-820.png
+!artifacts/watcher-top-lines/requests-dark-1600.png
+!artifacts/watcher-top-lines/requests-light-1600.png
+!artifacts/watcher-top-lines/stress-cases.png
+!artifacts/watcher-top-lines/beside-dark-820.png

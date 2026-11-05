@@ -878,6 +878,10 @@ msgstr "{used}% used, past the allowance."
 msgid "{waiting, plural, one {# needs you} other {# need you}}"
 msgstr "{waiting, plural, one {# needs you} other {# need you}}"
 
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "{waiting, plural, one {Show # thread that needs you} other {Show # threads that need you}}"
+msgstr "{waiting, plural, one {Show # thread that needs you} other {Show # threads that need you}}"
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "{waitingCount, plural, =1 {One is waiting on {hosts} to confirm.} other {# are waiting on {hosts} to confirm.}}"
 msgstr "{waitingCount, plural, =1 {One is waiting on {hosts} to confirm.} other {# are waiting on {hosts} to confirm.}}"
@@ -2962,6 +2966,10 @@ msgstr "Hide the files it changes"
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Hide the handover"
 msgstr "Hide the handover"
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Hide threads that need you"
+msgstr "Hide threads that need you"
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "Hide what it said"
@@ -7213,6 +7221,10 @@ msgstr "Threads"
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Threads keep working while clients update."
 msgstr "Threads keep working while clients update."
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Threads that need you"
+msgstr "Threads that need you"
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
