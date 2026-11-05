@@ -1802,6 +1802,10 @@ msgstr "Hide"
 msgid "Hide Council"
 msgstr "Hide Council"
 
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Hide earlier wording"
+msgstr "Hide earlier wording"
+
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Hide phone"
 msgstr "Hide phone"
@@ -3273,6 +3277,10 @@ msgstr "Show Council"
 #: src/renderer/src/tools/OpenPullRequests.tsx
 msgid "Show draft #{number}: {title}. {checks}. {added} added, {removed} removed"
 msgstr "Show draft #{number}: {title}. {checks}. {added} added, {removed} removed"
+
+#: src/renderer/src/tools/DiffBlock.tsx
+msgid "Show earlier wording"
+msgstr "Show earlier wording"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Show every file in this comparison"
