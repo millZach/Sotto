@@ -158,3 +158,34 @@ the 15 Codex judge cases, the 9 Climb loop cases, the 13 desktop-selector cases 
 the 4 catalog cases passed on the merged tree. No failed job was rerun. CI must
 run the desktop journey and provide the pending screenshots before a
 Watcher-directed merge.
+
+## Failed-run receipt for f203eec
+
+[Run 42041544734, attempt 1](https://github.com/millZach/Sotto/actions/runs/42041544734)
+completed at head `f203eec7e60c28e2dc5be7b8c09d72554a342be2`, testing merge
+`608c3aaea334bff1423a6a9b984c7d8c492e48dc` with base
+`45c799471f460bc1da1f7a609783aaf33cafdd35`. It has one underlying failing assertion.
+
+| Job | Assertion | Classification and evidence | Repair |
+| --- | --- | --- | --- |
+| [Checks and desktop (Windows), 127293668928](https://github.com/millZach/Sotto/actions/runs/42041544734/job/127293668928) | `council-climb.spec.ts:76`, “Climb keeps its setup in the Council drawer, previews a non-Git folder and requires approval”: `Preparing proposal` must be visible after asking the chair. | Own-diff. The new journey uses `composer-speed`. Its model has `providerId: 'claude'`, but the pre-existing Workshop thread has no provider ID. The artifact's error context reports “Choose an open local project thread as the builder.” This matches Climb's required local-provider guard, before any chair dispatch. | Give the fixture's existing threads their Claude provider identity. Keep the production guard and the desktop assertion. |
+| [Desktop result, 127299131148](https://github.com/millZach/Sotto/actions/runs/42041544734/job/127299131148) | The required desktop journeys must pass. | Downstream of the same own-diff failure, not a separate defect. Its log says “The desktop journeys were needed and ended failure.” | Cleared only by a passing desktop run after the fixture repair. |
+
+Gates (Windows), all six Windows test shards and Package result passed. The
+current base still has the same incomplete fixture metadata; it has no repair
+to merge. No assertion is classified as a flake, unknown or pre-existing on main,
+and no failed job was rerun.
+
+The [desktop artifact, 13424266316](https://github.com/millZach/Sotto/actions/runs/42041544734/artifacts/13424266316)
+contains all twelve setup and limits screenshots. They were inspected at all
+three sizes in both themes: the panel remains within its scroll area, the
+controls fit, and the limits show No limit without cost controls. The minimum
+window needs scrolling to reach the form and its final action. The test passed
+its focus/Escape, form-retention and geometry assertions before failing at
+proposal dispatch. It did not reach setup approval or write `geometry.json`;
+those screenshots and the complete journey remain pending in the next CI run.
+
+Only the fixture and this evidence note change in this repair. No desktop app,
+Playwright test or full suite was run locally. The existing desktop journey is
+the regression check on GitHub; no production behavior or allowance is changed.
+`npm run typecheck` and `npm run lint` passed on the repaired tree.
