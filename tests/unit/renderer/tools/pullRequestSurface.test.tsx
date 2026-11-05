@@ -886,7 +886,7 @@ describe('the drill-in under the merge checklist', () => {
   const listed = (number: number, title: string, change: Partial<GitPullRequestListItem> = {}): GitPullRequestListItem => ({ number, title, url: `https://github.com/o/r/pull/${number}`, draft: false, author: 'mira', headBranch: `feat/${number}`, updatedAt: '2026-09-23T10:00:00.000Z', additions: 5, deletions: 1, changedFiles: 2, checks: 'passed', reviewDecision: null, ...change })
   it('reads the repository\'s open pull requests only when its fold opens, and searches them here', async () => {
     const { gitPullRequest } = mount()
-    const gitPullRequestList = vi.fn(async () => ({ repository: 'o/r', total: 3, pullRequests: [listed(74, 'Make the greeting friendlier'), listed(80, 'Fix the socket flake', { checks: 'failing', author: 'drake' }), listed(81, 'Draft the plan', { draft: true, checks: 'none' })] }))
+    const gitPullRequestList = vi.fn(async () => ({ repository: 'o/r', total: 3, pullRequests: [listed(74, 'Make the greeting friendlier', { reviewDecision: 'changes_requested' }), listed(80, 'Fix the socket flake', { checks: 'failing', author: 'drake' }), listed(81, 'Draft the plan', { draft: true, checks: 'none' })] }))
     vi.stubGlobal('sotto', { agents: { gitPullRequest, gitPullRequestList }, openExternalLink: vi.fn() })
     await opened()
     expect(gitPullRequestList).not.toHaveBeenCalled()
@@ -896,6 +896,8 @@ describe('the drill-in under the merge checklist', () => {
     expect(within(list).getAllByRole('button')).toHaveLength(3)
     expect(within(list).getByRole('button', { name: /^Show #74:/u })).toHaveAttribute('aria-current', 'true')
     expect(within(list).getByRole('button', { name: /^Show #80: Fix the socket flake\. A check failed\./u })).toBeInTheDocument()
+    // Each row says how it stands in words beside each mark, so a passed check's tick is never read as an approval.
+    expect([...list.querySelectorAll('.pr-surface__open-state')].map(state => state.textContent)).toEqual(['Checks passedChanges requested', 'A check failed', 'No checksDraft'])
     fireEvent.change(screen.getByRole('searchbox', { name: /^Search open pull requests/u }), { target: { value: 'drake' } })
     expect(within(list).getAllByRole('button')).toHaveLength(1)
     fireEvent.change(screen.getByRole('searchbox', { name: /^Search open pull requests/u }), { target: { value: 'nothing like it' } })

@@ -174,18 +174,24 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__search input::placeholder { color: var(--tt-text-muted); opacity: 1; }
 .pr-surface__search input::-webkit-search-cancel-button { display: none; }
 .pr-surface__open-list { margin: 0; padding: 0; list-style: none; }
-.pr-surface__open-row { display: grid; grid-template-columns: 15px minmax(0, 1fr) 14px; grid-template-areas: 'icon title checks' '. meta meta'; column-gap: 8px; row-gap: 2px; align-items: start; width: 100%; padding: 8px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; }
+.pr-surface__open-row { display: grid; grid-template-columns: 15px minmax(0, 1fr); grid-template-areas: 'icon title' '. meta'; column-gap: 8px; row-gap: 4px; align-items: start; width: 100%; padding: 9px 8px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; }
 .pr-surface__open-row:hover { background: var(--tt-hover); }
 .pr-surface__open-row:active { background: var(--tt-hover-strong); }
 /* The one shown above is a selected item, so it wears the selected card's fill (ADR-0110 decision 1). */
 .pr-surface__open-row[aria-current] { background: var(--tt-card-selected); }
-.pr-surface__open-row > svg:first-child { grid-area: icon; margin-top: 2px; }
+/* Every row here is open, so its mark only tells a draft by its shape; colour is left to how each one stands. */
+.pr-surface__open-row > svg[data-state] { grid-area: icon; margin-top: 2px; color: var(--tt-text-muted); }
 .pr-surface__open-title { grid-area: title; display: -webkit-box; overflow: hidden; font-size: var(--tt-type-small); font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.pr-surface__open-checks { grid-area: checks; margin-top: 2px; color: var(--tt-text-muted); }
-.pr-surface__open-checks[data-checks='passed'] { color: var(--tt-success); }
-.pr-surface__open-checks[data-checks='failing'] { color: var(--tt-error-text); }
-.pr-surface__open-checks[data-checks='running'] { color: var(--tt-warning-text); }
-.pr-surface__open-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.pr-surface__open-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
+/* How it stands: its checks, then its review, each a mark and its words, kept together ahead of who, when and how big. */
+.pr-surface__open-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+.pr-surface__open-who { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+.pr-surface__open-fact { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-2); white-space: nowrap; }
+.pr-surface__open-fact > svg { flex: none; }
+.pr-surface__open-fact:is([data-checks='passed'], [data-review='approved']) > svg { color: var(--tt-success); }
+.pr-surface__open-fact:is([data-checks='failing'], [data-review='changes_requested']) { color: var(--tt-error-text); }
+.pr-surface__open-fact[data-checks='running'] { color: var(--tt-warning-text); }
+.pr-surface__open-fact:is([data-checks='none'], [data-review='draft']) { color: var(--tt-text-muted); }
 .pr-surface__list-failed { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--tt-error-text); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
 .pr-surface__finished[data-state='unlinked'] > svg { color: var(--tt-warning-text); }
 .pr-surface__links { justify-self: stretch; margin: 0; padding: 0; list-style: none; }

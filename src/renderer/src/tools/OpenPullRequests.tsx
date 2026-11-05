@@ -11,6 +11,8 @@ import { limitedWords, listChecksWord, listMatches, listReviewWord, stateLabel }
 const openExternal = (url: string): void => { void window.sotto?.openExternalLink?.(url) }
 type ListRead = { readonly status: 'idle' } | { readonly status: 'loading'; readonly list: GitPullRequestList | null } | { readonly status: 'ready'; readonly list: GitPullRequestList } | { readonly status: 'none' } | { readonly status: 'failed'; readonly words: string; readonly list: GitPullRequestList | null }
 const LIST_CHECK_ICONS: Readonly<Record<GitPullRequestListItem['checks'], LucideIcon | null>> = { passed: CircleCheck, failing: CircleX, running: CircleDashed, none: null }
+/** A review that decided, in the marks the merge checklist gives its review line. */
+const LIST_REVIEW_ICONS: Readonly<Record<NonNullable<GitPullRequestListItem['reviewDecision']>, LucideIcon | null>> = { approved: CircleCheck, changes_requested: CircleX, review_required: null }
 
 /**
  * The repository's open pull requests, read from GitHub only once this is opened and on its own Refresh, the most
@@ -83,6 +85,7 @@ function ListRow({ item, current, onShow }: { readonly item: GitPullRequestListI
   const by = item.author
   const added = shownLineCount(item.additions), removed = shownLineCount(item.deletions)
   const review = listReviewWord(item.reviewDecision)
+  const ReviewIcon = item.reviewDecision ? LIST_REVIEW_ICONS[item.reviewDecision] : null
   const label = item.draft
     ? t({ message: `Show draft #${number}: ${title}. ${checks}. ${added} added, ${removed} removed`, comment: '{checks} says how its checks stand, as in Checks passed.' })
     : t({ message: `Show #${number}: ${title}. ${checks}. ${added} added, ${removed} removed`, comment: '{checks} says how its checks stand, as in Checks passed.' })
@@ -90,10 +93,15 @@ function ListRow({ item, current, onShow }: { readonly item: GitPullRequestListI
     <button type="button" className="pr-surface__open-row tt-focusable" aria-current={current || undefined} aria-label={review ? `${label}. ${review}` : label} onClick={() => onShow(item.url)}>
       <Icon size={15} aria-hidden="true" data-state={item.draft ? 'draft' : 'open'} />
       <span className="pr-surface__open-title"><span className="pr-surface__link-number">#{item.number}</span> {item.title}</span>
-      {CheckIcon ? <CheckIcon size={14} aria-hidden="true" className="pr-surface__open-checks" data-checks={item.checks} /> : <span className="pr-surface__open-checks" />}
+      {/* How it stands leads the second line in words, each with its mark, so a tick never stands for more than its word;
+          who, when and how big follow, and go to a line of their own together where the row is narrow. */}
       <span className="pr-surface__open-meta">
-        {by ? <span>{by}</span> : null}{when ? <span>{when}</span> : null}<PullRequestLineCounts additions={item.additions} deletions={item.deletions} />
-        {item.draft ? <span>{stateLabel({ state: 'open', draft: true })}</span> : review ? <span data-review={item.reviewDecision}>{review}</span> : null}
+        <span className="pr-surface__open-state">
+          <span className="pr-surface__open-fact" data-checks={item.checks}>{CheckIcon ? <CheckIcon size={13} aria-hidden="true" /> : null}{checks}</span>
+          {item.draft ? <span className="pr-surface__open-fact" data-review="draft">{stateLabel({ state: 'open', draft: true })}</span>
+            : review && item.reviewDecision ? <span className="pr-surface__open-fact" data-review={item.reviewDecision}>{ReviewIcon ? <ReviewIcon size={13} aria-hidden="true" /> : null}{review}</span> : null}
+        </span>
+        <span className="pr-surface__open-who">{by ? <span>{by}</span> : null}{when ? <span>{when}</span> : null}<PullRequestLineCounts additions={item.additions} deletions={item.deletions} /></span>
       </span>
     </button>
   </li>
