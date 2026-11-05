@@ -143,6 +143,9 @@
 .settings-view .settings-rows > *, .settings-view .settings-rows > * + * { min-height: 66px; padding: 17px 0; border: 0; border-bottom: 2px solid var(--tt-card-inset); }
 .settings-view .settings-rows > :last-child { border-bottom: 0; }
 .settings-view .settings-rows .tt-field { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); grid-template-areas: 'label control' 'description control' 'error error'; gap: 5px 22px; }
+/* A field with only its name and its control is one line: the name level with the control's middle, and no empty rows
+   for a description or an error it does not have holding space under both. */
+.settings-view .settings-rows .tt-field:has(> .tt-field__label):not(:has(> .tt-field__description, > .tt-field__error)) { grid-template-areas: 'label control'; row-gap: 0; }
 .settings-view .settings-rows .tt-field__label, .settings-view .tt-toggle__copy > strong { font-size: var(--tt-type-reading); font-weight: 500; line-height: 1.35; }
 .settings-view .settings-rows .tt-field__description { margin: 0; max-width: 330px; font-size: var(--tt-type-small); line-height: 1.45; }
 .settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; min-width: 0; width: 100%; max-width: 100%; min-height: 38px; border: 1px solid transparent; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); color: var(--tt-text); font-size: var(--tt-type-body); }
