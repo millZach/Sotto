@@ -84,6 +84,10 @@ msgid "{approvalCount} need approval"
 msgstr "{approvalCount} need approval"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
+msgstr "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{aside, plural, one {{done} of {total} done, # does not block} other {{done} of {total} done, # do not block}}"
 msgstr "{aside, plural, one {{done} of {total} done, # does not block} other {{done} of {total} done, # do not block}}"
 
@@ -136,6 +140,14 @@ msgstr "{failedCount} failed"
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "{failure} What shows below is from the last read."
 msgstr "{failure} What shows below is from the last read."
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
+msgstr "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
+msgstr "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
 
 #: src/renderer/src/tools/terminalSearch.ts
 msgid "{found, plural, other {{total} matches}}"
@@ -312,6 +324,10 @@ msgstr "{reveal}: working folder"
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{runningCount} running"
 msgstr "{runningCount} running"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
+msgstr "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
 
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "{sessionMinutes, plural, other {{shownMinutes} min}}"
@@ -705,6 +721,11 @@ msgstr "Before merging"
 msgid "Before the turn"
 msgstr "Before the turn"
 
+#. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Behind {base}"
+msgstr "Behind {base}"
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Binary file: no text diff."
 msgstr "Binary file: no text diff."
@@ -878,6 +899,7 @@ msgstr "Changes could not read Git."
 msgid "Changes is not available in this window."
 msgstr "Changes is not available in this window."
 
+#. A line of the merge checklist: a reviewer asked for changes.
 #. Said of a pull request in the list of open ones: a reviewer asked for changes.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Changes requested"
@@ -913,6 +935,10 @@ msgstr "Checked out from the branch picker"
 msgid "Checked out PR #{number}."
 msgstr "Checked out PR #{number}."
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checking for conflicts"
+msgstr "Checking for conflicts"
+
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Checkout pull request"
 msgstr "Checkout pull request"
@@ -941,19 +967,23 @@ msgstr "Checkpoints are unavailable in this window."
 msgid "Checks"
 msgstr "Checks"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks could not be read"
+msgstr "Checks could not be read"
+
 #. Said of a pull request in the list of open ones.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Checks passed"
 msgstr "Checks passed"
 
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Checks passing"
-msgstr "Checks passing"
-
 #. Said of a pull request in the list of open ones.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Checks running"
 msgstr "Checks running"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks skipped"
+msgstr "Checks skipped"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Checks waiting their turn"
@@ -1134,8 +1164,13 @@ msgid "Conflicted"
 msgstr "Conflicted"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Conflicts with {base}. Resolve them in the branch and push"
-msgstr "Conflicts with {base}. Resolve them in the branch and push"
+msgid "Conflicts not checked"
+msgstr "Conflicts not checked"
+
+#. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Conflicts with {base}"
+msgstr "Conflicts with {base}"
 
 #. {agent} is a subagent's title.
 #: src/renderer/src/tools/AgentContinue.tsx
@@ -1320,7 +1355,6 @@ msgid "Could not unlink the pull request."
 msgstr "Could not unlink the pull request."
 
 #. The drawer's tab that shows the Council under a thread, before its shells' tabs (ADR-0177).
-#. The pane header button that shows the Council in the drawer under the thread (ADR-0177).
 #. The pane header button that shows the Council in the drawer under the thread (ADR-0177).
 #: src/renderer/src/tools/PaneTerminalDrawer.tsx
 #: src/renderer/src/tools/PaneTerminalToggle.tsx
@@ -1835,6 +1869,10 @@ msgstr "It is waiting for your approval. Open it to answer there; nothing is ans
 msgid "It still needs an approving review"
 msgstr "It still needs an approving review"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "It was never marked ready for review"
+msgstr "It was never marked ready for review"
+
 #: src/renderer/src/tools/AgentContinue.tsx
 msgid "It’s still working. Continue it once it finishes."
 msgstr "It’s still working. Continue it once it finishes."
@@ -2052,6 +2090,10 @@ msgstr "Make the test iPhone medium"
 msgid "Make the test iPhone small"
 msgstr "Make the test iPhone small"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Mark it ready for review when the work is done"
+msgstr "Mark it ready for review when the work is done"
+
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Markdown files open here up to 512 KB. Nothing was opened."
 msgstr "Markdown files open here up to 512 KB. Nothing was opened."
@@ -2175,6 +2217,10 @@ msgstr "Move the test iPhone. Drag, or use the arrow keys; hold Shift to move fu
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Native builds can run on a cloud iPhone. Add a run.cloud key in Settings > Cloud iPhone."
 msgstr "Native builds can run on a cloud iPhone. Add a run.cloud key in Settings > Cloud iPhone."
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Needs a review"
+msgstr "Needs a review"
 
 #. A check on a pull request waits for someone to approve it on GitHub.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
@@ -2348,9 +2394,18 @@ msgstr "None yet. A pull request the Git action creates is linked here, and so i
 msgid "Not a draft"
 msgstr "Not a draft"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Not approved"
+msgstr "Not approved"
+
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "Not checked: {uncheckedList}"
 msgstr "Not checked: {uncheckedList}"
+
+#. {base} is a Git branch name, as in main.
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Not compared with {base}"
+msgstr "Not compared with {base}"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "not connected"
@@ -3012,6 +3067,10 @@ msgstr "Resize tools panel"
 msgid "Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started."
 msgstr "Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started."
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Resolve them in the branch and push"
+msgstr "Resolve them in the branch and push"
+
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Resolving pull request..."
 msgstr "Resolving pull request..."
@@ -3062,11 +3121,6 @@ msgstr "Revert files and conversation"
 #: src/renderer/src/tools/GitActions.tsx
 msgid "Revert needs recovery."
 msgstr "Revert needs recovery."
-
-#. A line of the merge checklist: the pull request's review.
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Review"
-msgstr "Review"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Review approved"
@@ -3309,6 +3363,10 @@ msgstr "Skipped"
 msgid "Small"
 msgstr "Small"
 
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Some checks could not be read"
+msgstr "Some checks could not be read"
+
 #: src/renderer/src/tools/TerminalViewProblem.tsx
 msgid "Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again."
 msgstr "Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again."
@@ -3500,9 +3558,6 @@ msgstr "Task"
 
 #. A terminal's name, and the Tools surface that holds a thread's terminals.
 #. A terminal's name, and the Tools surface that holds a thread's terminals.
-#. The pane header button that shows the terminal drawer under the thread.
-#. The pane header button that shows the terminal drawer under the thread.
-#: src/renderer/src/tools/PaneTerminalToggle.tsx
 #: src/renderer/src/tools/TerminalSurface.tsx
 #: src/renderer/src/tools/toolsPanelStore.ts
 msgid "Terminal"
@@ -4318,71 +4373,3 @@ msgstr "Wrap long lines"
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "You can merge once {list}."
 msgstr "You can merge once {list}."
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Checks could not be read"
-msgstr "Checks could not be read"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
-msgstr "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
-msgstr "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
-msgstr "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
-msgstr "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Some checks could not be read"
-msgstr "Some checks could not be read"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Checks skipped"
-msgstr "Checks skipped"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Needs a review"
-msgstr "Needs a review"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Not approved"
-msgstr "Not approved"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Not compared with {base}"
-msgstr "Not compared with {base}"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Behind {base}"
-msgstr "Behind {base}"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Conflicts with {base}"
-msgstr "Conflicts with {base}"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Resolve them in the branch and push"
-msgstr "Resolve them in the branch and push"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Checking for conflicts"
-msgstr "Checking for conflicts"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Conflicts not checked"
-msgstr "Conflicts not checked"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "Mark it ready for review when the work is done"
-msgstr "Mark it ready for review when the work is done"
-
-#: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "It was never marked ready for review"
-msgstr "It was never marked ready for review"

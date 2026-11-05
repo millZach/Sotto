@@ -117,10 +117,6 @@ msgstr ""
 msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "{count, plural, one {{tips} tip hidden or used.} other {{tips} tips hidden or used.}}"
-msgstr ""
-
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "{count, plural, one {# provider} other {# providers}}"
 msgstr ""
@@ -3556,10 +3552,6 @@ msgstr ""
 msgid "No supported open-source themes found. Try a broader search."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "No tips are hidden."
-msgstr ""
-
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -4940,10 +4932,6 @@ msgstr ""
 msgid "Show floating widget when idle"
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show hidden tips again"
-msgstr ""
-
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "Show in menu bar"
 msgstr ""
@@ -5004,11 +4992,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show thread {thread}"
-msgstr ""
-
-#: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show tips"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
