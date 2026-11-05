@@ -114,12 +114,13 @@ button.pr-surface__check-row:active { background: var(--tt-hover-strong); }
 .pr-surface__babysit[data-state='ended'] .pr-surface__babysit-text span { color: var(--tt-text-muted); }
 .pr-surface__finished + .pr-surface__babysit { margin: 12px 0 0; }
 
-/* The folds, in one box with the checklist's edge and corners: the surface ends where the box does, so a short pull
-   request reads as finished rather than trailing off, and an open fold grows inside it. */
-.pr-surface__folds { border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
+/* The folds, together on one card (ADR-0110: filled, with no outline): the surface ends where the card does, so a short
+   pull request reads as finished rather than trailing off, and an open fold grows inside it. */
+.pr-surface__folds { border-radius: var(--tt-radius-md); background: var(--tt-card); }
 .pr-surface__folds:empty { display: none; }
 .pr-surface__dock + .pr-surface__folds { margin-top: 6px; }
-.pr-surface__fold + .pr-surface__fold { border-top: 1px solid var(--tt-hairline); }
+/* Rows on a card are divided by the card's inset, and the last has none (ADR-0110). */
+.pr-surface__fold + .pr-surface__fold { border-top: 2px solid var(--tt-card-inset); }
 .pr-surface__fold-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; width: 100%; min-height: 40px; padding: 10px 12px; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); font-weight: 500; text-align: left; }
 .pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
 .pr-surface__fold-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; justify-items: start; padding: 0 12px 14px 35px; }
