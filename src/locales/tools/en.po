@@ -582,6 +582,7 @@ msgid "All agents"
 msgstr "All agents"
 
 #. Opens the list of a comparison's files over its lines, in a narrow panel.
+#. Opens the list of a comparison's files over its lines, in a narrow panel.
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "All files"
 msgstr "All files"

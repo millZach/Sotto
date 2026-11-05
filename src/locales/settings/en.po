@@ -1734,6 +1734,10 @@ msgstr "Code surface"
 msgid "Collapsed"
 msgstr "Collapsed"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Collapses or expands the sidebar. In a window under 1000 pixels wide it opens over the thread, and Escape closes it."
+msgstr "Collapses or expands the sidebar. In a window under 1000 pixels wide it opens over the thread, and Escape closes it."
+
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Color and border intensity."
 msgstr "Color and border intensity."
@@ -4939,6 +4943,14 @@ msgstr "Show in menu bar"
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Show or hide the focused pane’s terminal drawer."
 msgstr "Show or hide the focused pane’s terminal drawer."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar"
+msgstr "Show or hide the sidebar"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar already uses {keys}. Pick other keys."
+msgstr "Show or hide the sidebar already uses {keys}. Pick other keys."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show providers"

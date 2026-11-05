@@ -1734,6 +1734,10 @@ msgstr ""
 msgid "Collapsed"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Collapses or expands the sidebar. In a window under 1000 pixels wide it opens over the thread, and Escape closes it."
+msgstr ""
+
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Color and border intensity."
 msgstr "రంగులు, అంచుల తీవ్రత."
@@ -4938,6 +4942,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Show or hide the focused pane’s terminal drawer."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the sidebar already uses {keys}. Pick other keys."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx

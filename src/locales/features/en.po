@@ -421,6 +421,14 @@ msgstr "{languages}. Ready."
 msgid "{left} seconds left"
 msgstr "{left} seconds left"
 
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "{length, plural, one {No prompts for # day} other {No prompts for # days}}"
+msgstr "{length, plural, one {No prompts for # day} other {No prompts for # days}}"
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "{length, plural, one {No tokens for # day} other {No tokens for # days}}"
+msgstr "{length, plural, one {No tokens for # day} other {No tokens for # days}}"
+
 #: src/renderer/src/features/dictate/journalFacts.ts
 msgid "{length}, {wordCount} at {wpm} wpm."
 msgstr "{length}, {wordCount} at {wpm} wpm."

@@ -4618,6 +4618,11 @@ msgstr ""
 msgid "In <0>{cwd}</0>"
 msgstr ""
 
+#. A sidebar row's state: the thread waits on the user and stands in the Needs you card above, which says what for.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "In Needs you"
+msgstr ""
+
 #. A plan step's state.
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "In progress"
