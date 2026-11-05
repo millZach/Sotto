@@ -4318,3 +4318,71 @@ msgstr "Wrap long lines"
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "You can merge once {list}."
 msgstr "You can merge once {list}."
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks could not be read"
+msgstr "Checks could not be read"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
+msgstr "{failures, plural, one {{failureCount} check failed} other {{failureCount} checks failed}}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
+msgstr "{failures, plural, one {{failureCount} check cancelled} other {{failureCount} checks cancelled}}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
+msgstr "{approvals, plural, one {{approvalCount} check needs approval} other {{approvalCount} checks need approval}}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
+msgstr "{runs, plural, one {{runningCount} check running} other {{runningCount} checks running}}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Some checks could not be read"
+msgstr "Some checks could not be read"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checks skipped"
+msgstr "Checks skipped"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Needs a review"
+msgstr "Needs a review"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Not approved"
+msgstr "Not approved"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Not compared with {base}"
+msgstr "Not compared with {base}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Behind {base}"
+msgstr "Behind {base}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Conflicts with {base}"
+msgstr "Conflicts with {base}"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Resolve them in the branch and push"
+msgstr "Resolve them in the branch and push"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Checking for conflicts"
+msgstr "Checking for conflicts"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Conflicts not checked"
+msgstr "Conflicts not checked"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "Mark it ready for review when the work is done"
+msgstr "Mark it ready for review when the work is done"
+
+#: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgid "It was never marked ready for review"
+msgstr "It was never marked ready for review"

@@ -279,8 +279,12 @@ const PR_NOTES: Readonly<Record<PullRequestMoment, string>> = {
   'blocked-many': 'A draft that conflicts with main and is three commits behind it, with no review: four lines blocked and the checks done.',
   'auto-merge': 'Auto-merge armed while checks still run: the armed line in Merge\'s place.',
   merged: 'A merged pull request: what happened in Merge\'s place.',
+  'changes-requested': 'Checks passed and a reviewer asked for changes, with nobody approving since.',
+  'no-review-needed': 'A repository with no required review and no checks: the lines say so rather than claiming a pass.',
+  closed: 'A pull request closed without merging, behind main, with a failed check and a cancelled one.',
 }
-const PR_STATE: Readonly<Record<PullRequestMoment, string>> = { 'checks-running': 'pr-checks-running', 'checks-failed': 'pr-checks-failed', ready: 'pr-ready', 'blocked-many': 'pr-blocked-many', 'auto-merge': 'pr-auto-merge', merged: 'pr-merged' }
+const PR_STATE: Readonly<Record<PullRequestMoment, string>> = { 'checks-running': 'pr-checks-running', 'checks-failed': 'pr-checks-failed', ready: 'pr-ready', 'blocked-many': 'pr-blocked-many', 'auto-merge': 'pr-auto-merge', merged: 'pr-merged',
+  'changes-requested': 'pr-changes-requested', 'no-review-needed': 'pr-no-review-needed', closed: 'pr-closed' }
 
 /** The pull request surface opened on a moment, and read. */
 async function pullRequestMomentRead(capture: Capture, moment: PullRequestMoment): Promise<void> {
@@ -289,7 +293,8 @@ async function pullRequestMomentRead(capture: Capture, moment: PullRequestMoment
   const panel = await toolsTab(page, 'Pull request')
   await refreshBranch(page, 'Thread store on a worker')
   await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
-  const shows: Partial<Record<PullRequestMoment, string | RegExp>> = { ready: 'Approved by mira', 'checks-failed': /fail/iu, 'blocked-many': 'Conflicts with main', 'auto-merge': /running/iu, merged: 'Approved by mira' }
+  const shows: Partial<Record<PullRequestMoment, string | RegExp>> = { ready: 'Approved by mira', 'checks-failed': /fail/iu, 'blocked-many': 'Conflicts with main', 'auto-merge': /running/iu, merged: 'Approved by mira',
+    'checks-running': /running/iu, 'changes-requested': 'ola asked for changes', 'no-review-needed': 'No review required', closed: 'Behind main' }
   await expect(panel.getByRole('list', { name: 'Merge checklist' })).toContainText(shows[moment]!, { timeout: 30_000 })
 }
 
@@ -583,6 +588,18 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await resizeContentWindowFor(capture.launched, 1600, 1000)
     await closeTools(page)
   } },
+  // Every moment of the pull request, in both modes at every size, so each line's label can be read against its reason. Run by name.
+  { name: 'pr-every', covers: ['pr-changes-requested', 'pr-no-review-needed', 'pr-closed'], run: async capture => {
+    const { page } = capture
+    await openThread(page, 'Thread store on a worker')
+    const scripted = 'The pull request lives in the scripted gh: its checks, reviews and how it stands are data, read through the real status reader and surface.'
+    for (const moment of Object.keys(PR_STATE) as PullRequestMoment[]) {
+      await pullRequestMomentRead(capture, moment)
+      for (const size of [[1600, 1000], ...SMALLER_SIZES] as const) await capture.shoot(PR_STATE[moment], PR_NOTES[moment], scripted, { size })
+    }
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
+    await closeTools(page)
+  } },
   // The drill-in folded under the plain answer: every check, the changed files, the description, the repository's open pull requests and one of them read.
   { name: 'pr-detail', covers: ['pr-checks-fold', 'pr-all-checks', 'pr-files', 'pr-review-in-changes', 'pr-description', 'pr-clay', 'pr-open-list', 'pr-other'], run: async capture => {
     const { page } = capture
@@ -755,7 +772,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
   } },
 ]
 
-const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface']
+const BY_NAME_ONLY = ['shell-check', 'header-press', 'shell-surface', 'pr-every']
 const wanted = (state: { readonly name: string; readonly covers: readonly string[] }): boolean => ONLY ? ONLY.includes(state.name) || state.covers.some(name => ONLY.includes(name)) : !BY_NAME_ONLY.includes(state.name)
 
 async function runState(name: string, run: () => Promise<void>): Promise<void> {

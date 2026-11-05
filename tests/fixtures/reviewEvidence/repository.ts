@@ -97,7 +97,7 @@ export async function buildEvidenceRepository(source = resolve('.')): Promise<Ev
   return { path: repository, ghState, files }
 }
 
-export type PullRequestMoment = 'checks-running' | 'checks-failed' | 'ready' | 'blocked-many' | 'auto-merge' | 'merged'
+export type PullRequestMoment = 'checks-running' | 'checks-failed' | 'ready' | 'blocked-many' | 'auto-merge' | 'merged' | 'changes-requested' | 'no-review-needed' | 'closed'
 
 /** A time before the capture's held clock, as GitHub would record it. */
 const ago = (minutes: number): string => new Date(E2E_THREADS_NOW - minutes * 60_000).toISOString()
@@ -127,12 +127,21 @@ const CHECKS: Readonly<Record<PullRequestMoment, readonly ReturnType<typeof run>
   'blocked-many': PASSING,
   'auto-merge': [...LEADING, run('Gates (Windows)', 'CI', 'IN_PROGRESS', null, 4, 512), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'QUEUED', null, 10)],
   merged: PASSING,
+  'changes-requested': PASSING,
+  'no-review-needed': [],
+  closed: [...LEADING, run('Gates (Windows)', 'CI', 'COMPLETED', 'FAILURE', 4, 618), run('Package result', 'CI', 'COMPLETED', SUCCESS, 9, 845), run('Desktop result', 'CI', 'COMPLETED', 'CANCELLED', 10, 734)],
 }
 /** What else stands at a moment that is not about its checks: every line but the checks blocked, an armed auto-merge, a finished pull request. */
 const STANDING: Readonly<Partial<Record<PullRequestMoment, Readonly<Record<string, unknown>>>>> = {
   'blocked-many': { isDraft: true, mergeable: 'CONFLICTING', behindBy: 3 },
   'auto-merge': { autoMergeRequest: { mergeMethod: 'SQUASH' } },
   merged: { state: 'MERGED', mergedAt: ago(5) },
+  // A reviewer asked for changes and nobody has approved since.
+  'changes-requested': { reviewDecision: 'CHANGES_REQUESTED', reviews: [{ state: 'CHANGES_REQUESTED', url: `${GITHUB_URL}/pull/${EVIDENCE_PULL}#pullrequestreview-2`, author: { login: 'ola' } }] },
+  // A repository with no required review and no checks configured: nothing is missing, so nothing claims to have passed.
+  'no-review-needed': { reviewDecision: null, rollup: null },
+  // Closed without merging, behind its base, with a check that failed and one cancelled.
+  closed: { state: 'CLOSED', mergeable: 'UNKNOWN', behindBy: 2 },
 }
 
 const BODY = `## What changed
@@ -164,7 +173,7 @@ export async function writePullRequestMoment(repository: EvidenceRepository, mom
   await writeFile(repository.ghState, JSON.stringify({ calls: [], pulls: [{
     number: EVIDENCE_PULL, title: EVIDENCE_PULL_TITLE, url: `${GITHUB_URL}/pull/${EVIDENCE_PULL}`,
     state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: EVIDENCE_BRANCH, body: BODY, checks: CHECKS[moment], author: 'zach', updatedAt: ago(2),
-    rollup: moment === 'checks-failed' ? 'FAILURE' : moment === 'checks-running' || moment === 'auto-merge' ? 'PENDING' : 'SUCCESS', files: repository.files,
+    rollup: moment === 'checks-failed' || moment === 'closed' ? 'FAILURE' : moment === 'checks-running' || moment === 'auto-merge' ? 'PENDING' : 'SUCCESS', files: repository.files,
     additions: repository.files.reduce((sum, file) => sum + file.additions, 0), deletions: repository.files.reduce((sum, file) => sum + file.deletions, 0),
     reviewDecision: moment === 'ready' || moment === 'merged' ? 'APPROVED' : 'REVIEW_REQUIRED',
     reviews: moment === 'ready' || moment === 'merged' ? [{ state: 'APPROVED', url: `${GITHUB_URL}/pull/${EVIDENCE_PULL}#pullrequestreview-1`, author: { login: 'mira' } }] : [],

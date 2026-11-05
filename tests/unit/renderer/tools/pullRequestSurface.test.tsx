@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, checkNameParts, type ChecklistLine, checksInOrder, checksOnGitHub, checksSummary, checkTime, checkWord, confirmationFor, descriptionPreview, fileOnGitHub, filesByWeight, limitedWords, linesInOrder, listMatches, listReviewWord, mergedWhen, mergeEffect, mergeReady, mergeWaitsFor, pathParts, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
@@ -88,7 +88,7 @@ describe('the merge checklist, read from the pull request', () => {
   const read = (change: Partial<GitPullRequestDetail>) => checklist(detail(change)).map(line => [line.label, line.tone, line.why, line.fix?.kind ?? null])
   it('lists five lines in the order a merge meets them, each done for a pull request ready to merge', () => {
     expect(read({})).toEqual([
-      ['Checks passing', 'done', 'CI / build passed', null],
+      ['Checks passed', 'done', 'CI / build passed', null],
       ['Review approved', 'done', 'Approved by mira', null],
       ['Up to date with main', 'done', 'Has every commit on main', null],
       ['No conflicts', 'done', 'Merges cleanly into main', null],
@@ -100,11 +100,11 @@ describe('the merge checklist, read from the pull request', () => {
   it('gives each line that holds the merge back its one press: the failing check, the review, Update branch, Ready for review', () => {
     const draft = read({ draft: true, reviewDecision: 'review_required', reviews: [], checks: [check('Gates (Windows)', 'success'), check('Gates (macOS)', 'pending')], behindBy: 2 })
     expect(draft).toEqual([
-      ['Checks passing', 'running', 'Gates (macOS) is still running', null],
-      ['Review approved', 'todo', 'Reviewers wait until it is ready', null],
-      ['Up to date with main', 'todo', '2 commits behind main', 'update-branch'],
+      ['1 check running', 'running', 'Gates (macOS) is still running', null],
+      ['Needs a review', 'todo', 'Reviewers wait until it is ready', null],
+      ['Behind main', 'todo', '2 commits behind main', 'update-branch'],
       ['No conflicts', 'done', 'Merges cleanly into main', null],
-      ['Ready for review', 'todo', 'Still a draft', 'ready'],
+      ['Still a draft', 'todo', 'Mark it ready for review when the work is done', 'ready'],
     ])
     const failing = checklist(detail({ reviewDecision: 'changes_requested', reviews: [review('mira', 'changes_requested')],
       checks: [check('Gates (Windows)', 'failure', 'https://github.com/o/r/actions/runs/9', '3 tests failed in tests/unit/main'), check('Notices', 'success')] }))
@@ -113,21 +113,21 @@ describe('the merge checklist, read from the pull request', () => {
     expect(mergeReady(detail(), failing)).toBe(false)
     expect(mergeWaitsFor(failing)).toBe('You can merge once the failing check passes and someone approves it.')
     expect(checklistHeading(detail(), false)).toBe('Before merging')
-    expect(read({ checks: [check('a', 'cancelled'), check('b', 'failure')] })[0]).toEqual(['Checks passing', 'failed', 'a was cancelled, and 1 more', null])
-    expect(read({ checks: [check('deploy', 'action-required', 'https://github.com/o/r/actions/runs/3')] })[0]).toEqual(['Checks passing', 'todo', 'deploy is waiting for approval on GitHub', 'open-check'])
-    expect(read({ checks: [check('a', 'success'), check('b', 'skipped')] })[0]).toEqual(['Checks passing', 'done', '1 passed, 1 skipped', null])
-    expect(read({ canUpdateBranch: false, behindBy: 1 })[2]).toEqual(['Up to date with main', 'todo', '1 commit behind main. GitHub does not let this account update it', null])
+    expect(read({ checks: [check('a', 'cancelled'), check('b', 'failure')] })[0]).toEqual(['2 checks failed', 'failed', 'a was cancelled, and 1 more', null])
+    expect(read({ checks: [check('deploy', 'action-required', 'https://github.com/o/r/actions/runs/3')] })[0]).toEqual(['1 check needs approval', 'todo', 'deploy is waiting for approval on GitHub', 'open-check'])
+    expect(read({ checks: [check('a', 'success'), check('b', 'skipped')] })[0]).toEqual(['Checks passed', 'done', '1 passed, 1 skipped', null])
+    expect(read({ canUpdateBranch: false, behindBy: 1 })[2]).toEqual(['Behind main', 'todo', '1 commit behind main. GitHub does not let this account update it', null])
     // English writes a long way behind as it always has, without grouping its digits.
-    expect(read({ behindBy: 1_000 })[2]).toEqual(['Up to date with main', 'todo', '1000 commits behind main', 'update-branch'])
-    expect(read({ mergeable: 'conflicting' })[3]).toEqual(['No conflicts', 'failed', 'Conflicts with main. Resolve them in the branch and push', null])
-    expect(read({ mergeable: 'unknown' })[3]).toEqual(['No conflicts', 'running', 'GitHub is still checking. Refresh in a moment', null])
+    expect(read({ behindBy: 1_000 })[2]).toEqual(['Behind main', 'todo', '1000 commits behind main', 'update-branch'])
+    expect(read({ mergeable: 'conflicting' })[3]).toEqual(['Conflicts with main', 'failed', 'Resolve them in the branch and push', null])
+    expect(read({ mergeable: 'unknown' })[3]).toEqual(['Checking for conflicts', 'running', 'GitHub is still checking. Refresh in a moment', null])
   })
   it('says what GitHub reports rather than an approval nobody gave: no checks, no review required, a base it could not compare', () => {
     const noted = checklist(detail({ checks: [], reviewDecision: null, reviews: [], behindBy: null }))
     expect(noted.map(line => [line.label, line.tone, line.why])).toEqual([
       ['No checks', 'done', 'GitHub reports none for this pull request'],
       ['No review required', 'done', 'This repository merges without one'],
-      ['Up to date with main', 'unknown', 'GitHub could not compare it with main'],
+      ['Not compared with main', 'unknown', 'GitHub could not compare it with main'],
       ['No conflicts', 'done', 'Merges cleanly into main'],
       ['Ready for review', 'done', 'Not a draft'],
     ])
@@ -139,7 +139,7 @@ describe('the merge checklist, read from the pull request', () => {
     expect(checklistCount(checklist(detail({ draft: true })))).toBe('4 of 5 done')
     // Checks GitHub refused to show are not "No checks": the line says they could not be read, and is not counted as done.
     const refused = checklist(detail({ checks: [], checksUnknown: true }))
-    expect([refused[0]!.label, refused[0]!.tone, refused[0]!.why]).toEqual(['Checks passing', 'unknown', 'GitHub did not let Sotto read the checks'])
+    expect([refused[0]!.label, refused[0]!.tone, refused[0]!.why]).toEqual(['Checks could not be read', 'unknown', 'GitHub did not let Sotto read the checks'])
     expect(checklistCount(refused)).toBe('4 of 5 done, 1 does not block')
     // A failing check GitHub did return is never hidden behind unknown, and still holds the merge back.
     const failing = checklist(detail({ checks: [check('lint', 'failure', 'https://github.com/o/r/actions/runs/2')], checksUnknown: true }))
@@ -159,7 +159,71 @@ describe('the merge checklist, read from the pull request', () => {
       expect(checklistCount(lines)).toBe('4 of 5 done, 1 does not block')
     }
     expect(checklist(detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested'), review('sam', 'changes_requested')] }))[1])
-      .toMatchObject({ label: 'Review', tone: 'open', why: 'sam and 1 more asked for changes. This repository does not require a review', fix: { author: 'sam' } })
+      .toMatchObject({ label: 'Changes requested', tone: 'open', why: 'sam and 1 more asked for changes. This repository does not require a review', fix: { author: 'sam' } })
+  })
+  // A line's label is what a reader takes in first, so it says how the line stands in every state the surface can show,
+  // never the state it is waiting for: "Checks passing" over failed checks is what this holds against.
+  describe('labels each line with how it stands', () => {
+    const label = (change: Partial<GitPullRequestDetail>, id: ChecklistLine['id']): string => checklist(detail(change)).find(line => line.id === id)!.label
+    const checks = (...statuses: GitPullRequestCheck['status'][]): Partial<GitPullRequestDetail> => ({ checks: statuses.map((status, index) => check(`c${index}`, status)) })
+    it.each<[string, Partial<GitPullRequestDetail>, string]>([
+      ['one failed', checks('failure', 'success'), '1 check failed'],
+      ['two failed and one running', checks('failure', 'failure', 'pending', 'success'), '2 checks failed'],
+      ['one failed and one cancelled, counted as the Checks fold counts them', checks('cancelled', 'failure'), '2 checks failed'],
+      ['only cancelled', checks('cancelled', 'cancelled'), '2 checks cancelled'],
+      ['waiting for approval', checks('action-required', 'success'), '1 check needs approval'],
+      ['running', checks('pending', 'pending', 'success'), '2 checks running'],
+      ['passing', checks('success', 'success'), 'Checks passed'],
+      ['passing with some skipped', checks('success', 'skipped'), 'Checks passed'],
+      ['all skipped', checks('skipped', 'neutral'), 'Checks skipped'],
+      ['none', { checks: [] }, 'No checks'],
+      ['none readable', { checks: [], checksUnknown: true }, 'Checks could not be read'],
+      ['some unreadable', { ...checks('success'), checksUnknown: true }, 'Some checks could not be read'],
+    ])('checks: %s', (_, change, expected) => {
+      expect(label(change, 'checks')).toBe(expected)
+      expect(label(change, 'checks')).not.toBe('Checks passing')
+    })
+    it.each<[string, Partial<GitPullRequestDetail>, string]>([
+      ['approved', { reviewDecision: 'approved', reviews: [review('mira', 'approved')] }, 'Review approved'],
+      ['changes requested', { reviewDecision: 'changes_requested', reviews: [review('mira', 'changes_requested')] }, 'Changes requested'],
+      ['required, nobody has reviewed', { reviewDecision: 'review_required', reviews: [] }, 'Needs a review'],
+      ['required, approved but not enough', { reviewDecision: 'review_required', reviews: [review('mira', 'approved')] }, 'Needs a review'],
+      ['required, on a draft', { reviewDecision: 'review_required', reviews: [], draft: true }, 'Needs a review'],
+      ['required, on a closed pull request', { reviewDecision: 'review_required', reviews: [], state: 'closed' }, 'Not approved'],
+      ['not required, nobody has reviewed', { reviewDecision: null, reviews: [] }, 'No review required'],
+      ['not required, approved', { reviewDecision: null, reviews: [review('mira', 'approved')] }, 'Review approved'],
+      ['not required, changes requested', { reviewDecision: null, reviews: [review('ola', 'changes_requested')] }, 'Changes requested'],
+    ])('review: %s', (_, change, expected) => expect(label(change, 'review')).toBe(expected))
+    it('keeps a review nobody gave apart from one nobody needs', () => {
+      expect(label({ reviewDecision: 'review_required', reviews: [] }, 'review')).not.toBe(label({ reviewDecision: null, reviews: [] }, 'review'))
+    })
+    it.each<[string, Partial<GitPullRequestDetail>, ChecklistLine['id'], string]>([
+      ['up to date', { behindBy: 0 }, 'up-to-date', 'Up to date with main'],
+      ['behind', { behindBy: 3 }, 'up-to-date', 'Behind main'],
+      ['behind, closed', { behindBy: 3, state: 'closed' }, 'up-to-date', 'Behind main'],
+      ['not compared', { behindBy: null }, 'up-to-date', 'Not compared with main'],
+      ['merged', { state: 'merged', behindBy: 3 }, 'up-to-date', 'Up to date with main'],
+      ['conflicts', { mergeable: 'conflicting' }, 'conflicts', 'Conflicts with main'],
+      ['no conflicts', { mergeable: 'mergeable' }, 'conflicts', 'No conflicts'],
+      ['still checking', { mergeable: 'unknown' }, 'conflicts', 'Checking for conflicts'],
+      ['not checked, closed', { mergeable: 'unknown', state: 'closed' }, 'conflicts', 'Conflicts not checked'],
+      ['merged, conflicts unknown', { mergeable: 'unknown', state: 'merged' }, 'conflicts', 'No conflicts'],
+      ['ready', { draft: false }, 'ready', 'Ready for review'],
+      ['draft', { draft: true }, 'ready', 'Still a draft'],
+      ['draft, closed', { draft: true, state: 'closed' }, 'ready', 'Still a draft'],
+    ])('%s', (_, change, id, expected) => expect(label(change, id)).toBe(expected))
+    it('keeps every label true with auto-merge armed, and on a merged pull request', () => {
+      const armed = checklist(detail({ autoMerge: { method: 'squash' }, ...checks('pending', 'success'), reviewDecision: 'review_required', reviews: [] }))
+      expect(armed.map(line => line.label)).toEqual(['1 check running', 'Needs a review', 'Up to date with main', 'No conflicts', 'Ready for review'])
+      const merged = checklist(detail({ state: 'merged', ...checks('success', 'success') }))
+      expect(merged.map(line => line.label)).toEqual(['Checks passed', 'Review approved', 'Up to date with main', 'No conflicts', 'Ready for review'])
+    })
+    it('names the draft line\'s press for what it does, not for the line', async () => {
+      mount({ detail: detail({ draft: true }) })
+      await opened()
+      const line = screen.getByText('Still a draft').closest('li')!
+      expect(within(line).getByRole('button', { name: 'Ready for review' })).toBeInTheDocument()
+    })
   })
   it('reads a merged or closed pull request as settled, and offers auto-merge only where it can be armed', () => {
     const merged = detail({ state: 'merged', behindBy: 3, mergeable: 'unknown' })
@@ -309,9 +373,9 @@ describe('the Pull request surface', () => {
     mount({ detail: detail({ draft: true, behindBy: 2, mergeable: 'conflicting', reviewDecision: 'approved', reviews: [review('mira', 'approved')], checks: [check('build', 'pending')] }) })
     await opened()
     const words = lines().map(line => line.textContent)
-    expect(words[0]).toMatch(/^Failing: No conflicts/u)
+    expect(words[0]).toMatch(/^Failing: Conflicts with main/u)
     expect(words.slice(1, 3).map(line => line?.split(':')[0])).toEqual(['To do', 'To do'])
-    expect(words[3]).toMatch(/^Waiting: Checks passing/u)
+    expect(words[3]).toMatch(/^Waiting: 1 check running/u)
     expect(words[4]).toBe('Done: Approved by mira')
     expect(mergeButton()).toHaveAccessibleName('Can\'t merge #74 yet')
     expect(screen.getByText(/^You can merge once its conflicts with main are resolved, it is up to date with main, it is marked ready for review, and the running check finishes\./u)).toBeInTheDocument()
@@ -527,7 +591,7 @@ describe('the Pull request surface', () => {
   it('reads an open request for changes with nobody approving without claiming an approval', async () => {
     mount({ detail: detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested')] }) })
     await opened()
-    expect(lineOf(/^Does not block/u)).toHaveTextContent('Does not block: Reviewola asked for changes. This repository does not require a review')
+    expect(lineOf(/^Does not block/u)).toHaveTextContent('Does not block: Changes requestedola asked for changes. This repository does not require a review')
     expect(lineOf(/^Does not block/u)).not.toHaveTextContent(/approved/iu)
     expect(within(lineOf(/^Does not block/u)!).getByRole('button', { name: "Open ola's review on GitHub" })).toBeInTheDocument()
   })

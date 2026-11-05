@@ -23,7 +23,7 @@ import { OpenPullRequests } from './OpenPullRequests'
 import { PullRequestChecks, PullRequestChecksSummary, PullRequestDescription, PullRequestFiles, PullRequestLineCounts, UnlinkedDock } from './PullRequestDetails'
 import {
   canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, descriptionPreview, holdsBack, limitedWords, linesInOrder, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
-  mergeWaitsFor, resolveMergeMethod, stateLabel, type ChecklistLine, type ConfirmedAction, type LineFix, type LineTone,
+  mergeWaitsFor, resolveMergeMethod, stateLabel, type ConfirmedAction, type LineFix, type LineTone,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
 import './pullRequestSurface.css'
@@ -265,7 +265,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
     ...(detail.state === 'closed' ? [{ id: 'reopen', label: t`Reopen pull request`, disabled: running, run: () => void act('reopen') }] : []),
   ]]
   const busyLabel = (pending: Busy): string => i18n._(BUSY_LABEL[pending]!)
-  const fix = (line: ChecklistLine, press: LineFix): ReactNode => {
+  const fix = (press: LineFix): ReactNode => {
     switch (press.kind) {
       case 'open-check': {
         const check = press.name
@@ -278,7 +278,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
           <ExternalLink size={14} aria-hidden="true" />{t`Open review`}</Button>
       }
       case 'update-branch': return <Button variant="secondary" disabled={running} onClick={() => void act('update-branch')}>{busy === 'update-branch' ? busyLabel('update-branch') : t`Update branch`}</Button>
-      case 'ready': return <Button variant="secondary" disabled={running} onClick={() => void act('ready')}>{busy === 'ready' ? busyLabel('ready') : line.label}</Button>
+      case 'ready': return <Button variant="secondary" disabled={running} onClick={() => void act('ready')}>{busy === 'ready' ? busyLabel('ready') : t`Ready for review`}</Button>
     }
   }
   const baseBranch = detail.baseBranch, number = detail.number
@@ -348,7 +348,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
         return <li key={line.id} className="pr-surface__line" data-tone={line.tone}>
           <Icon size={18} aria-hidden="true" />
           <div className="pr-surface__line-text"><strong><span className="tt-visually-hidden">{i18n._(LINE_STATE[line.tone])}: </span>{line.label}</strong><span className="pr-surface__why">{line.why}</span></div>
-          {pressable && line.fix ? <span className="pr-surface__fix">{fix(line, line.fix)}</span> : null}
+          {pressable && line.fix ? <span className="pr-surface__fix">{fix(line.fix)}</span> : null}
         </li>
       })}</ol>
       {open || !known ? mergeDock : null}
