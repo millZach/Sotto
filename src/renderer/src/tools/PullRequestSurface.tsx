@@ -209,8 +209,10 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
           : failure ? <div className="files-problem" role="status"><strong>{failure}</strong><button type="button" className="files-link tt-focusable" onClick={() => void load()}>{t`Try again`}</button></div>
             : <NoPullRequest thread={thread} busy={busy} command={command} onLink={() => setLinking(true)}
               onCreate={actionId => void send({ type: 'git-action', threadId: thread.id, actionId, action: 'create_pr' }, 'create-pr', t`Sotto could not confirm this Git command.`).then(() => setNotice(current => current?.tone === 'status' ? null : current))} />}
-        {!loading && !failure && (links.length > 0 || thread.worktree?.git?.pullRequest) ? linked : null}
-        {!loading && thread.worktree?.git?.hasRemote ? openList : null}
+        <div className="pr-surface__folds">
+          {!loading && !failure && (links.length > 0 || thread.worktree?.git?.pullRequest) ? linked : null}
+          {!loading && thread.worktree?.git?.hasRemote ? openList : null}
+        </div>
       </div>
       {linkDialog}
     </div>
@@ -352,18 +354,21 @@ export function PullRequestSurface({ thread, command, onStatus, babysit, onRevie
         </li>
       })}</ol>
       {open || !known ? mergeDock : null}
-      <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} preview={descriptionPreview(detail.body)} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
-        <PullRequestDescription detail={detail} />
-      </Fold>
-      {detail.checks.length ? <Fold label={t({ message: 'Checks', comment: 'A pull request\'s checks, listed in a fold.' })} aside={<PullRequestChecksSummary checks={detail.checks} />} open={checksOpen} onToggle={() => setChecksOpen(value => !value)}>
-        <PullRequestChecks url={detail.url} checks={detail.checks} />
-      </Fold> : null}
-      {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
-        aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
-        <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
-      </Fold> : null}
-      {linked}
-      {openList}
+      {/* The folds share one box, so the surface ends where they do, however little or much is open. */}
+      <div className="pr-surface__folds">
+        <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} preview={descriptionPreview(detail.body)} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
+          <PullRequestDescription detail={detail} />
+        </Fold>
+        {detail.checks.length ? <Fold label={t({ message: 'Checks', comment: 'A pull request\'s checks, listed in a fold.' })} aside={<PullRequestChecksSummary checks={detail.checks} />} open={checksOpen} onToggle={() => setChecksOpen(value => !value)}>
+          <PullRequestChecks url={detail.url} checks={detail.checks} />
+        </Fold> : null}
+        {detail.files || detail.changedFiles !== undefined ? <Fold label={t({ message: 'Changed files', comment: 'The files a pull request changes, which fold away.' })} count={detail.changedFiles ?? detail.files?.length}
+          aside={detail.additions !== undefined && detail.deletions !== undefined ? <PullRequestLineCounts additions={detail.additions} deletions={detail.deletions} /> : undefined} open={filesOpen} onToggle={() => setFilesOpen(value => !value)}>
+          <PullRequestFiles detail={detail} onReview={detail.branch ? onReviewChanges : undefined} />
+        </Fold> : null}
+        {linked}
+        {openList}
+      </div>
     </div>
     {linkDialog}
     {confirmation && confirming ? <ConfirmationDialog title={confirmation.title} description={confirmation.description} confirmLabel={confirmation.confirm} cancelLabel={t`Cancel`} danger={confirmation.danger}
