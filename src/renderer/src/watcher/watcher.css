@@ -284,12 +284,15 @@
 .watcher-machines__name { display: inline-flex; min-width: 0; max-width: 230px; margin-right: 4px; }
 .watcher-machines__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .watcher-machines__name:hover, .watcher-machines__name[aria-expanded='true'], .watcher-machines__more:hover { color: var(--tt-text); text-decoration: underline; text-underline-offset: 3px; }
-.watcher-machines__count, .watcher-machines__words { flex: none; }
-.watcher-machines__words { color: var(--watcher-needs-ink); white-space: normal; }
+/* Keep a warned machine's name readable while its longer problem words wrap beside the count. */
+.watcher-machines__machine:has(.watcher-machines__words) .watcher-machines__name { flex-shrink: 0; }
+.watcher-machines__count { flex: none; }
+.watcher-machines__words { flex: 0 1 auto; min-width: 0; color: var(--watcher-needs-ink); white-space: normal; overflow-wrap: anywhere; }
 .watcher-machines__narrow { display: none; }
 .watcher-status > .watcher-move-suggestion { flex-basis: 100%; margin: 0; }
 @container thread-pane (width < 600px) {
   .watcher-machines { flex-basis: 100%; }
+  .watcher-machines__machine:has(.watcher-machines__words) .watcher-machines__name { max-width: min(230px, 30%); }
   .watcher-machines__wide, .watcher-machines__narrow { justify-content: flex-start; }
   .watcher-machines:not([data-all]) .watcher-machines__wide { display: none; }
   .watcher-machines:not([data-all]) .watcher-machines__narrow { display: flex; }

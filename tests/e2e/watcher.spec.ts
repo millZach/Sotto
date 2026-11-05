@@ -146,6 +146,11 @@ const beside = (page: Page) => page.locator('#watcher-beside-pane')
 const allThreads = (page: Page) => page.getByRole('button', { name: /^All threads, \d+\. Show the list$/ })
 const threadsList = (page: Page) => page.getByRole('dialog', { name: 'All threads' })
 
+async function openNeedsYou(page: Page): Promise<Locator> {
+  await watcherPane(page).getByRole('button', { name: /^Show \d+ threads? that needs? you$/ }).click()
+  return watcherPane(page).getByRole('dialog', { name: 'Threads that need you' })
+}
+
 async function openRoom(page: Page): Promise<void> {
   await switchTab(page, 'Watcher').click()
   await expect(page.locator('.watcher-head__rooms')).toBeVisible()
@@ -302,7 +307,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       const onSky = !ownFill && sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
       return onSky ? [under, token(element.closest('.watcher-room')!, '--tt-owl-room-night')] : [under]
     }
-    const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why', '.watcher-glance__more',
+    const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__title', '.watcher-glance__why', '.watcher-glance__more',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro p', '.watcher-first__how',
@@ -729,7 +734,7 @@ test.describe("Watcher's room on the built app", () => {
         await seedRoom(page, { current: true })
         await resizeContentWindow(launched, 1280, 800)
         await openRoom(page)
-        await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
+        await (await openNeedsYou(page)).getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
         await expect(beside(page)).toBeVisible()
         for (const platform of ['win32', 'darwin'] as const) {
           await page.locator('.watcher-room').evaluate((room, mac) => {
@@ -827,8 +832,22 @@ test.describe("Watcher's room on the built app", () => {
       expect(stopAll).toBeGreaterThanOrEqual(4)
       expect(stopAll).toBeLessThanOrEqual(5)
       expect(order.some(entry => /^More/.test(entry))).toBe(false)
-      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(stopAll)
-      expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
+      const needsYou = indexOf('Show 2 threads that need you')
+      expect(needsYou).toBeGreaterThan(stopAll)
+      expect(indexOf('Watcher message')).toBeGreaterThan(needsYou)
+      expect(indexOf(/^Open Visual gate flake to answer/)).toBe(-1)
+      expect(indexOf(/^Open Streaming WAV stall/)).toBe(-1)
+      const count = watcherPane(page).getByRole('button', { name: 'Show 2 threads that need you' })
+      await count.focus()
+      await page.keyboard.press('Enter')
+      const requests = watcherPane(page).getByRole('dialog', { name: 'Threads that need you' })
+      await expect(requests.getByRole('button', { name: 'Open Visual gate flake to answer its permission' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(requests.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' })).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(requests).toHaveCount(0)
+      await expect(count).toBeFocused()
+      await expect(count).toHaveAttribute('aria-expanded', 'false')
       for (const name of ['Settings', 'Help'] as const) {
         await openPage(page, name)
         await expect(switchTab(page, 'Dictate')).toHaveAttribute('tabindex', '0')
@@ -905,12 +924,17 @@ test.describe("Watcher's room on the built app", () => {
         }
         // With the list open and with a thread beside, at the size Zach's mock-up was mostly reviewed at.
         await resizeContentWindow(launched, 1280, 800)
+        await openNeedsYou(page)
+        await settle(page)
+        await measure('1280x800 requests', 1280, 800)
+        await capture(launched, `requests-${label}-${appearance}-1280x800.png`)
+        await page.keyboard.press('Escape')
         await allThreads(page).click()
         await settle(page)
         await measure('1280x800 list', 1280, 800)
         await capture(launched, `list-${label}-${appearance}-1280x800.png`)
         await page.keyboard.press('Escape')
-        await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
+        await (await openNeedsYou(page)).getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
         await expect(beside(page)).toBeVisible()
         for (const [width, height] of [[1280, 800], [820, 560]] as const) {
           await resizeContentWindow(launched, width, height)
@@ -999,9 +1023,9 @@ test.describe("Watcher's room on the built app", () => {
         await openRoom(page)
         await resizeContentWindow(launched, 820, 560)
         await settle(page)
-        // In the needs-you line and the list, a long title gives way with an ellipsis and keeps its whole text as a tooltip.
-        await page.locator('.watcher-glance__lead').click()
-        const name = page.locator('.watcher-glance__name').filter({ hasText: long })
+        // In the opened requests and All threads, a long title keeps its whole text as a tooltip.
+        const requests = await openNeedsYou(page)
+        const name = requests.getByRole('button', { name: `Open ${long} to answer its permission`, exact: true })
         await expect(name).toHaveAttribute('title', long)
         expect(await name.locator('.watcher-glance__title').evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
         await allThreads(page).click()
@@ -1918,7 +1942,7 @@ test.describe("Watcher's room on the built app", () => {
       await expect(card).toBeVisible()
       await expect(card).toContainText('This computer')
       // The needs-you line goes to the card and focuses it, rather than open the thread.
-      await page.getByRole('button', { name: 'Go to the permission from Visual gate flake in this conversation' }).click()
+      await (await openNeedsYou(page)).getByRole('button', { name: 'Go to the permission from Visual gate flake in this conversation' }).click()
       await expect(card).toBeFocused()
       await expect(beside(page)).toHaveCount(0)
       // The thread's last reply is folded until asked for; Escape folds it again onto its toggle.
@@ -1958,8 +1982,8 @@ test.describe("Watcher's room on the built app", () => {
         await captureInto(answerEvidence, launched, `answer-line-${appearance}-${width}x${height}.png`)
         await contrastHolds(page, `answer-line-${appearance}-${width}x${height}`)
       }
-      // With no card left, the needs-you name opens the thread as before.
-      await expect(page.getByRole('button', { name: /^Go to the permission from Visual gate flake/ })).toHaveCount(0)
+      // The answered request no longer offers a route to its card, even with the remaining requests open.
+      await expect((await openNeedsYou(page)).getByRole('button', { name: /^Go to the permission from Visual gate flake/ })).toHaveCount(0)
     }))
   })
 
@@ -2041,7 +2065,7 @@ test.describe("Watcher's room on the built app", () => {
           }) }) } })
           await resizeContentWindow(launched, 1280, 800)
           await openRoom(page)
-          await page.getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
+          await (await openNeedsYou(page)).getByRole('button', { name: 'Open Visual gate flake to answer its permission' }).click()
           await expect(beside(page)).toBeVisible()
           await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
           for (const counts of ['seeded', 'three-digit'] as const) {

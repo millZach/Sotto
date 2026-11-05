@@ -931,3 +931,5 @@ artifacts/watcher-top-lines/*
 !artifacts/watcher-top-lines/requests-light-1600.png
 !artifacts/watcher-top-lines/stress-cases.png
 !artifacts/watcher-top-lines/beside-dark-820.png
+!artifacts/watcher-top-lines/machine-warning-dark-400.png
+!artifacts/watcher-top-lines/machine-warning-light-400.png

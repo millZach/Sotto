@@ -139,7 +139,7 @@ async function sceneHolds(page: Page, key: string, landscape = true): Promise<vo
     const pane = document.getElementById('watcher-pane')!
     const base = pane.getBoundingClientRect()
     const composer = pane.querySelector('.thread-workspace__compose .thread-prompt')!.getBoundingClientRect()
-    const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
+    const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-status, .thread-workspace__error)')].map(node => node.getBoundingClientRect().bottom))
     // Every line of words in the transcript that shows, in pane pixels.
     const PAD = 0
     const transcript = pane.querySelector('.thread-workspace__transcript')!
