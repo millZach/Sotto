@@ -941,6 +941,7 @@ msgstr ""
 msgid "Open Phones in the main Sotto window."
 msgstr ""
 
+#: src/main/agents/dynamicRecordIpc.ts
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
 #: src/main/phones/ipc.ts

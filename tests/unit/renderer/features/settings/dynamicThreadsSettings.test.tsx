@@ -128,6 +128,47 @@ describe('the Dynamic threads card', () => {
     expect(onSave).toHaveBeenCalledTimes(2)
   })
 
+  describe('its record on this computer', () => {
+    const sotto = window as unknown as { sotto?: unknown }
+    afterEach(() => { delete sotto.sotto })
+    const line = { provider: 'codex', model: 'native:codex:model:gpt-6.1-sol', name: 'GPT-6.1 Sol', pieces: 27, finished: 25, moved: 1, tokens: 2_400_000 } as const
+
+    it('shows each model\'s pieces, finished, moved and tokens, and Clear its record empties it', async () => {
+      const clear = vi.fn(async () => ({ models: [] }))
+      sotto.sotto = { dynamicRecord: { read: vi.fn(async () => ({ models: [line] })), clear } }
+      render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={vi.fn()} />)
+      expect(screen.getByRole('heading', { name: 'Its record on this computer' })).toBeInTheDocument()
+      const row = await screen.findByRole('row', { name: /GPT-6\.1 Sol/u })
+      expect([...row.querySelectorAll('td')].map(cell => cell.textContent)).toEqual(['27', '25', '1', '2.4M'])
+      expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Model', 'Pieces', 'Finished', 'Moved', 'Tokens'])
+      fireEvent.click(screen.getByRole('button', { name: 'Clear its record' }))
+      expect(await screen.findByText('Its record was cleared. Pieces from now on are counted here.')).toBeInTheDocument()
+      expect(clear).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('table')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Clear its record' })).toBeDisabled()
+    })
+
+    it('says nothing is counted yet, and has nothing to clear', async () => {
+      sotto.sotto = { dynamicRecord: { read: vi.fn(async () => ({ models: [] })), clear: vi.fn() } }
+      render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={vi.fn()} />)
+      expect(await screen.findByText('Nothing counted yet. Each piece an overseer gives a model is counted here.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Clear its record' })).toBeDisabled()
+    })
+
+    it('says a clear that failed may have left the counts, and keeps them shown', async () => {
+      sotto.sotto = { dynamicRecord: { read: vi.fn(async () => ({ models: [line] })), clear: vi.fn(async () => { throw new Error('no') }) } }
+      render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={vi.fn()} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Clear its record' }))
+      expect(await screen.findByText('Its record could not be cleared. Its counts may remain. Try again.')).toBeInTheDocument()
+      expect(screen.getByRole('row', { name: /GPT-6\.1 Sol/u })).toBeInTheDocument()
+    })
+
+    it('is absent where the window has no reach to it', () => {
+      render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={vi.fn()} />)
+      expect(screen.queryByRole('heading', { name: 'Its record on this computer' })).toBeNull()
+    })
+  })
+
   it('names who the work goes to: a company, or for OpenCode, which is a client, its model sources', () => {
     render(<DynamicThreadsSettings settings={DEFAULT_DYNAMIC_THREADS} onSave={vi.fn()} />)
     expect(companyWords('claude')).toBe('Anthropic')

@@ -1275,6 +1275,7 @@ Each worker is a delegated thread. Its row under **Worked for** names the model 
 - **Highest effort.** A higher one is held to this, and the worker's row says so. Ultracode is only ever yours to choose, on your own thread.
 - **Workers at once.** The overseer starts the next as one returns. Your ceiling for the computer still applies.
 - **Your note.** Advice in your own words, up to 600 characters, such as "Sol for reviews. Save Opus for the hard debugging." A Dynamic thread reads it when it starts, and once more, with your next message, after you change or clear it. It is advice and can be ignored, so a provider you must not use belongs off the list.
+- **Its record on this computer.** For each model, the pieces an overseer gave it, how many its worker finished, how many were moved to another model, and the tokens they used. Counts and model names only, kept whatever **Keep local history** says. The overseer reads it when it chooses. **Clear its record** empties it, and nothing from before counts again.
 
 When a limit stops a worker, the overseer can give the piece to a model with room, and the old thread doesn't restart at the reset. If the overseer's own provider stops, the thread stops as any thread does: it restarts at the reset, or you continue on another provider with a press. Workers on other providers carry on, and their results wait.
 

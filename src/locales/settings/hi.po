@@ -1602,6 +1602,10 @@ msgstr ""
 msgid "Clear history?"
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Clear its record"
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Clear now"
@@ -2011,6 +2015,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Council panel"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Counts only, no words. The overseer reads this when it chooses. Moved means the piece was then given to another model."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
@@ -2499,6 +2507,10 @@ msgstr ""
 msgid "Finish the steps above first."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Finished"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Finishing sign-in on {hostName}, then connecting {name}…"
 msgstr ""
@@ -2972,6 +2984,22 @@ msgstr ""
 msgid "Its price is on openrouter.ai."
 msgstr ""
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record could not be cleared. Its counts may remain. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record could not be read. Nothing was changed. Open Settings again to try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record on this computer"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Its record was cleared. Pieces from now on are counted here."
+msgstr ""
+
 #. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Its text came back in {0} s on Sotto’s test clips."
@@ -3325,6 +3353,7 @@ msgstr ""
 #. The AI model an agent runs on.
 #. The AI model an agent runs on.
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostSetupView.tsx
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
@@ -3377,6 +3406,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Move to the previous thread in the sidebar’s order."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Moved"
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -3674,6 +3707,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Nothing changed on {name}. Its host is still running as before, and this computer is still connected."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Nothing counted yet. Each piece an overseer gives a model is counted here."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -4162,6 +4199,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Pieces"
 msgstr ""
 
 #. Precedes theme names people often search for
@@ -6407,6 +6448,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Toggle developer tools"
+msgstr ""
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Tokens"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
