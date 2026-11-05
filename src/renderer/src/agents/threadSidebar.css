@@ -120,6 +120,25 @@
 .thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 6px; border-top-width: 1px; }
 @container scroll-state(scrollable: top) { .thread-nav[data-mode] .thread-nav__scroll::before { border-bottom-color: var(--tt-hairline); } }
 @container scroll-state(scrollable: bottom) { .thread-nav[data-mode] .thread-nav__scroll::after { border-top-color: var(--tt-hairline); } }
+/* A row is never drawn cut through its words at either edge. As a row slides under the band it fades out whole, gone by the
+   time a fifth of it is under, and one coming up from the foot fades in only once most of it is in view. So whatever the
+   scroll, the list under Needs you starts at a whole row with a little of the sidebar above it, and ends at one above the
+   foot. Only how a row is drawn follows the scroll: nothing moves, nothing snaps, and a scroll the app or the user sets
+   stays exactly where it was set, so a held gap (ADR-0167) holds. The faded part takes no presses, and a row the keyboard
+   reaches is scrolled into view by the list's own scroll padding and is never faded. The timeline's edges are the bands', and
+   a row cut only through its own padding stays whole, so a row fades only while the cut would reach its words. */
+@supports (animation-timeline: view()) {
+  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-nav__row, .thread-folder__head, .thread-nav__settled) {
+    animation: thread-nav-edge linear both; animation-timeline: view(block 7px); animation-range: cover;
+  }
+  /* What holds the keyboard's focus is never faded, wherever the scroll has it. */
+  .thread-nav[data-mode] .thread-nav__scroll :is(.thread-nav__row:has(:focus-visible), .thread-folder__head:has(:focus-visible), .thread-nav__settled:focus-visible) { animation: none; }
+}
+@keyframes thread-nav-edge {
+  entry 0%, entry 80% { opacity: 0; pointer-events: none; }
+  entry 88%, exit 12% { opacity: 1; pointer-events: auto; }
+  exit 20%, exit 100% { opacity: 0; pointer-events: none; }
+}
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; font-variant-numeric: tabular-nums; }
 /* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */

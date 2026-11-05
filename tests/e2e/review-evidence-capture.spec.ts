@@ -56,6 +56,9 @@ async function settle(page: Page): Promise<void> {
       new Promise(done => setTimeout(done, 1_200)),
     ])
     for (const animation of document.getAnimations()) {
+      // An animation that follows a scroll, such as the sidebar's rows at its edges, has no time to hold: it already shows
+      // what the scroll it follows says, and pausing it would freeze it where the scroll set below no longer is.
+      if (!(animation.timeline instanceof DocumentTimeline)) continue
       const end = endOf(animation)
       if (end !== undefined && Number.isFinite(end)) continue
       try { animation.currentTime = hold; animation.pause() } catch { /* A compositor-only animation with no timeline has no frame to hold. */ }
