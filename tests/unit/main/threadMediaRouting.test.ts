@@ -82,10 +82,11 @@ describe('reading an agent\'s picture from the window', () => {
     const picture = (size: { width: number; height: number }) => ({ isEmpty: () => false, getSize: () => size,
       resize: (to: { width: number; height: number }) => { resized.push({ width: to.width, height: to.height }); return { toJPEG: () => Buffer.from('jpeg') } } })
     const make = mediaThumbnailMaker(() => picture({ width: 1600, height: 1000 }) as never)
-    for (const scale of [1, 1.25, 1.5, 2, undefined]) make('data:image/png;base64,AAAA', scale)
+    for (const scale of [1, 1.1, 1.25, 1.5, 2, undefined]) make('data:image/png;base64,AAAA', scale)
     // 1600x1000 fits the 208x140 tile by its width, at each scale; a window that names none gets twice the tile.
-    expect(resized).toEqual([{ width: 208, height: 130 }, { width: 260, height: 163 }, { width: 312, height: 195 }, { width: 416, height: 260 }, { width: 416, height: 260 }])
-    expect([0.8, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.25, 4].map(mediaTileScale)).toEqual([1, 1, 1.25, 1.25, 1.5, 1.75, 2, 2.25, 3])
+    expect(resized).toEqual([{ width: 208, height: 130 }, { width: 229, height: 143 }, { width: 260, height: 163 }, { width: 312, height: 195 }, { width: 416, height: 260 }, { width: 416, height: 260 }])
+    // The screen's own ratio, to the hundredth above, from 1 to 4.
+    expect([0.8, 1, 1.1, 1.125, 1.25, 1.5, 2, 2.625, 4, 5].map(mediaTileScale)).toEqual([1, 1, 1.1, 1.13, 1.25, 1.5, 2, 2.63, 4, 4])
   })
 
   it('holds thumbnails to a budget in bytes, letting the one read longest ago go first', () => {
@@ -130,7 +131,7 @@ describe('reading an agent\'s picture from the window', () => {
     await expect(registry.invoke(AGENT_THREAD_MEDIA, [request], registry.event(registry.widget))).rejects.toThrow('AGENT_SENDER_REJECTED')
     const stranger = trustedIpcSender('main'); stranger.webContents.getURL = () => 'https://elsewhere.test/'
     await expect(registry.invoke(AGENT_THREAD_MEDIA, [request], registry.event(stranger))).rejects.toThrow('AGENT_SENDER_REJECTED')
-    for (const payload of [{ ...request, mediaId: 'm8' }, { ...request, size: 'huge' }, { ...request, digest: 'a'.repeat(64) }, { ...request, scale: 1.3 }, { ...request, scale: 8 }]) {
+    for (const payload of [{ ...request, mediaId: 'm8' }, { ...request, size: 'huge' }, { ...request, digest: 'a'.repeat(64) }, { ...request, scale: 0.5 }, { ...request, scale: 8 }]) {
       await expect(registry.invoke(AGENT_THREAD_MEDIA, [payload], registry.event(registry.main))).rejects.toThrow()
     }
     expect(threadMedia).toHaveBeenCalledTimes(1)

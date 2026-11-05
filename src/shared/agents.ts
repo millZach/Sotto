@@ -272,18 +272,18 @@ export const AGENT_THREAD_MEDIA = 'sotto:agents:thread-media'
 export const agentThreadMediaRequestSchema = z.object({ threadId: id, activityId: id, mediaId: z.string().regex(/^m[0-7]$/u) }).strict()
 export type AgentThreadMediaRequest = z.infer<typeof agentThreadMediaRequestSchema>
 /**
- * The scale a window's thumbnails are made at (ADR-0170): its device pixel ratio rounded up to a quarter, from 1 to 3, so a
- * tile is sharp on its screen and holds no more pixels than that screen shows.
+ * The scale a window's thumbnails are made at (ADR-0170): its device pixel ratio, to the hundredth above, from 1 to 4, so a
+ * tile is sharp on its screen and holds no more pixels than that screen shows. Below 1 a tile still gets its full size.
  */
 export function mediaTileScale(devicePixelRatio: number): number {
-  return Math.min(3, Math.max(1, Math.ceil((Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1) * 4 - 1e-9) / 4))
+  return Math.min(4, Math.max(1, Math.ceil((Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1) * 100 - 1e-6) / 100))
 }
 /**
  * What a window asks for: the picture whole for the viewer, or a thumbnail at tile size, which main makes at the window's
  * `scale`, or at 2 when it names none.
  */
 export const agentThreadMediaWindowRequestSchema = agentThreadMediaRequestSchema.extend({ size: z.enum(['tile', 'full']),
-  scale: z.number().min(1).max(3).multipleOf(0.25).optional() }).strict()
+  scale: z.number().min(1).max(4).optional() }).strict()
 export type AgentThreadMediaWindowRequest = z.infer<typeof agentThreadMediaWindowRequestSchema>
 export const agentThreadMediaResultSchema = z.object({ dataUrl: z.string().max(14_000_000).regex(/^data:image\/(png|jpeg|gif|webp);base64,/u) }).strict().nullable()
 export type AgentThreadMediaResult = z.infer<typeof agentThreadMediaResultSchema>

@@ -26,9 +26,13 @@ const currentScale = (): number => mediaTileScale(typeof window === 'undefined' 
 /** That scale, again whenever the window moves to a screen with other scaling. */
 function useTileScale(): number { return useSyncExternalStore(watchResolution, currentScale) }
 
+/** Names one read: the picture, its size, and for a tile the scale it is made at, which a whole picture does not have. */
+const readKey = (origin: ThreadMediaOrigin, size: 'tile' | 'full', scale: number): string =>
+  JSON.stringify([origin.threadId, origin.activityId, origin.mediaId, size, size === 'tile' ? scale : 0])
+
 function request(origin: ThreadMediaOrigin, size: 'tile' | 'full', scale: number): Promise<Read> {
   const cache = kept[size]
-  const key = JSON.stringify([origin.threadId, origin.activityId, origin.mediaId, size === 'tile' ? scale : 0])
+  const key = readKey(origin, size, scale)
   const hit = cache.get(key)
   if (hit) { cache.delete(key); cache.set(key, hit); return hit }
   const bridge = window.sotto?.agents
@@ -51,7 +55,7 @@ function request(origin: ThreadMediaOrigin, size: 'tile' | 'full', scale: number
 export function useThreadMediaSource(origin: ThreadMediaOrigin | undefined, size: 'tile' | 'full', wanted = true): { readonly source: string | null; readonly awaiting: boolean; readonly failed: boolean } {
   const [read, setRead] = useState<{ readonly key: string; readonly source: Read } | null>(null)
   const scale = useTileScale()
-  const key = origin && wanted ? JSON.stringify([origin.threadId, origin.activityId, origin.mediaId, size, size === 'tile' ? scale : 0]) : null
+  const key = origin && wanted ? readKey(origin, size, scale) : null
   useEffect(() => {
     if (key === null || !origin) { setRead(null); return }
     let live = true
