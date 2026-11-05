@@ -244,6 +244,11 @@
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 30px; padding-bottom: 12px; overflow-clip-margin: 36px; }
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; }
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 30px; }
+/* A message the user sent opens a turn, so the space before it is the widest in the conversation: a reader sees where one
+   exchange ends and the next begins, while the message, its Worked for line and its reply stay close. */
+.thread-pane:not(.watcher-pane) .thread-transcript__content > .thread-message[data-role='user']:not(:first-child) { margin-top: 24px; }
+/* Inside the turn the Worked for line is a caption: its press is a row a little taller than its words, not a full control row. */
+.thread-pane:not(.watcher-pane) .thread-work > :is(.thread-work__summary, .thread-changes > .thread-changes__summary) { min-height: 26px; }
 /* You and the time head the first message the user sent and one sent after a pause. On the rest they wait in the same gap,
    beside Copy as a later reply's do, and show with it. */
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user'][data-named='no']:not([data-from]) > header { top: calc(100% + 1px); bottom: auto; left: 48px; }
