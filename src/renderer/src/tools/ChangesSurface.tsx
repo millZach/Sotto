@@ -929,24 +929,24 @@ function ChangesTree({ files, current: inView, over, toggleButton, onLeave, onCl
           const status = CHANGE_STATUS[file.status]
           const { name } = splitPath(file.path)
           const state = status.label
-          return <div key={file.path} role="option" aria-selected={file.path === current} aria-current={file.path === inView || undefined} tabIndex={file.path === current ? 0 : -1} data-tree-path={file.path}
-            className="changes-tree__item" title={file.path} aria-label={label}
-            onFocus={() => setFocused(file.path)} onClick={() => onPick(file.path)}
-            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPick(file.path) } }}>
-            <span className="changes-badge" data-status={file.status} aria-hidden="true">{status.letter}</span>
-            <FileName name={name} />
-          </div>
-        })}
           // Each file says how much it changed, as its head in the list does, so the biggest are found from the tree.
           const counted = file.additions !== null && file.deletions !== null
           const additions = shownLineCount(file.additions ?? 0), deletions = shownLineCount(file.deletions ?? 0)
           const label = !counted ? folder ? t({ message: `${name}, ${state}, in ${folder}`, comment: '{name} is a file name; {state} its Git status, as in Modified; {folder} its folder.' }) : t({ message: `${name}, ${state}`, comment: '{name} is a file name; {state} its Git status, as in Modified.' })
             : folder ? t({ message: `${name}, ${state}, ${additions} added, ${deletions} removed, in ${folder}`, comment: '{name} is a file name; {state} its Git status, as in Modified; {additions} and {deletions} its line counts; {folder} its folder.' })
               : t({ message: `${name}, ${state}, ${additions} added, ${deletions} removed`, comment: '{name} is a file name; {state} its Git status, as in Modified; {additions} and {deletions} its line counts.' })
+          return <div key={file.path} role="option" aria-selected={file.path === current} aria-current={file.path === inView || undefined} tabIndex={file.path === current ? 0 : -1} data-tree-path={file.path}
+            className="changes-tree__item" title={file.path} aria-label={label}
+            onFocus={() => setFocused(file.path)} onClick={() => onPick(file.path)}
+            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPick(file.path) } }}>
+            <span className="changes-badge" data-status={file.status} aria-hidden="true">{status.letter}</span>
+            <FileName name={name} />
+            {counted ? <span className="changes-counts changes-tree__counts" aria-hidden="true">
+              {file.additions ? <span className="changes-counts__add">+{additions}</span> : null}{file.additions && file.deletions ? ' ' : null}{file.deletions ? <span className="changes-counts__remove">−{deletions}</span> : null}
+            </span> : null}
+          </div>
+        })}
       </div>)}
     </div>
   </nav>
 }
-            {counted ? <span className="changes-counts changes-tree__counts" aria-hidden="true">
-              {file.additions ? <span className="changes-counts__add">+{additions}</span> : null}{file.additions && file.deletions ? ' ' : null}{file.deletions ? <span className="changes-counts__remove">−{deletions}</span> : null}
-            </span> : null}
