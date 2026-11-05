@@ -895,6 +895,14 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await capture.shoot('shell-header-focus', 'The keyboard on the Terminal drawer button, named under the header.', '', { modes: ['dark', 'light'], before: headerFocus })
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    // An icon of the sidebar's foot the keys reach is named over the foot.
+    const footFocus = async (): Promise<void> => {
+      await page.keyboard.press('Tab')
+      await sidebar.locator('.thread-nav__foot .thread-nav__page[href="#settings"]').focus()
+      await expect(page.locator('.focus-name')).toBeVisible()
+    }
+    await capture.shoot('shell-foot-focus', 'The keyboard on Settings in the sidebar foot, named over the foot.', '', { modes: ['dark', 'light'], before: footFocus })
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     // The row may sit faded at the list's edge, where it takes no presses, so it comes to the middle and is pointed at first.
     const review = sidebar.getByRole('button', { name: 'Repository review', exact: true }).first()
     await review.evaluate(element => element.scrollIntoView({ block: 'center' }))
@@ -912,14 +920,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     const { page } = capture
     // A waiting thread on screen, so the list centres on its folder, where another waiting thread's row stands.
     await openThread(page, 'Visual gate flake')
-    // An icon of the sidebar's foot the keys reach is named over the foot.
-    const footFocus = async (): Promise<void> => {
-      await page.keyboard.press('Tab')
-      await sidebar.locator('.thread-nav__foot .thread-nav__page[href="#settings"]').focus()
-      await expect(page.locator('.focus-name')).toBeVisible()
-    }
-    await capture.shoot('shell-foot-focus', 'The keyboard on Settings in the sidebar foot, named over the foot.', '', { modes: ['dark', 'light'], before: footFocus })
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     // Pointing at a waiting thread's row in its folder lights its entry in Needs you, and the other way round.
     const queued = sidebar.locator('.thread-nav__row[data-in-queue]').filter({ hasText: 'Streaming WAV stall' })
