@@ -382,23 +382,23 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await tell([...long.messages, { ...last, id: 'review-evidence-arrived', text: 'One more thing: the pull request is ready for your review.' }])
     await expect(pane.getByRole('button', { name: 'New messages' })).toBeVisible()
     await capture.shoot('reading-new-messages', 'New messages, after a reply arrived while the reader was back up the thread.', 'The reply is told to the thread by the fake provider host and taken back afterwards.')
+    await capture.shoot('reading-new-messages', 'The same at the minimum window, where the button has no margin to stand in.', 'The reply is told to the thread by the fake provider host and taken back afterwards.', { modes: ['dark'], size: [820, 560] })
     await tell(long.messages)
     await openThread(page, 'Repository review')
     await scrollTranscript(page, 'top-of-turn')
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'clay', lightTheme: 'clay' }))
     await capture.shoot('reading-clay', 'A finished reply in the Clay theme, to check the reading surface away from the default palette.')
+    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'glass', lightTheme: 'glass' }))
+    await capture.shoot('reading-glass', 'The same reply on Glass, whose room is painted once and whose cards are translucent, to check the foot of the transcript.')
     await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
   } },
   { name: 'streaming', covers: ['streaming-1', 'streaming-2', 'streaming-3'], run: async capture => {
-    await capture.shoot('reading-new-messages', 'The same at the minimum window, where the button has no margin to stand in.', 'The reply is told to the thread by the fake provider host and taken back afterwards.', { modes: ['dark'], size: [820, 560] })
     const { page } = capture
     await openThread(page, 'Trace a permission request')
     const differs = 'The deltas come from the fake provider host at a steady rate, not a model.'
     await capture.shoot('streaming-1', 'A streaming turn before its first word: the working line after three steps, one command running.', differs)
     await streamTo(page, 'second')
     await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list; the transcript follows the end.', differs)
-    await page.evaluate(async () => window.sotto!.updateSettings({ darkTheme: 'glass', lightTheme: 'glass' }))
-    await capture.shoot('reading-glass', 'The same reply on Glass, whose room is painted once and whose cards are translucent, to check the foot of the transcript.')
     await streamTo(page, 'third')
     await capture.shoot('streaming-3', 'The same turn further on, its reply cut off inside the code block as it arrives.', differs)
   } },
