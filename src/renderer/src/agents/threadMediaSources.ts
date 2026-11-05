@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { agentThreadMediaResultSchema } from '../../../shared/agents'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { agentThreadMediaResultSchema, mediaTileScale } from '../../../shared/agents'
+import { watchResolution } from '../watcher/watchResolution'
 
 /** Where one picture of a thread is found (ADR-0170): its thread, the record that carries its handle, and the handle. */
 export interface ThreadMediaOrigin { readonly threadId: string; readonly activityId: string; readonly mediaId: string }
@@ -20,15 +21,24 @@ export function threadVideoLoads(): number { return videoLoads }
 /** A video tile gave its player a source: it came near, and the player reads the video's first frame. */
 export function countVideoLoad(): void { videoLoads += 1 }
 
-function request(origin: ThreadMediaOrigin, size: 'tile' | 'full'): Promise<Read> {
+/** The scale this window's thumbnails are made at: its screen's, so a tile holds no more pixels than the screen shows. */
+const currentScale = (): number => mediaTileScale(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1)
+/** That scale, again whenever the window moves to a screen with other scaling. */
+function useTileScale(): number { return useSyncExternalStore(watchResolution, currentScale) }
+
+/** Names one read: the picture, its size, and for a tile the scale it is made at, which a whole picture does not have. */
+const readKey = (origin: ThreadMediaOrigin, size: 'tile' | 'full', scale: number): string =>
+  JSON.stringify([origin.threadId, origin.activityId, origin.mediaId, size, size === 'tile' ? scale : 0])
+
+function request(origin: ThreadMediaOrigin, size: 'tile' | 'full', scale: number): Promise<Read> {
   const cache = kept[size]
-  const key = JSON.stringify([origin.threadId, origin.activityId, origin.mediaId])
+  const key = readKey(origin, size, scale)
   const hit = cache.get(key)
   if (hit) { cache.delete(key); cache.set(key, hit); return hit }
   const bridge = window.sotto?.agents
   requests += 1
   const pending: Promise<Read> = bridge?.threadMedia
-    ? bridge.threadMedia({ ...origin, size }).then(result => agentThreadMediaResultSchema.safeParse(result).data?.dataUrl ?? null, () => 'failed' as const)
+    ? bridge.threadMedia({ ...origin, size, ...size === 'tile' ? { scale } : {} }).then(result => agentThreadMediaResultSchema.safeParse(result).data?.dataUrl ?? null, () => 'failed' as const)
     : Promise.resolve(null)
   cache.set(key, pending)
   // A picture main could not hand over may be there later; only the ones it did are kept.
@@ -44,13 +54,14 @@ function request(origin: ThreadMediaOrigin, size: 'tile' | 'full'): Promise<Read
  */
 export function useThreadMediaSource(origin: ThreadMediaOrigin | undefined, size: 'tile' | 'full', wanted = true): { readonly source: string | null; readonly awaiting: boolean; readonly failed: boolean } {
   const [read, setRead] = useState<{ readonly key: string; readonly source: Read } | null>(null)
-  const key = origin && wanted ? JSON.stringify([origin.threadId, origin.activityId, origin.mediaId, size]) : null
+  const scale = useTileScale()
+  const key = origin && wanted ? readKey(origin, size, scale) : null
   useEffect(() => {
     if (key === null || !origin) { setRead(null); return }
     let live = true
-    void request(origin, size).then(source => { if (live) setRead({ key, source }) })
+    void request(origin, size, scale).then(source => { if (live) setRead({ key, source }) })
     return () => { live = false }
-    // The key names the origin and size whole, so it alone decides when to read again.
+    // The key names the origin, size and scale whole, so it alone decides when to read again.
   }, [key])
   const current = read !== null && read.key === key ? read : null
   return { source: current?.source === 'failed' ? null : current?.source ?? null, awaiting: key !== null && current === null, failed: current?.source === 'failed' }

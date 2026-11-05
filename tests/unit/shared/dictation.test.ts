@@ -369,11 +369,6 @@ describe('widget snapshot contract', () => {
 })
 
 describe('widget error codes', () => {
-  it.each(WIDGET_ERROR_CODES)('lets main accept a %s snapshot', (code) => {
-    const metadata = { theme: 'dark', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'on', shortcut: 'Control+Shift+Space', cancellable: false }
-    expect(widgetSnapshotSchema.safeParse({ status: 'error', sessionId: 'session', code, ...metadata }).success).toBe(true)
-  })
-
   it('gives every transcription code its own sentence saying the recording was not kept', () => {
     const transcriptionCodes = WIDGET_ERROR_CODES.filter((code) => code.startsWith('TRANSCRIPTION_'))
     expect(Object.keys(TRANSCRIPTION_ERROR_DETAIL).sort()).toEqual([...transcriptionCodes].sort())

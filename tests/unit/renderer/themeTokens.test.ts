@@ -356,7 +356,6 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/usage/usage.css',
     'src/renderer/src/features/council/council.css',
       'src/renderer/src/features/performance/mainActivity.css',
-      'src/renderer/src/features/toDos/toDos.css',
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',
       'src/renderer/src/tools/browserPlayer.css',

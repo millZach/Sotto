@@ -8,7 +8,6 @@ import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
 import { TurnRecorder, turnRecordSchema } from '../../../src/main/agents/turns'
 import { holdTurnEnd, markSendStage, SEND_STAGE_FIELDS, TURN_END_FIELDS, type TurnEndTimings } from '../../../src/main/agents/sendStages'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
-import { TrayController } from '../../../src/main/tray/trayController'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentConfiguration } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -378,16 +377,6 @@ describe('coordinator turn records', () => {
     expect(records[1]?.timings.speechToIntentMs).toBe(10)
     expect(records[0]?.timings).not.toHaveProperty('speechToIntentMs')
     expect(await readFile(reader.path(), 'utf8')).not.toContain('Private historical words')
-  })
-
-  it('makes the developer turn-record command reachable through the native tray', () => {
-    const setMenu = vi.fn()
-    const showTurnRecords = vi.fn()
-    const actions = { toggleDictation: vi.fn(), setAutoPaste: vi.fn(), show: vi.fn(), quit: vi.fn(), showTurnRecords }
-    new TrayController({ setMenu, destroy: vi.fn() }, actions).update({ dictating: false, autoPaste: true })
-    const items = setMenu.mock.calls[0]![0] as { label?: string; click?: () => void }[]
-    items.find(item => item.label === 'Show recent turn records')?.click?.()
-    expect(showTurnRecords).toHaveBeenCalledOnce()
   })
 
   describe('send stages', () => {

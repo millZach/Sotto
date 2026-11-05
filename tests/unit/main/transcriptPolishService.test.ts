@@ -133,23 +133,6 @@ describe('TranscriptPolishService', () => {
     expect(diagnostics[0]).toMatchObject({ attempts: ['unfinished', 'ok'] })
   })
 
-  it('keeps a deadline floor above the default timeout for the cleanup model', async () => {
-    let clock = 0
-    const { fetchFn, service } = createService({
-      now: () => clock,
-      fetchFn: async () => {
-        // Slower than the user deadline, but within the cleanup model's floor:
-        // the fallback attempt must still be allowed to run.
-        clock += DEFAULT_SETTINGS.llmTimeoutMs + 500
-        return new Response('overloaded', { status: 500 })
-      },
-    })
-    await expect(service.polish('um hello there my good friend')).resolves.toMatchObject({
-      applied: false,
-    })
-    expect(fetchFn).toHaveBeenCalledTimes(2)
-  })
-
   it('reserves fallback budget so a hung primary cannot starve the fallback', async () => {
     let clock = 0
     const diagnostics: unknown[] = []

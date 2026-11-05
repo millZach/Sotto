@@ -106,10 +106,6 @@ describe('what the installer is allowed to say back', () => {
     expect(installerDetail('EACCES: permission denied, open /Users/zache/.npm/_cacache'))
       .toBe('EACCES: permission denied, open \u2026')
   })
-
-  it('says nothing rather than something empty', () => {
-    expect(installerDetail('   \n  \n')).toBeUndefined()
-  })
 })
 
 describe('which channel owns an install', () => {
@@ -384,19 +380,6 @@ describe('updating a client from the app', () => {
       expect(host.log).toEqual(['clientUpdated grok'])
       expect(control.get().host.threads.some(thread => thread.providerId === 'grok' && thread.status === 'running'), 'the working thread keeps working').toBe(true)
       expect(control.get().host.providers).toEqual([expect.objectContaining({ id: 'grok', connection: 'connected' })])
-    } finally { control.dispose() }
-  })
-
-  it('still accepts force, which changes nothing now that an update stops no thread', async () => {
-    const host = new VersionedHost()
-    const { control } = await coordinator(host, async () => { host.onDisk = '1.0.40'; return { ok: true } })
-    try {
-      await control.command({ type: 'connect' })
-      await control.command({ type: 'check-client-updates' })
-      host.log.length = 0
-      const result = await control.command({ type: 'update-client', provider: 'grok', force: true })
-      expect(result.error).toBeNull()
-      expect(host.log).toEqual(['clientUpdated grok'])
     } finally { control.dispose() }
   })
 

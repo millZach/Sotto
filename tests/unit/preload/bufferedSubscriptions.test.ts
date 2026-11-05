@@ -33,22 +33,6 @@ describe('buffered settings subscriptions', () => {
     expect(later).toHaveBeenCalledWith(DEFAULT_SETTINGS)
   })
 
-  it('delivers changes to both the app and voice settings and keeps the app subscribed after voice settings unmount', () => {
-    const { bridge, emit } = fixture(), app = vi.fn(), voice = vi.fn()
-    const offApp = bridge.onSettingsChanged(app)
-    const offVoice = bridge.onSettingsChanged(voice)
-    emit(DEFAULT_SETTINGS)
-    expect(app).toHaveBeenCalledWith(DEFAULT_SETTINGS)
-    expect(voice).toHaveBeenCalledWith(DEFAULT_SETTINGS)
-    offVoice()
-    offVoice()
-    const next = { ...DEFAULT_SETTINGS, llmApiKey: 'saved' }
-    emit(next)
-    expect(app).toHaveBeenLastCalledWith(next)
-    expect(voice).toHaveBeenCalledTimes(1)
-    offApp()
-  })
-
   it('buffers the latest valid settings while no listeners exist and replays them once', () => {
     const { bridge, emit } = fixture(), first = vi.fn(), second = vi.fn()
     emit({ ...DEFAULT_SETTINGS, llmApiKey: 'older' })

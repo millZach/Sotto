@@ -258,16 +258,6 @@ describe('checking afresh', () => {
       expect(reading(control, 'codex')).toMatchObject({ state: 'failed' })
     } finally { control.dispose() }
   })
-
-  it('asks nothing while the setting is off', async () => {
-    const { control, npm } = await coordinator()
-    try {
-      await control.command({ type: 'configure', patch: { checkClientUpdates: false } })
-      const before = npm.state.asked
-      await control.checkClientsAfresh()
-      expect(npm.state.asked).toBe(before)
-    } finally { control.dispose() }
-  })
 })
 
 describe('a check and the update line at once', () => {

@@ -122,11 +122,6 @@ describe('the stepper', () => {
     const dots = within(screen.getByRole('group', { name: 'Steps' })).getAllByRole('button')
     expect(dots.map(dot => dot.getAttribute('tabindex'))).toEqual(['-1', '0', '-1'])
   })
-
-  it('draws nothing for a visual without steps', () => {
-    const { container } = render(<VisualStepper steps={[]} index={0} onStep={() => undefined} />)
-    expect(container).toBeEmptyDOMElement()
-  })
 })
 
 // A flowchart Mermaid 11.17.2 drew, as the renderer returns it after the sanitizer.

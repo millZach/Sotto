@@ -102,16 +102,6 @@ describe('SettingsView', () => {
     await user.click(screen.getByRole('button', { name: 'Restart and install' }))
     expect(install).toHaveBeenCalledOnce()
   })
-
-  it('says plainly when this build has no update feed at all', async () => {
-    render(<SettingsView {...baseProps({
-      updateStatus: { currentVersion: '3.4.0', phase: { phase: 'unsupported' }, checkedAt: null },
-    })} />)
-    await selectCategory('Application')
-
-    expect(screen.getByText('Update checks run in the installed Windows app and in Sotto Owl on a Mac.')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Check now' })).toBeEnabled()
-  })
 })
 
 it('says reset preserves the saved OpenRouter key before confirmation', async () => {

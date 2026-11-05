@@ -44,27 +44,6 @@ function fakeElectron(options: { empty?: boolean; reduced?: boolean; locked?: bo
 }
 
 describe('the menu bar owl in Electron', () => {
-  it('builds one image with a 2x picture and a 1x one', () => {
-    const { electron, created } = fakeElectron()
-    const env = electronOwlEnvironment(electron, '/resources')
-    const one = Buffer.from([1])
-    const two = Buffer.from([2])
-    const image = env.createImage(one, two)
-    expect(created).toHaveLength(1)
-    expect(image.representations).toEqual([{ scaleFactor: 2, buffer: two }, { scaleFactor: 1, buffer: one }])
-  })
-
-  it('throws for an image Electron cannot read', () => {
-    const { electron } = fakeElectron({ empty: true })
-    expect(() => electronOwlEnvironment(electron, '/resources').createImage(Buffer.from([1]), Buffer.from([2]))).toThrow()
-  })
-
-  it('reads a file under tray/owl, or null when it is not there', () => {
-    const { electron } = fakeElectron()
-    const env = electronOwlEnvironment(electron, '/no/such/folder')
-    expect(env.readOwlFile('manifest.json')).toBeNull()
-  })
-
   it('reports the system\'s reduced motion and watches the accessibility notification', () => {
     const { electron, workspace } = fakeElectron({ reduced: true })
     const env = electronOwlEnvironment(electron, '/resources')

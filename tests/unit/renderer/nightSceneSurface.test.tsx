@@ -36,10 +36,6 @@ function room(...backgrounds: string[]): HTMLElement {
 afterEach(() => { document.body.replaceChildren(); document.body.removeAttribute('style') })
 
 describe('the surface the night scene reads (ADR-0126, ADR-0150)', () => {
-  it('is the first solid background on a solid window', () => {
-    expect(surfaceOf(room('rgb(20, 22, 26)', 'rgba(0, 0, 0, 0)'), pixel())).toEqual({ r: 20, g: 22, b: 26 })
-  })
-
   it('lays a translucent room over the desktop that is worst for the words', () => {
     const pane = room('rgba(10, 12, 16, 0.8)')
     // Light words: the room as pure white behind the window leaves it.

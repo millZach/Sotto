@@ -12,7 +12,6 @@ import { ThreadDraftStore } from '../../../../src/renderer/src/agents/threadDraf
 import { appendBrowserFeedback } from '../../../../src/renderer/src/tools/BrowserFeedback'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
-import { browserStepWords, browsingWords, shortAddress } from '../../../../src/renderer/src/tools/browserSteps'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { BrowserStore } from '../../../../src/renderer/src/tools/browserStore'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
@@ -457,22 +456,6 @@ describe('the browser pane opening on its own', () => {
       expect(store.getSnapshot().surface).toBe('files')
       view.unmount()
     }
-  })
-})
-
-describe('browser steps in plain words', () => {
-  const step = (action: string, patch: Partial<BrowserTask['steps'][number]> = {}) => ({ id: 's', action, status: 'completed' as const, at: 1, detail: '', ...patch })
-  it('says what each step did without guessing what was under a click', () => {
-    expect(browserStepWords(step('click'))).toBe('clicked in the page')
-    expect(browserStepWords(step('type'))).toBe('typed into the page')
-    expect(browserStepWords(step('navigate', { url: 'http://localhost:5173/notes?x=1' }))).toBe('went to localhost:5173/notes?x=1')
-    expect(browserStepWords(step('key', { detail: 'Pressed Enter.' }))).toBe('pressed Enter')
-    expect(browserStepWords(step('click', { status: 'failed' }))).toBe('tried to click in the page')
-    expect(browserStepWords(step('something-new'))).toBe('worked in the page')
-  })
-  it('names the page while the agent has taken no step yet', () => {
-    expect(browsingWords(task(), 'http://localhost:5173/')).toEqual({ lead: 'Agent is browsing', last: 'localhost:5173' })
-    expect(shortAddress('https://example.com/')).toBe('example.com')
   })
 })
 

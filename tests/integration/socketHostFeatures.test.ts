@@ -224,11 +224,28 @@ describe('host version and features', () => {
    * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
    */
   const OWL_GATED: Partial<Record<HostFeature, OwlFeatureId>> = { 'usage-dashboard': 'usage', 'usage-history': 'usage', 'thread-starts': 'continue-agent-thread',
-    'usage-muse-opencode': 'usage', 'usage-background-refresh': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view', 'thread-delete': 'clear-threads', 'thread-file-links': 'markdown-side-panel', 'to-dos': 'to-do-list' }
+    'usage-muse-opencode': 'usage', 'usage-background-refresh': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view', 'thread-delete': 'clear-threads', 'thread-file-links': 'markdown-side-panel' }
   const offered = (always: readonly HostFeature[]): HostFeature[] => {
     const answers = owlFeaturesForTrack(getReleaseTrack(packageVersion))
     return HOST_FEATURES.filter(feature => always.includes(feature) || OWL_GATED[feature] !== undefined && answers[OWL_GATED[feature]!])
   }
+
+  // The to-do list is gone from the protocol (ADR-0188, reversed). A desktop on an older Owl build still asks for it by name.
+  it('lets a client from before the to-do list went connect, offers it nothing, and refuses its press without closing', async () => {
+    const service = fixture.host.service
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Older desktop')
+    const older = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    try {
+      const hello = await older.call('hello', { op: 'hello', accepts: ['to-dos', 'detail-delta'] }) as { ok: boolean; result: { features: string[] } }
+      expect(hello.ok).toBe(true)
+      expect(hello.result.features).not.toContain('to-dos')
+      const press = await older.call('press', { op: 'to-do-request', request: { kind: 'seen' } })
+      expect(press).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      // Still connected: the next request is answered.
+      expect(await older.call('after', { op: 'shell' })).toMatchObject({ ok: true })
+    } finally { older.frames.close(); await server.close() }
+  })
 
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     // Its own features, and those its version's Owl answers turn on, in the protocol's order.

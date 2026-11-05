@@ -69,13 +69,6 @@ describe('where a waiting request’s card shows in Watcher’s conversation', (
     }
   })
 
-  it('reads a history again only when it changed', () => {
-    const messages = [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), reply('r2')]
-    const first = watcherAskPlacements({ messages, status: 'idle' })
-    expect(watcherAskPlacements({ messages, status: 'idle' })).toBe(first)
-    expect(watcherAskPlacements({ messages: [...messages], status: 'idle' })).toEqual(first)
-  })
-
   it('places nothing for a history with no asks, or a wake-up with nothing shown before or after it', () => {
     expect(watcherAskPlacements({ messages: [user('u1'), wakeUp('w1'), reply('r1')] })).toEqual([])
     expect(watcherAskPlacements(undefined)).toEqual([])

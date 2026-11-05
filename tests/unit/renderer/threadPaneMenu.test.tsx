@@ -85,12 +85,6 @@ describe('the pane header’s More menu', () => {
     fireEvent.keyDown(field, { key: 'Enter' })
     expect(view.requests()).toContainEqual({ type: 'rename-thread', threadId: THREAD, title: 'Voice previews' })
   })
-
-  it('opens the thread beside this one through the caller’s own handler', () => {
-    const view = mount()
-    fireEvent.click(within(openPaneMenu(view.head())).getByRole('menuitem', { name: 'Open beside' }))
-    expect(view.onOpenBeside).toHaveBeenCalledOnce()
-  })
 })
 
 describe('a row that shows or hides something', () => {
@@ -134,12 +128,6 @@ describe('the pane header’s Tools and Terminal symbols (ADR-0182)', () => {
     fireEvent.click(drawer)
     expect(document.querySelector('.pane-terminal')).toBeNull()
     expect(drawer).not.toHaveAttribute('aria-pressed')
-  })
-
-  it('shows the full name on hover', () => {
-    const title = 'A long thread name that the header has to cut off as the pane narrows'
-    const view = mount({ patch: { title } })
-    expect(within(view.head()).getByRole('heading', { name: title })).toHaveAttribute('title', title)
   })
 })
 

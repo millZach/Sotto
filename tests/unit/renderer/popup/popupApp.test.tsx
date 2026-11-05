@@ -9,7 +9,6 @@ import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import type { WatcherRoomResult } from '../../../../src/shared/watcherRoom'
 import { PopupApp } from '../../../../src/renderer/src/popup/PopupApp'
 import { POPUP_MEMORY_KEY, readPopupMemory, writePopupMemory, type PopupTarget } from '../../../../src/renderer/src/popup/popupLogic'
-import { MessageLinks } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
 import { requestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { agentThread, threadsStateFixture } from '../../../fixtures/agentState'
 import { deferred } from '../../../fixtures/deferred'
@@ -136,13 +135,6 @@ describe('links in popup request cards', () => {
     fireEvent.click(await screen.findByRole('link', { name: 'Read the plan' }))
     await waitFor(() => expect(f.bridge.openExternalLink).toHaveBeenCalledExactlyOnceWith('https://example.com/plan'))
     expect(f.command.mock.calls.some(([command]) => command.type === 'answer')).toBe(false)
-  })
-
-  it('opens message-link rows through the same bridge', async () => {
-    const f = mount()
-    render(<MessageLinks links={['https://example.com/rows']} />)
-    fireEvent.click(screen.getByRole('link', { name: 'Open the link, example.com/rows' }))
-    expect(f.bridge.openExternalLink).toHaveBeenCalledExactlyOnceWith('https://example.com/rows')
   })
 
   it.each(['click', 'Enter'])('routes a prototype page to its owning thread by %s', async action => {

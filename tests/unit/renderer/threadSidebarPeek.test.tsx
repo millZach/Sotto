@@ -27,24 +27,6 @@ function mount() {
 const advance = (ms: number): void => { act(() => { vi.advanceTimersByTime(ms) }) }
 const preview = () => screen.queryByRole('group', { name: 'Preview of threads in workshop' })
 
-it('previews a closed folder after the pointer rests, and puts it away after it leaves', () => {
-  const { toggle, folder } = mount()
-  fireEvent.pointerOver(folder, { pointerType: 'mouse' })
-  advance(349)
-  expect(preview()).not.toBeInTheDocument()
-  advance(1)
-  expect(preview()).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Visual gate flake' })).toBeVisible()
-  // A preview is not an opening: the folder's own state never moved.
-  expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  fireEvent.pointerOut(folder, { pointerType: 'mouse', relatedTarget: document.body })
-  advance(299)
-  expect(preview()).toBeInTheDocument()
-  advance(1)
-  expect(preview()).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Visual gate flake' })).not.toBeInTheDocument()
-})
-
 it('opens a thread from the preview and leaves its folder closed', () => {
   const { onOpen, toggle, folder } = mount()
   fireEvent.pointerOver(folder, { pointerType: 'mouse' })

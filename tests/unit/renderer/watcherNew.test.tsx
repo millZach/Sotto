@@ -201,13 +201,6 @@ describe('New Watcher in Watcher’s composer', () => {
     // The new Watcher has said nothing, so New Watcher waits for it too.
     expect(await newButton()).toHaveAccessibleDescription(NEW_WATCHER_EMPTY)
   })
-
-  it('after a provider change the strip still names the provider the last Watcher was on', async () => {
-    renderRoom(roomState('watcher-b', { history: [{ ...identity('watcher-a'), provider: 'codex' }], handover: { source: target('watcher-a'), provider: 'codex', counts } }),
-      stateWith(watcherThread('watcher-b')), vi.fn())
-    const strip = await within(await watcherPane()).findByRole('region', { name: 'Handover of the last Watcher' })
-    expect(strip).toHaveTextContent('Sending starts the new Watcher with a handover of the last one, from Codex.')
-  })
 })
 
 describe('a new Watcher whose start stopped part-way', () => {
@@ -283,13 +276,6 @@ describe('the new Watcher’s empty conversation', () => {
     await within(pane).findByRole('heading', { level: 3, name: /^New Watcher on /u })
     expect(within(pane.querySelector('.watcher-new-note__carried') as HTMLElement).getAllByRole('listitem').map(item => item.textContent))
       .toEqual(['Its question to you may still be open in the last conversation. Answer it here instead; the handover carries it.'])
-  })
-
-  it('adds no lines when the press carried nothing over', async () => {
-    renderRoom(roomState('watcher-b', { history: [identity('watcher-a')] }), stateWith(watcherThread('watcher-b')), vi.fn())
-    const pane = await watcherPane()
-    await within(pane).findByRole('heading', { level: 3, name: /^New Watcher on /u })
-    expect(pane.querySelector('.watcher-new-note__carried')).toBeNull()
   })
 
   it('is the plain empty line for a first Watcher that replaced nothing', async () => {

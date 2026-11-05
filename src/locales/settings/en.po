@@ -190,6 +190,10 @@ msgstr "{defaultModelName} is {roleName}’s default."
 msgid "{downloadCount, plural, other {{downloads} downloads}}"
 msgstr "{downloadCount, plural, other {{downloads} downloads}}"
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "{DYNAMIC_NOTE_MAX_CHARACTERS, plural, one {Up to # character.} other {Up to # characters.}}"
+msgstr "{DYNAMIC_NOTE_MAX_CHARACTERS, plural, one {Up to # character.} other {Up to # characters.}}"
+
 #: src/renderer/src/features/settings/hostTailnetWords.ts
 msgid "{error} {name} is connected over SSH and nothing was lost. Press {button}."
 msgstr "{error} {name} is connected over SSH and nothing was lost. Press {button}."
@@ -966,6 +970,10 @@ msgstr "Adds this computer to Tailscale Serve, on port 8443 or 10000, while this
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Advanced"
 msgstr "Advanced"
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Advice in your own words. A Dynamic thread reads it when it starts, and once more after you change it. It can be ignored, so a provider you must not use belongs off the list above."
+msgstr "Advice in your own words. A Dynamic thread reads it when it starts, and once more after you change it. It can be ignored, so a provider you must not use belongs off the list above."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "After {name} restarts, its host starts again only when this computer connects over SSH."
@@ -5101,6 +5109,10 @@ msgstr "Snowfield"
 msgid "Snowy pines and falling snow under the northern lights."
 msgstr "Snowy pines and falling snow under the northern lights."
 
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Sol for reviews. Save Opus for the hard debugging."
+msgstr "Sol for reviews. Save Opus for the hard debugging."
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
 msgstr "Sort themes"
@@ -7250,6 +7262,14 @@ msgstr "Your instructions go to the thread's own model with every draft and win 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
 msgstr "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your note"
+msgstr "Your note"
+
+#: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+msgid "Your note to the overseer"
+msgstr "Your note to the overseer"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Your own model servers"

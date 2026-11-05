@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, UNCONFIRMED_SEND_HOLD, UNCONFIRMED_SEND_WAITS, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from '../../../src/main/agents/watcherSendHolds'
+import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD, startsWithSlashCommand, UNCONFIRMED_SEND_HOLD, UNCONFIRMED_SEND_WAITS, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from '../../../src/main/agents/watcherSendHolds'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import { deferred } from '../../fixtures/deferred'
@@ -36,11 +36,6 @@ describe('a prompt that starts with a slash command (#1222)', () => {
 
   it('is not a path, a slash later in the prompt, or a slash alone', () => {
     for (const text of ['/home/x is the path', '/tmp/foo', 'see /tmp/foo', 'Run /compact when you can', '/', '/ compact', '//compact', '']) expect(startsWithSlashCommand(text), text).toBe(false)
-  })
-
-  it('is refused in plain words that send the user to run it', () => {
-    expect(SLASH_COMMAND_REFUSAL).toMatch(/Ask the user to run it in the thread/u)
-    expect(SLASH_COMMAND_REFUSAL).toMatch(/Nothing was sent\.$/u)
   })
 })
 

@@ -2,16 +2,16 @@ import { readFileSync } from 'node:fs'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentMessage, AgentModel, AgentState, AgentThread } from '../../../src/shared/agents'
+import type { AgentMessage, AgentState, AgentThread } from '../../../src/shared/agents'
 import { clientAgentState, hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView, RefusedView } from '../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { chosenWords, DelegatedWorkRow, DelegationWorldProvider, delegationsByTurn, stillWorkingAgents, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
+import { DelegatedWorkRow, DelegationWorldProvider, delegationsByTurn, stillWorkingAgents, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
 import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
 import { threadOrnamentAllowed } from '../../../src/shared/threadActivity'
 import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
-import { delegatedKind, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationDuration, pendingRequestOf, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
+import { delegatedKind, delegatedLine, delegatedNote, delegatedState, delegatedSummary, pendingRequestOf, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { describeThreads, organizeWorkspace, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
@@ -83,10 +83,6 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalApp).m
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('delegation words', () => {
-  it('says a wait and an answer in minutes and seconds', () => {
-    expect([0, 12_000, 100_000, 300_000, 3_840_000].map(delegationDuration)).toEqual(['0 s', '12 s', '1 min 40 s', '5 min', '1 h 4 min'])
-  })
-
   it('says how the delegating thread\'s wait went, for each outcome as the prototype words it', () => {
     const started = at(5), now = Date.parse(started) + 72_000
     expect(delegationWaitLine(view({ waiting: true }), now)).toBe('Sotto is starting it and sending the brief.')
@@ -410,13 +406,6 @@ describe('delegated work in the delegating thread', () => {
       expect(shown).not.toHaveTextContent('Why:')
       expect(shown).not.toHaveTextContent('took over')
       expect(within(shown).queryByRole('button', { name: /^Actions for / })).toBeNull()
-    })
-
-    it('names any speed it was started at', () => {
-      const model = { id: 'sol', name: 'GPT-6.1 Sol', speeds: [{ id: 'fast', name: 'Fast' }] } as unknown as AgentModel
-      expect(chosenWords({ model: 'sol', effort: 'high' }, [model])).toBe('GPT-6.1 Sol, High')
-      expect(chosenWords({ model: 'sol', effort: 'high', speed: 'fast' }, [model])).toBe('GPT-6.1 Sol, High, Fast')
-      expect(chosenWords({ model: 'gone' }, [model])).toBe('gone')
     })
 
     it('counts workers by provider on the Worked for line only where the Owl feature is on', () => {

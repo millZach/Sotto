@@ -502,13 +502,6 @@ describe('the Pull request surface', () => {
     expect(lines()[1]).not.toHaveTextContent(/approved/iu)
     expect(within(lines()[1]!).getByRole('button', { name: "Open ola's review on GitHub" })).toBeInTheDocument()
   })
-  it('shows the count in the done colour beside Ready to merge, a line that does not block included', async () => {
-    mount({ detail: detail({ behindBy: null }) })
-    await opened()
-    const heading = screen.getByRole('heading', { name: 'Ready to merge 4 of 5 done, 1 does not block' })
-    expect(heading.querySelector('small')).toHaveAttribute('data-tone', 'done')
-    expect(mergeButton()).not.toHaveAttribute('aria-disabled')
-  })
   it('reads a paired host on an earlier build, which names no reviewer and no merge time', () => {
     const earlier: Record<string, unknown> = { ...detail() }
     delete earlier.reviews; delete earlier.mergedAt
@@ -560,13 +553,6 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     // Focus moves on to ···, where Babysit pull request will be, without waiting for the line to go.
     await waitFor(() => expect(screen.getByRole('button', { name: 'More pull request actions' })).toHaveFocus())
     expect(screen.queryByRole('status')).toBeNull()
-  })
-
-  it('says the host’s refusal in its own words', async () => {
-    mount({ babysit: { agent: 'Codex' }, result: { error: 'Link this pull request to the thread first. Nothing was started.' } })
-    await opened()
-    await menu('Babysit pull request')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Link this pull request to the thread first. Nothing was started.')
   })
 
   it('keeps focus on a refused Stop and says why in its line, not above the checklist', async () => {

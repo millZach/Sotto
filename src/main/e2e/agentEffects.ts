@@ -12,6 +12,7 @@ import { withUltracode } from '../../shared/ultracode'
 /** External provider effects only. The real controller, persistence, IPC and both renderers remain in the test. */
 export class E2EAgentHost implements AgentHost {
   private readonly checkpointFixture: boolean
+  private readonly climbFixture: boolean
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly commands = new Set<string>()
   private uncertain = false
@@ -35,8 +36,13 @@ export class E2EAgentHost implements AgentHost {
   }
   constructor(scenario: E2EScenario = 'success') {
     this.checkpointFixture = scenario === 'phase3-workspace' || scenario === 'queued-steering'
+    this.climbFixture = scenario === 'council-climb'
     if (scenario === 'queued-steering') this.state.capabilities.steer = true
-    if (scenario === 'composer-speed') this.state.models = this.state.models.map(model => ({ ...model, providerId: 'claude', speeds: [{ id: 'fast', name: 'Fast', description: 'Faster output at a higher price.' }] }))
+    if (scenario === 'composer-speed' || this.climbFixture) {
+      this.state.models = this.state.models.map(model => ({ ...model, providerId: 'claude',
+        ...(scenario === 'composer-speed' ? { speeds: [{ id: 'fast', name: 'Fast', description: 'Faster output at a higher price.' }] } : {}) }))
+      for (const thread of this.state.threads) thread.providerId = 'claude'
+    }
     if (scenario === 'ultracode') this.state.models = this.state.models.map(model => ({ ...model, providerId: 'claude', reasoningEfforts: withUltracode(model.reasoningEfforts ?? []) }))
     if (scenario === 'design-threads' || scenario === 'design-threads-empty' || scenario === 'phase3-workspace') {
       const fixture = designThreadsFixture()
@@ -155,11 +161,15 @@ export class E2EAgentHost implements AgentHost {
       } else if (command.type === 'send' || command.type === 'steer') {
         if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) return { accepted: false }
         thread.settledAt = null; thread.settledOverride = null; thread.updatedAt = new Date().toISOString()
-        if (this.checkpointFixture && command.type === 'send') thread.lastTurn = { id: randomUUID(), status: 'running' }
+        if (this.climbFixture && command.type === 'send') thread.lastTurn = { id: command.messageId, messageId: command.messageId, status: 'running' }
+        else if (this.checkpointFixture && command.type === 'send') thread.lastTurn = { id: randomUUID(), status: 'running' }
         thread.messages.push({ id: command.messageId, role: 'user', text: command.text, createdAt: new Date().toISOString(), commandId: command.commandId,
           ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }); thread.status = 'running'
       } else if (command.type === 'answer') { thread.requests = thread.requests.filter(r => r.id !== command.requestId); thread.status = 'running' }
-      else thread.status = 'idle'
+      else {
+        thread.status = 'idle'
+        if (this.climbFixture && command.type === 'interrupt' && thread.lastTurn) thread.lastTurn.status = 'interrupted'
+      }
     }
     if (this.uncertain && command.type === 'send') { this.uncertain = false; return { accepted: false, uncertain: true } }
     this.emit()
@@ -217,10 +227,11 @@ export class E2EAgentHost implements AgentHost {
       if (request.kind !== event.type) throw new Error('E2E_REQUEST_KIND_MISMATCH')
       thread.requests.push(structuredClone(request))
     }
-    else thread.messages.push({ id: randomUUID(), role: event.type === 'manual' ? 'user' : 'assistant', text: event.text, createdAt: new Date().toISOString() })
+    else thread.messages.push({ id: randomUUID(), role: event.type === 'manual' ? 'user' : 'assistant', text: event.text, createdAt: new Date().toISOString(),
+      ...(this.climbFixture && event.type !== 'manual' && thread.lastTurn?.messageId ? { turnMessageId: thread.lastTurn.messageId } : {}) })
     if (event.activities) thread.activities = structuredClone(event.activities)
     thread.status = event.status ?? (event.type === 'manual' ? 'running' : event.type === 'failure' ? 'error' : 'idle')
-    if (this.checkpointFixture && thread.lastTurn && thread.status !== 'running') thread.lastTurn.status = event.type === 'failure' ? 'failed' : 'completed'
+    if ((this.checkpointFixture || this.climbFixture) && thread.lastTurn && thread.status !== 'running') thread.lastTurn.status = event.type === 'failure' ? 'failed' : 'completed'
     this.emit()
   }
 }

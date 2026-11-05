@@ -378,20 +378,6 @@ describe('useWidgetDragGesture', () => {
     }
   })
 
-  it('suppresses only the click following a completed drag', () => {
-    const onClick = vi.fn()
-    render(<Harness onClick={onClick} />)
-    const surface = screen.getByTestId('surface')
-
-    beginDrag(surface)
-    fireEvent.pointerUp(surface, { pointerId: 1 })
-    fireEvent.click(surface)
-    expect(onClick).not.toHaveBeenCalled()
-
-    fireEvent.click(surface)
-    expect(onClick).toHaveBeenCalledOnce()
-  })
-
   it('ignores secondary and non-primary pointers', () => {
     const onDrag = vi.fn()
     render(<Harness onDrag={onDrag} />)

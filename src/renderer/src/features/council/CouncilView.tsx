@@ -14,7 +14,11 @@ import { CouncilChamber } from './CouncilChamber'
 import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
 import { clearCouncilDraft, councilAskable, heldCouncilForm, holdCouncilForm, onCouncilDraft, readCouncilDraft, type CouncilDraft } from './councilDraft'
+import type { ClimbRecord } from '../../../../shared/councilClimb'
+import { ClimbPanel } from './ClimbPanel'
 import './council.css'
+
+const climbModes = new Map<string, 'ask' | 'climb'>()
 
 /**
  * The Council the chamber shows: the one being worked now, the newest if several are; with none, the newest Council
@@ -57,6 +61,8 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const { councils, failed } = useCouncils(bridge)
+  const [mode, setMode] = useState<'ask' | 'climb'>(() => climbModes.get(thread ?? '') ?? 'ask')
+  useEffect(() => { climbModes.set(thread ?? '', mode) }, [mode, thread])
   const settings = app?.settings
   const state = agents?.state
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
@@ -64,6 +70,8 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
   const [held] = useState(() => thread === undefined ? undefined : heldCouncilForm(thread))
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
   const [panel, setPanel] = useState<CouncilPanel | null>(held?.panel ?? null)
+  const [climbRecord, setClimbRecord] = useState<ClimbRecord | null>(null)
+  const [climbPanel, setClimbPanel] = useState<CouncilPanel>({ panelists: [null, null, null], chair: null })
   // Ask the Council on a reply opens this tab with that thread and reply filled in, or fills it in when it is open.
   const [taken, setTaken] = useState(() => ({ draft: ownDraft(thread), revision: 0 }))
   const draft = taken.draft
@@ -83,19 +91,22 @@ export function CouncilView({ thread, bridge = window.sotto?.council }: { readon
   }, [thread])
   useEffect(() => { if (thread !== undefined) holdCouncilForm(thread, { question, panel, origin: chosenOrigin }) }, [thread, question, panel, chosenOrigin])
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
-  const seats = useSeatsInForce(seatsPanel, catalog)
+  const seats = useSeatsInForce(mode === 'climb' ? climbPanel : seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
   return <div className="council-view" data-layout={layout}>
-    <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
+    <CouncilChamber climb={mode === 'climb' ? climbRecord : null} council={mode === 'climb' ? null : chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
     {/* The seats, under the figures they seat and as wide as the drawer, before the question in the Tab order. */}
-    {bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
+    {mode === 'ask' && bridge && state && settings ? <div className="council-seats-bar"><CouncilSeats panel={seatsPanel} catalog={catalog} onChange={setPanel} /></div> : null}
     <div className="council-scroll"><div className="council-page">
+      {bridge?.climb ? <div className="climb-mode" role="group" aria-label={t`Council mode`}><button type="button" aria-pressed={mode === 'ask'} onClick={() => setMode('ask')}>{t`Ask`}</button><button type="button" aria-pressed={mode === 'climb'} onClick={() => setMode('climb')}>{t`Climb`}</button></div> : null}
+      {mode === 'climb' && bridge ? <ClimbPanel thread={thread} bridge={bridge} onPanel={setClimbPanel} onRecord={setClimbRecord} /> : <>
       {/* A new draft is a new question from its thread: the form starts again from it. */}
       {bridge ? <AskForm key={taken.revision} bridge={bridge} origin={draft?.originThread ?? chosenOrigin ?? thread} onOrigin={setChosenOrigin} panel={seatsPanel}
         onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
       {bridge && councils === null && !failed ? <p className="council-muted tt-paragraph" role="status">{t`Reading the Councils…`}</p> : null}
       {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the Council again.`}</p> : null}
       <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
+      </>}
     </div></div>
   </div>
 }
@@ -122,7 +133,7 @@ export function useSeatsInForce(panel: CouncilPanel, catalog: readonly AgentMode
  * The thread a Council question comes from: the thread the user was on when they opened the Council, shown as one line.
  * Change opens a list grouped by project, as the sidebar groups threads, that typing narrows by title or project.
  */
-function OriginPicker({ threads, projects, chosen, onChoose }: { readonly threads: readonly AgentThread[]; readonly projects: readonly AgentProject[]
+export function OriginPicker({ threads, projects, chosen, onChoose }: { readonly threads: readonly AgentThread[]; readonly projects: readonly AgentProject[]
   readonly chosen: string; readonly onChoose: (id: string) => void }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)

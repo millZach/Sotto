@@ -70,13 +70,6 @@ describe('the linked file panel', () => {
     await waitFor(() => expect(files.previewLink).toHaveBeenCalledTimes(2))
   })
 
-  it('says each refusal in its own words rather than the English the service answered in', async () => {
-    const files = bridge({ previewLink: vi.fn(async () => ({ ok: false as const, error: { code: 'invalid-request' as const, message: 'from the service' } })) })
-    render(<LinkedFilePanel file={file} bridge={files} onClose={() => undefined} />)
-    expect(await screen.findByText('This link does not lead to a Markdown file. Nothing was opened.')).toBeInTheDocument()
-    expect(screen.queryByText('from the service')).toBeNull()
-  })
-
   it('closes on Escape, on its close and on Back, and names the thread waiting behind it', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

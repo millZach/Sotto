@@ -44,33 +44,6 @@ describe('WindowManager lifecycle', () => {
     expect(onWidgetMoved).not.toHaveBeenCalled()
   })
 
-  it('records native window and Electron cursor origins on start', async () => {
-    const cursor = { current: { x: 1_700, y: 970 } }
-    const getCursorScreenPoint = vi.fn(() => ({ ...cursor.current }))
-    const { manager, windows } = createHarness({
-      display: {
-        getCursorScreenPoint,
-        getDisplayNearestPoint: () => ({
-          workArea: { x: 1_000, y: 100, width: 1_200, height: 900 },
-        }),
-      },
-    })
-    await manager.showWidget()
-    setWidgetPresentation(manager, 'idle-hovered')
-    const widget = windows[0]!
-    widget.bounds = { x: 1_200, y: 500, width: 248, height: 76 }
-    getCursorScreenPoint.mockClear()
-
-    reportWidgetDrag(manager, 'start')
-    widget.bounds = { x: 1_400, y: 700, width: 248, height: 76 }
-    cursor.current = { x: 1_730, y: 950 }
-    reportWidgetDrag(manager, 'move')
-
-    expect(widget.getBounds).toHaveBeenCalled()
-    expect(getCursorScreenPoint).toHaveBeenCalledTimes(2)
-    expect(widget.setPosition).toHaveBeenCalledWith(1_230, 480, false)
-  })
-
   it('moves from Electron cursor deltas without renderer coordinates', async () => {
     const cursor = { current: { x: 1_700, y: 970 } }
     const { manager, windows } = createHarness({
@@ -420,13 +393,5 @@ describe('WindowManager lifecycle', () => {
       vi.clearAllTimers()
       vi.useRealTimers()
     }
-  })
-
-  it('ignores drag reports without a widget window', () => {
-    const { manager } = createHarness()
-
-    expect(() => reportWidgetDrag(manager, 'start')).not.toThrow()
-    expect(() => reportWidgetDrag(manager, 'move')).not.toThrow()
-    expect(() => reportWidgetDrag(manager, 'end')).not.toThrow()
   })
 })

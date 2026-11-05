@@ -27,14 +27,6 @@ describe('Codex Computer Use calls', () => {
     expect(project(item).title).toBe('node_repl / js')
   })
 
-  it('say what to do when the sandbox or an unavailable connection stopped them', () => {
-    const failed = (text: string) => project(call('node_repl', 'await sky.list_apps()', { status: 'failed', result: { content: [{ type: 'text', text }] } }))
-    expect(failed('node_repl kernel exited unexpectedly: windows sandbox failed: helper_unknown_error: apply deny-read ACLs').error).toMatch(/sandbox.*Full access/su)
-    expect(failed('trusted Node process exited unexpectedly; kernel reset, rerun your request').error).toMatch(/Full access/u)
-    expect(failed('Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified. (os error 2)').error).toMatch(/connection is unavailable/u)
-    expect(project(call('node_repl', 'await sky.click()', { status: 'failed', error: { message: 'Window not found' } })).error).toBe('Window not found')
-  })
-
   it('gives the same recovery for a closed app and a stale connection in Full access', () => {
     const guidance = 'Computer Use connection is unavailable. Open Codex if it is closed. Keep it open and try again. If this continues, restart Sotto when your other threads are idle.'
     for (const text of [

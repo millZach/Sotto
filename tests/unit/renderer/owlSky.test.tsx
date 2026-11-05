@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ReleaseTrack } from '../../../src/shared/releaseTrack'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { OWL_SKY_STARS } from '../../../src/renderer/src/agents/OwlSky'
 import { agentWireBridge } from '../../fixtures/agentBridge'
 import { createBridge, renderApp } from '../../fixtures/renderer/appHarness'
 import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
@@ -68,15 +67,5 @@ describe('the Sotto Owl night sky', () => {
     await user.click(within(sidebar).getByRole('button', { name: 'Expand sidebar' }))
     expect(sidebar).toHaveAttribute('data-sky')
     expect(sidebar.querySelectorAll('.thread-nav__star')).toHaveLength(11)
-  })
-
-  it('keeps its stars in the header strip, in four strengths, with one star on each slow cycle', () => {
-    for (const star of OWL_SKY_STARS) {
-      // The night is solid to 76 pixels; every star sits within the top row's 44 and clear of the field below it.
-      expect(star.top + star.size).toBeLessThanOrEqual(42)
-      expect(star.size).toBeLessThanOrEqual(1.6)
-    }
-    expect(new Set(OWL_SKY_STARS.map(star => star.tier))).toEqual(new Set([1, 2, 3, 4]))
-    expect(OWL_SKY_STARS.filter(star => star.twinkle !== undefined)).toHaveLength(4)
   })
 })

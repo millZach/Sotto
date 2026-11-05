@@ -11,7 +11,6 @@ import { VISUAL_MCP_SERVER } from './visualTools'
 import { MEDIA_MCP_SERVER } from './mediaTools'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { TELL_WATCHER_MCP_SERVER } from '../../shared/tellWatcher'
-import { TO_DO_MCP_SERVER } from '../../shared/toDos'
 
 // This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
 // the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
@@ -36,7 +35,7 @@ export interface DevinProfile { readonly path: string; readonly allows: DevinAll
  * Every other MCP tool keeps the `mcp__*` ask; a more specific allow wins over it in Devin's own precedence. A server that
  * is not on this list, such as the host setup tools, which Devin is not offered, is asked about as before.
  */
-export const DEVIN_SOTTO_SERVERS: readonly string[] = [BROWSER_MCP_SERVER, VISUAL_MCP_SERVER, MEDIA_MCP_SERVER, PULL_REQUEST_MCP_SERVER, DELEGATE_MCP_SERVER, TELL_WATCHER_MCP_SERVER, TO_DO_MCP_SERVER]
+export const DEVIN_SOTTO_SERVERS: readonly string[] = [BROWSER_MCP_SERVER, VISUAL_MCP_SERVER, MEDIA_MCP_SERVER, PULL_REQUEST_MCP_SERVER, DELEGATE_MCP_SERVER, TELL_WATCHER_MCP_SERVER]
 const SOTTO_TOOLS = DEVIN_SOTTO_SERVERS.map(server => `mcp__${server}__*`)
 
 const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string[]; ask: string[] } => ({
@@ -45,11 +44,11 @@ const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string
   ask: allows === 'everything' ? [] : allows === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
 })
 
-// The profile's own version, in its file name. Version 2 added `otel`, version 3 lets Sotto's own tools through, and
-// version 4 adds `sotto_watcher` and `sotto_to_do` to them (#2073 added the first without a new version): an
-// owned profile is never rewritten (a changed one is refused), so changing what it says means a new file. Earlier files
-// are left where they are, unused.
-const PROFILE_VERSION = 4
+// The profile's own version, in its file name. Version 2 added `otel`, version 3 lets Sotto's own tools through, version 4
+// added `sotto_watcher` (#2073 added it without a new version) and the to-do list's tool, and version 5 takes that tool away
+// with the list (ADR-0188, reversed): an owned profile is never rewritten (a changed one is refused), so changing what it
+// says means a new file. Earlier files are left where they are, unused.
+const PROFILE_VERSION = 5
 // `version` below is Devin's own config schema version, not the profile's.
 const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,

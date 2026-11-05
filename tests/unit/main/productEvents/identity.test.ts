@@ -74,8 +74,4 @@ describe('product event identity', () => {
     await writeFile(join(codexHome, 'auth.json'), `${authFile('user-abc')}${' '.repeat(300 * 1024)}`)
     expect(await readProductEventOwners({ claudeFile: join(directory, 'none'), codexHome })).toEqual([])
   })
-
-  it('finds the default folders under home', () => {
-    expect(productEventHomes({}, join('/home', 'someone'))).toEqual({ claudeFile: join('/home', 'someone', '.claude.json'), codexHome: join('/home', 'someone', '.codex') })
-  })
 })

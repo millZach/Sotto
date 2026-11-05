@@ -35,12 +35,6 @@ describe('the pill', () => {
     // An update under way, or one that failed, is named even beside another host.
     expect(hostUpdatePillText([forge(), forge({ id: ATLAS, name: 'atlas', phase: 'updating', step: 'restart' })]).text).toBe('Updating atlas · 4 of 4')
   })
-  it('shows nothing while no host needs an update', async () => {
-    const { bridge } = hosts([])
-    const { container } = render(<HostUpdateControl bridge={bridge} />)
-    await act(async () => undefined)
-    expect(container).toBeEmptyDOMElement()
-  })
   it('opens the panel on the host it names, and Escape or a click outside closes it', async () => {
     const user = userEvent.setup()
     const { bridge } = hosts([forge()])

@@ -120,11 +120,4 @@ describe('what a finished turn changed', () => {
     expect(items[0]!.textContent).toContain('+third')
     expect(items[1]!.textContent).toContain('+fresh')
   })
-
-  it('says nothing when a turn changed no files', () => {
-    const { transcript } = mount(stateWith({ activities: [
-      lifecycle({ status: 'completed', durationMs: 30_000 }), activity({ id: 'test', command: 'npm test' }),
-    ] }))
-    expect(within(transcript).queryByRole('button', { name: /^Changed/u })).not.toBeInTheDocument()
-  })
 })

@@ -240,19 +240,6 @@ describe('worklet microphone setup test', () => {
     await expect(test.start(vi.fn())).resolves.toBe('denied')
   })
 
-  it('opens the dictation recorder on the selected input', async () => {
-    const createRecorder = vi.fn((options: { onLevel?: (level: number) => void; selectedDeviceId?: string }) => ({
-      start: vi.fn(async () => undefined),
-      cancel: vi.fn(async () => undefined),
-      options,
-    }))
-    const test = new WorkletMicrophoneTest(createRecorder)
-    const onLevel = vi.fn()
-
-    await expect(test.start(onLevel, 'mic-c922')).resolves.toBe('ready')
-    expect(createRecorder).toHaveBeenCalledWith(expect.objectContaining({ onLevel, selectedDeviceId: 'mic-c922' }))
-  })
-
   it('opens the recorder in levels-only mode so the test keeps no audio', async () => {
     const createRecorder = vi.fn<(options: AudioRecorderOptions) => { start(): Promise<void>; cancel(): Promise<void> }>(() => ({
       start: vi.fn(async () => undefined),

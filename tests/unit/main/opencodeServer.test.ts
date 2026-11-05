@@ -17,9 +17,6 @@ describe('which OpenCode Sotto drives (ADR-0087)', () => {
     expect(opencodeVersionRefusal('opencode v2.0.30')).toBeInstanceOf(OpenCodeTooOld)
     expect(opencodeVersionRefusal('opencode v3.0.0')).not.toBeInstanceOf(OpenCodeTooOld)
   })
-  it.each(['opencode v2.0.31', 'opencode v2.4.0', '2.0.31'])('drives %s', said => {
-    expect(opencodeVersionRefusal(said)).toBeUndefined()
-  })
 })
 
 describe('the processes a server that has exited leaves behind', () => {

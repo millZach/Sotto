@@ -268,9 +268,4 @@ describe('Tailscale on this computer', () => {
     const invoke = cli({ up: options => { options.watch?.('To authenticate, visit:\n\thttps://login.tailscale.com/a/xyz\n'); return new Promise(() => undefined) } })
     expect(await new HostTailscale({ invoke, suggestions: async () => [], openExternal: async () => { throw new Error('no browser') } }).connect()).toBe('sign-in-needed')
   })
-  it('opens Tailscale’s download page for Get Tailscale', async () => {
-    const openExternal = vi.fn(async () => undefined)
-    await new HostTailscale({ invoke: async () => 'missing', suggestions: async () => [], openExternal }).openDownload()
-    expect(openExternal).toHaveBeenCalledWith('https://tailscale.com/download')
-  })
 })

@@ -338,7 +338,8 @@ export function reframe(record: CouncilRecord, change: { readonly kinds?: readon
 
 /** Puts a follow-up question to the same threads (decision 4), once the round before it is done. */
 export function addRound(record: CouncilRecord, question: string, now: number): CouncilRound {
-  const round: CouncilRound = { index: record.rounds.length, askedAt: new Date(now).toISOString(), stage: 'framing', leftOut: [], objections: [], question }
+  const round: CouncilRound = { index: record.rounds.length, askedAt: new Date(now).toISOString(), stage: 'framing', leftOut: [], objections: [], question,
+    ...(record.rounds[0]?.evidence ? { evidence: record.rounds[0].evidence } : {}) }
   record.rounds.push(round)
   return round
 }

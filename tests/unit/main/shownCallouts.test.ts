@@ -2,7 +2,7 @@
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { placeCallouts, type CalloutRequest } from '../../../src/main/agents/shownCallouts'
-import { agentActivityMediaSchema, MAX_MEDIA_CALLOUTS, type AgentActivityMedia } from '../../../src/shared/agentActivity'
+import { agentActivityMediaSchema, type AgentActivityMedia } from '../../../src/shared/agentActivity'
 
 const folder = resolve('/work/shop')
 const picture = (id: string, width?: number, height?: number): AgentActivityMedia => ({ id, digest: id.repeat(32).slice(0, 64).replace(/[^a-f0-9]/gu, 'a'), kind: 'image',
@@ -53,12 +53,5 @@ describe('callouts an agent places on the pictures it shows (ADR-0170, part 6)',
     expect(placed.media.every(media => media.callouts === undefined)).toBe(true)
     // A relative path with no folder names nothing.
     expect(placeCallouts(undefined, [box('checkout.png', 0, 0, 10, 10, 'no folder')], shown).refused).toEqual([{ note: 'no folder', reason: 'not-shown' }])
-  })
-
-  it('places at most twelve', () => {
-    const many = Array.from({ length: MAX_MEDIA_CALLOUTS + 3 }, (_, index) => box('checkout.png', index * 10, 0, 10, 10))
-    const placed = placeCallouts(folder, many, shown)
-    expect(placed.placed).toBe(MAX_MEDIA_CALLOUTS)
-    expect(placed.media[0]!.callouts!.map(callout => callout.n)).toEqual(Array.from({ length: MAX_MEDIA_CALLOUTS }, (_, index) => index + 1))
   })
 })

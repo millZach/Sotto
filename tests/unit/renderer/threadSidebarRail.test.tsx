@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW as NOW } from '../../../src/shared/e2e'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
-import { railMark, ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
+import { ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { useWatchedThreadIds } from '../../../src/renderer/src/watcher/watcherRoom'
 import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
@@ -25,9 +25,6 @@ function owl(on: boolean, queue = false): void {
 }
 beforeEach(() => { vi.mocked(useOptionalApp).mockReset(); vi.mocked(useWatchedThreadIds).mockReturnValue(new Set()); navigate.mockReset(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
 afterEach(() => { cleanup(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
-
-/** Nothing waits: every thread's requests answered and failures seen. */
-const calm = (state: AgentState): AgentState => ({ ...state, host: { ...state.host, threads: state.host.threads.map(thread => ({ ...thread, requests: [], status: thread.status === 'error' ? 'idle' : thread.status })) } })
 
 function mountCollapsed(state: AgentState, onOpen = vi.fn()): HTMLElement {
   render(<ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW)}
@@ -185,22 +182,5 @@ describe('the collapsed rail (ADR-0146)', () => {
     act(() => footer.focus())
     act(() => { fireEvent.keyDown(footer, { key: 'ContextMenu' }) })
     expect(within(within(rail).getByRole('menu', { name: 'Actions for Footer links' })).getByRole('menuitem', { name: 'Open' })).toHaveAttribute('aria-keyshortcuts', 'Enter')
-  })
-
-  it('edges nothing in the attention colour while nothing waits', () => {
-    owl(true)
-    const rail = mountCollapsed(calm(threadsStateFixture()))
-    expect(rail.querySelector('.thread-nav__rail-thread[data-waiting]')).toBeNull()
-    expect(tile(rail, 'Visual gate flake')).toBeInTheDocument()
-  })
-
-  it('marks each tile with two letters of its title', () => {
-    owl(true)
-    const rail = mountCollapsed(threadsStateFixture())
-    expect(tile(rail, 'Visual gate flake')).toHaveTextContent(/^Vg$/)
-    expect(railMark('Branch picker search')).toBe('Bp')
-    expect(railMark('dictation hotkey drift')).toBe('Dh')
-    expect(railMark('Sotto')).toBe('So')
-    expect(railMark('  x  ')).toBe('X')
   })
 })

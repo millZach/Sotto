@@ -6480,9 +6480,19 @@ msgstr ""
 msgid "Picking one starts a new thread there with a handover of this one. This thread stays as it is."
 msgstr ""
 
+#. {number} is the place of an agent's picture among the pictures of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Picture {number}"
+msgstr ""
+
 #. {name} is the file name of a picture.
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Picture to mark up: {name}"
+msgstr ""
+
+#. The step that holds the pictures and videos an agent wrote in its folder during a turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Pictures and videos it wrote"
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx

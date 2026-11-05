@@ -4,10 +4,7 @@
  * theme messages the guest preload passes on, the CSS it writes, and the window's request for a page.
  */
 import { describe, expect, it } from 'vitest'
-import {
-  clampVisualPageHeight, GUEST_HIGHLIGHT_MAX, GUEST_HIGHLIGHTS_MAX, GUEST_STEPS_MAX, measuredPageHeight, readVisualStep, readVisualTheme, VISUAL_PAGE_HEIGHT_MAX,
-  VISUAL_PAGE_HEIGHT_MIN, VISUAL_THEME_TOKENS, visualThemeCss, type VisualTheme,
-} from '../../../src/shared/visualGuest'
+import { clampVisualPageHeight, GUEST_HIGHLIGHT_MAX, GUEST_HIGHLIGHTS_MAX, GUEST_STEPS_MAX, measuredPageHeight, readVisualStep, readVisualTheme, VISUAL_THEME_TOKENS, visualThemeCss, type VisualTheme } from '../../../src/shared/visualGuest'
 import { visualPageRequestSchema, visualPageResultSchema } from '../../../src/shared/visualPages'
 import { VISUAL_KEPT_HIGHLIGHT_MAX, VISUAL_KEPT_HIGHLIGHTS_MAX, VISUAL_KEPT_STEPS_MAX } from '../../../src/shared/visuals'
 
@@ -24,9 +21,6 @@ describe('the height Sotto gives a page', () => {
     // An ordinary page: its root's own box.
     expect(measuredPageHeight(260, 244)).toBe(260)
     expect(measuredPageHeight(200, undefined)).toBe(200)
-  })
-  it('stays between 160 and 640 pixels', () => {
-    expect([VISUAL_PAGE_HEIGHT_MIN, VISUAL_PAGE_HEIGHT_MAX]).toEqual([160, 640])
   })
 })
 

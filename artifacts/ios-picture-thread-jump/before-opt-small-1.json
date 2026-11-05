@@ -1,0 +1,591 @@
+{
+ "chunks": 1,
+ "current": {
+  "counts": {},
+  "cpuMs": 0.9239999999990687,
+  "footprintMB": 185.772216796875,
+  "frames": {
+   "frames": 0,
+   "hitchMs": 0,
+   "hitchMsPerSecond": 0,
+   "hitches": 0,
+   "longestFrameMs": 0,
+   "over80": 0,
+   "seconds": 0
+  },
+  "peakFootprintMB": 191.88153076171875
+ },
+ "marks": {
+  "driver-start": 5865.558862686157,
+  "first-list": 10296.67592048645,
+  "open-begin": 10872.252941131592,
+  "open-rendered": 14123.667001724243,
+  "phase-back-to-end": 159969.39301490784,
+  "phase-finger": 97463.28091621399,
+  "phase-finished": 181245.05400657654,
+  "phase-hold-mid": 45548.285722732544,
+  "phase-images": 15986.495733261108,
+  "phase-open": 10872.002840042114,
+  "phase-settle-finger": 94298.17485809326,
+  "phase-settle-live": 72682.83772468567,
+  "phase-settle-mid": 42451.22170448303,
+  "phase-thread-scroll": 19181.479930877686,
+  "phase-working-end": 163162.30487823486,
+  "phase-working-live": 75837.3429775238,
+  "phase-working-mid": 52403.09286117554
+ },
+ "peakFootprintMB": 191.88153076171875,
+ "phase": "finished",
+ "phases": {
+  "back-to-end": {
+   "counts": {
+    "body.AgentPictureTile": 62,
+    "pictures.decoded": 17
+   },
+   "cpuMs": 758.5620000000199,
+   "footprintMB": 179.303466796875,
+   "frames": {
+    "frames": 184,
+    "hitchMs": 117.15120833468973,
+    "hitchMsPerSecond": 37.02364172735701,
+    "hitches": 2,
+    "longestFrameMs": 114.67633333359117,
+    "over80": 1,
+    "seconds": 3.1642270416668907
+   },
+   "peakFootprintMB": 191.88153076171875
+  },
+  "finger": {
+   "counts": {
+    "body.AgentPictureTile": 30712,
+    "body.AgentPictures": 13260,
+    "body.Conversation": 391,
+    "body.FoldedRun": 98,
+    "body.FollowupStack": 98,
+    "body.MainTabs": 102,
+    "body.ReplyDock": 98,
+    "body.RootView": 98,
+    "body.SheetPage": 197,
+    "body.ThreadHero": 98,
+    "body.ThreadListSections": 104,
+    "body.ThreadView": 296,
+    "body.ThreadsView": 197,
+    "bytes.delta": 39106,
+    "bytes.shell": 203469,
+    "frames.delta": 98,
+    "frames.shell": 98,
+    "pictures.decoded": 37,
+    "time.apply.delta.n": 98,
+    "time.apply.delta.ns": 32880293,
+    "time.apply.shell.n": 98,
+    "time.apply.shell.ns": 90822376,
+    "time.decode.delta.max": 39161333,
+    "time.decode.delta.n": 98,
+    "time.decode.delta.ns": 178607249,
+    "time.decode.shell.max": 548882375,
+    "time.decode.shell.n": 98,
+    "time.decode.shell.ns": 5844183961,
+    "time.timeline.rows.n": 98,
+    "time.timeline.rows.ns": 277318454
+   },
+   "cpuMs": 40824.00700000001,
+   "footprintMB": 175.55340576171875,
+   "frames": {
+    "frames": 1160,
+    "hitchMs": 42976.60062500745,
+    "hitchMsPerSecond": 687.7685434343505,
+    "hitches": 308,
+    "longestFrameMs": 965.3939166664713,
+    "over80": 212,
+    "seconds": 62.48701112500021
+   },
+   "page": {
+    "biggestHeightStep": 3349,
+    "biggestOffsetStep": 171,
+    "drags": [
+     {
+      "at": 12.871167291666097,
+      "moved": -166.5
+     },
+     {
+      "at": 23.903816999999435,
+      "moved": -289.5
+     },
+     {
+      "at": 33.77618308333331,
+      "moved": -170
+     },
+     {
+      "at": 45.2784878333332,
+      "moved": 170
+     },
+     {
+      "at": 54.44034133333298,
+      "moved": 170
+     },
+     {
+      "at": 60.17515249999997,
+      "moved": 170
+     }
+    ],
+    "firstHeight": 35445.5,
+    "firstOffset": 17723,
+    "furthest": 626,
+    "heightChanges": 55,
+    "lastHeight": 36880.5,
+    "lastOffset": 17607,
+    "maxHeight": 39990.5,
+    "minHeight": 35443.5,
+    "offsetSteps": 51,
+    "swings": [
+     {
+      "at": 12.512152541666183,
+      "from": 35684.5,
+      "offset": 17556.5,
+      "to": 39033.5
+     },
+     {
+      "at": 60.17515249999997,
+      "from": 39990.5,
+      "offset": 17607,
+      "to": 36759.5
+     }
+    ]
+   },
+   "peakFootprintMB": 187.5064697265625
+  },
+  "hold-mid": {
+   "counts": {},
+   "cpuMs": 210.63999999999942,
+   "footprintMB": 151.55316162109375,
+   "frames": {
+    "frames": 376,
+    "hitchMs": 517.0523333326855,
+    "hitchMsPerSecond": 76.20149295341112,
+    "hitches": 7,
+    "longestFrameMs": 159.1815833335204,
+    "over80": 4,
+    "seconds": 6.785330749999957
+   },
+   "looks": 6,
+   "page": {
+    "biggestHeightStep": 0,
+    "biggestOffsetStep": 0,
+    "drags": [],
+    "firstHeight": 34486.5,
+    "firstOffset": 17243.5,
+    "furthest": 0,
+    "heightChanges": 0,
+    "lastHeight": 34486.5,
+    "lastOffset": 17243.5,
+    "maxHeight": 34486.5,
+    "minHeight": 34486.5,
+    "offsetSteps": 0,
+    "swings": []
+   },
+   "peakFootprintMB": 164.38128662109375,
+   "pixelsChangedBetweenLooksPct": 0,
+   "pixelsChangedFromFirstPct": 0
+  },
+  "images": {
+   "counts": {},
+   "cpuMs": 778.9570000000003,
+   "footprintMB": 97.88104248046875,
+   "frames": {
+    "frames": 187,
+    "hitchMs": 50.0000000001819,
+    "hitchMsPerSecond": 15.803811900559944,
+    "hitches": 1,
+    "longestFrameMs": 66.66666666660603,
+    "over80": 0,
+    "seconds": 3.1637936666666064
+   },
+   "peakFootprintMB": 110.8028564453125
+  },
+  "launch": {
+   "counts": {
+    "body.EnvironmentUnderList": 6,
+    "body.MainTabs": 3,
+    "body.RootView": 3,
+    "body.SheetPage": 6,
+    "body.ThreadListRow": 74,
+    "body.ThreadListSections": 6,
+    "body.ThreadsView": 6,
+    "bytes.shell-full": 29473,
+    "fixture.detailBytes": 338212,
+    "fixture.imageBytes": 208993,
+    "frames.shell-full": 1,
+    "page.shown": 1,
+    "time.apply.shell-full.max": 323916,
+    "time.apply.shell-full.n": 1,
+    "time.apply.shell-full.ns": 323916,
+    "time.decode.shell-full.max": 19780334,
+    "time.decode.shell-full.n": 1,
+    "time.decode.shell-full.ns": 19780334,
+    "time.list.focusThreads.max": 7515791,
+    "time.list.focusThreads.n": 2,
+    "time.list.focusThreads.ns": 12574458
+   },
+   "cpuMs": 7078.877,
+   "footprintMB": 46.3494873046875,
+   "frames": {
+    "frames": 32,
+    "hitchMs": 4445.5579999985275,
+    "hitchMsPerSecond": 891.6558657077743,
+    "hitches": 3,
+    "longestFrameMs": 4123.672749999969,
+    "over80": 3,
+    "seconds": 4.985732916667075
+   },
+   "peakFootprintMB": 62.0836181640625
+  },
+  "open": {
+   "counts": {
+    "body.AgentPictureTile": 264,
+    "body.AgentPictures": 68,
+    "body.Conversation": 7,
+    "body.EnvironmentUnderList": 8,
+    "body.EnvironmentUnderThread": 7,
+    "body.FoldedRun": 68,
+    "body.FollowupStack": 7,
+    "body.MainTabs": 3,
+    "body.MarkdownBlockView": 66,
+    "body.MarkdownText": 62,
+    "body.MessageView": 66,
+    "body.ReplyDock": 7,
+    "body.RootView": 3,
+    "body.SheetPage": 8,
+    "body.ThreadHero": 7,
+    "body.ThreadListRow": 200,
+    "body.ThreadListSections": 8,
+    "body.ThreadView": 6,
+    "body.ThreadsView": 8,
+    "body.WorkingLine": 2,
+    "bytes.detail": 338212,
+    "frames.detail": 1,
+    "markdown.blocks": 30,
+    "markdown.bytes": 20906,
+    "page.holds": 1,
+    "page.shown": 1,
+    "pictures.decoded": 10,
+    "textview.make": 29,
+    "textview.set": 58,
+    "textview.update": 58,
+    "time.apply.detail.max": 174875,
+    "time.apply.detail.n": 1,
+    "time.apply.detail.ns": 174875,
+    "time.decode.detail.max": 628680625,
+    "time.decode.detail.n": 1,
+    "time.decode.detail.ns": 628680625,
+    "time.list.focusThreads.n": 1,
+    "time.list.focusThreads.ns": 2205042,
+    "time.textview.measure.max": 2018792,
+    "time.textview.measure.n": 27,
+    "time.textview.measure.ns": 24800293,
+    "time.timeline.rows.max": 155995792,
+    "time.timeline.rows.n": 1,
+    "time.timeline.rows.ns": 155995792
+   },
+   "cpuMs": 4692.727,
+   "footprintMB": 92.52166748046875,
+   "frames": {
+    "frames": 58,
+    "hitchMs": 4161.612750001041,
+    "hitchMsPerSecond": 814.1486754842847,
+    "hitches": 8,
+    "longestFrameMs": 2068.117208333206,
+    "over80": 4,
+    "seconds": 5.111612749999949
+   },
+   "peakFootprintMB": 110.8028564453125
+  },
+  "settle-finger": {
+   "counts": {
+    "body.AgentPictureTile": 26,
+    "pictures.decoded": 8
+   },
+   "cpuMs": 791.0409999999974,
+   "footprintMB": 170.7877197265625,
+   "frames": {
+    "frames": 187,
+    "hitchMs": 35.44337500079564,
+    "hitchMsPerSecond": 11.304103044371775,
+    "hitches": 2,
+    "longestFrameMs": 40.17500000009022,
+    "over80": 0,
+    "seconds": 3.13544337500025
+   },
+   "peakFootprintMB": 186.0220947265625
+  },
+  "settle-live": {
+   "counts": {
+    "body.AgentPictureTile": 62,
+    "pictures.decoded": 12
+   },
+   "cpuMs": 773.9400000000023,
+   "footprintMB": 170.0689697265625,
+   "frames": {
+    "frames": 175,
+    "hitchMs": 214.8955416678291,
+    "hitchMsPerSecond": 68.56649538594453,
+    "hitches": 2,
+    "longestFrameMs": 172.40295833380515,
+    "over80": 1,
+    "seconds": 3.1341187916668787
+   },
+   "peakFootprintMB": 186.0220947265625
+  },
+  "settle-mid": {
+   "counts": {
+    "body.AgentPictureTile": 36,
+    "pictures.decoded": 22
+   },
+   "cpuMs": 931.6739999999991,
+   "footprintMB": 151.08441162109375,
+   "frames": {
+    "frames": 177,
+    "hitchMs": 135.7175000002826,
+    "hitchMsPerSecond": 44.26925495890125,
+    "hitches": 2,
+    "longestFrameMs": 132.65204166691547,
+    "over80": 1,
+    "seconds": 3.065728124999623
+   },
+   "peakFootprintMB": 164.38128662109375
+  },
+  "thread-scroll": {
+   "counts": {
+    "body.AgentPictureTile": 399,
+    "pictures.decoded": 81
+   },
+   "cpuMs": 18261.959,
+   "footprintMB": 149.00628662109375,
+   "frames": {
+    "frames": 1040,
+    "hitchMs": 5874.413041671687,
+    "hitchMsPerSecond": 252.63971445741748,
+    "hitches": 166,
+    "longestFrameMs": 1325.1339583339359,
+    "over80": 8,
+    "seconds": 23.252136166666787
+   },
+   "page": {
+    "biggestHeightStep": 9,
+    "biggestOffsetStep": 3975.5,
+    "drags": [],
+    "firstHeight": 34486.5,
+    "firstOffset": 33913.5,
+    "furthest": 33987.5,
+    "heightChanges": 10,
+    "lastHeight": 34486.5,
+    "lastOffset": 33913.5,
+    "maxHeight": 34528.5,
+    "minHeight": 34486.5,
+    "offsetSteps": 1007,
+    "swings": []
+   },
+   "peakFootprintMB": 155.81878662109375,
+   "scrolledPoints": 33987.5
+  },
+  "working-end": {
+   "counts": {
+    "body.AgentPictureTile": 7733,
+    "body.AgentPictures": 4080,
+    "body.Conversation": 120,
+    "body.FoldedRun": 30,
+    "body.FollowupStack": 30,
+    "body.MainTabs": 30,
+    "body.ReplyDock": 30,
+    "body.RootView": 30,
+    "body.SheetPage": 60,
+    "body.ThreadHero": 30,
+    "body.ThreadView": 90,
+    "body.ThreadsView": 60,
+    "bytes.delta": 12122,
+    "bytes.shell": 62310,
+    "frames.delta": 30,
+    "frames.shell": 30,
+    "pictures.decoded": 7,
+    "time.apply.delta.n": 30,
+    "time.apply.delta.ns": 14469000,
+    "time.apply.shell.n": 30,
+    "time.apply.shell.ns": 26916583,
+    "time.decode.delta.n": 30,
+    "time.decode.delta.ns": 7467874,
+    "time.decode.shell.n": 30,
+    "time.decode.shell.ns": 1685456667,
+    "time.timeline.rows.n": 30,
+    "time.timeline.rows.ns": 94270419
+   },
+   "cpuMs": 10215.206999999995,
+   "footprintMB": 185.772216796875,
+   "frames": {
+    "frames": 548,
+    "hitchMs": 8902.434166665444,
+    "hitchMsPerSecond": 493.5383556933547,
+    "hitches": 67,
+    "longestFrameMs": 313.3227916669057,
+    "over80": 54,
+    "seconds": 18.03797833333283
+   },
+   "page": {
+    "biggestHeightStep": 120,
+    "biggestOffsetStep": 120,
+    "drags": [],
+    "firstHeight": 36879.5,
+    "firstOffset": 36322.5,
+    "furthest": 463,
+    "heightChanges": 6,
+    "lastHeight": 37358.5,
+    "lastOffset": 36785.5,
+    "maxHeight": 37358.5,
+    "minHeight": 36879.5,
+    "offsetSteps": 5,
+    "swings": []
+   },
+   "peakFootprintMB": 191.88153076171875,
+   "updates": 30,
+   "wallMs": 17246.746499999972
+  },
+  "working-live": {
+   "counts": {
+    "body.AgentPictureTile": 3575,
+    "body.AgentPictures": 2006,
+    "body.Conversation": 59,
+    "body.EnvironmentUnderList": 44,
+    "body.EnvironmentUnderThread": 59,
+    "body.FoldedRun": 298,
+    "body.FollowupStack": 59,
+    "body.MainTabs": 30,
+    "body.MessageView": 924,
+    "body.ReplyDock": 59,
+    "body.RootView": 30,
+    "body.SheetPage": 60,
+    "body.ThreadHero": 59,
+    "body.ThreadListRow": 1200,
+    "body.ThreadListSections": 60,
+    "body.ThreadView": 30,
+    "body.ThreadsView": 60,
+    "body.WorkingLine": 6,
+    "bytes.delta": 11994,
+    "bytes.shell": 62250,
+    "frames.delta": 30,
+    "frames.shell": 30,
+    "time.apply.delta.max": 5904542,
+    "time.apply.delta.n": 30,
+    "time.apply.delta.ns": 16616668,
+    "time.apply.shell.max": 5546750,
+    "time.apply.shell.n": 30,
+    "time.apply.shell.ns": 39266790,
+    "time.decode.delta.n": 30,
+    "time.decode.delta.ns": 5478457,
+    "time.decode.shell.n": 30,
+    "time.decode.shell.ns": 2175660167,
+    "time.timeline.rows.n": 30,
+    "time.timeline.rows.ns": 85587958
+   },
+   "cpuMs": 12488.358999999997,
+   "footprintMB": 171.1158447265625,
+   "frames": {
+    "frames": 404,
+    "hitchMs": 11625.951374997385,
+    "hitchMsPerSecond": 631.9731765962991,
+    "hitches": 83,
+    "longestFrameMs": 348.6987500000396,
+    "over80": 61,
+    "seconds": 18.39627345833378
+   },
+   "looks": 16,
+   "page": {
+    "biggestHeightStep": 120,
+    "biggestOffsetStep": 0,
+    "drags": [],
+    "firstHeight": 34966.5,
+    "firstOffset": 33208.5,
+    "furthest": 0,
+    "heightChanges": 11,
+    "lastHeight": 35445.5,
+    "lastOffset": 33208.5,
+    "maxHeight": 35445.5,
+    "minHeight": 34964.5,
+    "offsetSteps": 0,
+    "swings": []
+   },
+   "peakFootprintMB": 186.0220947265625,
+   "pixelsChangedBetweenLooksPct": 8.186728395061728,
+   "pixelsChangedFromFirstPct": 8.186728395061728
+  },
+  "working-mid": {
+   "counts": {
+    "body.AgentPictureTile": 4347,
+    "body.AgentPictures": 1904,
+    "body.Conversation": 56,
+    "body.EnvironmentUnderList": 52,
+    "body.EnvironmentUnderThread": 56,
+    "body.FoldedRun": 1904,
+    "body.FollowupStack": 56,
+    "body.MainTabs": 30,
+    "body.MarkdownBlockView": 1518,
+    "body.MarkdownText": 1044,
+    "body.MessageView": 1848,
+    "body.ReplyDock": 56,
+    "body.RootView": 30,
+    "body.SheetPage": 56,
+    "body.ThreadHero": 56,
+    "body.ThreadListRow": 1400,
+    "body.ThreadListSections": 56,
+    "body.ThreadView": 30,
+    "body.ThreadsView": 56,
+    "body.WorkingLine": 42,
+    "bytes.delta": 11804,
+    "bytes.shell": 62233,
+    "frames.delta": 30,
+    "frames.shell": 30,
+    "time.apply.delta.max": 509541,
+    "time.apply.delta.n": 30,
+    "time.apply.delta.ns": 8762039,
+    "time.apply.shell.max": 3054416,
+    "time.apply.shell.n": 30,
+    "time.apply.shell.ns": 30918332,
+    "time.decode.delta.max": 7056000,
+    "time.decode.delta.n": 30,
+    "time.decode.delta.ns": 40018417,
+    "time.decode.shell.max": 370821500,
+    "time.decode.shell.n": 30,
+    "time.decode.shell.ns": 3866116334,
+    "time.timeline.rows.n": 30,
+    "time.timeline.rows.ns": 88440792
+   },
+   "cpuMs": 16721.190000000002,
+   "footprintMB": 169.9439697265625,
+   "frames": {
+    "frames": 192,
+    "hitchMs": 16986.291166667797,
+    "hitchMsPerSecond": 840.9987486896949,
+    "hitches": 63,
+    "longestFrameMs": 725.5641250003464,
+    "over80": 54,
+    "seconds": 20.197760333333463
+   },
+   "looks": 17,
+   "page": {
+    "biggestHeightStep": 120,
+    "biggestOffsetStep": 0,
+    "drags": [],
+    "firstHeight": 34486.5,
+    "firstOffset": 17243.5,
+    "furthest": 0,
+    "heightChanges": 11,
+    "lastHeight": 34965.5,
+    "lastOffset": 17243.5,
+    "maxHeight": 34965.5,
+    "minHeight": 34486.5,
+    "offsetSteps": 0,
+    "swings": []
+   },
+   "peakFootprintMB": 186.0220947265625,
+   "pixelsChangedBetweenLooksPct": 5.864197530864197,
+   "pixelsChangedFromFirstPct": 5.864197530864197
+  }
+ }
+}

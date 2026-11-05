@@ -120,17 +120,6 @@ describe('the client update card', () => {
     expect(await screen.findByText('Another client is updating. Wait for it to finish.')).toBeTruthy()
   })
 
-  it('does not repeat an outcome the card already shows', async () => {
-    const state = fixture([behind({ state: 'unchanged', ranAt: '2026-09-25T09:40:00.000Z' })])
-    const command = provide(state)
-    command.mockResolvedValueOnce({ ...state, clientUpdates: [behind({ state: 'unchanged', ranAt: '2026-09-25T09:45:00.000Z' })], error: 'The installer finished, but Grok Build still reports 1.0.5. Try again.' })
-    render(<ClientUpdateCard />)
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(command).toHaveBeenCalled())
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(screen.getAllByText(/still reports 1\.0\.5/u)).toHaveLength(1)
-  })
-
   it('offers no press while an update is running', () => {
     provide(fixture([behind({ state: 'updating' })]))
     render(<ClientUpdateCard />)

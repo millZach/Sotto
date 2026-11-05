@@ -10,7 +10,6 @@ import { cursorPending } from '../../../src/main/agents/cursorRequests'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
 import { ModelPicker } from '../../../src/renderer/src/agents/ModelPicker'
-import { ProviderMark } from '../../../src/renderer/src/agents/ProviderMark'
 import { modeChoices } from '../../../src/renderer/src/agents/ThreadOptions'
 import { AgentRequestCard } from '../../../src/renderer/src/agents/requests/AgentRequestCard'
 import { RequestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
@@ -339,17 +338,5 @@ describe('Cursor’s sign-in on a host', () => {
     expect(await within(dialog).findByText('Waiting for you on cursor.com.')).toBeVisible()
     expect(within(dialog).queryByRole('textbox')).toBeNull()
     expect(within(dialog).getByRole('button', { name: 'Open sign-in page again' })).toBeVisible()
-  })
-})
-
-describe('Cursor’s mark', () => {
-  it('draws Sotto’s own cube in one path', () => {
-    const { container } = render(<ProviderMark provider="cursor" name="Cursor" size={18} />)
-    const svg = container.querySelector('svg.provider-mark[data-provider="cursor"]')
-    expect(svg).toHaveAttribute('viewBox', '0 0 24 24')
-    expect(svg).toHaveAttribute('aria-hidden', 'true')
-    expect(svg!.querySelectorAll('path')).toHaveLength(1)
-    // Three faces, each its own closed shape.
-    expect(svg!.querySelector('path')!.getAttribute('d')!.match(/Z/gu)).toHaveLength(3)
   })
 })

@@ -2,6 +2,10 @@
 
 ## Status
 
+Reversed November 4, 2026, by Zach, on a question card ("Remove it completely"). The list is gone from Sotto: its store, `add_to_do` and the `sotto_to_do` tool server, the corner scroll and its badge, the `to-do-list` Owl entry, Watcher's to-do lines and its settle check, and the host protocol's `to-dos` and `to-do-request`. Watcher's and the sidebar's Needs you are as they were before it. The decision below is kept as a record of what was tried.
+
+A computer that ran it keeps its `to-dos.json`: nothing reads it now, and nothing deletes it. The iPhone part never merged; it stands on the branch `feat/to-do-iphone` (#2162), and the prototype stays at the tag `prototype/to-do-scroll`. The desktop's verification note and captures went with the feature, and stay in the history at `f7ac01978`.
+
 Accepted November 3, 2026, by Zach's picks on question cards, from the prototype kept at the tag `prototype/to-do-scroll` (variant A).
 
 It is an Owl feature (`to-do-list`, ADR-0072). Stable keeps today's Needs you lines in Watcher's replies until Zach sends it.

@@ -1,3 +1,4 @@
+import { KeptThumbnails, MEDIA_TILE_DEFAULT_SCALE } from '../agents/mediaThumbnail'
 import { t } from '@lingui/core/macro'
 import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { StopLeft } from '../agents/delegationRelayHost'
@@ -12,7 +13,7 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
-import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { mediaTileScale, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import { modelInForce } from '../../shared/modelLineup'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
@@ -41,7 +42,6 @@ import type { HostThreadFolders } from './hostedTerminals'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
-import { toDoForWindow, type MachineToDos, type ToDoRequest } from '../../shared/toDos'
 import { RemoteDelegationReads } from './remoteDelegations'
 import { HostConnectionError, HostRequestUnanswered, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
@@ -51,7 +51,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'toDos' | 'subscribeToDos' | 'toDoRequest' | 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -343,7 +343,6 @@ export class DesktopHostRouter {
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly checkListeners = new Set<() => void>()
-  private readonly toDoListeners = new Set<() => void>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   /** What each remote host's suggestions were told to the window as, by window key, so a connection that goes lets them go. */
   private readonly toldNextPrompts = new Map<string, Map<string, string>>()
@@ -417,7 +416,7 @@ export class DesktopHostRouter {
      * This desktop's thumbnail maker for pictures in threads (ADR-0170): a data URL in, the picture at tile size out, or
      * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
      */
-    mediaThumbnail?: (dataUrl: string) => string | null
+    mediaThumbnail?: (dataUrl: string, scale: number) => string | null
     /**
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
@@ -621,9 +620,6 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeDelegationViews) off.push(connection.service.subscribeDelegationViews(change => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.delegations.heard(connection.hostId, change)
     }))
-    if (connection.kind === 'remote' && connection.service.subscribeToDos) off.push(connection.service.subscribeToDos(() => {
-      if (this.hosts.get(connection.hostId)?.connection === connection) this.toDosChanged()
-    }))
     if (connection.kind === 'remote' && connection.service.subscribeCheckQueue) off.push(connection.service.subscribeCheckQueue(() => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.checksChanged()
     }))
@@ -650,7 +646,6 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
     // The host pushed its check queue after the hello, before this connection was taken, so the queue it holds is told now.
     if (connection.kind === 'remote' && connection.service.checkQueue?.() !== undefined) this.checksChanged()
-    if (connection.kind === 'remote' && connection.service.toDos?.() !== undefined) this.toDosChanged()
     // So are the next prompts it pushed (ADR-0173).
     if (connection.kind === 'remote') this.retellNextPrompts(connection)
   }
@@ -686,7 +681,7 @@ export class DesktopHostRouter {
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
     // In place of the old connection's queue, the one this connection's hello brought, or none.
-    if (connection.kind === 'remote') { this.checksChanged(); this.toDosChanged() }
+    if (connection.kind === 'remote') this.checksChanged()
     // And in place of its next prompts, the ones this connection holds: what only the old one held is let go.
     if (connection.kind === 'remote') this.retellNextPrompts(connection)
   }
@@ -712,7 +707,6 @@ export class DesktopHostRouter {
     this.emit()
     this.delegations.removed(hostId)
     this.checksChanged()
-    this.toDosChanged()
     this.letGoNextPrompts(hostId)
   }
   /**
@@ -731,30 +725,6 @@ export class DesktopHostRouter {
         ...check.by !== undefined ? { by: hostEntityKey(hostId, check.by) } : {} })) })
     }
     return machines
-  }
-  /** Each connected host's to-do list (ADR-0188), by the window's keys for its threads. */
-  hostToDos(): MachineToDos[] {
-    const machines: MachineToDos[] = []
-    for (const [hostId, { connection }] of this.hosts) {
-      if (connection.kind !== 'remote') continue
-      const items = connection.service.toDos?.()
-      if (items === undefined) continue
-      machines.push({ hostId, thisComputer: false, items: items.map(item => toDoForWindow(hostId, item)) })
-    }
-    return machines
-  }
-  subscribeToDos(listener: () => void): () => void {
-    this.toDoListeners.add(listener)
-    return () => { this.toDoListeners.delete(listener) }
-  }
-  private toDosChanged(): void {
-    for (const listener of [...this.toDoListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
-  }
-  /** A press on a connected host's list. A host that has gone refuses it, and its item stays. */
-  async toDoRequest(hostId: string, request: ToDoRequest): Promise<void> {
-    const service = this.hosts.get(hostId)?.connection.service
-    if (!service?.toDoRequest) throw new Error(t`That computer is not connected. Your to-do is still on its list.`)
-    await service.toDoRequest(request)
   }
   /** Hears a connected host's check queue change, or a host with one leave. Returns the way to stop. */
   subscribeCheckQueues(listener: () => void): () => void {
@@ -1294,28 +1264,29 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     return connection.preview({ ...request, threadId: id! })
   }
-  /** The thumbnails this window asked for most recently, so a tile scrolled back into view is not read again (ADR-0170). */
-  private readonly mediaTiles = new Map<string, string>()
+  /** The thumbnails made for this window, so a tile scrolled back into view is neither read nor decoded again (ADR-0170). */
+  private readonly mediaTiles = new KeptThumbnails()
   /**
    * One picture a thread's record names (ADR-0170), from the host that runs the thread: whole for the viewer, or at tile
    * size for a tile. The thumbnail is made here, so the window never decodes a whole picture to draw a tile, and a headless
-   * host needs no image library. The newest 120 are kept; a picture is only ever read when a tile or the viewer asks.
+   * host needs no image library. Thumbnails are kept up to `MEDIA_TILE_KEEP_BYTES`; a picture is only ever read when a tile or the viewer asks.
    */
   async threadMedia(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult> {
     const thumbnail = this.options.mediaThumbnail
     if (!thumbnail) return null
-    const key = JSON.stringify([request.threadId, request.activityId, request.mediaId])
+    // Each scale is its own thumbnail, so a window moved to another screen is not handed one made for the last.
+    const scale = request.scale === undefined ? MEDIA_TILE_DEFAULT_SCALE : mediaTileScale(request.scale)
+    const key = JSON.stringify([request.threadId, request.activityId, request.mediaId, scale])
     if (request.size === 'tile') {
       const kept = this.mediaTiles.get(key)
-      if (kept !== undefined) { this.mediaTiles.delete(key); this.mediaTiles.set(key, kept); return { dataUrl: kept } }
+      if (kept !== undefined) return { dataUrl: kept }
     }
     const { connection, id } = this.target(request.threadId)
     const whole = await connection.media?.({ threadId: id!, activityId: request.activityId, mediaId: request.mediaId }) ?? null
     if (!whole || request.size === 'full') return whole
-    const tile = thumbnail(whole.dataUrl)
+    const tile = thumbnail(whole.dataUrl, scale)
     if (tile === null) return null
     this.mediaTiles.set(key, tile)
-    if (this.mediaTiles.size > 120) this.mediaTiles.delete(this.mediaTiles.keys().next().value!)
     return { dataUrl: tile }
   }
   /**

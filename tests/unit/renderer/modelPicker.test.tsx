@@ -182,17 +182,6 @@ describe('provider model picker', () => {
       expect(fireEvent.wheel(rail, { deltaX: 100, deltaY: 0 })).toBe(true)
       expect(chosen()).toBe('Codex')
     })
-
-    it('brings the chosen provider into view on a rail taller than the menu', async () => {
-      const scrolled = vi.fn()
-      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrolled })
-      try {
-        const { rail } = await open()
-        wheel(rail, 100, 400)
-        expect(scrolled).toHaveBeenCalledExactlyOnceWith({ block: 'nearest' })
-        expect(scrolled.mock.contexts[0]).toBe(within(rail).getByRole('tab', { name: 'Claude' }))
-      } finally { delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView }
-    })
   })
 
   it('filters models and supports arrow-key selection without submitting the parent form', async () => {

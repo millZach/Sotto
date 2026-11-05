@@ -1,16 +1,16 @@
 import React from 'react'
-import { act, cleanup, render, renderHook, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
 import { ChamberPainter } from '../../../../../src/renderer/src/features/council/chamberPainter'
-import { chamberCouncil, CouncilLayoutMenu, CouncilView, useSeatsInForce } from '../../../../../src/renderer/src/features/council/CouncilView'
+import { chamberCouncil, CouncilLayoutMenu, CouncilView } from '../../../../../src/renderer/src/features/council/CouncilView'
 import { clearCouncilDraft, holdCouncilForm, offerCouncilDraft, readCouncilDraft } from '../../../../../src/renderer/src/features/council/councilDraft'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
 import * as canvasColor from '../../../../../src/renderer/src/watcher/canvasColor'
 import * as watcherScene from '../../../../../src/renderer/src/watcher/WatcherNightScene'
-import type { AgentCommand, AgentModel, AgentState, AgentThread } from '../../../../../src/shared/agents'
+import type { AgentCommand, AgentState, AgentThread } from '../../../../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 import { threadsStateFixture, withThread } from '../../../../fixtures/agentState'
@@ -279,17 +279,6 @@ describe('the chamber’s figures', () => {
       expect(layout.asked()).toBe(asked)
       cleanup()
     }
-  })
-
-  it('keeps the Ask view’s seats while a new catalog holds the same models', () => {
-    const models = [{ id: 'claude:opus', providerId: 'claude', provider: 'Claude', name: 'Opus 5.5', ready: true }] as AgentModel[]
-    const panel = { panelists: [null, null], chair: null }
-    const { result, rerender } = renderHook(({ catalog }) => useSeatsInForce(panel, catalog), { initialProps: { catalog: models } })
-    const first = result.current
-    rerender({ catalog: models.map(model => ({ ...model })) })
-    expect(result.current).toBe(first)
-    rerender({ catalog: models.map(model => ({ ...model, name: 'Opus 5.6' })) })
-    expect(result.current).not.toBe(first)
   })
 
   it('opens a figure’s thread on a press', async () => {

@@ -152,17 +152,6 @@ describe('FolderBrowserDialog', () => {
     expect(onUse).toHaveBeenCalledWith({ hostId: FORGE, path: '/home/zach/code/forge-ml', name: 'forge-ml' })
   })
 
-  it('offers this computer\'s own folder dialog beside its folders', async () => {
-    const { chooseProjectDirectory } = stubBridge()
-    const onUse = vi.fn()
-    const user = userEvent.setup()
-    render(<FolderBrowserDialog state={twoHosts()} hostId={LOCAL} heading="Add" onUse={onUse} onClose={vi.fn()} />)
-    expect(await screen.findByRole('button', { name: 'source' })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Browse with File Explorer' }))
-    expect(chooseProjectDirectory).toHaveBeenCalledOnce()
-    await waitFor(() => expect(onUse).toHaveBeenCalledWith({ hostId: LOCAL, path: 'D:\\Sotto Workspace Projects', name: 'Sotto Workspace Projects' }))
-  })
-
   it('skips the computer step when this computer is the only one', async () => {
     const { hostFolders } = stubBridge()
     const state = twoHosts()

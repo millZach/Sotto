@@ -16,6 +16,8 @@ October 9 exception ([ADR-0068](adr/0068-remove-voice-control-and-thread-managem
 
 Nothing v1 carries is renamed, removed or given a new meaning. A change that needs one is version 2, with its own support window. `v` stays `1` on every message until then.
 
+November 4 exception ([ADR-0025](adr/0025-headless-host-and-client-identity.md), [ADR-0188](adr/0188-a-to-do-list-holds-what-only-the-users-hands-can-do.md)): `to-dos` and `to-do-request` are removed outright rather than kept as dead schema. See "A list that was retired".
+
 October 9, 2026 contract ([ADR-0073](adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md)): a thread may carry optional `kind: 'project' | 'watcher' | 'watcher-history'`. Absence means `project`; older clients may ignore it. It is Sotto-owned organization, not a capability or grant. Zach's October 11 choice keeps Watcher available to later phone projections; ticket 8 supplies its phone surface. These host features add no phone filtering or aggregate desktop roster to the phone.
 
 ## Watcher on a paired host
@@ -272,7 +274,6 @@ A shell push whose `state` is byte for byte the state of the last shell push wri
 | `error` | `threadId?`, `error` | In place of a push that would not fit in one frame (`too_large`). `threadId` names the thread whose detail or delta it replaced. |
 | `host-update-step` | `step` | Which step a `host-update` this client asked for is on: `download`, `check`, `install` or `restart`. Only to the client that asked, and only once its hello accepted `host-update`. |
 | `delegations-changed` | `threadIds` | The host's threads whose delegations changed, batched per pass (#1310). Only to a desktop whose hello accepted `delegation-views`, and never naming a thread that client is not sent. |
-| `to-dos` | `items` | The host's own to-do list (ADR-0188). Only to a client whose hello accepted `to-dos`: once after its hello's answer, and again whenever the list changes. See "The to-do list". |
 | `check-queue` | `checks` | The host's own check queue, the running check first (#1312). Only to a desktop whose hello accepted `check-queue-views`: once after its hello's answer, and again whenever the queue changes. See "The check queue in the desktop's window" below. |
 
 A message whose ID starts `visual:` is a visual an agent drew in its thread (ADR-0056). Its `text` is the visual's title, intro and numbered steps, then a line saying the visual is in Sotto on the computer. The desktop keeps the drawing itself in a `visual` field that no socket client is sent, in a `detail`, a `detail-delta` or a read, so a client shows the text as it would any reply.
@@ -579,13 +580,9 @@ Contract (#1312, Owl `cross-machine-work`, [ADR-0082, October 27 amendment](adr/
 
 Watcher's stop of a waiting check (#1637, Owl `cross-machine-work`, [ADR-0082, amendment on Watcher's stop](adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md)): a host that lists `watcher-check-queue` also lists `watcher-check-stop`. It adds no request or field: the desktop sends Watcher's `stop_thread` in `watcher-control` as it sends any stop, its target the waiting start's thread, which the host has not made yet, and with no `standingWatchId`, since the host has no watch for a thread it has not made. When that target is a check still waiting in the host's queue for the same desktop's Watcher, the host fails the waiting start as stopped (`REQUEST_NOT_ACTIVE`) and accepts the stop in one change of its record, so it starts nothing and an exact `read_operation` of either finds both; the stop's answer is the usual `stop_thread` result, `stopRequested: true` with an accepted receipt. A check whose turn has come is stopped as any thread is: while its thread is made but its first prompt has not gone, the stop cancels that prompt and the start reads stopped. A desktop uses it only where its own Owl answer turns on Work across machines and the host lists it; otherwise a waiting check's words say only the user's Stop takes it out, and `stop_thread` on its target is refused as `UNKNOWN_TARGET` before anything is sent. A host whose answer is off keeps no queue, and refuses such a stop the same way. `v` stays 1.
 
-### The to-do list (November 3, 2026)
+### A list that was retired (November 4, 2026)
 
-Contract ([ADR-0188](adr/0188-a-to-do-list-holds-what-only-the-users-hands-can-do.md), Owl `to-do-list`): a host lists `to-dos` only where its Owl answer turns the feature on, to desktops and phones alike. A client asks for it by name in hello's `accepts`, and the host then pushes `to-dos` with the whole list, after the hello's answer and whenever it changes. There is no read: a client's last push is the list.
-
-`items` is the list, the oldest first. Each is `{ id, title, why?, link?, steps?, threadId?, by, waits, seen, addedAt }`: `link` is `{ label, url }`, an `http` or `https` address; `by` is `thread`, `watcher`, `user` or `prototype`; `threadId` is the host's own, left out where that client is not sent the thread; `waits` says the thread is told when it is checked off; `seen` says any client has opened the list since it was added.
-
-`to-do-request` is a press on it, with `request` one of `{ kind: 'add', title }`, `{ kind: 'seen' }` or `{ kind: 'check', id, didNotWork? }`, answered `{ ok: true }`. A check of an item already gone succeeds and tells nobody, so a retry is safe. A client that has not accepted `to-dos` is refused with `invalid_request`, and a press the host could not apply with `unavailable`; the item stays. A client holds a check-off for its five seconds of Undo before it sends it, so the host never hears of one that was undone.
+`to-dos` and its `to-do-request` were Owl-only for a day and are retired ([ADR-0188](adr/0188-a-to-do-list-holds-what-only-the-users-hands-can-do.md), reversed). No host offers `to-dos` now. A client whose hello still accepts it connects as usual and is sent nothing for it, and a `to-do-request` is refused with `invalid_request`, which leaves the connection open. A host from before that listed it pushes only to a client that accepted it, and this desktop no longer does.
 
 ### The check queue in the desktop's window (October 27, 2026)
 

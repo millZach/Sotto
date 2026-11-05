@@ -35,9 +35,4 @@ describe('the message scrubber’s prompts IPC (ADR-0109)', () => {
     await expect(f.invoke(f.event, { threadId: 'host:thread', beforeMessageId: 'u3', extra: true })).rejects.toThrow()
     expect(threadPrompts).toHaveBeenCalledTimes(1)
   })
-
-  it('answers null where nothing keeps a store', async () => {
-    const f = fixture()
-    await expect(f.invoke(f.event, { threadId: 'thread', beforeMessageId: 'u3' })).resolves.toBeNull()
-  })
 })

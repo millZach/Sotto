@@ -193,10 +193,7 @@ describe('remote command allow-list', () => {
       'product-events-answer',
       // The settled threads a phone's list leaves out, a page at a time (ADR-0028, November 1 amendment): a read of the
       // same thread records `shell` carries, with the same trust.
-      'settled-threads',
-      // A press on this host's to-do list, on a listener that offers to-dos (ADR-0188): pairing admits it, as it admits
-      // watching. A check-off tells the thread that waits on it and approves nothing, and none of it grants anything.
-      'to-do-request']
+      'settled-threads']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

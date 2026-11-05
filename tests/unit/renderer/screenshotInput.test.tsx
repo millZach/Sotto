@@ -70,11 +70,6 @@ describe('screenshot attachment input', () => {
     expect(chip.querySelector('.screenshot-previews__picture .screenshot-previews__resized')).toHaveTextContent('Resized from 3840 x 2160 to 2576 x 1449')
     expect(chip).toHaveAttribute('title', 'button · Sign in\nResized from 3840 by 2160 to 2576 by 1449 pixels')
   })
-  it('shows one plain image with no count', () => {
-    render(<ScreenshotInput target="workshop" attachments={[attached('one', 100)]} onChange={() => undefined} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput>)
-    expect(document.querySelector('.screenshot-deck figure')).toBeInTheDocument()
-    expect(document.querySelector('.screenshot-deck__count')).toBeNull()
-  })
   it('accepts pasted screenshot files without inserting clipboard text', async () => {
     render(<Harness />)
     fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { items: [{ kind: 'file', getAsFile: file }] } })

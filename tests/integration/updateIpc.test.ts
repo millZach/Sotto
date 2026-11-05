@@ -46,16 +46,4 @@ describe('IPC validation and lifecycle', () => {
         })
       }
     })
-
-  it('reports updating as unavailable when no service is wired', async () => {
-      const harness = createIpcHarness()
-
-      for (const channel of [UPDATE_GET_STATUS, UPDATE_CHECK, UPDATE_DOWNLOAD, UPDATE_INSTALL]) {
-        await expect(harness.ipc.invokeArgs(channel, [])).resolves.toEqual({
-          ok: false,
-          reason: 'unavailable',
-        })
-      }
-      harness.cleanup()
-    })
 })

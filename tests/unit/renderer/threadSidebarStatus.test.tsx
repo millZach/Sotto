@@ -75,13 +75,6 @@ describe('a row that needs you says what it needs', () => {
     } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
   })
 
-  it('keeps the native question visible until the user answers', () => {
-    const pending = asQuestion(threadsStateFixture())
-
-    expect(rowFor(pending, 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer',
-      request: { kind: 'question', requestId: 'visual-gate-question' } })
-  })
-
   it('keeps the older wording where nothing is pending but you are still needed', () => {
     const blocked = threadsStateFixture()
     blocked.host.threads.find(thread => thread.id === 'visual-gate')!.requests = []

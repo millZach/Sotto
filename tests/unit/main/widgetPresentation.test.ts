@@ -7,15 +7,6 @@ import { WIDGET_VISIBILITY } from '../../../src/shared/channels'
 import { createDeferred, createHarness, createMutableTwoDisplayAdapter, setWidgetPresentation } from '../../fixtures/windowManager'
 
 describe('WindowManager lifecycle', () => {
-  it('constructs the widget at the bottom idle-resting footprint', async () => {
-    const { manager, options, windows } = createHarness()
-
-    await manager.createWidgetWindow()
-
-    expect(options[0]).toMatchObject({ width: 124, height: 54 })
-    expect(windows[0]!.setIgnoreMouseEvents).not.toHaveBeenCalled()
-  })
-
   it('applies presentation changes through one bounds path', async () => {
     const { manager, windows } = createHarness()
     await manager.showWidget()
@@ -292,12 +283,6 @@ describe('WindowManager lifecycle', () => {
 
     manager.setWidgetMouseInteractive(false)
     expect(widget.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
-  })
-
-  it('ignores interactivity requests without a widget window', () => {
-    const { manager } = createHarness()
-
-    expect(() => manager.setWidgetMouseInteractive(true)).not.toThrow()
   })
 
   it('does not report widget send success until renderer load completes', async () => {

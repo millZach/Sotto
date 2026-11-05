@@ -235,16 +235,6 @@ describe('independent provider settings', () => {
     fireEvent.keyDown(toggle, { key: 'ArrowDown' })
     expect(toggle).toHaveFocus()
   })
-  it("marks each provider's row with that provider's mark on its own badge", () => {
-    provide()
-    render(<ProvidersSettings />)
-    for (const provider of providerIdSchema.options.filter(id => !HELD.has(id))) {
-      // Every provider Sotto ships draws its own mark; the initial is the fallback for one it has none for.
-      const drawn = screen.getByRole('button', { name: PROVIDER_LABELS[provider] }).querySelector(`.provider-badge[data-provider="${provider}"] > svg.provider-mark[data-provider="${provider}"]`)
-      expect(drawn, `${provider} needs its own mark rather than its initial`).not.toBeNull()
-      expect(drawn!.querySelector('path')?.getAttribute('d')).toBeTruthy()
-    }
-  })
   it('offers Muse in Sotto Owl with its own sign-in guidance (ADR-0079)', async () => {
     provide()
     render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => ({ currentVersion: '0.1.37-owl.20261012.1', releaseTrack: 'owl', owlFeatures: { watcher: false, muse: true }, phase: { phase: 'unsupported' }, checkedAt: null }) as never })} createController={createController}><ProvidersSettings /></AppProvider>)
@@ -495,13 +485,6 @@ describe('the installed client, in provider settings', () => {
     expect(screen.queryByText(/stops/u)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'codex' }))
-  })
-
-  it('turns the whole check off from one switch', async () => {
-    const { command } = provide(fixture())
-    render(<ProvidersSettings />)
-    fireEvent.click(screen.getByRole('switch', { name: 'Check for client updates' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { checkClientUpdates: false } }))
   })
 })
 

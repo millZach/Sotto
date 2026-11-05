@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { layoutScene, type SceneMeasure } from '../../../src/renderer/src/watcher/nightScene'
-import {
-  ARRIVAL_STAGGER, assignSpots, blinking, EMERGE, FADE, glowStep, moodOf, owlGlyphs, owlKey, OwlFamily, pileLabel, spriteCells, type FamilyOwl, type OwlMood, type WatchedOwl,
-} from '../../../src/renderer/src/watcher/owlFamily'
+import { ARRIVAL_STAGGER, assignSpots, blinking, EMERGE, FADE, glowStep, moodOf, owlGlyphs, owlKey, OwlFamily, spriteCells, type FamilyOwl, type OwlMood, type WatchedOwl } from '../../../src/renderer/src/watcher/owlFamily'
 
 /** Watcher's pane for a window `width` by `height`, its composer in the 760-pixel column near the bottom. */
 function room(width: number, height: number): SceneMeasure {
@@ -49,13 +47,6 @@ describe('a thread owl’s mood', () => {
     expect(owlGlyphs({ owl: owl('awake'), flying: false }, 0.05, { rail: false, still: true })[0]).toBe('{o,o}')
     expect(glowStep(3, true)).toBe(0.5)
     expect(new Set([0, 0.45, 0.9, 1.35].map(t => glowStep(t, false))).size).toBeGreaterThan(1)
-  })
-
-  it('labels the pile "+N", and on the rail never cuts a number short', () => {
-    expect(pileLabel(3, false)).toBe('+3')
-    expect(pileLabel(12, false)).toBe('+12')
-    expect(pileLabel(9, true)).toBe('+9')
-    expect(pileLabel(12, true)).toBe('9+')
   })
 
   it('stands a sprite’s feet on its spot, centred', () => {

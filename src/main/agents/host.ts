@@ -60,7 +60,7 @@ export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
   | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true
     /** Main-only Watcher creation metadata, never accepted by the public command schema. */
-    readonly keptSpeed?: true } & AgentThreadOptions)
+    readonly keptSpeed?: true; readonly councilJudge?: true } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string
     /** The caller keeps history from the host's events, so the result's snapshot may leave every thread's messages out (`ThreadReadPurpose`, #368). */
     readonly historyFromEvents?: boolean } & AgentThreadOptions)
@@ -536,4 +536,6 @@ export interface AgentHost {
    * so its next send starts one without its role agents, or with them, and ready to carry an overseer note.
    */
   threadInstructionsChanged?(threadId: string, provider?: ProviderId): Promise<void>
+  /** Main-only: release a read-only Climb judge before removing its owned evidence copy. */
+  closeCouncilJudge?(threadId: string): Promise<void>
 }

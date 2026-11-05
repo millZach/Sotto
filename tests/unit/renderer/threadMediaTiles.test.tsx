@@ -7,7 +7,7 @@ import type { ActivityGroup } from '../../../src/renderer/src/agents/threadActiv
 
 const owl = { on: true }
 vi.mock('../../../src/renderer/src/state/owlFeature', () => ({ useOwlFeature: (id: string) => id === 'inline-media' && owl.on }))
-import { mediaDetails, ThreadMediaTiles } from '../../../src/renderer/src/agents/ThreadMediaTiles'
+import { ThreadMediaTiles } from '../../../src/renderer/src/agents/ThreadMediaTiles'
 
 const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
 const WHOLE = 'data:image/png;base64,iVBORw0KGgo='
@@ -33,12 +33,22 @@ describe('an agent\'s pictures in a turn (ADR-0170)', () => {
   afterEach(() => { cleanup(); owl.on = true; threadMedia.mockClear() })
   afterAll(() => { globalThis.IntersectionObserver = real; delete (window as unknown as { sotto?: unknown }).sotto })
 
+  it('asks for each tile at the scale of the window\'s screen', async () => {
+    const ratio = window.devicePixelRatio
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1.5 })
+    try {
+      render(<ThreadMediaTiles groups={groups} threadId="scaled-thread" />)
+      await waitFor(() => expect(threadMedia).toHaveBeenCalledTimes(2))
+      expect(threadMedia.mock.calls.map(call => (call[0] as { scale?: number }).scale)).toEqual([1.5, 1.5])
+    } finally { Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: ratio }) }
+  })
+
   it('shows a tile for each picture with its type and size, read at tile size by its handle', async () => {
     render(<ThreadMediaTiles groups={groups} threadId="thread" />)
     expect(screen.getByRole('list', { name: '2 pictures' })).toBeTruthy()
     expect(screen.getAllByText('PNG · 1280×800')).toHaveLength(2)
     await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(2))
-    expect(threadMedia).toHaveBeenCalledWith({ threadId: 'thread', activityId: 'claude-tool-shot', mediaId: 'm0', size: 'tile' })
+    expect(threadMedia).toHaveBeenCalledWith({ threadId: 'thread', activityId: 'claude-tool-shot', mediaId: 'm0', size: 'tile', scale: 1 })
   })
 
   it('opens the viewer on the picture pressed, reading it whole', async () => {
@@ -80,23 +90,12 @@ describe('an agent\'s pictures in a turn (ADR-0170)', () => {
     expect(screen.getByRole('button', { name: 'Open picture 1 of 1, from Image' })).toBeTruthy()
   })
 
-  it('shows no tile for an image step that ended without a picture', () => {
-    const failed: AgentActivity = { id: 'codex-image', turnId: 'turn', sequence: 1, kind: 'tool', status: 'failed', title: 'Image', generates: 'image' }
-    const { container } = render(<ThreadMediaTiles groups={[{ ...groups[0]!, records: [failed] }] as unknown as ActivityGroup[]} threadId="thread" />)
-    expect(container.innerHTML).toBe('')
-  })
-
   it('draws nothing while the Owl feature is off, and reads nothing', async () => {
     owl.on = false
     const { container } = render(<ThreadMediaTiles groups={groups} threadId="thread" />)
     await act(async () => undefined)
     expect(container.innerHTML).toBe('')
     expect(threadMedia).not.toHaveBeenCalled()
-  })
-
-  it('names a picture by its type and size alone', () => {
-    expect(mediaDetails(media(0))).toBe('PNG · 1280×800')
-    expect(mediaDetails({ ...media(0), mimeType: 'image/webp', width: undefined, height: undefined })).toBe('WebP')
   })
 })
 

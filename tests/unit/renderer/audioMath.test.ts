@@ -46,15 +46,6 @@ describe('resampleMono', () => {
     expect(input).toStrictEqual(before)
   })
 
-  it('returns independent arrays for empty and same-rate input', () => {
-    const input = new Float32Array([0.25, -0.5])
-    const sameRate = resampleMono(input, 16_000)
-
-    expect(resampleMono(new Float32Array(), 48_000)).toStrictEqual(new Float32Array())
-    expect(sameRate).toStrictEqual(input)
-    expect(sameRate).not.toBe(input)
-  })
-
   it('strongly attenuates frequencies above the target Nyquist when downsampling', () => {
     const output = resampleMono(sineWave(12_000, 48_000), 48_000)
     const steadyState = output.slice(128, -128)

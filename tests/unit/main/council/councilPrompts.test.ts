@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '../../../../src/shared/agents'
 import type { AgentActivity } from '../../../../src/shared/agentActivity'
 import { COUNCIL_FIELD_MAX, readFairnessBlock } from '../../../../src/shared/councilBlocks'
-import { councilFileSchema } from '../../../../src/main/council/councilRecord'
+import { councilFileSchema, legacyCouncilFileSchema, migrateCouncilFile } from '../../../../src/main/council/councilRecord'
 import { answerPrompt, fairnessPrompt, framingWords, historyAboveWords, historyPartPrompt, historyParts, historyText, PROMPT_LIMIT, quoteHistory, reviewPrompt, verdictPrompt } from '../../../../src/main/council/councilPrompts'
 
 const message = (id: string, role: 'user' | 'assistant', text: string, extra: Partial<AgentMessage> = {}): AgentMessage => ({ id, role, text, createdAt: '2026-11-02T12:00:00.000Z', ...extra })
@@ -113,6 +113,6 @@ describe('long fields', () => {
       seats: ['A', 'B', 'chair'].map(seat => ({ seat, role: seat === 'chair' ? 'chair' : 'panelist', modelId: 'm', modelName: 'm', effort: null, thread: `t-${seat}`, formerThreads: [], started: true, context: true })),
       rounds: [{ index: 0, askedAt: '2026-11-02T12:00:00.000Z', stage: 'fairness', leftOut: [], objections: [{ seat: 'A', claim: read.ok ? read.value.claim : '', passage: 'q', answer: 'pending' }] }],
       turns: [], deadlineMinutes: 10 }
-    expect(councilFileSchema.safeParse({ version: 1, councils: [record] }).success).toBe(true)
+    expect(councilFileSchema.safeParse(migrateCouncilFile(legacyCouncilFileSchema.parse({ version: 1, councils: [record] }))).success).toBe(true)
   })
 })

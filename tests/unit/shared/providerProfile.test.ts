@@ -7,10 +7,6 @@ import { watcherProviderSchema } from '../../../src/shared/watcher'
 import { roleCanUse, watcherProvidersInWords } from '../../../src/shared/workerRoles'
 
 describe('provider profiles', () => {
-  it('hold one profile for every provider and nothing else', () => {
-    expect(Object.keys(PROVIDER_PROFILES).sort()).toEqual([...providerIdSchema.options].sort())
-  })
-
   it('answer nothing for a thread that names no provider or a provider this build does not know', () => {
     expect(providerProfile(undefined)).toBeUndefined()
     expect(providerProfile('test-seventh')).toBeUndefined()

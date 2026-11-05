@@ -16,7 +16,6 @@ import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
 import { WindowControls } from './WindowControls'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
-import { ToDoCorner } from '../features/toDos/ToDoCorner'
 import { ClickEffect } from './ClickEffect'
 import { useClickEffectOn } from '../state/clickEffect'
 import { pageShortcutFor, usePageShortcutLabels } from './pageShortcuts'
@@ -283,11 +282,11 @@ export function AppShell({
               ))}
             </div>
           ) : <span />}
-          <div className="app-strip__end"><MainFreezeNotice />{management ? <ToDoCorner /> : null}{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div>
+          <div className="app-strip__end"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div>
         </header>
       )}
       {beside ? sidebar : null}
-      {beside ? <div className="app-room__top"><MainFreezeNotice /><ToDoCorner />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
+      {beside ? <div className="app-room__top"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
       {/* Takes focus only from a page shortcut whose room has no switch on screen (pageShortcuts.ts). */}
       {/* A region F6 moves to beside the sidebar, on a page that has none of its own inside (ADR-0164). */}
       <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content" tabIndex={-1} data-region="room">{children}</main>

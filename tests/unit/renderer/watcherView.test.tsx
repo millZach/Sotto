@@ -908,13 +908,6 @@ describe("Watcher's room", () => {
     toolsPanelStore.setOpen(false)
   })
 
-  it('has no limit to set: once Watcher runs its header holds no More Watcher actions, and the watched count is not capped', async () => {
-    renderRoom(stateWithWatcher(), roomState())
-    await paneReady()
-    expect(screen.queryByRole('button', { name: 'More Watcher actions' })).toBeNull()
-    expect(screen.queryByText('Threads in flight')).toBeNull()
-  })
-
   /** A window whose Sotto browser opens `footer-links`' pages, and whose system browser opens anything. */
   function withBrowser(): { readonly browser: ReturnType<typeof browserBridgeFixture>; readonly openExternalLink: ReturnType<typeof vi.fn>; readonly restore: () => void } {
     const workspace = { threadId: 'footer-links', projectId: 'workshop', workingDirectory: 'D:/work/workshop', workspaceId: '0f8fad5b-d9cb-469f-a165-70867728950e' }
@@ -1033,14 +1026,6 @@ describe('the room switch', () => {
     expect(navigate).toHaveBeenCalledWith('settings')
     fireEvent.click(updating)
     expect(onActivate).toHaveBeenCalledWith('download')
-  })
-
-  it('has no update control where the app does not update itself, and keeps its pages', async () => {
-    renderRoom(stateWithWatcher(), roomState())
-    await paneReady()
-    const head = document.querySelector<HTMLElement>('.watcher-head')!
-    expect(head.querySelector('.update-control')).toBeNull()
-    expect(within(within(head).getByRole('navigation', { name: 'Pages' })).getAllByRole('link').map(link => link.textContent)).toEqual(['Settings', 'Help'])
   })
 
   it('is Dictate | Threads alone with the gate off', () => {

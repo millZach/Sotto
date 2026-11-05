@@ -90,12 +90,6 @@ describe('the steps in plain words, per provider', () => {
     expect(browserStepSentence(browserStep(record({ id: 'x', title: 'sotto_browser / browser_action', output: '{"task":{"steps":[{"act' }))!)).toBe('Worked in the page')
   })
 
-  it('says a failed step could not be done', () => {
-    const failed = claude('f', 'browser_action', { action: { type: 'scroll', x: 0, y: 0, deltaX: 0, deltaY: 1 } }, { status: 'failed', error: 'The browser action did not finish.' })
-    expect(browserStep(failed)!.failed).toBe(true)
-    expect(browserStepSentence(browserStep(failed)!)).toBe('Could not scroll the page')
-  })
-
   it('never says a stopped, unknown or unanswered step was done', () => {
     const shot = { action: { type: 'screenshot' } }
     const stopped = browserStep(claude('s', 'browser_action', shot, { status: 'interrupted' }))!

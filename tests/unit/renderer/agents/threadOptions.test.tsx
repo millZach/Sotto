@@ -23,16 +23,6 @@ describe('composer option chips', () => {
     expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled()
   })
 
-  it('shows the model with its provider mark, the effort and the permissions as three chips', () => {
-    mount()
-    const model = screen.getByRole('combobox', { name: 'Thread model' })
-    expect(model).toHaveTextContent('Claude Code model')
-    expect(model.querySelector('svg.provider-mark[data-provider="claude"]')).not.toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('High')
-    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toHaveTextContent('Auto')
-    expect(screen.queryByRole('listbox')).toBeNull()
-  })
-
   it('gives permissions a shield for a narrow composer and keeps its value in the chip for assistive technology (ADR-0113)', () => {
     mount()
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })

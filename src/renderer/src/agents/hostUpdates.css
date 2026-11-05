@@ -7,9 +7,9 @@
 .threads-view[data-host-update] { --host-update-room: 186px; }
 .threads-view[data-host-update][data-side-by-side] { --host-update-room: 38px; }
 @media (max-width: 1099px) { .threads-view[data-host-update] { --host-update-room: 38px; } }
-.threads-view:not(.threads-view--mac)[data-host-update] { --threads-winctl-inset: calc(116px + var(--host-update-room) + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
-.threads-view--mac[data-host-update] { --threads-winctl-inset: calc(var(--host-update-room) + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
-[data-platform='linux'] .threads-view[data-host-update] { --threads-winctl-inset: calc(var(--host-update-room) + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
+.threads-view:not(.threads-view--mac)[data-host-update] { --threads-winctl-inset: calc(116px + var(--host-update-room) + var(--main-freeze-room, 0px)); }
+.threads-view--mac[data-host-update] { --threads-winctl-inset: calc(var(--host-update-room) + var(--main-freeze-room, 0px)); }
+[data-platform='linux'] .threads-view[data-host-update] { --threads-winctl-inset: calc(var(--host-update-room) + var(--main-freeze-room, 0px)); }
 /* A pane's header is the window's drag handle, and Chromium builds the drag region in tree order: the header comes after the
    pill (which comes first for the Tab order), so a header reaching under the pill would cover its opt-out and a click on it
    would move the window. With the pill there, the header of the pane under it, alone or in a split, stops short of it with
@@ -19,9 +19,9 @@
   margin-right: var(--threads-pane-inset, 0px);
 }
 
-.host-update { --host-update-right: calc(122px + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); position: absolute; top: 0; right: 0; z-index: 7; width: 0; height: 0; -webkit-app-region: no-drag; }
-.threads-view--mac .host-update { --host-update-right: calc(12px + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
-[data-platform='linux'] .host-update { --host-update-right: calc(12px + var(--main-freeze-room, 0px) + var(--to-do-room, 0px)); }
+.host-update { --host-update-right: calc(122px + var(--main-freeze-room, 0px)); position: absolute; top: 0; right: 0; z-index: 7; width: 0; height: 0; -webkit-app-region: no-drag; }
+.threads-view--mac .host-update { --host-update-right: calc(12px + var(--main-freeze-room, 0px)); }
+[data-platform='linux'] .host-update { --host-update-right: calc(12px + var(--main-freeze-room, 0px)); }
 
 .host-update__pill {
   position: absolute;

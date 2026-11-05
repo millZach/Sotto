@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { expect, expectTypeOf, it, vi } from 'vitest'
@@ -131,4 +131,26 @@ it('reorders the follow-ups the user sees around a wake-up no one is shown, and 
   await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Third', attachments: [] })
   await expect(store.reorder('thread', stale)).rejects.toThrow('The follow-up order changed')
   expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', 'Third', WATCHER_WAKE_UP_PROMPT])
+}))
+
+// The to-do list is gone (ADR-0188, reversed), and a queue saved while it was here may still hold its news.
+it('reads a queue an earlier build saved with to-do news, keeping everything else and setting nothing aside', async () => inDirectory(async directory => {
+  const followup = (thread: string, news: unknown[]) => ({ id: randomUUID(), threadId: thread, draftId: randomUUID(), text: 'Saved words', attachments: [], status: 'queued', wakeUp: true, news,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+  const event = (kind: string, id: string) => ({ id, requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind, observedAt: new Date().toISOString(), toDoId: id, toDoTitle: 'Hand test' })
+  const finished = watcher('kept')
+  await writeFile(join(directory, 'followups.json'), JSON.stringify({ receipts: [], items: [
+    followup('to-do', [{ source: 'to-do', items: [{ title: 'Hand test', didNotWork: 'It would not open' }] }]),
+    followup('only-to-do-news', [{ source: 'watcher', watcher: finished.watcher, omitted: 0, events: [event('to-do-added', 'a'), event('to-do-checked', 'b')] }]),
+    followup('mixed', [babysit(), { ...finished, events: [event('to-do-checked', 'c'), ...finished.events] }]),
+    followup('untouched', [babysit(2)]),
+  ] }))
+  const store = new FollowupStore(directory); await store.load()
+  const items = store.get().items
+  expect(items.map(item => item.threadId)).toEqual(['mixed', 'untouched'])
+  expect(items[0]!.news).toEqual([babysit(), finished])
+  expect(items[1]!.news).toEqual([babysit(2)])
+  expect((await readdir(directory)).filter(name => name.includes('.corrupt-'))).toEqual([])
+  const saved = await readFile(join(directory, 'followups.json'), 'utf8')
+  expect(saved).not.toMatch(/to-do|It would not open/u)
 }))

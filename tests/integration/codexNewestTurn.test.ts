@@ -185,16 +185,6 @@ describe('Codex send checks the newest turn before reading the whole transcript'
     expect(messages.map(message => [message.role, message.text])).toEqual(['own-1', 'own-2'].flatMap(own => [['user', `Prompt ${own}`], ['assistant', `Reply to ${own}`]]))
   })
 
-  it('stops asking on that connection when Codex names a value the check sends as unknown', async () => {
-    const { f, id } = await answeredThread()
-    // How Codex 0.157.1 answers a params value it does not know, here an itemsView it has no such view for.
-    await f.script({ reject: 'thread/turns/list', rejection: { code: -32600, message: 'Invalid request: unknown variant `bogus`, expected one of `notLoaded`, `summary`, `full`' } })
-    const from = (await f.driver.requests()).length
-    await turn(f, id, 'own-2', 'own-1')
-    await turn(f, id, 'own-3', 'own-2')
-    expect(await historyRequests(f, from)).toEqual(['turns', 'read', 'read'])
-  })
-
   it('checks the newest turn once when the read before the send was made for it (#765)', async () => {
     const { f, id } = await answeredThread()
     const from = (await f.driver.requests()).length

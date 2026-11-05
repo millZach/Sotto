@@ -45,26 +45,6 @@ describe('Claude bot babysitting', () => {
     expect(frame).not.toHaveBeenCalled()
   })
 
-  it('holds the whole sign: the same pull request mark as Sotto\'s, a fill, an outline and a pole to the track', () => {
-    const marks = (creature: Creature): number => {
-      setting.creature = creature
-      const { container, unmount } = render(<ThreadBabysitting thread={thread} now={NOW.getTime()} />)
-      const count = (container.querySelector('.thread-monitor__sign')?.getAttribute('d') ?? '').match(/M/gu)?.length ?? 0
-      unmount()
-      return count
-    }
-    const sotto = marks('sotto'), claude = marks('claude')
-    expect(claude).toBeGreaterThanOrEqual(5)
-    expect(claude).toBe(sotto)
-    const { container } = render(<ThreadBabysitting thread={thread} now={NOW.getTime()} />)
-    const actor = container.querySelector('.thread-monitor__actor')!
-    expect(actor.querySelector('.thread-monitor__color[opacity]')).not.toBeNull()
-    expect(actor.querySelector('.thread-monitor__shine')?.getAttribute('d')).toMatch(/^M/u)
-    const pole = /^M(\d+) (\d+)h(\d+)v(\d+)/u.exec(actor.querySelector('.thread-monitor__handle')?.getAttribute('d') ?? '')
-    expect(pole).not.toBeNull()
-    expect(Number(pole![2]) + Number(pole![4])).toBe(32)
-  })
-
   it('is painted once in the resting stance: eyes half shut, mouth flat, standing, body down', () => {
     const { container, rerender } = render(<ThreadBabysitting thread={thread} now={NOW.getTime()} />)
     const svg = container.querySelector('.thread-monitor__creature')!

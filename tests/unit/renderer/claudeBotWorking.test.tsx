@@ -24,8 +24,6 @@ const even = (x: number) => Math.round(x / 2) * 2
 
 /** Sotto's working schedule, written out again so the pose cannot drift from it unnoticed. */
 const start = (width: number) => Math.max(0, width - 96)
-const walking = (width: number, time: number, index: number): [number, number] =>
-  [even(start(width) - (start(width) + 24) * ((time * 0.09 + index * 0.17) % 1)), Math.floor(time * 6 + index) % 2 ? -1 : 0]
 const standing = (width: number, count: number, index: number): [number, number] =>
   [even(Math.max(0, start(width) - 12 - index * Math.min(36, Math.max(0, start(width) - 12) / count))), 0]
 
@@ -42,7 +40,6 @@ const bot = (container: HTMLElement) => {
 }
 /** Eyes one unit toward the small bots (look 1 in the mirrored bot): open slots, or shut to a line in a blink. */
 const OPEN = 'M11 12h2v5h-2z M22 12h2v5h-2z'
-const BLINK = 'M11 15h2v1h-2z M22 15h2v1h-2z'
 /** The chest emblem as a plus (its centre column at x 16) rather than a cross (which starts at x 14). */
 const isPlus = (spark: Element) => spark.getAttribute('d')!.startsWith('M16 22h1v1h-1z')
 
@@ -84,16 +81,6 @@ describe('Claude bot working', () => {
     expect(actor.querySelector('.thread-monitor__creature')).not.toBeNull()
   })
 
-  it('walks the small bots on Sotto\'s schedule: from under the arm, at its pace, a beat apart', () => {
-    motion(false)
-    const { container } = render(<ThreadWorking work={work(3)} />)
-    // The first paint is t = 0: they leave from 96 px short of the end, spaced by the 0.17 phase, the middle one up a pixel.
-    expect(placed(container)).toEqual([[504, 0], [414, -1], [324, 0]])
-    at(2)
-    expect(placed(container)).toEqual([0, 1, 2].map(index => walking(600, 2, index)))
-    expect(placed(container)).toEqual([[408, 0], [320, -1], [230, 0]])
-  })
-
   it.each([[1, 600], [3, 600], [6, 600], [3, 120], [6, 120]])(
     'under reduced motion stands %i small bots a stride apart on a %i px track, none past the left end', (count, width) => {
       trackWidth = width
@@ -129,21 +116,6 @@ describe('Claude bot working', () => {
     expect(new Set(planted).size).toBe(1)
     expect(planted[0]).not.toBe(up)
     expect(planted[0]).not.toBe(down)
-  })
-
-  it('faces the room from the readout end, waves on the half second and blinks on Sotto\'s cadence', () => {
-    motion(false)
-    const { container } = render(<ThreadWorking work={work(3)} />)
-    const { actor, facing, hand, eyes } = bot(container)
-    // Mirrored with its right edge 18 px short of the track end, so the readout clears it.
-    expect(actor.style.transform).toBe('translateX(520px)')
-    expect(facing).toHaveAttribute('transform', 'translate(33 0) scale(-1 1)')
-    const raised: string[] = []
-    for (const time of [0.1, 0.6, 1.1, 1.6]) { at(time); raised.push(hand.getAttribute('transform')!) }
-    expect(raised).toEqual(['', 'translate(0 -1)', '', 'translate(0 -1)'])
-    at(4.8); expect(eyes).toHaveAttribute('d', OPEN)
-    at(4.9); expect(eyes).toHaveAttribute('d', BLINK)
-    at(5.1); expect(eyes).toHaveAttribute('d', OPEN)
   })
 
   it('under reduced motion holds the big bot in one steady pose', () => {

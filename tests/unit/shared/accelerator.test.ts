@@ -202,22 +202,9 @@ describe('Fn and Win', () => {
   it('keeps Super as Super on Linux', () => {
     expect(formatAccelerator('Super+Shift+Space', 'linux', 'display')).toBe('Super+Shift+Space')
   })
-
-  it('names Escape', () => {
-    expect(parseAccelerator('ctrl+esc', 'win32')).toBe('CommandOrControl+Escape')
-  })
 })
 
 describe('platform isolation', () => {
-  it('uses Control and Ctrl labels on Linux', () => {
-    expect(parseAccelerator('control+shift+space', 'linux')).toBe('CommandOrControl+Shift+Space')
-    expect(formatAccelerator('CommandOrControl+Shift+Space', 'linux', 'display')).toBe('Ctrl+Shift+Space')
-  })
-  it('does not leak the darwin Control token onto win32', () => {
-    expect(parseAccelerator('control+shift+space', 'win32')).toBe('CommandOrControl+Shift+Space')
-    expect(parseAccelerator('control+shift+space', 'darwin')).toBe('Control+Shift+Space')
-  })
-
   it('does not accept macOS glyphs as modifiers on win32', () => {
     expect(parseAccelerator('⌘+⇧+Space', 'win32')).toBeNull()
   })

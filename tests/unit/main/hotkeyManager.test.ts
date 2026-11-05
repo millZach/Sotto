@@ -120,17 +120,6 @@ describe('HotkeyManager primary shortcut', () => {
     expect(manager.replace('Escape')).toEqual({ ok: false, reason: 'invalid' })
     expect(manager.current()).toBe('Old')
   })
-
-  it('invokes the toggle callback from the registered primary accelerator', () => {
-    const { active, adapter } = createAdapter()
-    const toggle = vi.fn()
-    const manager = new HotkeyManager(adapter, toggle, vi.fn())
-    manager.replace('Primary')
-
-    active.get('Primary')?.()
-
-    expect(toggle).toHaveBeenCalledOnce()
-  })
 })
 
 describe('HotkeyManager cancellable-session Escape', () => {

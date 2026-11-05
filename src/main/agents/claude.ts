@@ -1,3 +1,4 @@
+import { assertCouncilJudgeDirectory, COUNCIL_JUDGE_CLAUDE_ARGS } from '../council/councilJudge'
 import type { MediaCapture } from './threadMedia'
 import { preserveLegacyAliases } from './legacyAliases'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -84,7 +85,7 @@ const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uu
  */
 const cursorSchema = z.object({ sessionId: z.string().uuid(), offset: z.number().int().nonnegative(), size: z.number().int().nonnegative(),
   ino: z.string().optional(), birthtimeMs: z.number().optional(), consumedOriginIds: z.array(z.string()).default([]), lastDigest: z.string().optional() })
-const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
+const aliasSchema = z.object({ councilJudge: z.literal(true).optional(), sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
   compaction: compactionSchema.optional(), compactStartedAt: z.string().datetime().optional(), compactInputIds: z.array(z.string().uuid()).optional(), resumeCompactionDismissed: z.boolean().optional(),
   forkMessageIds: z.record(z.string(), z.string()).optional(), lineage: z.array(z.object({ sessionId: z.string().uuid(), boundary: z.string().uuid().optional() })).optional(), rollbackPending: z.object({ sourceSessionId: z.string().uuid(), sourceDigest: z.string(), boundary: z.string().uuid().optional(), targetSessionId: z.string().uuid().optional() }).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), transcriptCursor: cursorSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
@@ -605,6 +606,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   async threadInstructionsChanged(id: string): Promise<void> {
     if (!this.busy(id)) await this.stopSession(id)
   }
+  async closeCouncilJudge(id: string): Promise<void> {
+    if (!this.aliases[id]?.councilJudge) throw new Error('Only a Climb judge can release its evidence workspace.')
+    await this.stopSession(id)
+    await this.closing.get(id)
+  }
   private async stopSession(id: string): Promise<void> {
     if (this.spares.has(id)) { this.discardSpare(id); return }
     const runtime = this.runtimes.get(id)
@@ -994,6 +1000,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * never forked here; it continues from a thin handover instead. The model is asked nothing.
    */
   async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    if (this.aliases[request.source.threadId]?.councilJudge) throw new Error('A Climb judge cannot be forked.')
     const generation = this.generation
     if (!this.state.connected) throw new Error('Connect Claude Code before continuing.')
     if (this.aliases[request.threadId]) return { accepted: true }
@@ -1067,10 +1074,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
       watcherGuard?.()
       // A spare started for exactly this thread hands it the session ID its CLI already runs (#769); any other spare goes.
-      const spare = this.spareFor(command.threadId, cwd, settingsOf(command, this.state.models))
+      const spare = command.councilJudge ? undefined : this.spareFor(command.threadId, cwd, settingsOf(command, this.state.models))
       if (!spare) void this.discardSpare(command.threadId)
       const speed = speedAfterChange(command)
-      const alias: Alias = { sessionId: spare?.sessionId ?? randomUUID(), projectId: project.id, cwd, title: command.title, modelId: command.modelId,
+      const alias: Alias = { ...(command.councilJudge ? { councilJudge: true as const } : {}), sessionId: spare?.sessionId ?? randomUUID(), projectId: project.id, cwd, title: command.title, modelId: command.modelId,
         reasoningEffort: command.reasoningEffort, ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
         ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [] }
@@ -1088,6 +1095,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
     // The coordinator's read before this send stands for its first read (#765).
+    if (alias.councilJudge && !['send', 'interrupt'].includes(command.type)) throw new Error('A Climb judge is read-only. Start a new assessment to change its setup.')
     const readForSend = this.readsBeforeSend.take(id, command)
     this.worked(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
@@ -1605,15 +1613,17 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * starts, so what it says while starting is applied as it comes. A spare's is held, with what it said, until the
    * thread's first send adopts it (`adoptSpare`); until then it is nobody's, and its exit only lets it go.
    */
-  private async spawn(id: string, alias: Pick<Alias, 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'speed' | 'fastMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
+  private async spawn(id: string, alias: Pick<Alias, 'councilJudge' | 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'speed' | 'fastMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
     const generation = this.generation
     const profile = await this.watcherProfile(id, alias.modelId)
     this.checkProfileContinuation(id, generation)
-    const browser = profile ? undefined : await this.browserTools?.mcpServer(id)
+    if (alias.councilJudge && alias.reasoningEffort === ULTRACODE) throw new Error('A Climb judge cannot start an Ultracode workflow.')
+    if (alias.councilJudge) await assertCouncilJudgeDirectory(this.options.userDataPath, alias.cwd)
+    const browser = profile || alias.councilJudge ? undefined : await this.browserTools?.mcpServer(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs, and the
     // visual tool while visuals are on.
-    const scoped = await scopedThreadServers(profile ? watcherThreadTools(this.threadTools) : this.threadTools, id)
+    const scoped = alias.councilJudge ? [] : await scopedThreadServers(profile ? watcherThreadTools(this.threadTools) : this.threadTools, id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (spare) spare.scopedTools = scopedNames(scoped)
     const servers = [...(profile ? [{ server: profile.server, definitions: profile.toolNames.map(name => ({ name })) }] : []), ...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
@@ -1632,11 +1642,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     // The worker roles (#1042), read once for this launch: one agent per role on Claude, each held to the thread's own
     // permission, and the table in the instructions. Watcher starts its workers through its own tools instead.
-    const overseer = profile ? undefined : this.workerRoles?.overseer?.(id)
-    const roles = profile || overseer ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
+    const overseer = profile || alias.councilJudge ? undefined : this.workerRoles?.overseer?.(id)
+    const roles = profile || overseer || alias.councilJudge ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const questions = this.options.markdownLinks === true ? `${CLAUDE_QUESTIONS}\n\n${MARKDOWN_LINK_INSTRUCTIONS}` : CLAUDE_QUESTIONS
-    const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    const args = [...(this.options.args ?? []), ...(alias.councilJudge ? COUNCIL_JUDGE_CLAUDE_ARGS : toolArguments), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${questions}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
@@ -1644,7 +1654,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
-      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, takesNotes: !!profile || this.workerRoles?.overseerNote !== undefined, subagentMode: roles?.subagents?.widest,
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, takesNotes: !alias.councilJudge && (!!profile || this.workerRoles?.overseerNote !== undefined), subagentMode: roles?.subagents?.widest,
         ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
@@ -1748,6 +1758,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * starts a CLI of its own the usual way.
    */
   private async adoptSpare(id: string, alias: Alias): Promise<Runtime | undefined> {
+    if (alias.councilJudge) { await this.discardSpare(id); return undefined }
     const generation = this.generation
     const profile = await this.watcherProfile(id, alias.modelId)
     this.checkProfileContinuation(id, generation)
@@ -1887,7 +1898,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'system' && frame.subtype === 'init') {
       // A CLI still running a replaced client names the old version; the provider's is the one on disk.
       if (typeof frame.claude_code_version === 'string' && runtime.clientRevision === this.clientRevision) this.state.version = frame.claude_code_version
-      this.checkApprovalSurface(frame)
+      if (alias.councilJudge && (!Array.isArray(frame.tools) || frame.tools.length !== 0)) {
+        thread.status = 'error'; this.changed(id); void this.stopRuntime(id, runtime); this.emit(); return
+      }
+      if (!alias.councilJudge) this.checkApprovalSurface(frame)
       this.queries.add(id)
     }
     const hook = frame.type === 'control_request' ? object(frame.request) : undefined
@@ -1898,6 +1912,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
         && (typeof input.prompt !== 'string' || input.prompt.trim() === pending.text.trim()) ? pending.note : undefined
       if (note !== undefined) runtime.requestNote = undefined
       void this.reply(runtime, frame.request_id, note ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: note } } : {}).catch(() => undefined)
+      return
+    }
+    if (frame.type === 'control_request' && alias.councilJudge && object(frame.request)?.subtype === 'can_use_tool') {
+      if (typeof frame.request_id === 'string') void this.reply(runtime, frame.request_id, claudeDenial()).catch(() => undefined)
       return
     }
     if (frame.type === 'control_request') {
@@ -2227,7 +2245,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private ensureThread(id: string, alias: Alias): void {
     this.activityHistoryPending.delete(id)
     const speed = speedAfterChange(alias)
-    this.threads.set(id, { id, projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}), status: 'idle', messages: [], requests: [], activities: [] })
+    this.threads.set(id, { id, ...(alias.councilJudge ? { councilJudge: true as const } : {}), projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}), status: 'idle', messages: [], requests: [], activities: [] })
     this.threads.get(id)!.usage = this.usage.get(id)
     this.threads.get(id)!.compaction = alias.compaction
     this.threads.get(id)!.resumeCompactionDismissed = Object.values(this.aliases).some(value => value.kind !== 'personal' && value.resumeCompactionDismissed)

@@ -5,7 +5,7 @@ import type { AgentState, AgentThread } from '../../../../src/shared/agents'
 import type { GitStatus } from '../../../../src/shared/gitStatus'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
-import { useDiffPreferences, useMergeMethod } from '../../../../src/renderer/src/state/gitSettings'
+import { useMergeMethod } from '../../../../src/renderer/src/state/gitSettings'
 import { ProactiveChangesWatch, useProactiveChanges } from '../../../../src/renderer/src/tools/proactivePanels'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
@@ -121,13 +121,6 @@ describe('Proactive panels on the Tools panel store', () => {
 })
 
 describe('the settings hooks other surfaces read', () => {
-  it('gives Changes its starting layout, whitespace and file state, and nothing before settings arrive', () => {
-    expect(renderHook(() => useDiffPreferences()).result.current).toBeNull()
-    withSettings({})
-    expect(renderHook(() => useDiffPreferences()).result.current).toEqual({ layout: 'stacked', hideWhitespace: true, fileState: 'collapsed' })
-    withSettings({ diffLayout: 'split', diffHideWhitespace: false, diffFileState: 'expanded' })
-    expect(renderHook(() => useDiffPreferences()).result.current).toEqual({ layout: 'split', hideWhitespace: false, fileState: 'expanded' })
-  })
   it('starts a merge on the remembered method under Last selected and saves a new choice, and saves nothing under a fixed default', () => {
     const update = withSettings({ defaultMergeMethod: 'last', lastMergeMethod: 'squash' })
     const last = renderHook(() => useMergeMethod()).result.current

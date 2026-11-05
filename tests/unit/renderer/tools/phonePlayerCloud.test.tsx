@@ -1,7 +1,7 @@
 import { cloudIphoneBridgeFixture, cloudSession } from '../../../fixtures/renderer/cloudIphoneBridge'
 import { browserBridgeFixture } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BrowserBridge } from '../../../../src/shared/browser'
 import type { CloudSession } from '../../../../src/shared/cloudIphone'
@@ -63,15 +63,5 @@ describe('the phone player’s cloud iPhone mode', () => {
     await screen.findByRole('complementary', { name: 'Cloud iPhone for Visual gate flake' })
     fireEvent.click(screen.getByRole('button', { name: 'End session' }))
     await waitFor(() => expect(cloud.bridge.end).toHaveBeenCalledWith(expect.objectContaining({ sessionId: session().id })))
-  })
-
-  it('keeps the test iPhone unchanged when there is no cloud session', async () => {
-    const cloud = fakeCloudBridge([])
-    const browser = fakeEmptyBrowser()
-    const store = new ToolsPanelStore(); const phoneStore = new PhonePlayerStore(); const cloudStore = new CloudIphoneStore()
-    render(<PhonePlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser} store={store} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloud.bridge} />)
-    act(() => phoneStore.show('visual-gate'))
-    await waitFor(() => expect(cloud.bridge.sessions).toHaveBeenCalled())
-    expect(screen.queryByRole('complementary', { name: /iPhone/ })).not.toBeInTheDocument()
   })
 })

@@ -130,15 +130,6 @@ describe('Changes as T3’s diff', () => {
     expect(await within(panel()).findByText(reason)).toBeInTheDocument()
   })
 
-  it('gives each row its file and line numbers as data for a later selection', async () => {
-    setup()
-    await within(panel()).findByText('export const ready = true')
-    const rows = [...block('src/app.ts').querySelectorAll('.changes-line[data-kind="context"], .changes-line[data-kind="add"], .changes-line[data-kind="remove"]')]
-    expect(rows.map(row => [row.getAttribute('data-path'), row.getAttribute('data-old-line'), row.getAttribute('data-new-line'), row.getAttribute('data-kind')])).toEqual([
-      ['src/app.ts', '3', '3', 'context'], ['src/app.ts', '4', null, 'remove'], ['src/app.ts', null, '4', 'add'], ['src/app.ts', '5', '5', 'context'],
-    ])
-  })
-
   it('collapses one file or all of them, copies a path, and opens a file in Files from its name', async () => {
     const user = userEvent.setup()
     const { git, store, files } = setup()

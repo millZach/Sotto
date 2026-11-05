@@ -17,8 +17,6 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['primary-hover', ['surface', 'sidebar', 'selected']],
   ['warning', ['canvas', 'surface', 'surface-elevated', 'sidebar']],
   ['attention', ['sidebar', 'sidebar-control', 'sidebar-row-hover', 'sidebar-row-active', 'sidebar-row-selected']],
-  // The to-do list's count of what is new (ADR-0188): the canvas's ink on the attention colour.
-  ['canvas', ['attention']],
   ['warning-text', ['sidebar', 'warning-surface']],
   ['warning-on-tint', ['selected', 'bubble']],
   ['error', ['canvas', 'surface', 'surface-elevated', 'sidebar']],

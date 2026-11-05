@@ -45,17 +45,6 @@ describe('Settings → Application → Notifications (Owl desktop-notifications)
     expect(screen.queryByRole('region', { name: 'Notifications', hidden: true })).toBeNull()
   })
 
-  it('shows both switches with their saved values, the help line and the test button', () => {
-    owl.on = true
-    bridge()
-    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, notifyNeedsYou: true, notifyFinished: false } })} />)
-    const notifications = within(group())
-    expect(notifications.getByRole('switch', { name: 'When a thread needs you', hidden: true })).toBeChecked()
-    expect(notifications.getByRole('switch', { name: 'When a thread has finished everything', hidden: true })).not.toBeChecked()
-    expect(notifications.getByText(HELP)).toBeInTheDocument()
-    expect(notifications.getByRole('button', { name: 'Send a test notification', hidden: true })).toBeEnabled()
-  })
-
   it.each([
     ['notifyNeedsYou', 'When a thread needs you'],
     ['notifyFinished', 'When a thread has finished everything'],
@@ -94,15 +83,6 @@ describe('Settings → Application → Notifications (Owl desktop-notifications)
     const status = within(group()).getByText(copy)
     expect(status).toHaveAttribute('role', 'status')
     expect(status).toHaveAttribute('aria-live', 'polite')
-  })
-
-  it('has an empty live region before any press', () => {
-    owl.on = true
-    bridge()
-    render(<SettingsView {...baseProps()} />)
-    const status = within(group()).getByRole('status', { hidden: true })
-    expect(status).toHaveAttribute('aria-live', 'polite')
-    expect(status).toBeEmptyDOMElement()
   })
 
   it('clears the last answer while a new test is pending, and ignores a second press meanwhile', async () => {

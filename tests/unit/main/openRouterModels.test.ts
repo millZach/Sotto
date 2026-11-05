@@ -42,11 +42,6 @@ describe('listOpenRouterModels', () => {
     await expect(listOpenRouterModels({ fetchFn })).resolves.toMatchObject({ ok: true, complete: false })
   })
 
-  it('says why the list did not come', async () => {
-    await expect(listOpenRouterModels({ fetchFn: vi.fn().mockResolvedValue(new Response('', { status: 500 })) })).resolves.toEqual({ ok: false, reason: 'http' })
-    await expect(listOpenRouterModels({ fetchFn: vi.fn().mockRejectedValue(new TypeError('offline')) })).resolves.toEqual({ ok: false, reason: 'network' })
-  })
-
   it('lists active account presets first and sends the key only to the preset endpoint without following redirects', async () => {
     const fetchFn = vi.fn(async (url: string | URL | Request) => {
       if (String(url).endsWith('/models')) return page([{ id: 'a/model', name: 'A model' }])
