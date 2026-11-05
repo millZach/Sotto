@@ -106,8 +106,11 @@
 /* The header says words only for the thread's own presses, the Git action and Watch. Tools, the Council and the Terminal
    drawer are the symbols they were before ADR-0163 at every width, named on hover and for a screen reader, so nothing in
    the row grows or shrinks as a pane narrows (ADR-0163 decision 5, ADR-0182 decision 1). */
-/* The thread's own presses, then a little air, then the layout's keys: two groups, in ADR-0163's fixed order. */
-.thread-workspace__actions > .watch-toggle { margin-right: 6px; }
+/* The thread's own presses, then air, then the layout's keys: two groups, in ADR-0163's fixed order. The layout's keys
+   (the Council, Tools, the Terminal drawer and ···) stand edge to edge as one set, so they read as one toolbar beside
+   the two worded presses rather than as four more presses at the same spacing. Close, in a split, keeps its gap. */
+.thread-workspace__actions > .watch-toggle { margin-right: 10px; }
+.thread-workspace__actions > :is(.pane-action, .pane-menu):not(.thread-pane__close) + :is(.pane-action, .pane-menu):not(.thread-pane__close) { margin-left: -2px; }
 /* In a narrow pane every pixel beside the buttons is the name's and then the pull request number's, so the row tightens and
    the name takes the sidebar row's size. The buttons keep their size and their place against the pane's right edge, so
    nothing moves under a pointer as a pane is resized (ADR-0163, decision 5). */

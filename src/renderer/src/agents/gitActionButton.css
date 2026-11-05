@@ -1,6 +1,6 @@
 /* T3's Git action in the pane header: the quick action and its chevron, one control in two halves. */
 .git-action { display: inline-flex; flex: none; align-items: center; height: 30px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row); background: transparent; }
-.git-action__quick { display: inline-flex; align-items: center; gap: 6px; height: 100%; min-width: 0; padding: 0 9px; border: 0; border-radius: var(--tt-radius-control) 0 0 var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.git-action__quick { display: inline-flex; align-items: center; gap: 6px; height: 100%; min-width: 0; padding: 0 9px; border: 0; border-radius: var(--tt-radius-control) 0 0 var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .git-action__quick > svg { flex: none; }
 .git-action__quick:hover:not([aria-disabled='true']) { background: var(--tt-hover); color: var(--tt-text); }
 .git-action__quick:active:not([aria-disabled='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
