@@ -222,7 +222,8 @@
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) { margin-bottom: 30px; padding-bottom: 12px; overflow-clip-margin: 36px; }
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]) > .thread-message__copy { top: calc(100% + 1px); bottom: auto; left: 9px; }
 .thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy)::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 30px; }
-.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) + * { margin-top: 0; }
+/* Named, not `+ *`: a :has() rule whose last part names nothing restyles the whole window on every change (#1423). */
+.thread-pane:not(.watcher-pane) .thread-message[data-role='user']:not([data-from]):has(> .thread-message__copy) + :is(.thread-work, .thread-activity, .thread-activity-live, .thread-browser-lines, .thread-delivery, .thread-lifted, .continue-now, .delegated-work, .delegated-work-still) { margin-top: 0; }
 /* Watcher's conversation keeps the look it had: its room is the owner's, and it runs over the night scene (ADR-0126). */
 .watcher-pane .thread-message header { margin-bottom: 8px; }
 .watcher-pane .thread-message:has(> .thread-message__copy) { margin-bottom: 28px; }
