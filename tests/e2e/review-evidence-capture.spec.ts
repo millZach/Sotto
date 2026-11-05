@@ -298,6 +298,33 @@ async function closeTools(page: Page): Promise<void> {
   if (await page.getByRole('complementary', { name: 'Tools', exact: true }).count()) await toggleTools(page)
 }
 
+/**
+ * Where every state starts: the Threads page at 1600x1000 in the default dark look, one pane, Tools shut and not expanded,
+ * nothing open over the thread, motion on, and neither the keys nor the pointer on anything. A state that stops part-way
+ * leaves what it opened behind it, and a state that ends at another size or with a split open does too, so each next
+ * state would start inside the last one's mess and read wrong or fail.
+ */
+async function cleanStart(capture: Capture): Promise<void> {
+  const { page, launched } = capture
+  for (let tries = 0; tries < 4 && await page.locator('[role="dialog"]:visible, [role="menu"]:visible').count(); tries += 1) await page.keyboard.press('Escape')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await openThreads(page)
+  await resizeContentWindowFor(launched, 1600, 1000)
+  const restore = page.getByRole('button', { name: 'Restore tools panel', exact: true })
+  if (await restore.count()) await restore.first().click()
+  await closeTools(page)
+  for (let tries = 0; tries < 4 && await page.locator('section.thread-pane').count() > 1; tries += 1) {
+    await page.locator('section.thread-pane').last().getByRole('button', { name: /^Close .+ pane$/u }).first().click()
+  }
+  await expect(page.locator('section.thread-pane')).toHaveCount(1)
+  await page.evaluate(() => {
+    for (const element of document.querySelectorAll('.threads-view, .threads-view *')) if (element.scrollTop > 0 && !element.closest('.changes-files, [role="log"], .thread-nav')) element.scrollTop = 0
+  })
+  await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.mouse.move(0, 0)
+}
+
 const PR_NOTES: Readonly<Record<PullRequestMoment, string>> = {
   'checks-running': 'Pull request surface in Tools with Gates, three test shards, Package and Desktop still running or queued; the branch toolbar shows the pull request badge.',
   'checks-failed': 'Pull request surface with Gates (Windows) and Test shard 2 failed and Desktop result still running; badge visible.',
@@ -766,8 +793,8 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await quick.click()
     const dialog = page.getByRole('dialog', { name: 'Commit changes' })
     await expect(dialog.getByRole('list', { name: 'Changed files' })).toContainText('storeWorkerProtocol.ts', { timeout: 30_000 })
-    await capture.shoot('git-dialog', 'The commit dialog at the smallest window: the paths give way before the counts and the presses.', '', { modes: ['dark'], size: [820, 560] })
     await capture.shoot('git-dialog', 'The Git action\'s commit dialog over the thread, with its changed-files list: four edits and one new file on the pull request\'s branch.')
+    await capture.shoot('git-dialog', 'The commit dialog at the smallest window: the paths give way before the counts and the presses.', '', { modes: ['dark'], size: [820, 560] })
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
   } },
@@ -843,6 +870,7 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.keyboard.press('Tab')
     await sidebar.getByRole('button', { name: 'Plan the split', exact: true }).first().focus()
     await capture.shoot('shell-row-focus', 'The keyboard on a working row, with its shortcuts showing.', '', { modes: ['dark', 'light'] })
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     // A header symbol the keys reach is named under it, as the pointer's tooltip names it.
     const headerFocus = async (): Promise<void> => {
       await page.keyboard.press('Tab')
@@ -850,7 +878,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await expect(page.locator('.focus-name')).toBeVisible()
     }
     await capture.shoot('shell-header-focus', 'The keyboard on the Terminal drawer button, named under the header.', '', { modes: ['dark', 'light'], before: headerFocus })
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     // The row may sit faded at the list's edge, where it takes no presses, so it comes to the middle and is pointed at first.
     const review = sidebar.getByRole('button', { name: 'Repository review', exact: true }).first()
@@ -891,13 +918,6 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
       await resizeContentWindowFor(capture.launched, width, height)
       await capture.shoot('sidebar-rail-narrow', width < 1000 ? 'Below a 1000 pixel window the sidebar stands as the rail and the thread takes the rest.' : 'At 1000 the sidebar stands beside the thread, as at every wider window.', '', { modes: ['dark'], size: [width, height] })
     }
-    // Expand opens the whole sidebar over the thread, which has not moved.
-    const open = async (): Promise<void> => {
-      if (await page.locator('aside.thread-nav[data-over]').count()) return
-      await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
-      await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
-    }
-    await open()
     // A tile the keys reach is named beside the rail, as the pointer's tooltip names it.
     const railFocus = async (): Promise<void> => {
       await page.keyboard.press('Tab')
@@ -906,6 +926,13 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     }
     await capture.shoot('sidebar-rail-focus', 'The keyboard on a rail tile at the minimum window, its thread named beside the rail.', '', { modes: ['dark', 'light'], size: [820, 560], before: railFocus })
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    // Expand opens the whole sidebar over the thread, which has not moved.
+    const open = async (): Promise<void> => {
+      if (await page.locator('aside.thread-nav[data-over]').count()) return
+      await sidebar.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+      await expect(page.getByRole('dialog', { name: 'Thread sidebar' })).toBeVisible()
+    }
+    await open()
     await capture.shoot('sidebar-over', 'Expand pressed at the minimum window: the whole sidebar over the thread, the thread dimmed and unmoved behind it.', '', { size: [820, 560], before: open })
     await resizeContentWindowFor(capture.launched, 999, 700)
     await capture.shoot('sidebar-over', 'The same just under the 1000 pixel line.', '', { modes: ['dark'], size: [999, 700], before: open })
@@ -1002,8 +1029,8 @@ test.describe('review evidence', () => {
           const capture = captureFor(launched, repository, out)
           for (const state of STATES) {
             if (!wanted(state)) continue
+            await runState(`${state.name} (its clean start)`, () => cleanStart(capture))
             await runState(state.name, () => state.run(capture))
-            await closeTools(page).catch(() => undefined)
           }
         })
       }
