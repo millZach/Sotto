@@ -175,6 +175,9 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
   :root:not([data-reduced-motion='on']) .thread-activity-live__plan .thread-activity__step-text { transition: color 220ms ease; }
 }
 .thread-activity-live__steps > .thread-activity { margin: 0; }
+/* Once the steps are open the checklist above the line reads each item whole, as the opened plan did, since its row among
+   the steps does not open it again. */
+.thread-activity-live[data-expanded] > .thread-activity-live__plan .thread-activity__step-text { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity__pulse[data-connected] { animation: thread-activity-pulse 1.6s ease-in-out infinite; }

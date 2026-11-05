@@ -382,6 +382,12 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   </div>
 }
 
+/**
+ * The plan record whose checklist stands above the working line, which the opened steps under that line keep as one
+ * step without opening it again, so opening the steps adds what they did and never says the plan twice.
+ */
+const PlanInViewContext = createContext<string | undefined>(undefined)
+
 const ActivityRow = memo(function ActivityRow({ node, connected, provider, quietUnknown, onDisclosure }: {
   readonly node: ActivityNode; readonly connected: boolean; readonly provider: string
   /** The group heading already says the outcome is unknown; the row keeps it for assistive tech only. */
@@ -389,9 +395,13 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const [open, setOpen] = useState(false)
+  const [pressedOpen, setOpen] = useState(false)
   const detailId = useId()
   const { record, children } = node
+  // The plan in view above the working line is already open there: its row stands among the steps and opens nothing.
+  const planInView = useContext(PlanInViewContext) === record.id
+  const expandable = !planInView && (hasDetails(record) || children.length > 0)
+  const open = pressedOpen && expandable
   const count = children.length
   const steps = count ? plural(count, { one: `${{ stepCount: shownCount(count) }} step`, other: `${{ stepCount: shownCount(count) }} steps` }) : ''
   const base = activityLabel(record)
@@ -400,7 +410,6 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const status = statusText(record, connected)
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running'
-  const expandable = hasDetails(record) || children.length > 0
   const lines = activityLineCounts(record)
   const spoken = [spokenActivity(activityLeadKind(record), label), label.preview, lines ? spokenLineCounts(lines) : '',
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
@@ -621,7 +630,8 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // streaming in, or when the interface language does, since the words are in it.
   const now = useMemo(() => workingNow(steps, replyId, waitingOn), [steps, replyId, waitingOn, i18n.locale])
   // When the provider sent a plan, its checklist stands above the line while the turn runs (ADR-0134, November 5 amendment,
-  // "the plan stays in view"). Its record is still one of the steps under the line.
+  // "the plan stays in view"). Its record is still one of the steps under the line, a row that does not open the list again;
+  // once the steps are open the checklist reads each item whole, as the opened plan did.
   const plan = useMemo(() => newestPlan(steps), [steps])
   const checklist = plan ? <PlanSteps record={plan} live /> : null
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
@@ -674,7 +684,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    {disclosure.opened}
+    <PlanInViewContext.Provider value={plan?.id}>{disclosure.opened}</PlanInViewContext.Provider>
   </div>
 }
 

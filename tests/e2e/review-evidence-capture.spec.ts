@@ -540,20 +540,24 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('steps-collapsed-still', 'The same line under reduced motion: the light holds still and a still dot stands beside the words.', '', { modes: ['dark'] })
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     const composer = focusedPane(page).locator('form.thread-prompt')
-    /** From the end of the thread at the window's size, as a reader there would: the working line pressed, then the plan. */
+    /**
+     * From the end of the thread at the window's size, as a reader there would: the working line pressed, then the command
+     * that read the publish windows module, for its output. The plan is one of the steps there and opens nothing, since its
+     * checklist stands above the line.
+     */
     const unfold = async (width: number, height: number, folded: boolean): Promise<void> => {
       await resizeContentWindowFor(capture.launched, width, height)
       if (!folded) await line.click()
       await scrollTranscript(page, 'bottom')
       await line.click()
-      await focusedPane(page).getByRole('button', { name: /^Plan the split, 3 of 7 done/u }).click()
-      await expect(focusedPane(page).getByRole('list', { name: 'Plan, 3 of 7 done' }).last()).toBeVisible()
+      await focusedPane(page).getByRole('button', { name: /^cat src\/main\/agents\/publishWindows\.ts, /u }).click()
+      await expect(focusedPane(page).getByText('export interface PublishWindow')).toBeVisible()
       // The press can take the reader off the end, so the composer slims; it is not done moving when its animations are.
       let lastTop = Number.NaN
       await expect.poll(async () => { const top = (await composer.boundingBox())?.y ?? Number.NaN, still = top === lastTop; lastTop = top; return still }, { intervals: [500] }).toBe(true)
     }
     await unfold(1600, 1000, true)
-    await capture.shoot('steps-expanded', 'The same turn unfolded: the newest six steps, with the plan among them pressed open, three done, one running and three to come.')
+    await capture.shoot('steps-expanded', 'The same turn unfolded: the newest six steps under the plan’s checklist, the plan among them as one step, and a finished command pressed open to its output.')
     await unfold(1280, 800, false)
     await capture.shoot('steps-expanded', 'The same turn unfolded at a narrower window, pressed open at that size.', '', { modes: ['dark'], size: [1280, 800] })
     await unfold(820, 560, false)
