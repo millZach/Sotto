@@ -491,6 +491,26 @@ describe('shared tools panel', () => {
     fireEvent.keyDown(handle, { key: 'Home' })
     expect(store.getSnapshot().width).toBe(380)
   })
+  it('opens Changes over the thread where a comparison and the conversation are too narrow side by side, with the room the thread would keep', async () => {
+    const { store } = setup()
+    const area = document.querySelector('.thread-workspace__body') as HTMLElement
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 820 })
+    act(() => { store.setSurface('files'); store.setOpen(true) })
+    // Files keeps its place beside a 361px thread.
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'docked'))
+    act(() => store.setSurface('changes'))
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'overlay'))
+    expect(panel().style.getPropertyValue('--tools-width')).toBe('820px')
+    // It fills the workspace already, so there is nothing to expand, and the thread under it takes no keys.
+    expect(within(panel()).queryByRole('button', { name: 'Expand tools panel' })).toBeNull()
+    const under = [...area.children].filter(element => !element.contains(panel())) as HTMLElement[]
+    expect(under.length).toBeGreaterThan(0)
+    expect(under.every(element => element.inert)).toBe(true)
+    // A panel the user sized keeps its width and its place.
+    act(() => store.setWidth(400))
+    await waitFor(() => expect(panel()).toHaveAttribute('data-mode', 'docked'))
+    Object.defineProperty(area, 'clientWidth', { configurable: true, value: 1200 })
+  })
   it('moves along the rail with the arrow keys, Home and End, as a single tab stop', async () => {
     const { store } = setup()
     act(() => store.setOpen(true))

@@ -61,6 +61,11 @@ import './toolsRail.css'
 const FEEDBACK_MS = 1_600
 const RESIZE_STEP = 24
 const OVERLAY_GUTTER = 48
+/**
+ * Beside a pane narrower than this, a comparison and the conversation are both too cramped to read, so Changes fills the
+ * workspace over the thread, as in an 820px window, until it closes. A panel the user sized keeps its width and its place.
+ */
+const CHANGES_MIN_PANE_WIDTH = 400
 
 export interface ToolsPanelProps {
   readonly focusedThreadId: string | null
@@ -320,16 +325,20 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     return () => observer.disconnect()
   }, [open])
 
+  const measured = available !== null && available > 0 ? available : null
+  const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
+  const changesOver = !chrome.expanded && !chrome.resized && chrome.surface === 'changes' && measured !== null && measured - preferred < CHANGES_MIN_PANE_WIDTH
+  const fills = chrome.expanded || changesOver
   // Keep mounted conversations (and their state) out of keyboard navigation while the tool fills the workspace.
   const covered = useRef<HTMLElement[]>([])
   useLayoutEffect(() => {
-    if (!open || !chrome.expanded) return
+    if (!open || !fills) return
     const area = workspaceArea(aside.current)
     covered.current = area ? [...area.children].filter((element): element is HTMLElement => element instanceof HTMLElement && !element.contains(aside.current)) : []
     const previous = covered.current.map(element => element.inert)
     covered.current.forEach(element => { element.inert = true })
     return () => { covered.current.forEach((element, index) => { element.inert = previous[index] ?? false }); covered.current = [] }
-  }, [open, chrome.expanded])
+  }, [open, fills])
 
   // Files, Changes and Agents read a paired host's thread on that host. Its browser and test iPhone stay on that machine,
   // so nothing here starts them for it; its terminal runs over SSH where that is on (ADR-0183; Owl only).
@@ -397,13 +406,11 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
     <PhonePlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   </>
-  const measured = available !== null && available > 0 ? available : null
-  const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
-  const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
+  const overlay = chrome.expanded || changesOver || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
   // The page wears how the panel stands: docked beside the panes or over them, and nothing while it is shut.
   useMark('tools', open ? overlay ? 'overlay' : 'docked' : null)
   if (!open) return player
-  const width = chrome.expanded && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
+  const width = chrome.expanded && measured !== null ? measured : changesOver && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
   const pinned = (chrome.surface !== 'agents' || delegationOn) && chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null
   const surfaceLabel = surfaceName(chrome.surface)
@@ -498,7 +505,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
         <ToolsRailTabs value={chrome.surface} live={live} attention={attention} onChange={surface => store.setSurface(surface)} />
         <div className="tools-rail__foot">
           {thread && (chrome.surface !== 'agents' || delegationOn) ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned} aria-label={pinned ? t({ message: `Unpin from ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t({ message: `Pin to ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' })} title={pinned ? t({ message: `Unpin from ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t`Pin to this thread`} onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
-          <button type="button" className="files-icon tt-focusable" aria-label={chrome.expanded ? t`Restore tools panel` : t`Expand tools panel`} title={chrome.expanded ? t({ message: 'Restore', comment: 'Returns the expanded tools panel to its width.' }) : t`Expand to fill the workspace`} aria-pressed={chrome.expanded} onClick={() => store.setExpanded(!chrome.expanded)}>{chrome.expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button>
+          {/* Changes already fills a workspace too narrow to share, so expanding it would change nothing. */}
+          {changesOver ? null : <button type="button" className="files-icon tt-focusable" aria-label={chrome.expanded ? t`Restore tools panel` : t`Expand tools panel`} title={chrome.expanded ? t({ message: 'Restore', comment: 'Returns the expanded tools panel to its width.' }) : t`Expand to fill the workspace`} aria-pressed={chrome.expanded} onClick={() => store.setExpanded(!chrome.expanded)}>{chrome.expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button>}
           <button type="button" className="files-icon tt-focusable" aria-label={t`Close tools panel`} title={t({ message: 'Close', comment: 'Closes the tools panel.' })} onClick={close}><X size={16} aria-hidden="true" /></button>
         </div>
       </div>
