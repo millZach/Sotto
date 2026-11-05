@@ -54,6 +54,11 @@
 .thread-workspace__head .thread-workspace__branches { flex: 0 1 auto; min-width: 0; -webkit-app-region: no-drag; }
 .thread-workspace__branches:empty { display: none; }
 .thread-workspace__branches .branch-toolbar__pr { flex: none; }
+/* Where the thread works is one quiet line after the name: the project, its folder, the pull request and the branch, each
+   in the same muted caption and the interface's own face, parted by their own space rather than by dots. Only the pull
+   request's state keeps its colour, on its mark. */
+.thread-workspace__branches .branch-toolbar__separator { display: none; }
+.thread-workspace__branches .branch-toolbar__branch { font-family: inherit; }
 .thread-workspace__crumb { display: flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: 100%; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
