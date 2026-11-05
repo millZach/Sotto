@@ -530,17 +530,26 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await capture.shoot('steps-collapsed-still', 'The same line under reduced motion: the light holds still and a still dot stands beside the words.', '', { modes: ['dark'] })
     await page.emulateMedia({ reducedMotion: 'no-preference' })
-    await resizeContentWindowFor(capture.launched, 1600, 1000)
-    await line.click()
-    await focusedPane(page).getByRole('button', { name: /^Plan the split, 3 of 7 done/u }).click()
-    await expect(focusedPane(page).getByRole('list', { name: 'Plan, 3 of 7 done' })).toBeVisible()
-    // The press scrolls the reader off the end, so the composer slims; it is not done moving when its animations are.
     const composer = focusedPane(page).locator('form.thread-prompt')
-    let lastTop = Number.NaN
-    await expect.poll(async () => { const top = (await composer.boundingBox())?.y ?? Number.NaN, still = top === lastTop; lastTop = top; return still }, { intervals: [500] }).toBe(true)
+    /** From the end of the thread at the window's size, as a reader there would: the working line pressed, then the plan. */
+    const unfold = async (width: number, height: number, folded: boolean): Promise<void> => {
+      await resizeContentWindowFor(capture.launched, width, height)
+      if (!folded) await line.click()
+      await scrollTranscript(page, 'bottom')
+      await line.click()
+      await focusedPane(page).getByRole('button', { name: /^Plan the split, 3 of 7 done/u }).click()
+      await expect(focusedPane(page).getByRole('list', { name: 'Plan, 3 of 7 done' }).last()).toBeVisible()
+      // The press can take the reader off the end, so the composer slims; it is not done moving when its animations are.
+      let lastTop = Number.NaN
+      await expect.poll(async () => { const top = (await composer.boundingBox())?.y ?? Number.NaN, still = top === lastTop; lastTop = top; return still }, { intervals: [500] }).toBe(true)
+    }
+    await unfold(1600, 1000, true)
     await capture.shoot('steps-expanded', 'The same turn unfolded: the newest six steps, with the plan among them pressed open, three done, one running and three to come.')
-    await capture.shoot('steps-expanded', 'The same turn unfolded at a narrower window.', '', { modes: ['dark'], size: [1280, 800] })
-    await capture.shoot('steps-expanded', 'The same turn unfolded at the minimum window.', '', { modes: ['dark'], size: [820, 560] })
+    await unfold(1280, 800, false)
+    await capture.shoot('steps-expanded', 'The same turn unfolded at a narrower window, pressed open at that size.', '', { modes: ['dark'], size: [1280, 800] })
+    await unfold(820, 560, false)
+    await capture.shoot('steps-expanded', 'The same turn unfolded at the minimum window, pressed open at that size.', '', { modes: ['dark'], size: [820, 560] })
+    await resizeContentWindowFor(capture.launched, 1600, 1000)
     await setAppearance(page, { appearance: 'dark', lightTheme: 'clay', darkTheme: 'clay' }, 'dark')
     await capture.shoot('steps-expanded-clay', 'The same turn unfolded on another theme, clay.')
     await setAppearance(page, { appearance: 'dark', lightTheme: DEFAULT_THEME_ID, darkTheme: DEFAULT_THEME_ID }, 'dark')

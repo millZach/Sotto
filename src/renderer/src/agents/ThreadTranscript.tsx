@@ -62,7 +62,7 @@ import type { DelegationView } from '../../../shared/delegation'
 import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, StillWorking, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
-import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
+import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
 import { readsBack, typesIntoComposer } from './slimComposer'
 import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
@@ -750,6 +750,22 @@ export function reachesJumpBand(scroller: HTMLElement): boolean {
 }
 
 /**
+ * How far the transcript rises so what a press opened can be read (`revealLift`), measured with the control where it was
+ * pressed: nothing for a press that folds, or for a control that names nothing it opened.
+ */
+function openedLift(scroller: HTMLElement, control: HTMLElement, pressedAt: number): number {
+  const id = control.getAttribute('aria-expanded') === 'true' ? control.getAttribute('aria-controls') : null
+  const opened = id ? document.getElementById(id) : null
+  if (opened === null || !scroller.contains(opened)) return 0
+  const box = scroller.getBoundingClientRect()
+  const style = getComputedStyle(scroller)
+  const view = { top: box.top + (parseFloat(style.scrollPaddingTop) || 0), bottom: box.top + scroller.clientHeight - (parseFloat(style.scrollPaddingBottom) || 0) }
+  const shift = pressedAt - control.getBoundingClientRect().top
+  const rect = opened.getBoundingClientRect()
+  return revealLift(view, { top: pressedAt }, { top: rect.top + shift, bottom: rect.bottom + shift })
+}
+
+/**
  * The selected thread's history. It follows new content only while the reader is at the end;
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
  * the message under the reader where it was.
@@ -1063,19 +1079,28 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (onTypeAhead !== undefined && typesIntoComposer(event.nativeEvent)) onTypeAhead()
   }
 
-  // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away.
+  // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away. Where
+  // what it opens would land under the composer, mostly out of sight, the view rises with the fold instead, only far
+  // enough for its end to show and never past the control reaching the top, so what was opened can be read at any size.
   const onDisclosure = useCallback((control: HTMLElement): void => {
     const element = scroller.current
     if (element === null) return
     const before = control.getBoundingClientRect().top
     following.current = false
     // What it opens slides for a moment, so the control is held for all of it, and the end-follow answers only once it has its height.
-    const until = performance.now() + FOLD_MS
+    const started = performance.now()
+    const until = started + FOLD_MS
+    const still = prefersReducedMotion()
+    let lift: number | null = null
     const hold = (): void => {
       const current = scroller.current
       if (current === null || !control.isConnected) return
-      current.scrollTop += control.getBoundingClientRect().top - before
-      if (performance.now() < until) { requestAnimationFrame(hold); return }
+      // What it opened is laid out whole from the first frame, inside a fold that is still sliding open.
+      lift ??= openedLift(current, control, before)
+      const now = performance.now()
+      const progress = still ? 1 : Math.min(1, (now - started) / FOLD_MS)
+      current.scrollTop += control.getBoundingClientRect().top - (before - lift * (1 - (1 - progress) ** 3))
+      if (now < until) { requestAnimationFrame(hold); return }
       following.current = current.scrollHeight - current.scrollTop - current.clientHeight <= FOLLOW_SLACK_PX
     }
     requestAnimationFrame(hold)

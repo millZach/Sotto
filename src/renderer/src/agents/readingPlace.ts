@@ -164,3 +164,22 @@ export function scrollsTranscript(event: { readonly key: string; readonly target
   if (!(event.target instanceof Element)) return true
   return event.target.closest(event.key === ' ' ? `${OWNS_KEYS}, ${PRESSED_BY_SPACE}` : OWNS_KEYS) === null
 }
+
+/** How near the top of the view a pressed control may come to show what it opened. */
+const REVEAL_TOP_GAP_PX = 12
+
+/**
+ * How far to scroll a transcript down so what a press just opened can be read, as `top` and `bottom` edges in the window:
+ * `view` is the readable part of the transcript (above the composer and Jump to latest), `control` the pressed control and
+ * `opened` what it opened, at full height. Nothing when all of it shows already, or at least half the view of it does, so a
+ * press in the middle of the view leaves the control where it was. Otherwise far enough that its end comes into view,
+ * but never so far that the control goes past the top of the view: a fold taller than the view shows from its start.
+ */
+export function revealLift(view: { readonly top: number; readonly bottom: number }, control: { readonly top: number },
+  opened: { readonly top: number; readonly bottom: number }): number {
+  const hidden = opened.bottom - view.bottom
+  if (hidden <= 0.5) return 0
+  const shown = Math.max(0, Math.min(opened.bottom, view.bottom) - Math.max(opened.top, view.top))
+  if (shown >= (view.bottom - view.top) / 2) return 0
+  return Math.max(0, Math.min(hidden, control.top - view.top - REVEAL_TOP_GAP_PX))
+}

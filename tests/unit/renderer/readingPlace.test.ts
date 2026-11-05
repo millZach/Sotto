@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MessageRows, scrollsTranscript } from '../../../src/renderer/src/agents/readingPlace'
+import { MessageRows, revealLift, scrollsTranscript } from '../../../src/renderer/src/agents/readingPlace'
 
 /**
  * The rows a transcript draws keep themselves in the order shown (#1452). What that costs is counted as the page would do
@@ -152,5 +152,23 @@ describe('a key pressed in the transcript', () => {
       expect(press('Enter', target(html)), html).toBe(false)
       expect(press('PageDown', target(html)), html).toBe(true)
     }
+  })
+})
+
+describe('how far a press lifts the transcript to show what it opened', () => {
+  const view = { top: 40, bottom: 500 }
+
+  it('leaves the control where it was when what opened shows whole, or half the view of it does', () => {
+    expect(revealLift(view, { top: 200 }, { top: 230, bottom: 480 })).toBe(0)
+    expect(revealLift(view, { top: 100 }, { top: 130, bottom: 900 })).toBe(0)
+  })
+
+  it('lifts what opened under the composer far enough for its end to show', () => {
+    expect(revealLift(view, { top: 470 }, { top: 500, bottom: 700 })).toBe(200)
+  })
+
+  it('never lifts the control past the top of the view', () => {
+    expect(revealLift(view, { top: 470 }, { top: 500, bottom: 1_400 })).toBe(470 - 40 - 12)
+    expect(revealLift(view, { top: 45 }, { top: 75, bottom: 300 })).toBe(0)
   })
 })
