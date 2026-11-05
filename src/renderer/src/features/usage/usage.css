@@ -192,6 +192,8 @@
 .usage-chart__dot { position: absolute; width: 8px; height: 8px; margin: 0 0 -4px -4px; border-radius: 50%; background: var(--usage-series); box-shadow: 0 0 0 2px var(--usage-ground); }
 .usage-chart__dot[data-on] { width: 10px; height: 10px; margin: 0 0 -5px -5px; }
 .usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__bar { opacity: .28; }
+.usage-chart__label { flex: none; align-self: center; margin-bottom: 5px; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; transition: opacity .15s; }
+.usage-chart__plot[data-active] .usage-chart__column:not([data-on]) .usage-chart__label { opacity: .28; }
 .usage-chart__grid { position: absolute; right: 0; left: 0; border-top: 1px dashed var(--usage-grid); pointer-events: none; }
 .usage-chart__grid span { position: absolute; right: calc(-1 * var(--usage-scale-gutter)); width: calc(var(--usage-scale-gutter) - 6px); bottom: -8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .usage-chart__none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tt-text-muted); font-size: var(--tt-type-small); }

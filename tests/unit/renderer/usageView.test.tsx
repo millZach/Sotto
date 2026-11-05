@@ -82,6 +82,26 @@ describe('Usage page', () => {
     await user.click(measure(/^From cache /u))
     expect(screen.getByRole('tabpanel', { name: /From cache/u })).toHaveTextContent("Input tokens weren't reported in this range, so the share from cache can't be worked out.")
   })
+  it('says once that a range has no tokens, on Tokens, and leaves Where and From cache out until it has some', async () => {
+    const host = localHost()
+    host.activity = { ...host.activity!, totals: activityRow(190, 10, 0, tokens()) }
+    const { user } = await open(dashboard(host))
+    expect(within(measures()).getAllByRole('tab').map(tab => tab.querySelector('.usage-index__label')?.textContent)).toEqual(['Room left', 'Prompts', 'Tokens', 'Most used model', 'Busiest hour'])
+    expect(within(measures()).getAllByText('No tokens in this range')).toHaveLength(1)
+    measure(/^Tokens /u).focus()
+    await user.keyboard('{ArrowDown}')
+    expect(measure(/^Most used model /u)).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    const stage = screen.getByRole('tabpanel', { name: /Tokens/u })
+    expect(stage).toHaveTextContent('No tokens in this range.')
+    expect(within(stage).queryByRole('group', { name: /^Tokens per day/u })).toBeNull()
+  })
+  it('labels each busy day over its bar when only a few days have work', async () => {
+    const host = localHost()
+    await open(dashboard(host))
+    const chart = screen.getByRole('group', { name: /^Prompts per day/u })
+    expect([...chart.querySelectorAll('.usage-chart__label')].map(label => label.textContent).length).toBeGreaterThan(0)
+  })
   it('moves through the index with the arrow keys and opens each stage', async () => {
     const { user } = await open()
     measure(/^Prompts /u).focus()

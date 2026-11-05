@@ -260,7 +260,7 @@ describe('Usage Per day chart split', () => {
     expect(screen.queryByText(/^Ranking is incomplete\. There are more models/u)).toBeNull()
   })
 
-  it('says there are no token counts, and reads nothing, when a split has nothing to draw', async () => {
+  it('says there are no token counts once, draws no Tokens chart and reads nothing, even with a split chosen', async () => {
     const host = splitHost()
     const strip = <T extends UsageActivityAggregate>(row: T): T => ({ ...row, tokens: tokens(), tokenRecords: 0 })
     const activity = host.activity!
@@ -268,13 +268,12 @@ describe('Usage Per day chart split', () => {
       daily: activity.daily.map(strip), ...(activity.clients === undefined ? {} : { clients: activity.clients.map(strip) }) }
     const bridge = fixtureBridge(dashboard(host))
     const { user } = await open(bridge)
-    await user.click(measure(/^Tokens /u))
-    await user.click(within(show()).getByRole('radio', { name: 'By provider' }))
-    expect(plot('Tokens')).toHaveTextContent('No token counts in this range')
-    expect(plot('Tokens')).not.toHaveAttribute('aria-busy')
-    expect(plot('Tokens')).not.toHaveTextContent(/Reading/u)
     await user.click(within(show()).getByRole('radio', { name: 'By model' }))
-    expect(plot('Tokens')).toHaveTextContent('No token counts in this range')
-    expect(filteredReads(bridge)).toEqual([])
+    const asked = filteredReads(bridge).length
+    await user.click(measure(/^Tokens /u))
+    expect(screen.getByRole('tabpanel', { name: /Tokens/u })).toHaveTextContent("Devin doesn't report tokens. Prompts are still counted.")
+    expect(screen.queryByRole('group', { name: /^Tokens per day/u })).toBeNull()
+    expect(screen.queryByRole('radiogroup', { name: 'Show on the chart' })).toBeNull()
+    expect(filteredReads(bridge)).toHaveLength(asked)
   })
 })

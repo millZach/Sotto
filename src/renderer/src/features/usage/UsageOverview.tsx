@@ -56,11 +56,15 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
     return () => observer?.disconnect()
   }, [])
 
+  // A range with no token counts says so once, on Tokens: Where and From cache would only repeat it.
+  const noTokenCounts = USAGE_TOKEN_FIELDS.every(name => totals.tokens[name].value === undefined)
+  const measures: readonly Focus[] = noTokenCounts ? FOCUS.filter(value => value !== 'where' && value !== 'cache') : FOCUS
+  const shownFocus: Focus = measures.includes(focus) ? focus : 'tokens'
   const choose = (value: Focus): void => { setFocus(value); setHover(null); setPin(null); setCell(null) }
   const onIndexKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    const target = roomKeyTarget(event.key, index, FOCUS.length)
+    const target = roomKeyTarget(event.key, index, measures.length)
     if (target === null) return
-    event.preventDefault(); choose(FOCUS[target]!)
+    event.preventDefault(); choose(measures[target]!)
     list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[target]?.focus()
   }
 
@@ -111,7 +115,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
   const placesNote = page.withoutPlacesNote === null ? null : <p className="usage-note tt-paragraph">{page.withoutPlacesNote}</p>
 
   let stage: ReactNode
-  switch (focus) {
+  switch (shownFocus) {
     case 'room':
       stage = <>
         {head(t`Room left`, <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('subscriptions')}><Trans>Subscriptions</Trans></button>)}
@@ -145,7 +149,8 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           })() : prompts > 0 && tokenTotal > 0 ? totals.tokens.total.partial
             ? <Trans>At least <b>{perPrompt}</b> tokens per prompt</Trans>
             : <Trans>About <b>{perPrompt}</b> tokens per prompt</Trans> : null}</p>
-          return series === null || series.length === 0
+          // With nothing counted the line above already says so, and a chart of empty days would say it again.
+          return noTokenCounts ? null : series === null || series.length === 0
             ? <div className="usage-stage__sub"><div className="usage-chart-head"><h3><Trans>Per day</Trans></h3></div>{when}{perDay('tokens')}</div>
             : perDay('tokens', when)
         })()}
@@ -319,12 +324,12 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
   return <>
     <div className="usage-focus">
       <div ref={list} className="usage-index" role="tablist" aria-label={t`Usage measures`} aria-orientation={orientation}>
-        {FOCUS.map((value, index) => {
+        {measures.map((value, index) => {
           const item = items[value]
           const name = i18n._(FOCUS_NAMES[value])
           // A measure with nothing to show says so in a line and takes a line's room, so what is known stands out.
           const empty = item.text === '—'
-          return <button key={value} type="button" role="tab" id={`${id}-${value}`} className="usage-index__item tt-focusable" data-empty={empty || undefined} aria-selected={focus === value} tabIndex={focus === value ? 0 : -1}
+          return <button key={value} type="button" role="tab" id={`${id}-${value}`} className="usage-index__item tt-focusable" data-empty={empty || undefined} aria-selected={shownFocus === value} tabIndex={shownFocus === value ? 0 : -1}
             aria-controls={`${id}-stage`} aria-label={empty ? `${name} ${item.note}` : `${name} ${item.text} ${item.note}`}
             onClick={() => choose(value)} onKeyDown={event => onIndexKey(event, index)}>
             <span className="usage-index__label">{name}</span>
@@ -334,7 +339,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           </button>
         })}
       </div>
-      <section key={focus} className="usage-stage usage-enter" id={`${id}-stage`} role="tabpanel" aria-labelledby={`${id}-${focus}`}>{stage}</section>
+      <section key={shownFocus} className="usage-stage usage-enter" id={`${id}-stage`} role="tabpanel" aria-labelledby={`${id}-${shownFocus}`}>{stage}</section>
     </div>
     <About page={page} />
   </>

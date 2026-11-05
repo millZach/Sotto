@@ -64,6 +64,9 @@ function niceMax(value: number): number {
 
 export interface DayValue { readonly day: string; readonly prompts: number; readonly input: number; readonly output: number; readonly tokensKnown: boolean; readonly tokensPartial: boolean }
 
+/** At most this many days with work, and the chart labels each one's bar. */
+const FEW_DAYS = 6
+
 /** A day's position across the plot, as a percentage of its width. */
 const across = (index: number, count: number): string => `${((index + 0.5) / count * 100).toFixed(3)}%`
 
@@ -87,7 +90,12 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
 }): ReactNode {
   const { t } = useLingui()
   const count = days.length
-  const top = niceMax(Math.max(metric === 'prompts' ? 10 : 1e5, plan.peak))
+  // A range with work on only a few days says each one's figure over its bar, so the page reads without a pointer on it,
+  // and the scale keeps room above the tallest bar for its figure.
+  const dayTotal = (at: number): number => plan.series.reduce((sum, item) => sum + Math.max(0, item.values[at] ?? 0), 0)
+  const busyDays = kind === 'bars' && waiting === undefined ? days.reduce((busy, _, at) => busy + (dayTotal(at) > 0 ? 1 : 0), 0) : 0
+  const labelled = busyDays > 0 && busyDays <= FEW_DAYS
+  const top = niceMax(Math.max(metric === 'prompts' ? 10 : 1e5, labelled ? plan.peak * 1.15 : plan.peak))
   const gap = count <= 7 ? 18 : count <= 45 ? 4 : count <= 100 ? 2 : 1
   const radius = count > 60 ? 1 : count > 20 ? 3 : 5
   // A token chart with nothing reported, or a split with no series to draw, says so rather than draw an empty frame.
@@ -110,9 +118,11 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
         const parts = plan.series.filter(item => (item.values[at] ?? 0) > 0)
         // A day with nothing keeps a one-pixel mark on the baseline, as the chart always had.
         const shown = parts.length > 0 ? parts : plan.series.slice(0, 1)
+        const total = labelled ? dayTotal(at) : 0
         return <span key={day} className="usage-chart__column" data-on={day === selected || undefined} style={{ '--usage-i': at } as Style}>
           {shown.map((item, place) => <i key={item.key} className="usage-chart__bar" data-tone={item.tone} data-top={place === shown.length - 1 || undefined}
             style={{ '--usage-h': height(item.values[at] ?? 0) } as Style} />)}
+          {total > 0 ? <b className="usage-chart__label" aria-hidden="true">{scale(total)}</b> : null}
         </span>
       })}
     </div>
