@@ -521,10 +521,10 @@ const STATES: ReadonlyArray<{ readonly name: string; readonly covers: readonly s
     await capture.shoot('streaming-1', 'A streaming turn before its first word: the working line after three steps, one command running.', differs)
     await capture.shoot('streaming-1', 'The same at the minimum window.', differs, { size: [820, 560] })
     await streamTo(page, 'second')
-    await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list, under the plan Claude sent, three of four done; the transcript follows the end.', differs)
+    await capture.shoot('streaming-2', 'The same turn with its reply part-way through the numbered list, written under the working line and the plan Claude sent, three of four done; the transcript follows the end.', differs)
     await capture.shoot('streaming-2', 'The same at the minimum window.', differs, { size: [820, 560] })
     await streamTo(page, 'third')
-    await capture.shoot('streaming-3', 'The same turn further on, under its plan, its reply cut off inside the code block as it arrives.', differs)
+    await capture.shoot('streaming-3', 'The same turn further on, its reply under its plan and working line, cut off inside the code block as it arrives.', differs)
     await capture.shoot('streaming-3', 'The same at the minimum window.', differs, { size: [820, 560] })
     await resizeContentWindowFor(capture.launched, 1600, 1000)
   } },

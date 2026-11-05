@@ -178,6 +178,9 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 /* Once the steps are open the checklist above the line reads each item whole, as the opened plan did, since its row among
    the steps does not open it again. */
 .thread-activity-live[data-expanded] > .thread-activity-live__plan .thread-activity__step-text { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+/* The reply a running turn writes after its steps stands under the working line (ThreadTranscript.tsx). The place it is
+   drawn into takes no box of its own, so the reply sits in the transcript's column as any reply does. */
+.thread-transcript__writing { display: contents; }
 
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity__pulse[data-connected] { animation: thread-activity-pulse 1.6s ease-in-out infinite; }

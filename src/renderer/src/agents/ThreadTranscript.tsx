@@ -414,7 +414,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, namedReply, namedSent = true }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, namedReply, namedSent = true }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
   /** The one reply in the list that is headed by the provider's name and time; undefined heads every reply. */
   readonly namedReply?: string | undefined
@@ -423,6 +423,8 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   /** The thread is working on the newest turn drawn, so that turn, when `last`, keeps the live layout. */
   readonly running: boolean
   readonly writing: string | undefined
+  /** Where the reply being written stands instead, under the working line (`MessageList`'s `writingBelow`). */
+  readonly writingBelow?: HTMLElement | null | undefined
   readonly speaker?: 'watcher' | undefined
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
   readonly threadId: string | undefined
@@ -453,7 +455,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
         : namedReply === undefined || message.role !== 'assistant' || message.id === namedReply)}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
-    {article(message)}
+    {message.id === writing && writingBelow ? createPortal(article(message), writingBelow, message.id) : article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
   </React.Fragment>
   const everything = turn.user ? [turn.user, ...turn.replies] : [...turn.replies]
@@ -610,10 +612,15 @@ function turnBefore(turns: readonly TranscriptTurn[], at: string): number {
   return found
 }
 
-export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, modelMoved }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, writingBelow = null, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, modelMoved }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   /** A prompt the user sent is drawn below these messages until the history carries it, so the newest reply here is not the one being written. */
   readonly sending?: boolean
+  /**
+   * Where the reply being written stands when the turn took steps before it: under the working line, which the transcript
+   * draws after these messages. Null keeps it in its place here.
+   */
+  readonly writingBelow?: HTMLElement | null | undefined
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
   /** The thread these messages belong to, which is how a submitted attachment finds its preview. */
   readonly threadId?: string
@@ -662,7 +669,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   {turns.map((turn, index) => <React.Fragment key={turn.key}>
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
-      last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
+      last={index === turns.length - 1} writing={writing} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
       delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} namedReply={namedReply}
       namedSent={sentNamed(turns, index, firstSent)} />
     {movedAfter === index ? movedLine : null}
@@ -1202,6 +1209,25 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const bodyHost = useMemo<ActivityBodyHost | null>(() => bodyHostName === undefined ? null : { threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected },
     [thread.id, bodyHostName, bodyHostConnected])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
+  // While the running turn writes a reply after taking steps, the reply stands under the working line rather than above it:
+  // the steps came first, and once the turn ends its Worked for line stands where the working line stood, above that reply.
+  // So the screen reads in the order the work happened, and the line holds its place as the words arrive. The reply is
+  // drawn into the place after the line through a portal, keeping the conversation's own providers. A request waiting on
+  // the user keeps the line with its card at the end, and a reply from before the turn began is not being written now.
+  const [writingPlace, setWritingPlace] = useState<HTMLDivElement | null>(null)
+  const liveWork = useMemo(() => {
+    if (liveTurn === null) return null
+    let stepped = false, startedAt: string | undefined
+    for (const record of thread.activities ?? []) {
+      if (record.turnId !== liveTurn) continue
+      if (isStep(record)) stepped = true
+      else if (record.kind === 'turn') startedAt ??= record.startedAt
+    }
+    return stepped ? { startedAt } : null
+  }, [thread.activities, liveTurn])
+  const newest = thread.messages.at(-1)
+  const writingBelow = liveWork !== null && thread.requests.length === 0 && newest?.role === 'assistant'
+    && !(liveWork.startedAt && Date.parse(newest.createdAt) < Date.parse(liveWork.startedAt)) ? writingPlace : null
 
   const showEarlier = (): void => {
     const element = scroller.current
@@ -1250,7 +1276,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
@@ -1263,6 +1289,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         <ActivityBodyContext.Provider value={bodyHost}>
           <LiveActivity thread={thread} connected={row.connected} provider={row.provider} onDisclosure={onDisclosure} sendingSince={sendingSince} />
         </ActivityBodyContext.Provider>
+        <div ref={setWritingPlace} className="thread-transcript__writing" />
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
       </SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>

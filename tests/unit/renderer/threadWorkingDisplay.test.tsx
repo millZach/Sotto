@@ -147,6 +147,25 @@ describe('what the working line names', () => {
     expect(word(within(before.transcript).getByTestId('thread-activity-live'))).toHaveTextContent('Combing the desert')
   })
 
+  it('stands above a reply it writes after its steps, in the order the work happened, and below one it writes before them', () => {
+    const asked = threadsStateFixture().host.threads.find(item => item.id === THREAD)!.messages[0]!
+    const reply = { ...asked, id: 'reply', role: 'assistant' as const, text: 'So far', createdAt: iso(0) }
+    const order = (activities: AgentActivity[]): 'line first' | 'reply first' => {
+      const { transcript } = mount(stateWith({ status: 'running', messages: [asked, reply], activities }))
+      const line = within(transcript).getByTestId('thread-activity-live')
+      const written = within(transcript).getByText('So far').closest('.thread-message')!
+      const first = line.compareDocumentPosition(written) & Node.DOCUMENT_POSITION_FOLLOWING ? 'line first' : 'reply first'
+      cleanup()
+      return first
+    }
+    // Steps, then the reply: the line, with the turn's steps under it, stands where the Worked for line will.
+    expect(order([...waiting(), activity({ id: 'c', command: 'npm test' })])).toBe('line first')
+    // No steps: nothing will fold above the reply, so the line stays at the end.
+    expect(order(waiting())).toBe('reply first')
+    // A step after the reply: the reply is done and the work went on below it.
+    expect(order([...waiting(), activity({ id: 'c', command: 'npm test', status: 'running', afterMessageId: 'reply' })])).toBe('reply first')
+  })
+
   it('says what it waits for while a request waits on the user, not that a reply is being written', () => {
     const messages = threadsStateFixture().host.threads.find(item => item.id === THREAD)!.messages
     const reply = { ...messages.at(-1)!, id: 'reply', role: 'assistant' as const, text: 'I will run the benchmark.', createdAt: iso(0) }
